@@ -4,6 +4,10 @@ export const PASTE_PREVIEW_LEN = 40;
 export const INPUT_MAX_ROWS = 8;
 export const SENT_PREVIEW_LEN = 60;
 
+// Viewport scroll step (lines per arrow press). Option/Alt applies the multiplier.
+export const SCROLL_STEP = 3;
+export const SCROLL_FAST_MULTIPLIER = 10;
+
 export const GOOSE_FRAMES = [
   [
     "    ,_",
@@ -66,17 +70,3 @@ export const GREETING_MESSAGES = [
 
 export const INITIAL_GREETING =
   GREETING_MESSAGES[Math.floor(Math.random() * GREETING_MESSAGES.length)]!;
-
-export const PERMISSION_LABELS: Record<string, string> = {
-  allow_once: "Allow once",
-  allow_always: "Always allow",
-  reject_once: "Reject once",
-  reject_always: "Always reject",
-};
-
-export const PERMISSION_KEYS: Record<string, string> = {
-  allow_once: "y",
-  allow_always: "a",
-  reject_once: "n",
-  reject_always: "r",
-};

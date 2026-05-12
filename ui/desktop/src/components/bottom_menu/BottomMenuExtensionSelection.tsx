@@ -7,6 +7,7 @@ import { Switch } from '../ui/switch';
 import { FixedExtensionEntry, useConfig } from '../ConfigContext';
 import { toastService } from '../../toasts';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
+import { nameToKey } from '../settings/extensions/utils';
 import { ExtensionConfig, getSessionExtensions } from '../../api';
 import { addToAgent, removeFromAgent } from '../settings/extensions/agent-api';
 import {
@@ -230,15 +231,29 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
       );
     }
 
-    const sessionExtensionNames = new Set(sessionExtensions.map((ext) => ext.name));
+    const sessionExtensionKeys = new Set(sessionExtensions.map((ext) => nameToKey(ext.name)));
+    const globalExtensionKeys = new Set(allExtensions.map((ext) => nameToKey(ext.name)));
 
-    return allExtensions.map(
+    const mergedExtensions = allExtensions.map(
       (ext) =>
         ({
           ...ext,
-          enabled: sessionExtensionNames.has(ext.name),
+          enabled: sessionExtensionKeys.has(nameToKey(ext.name)),
         }) as FixedExtensionEntry
     );
+
+    for (const sessionExtension of sessionExtensions) {
+      if (globalExtensionKeys.has(nameToKey(sessionExtension.name))) {
+        continue;
+      }
+
+      mergedExtensions.push({
+        ...sessionExtension,
+        enabled: true,
+      });
+    }
+
+    return mergedExtensions;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allExtensions, sessionExtensions, isHubView, hubUpdateTrigger]);
 
@@ -266,6 +281,9 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
     return extensionsList.filter((ext) => ext.enabled).length;
   }, [extensionsList]);
 
+  const shouldHideTrigger =
+    extensionsList.length === 0 || (!isHubView && !isSessionExtensionsLoaded);
+
   return (
     <DropdownMenu
       open={isOpen}
@@ -284,7 +302,7 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
     >
       <DropdownMenuTrigger asChild>
         <button
-          className={`flex items-center [&_svg]:size-4 text-text-primary/70 hover:text-text-primary hover:scale-100 hover:bg-transparent text-xs cursor-pointer ${allExtensions.length === 0 || (!isHubView && !isSessionExtensionsLoaded) ? 'invisible' : ''}`}
+          className={`flex items-center [&_svg]:size-4 text-text-primary/70 hover:text-text-primary hover:scale-100 hover:bg-transparent text-xs cursor-pointer ${shouldHideTrigger ? 'invisible' : ''}`}
           title={intl.formatMessage(i18n.manageExtensions)}
         >
           <Puzzle className="mr-1 h-4 w-4" />
@@ -309,7 +327,9 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
             autoFocus
           />
           <p className="text-xs text-text-primary/60 mt-1.5">
-            {intl.formatMessage(isHubView ? i18n.extensionsForNewChats : i18n.extensionsForThisSession)}
+            {intl.formatMessage(
+              isHubView ? i18n.extensionsForNewChats : i18n.extensionsForThisSession
+            )}
           </p>
         </div>
         <div
@@ -319,7 +339,9 @@ export const BottomMenuExtensionSelection = ({ sessionId }: BottomMenuExtensionS
         >
           {sortedExtensions.length === 0 ? (
             <div className="px-2 py-4 text-center text-sm text-text-primary/70">
-              {intl.formatMessage(searchQuery ? i18n.noExtensionsFound : i18n.noExtensionsAvailable)}
+              {intl.formatMessage(
+                searchQuery ? i18n.noExtensionsFound : i18n.noExtensionsAvailable
+              )}
             </div>
           ) : (
             sortedExtensions.map((ext) => {

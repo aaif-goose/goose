@@ -1,8 +1,39 @@
+#!/usr/bin/env bash
+set -e
+
 # Only auto-format desktop TS code if relevant files are modified
-if git diff --cached --name-only | grep -q "^ui/desktop/"; then
+if git diff --cached --no-renames --name-only | grep -q "^ui/desktop/"; then
   if [ -d "ui/desktop" ]; then
-    cd ui/desktop && pnpm exec lint-staged
+    (cd ui/desktop && pnpm exec lint-staged)
   else
     echo "Warning: ui/desktop directory does not exist, skipping lint-staged"
+  fi
+fi
+
+# Run goose2 checks if any staged files are under ui/goose2/
+if git diff --cached --no-renames --name-only | grep -q '^ui/goose2/'; then
+  if [ -d "ui/goose2" ]; then
+    REPO_ROOT="$(pwd)"
+    echo "Running goose2 pre-commit checks..."
+
+    # Auto-format only staged files that biome can process, then re-stage them.
+    # Exclude justfile and .swift files — biome doesn't understand these formats
+    # and would fail with "no files were processed" when only such files are staged.
+    STAGED_FILES=$(git diff --cached --no-renames --diff-filter=ACMR --name-only \
+      | grep '^ui/goose2/' \
+      | grep -v -E '(^ui/goose2/justfile$|\.swift$)' \
+      | sed 's|^ui/goose2/||' || true)
+    if [ -n "$STAGED_FILES" ]; then
+      cd ui/goose2
+      echo "$STAGED_FILES" | xargs npx biome format --write
+      echo "$STAGED_FILES" | xargs npx biome check --fix
+      cd "$REPO_ROOT"
+      git diff --cached --no-renames --diff-filter=ACMR --name-only | grep '^ui/goose2/' | xargs git add
+    fi
+
+    # Run checks (biome check + file sizes + i18n + typecheck)
+    just goose2 check
+  else
+    echo "Warning: ui/goose2 directory does not exist, skipping goose2 checks"
   fi
 fi

@@ -5,9 +5,39 @@ import type {
   ProviderInventoryEntryDto,
   ProviderInventoryModelDto,
 } from "@aaif/goose-sdk";
-import { getModelProviders } from "../providerCatalog";
+import { getModelProvidersFromEntries } from "../providerCatalog";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
+import {
+  filterModelProvidersForDistro,
+  isProviderAllowedByAllowlist,
+  parseProviderAllowlist,
+} from "../distroProviderConstraints";
+import { useProviderCatalogStore } from "../stores/providerCatalogStore";
 
-const MODEL_PROVIDER_IDS = new Set(getModelProviders().map((p) => p.id));
+function isConfiguredGooseModelProvider(
+  entry: ProviderInventoryEntryDto,
+  modelProviderIds: Set<string>,
+  providerAllowlist: Set<string> | null,
+  catalogLoaded: boolean,
+): boolean {
+  if (!entry.configured) {
+    return false;
+  }
+
+  if (entry.category === "agent") {
+    return false;
+  }
+
+  if (entry.providerType === "Custom") {
+    return entry.providerId.startsWith("custom_");
+  }
+
+  if (!catalogLoaded) {
+    return isProviderAllowedByAllowlist(entry.providerId, providerAllowlist);
+  }
+
+  return modelProviderIds.has(entry.providerId);
+}
 
 function inventoryModelToOption(
   model: ProviderInventoryModelDto,
@@ -20,6 +50,7 @@ function inventoryModelToOption(
     provider: model.family ?? undefined,
     providerId: provider?.providerId,
     providerName: provider?.providerName,
+    contextLimit: model.contextLimit ?? undefined,
     recommended: model.recommended ?? false,
   };
 }
@@ -27,6 +58,13 @@ function inventoryModelToOption(
 export function useProviderInventory() {
   const entries = useProviderInventoryStore((s) => s.entries);
   const loading = useProviderInventoryStore((s) => s.loading);
+  const distro = useDistroStore((s) => s.manifest);
+  const catalogEntries = useProviderCatalogStore((s) => s.entries);
+  const catalogLoaded = useProviderCatalogStore((s) => s.loaded);
+  const providerAllowlist = useMemo(
+    () => parseProviderAllowlist(distro),
+    [distro],
+  );
 
   const getEntry = useCallback(
     (providerId: string) => entries.get(providerId),
@@ -42,12 +80,28 @@ export function useProviderInventory() {
     [entries],
   );
 
+  const modelProviderIds = useMemo(
+    () =>
+      new Set(
+        filterModelProvidersForDistro(
+          getModelProvidersFromEntries(catalogEntries),
+          distro,
+        ).map((provider) => provider.id),
+      ),
+    [catalogEntries, distro],
+  );
+
   const configuredModelProviderEntries = useMemo(
     () =>
-      [...entries.values()].filter(
-        (entry) => entry.configured && MODEL_PROVIDER_IDS.has(entry.providerId),
+      [...entries.values()].filter((entry) =>
+        isConfiguredGooseModelProvider(
+          entry,
+          modelProviderIds,
+          providerAllowlist,
+          catalogLoaded,
+        ),
       ),
-    [entries],
+    [catalogLoaded, entries, modelProviderIds, providerAllowlist],
   );
 
   const getModelsForAgent = useCallback(
@@ -66,8 +120,8 @@ export function useProviderInventory() {
   const configuredProviderIds = useMemo(
     () =>
       [...entries.values()]
-        .filter((e) => e.configured)
-        .map((e) => e.providerId),
+        .filter((entry) => entry.configured)
+        .map((entry) => entry.providerId),
     [entries],
   );
 

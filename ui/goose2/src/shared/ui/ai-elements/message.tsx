@@ -6,6 +6,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
+import { isExternalHref } from "@/shared/lib/isExternalHref";
+import { LinkSafetyModal } from "@/shared/ui/ai-elements/link-safety-modal";
 import { cn } from "@/shared/lib/cn";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -325,17 +327,104 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+type OpenLinkSafetyModal = (url: string) => void;
+
+const LinkSafetyContext = createContext<OpenLinkSafetyModal | null>(null);
+
+/**
+ * Custom link component that splits behavior by link type:
+ * - External links → <a> with preventDefault that opens a LinkSafetyModal via context
+ * - Internal links → plain <a> so useArtifactLinkHandler can intercept via closest("a")
+ *
+ * Both render as <a> elements. useArtifactLinkHandler has an early return for external
+ * hrefs, so there is no conflict with its delegated click handler.
+ *
+ * This replaces Streamdown's built-in linkSafety which renders <button> for ALL
+ * links, breaking artifact navigation since useArtifactLinkHandler matches on <a>.
+ */
+const MarkdownLink = memo(
+  ({
+    children,
+    href,
+    node: _node,
+    ...rest
+  }: ComponentProps<"a"> & { node?: unknown }) => {
+    const openModal = useContext(LinkSafetyContext);
+
+    if (isExternalHref(href)) {
+      return (
+        <a
+          className="wrap-anywhere font-medium text-primary underline"
+          data-streamdown="link"
+          href={href}
+          rel="noreferrer"
+          onClick={(e) => {
+            e.preventDefault();
+            openModal?.(href ?? "");
+          }}
+          {...rest}
+        >
+          {children}
+        </a>
+      );
+    }
+
+    return (
+      <a
+        className="wrap-anywhere font-medium text-primary underline"
+        data-streamdown="link"
+        href={href}
+        rel="noreferrer"
+        {...rest}
+      >
+        {children}
+      </a>
+    );
+  },
+);
+MarkdownLink.displayName = "MarkdownLink";
+
+const streamdownComponents = { a: MarkdownLink };
+
+const linkSafetyConfig: ComponentProps<typeof Streamdown>["linkSafety"] = {
+  enabled: false,
+};
+
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className,
-      )}
-      plugins={streamdownPlugins}
-      {...props}
-    />
-  ),
+  ({ className, ...props }: MessageResponseProps) => {
+    const [modalUrl, setModalUrl] = useState<string | null>(null);
+
+    const openModal = useCallback((url: string) => {
+      setModalUrl(url);
+    }, []);
+
+    const closeModal = useCallback(() => {
+      setModalUrl(null);
+    }, []);
+
+    return (
+      <LinkSafetyContext.Provider value={openModal}>
+        <Streamdown
+          className={cn(
+            "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+            className,
+          )}
+          components={streamdownComponents}
+          linkSafety={linkSafetyConfig}
+          plugins={streamdownPlugins}
+          {...props}
+        />
+        <LinkSafetyModal
+          isOpen={modalUrl !== null}
+          onClose={closeModal}
+          url={modalUrl ?? ""}
+        />
+      </LinkSafetyContext.Provider>
+    );
+  },
+  // Internal state (modalUrl) is intentionally outside this comparator —
+  // React always re-renders when local state changes regardless of memo.
+  // If modalUrl is ever lifted to a prop, this comparator must be updated.
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating,

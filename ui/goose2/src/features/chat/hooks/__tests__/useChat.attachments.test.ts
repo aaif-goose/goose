@@ -43,13 +43,14 @@ describe("useChat attachments", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
     mockAcpCancelSession.mockResolvedValue(true);
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
   });
 
-  it("stores non-image attachments in metadata and prepends path references to the prompt", async () => {
+  it("stores non-image attachments in metadata and appends absolute paths to the prompt", async () => {
     const { result } = renderHook(() => useChat("session-1"));
     const attachments = [
       {
@@ -92,7 +93,7 @@ describe("useChat attachments", () => {
     ]);
     expect(mockAcpSendMessage).toHaveBeenCalledWith(
       "session-1",
-      "Attached items:\n- [file] /tmp/report.pdf\n- [directory] /tmp/screenshots\nPlease review these",
+      "Please review these /tmp/report.pdf /tmp/screenshots",
       {
         systemPrompt: undefined,
         personaId: undefined,
@@ -100,6 +101,12 @@ describe("useChat attachments", () => {
         images: undefined,
       },
     );
+
+    // The bubble's displayed text must remain the raw user input — appended
+    // paths are wire-only so they don't clutter the rendered message.
+    expect(message.content).toEqual([
+      { type: "text", text: "Please review these" },
+    ]);
   });
 
   it("keeps image attachments in ACP images while preserving path metadata", async () => {
@@ -134,26 +141,19 @@ describe("useChat attachments", () => {
       { type: "text", text: "" },
       {
         type: "image",
-        source: {
-          type: "base64",
-          mediaType: "image/png",
-          data: "abc123",
-        },
+        data: "abc123",
+        mimeType: "image/png",
       },
     ]);
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "Attached items:\n- [image] diagram.png (image attached)\n ",
-      {
-        systemPrompt: undefined,
-        personaId: undefined,
-        personaName: undefined,
-        images: [["abc123", "image/png"]],
-      },
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", " ", {
+      systemPrompt: undefined,
+      personaId: undefined,
+      personaName: undefined,
+      images: [["abc123", "image/png"]],
+    });
   });
 
-  it("includes image attachments in the prompt summary for mixed sends", async () => {
+  it("includes file/directory paths in the prompt for mixed sends; images flow through ACP image content blocks only", async () => {
     const { result } = renderHook(() => useChat("session-1"));
     const attachments = [
       {
@@ -190,7 +190,7 @@ describe("useChat attachments", () => {
 
     expect(mockAcpSendMessage).toHaveBeenCalledWith(
       "session-1",
-      "Attached items:\n- [file] /tmp/mobile-confirmation.html\n- [directory] /tmp/neighborhood block\n- [image] Screenshot 2026-04-09 at 1.25.32 PM.png (image attached)\ncan you see the attachments i attached?",
+      "can you see the attachments i attached? /tmp/mobile-confirmation.html /tmp/neighborhood block",
       {
         systemPrompt: undefined,
         personaId: undefined,
@@ -230,7 +230,7 @@ describe("useChat attachments", () => {
     ]);
     expect(mockAcpSendMessage).toHaveBeenCalledWith(
       "session-1",
-      "Attached items:\n- [file] report.pdf\nPlease review this",
+      "Please review this",
       {
         systemPrompt: undefined,
         personaId: undefined,

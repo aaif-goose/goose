@@ -16,13 +16,16 @@ use tokio::pin;
 use tokio_util::io::StreamReader;
 use uuid::Uuid;
 
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::errors::ProviderError;
 use super::formats::anthropic::{create_request, response_to_streaming_message};
 use super::oauth_device_flow::{
     refresh_device_flow_token, run_device_flow, DeviceFlowConfig, DeviceFlowTokens, RequestEncoding,
 };
-use super::openai_compatible::handle_status_openai_compat;
+use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use super::utils::RequestLog;
 use crate::conversation::message::Message;
@@ -162,7 +165,7 @@ impl KimiCodeProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
         let model = model.with_fast(KIMI_CODE_DEFAULT_FAST_MODEL, KIMI_CODE_PROVIDER_NAME)?;
         let client = Client::builder()
-            .timeout(StdDuration::from_secs(600))
+            .timeout(StdDuration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
             .build()?;
         let device_id = Self::get_or_create_device_id().await?;
         Ok(Self {
@@ -403,7 +406,7 @@ impl Provider for KimiCodeProvider {
         let response = self
             .with_retry(|| async {
                 let resp = self.post(Some(session_id), &payload).await?;
-                handle_status_openai_compat(resp).await
+                handle_status(resp).await
             })
             .await
             .inspect_err(|e| {
@@ -454,7 +457,7 @@ impl Provider for KimiCodeProvider {
             .send()
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
-        let resp = handle_status_openai_compat(resp).await?;
+        let resp = handle_status(resp).await?;
 
         let parsed: ModelsResp = resp.json().await.map_err(|e| {
             ProviderError::RequestFailed(format!("/v1/models body is not valid JSON: {}", e))

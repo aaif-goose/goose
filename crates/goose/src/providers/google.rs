@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::MessageStream;
 use super::errors::ProviderError;
-use super::openai_compatible::handle_status_openai_compat;
+use super::openai_compatible::{handle_status, map_http_error_to_provider_error};
 use super::retry::ProviderRetry;
 use super::utils::RequestLog;
 use crate::conversation::message::Message;
@@ -9,6 +9,7 @@ use crate::conversation::message::Message;
 use crate::model::ModelConfig;
 use crate::providers::base::{ConfigKey, Provider, ProviderDef, ProviderMetadata};
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
+use crate::providers::inventory::{config_secret_value, InventoryIdentityInput};
 use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -101,7 +102,7 @@ impl GoogleProvider {
             .api_client
             .response_post(session_id, &path, payload)
             .await?;
-        handle_status_openai_compat(response).await
+        handle_status(response).await
     }
 }
 
@@ -135,6 +136,27 @@ impl ProviderDef for GoogleProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
+
+    fn inventory_identity() -> Result<InventoryIdentityInput> {
+        let config = crate::config::Config::global();
+        let mut identity = InventoryIdentityInput::new(GOOGLE_PROVIDER_NAME, GOOGLE_PROVIDER_NAME)
+            .with_public(
+                "host",
+                config
+                    .get_param::<String>("GOOGLE_HOST")
+                    .unwrap_or_else(|_| GOOGLE_API_HOST.to_string()),
+            );
+
+        if let Some(api_key) = config_secret_value(config, "GOOGLE_API_KEY") {
+            identity = identity.with_secret("api_key", api_key);
+        }
+
+        Ok(identity)
+    }
 }
 
 #[async_trait]
@@ -153,6 +175,13 @@ impl Provider for GoogleProvider {
             .request(None, "v1beta/models")
             .response_get()
             .await?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            let payload = serde_json::from_str::<serde_json::Value>(&body).ok();
+            return Err(map_http_error_to_provider_error(status, payload));
+        }
+
         let json: serde_json::Value = response.json().await?;
         let arr = json
             .get("models")

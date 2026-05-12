@@ -21,7 +21,7 @@
     "defaultMessage": "Custom app"
   },
   "appsView.description": {
-    "defaultMessage": "Applications from your MCP servers and Apps build by goose itself. You can ask it to create new apps through the chat interface and they will appear here."
+    "defaultMessage": "Applications from your MCP servers and Apps built by goose itself. You can ask it to create new apps through the chat interface and they will appear here."
   },
   "appsView.errorLoading": {
     "defaultMessage": "Error loading apps: {error}"
@@ -112,6 +112,12 @@
   },
   "cardButtons.launch": {
     "defaultMessage": "Launch"
+  },
+  "chat.notification.taskComplete.body": {
+    "defaultMessage": "Click here to bring Goose back into focus."
+  },
+  "chat.notification.taskComplete.title": {
+    "defaultMessage": "Goose finished the task."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
@@ -512,11 +518,20 @@
   "cronPicker.august": {
     "defaultMessage": "August"
   },
+  "cronPicker.cronExpression": {
+    "defaultMessage": "Cron expression"
+  },
+  "cronPicker.custom": {
+    "defaultMessage": "Custom cron"
+  },
   "cronPicker.day": {
     "defaultMessage": "Day"
   },
   "cronPicker.december": {
     "defaultMessage": "December"
+  },
+  "cronPicker.emptyCronError": {
+    "defaultMessage": "Cron expression cannot be empty"
   },
   "cronPicker.every": {
     "defaultMessage": "Every"
@@ -532,6 +547,9 @@
   },
   "cronPicker.inMonth": {
     "defaultMessage": "in"
+  },
+  "cronPicker.invalidDayOfMonth": {
+    "defaultMessage": "Day must be between 1 and {max}"
   },
   "cronPicker.january": {
     "defaultMessage": "January"
@@ -551,6 +569,9 @@
   "cronPicker.minute": {
     "defaultMessage": "Minute"
   },
+  "cronPicker.mode": {
+    "defaultMessage": "Mode"
+  },
   "cronPicker.monday": {
     "defaultMessage": "Monday"
   },
@@ -569,11 +590,17 @@
   "cronPicker.onDay": {
     "defaultMessage": "on day"
   },
+  "cronPicker.quarter": {
+    "defaultMessage": "Quarter"
+  },
   "cronPicker.saturday": {
     "defaultMessage": "Saturday"
   },
   "cronPicker.september": {
     "defaultMessage": "September"
+  },
+  "cronPicker.startingMonth": {
+    "defaultMessage": "starting month"
   },
   "cronPicker.sunday": {
     "defaultMessage": "Sunday"
@@ -892,6 +919,9 @@
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
+  },
+  "elicitationRequest.accept": {
+    "defaultMessage": "Accept"
   },
   "elicitationRequest.cancelled": {
     "defaultMessage": "Information request was cancelled."
@@ -1449,7 +1479,7 @@
     "defaultMessage": "Downloaded"
   },
   "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "Downloading\u2026"
+    "defaultMessage": "Downloading…"
   },
   "huggingFaceModelSearch.loadingVariants": {
     "defaultMessage": "Loading variants..."
@@ -1845,7 +1875,7 @@
     "defaultMessage": "Vision"
   },
   "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "Vision encoder downloading\u2026"
+    "defaultMessage": "Vision encoder downloading…"
   },
   "localInferenceSettings.visionEncoderNotDownloaded": {
     "defaultMessage": "Vision encoder not downloaded"
@@ -3531,7 +3561,7 @@
     "defaultMessage": "YAML"
   },
   "schedulesView.confirmDelete": {
-    "defaultMessage": "Are you sure you want to delete schedule \"{id}\"?"
+    "defaultMessage": "Remove schedule \"{id}\"? The recipe will be kept."
   },
   "schedulesView.createSchedule": {
     "defaultMessage": "Create Schedule"
@@ -4051,6 +4081,12 @@
   },
   "settings.notifications.openSettings": {
     "defaultMessage": "Open Settings"
+  },
+  "settings.notifications.task.description": {
+    "defaultMessage": "Notify when Goose finishes a task while the window is in the background"
+  },
+  "settings.notifications.task.title": {
+    "defaultMessage": "Task completion notifications"
   },
   "settings.notifications.title": {
     "defaultMessage": "Notifications"

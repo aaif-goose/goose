@@ -65,6 +65,7 @@ const mockController = {
   availableProjects: [],
   handleProjectChange: vi.fn(),
   tokenState: { accumulatedTotal: 0, contextLimit: 0 },
+  isContextUsageReady: false,
 };
 
 vi.mock("@/shared/api/acp", () => ({
@@ -80,6 +81,10 @@ vi.mock("@/features/providers/hooks/useAgentProviderStatus", () => ({
     loading: false,
     refresh: vi.fn(),
   }),
+}));
+
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@/features/chat/hooks/useChatSessionController", () => ({
@@ -178,14 +183,14 @@ describe("HomeScreen", () => {
   it("renders the chat input placeholder with default agent name when no persona selected", () => {
     renderHome();
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention personas"),
+      screen.getByPlaceholderText("Chat with Goose or @ mention an agent"),
     ).toBeInTheDocument();
   });
 
-  it("renders the assistant chooser affordance", () => {
+  it("renders the agent/model chooser affordance", () => {
     renderHome();
     expect(
-      screen.getByRole("button", { name: /choose assistant/i }),
+      screen.getByRole("button", { name: /choose agent and model/i }),
     ).toBeInTheDocument();
   });
 
@@ -199,17 +204,17 @@ describe("HomeScreen", () => {
     ).toBeInTheDocument();
   });
 
-  it("forwards persona selection through the shared session controller", async () => {
+  it("forwards agent selection through the shared session controller", async () => {
     vi.useRealTimers();
     const user = userEvent.setup();
 
     renderHome();
 
-    await user.click(screen.getByRole("button", { name: /choose assistant/i }));
-    await user.click(screen.getByRole("menuitem", { name: /solo/i }));
-
-    expect(mockController.handlePersonaChange).toHaveBeenLastCalledWith(
-      "builtin-solo",
+    await user.click(
+      screen.getByRole("button", { name: /choose agent and model/i }),
     );
+    await user.click(screen.getByRole("button", { name: /claude code/i }));
+
+    expect(setSelectedProvider).toHaveBeenLastCalledWith("claude-acp");
   });
 });
