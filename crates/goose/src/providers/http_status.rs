@@ -55,13 +55,19 @@ fn duration_from_finite_secs(secs: f64) -> Option<Duration> {
 
 /// Parse `Retry-After` per RFC 7231 §7.1.3: either a non-negative integer
 /// number of seconds, or an HTTP-date (interpreted as the absolute time at
-/// which the request may be retried).
+/// which the request may be retried). A past date is honored as "retry
+/// now" (`Duration::ZERO`) rather than dropped — clock skew or near-now
+/// timestamps plus network latency commonly produce an HTTP-date that is
+/// already in the past, and falling back to exponential backoff would
+/// add unnecessary delay against an explicit server hint.
 fn parse_retry_after_header(value: &str) -> Option<Duration> {
     if let Ok(secs) = value.parse::<u64>() {
         return duration_from_finite_secs(secs as f64);
     }
     let target = parse_http_date(value)?;
-    let delay = target.duration_since(SystemTime::now()).ok()?;
+    let delay = target
+        .duration_since(SystemTime::now())
+        .unwrap_or(Duration::ZERO);
     duration_from_finite_secs(delay.as_secs_f64())
 }
 
@@ -249,12 +255,15 @@ mod tests {
     }
 
     #[test]
-    fn retry_after_past_http_date_returns_none() {
+    fn retry_after_past_http_date_means_retry_now() {
         // RFC 7231 allows an HTTP-date in `Retry-After`; a past date means
-        // "you may retry now" — duration_since returns Err and we degrade to None.
+        // "you may retry now" — surface that as `Duration::ZERO` rather
+        // than `None`, so we honor the server hint instead of dropping
+        // back to exponential backoff (clock skew or near-now timestamps
+        // plus latency commonly land us here).
         let headers = headers_with_retry_after("Fri, 31 Dec 1999 23:59:59 GMT");
         let delay = extract_retry_after(&headers, None);
-        assert!(delay.is_none());
+        assert_eq!(delay, Some(Duration::ZERO));
     }
 
     #[test]
