@@ -192,7 +192,11 @@ where
                 }
 
                 yield (Some(message), usage);
-            } else {
+            } else if !xml_detected {
+                // Usage-only chunks. Defer when xml is detected so the
+                // final synthesized message is the single emission that
+                // carries `last_usage`; otherwise consumers that sum
+                // usage across the stream would count it twice.
                 yield (None, usage);
             }
         }
@@ -373,6 +377,43 @@ hello
             panic!("Expected ToolRequest content from XML parsing");
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn streaming_xml_fallback_yields_usage_once() -> anyhow::Result<()> {
+        use futures::StreamExt;
+
+        let response_lines = r#"data: {"model":"hermes","choices":[{"delta":{"role":"assistant","content":"<function=developer__shell>"},"index":0,"finish_reason":null}],"object":"chat.completion.chunk","id":"x","created":1}
+data: {"model":"hermes","choices":[{"delta":{"role":"assistant","content":"<parameter=command>ls</parameter></function>"},"index":0,"finish_reason":null}],"object":"chat.completion.chunk","id":"x","created":1}
+data: {"model":"hermes","choices":[{"delta":{"role":"assistant","content":""},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15},"object":"chat.completion.chunk","id":"x","created":1}
+data: [DONE]
+"#;
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message_ollama(response_stream));
+
+        let mut usage_count = 0;
+        let mut tool_calls = 0;
+        while let Some(item) = messages.next().await {
+            let (msg, usage) = item?;
+            if usage.is_some() {
+                usage_count += 1;
+            }
+            if let Some(m) = msg {
+                for c in &m.content {
+                    if matches!(c, MessageContent::ToolRequest(_)) {
+                        tool_calls += 1;
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            usage_count, 1,
+            "usage should be yielded exactly once when XML fallback synthesizes the final message"
+        );
+        assert_eq!(tool_calls, 1, "XML fallback should produce one tool call");
         Ok(())
     }
 
