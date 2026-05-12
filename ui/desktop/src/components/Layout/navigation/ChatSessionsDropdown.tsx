@@ -3,6 +3,7 @@ import { MessageSquare, History, Plus, ChefHat } from 'lucide-react';
 import {
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '../../ui/dropdown-menu';
 import { SessionIndicators } from '../../SessionIndicators';
@@ -11,6 +12,7 @@ import { getSessionDisplayName, truncateMessage } from '../../../hooks/useNaviga
 import { defineMessages, useIntl } from '../../../i18n';
 import type { Session } from '../../../api';
 import type { SessionStatus } from './types';
+import type { ProjectGroup } from '../../../utils/projectSessions';
 
 const i18n = defineMessages({
   newChat: {
@@ -25,6 +27,7 @@ const i18n = defineMessages({
 
 interface ChatSessionsDropdownProps {
   sessions: Session[];
+  projectGroups?: ProjectGroup[];
   activeSessionId?: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
   zIndex?: number;
@@ -37,6 +40,7 @@ interface ChatSessionsDropdownProps {
 
 export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
   sessions,
+  projectGroups = [],
   activeSessionId,
   side = 'right',
   zIndex,
@@ -47,6 +51,40 @@ export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
   onShowAll,
 }) => {
   const intl = useIntl();
+  const groupedSessions = projectGroups.length > 1 ? projectGroups : null;
+
+  const renderSessionItem = (session: Session) => {
+    const status = getSessionStatus(session.id);
+    const isStreaming = status?.streamState === 'streaming';
+    const hasError = status?.streamState === 'error';
+    const hasUnread = status?.hasUnreadActivity ?? false;
+    const isActiveSession = session.id === activeSessionId;
+
+    return (
+      <DropdownMenuItem
+        key={session.id}
+        onClick={() => {
+          clearUnread(session.id);
+          onSessionClick(session.id);
+        }}
+        className={cn(
+          'flex items-center gap-2 px-3 py-2 text-sm rounded-lg cursor-pointer',
+          isActiveSession && 'bg-background-tertiary'
+        )}
+      >
+        {session.recipe ? (
+          <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+        ) : (
+          <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
+        )}
+        <span className="truncate flex-1">
+          {truncateMessage(getSessionDisplayName(session), 30)}
+        </span>
+        <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
+      </DropdownMenuItem>
+    );
+  };
+
   return (
     <DropdownMenuContent
       className="w-64 p-1 bg-background-primary border-border-secondary rounded-lg shadow-lg"
@@ -65,41 +103,19 @@ export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
 
       {sessions.length > 0 && <DropdownMenuSeparator className="my-1" />}
 
-      {sessions.map((session) => {
-        const status = getSessionStatus(session.id);
-        const isStreaming = status?.streamState === 'streaming';
-        const hasError = status?.streamState === 'error';
-        const hasUnread = status?.hasUnreadActivity ?? false;
-        const isActiveSession = session.id === activeSessionId;
-
-        return (
-          <DropdownMenuItem
-            key={session.id}
-            onClick={() => {
-              clearUnread(session.id);
-              onSessionClick(session.id);
-            }}
-            className={cn(
-              'flex items-center gap-2 px-3 py-2 text-sm rounded-lg cursor-pointer',
-              isActiveSession && 'bg-background-tertiary'
-            )}
-          >
-            {session.recipe ? (
-              <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-            ) : (
-              <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
-            )}
-            <span className="truncate flex-1">
-              {truncateMessage(getSessionDisplayName(session), 30)}
-            </span>
-            <SessionIndicators
-              isStreaming={isStreaming}
-              hasUnread={hasUnread}
-              hasError={hasError}
-            />
-          </DropdownMenuItem>
-        );
-      })}
+      {groupedSessions
+        ? groupedSessions.map((group) => (
+            <React.Fragment key={group.path}>
+              <DropdownMenuLabel
+                className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wider text-text-tertiary truncate"
+                title={group.path}
+              >
+                {group.label}
+              </DropdownMenuLabel>
+              {group.sessions.map(renderSessionItem)}
+            </React.Fragment>
+          ))
+        : sessions.map(renderSessionItem)}
 
       {sessions.length > 0 && (
         <>

@@ -3908,6 +3908,12 @@
   "sessions.loadingMore": {
     "defaultMessage": "Loading more sessions..."
   },
+  "sessions.projects.all": {
+    "defaultMessage": "All"
+  },
+  "sessions.projects.label": {
+    "defaultMessage": "Projects"
+  },
   "sessions.save": {
     "defaultMessage": "Save"
   },

@@ -16,6 +16,7 @@ export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
   visibleItems,
   isActive,
   recentSessions,
+  recentSessionsByProject,
   activeSessionId,
   onNavClick,
   onNewChat,
@@ -207,6 +208,7 @@ export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
                     </div>
                     <ChatSessionsDropdown
                       sessions={recentSessions}
+                      projectGroups={recentSessionsByProject}
                       activeSessionId={activeSessionId}
                       side="right"
                       zIndex={Z_INDEX.DROPDOWN_ABOVE_OVERLAY}

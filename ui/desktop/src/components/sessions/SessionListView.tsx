@@ -44,34 +44,69 @@ import { formatExtensionName } from '../settings/extensions/subcomponents/Extens
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { shouldShowNewChatTitle } from '../../sessions';
 import { DEFAULT_CHAT_TITLE } from '../../contexts/ChatContext';
+import { groupSessionsByProject, normalizeProjectPath } from '../../utils/projectSessions';
 
 const i18n = defineMessages({
   editSessionTitle: { id: 'sessions.edit.title', defaultMessage: 'Edit Session Description' },
-  editSessionPlaceholder: { id: 'sessions.edit.placeholder', defaultMessage: 'Enter session description' },
+  editSessionPlaceholder: {
+    id: 'sessions.edit.placeholder',
+    defaultMessage: 'Enter session description',
+  },
   cancel: { id: 'sessions.cancel', defaultMessage: 'Cancel' },
   save: { id: 'sessions.save', defaultMessage: 'Save' },
   saving: { id: 'sessions.saving', defaultMessage: 'Saving...' },
-  sessionUpdated: { id: 'sessions.toast.updated', defaultMessage: 'Session description updated successfully' },
-  sessionUpdateFailed: { id: 'sessions.toast.updateFailed', defaultMessage: 'Failed to update session description: {error}' },
+  sessionUpdated: {
+    id: 'sessions.toast.updated',
+    defaultMessage: 'Session description updated successfully',
+  },
+  sessionUpdateFailed: {
+    id: 'sessions.toast.updateFailed',
+    defaultMessage: 'Failed to update session description: {error}',
+  },
   chatHistory: { id: 'sessions.chatHistory', defaultMessage: 'Chat history' },
   importSession: { id: 'sessions.import', defaultMessage: 'Import Session' },
-  chatHistoryDesc: { id: 'sessions.chatHistoryDesc', defaultMessage: 'View and search your past conversations with Goose. {shortcut} to search.' },
+  chatHistoryDesc: {
+    id: 'sessions.chatHistoryDesc',
+    defaultMessage: 'View and search your past conversations with Goose. {shortcut} to search.',
+  },
   searchPlaceholder: { id: 'sessions.searchPlaceholder', defaultMessage: 'Search history...' },
   errorLoading: { id: 'sessions.error.loading', defaultMessage: 'Error Loading Sessions' },
   tryAgain: { id: 'sessions.error.tryAgain', defaultMessage: 'Try Again' },
   noSessions: { id: 'sessions.empty.title', defaultMessage: 'No chat sessions found' },
-  noSessionsDesc: { id: 'sessions.empty.description', defaultMessage: 'Your chat history will appear here' },
+  noSessionsDesc: {
+    id: 'sessions.empty.description',
+    defaultMessage: 'Your chat history will appear here',
+  },
   noMatching: { id: 'sessions.search.noResults', defaultMessage: 'No matching sessions found' },
-  noMatchingDesc: { id: 'sessions.search.noResultsDesc', defaultMessage: 'Try adjusting your search terms' },
+  noMatchingDesc: {
+    id: 'sessions.search.noResultsDesc',
+    defaultMessage: 'Try adjusting your search terms',
+  },
   loadingMore: { id: 'sessions.loadingMore', defaultMessage: 'Loading more sessions...' },
   deleteTitle: { id: 'sessions.delete.title', defaultMessage: 'Delete Session' },
-  deleteMessage: { id: 'sessions.delete.message', defaultMessage: 'Are you sure you want to delete the session "{name}"? This action cannot be undone.' },
-  duplicateSuccess: { id: 'sessions.toast.duplicated', defaultMessage: 'Session "{name}" duplicated successfully' },
-  duplicateFailed: { id: 'sessions.toast.duplicateFailed', defaultMessage: 'Failed to duplicate session: {error}' },
+  deleteMessage: {
+    id: 'sessions.delete.message',
+    defaultMessage:
+      'Are you sure you want to delete the session "{name}"? This action cannot be undone.',
+  },
+  duplicateSuccess: {
+    id: 'sessions.toast.duplicated',
+    defaultMessage: 'Session "{name}" duplicated successfully',
+  },
+  duplicateFailed: {
+    id: 'sessions.toast.duplicateFailed',
+    defaultMessage: 'Failed to duplicate session: {error}',
+  },
   deleteSuccess: { id: 'sessions.toast.deleted', defaultMessage: 'Session deleted successfully' },
-  deleteFailed: { id: 'sessions.toast.deleteFailed', defaultMessage: 'Failed to delete session "{name}": {error}' },
+  deleteFailed: {
+    id: 'sessions.toast.deleteFailed',
+    defaultMessage: 'Failed to delete session "{name}": {error}',
+  },
   importSuccess: { id: 'sessions.toast.imported', defaultMessage: 'Session imported successfully' },
-  importFailed: { id: 'sessions.toast.importFailed', defaultMessage: 'Failed to import session: {error}' },
+  importFailed: {
+    id: 'sessions.toast.importFailed',
+    defaultMessage: 'Failed to import session: {error}',
+  },
   exportSuccess: { id: 'sessions.toast.exported', defaultMessage: 'Session exported successfully' },
   openInNewWindow: { id: 'sessions.action.openNewWindow', defaultMessage: 'Open in new window' },
   editSessionName: { id: 'sessions.action.editName', defaultMessage: 'Edit session name' },
@@ -79,6 +114,8 @@ const i18n = defineMessages({
   deleteSession: { id: 'sessions.action.delete', defaultMessage: 'Delete session' },
   exportSession: { id: 'sessions.action.export', defaultMessage: 'Export session' },
   extensions: { id: 'sessions.extensions', defaultMessage: 'Extensions:' },
+  allProjects: { id: 'sessions.projects.all', defaultMessage: 'All' },
+  projects: { id: 'sessions.projects.label', defaultMessage: 'Projects' },
 });
 
 function getSessionExtensionNames(extensionData: ExtensionData): string[] {
@@ -174,7 +211,9 @@ const EditSessionModal = React.memo<EditSessionModalProps>(
     return (
       <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50">
         <div className="bg-background-primary border border-border-primary rounded-lg p-6 w-[500px] max-w-[90vw]">
-          <h3 className="text-lg font-medium text-text-primary mb-4">{intl.formatMessage(i18n.editSessionTitle)}</h3>
+          <h3 className="text-lg font-medium text-text-primary mb-4">
+            {intl.formatMessage(i18n.editSessionTitle)}
+          </h3>
 
           <div className="space-y-4">
             <div>
@@ -244,6 +283,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     const intl = useIntl();
     const [sessions, setSessions] = useState<Session[]>([]);
     const [filteredSessions, setFilteredSessions] = useState<Session[]>([]);
+    const [selectedProject, setSelectedProject] = useState<string | null>(null);
     const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showSkeleton, setShowSkeleton] = useState(true);
@@ -267,7 +307,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
 
     // Search state for debouncing
     const [searchTerm, setSearchTerm] = useState('');
-    const [caseSensitive, setCaseSensitive] = useState(false);
     const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms debounce
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -283,6 +322,22 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     };
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const projectGroups = useMemo(() => groupSessionsByProject(sessions), [sessions]);
+
+    useEffect(() => {
+      if (selectedProject === null) return;
+      if (!projectGroups.some((group) => group.path === selectedProject)) {
+        setSelectedProject(null);
+      }
+    }, [projectGroups, selectedProject]);
+
+    const projectFilteredSessions = useMemo(() => {
+      if (selectedProject === null) return sessions;
+      return sessions.filter(
+        (session) => normalizeProjectPath(session.working_dir) === selectedProject
+      );
+    }, [selectedProject, sessions]);
 
     const visibleDateGroups = useMemo(() => {
       return dateGroups.slice(0, visibleGroupsCount);
@@ -386,7 +441,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     useEffect(() => {
       if (!debouncedSearchTerm) {
         startTransition(() => {
-          setFilteredSessions(sessions);
+          setFilteredSessions(projectFilteredSessions);
           setSearchResults(null);
         });
         return;
@@ -401,7 +456,9 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         if (resp.data) {
           // Response is Vec<Session> - sessions that match the search
           const matchedSessionIds = new Set(resp.data.map((s: { id: string }) => s.id));
-          const filtered = sessions.filter((session) => matchedSessionIds.has(session.id));
+          const filtered = projectFilteredSessions.filter((session) =>
+            matchedSessionIds.has(session.id)
+          );
 
           startTransition(() => {
             setFilteredSessions(filtered);
@@ -413,12 +470,15 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       };
 
       performSearch();
-    }, [debouncedSearchTerm, caseSensitive, sessions]);
+    }, [debouncedSearchTerm, projectFilteredSessions]);
 
     // Handle immediate search input (updates search term for debouncing)
-    const handleSearch = useCallback((term: string, caseSensitive: boolean) => {
+    const handleProjectSelect = useCallback((projectPath: string | null) => {
+      setSelectedProject(projectPath);
+    }, []);
+
+    const handleSearch = useCallback((term: string, _caseSensitive: boolean) => {
       setSearchTerm(term);
-      setCaseSensitive(caseSensitive);
     }, []);
 
     // Handle search result navigation
@@ -486,7 +546,11 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           await loadSessions();
         } catch (error) {
           console.error('Error duplicating session:', error);
-          toast.error(intl.formatMessage(i18n.duplicateFailed, { error: errorMessage(error, 'Unknown error') }));
+          toast.error(
+            intl.formatMessage(i18n.duplicateFailed, {
+              error: errorMessage(error, 'Unknown error'),
+            })
+          );
         }
       },
       [loadSessions, intl]
@@ -511,7 +575,12 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         );
       } catch (error) {
         console.error('Error deleting session:', error);
-        toast.error(intl.formatMessage(i18n.deleteFailed, { name: sessionName, error: errorMessage(error, 'Unknown error') }));
+        toast.error(
+          intl.formatMessage(i18n.deleteFailed, {
+            name: sessionName,
+            error: errorMessage(error, 'Unknown error'),
+          })
+        );
       }
       await loadSessions();
     }, [sessionToDelete, loadSessions, intl]);
@@ -521,26 +590,29 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       setSessionToDelete(null);
     }, []);
 
-    const handleExportSession = useCallback(async (session: Session, e: React.MouseEvent) => {
-      e.stopPropagation();
+    const handleExportSession = useCallback(
+      async (session: Session, e: React.MouseEvent) => {
+        e.stopPropagation();
 
-      const response = await exportSession({
-        path: { session_id: session.id },
-        throwOnError: true,
-      });
+        const response = await exportSession({
+          path: { session_id: session.id },
+          throwOnError: true,
+        });
 
-      const json = response.data;
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${session.name}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success(intl.formatMessage(i18n.exportSuccess));
-    }, [intl]);
+        const json = response.data;
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${session.name}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(intl.formatMessage(i18n.exportSuccess));
+      },
+      [intl]
+    );
 
     const handleImportClick = useCallback(() => {
       fileInputRef.current?.click();
@@ -687,7 +759,9 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs">
                       <div className="text-xs">
-                        <div className="font-medium mb-1">{intl.formatMessage(i18n.extensions)}</div>
+                        <div className="font-medium mb-1">
+                          {intl.formatMessage(i18n.extensions)}
+                        </div>
                         <ul className="list-disc list-inside">
                           {extensionNames.map((name) => (
                             <li key={name}>{name}</li>
@@ -802,7 +876,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         );
       }
 
-      if (dateGroups.length === 0 && searchResults !== null) {
+      if (dateGroups.length === 0 && (searchResults !== null || selectedProject !== null)) {
         return (
           <div className="flex flex-col items-center justify-center h-full text-text-secondary mt-4">
             <MessageSquareText className="h-12 w-12 mb-4" />
@@ -868,6 +942,39 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
                 <p className="text-sm text-text-secondary mb-4">
                   {intl.formatMessage(i18n.chatHistoryDesc, { shortcut: getSearchShortcutText() })}
                 </p>
+                {projectGroups.length > 1 && (
+                  <div
+                    className="flex gap-2 overflow-x-auto pb-1"
+                    aria-label={intl.formatMessage(i18n.projects)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleProjectSelect(null)}
+                      className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
+                        selectedProject === null
+                          ? 'bg-background-inverse text-text-inverse'
+                          : 'bg-background-secondary text-text-secondary hover:bg-background-tertiary'
+                      }`}
+                    >
+                      {intl.formatMessage(i18n.allProjects)} ({sessions.length})
+                    </button>
+                    {projectGroups.map((project) => (
+                      <button
+                        key={project.path}
+                        type="button"
+                        title={project.path}
+                        onClick={() => handleProjectSelect(project.path)}
+                        className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
+                          selectedProject === project.path
+                            ? 'bg-background-inverse text-text-inverse'
+                            : 'bg-background-secondary text-text-secondary hover:bg-background-tertiary'
+                        }`}
+                      >
+                        {project.label} ({project.sessions.length})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
