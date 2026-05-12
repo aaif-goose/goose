@@ -323,13 +323,15 @@ static LANGUAGES: &[LangInfo] = &[
         name: "elixir",
         extensions: &["ex", "exs"],
         language: || tree_sitter_elixir::LANGUAGE.into(),
-        // Elixir's tree-sitter grammar represents `def`/`defmodule` as `call` nodes,
-        // the same type as regular function calls. Empty fn_kinds/class_kinds disables
-        // enclosing-context attribution in call graphs; semantic mode (function/module/import
-        // listing) works fully via the queries below.
-        fn_kinds: &[],
+        // Elixir's tree-sitter grammar represents `def`/`defmodule` as `call` nodes
+        // (target: (identifier "def" | "defp" | ...)), the same kind as regular
+        // function calls. `find_enclosing_fn` therefore special-cases "call" for
+        // Elixir below: it walks up to a `call`, confirms the target identifier
+        // is a def-style macro, and pulls the function name out of the arguments
+        // shape (identifier / call target / binary_operator "when").
+        fn_kinds: &["call"],
         fn_name_kinds: &[],
-        class_kinds: &[],
+        class_kinds: &["call"],
         queries: LangQueries {
             functions: r#"
                 (call

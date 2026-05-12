@@ -378,6 +378,16 @@ fn find_enclosing_class(node: tree_sitter::Node, source: &str, info: &LangInfo) 
     let mut cur = node;
     while let Some(parent) = cur.parent() {
         if info.class_kinds.contains(&parent.kind()) {
+            // Elixir: defmodule/defprotocol/defimpl are also `call` nodes. Reuse
+            // the same matcher used by find_enclosing_fn; defmodule's first
+            // argument is an `alias` node containing the module name.
+            if info.name == "elixir" && parent.kind() == "call" {
+                if let Some(name) = elixir_def_name(&parent, source) {
+                    return Some(name);
+                }
+                cur = parent;
+                continue;
+            }
             if parent.kind() == "impl_item" {
                 // For trait impls (impl Trait for Type), get the type after "for"
                 let mut found_for = false;
@@ -720,6 +730,16 @@ fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> 
                     continue; // skip — not a function declarator
                 }
             }
+            // Elixir special case: def/defp are call nodes, not a dedicated grammar
+            // kind, so distinguish them from regular `call` nodes by inspecting the
+            // target identifier and pulling the name out of the arguments shape.
+            if info.name == "elixir" && parent.kind() == "call" {
+                if let Some(name) = elixir_def_name(&parent, source) {
+                    return Some(name);
+                }
+                cur = parent;
+                continue; // call node, but not a def — skip
+            }
             // If this is an anonymous function-like node (closure, async block, arrow
             // function with no name), keep walking up to find the enclosing named function.
             if let Some(name) = find_child_text(&parent, info.fn_name_kinds, source) {
@@ -727,6 +747,59 @@ fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> 
             }
         }
         cur = parent;
+    }
+    None
+}
+
+/// If the given `call` node represents an Elixir `def`/`defp`/`defmacro`/etc.
+/// (or `defmodule`/`defprotocol`/`defimpl` when called from the class-resolution
+/// path), return the function/module name. Returns `None` for non-def calls.
+fn elixir_def_name(call: &tree_sitter::Node, source: &str) -> Option<String> {
+    let target = find_child_by_kind(call, "identifier")?;
+    let target_text = node_text(source, &target);
+    let is_def = matches!(
+        target_text,
+        "def"
+            | "defp"
+            | "defdelegate"
+            | "defguard"
+            | "defguardp"
+            | "defmacro"
+            | "defmacrop"
+            | "defn"
+            | "defnp"
+            | "defmodule"
+            | "defprotocol"
+            | "defimpl"
+    );
+    if !is_def {
+        return None;
+    }
+    let arguments = find_child_by_kind(call, "arguments")?;
+    // The first argument is either:
+    //   - (identifier name)                              — `def foo do ... end`
+    //   - (alias name)                                   — `defmodule Foo do ... end`
+    //   - (call target: (identifier name))               — `def foo(args) do ... end`
+    //   - (binary_operator left: (call target: (identifier name)) operator: "when")
+    //                                                    — `def foo(args) when guard do ... end`
+    for i in 0..arguments.child_count() as u32 {
+        let child = arguments.child(i)?;
+        match child.kind() {
+            "identifier" | "alias" => return Some(node_text(source, &child).to_string()),
+            "call" => {
+                if let Some(inner) = find_child_by_kind(&child, "identifier") {
+                    return Some(node_text(source, &inner).to_string());
+                }
+            }
+            "binary_operator" => {
+                if let Some(left) = find_child_by_kind(&child, "call") {
+                    if let Some(inner) = find_child_by_kind(&left, "identifier") {
+                        return Some(node_text(source, &inner).to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
     }
     None
 }
