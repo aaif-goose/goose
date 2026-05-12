@@ -6,7 +6,9 @@ use serde_json::{json, Value};
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
-use super::openai_compatible::{handle_status, stream_openai_compat_with_xml_fallback};
+use super::openai_compatible::{
+    handle_status, stream_openai_compat, stream_openai_compat_with_xml_fallback,
+};
 use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
 use crate::conversation::message::Message;
@@ -315,6 +317,50 @@ impl Provider for OpenRouterProvider {
                 let _ = log.error(e);
             })?;
 
-        stream_openai_compat_with_xml_fallback(response, log)
+        // The XML-fallback parser buffers text chunks once it sees `<function=`,
+        // which can double-emit content when models stream explanatory prose
+        // *before* the XML block. Restrict it to model families that are known
+        // to emit Hermes/Qwen-style XML tool calls instead of OpenAI's
+        // structured `tool_calls` array. Anything else streams normally.
+        if model_emits_xml_tool_calls(&model_config.model_name) {
+            stream_openai_compat_with_xml_fallback(response, log)
+        } else {
+            stream_openai_compat(response, log)
+        }
+    }
+}
+
+/// Returns true for OpenRouter model ids whose upstream stream emits
+/// Hermes/Qwen-style `<function=...>` XML tool-call blocks. These families
+/// don't produce OpenAI-style structured `tool_calls`, so we need the Ollama
+/// fallback parser to extract calls from text. All other models route through
+/// the plain OpenAI-compatible parser.
+fn model_emits_xml_tool_calls(model_name: &str) -> bool {
+    let m = model_name.to_ascii_lowercase();
+    // Match by family substrings — OpenRouter model ids embed the family in
+    // either the provider segment (`nousresearch/hermes-…`) or the model
+    // segment (`…/qwen-2.5-…`).
+    m.contains("hermes") || m.contains("qwen")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::model_emits_xml_tool_calls;
+
+    #[test]
+    fn xml_tool_call_models_match_hermes_and_qwen_families() {
+        assert!(model_emits_xml_tool_calls(
+            "nousresearch/hermes-3-llama-3.1-405b"
+        ));
+        assert!(model_emits_xml_tool_calls("qwen/qwen-2.5-72b-instruct"));
+        assert!(model_emits_xml_tool_calls("Hermes-3-LLaMA"));
+    }
+
+    #[test]
+    fn xml_tool_call_models_excludes_openai_style_families() {
+        assert!(!model_emits_xml_tool_calls("openai/gpt-4o"));
+        assert!(!model_emits_xml_tool_calls("anthropic/claude-3.5-sonnet"));
+        assert!(!model_emits_xml_tool_calls("meta-llama/llama-3.1-70b"));
+        assert!(!model_emits_xml_tool_calls("google/gemini-1.5-pro"));
     }
 }
