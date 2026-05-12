@@ -14,7 +14,7 @@ PID=$(lsof -ti :"${VITE_PORT}" 2>/dev/null | head -1 || true)
 if [[ -n "${PID}" ]]; then
     PROC_ARGS="$(ps -p "${PID}" -o args= 2>/dev/null || true)"
     PROC_CWD="$(lsof -a -p "${PID}" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
-    if [[ "${PROC_CWD}" == "${PROJECT_DIR}" && "${PROC_ARGS}" == *"vite --port ${VITE_PORT}"* ]]; then
+    if [[ "${PROC_CWD}" == "${PROJECT_DIR}" && "${PROC_ARGS}" == *"--port ${VITE_PORT} --strictPort"* ]]; then
         echo "Reusing existing Goose2 Vite dev server on port ${VITE_PORT} (PID ${PID})"
         exit 0
     fi
