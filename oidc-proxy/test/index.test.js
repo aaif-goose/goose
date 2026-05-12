@@ -285,6 +285,25 @@ describe("proxies valid requests", () => {
     expect((await response.json()).id).toBe("msg_123");
   });
 
+  it("rejects expired token even when within MAX_TOKEN_AGE_SECONDS", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await createSignedJwt(
+      validPayload({ iat: now - 600, exp: now - 300 }),
+    );
+    mockAll(200, { ok: true });
+
+    const request = new Request("https://proxy.example.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": token, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, testEnv(), ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(401);
+    expect((await response.json()).error).toBe("Token expired");
+  });
 });
 
 describe("token budget and rate limiting", () => {

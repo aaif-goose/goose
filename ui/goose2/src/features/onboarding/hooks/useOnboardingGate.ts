@@ -2,10 +2,11 @@ import { useCallback, useMemo, useState } from "react";
 import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import {
-  getModelProviders,
-  resolveAgentProviderCatalogIdStrict,
+  getModelProvidersFromEntries,
+  resolveAgentProviderCatalogIdStrictFromEntries,
 } from "@/features/providers/providerCatalog";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
 import { filterModelProvidersForDistro } from "@/features/providers/distroProviderConstraints";
 import { getStoredModelPreference } from "@/features/chat/lib/modelPreferences";
@@ -51,6 +52,7 @@ export function useOnboardingGate(startupReady: boolean) {
   const selectedProvider = useAgentStore((state) => state.selectedProvider);
   const { entries, configuredModelProviderEntries, getModelsForAgent } =
     useProviderInventory();
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const distro = useDistroStore((state) => state.manifest);
   const [completion, setCompletion] = useState<OnboardingCompletion | null>(
     readCompletion,
@@ -59,17 +61,24 @@ export function useOnboardingGate(startupReady: boolean) {
   const modelProviderIds = useMemo(
     () =>
       new Set(
-        filterModelProvidersForDistro(getModelProviders(), distro).map(
-          (provider) => provider.id,
-        ),
+        filterModelProvidersForDistro(
+          getModelProvidersFromEntries(catalogEntries),
+          distro,
+        ).map((provider) => provider.id),
       ),
-    [distro],
+    [catalogEntries, distro],
+  );
+
+  const selectedAgentId = useMemo(
+    () =>
+      resolveAgentProviderCatalogIdStrictFromEntries(
+        catalogEntries,
+        selectedProvider,
+      ) ?? "goose",
+    [catalogEntries, selectedProvider],
   );
 
   const readiness = useMemo<OnboardingReadiness>(() => {
-    const selectedAgentId =
-      resolveAgentProviderCatalogIdStrict(selectedProvider) ?? "goose";
-
     if (selectedAgentId !== "goose") {
       const models = getModelsForAgent(selectedAgentId);
       const entry = entries.get(selectedAgentId);
@@ -136,7 +145,7 @@ export function useOnboardingGate(startupReady: boolean) {
     entries,
     getModelsForAgent,
     modelProviderIds,
-    selectedProvider,
+    selectedAgentId,
   ]);
 
   const completeOnboarding = useCallback(

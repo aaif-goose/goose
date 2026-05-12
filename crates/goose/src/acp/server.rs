@@ -27,22 +27,23 @@ use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
 use agent_client_protocol::schema::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
-    AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
-    CloseSessionResponse, ConfigOptionUpdate, Content, ContentBlock, ContentChunk,
-    CurrentModeUpdate, EmbeddedResource, EmbeddedResourceResource, FileSystemCapabilities,
-    ForkSessionRequest, ForkSessionResponse, ImageContent, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    McpCapabilities, McpServer, Meta, ModelId, ModelInfo, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
-    SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
-    SessionMode, SessionModeId, SessionModeState, SessionModelState, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
-    StopReason, TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId,
-    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage,
-    UsageUpdate,
+    AuthenticateResponse, AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
+    BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
+    ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
+    EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest, ForkSessionResponse,
+    ImageContent, InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer, Meta, ModelId, ModelInfo,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption, SessionId,
+    SessionInfo, SessionInfoUpdate, SessionListCapabilities, SessionMode, SessionModeId,
+    SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
+    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
+    Usage, UsageUpdate,
 };
 use agent_client_protocol::util::MatchDispatchFrom;
 use agent_client_protocol::{
@@ -1673,6 +1674,13 @@ impl GooseAcpAgent {
             SessionUpdate::ToolCall(initial_tool_call),
         ))?;
 
+        if Config::global()
+            .get_goose_disable_tool_call_summary()
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+
         if let Ok(tool_call) = &tool_request.tool_call {
             let agent = match &session.agent {
                 AgentHandle::Ready(a) => a.clone(),
@@ -2151,6 +2159,104 @@ impl GooseAcpAgent {
 
         Ok(())
     }
+
+    fn input_hint_for_recipe(
+        params: Option<&Vec<crate::recipe::RecipeParameter>>,
+    ) -> Option<String> {
+        let params = params?;
+
+        params
+            .iter()
+            .find(|p| p.key == "args")
+            .or_else(|| params.iter().find(|p| p.default.is_none()))
+            .or_else(|| params.first())
+            .map(|p| p.description.clone())
+    }
+
+    async fn build_available_commands_from_slash_commands() -> Vec<AvailableCommand> {
+        let mut commands = Vec::new();
+
+        for mapping in crate::slash_commands::list_commands() {
+            if Self::is_builtin_agent_command(&mapping.command) {
+                continue;
+            }
+
+            let recipe_path = std::path::PathBuf::from(&mapping.recipe_path);
+
+            if !recipe_path.exists() {
+                continue;
+            }
+
+            let Ok(recipe_content) = tokio::fs::read_to_string(&recipe_path).await else {
+                continue;
+            };
+
+            let Some(recipe_dir) = recipe_path.parent() else {
+                continue;
+            };
+
+            let recipe_dir_str = recipe_dir.display().to_string();
+
+            let Ok(validation_result) =
+                crate::recipe::validate_recipe::validate_recipe_template_from_content(
+                    &recipe_content,
+                    Some(recipe_dir_str),
+                )
+            else {
+                continue;
+            };
+
+            let required_param_count = validation_result
+                .parameters
+                .as_ref()
+                .map(|params| params.iter().filter(|p| p.default.is_none()).count())
+                .unwrap_or(0);
+
+            if required_param_count > 1 {
+                continue;
+            }
+
+            let mut command =
+                AvailableCommand::new(mapping.command, validation_result.description.clone());
+
+            if let Some(hint) = Self::input_hint_for_recipe(validation_result.parameters.as_ref()) {
+                command = command.input(AvailableCommandInput::Unstructured(
+                    UnstructuredCommandInput::new(hint),
+                ));
+            }
+
+            commands.push(command);
+        }
+
+        commands
+    }
+
+    async fn send_available_commands_update(
+        &self,
+        cx: &ConnectionTo<Client>,
+        session_id: &SessionId,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let commands = Self::build_available_commands_from_slash_commands().await;
+
+        cx.send_notification(SessionNotification::new(
+            session_id.clone(),
+            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands)),
+        ))?;
+
+        Ok(())
+    }
+
+    fn is_builtin_agent_command(command: &str) -> bool {
+        let normalized = command.trim_start_matches('/');
+
+        crate::agents::execute_commands::list_commands()
+            .iter()
+            .any(|cmd| cmd.name == normalized)
+            || crate::agents::execute_commands::COMPACT_TRIGGERS
+                .iter()
+                .filter_map(|trigger| trigger.strip_prefix('/'))
+                .any(|trigger| trigger == normalized)
+    }
 }
 
 fn outcome_to_confirmation(outcome: &RequestPermissionOutcome) -> PermissionConfirmation {
@@ -2417,10 +2523,14 @@ impl GooseAcpAgent {
         }
         if let Some(usage_update) = initial_usage_update {
             cx.send_notification(SessionNotification::new(
-                acp_session_id,
+                acp_session_id.clone(),
                 SessionUpdate::UsageUpdate(usage_update),
             ))?;
         }
+
+        self.send_available_commands_update(cx, &acp_session_id)
+            .await?;
+
         debug!(
             target: "perf",
             sid = %sid,
@@ -2785,6 +2895,10 @@ impl GooseAcpAgent {
                 SessionUpdate::UsageUpdate(usage_update),
             ))?;
         }
+
+        self.send_available_commands_update(cx, &args.session_id)
+            .await?;
+
         debug!(
             target: "perf",
             sid = %sid,
@@ -2810,6 +2924,29 @@ impl GooseAcpAgent {
             .await?;
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+
+        let message_text = user_message.as_concat_text();
+        if let Some(parsed) = crate::agents::execute_commands::parse_slash_command(&message_text) {
+            let full_command = format!("/{}", parsed.command);
+
+            if !Self::is_builtin_agent_command(parsed.command) {
+                if let Some(recipe_path) =
+                    crate::slash_commands::get_recipe_for_command(&full_command)
+                {
+                    if recipe_path.exists() {
+                        cx.send_notification(SessionNotification::new(
+                            args.session_id.clone(),
+                            SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                                ContentBlock::Text(TextContent::new(format!(
+                                    "Running recipe: {}",
+                                    full_command
+                                ))),
+                            )),
+                        ))?;
+                    }
+                }
+            }
+        }
 
         let session_config = SessionConfig {
             id: session_id.clone(),
@@ -3254,15 +3391,22 @@ impl GooseAcpAgent {
 
         let meta = session_meta(&new_session);
 
-        let mut response = ForkSessionResponse::new(SessionId::new(new_session_id))
+        let acp_session_id = SessionId::new(new_session_id);
+
+        let mut response = ForkSessionResponse::new(acp_session_id.clone())
             .modes(mode_state)
             .meta(meta);
+
         if let Some(ms) = model_state {
             response = response.models(ms);
         }
         if let Some(co) = config_options {
             response = response.config_options(co);
         }
+
+        self.send_available_commands_update(cx, &acp_session_id)
+            .await?;
+
         Ok(response)
     }
 

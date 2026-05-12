@@ -158,6 +158,39 @@ describe("useOnboardingProviderStep", () => {
     });
   });
 
+  it("updates provider setup rows when the catalog loads after initial render", async () => {
+    useProviderCatalogStore.getState().reset();
+
+    const { result } = renderProviderStep(
+      readyReadiness({
+        isUsable: false,
+        providerId: null,
+        reason: "not_completed",
+      }),
+    );
+
+    expect(result.current.modelProviders).toHaveLength(0);
+
+    act(() => {
+      useProviderCatalogStore.getState().setEntries([
+        {
+          id: "anthropic",
+          displayName: "Anthropic",
+          category: "model",
+          description: "",
+          setupMethod: "single_api_key",
+          group: "default",
+        },
+      ]);
+    });
+
+    await waitFor(() =>
+      expect(
+        result.current.modelProviders.map((provider) => provider.id),
+      ).toEqual(["anthropic"]),
+    );
+  });
+
   it("continues with a current ACP agent without writing Goose model defaults", async () => {
     const { result, onReady, onSelectedSetup } = renderProviderStep(
       readyReadiness({

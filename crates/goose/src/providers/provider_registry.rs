@@ -60,7 +60,7 @@ impl ProviderEntry {
                 .metadata
                 .known_models
                 .iter()
-                .find(|m| m.name == model.model_name && m.context_limit > 0)
+                .find(|m| m.name.eq_ignore_ascii_case(&model.model_name) && m.context_limit > 0)
             {
                 model.context_limit = Some(info.context_limit);
             }
