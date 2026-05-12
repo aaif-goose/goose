@@ -319,18 +319,37 @@ impl OpenAiProvider {
 
         let global_config = crate::config::Config::global();
 
-        let api_key: Option<String> = if config.requires_auth && !config.api_key_env.is_empty() {
-            Some(global_config.get_secret::<String>(&config.api_key_env).map_err(|e| {
-                use crate::config::ConfigError;
-                match e {
-                    ConfigError::NotFound(_) => anyhow::anyhow!(
-                        "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
-                        config.api_key_env,
-                        config.api_key_env
-                    ),
-                    other => anyhow::anyhow!("Failed to read {}: {}", config.api_key_env, other),
+        let api_key: Option<String> = if !config.api_key_env.is_empty() {
+            match global_config.get_secret::<String>(&config.api_key_env) {
+                Ok(key) => Some(key),
+                Err(e) => {
+                    use crate::config::ConfigError;
+                    match e {
+                        ConfigError::NotFound(_) => {
+                            if config.requires_auth {
+                                anyhow::bail!(
+                                    "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
+                                    config.api_key_env,
+                                    config.api_key_env
+                                );
+                            }
+                            None
+                        }
+                        other => {
+                            if config.requires_auth {
+                                anyhow::bail!("Failed to read {}: {}", config.api_key_env, other);
+                            } else {
+                                tracing::warn!(
+                                    "Failed to read optional API key {}: {}. Proceeding without authentication.",
+                                    config.api_key_env,
+                                    other
+                                );
+                                None
+                            }
+                        }
+                    }
                 }
-            })?)
+            }
         } else {
             None
         };

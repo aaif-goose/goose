@@ -810,7 +810,7 @@ pub fn declarative_inventory_identity(
             .public_inputs
             .insert("headers".to_string(), serialize_string_map(headers)?);
     }
-    if config.requires_auth && !config.api_key_env.is_empty() {
+    if !config.api_key_env.is_empty() {
         if let Some(value) = config_secret_value(global, &config.api_key_env) {
             identity
                 .secret_inputs

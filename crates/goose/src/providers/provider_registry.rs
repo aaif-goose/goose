@@ -166,8 +166,14 @@ impl ProviderRegistry {
             .collect();
 
         let mut config_keys = if provider_type == ProviderType::Declarative {
-            if config.requires_auth && !config.api_key_env.is_empty() {
-                vec![ConfigKey::new(&config.api_key_env, true, true, None, true)]
+            if !config.api_key_env.is_empty() {
+                vec![ConfigKey::new(
+                    &config.api_key_env,
+                    config.requires_auth,
+                    true,
+                    None,
+                    true,
+                )]
             } else {
                 Vec::new()
             }

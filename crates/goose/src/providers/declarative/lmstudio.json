@@ -3,7 +3,7 @@
   "engine": "openai",
   "display_name": "LM Studio",
   "description": "Run local models with LM Studio",
-  "api_key_env": "",
+  "api_key_env": "LMSTUDIO_API_KEY",
   "base_url": "${LMSTUDIO_HOST}/v1/chat/completions",
   "env_vars": [
     {
