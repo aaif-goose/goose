@@ -751,9 +751,11 @@ fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> 
     None
 }
 
-/// If the given `call` node represents an Elixir `def`/`defp`/`defmacro`/etc.
-/// (or `defmodule`/`defprotocol`/`defimpl` when called from the class-resolution
-/// path), return the function/module name. Returns `None` for non-def calls.
+/// If the given `call` node represents an Elixir def-style macro
+/// (`def`/`defp`/`defmacro`/`defmodule`/`defprotocol`/`defimpl`/...), return
+/// the function or module name. Used by both `find_enclosing_fn` and
+/// `find_enclosing_class` — Elixir's grammar gives them the same `call` shape.
+/// Returns `None` for non-def calls.
 fn elixir_def_name(call: &tree_sitter::Node, source: &str) -> Option<String> {
     let target = find_child_by_kind(call, "identifier")?;
     let target_text = node_text(source, &target);
