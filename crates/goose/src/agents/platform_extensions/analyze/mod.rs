@@ -439,6 +439,41 @@ fn helper() { validate(0); }
         assert!(format::check_size(&big, true).is_ok());
     }
 
+    #[test]
+    fn elixir_module_attributes_not_captured_as_calls() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("attrs.ex");
+        fs::write(
+            &file,
+            r#"defmodule Attrs do
+  @moduledoc "module doc"
+  @doc "fn doc"
+  @spec foo() :: :ok
+  def foo do
+    bar()
+  end
+
+  def bar, do: :ok
+end
+"#,
+        )
+        .unwrap();
+
+        let analysis =
+            AnalyzeClient::analyze_file(&file).expect("analyze_file should return an analysis");
+        let callees: Vec<String> = analysis.calls.iter().map(|c| c.callee.clone()).collect();
+        for attr in ["moduledoc", "doc", "spec"] {
+            assert!(
+                !callees.iter().any(|c| c == attr),
+                "module attribute @{attr} leaked into calls (callees: {callees:?})"
+            );
+        }
+        assert!(
+            callees.iter().any(|c| c == "bar"),
+            "expected `bar` call from inside `foo` (callees: {callees:?})"
+        );
+    }
+
     #[tokio::test]
     async fn elixir_function_parent_is_module() {
         let tmp = tempdir().unwrap();

@@ -698,6 +698,9 @@ fn extract_calls(
             if query.capture_names()[cap.index as usize] != "name" {
                 continue;
             }
+            if info.name == "elixir" && is_inside_elixir_module_attribute(cap.node) {
+                continue;
+            }
             let callee = node_text(source, &cap.node).to_string();
             let line = cap.node.start_position().row + 1;
             let caller =
@@ -710,6 +713,28 @@ fn extract_calls(
         }
     }
     calls
+}
+
+/// True when `node` lives inside a `@foo ...` module attribute. Tree-sitter
+/// elixir parses module attributes as `(unary_operator operator: "@" operand:
+/// (call ...))`, and the call-extraction query otherwise captures both the
+/// attribute target (`doc`, `moduledoc`, `spec`, ...) and any sub-calls in the
+/// attribute's body (`foo()` in `@spec foo() :: :ok`) as if they were ordinary
+/// calls. Caller-graph attribution for the surrounding module degrades when
+/// those entries are mixed into the real call list.
+fn is_inside_elixir_module_attribute(node: tree_sitter::Node) -> bool {
+    let mut cur = node;
+    while let Some(parent) = cur.parent() {
+        if parent.kind() == "unary_operator" {
+            if let Some(op) = parent.child(0) {
+                if op.kind() == "@" {
+                    return true;
+                }
+            }
+        }
+        cur = parent;
+    }
+    false
 }
 
 fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> Option<String> {
