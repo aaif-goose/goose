@@ -2,8 +2,9 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { ChatInput } from "../ChatInput";
+import { ChatInput } from "./chatInputTestUtils";
 import { ChatInputToolbar } from "../ChatInputToolbar";
+import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import type { Persona } from "@/shared/types/agents";
 
 const mockVoiceDictation = {
@@ -35,6 +36,10 @@ vi.mock("@/shared/api/system", () => ({
     mockListFilesForMentions(roots, maxResults),
 }));
 
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
+}));
+
 const TEST_PERSONAS: Persona[] = [
   {
     id: "builtin-solo",
@@ -57,7 +62,7 @@ const TEST_PERSONAS: Persona[] = [
 function StatefulChatInput({
   onSend = vi.fn(),
 }: {
-  onSend?: (text: string, personaId?: string) => void;
+  onSend?: (text: string, personaId?: string) => boolean | Promise<boolean>;
 }) {
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(
     "builtin-solo",
@@ -89,7 +94,7 @@ describe("ChatInput", () => {
   it("renders with default placeholder", () => {
     render(<ChatInput onSend={vi.fn()} />);
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention personas"),
+      screen.getByPlaceholderText("Chat with Goose or @ mention an agent"),
     ).toBeInTheDocument();
   });
 
@@ -160,6 +165,26 @@ describe("ChatInput", () => {
     expect(
       screen.getByRole("button", { name: /choose agent and model/i }),
     ).toHaveTextContent("Goose");
+  });
+
+  it("shows provider label while the current model id is unresolved", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModel="opus"
+        availableModels={[]}
+        providers={[{ id: "claude-acp", label: "Claude Code" }]}
+        selectedProvider="claude-acp"
+      />,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /choose agent and model/i,
+    });
+    expect(trigger).toHaveTextContent("Claude Code");
+    expect(trigger).not.toHaveTextContent("opus");
   });
 
   it("shows default provider label", () => {
@@ -289,9 +314,52 @@ describe("ChatInput", () => {
     expect(onCompactContext).toHaveBeenCalledOnce();
   });
 
+  it("opens compaction settings from the context usage popover", async () => {
+    const user = userEvent.setup();
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        selectedProvider="goose"
+        contextTokens={1536}
+        contextLimit={8192}
+        canCompactContext
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+
+    await user.click(screen.getByRole("button", { name: /settings/i }));
+
+    expect(dispatchEventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: OPEN_SETTINGS_EVENT,
+        detail: { section: "compaction" },
+      }),
+    );
+
+    dispatchEventSpy.mockRestore();
+  });
+
   it("hides the context usage control when the context limit is unavailable", () => {
     render(
       <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={0} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /context usage/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the context usage control until usage is ready", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        contextTokens={1536}
+        contextLimit={8192}
+        isContextUsageReady={false}
+      />,
     );
 
     expect(
@@ -341,7 +409,7 @@ describe("ChatInput", () => {
     await user.click(screen.getByRole("option", { name: /reviewer/i }));
 
     expect(input).toHaveValue("");
-    expect(screen.getByText("@Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
   });
 
   it("shows project files in @mention results and inserts the selected path", async () => {
@@ -474,23 +542,30 @@ describe("ChatInput", () => {
   it("keeps the mic toggle enabled while recording even if voice input becomes unavailable", () => {
     render(
       <ChatInputToolbar
-        personas={[]}
-        selectedPersonaId={null}
-        providers={[]}
-        selectedProvider="goose"
-        onProviderChange={vi.fn()}
-        availableModels={[]}
-        selectedProjectId={null}
-        availableProjects={[]}
-        contextTokens={0}
-        contextLimit={0}
-        canSend={false}
-        isStreaming={false}
-        hasQueuedMessage={false}
-        onSend={vi.fn()}
-        voiceEnabled={false}
-        voiceRecording
-        onVoiceToggle={vi.fn()}
+        personaPicker={{ selectedPersonaId: null }}
+        agentModelPicker={{
+          providers: [],
+          selectedProvider: "goose",
+          onProviderChange: vi.fn(),
+          availableModels: [],
+        }}
+        projectPicker={{
+          selectedProjectId: null,
+          availableProjects: [],
+        }}
+        contextUsage={{
+          contextTokens: 0,
+          contextLimit: 0,
+        }}
+        composerActions={{
+          canSend: false,
+          isStreaming: false,
+          hasQueuedMessage: false,
+          onSend: vi.fn(),
+          voiceEnabled: false,
+          voiceRecording: true,
+          onVoiceToggle: vi.fn(),
+        }}
         isCompact={false}
       />,
     );
@@ -512,6 +587,6 @@ describe("ChatInput", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith("hello", "reviewer", undefined);
-    expect(screen.getByText("@Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
   });
 });

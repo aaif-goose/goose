@@ -15,7 +15,7 @@ use super::formats::anthropic::{
     create_request, response_to_streaming_message, thinking_type, ThinkingType,
 };
 use super::inventory::{config_secret_value, serialize_string_map, InventoryIdentityInput};
-use super::openai_compatible::handle_status_openai_compat;
+use super::openai_compatible::handle_status;
 use super::openai_compatible::map_http_error_to_provider_error;
 use super::retry::ProviderRetry;
 use crate::config::declarative_providers::DeclarativeProviderConfig;
@@ -322,7 +322,7 @@ impl Provider for AnthropicProvider {
                     request = request.header(key, value)?;
                 }
                 let resp = request.response_post(&payload).await?;
-                handle_status_openai_compat(resp).await
+                handle_status(resp).await
             })
             .await
             .inspect_err(|e| {

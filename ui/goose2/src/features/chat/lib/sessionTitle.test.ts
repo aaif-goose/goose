@@ -4,6 +4,7 @@ import {
   getDisplaySessionTitle,
   getEditableSessionTitle,
   getSessionTitleFromDraft,
+  isDefaultChatTitle,
   isSessionTitleUnchanged,
 } from "./sessionTitle";
 
@@ -15,6 +16,11 @@ describe("sessionTitle", () => {
     expect(getEditableSessionTitle(DEFAULT_CHAT_TITLE, "Nuevo chat")).toBe(
       "Nuevo chat",
     );
+  });
+
+  it("treats the ACP title-case default title as the default title", () => {
+    expect(isDefaultChatTitle("New Chat")).toBe(true);
+    expect(getDisplaySessionTitle("New Chat", "Nuevo chat")).toBe("Nuevo chat");
   });
 
   it("treats the localized default title as unchanged while the sentinel is still internal", () => {

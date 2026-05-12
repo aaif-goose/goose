@@ -19,6 +19,7 @@ import {
   authenticateModelProvider,
   onModelSetupOutput,
 } from "@/features/providers/api/modelSetup";
+import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
 import type {
   ProviderDisplayInfo,
   ProviderField,
@@ -34,24 +35,41 @@ import {
   getFieldSetupDescription,
   renderSetupMessage,
 } from "./modelProviderHelpers";
-import { ConnectedFieldsPanel, SetupFieldsPanel } from "./ModelProviderPanels";
+import {
+  ConnectedFieldsPanel,
+  InventorySyncMessage,
+  SetupFieldsPanel,
+} from "./ModelProviderPanels";
+
+interface ProviderFieldSaveInput {
+  key: string;
+  value: string;
+  isSecret: boolean;
+}
 
 interface ModelProviderRowProps {
   provider: ProviderDisplayInfo;
   onGetConfig: (providerId: string) => Promise<ProviderFieldValue[]>;
-  onSaveField: (key: string, value: string, isSecret: boolean) => Promise<void>;
+  onSaveFields: (fields: ProviderFieldSaveInput[]) => Promise<void>;
   onRemoveConfig?: () => Promise<void>;
-  onCompleteNativeSetup: () => Promise<void>;
+  onCompleteNativeSetup: (
+    providerId: string,
+    result?: ProviderConfigChangeResponse,
+  ) => Promise<void>;
   saving?: boolean;
+  inventorySyncing?: boolean;
+  inventoryWarning?: string | null;
 }
 
 export function ModelProviderRow({
   provider,
   onGetConfig,
-  onSaveField,
+  onSaveFields,
   onRemoveConfig,
   onCompleteNativeSetup,
   saving = false,
+  inventorySyncing = false,
+  inventoryWarning = null,
 }: ModelProviderRowProps) {
   const { t } = useTranslation("settings");
   const [expanded, setExpanded] = useState(false);
@@ -64,7 +82,6 @@ export function ModelProviderRow({
   const [setupOutput, setSetupOutput] = useState<SetupOutputLine[]>([]);
   const [setupError, setSetupError] = useState("");
   const [showSavedState, setShowSavedState] = useState(false);
-  const [preserveSetupLayout, setPreserveSetupLayout] = useState(false);
   const setupLineCounter = useRef(0);
   const hasLoadedConfig = useRef(false);
   const shouldRestorePanelFocus = useRef(false);
@@ -152,17 +169,18 @@ export function ModelProviderRow({
     setAuthenticating(true);
     setSetupError("");
     setSetupOutput([]);
-    setupLineCounter.current = 0;
     setEditingKey(null);
     setError("");
     setShowSavedState(false);
-    setPreserveSetupLayout(false);
 
     const unlisten = await onModelSetupOutput(provider.id, appendSetupOutput);
 
     try {
-      await authenticateModelProvider(provider.id, provider.nativeConnectQuery);
-      await onCompleteNativeSetup();
+      const result = await authenticateModelProvider(
+        provider.id,
+        provider.nativeConnectQuery,
+      );
+      await onCompleteNativeSetup(provider.id, result);
     } catch (nextError) {
       setSetupError(
         nextError instanceof Error
@@ -179,7 +197,6 @@ export function ModelProviderRow({
     setExpanded((current) => {
       if (current) {
         setShowSavedState(false);
-        setPreserveSetupLayout(false);
       }
       return !current;
     });
@@ -219,7 +236,9 @@ export function ModelProviderRow({
     setError("");
     try {
       shouldRestorePanelFocus.current = true;
-      await onSaveField(field.key, nextValue, field.secret);
+      await onSaveFields([
+        { key: field.key, value: nextValue, isSecret: field.secret },
+      ]);
       await loadConfig();
       setEditingKey(null);
       setShowSavedState(true);
@@ -269,13 +288,15 @@ export function ModelProviderRow({
 
     setError("");
     try {
-      for (const field of fieldsToSave) {
-        const nextValue = draftValues[field.key]?.trim() ?? "";
-        await onSaveField(field.key, nextValue, field.secret);
-      }
+      await onSaveFields(
+        fieldsToSave.map((field) => ({
+          key: field.key,
+          value: draftValues[field.key]?.trim() ?? "",
+          isSecret: field.secret,
+        })),
+      );
       await loadConfig();
-      setShowSavedState(true);
-      setPreserveSetupLayout(true);
+      setShowSavedState(false);
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : "Failed to save",
@@ -291,7 +312,6 @@ export function ModelProviderRow({
       setEditingKey(null);
       setError("");
       setShowSavedState(false);
-      setPreserveSetupLayout(false);
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : "Failed to remove",
@@ -315,6 +335,7 @@ export function ModelProviderRow({
     const fieldSetupDescription = getFieldSetupDescription(
       provider.setupMethod,
       t,
+      provider.fields,
     );
 
     if (loadingConfig && hasFields) {
@@ -360,10 +381,14 @@ export function ModelProviderRow({
           )}
           {authenticating ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner className="size-3.5 text-accent" />
+              <Spinner className="size-3.5 text-brand" />
               <span>{t("providers.waitingForSignIn")}</span>
             </div>
           ) : null}
+          <InventorySyncMessage
+            syncing={inventorySyncing}
+            warning={inventoryWarning}
+          />
           {setupOutput.length > 0 ? (
             <div className="space-y-1 rounded-md bg-muted px-3 py-2 font-mono text-xxs text-muted-foreground">
               {setupOutput.map((line) => (
@@ -378,7 +403,7 @@ export function ModelProviderRow({
       );
     }
 
-    if (hasFields && isConnected && !preserveSetupLayout) {
+    if (hasFields && isConnected) {
       return (
         <ConnectedFieldsPanel
           panelRef={panelRef}
@@ -387,6 +412,8 @@ export function ModelProviderRow({
           editingKey={editingKey}
           draftValues={draftValues}
           saving={saving}
+          inventorySyncing={inventorySyncing}
+          inventoryWarning={inventoryWarning}
           showSavedState={showSavedState}
           error={error}
           setupMessage={setupMessage}
@@ -407,6 +434,8 @@ export function ModelProviderRow({
           fieldValueMap={fieldValueMap}
           draftValues={draftValues}
           saving={saving}
+          inventorySyncing={inventorySyncing}
+          inventoryWarning={inventoryWarning}
           showSavedState={showSavedState}
           error={error}
           setupMethod={provider.setupMethod}
@@ -426,6 +455,10 @@ export function ModelProviderRow({
         className="focus-override mx-3 space-y-2 rounded-b-lg border-x border-b px-3 py-3 outline-none"
       >
         {renderSetupMessage(setupMessage)}
+        <InventorySyncMessage
+          syncing={inventorySyncing}
+          warning={inventoryWarning}
+        />
       </div>
     );
   }
@@ -439,21 +472,28 @@ export function ModelProviderRow({
         disabled={authenticating}
         className="flex w-full items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent"
       >
-        <div className="flex size-6 flex-shrink-0 items-center justify-center">
-          {icon || (
+        {icon ? (
+          <div className="flex size-6 flex-shrink-0 items-center justify-center">
+            {icon}
+          </div>
+        ) : (
+          <div className="flex size-6 flex-shrink-0 items-center justify-center">
             <span className="text-xs font-medium text-muted-foreground">
               {formatProviderLabel(provider.id).charAt(0)}
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         <span className="min-w-0 flex-1 text-sm">{provider.displayName}</span>
 
         {isConnected ? (
           <IconCheck className="size-4 flex-shrink-0 text-success" />
         ) : null}
+        {inventorySyncing ? (
+          <Spinner className="size-3.5 flex-shrink-0 text-brand" />
+        ) : null}
         {!isConnected && authenticating ? (
-          <Spinner className="size-3.5 flex-shrink-0 text-accent" />
+          <Spinner className="size-3.5 flex-shrink-0 text-brand" />
         ) : null}
       </button>
 

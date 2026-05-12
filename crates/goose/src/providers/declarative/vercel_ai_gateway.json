@@ -1,0 +1,165 @@
+{
+  "name": "vercel_ai_gateway",
+  "engine": "openai",
+  "display_name": "Vercel AI Gateway",
+  "description": "Unified gateway to OpenAI, Anthropic, Google, xAI, and many more frontier models via Vercel AI Gateway",
+  "api_key_env": "AI_GATEWAY_API_KEY",
+  "base_url": "https://ai-gateway.vercel.sh/v1/chat/completions",
+  "models": [
+    {
+      "name": "anthropic/claude-sonnet-4.6",
+      "context_limit": 1000000,
+      "input_token_cost": 0.000003,
+      "output_token_cost": 0.000015,
+      "currency": "USD"
+    },
+    {
+      "name": "anthropic/claude-sonnet-4.5",
+      "context_limit": 1000000,
+      "input_token_cost": 0.000003,
+      "output_token_cost": 0.000015,
+      "currency": "USD"
+    },
+    {
+      "name": "anthropic/claude-opus-4.6",
+      "context_limit": 1000000,
+      "input_token_cost": 0.000005,
+      "output_token_cost": 0.000025,
+      "currency": "USD"
+    },
+    {
+      "name": "anthropic/claude-opus-4.5",
+      "context_limit": 200000,
+      "input_token_cost": 0.000005,
+      "output_token_cost": 0.000025,
+      "currency": "USD"
+    },
+    {
+      "name": "anthropic/claude-haiku-4.5",
+      "context_limit": 200000,
+      "input_token_cost": 0.000001,
+      "output_token_cost": 0.000005,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-5",
+      "context_limit": 400000,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-5-codex",
+      "context_limit": 400000,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-5-mini",
+      "context_limit": 400000,
+      "input_token_cost": 0.00000025,
+      "output_token_cost": 0.000002,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-5.1-codex",
+      "context_limit": 400000,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-4.1",
+      "context_limit": 1047576,
+      "input_token_cost": 0.000002,
+      "output_token_cost": 0.000008,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-4o",
+      "context_limit": 128000,
+      "input_token_cost": 0.0000025,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/o3",
+      "context_limit": 200000,
+      "input_token_cost": 0.000002,
+      "output_token_cost": 0.000008,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/o4-mini",
+      "context_limit": 200000,
+      "input_token_cost": 0.0000011,
+      "output_token_cost": 0.0000044,
+      "currency": "USD"
+    },
+    {
+      "name": "google/gemini-3-pro-preview",
+      "context_limit": 1000000,
+      "input_token_cost": 0.000002,
+      "output_token_cost": 0.000012,
+      "currency": "USD"
+    },
+    {
+      "name": "google/gemini-2.5-pro",
+      "context_limit": 1048576,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "google/gemini-2.5-flash",
+      "context_limit": 1000000,
+      "input_token_cost": 0.0000003,
+      "output_token_cost": 0.0000025,
+      "currency": "USD"
+    },
+    {
+      "name": "xai/grok-4",
+      "context_limit": 256000,
+      "input_token_cost": 0.000003,
+      "output_token_cost": 0.000015,
+      "currency": "USD"
+    },
+    {
+      "name": "xai/grok-4-fast-reasoning",
+      "context_limit": 2000000,
+      "input_token_cost": 0.0000002,
+      "output_token_cost": 0.0000005,
+      "currency": "USD"
+    },
+    {
+      "name": "xai/grok-code-fast-1",
+      "context_limit": 256000,
+      "input_token_cost": 0.0000002,
+      "output_token_cost": 0.0000015,
+      "currency": "USD"
+    },
+    {
+      "name": "deepseek/deepseek-v3.1",
+      "context_limit": 163840,
+      "input_token_cost": 0.00000056,
+      "output_token_cost": 0.00000168,
+      "currency": "USD"
+    },
+    {
+      "name": "moonshotai/kimi-k2-thinking",
+      "context_limit": 262114,
+      "input_token_cost": 0.0000006,
+      "output_token_cost": 0.0000025,
+      "currency": "USD"
+    },
+    {
+      "name": "zai/glm-4.6",
+      "context_limit": 200000,
+      "input_token_cost": 0.0000006,
+      "output_token_cost": 0.0000022,
+      "currency": "USD"
+    }
+  ],
+  "supports_streaming": true
+}

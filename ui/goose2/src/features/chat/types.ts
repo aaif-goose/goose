@@ -1,6 +1,6 @@
 import type { AcpProvider } from "@/shared/api/acp";
 import type { Persona } from "@/shared/types/agents";
-import type { ChatAttachmentDraft } from "@/shared/types/messages";
+import type { ChatAttachmentDraft, MessageChip } from "@/shared/types/messages";
 
 export interface ModelOption {
   id: string;
@@ -9,6 +9,7 @@ export interface ModelOption {
   provider?: string;
   providerId?: string;
   providerName?: string;
+  contextLimit?: number | null;
   /** Whether this model should appear in the compact recommended picker. */
   recommended?: boolean;
 }
@@ -17,46 +18,88 @@ export interface ProjectOption {
   id: string;
   name: string;
   workingDirs: string[];
+  icon?: string | null;
   color?: string | null;
 }
 
-export interface ChatInputProps {
-  onSend: (
-    text: string,
-    personaId?: string,
-    attachments?: ChatAttachmentDraft[],
-  ) => void;
+export interface ChatSkillDraft {
+  id: string;
+  name: string;
+  description?: string;
+  sourceLabel?: string;
+}
+
+export interface ChatSendOptions {
+  displayText?: string;
+  assistantPrompt?: string;
+  chips?: MessageChip[];
+}
+
+export type ChatInputSendHandler = (
+  text: string,
+  personaId?: string,
+  attachments?: ChatAttachmentDraft[],
+  options?: ChatSendOptions,
+) => boolean | Promise<boolean>;
+
+export interface ChatInputComposerActions {
+  onSend: ChatInputSendHandler;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
   queuedMessage?: { text: string } | null;
   onDismissQueue?: () => void;
-  initialValue?: string;
-  onDraftChange?: (text: string) => void;
-  className?: string;
+}
+
+export interface ChatInputPersonaPicker {
   personas?: Persona[];
   selectedPersonaId?: string | null;
   onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
+}
+
+export interface ChatInputAgentModelPicker {
   providers?: AcpProvider[];
   providersLoading?: boolean;
   selectedProvider?: string;
   onProviderChange?: (providerId: string) => void;
   currentModelId?: string | null;
+  currentModelProviderId?: string | null;
   currentModel?: string;
   availableModels?: ModelOption[];
   modelsLoading?: boolean;
   modelStatusMessage?: string | null;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: (modelId: string, model?: ModelOption) => void;
+  onPickerOpen?: () => void;
+}
+
+export interface ChatInputProjectPicker {
   selectedProjectId?: string | null;
   availableProjects?: ProjectOption[];
   onProjectChange?: (projectId: string | null) => void;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
   }) => void;
+}
+
+export interface ChatInputContextUsage {
   contextTokens?: number;
   contextLimit?: number;
-  onCompactContext?: () => void | Promise<void>;
+  isContextUsageReady?: boolean;
+  onCompactContext?: () => Promise<unknown> | undefined;
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
+  supportsCompactionControls?: boolean;
+}
+
+export interface ChatInputProps {
+  composerActions: ChatInputComposerActions;
+  initialValue?: string;
+  onDraftChange?: (text: string) => void;
+  selectedSkills?: ChatSkillDraft[];
+  onSkillsChange?: (skills: ChatSkillDraft[]) => void;
+  className?: string;
+  personaPicker?: ChatInputPersonaPicker;
+  agentModelPicker?: ChatInputAgentModelPicker;
+  projectPicker?: ChatInputProjectPicker;
+  contextUsage?: ChatInputContextUsage;
 }

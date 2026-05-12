@@ -1,7 +1,7 @@
 use crate::config::paths::Paths;
 use crate::providers::api_client::{ApiClient, AuthMethod};
 use crate::providers::oauth_device_flow::{run_device_flow, DeviceFlowConfig, RequestEncoding};
-use crate::providers::openai_compatible::{handle_status_openai_compat, stream_openai_compat};
+use crate::providers::openai_compatible::{handle_status, stream_openai_compat};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use axum::http;
@@ -14,7 +14,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::base::{Provider, ProviderDef, ProviderMetadata, ProviderUsage, Usage};
+use super::base::{
+    Provider, ProviderDef, ProviderMetadata, ProviderUsage, Usage, DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::errors::ProviderError;
 use super::formats::openai::{create_request, get_usage, response_to_message};
 use super::openai_compatible::handle_response_openai_compat;
@@ -224,7 +226,7 @@ impl GithubCopilotProvider {
         let copilot_token_url: Option<String> = config.get_param("GITHUB_COPILOT_TOKEN_URL").ok();
         let urls = GithubCopilotUrls::new(&host, copilot_token_url.as_deref());
         let client = Client::builder()
-            .timeout(Duration::from_secs(600))
+            .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
             .build()?;
         let cache = DiskCache::new(&host);
         let mu = tokio::sync::Mutex::new(RefCell::new(None));
@@ -434,7 +436,7 @@ impl Provider for GithubCopilotProvider {
                 .with_retry(|| async {
                     let mut payload_clone = payload.clone();
                     let resp = self.post(Some(session_id), &mut payload_clone).await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {

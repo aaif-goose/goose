@@ -27,6 +27,8 @@ pub enum InputResult {
     Compact,
     ToggleFullToolOutput,
     Edit(Option<String>),
+    ListSkills,
+    LoadSkills(Vec<String>),
 }
 
 #[derive(Debug)]
@@ -204,6 +206,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_SUMMARIZE_DEPRECATED: &str = "/summarize";
     const CMD_EDIT: &str = "/edit";
     const CMD_EDIT_WITH_SPACE: &str = "/edit ";
+    const CMD_SKILLS: &str = "/skills";
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
@@ -267,6 +270,16 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         s if s == CMD_CLEAR => Some(InputResult::Clear),
         s if s.starts_with(CMD_RECIPE) => parse_recipe_command(s),
         s if s == CMD_COMPACT => Some(InputResult::Compact),
+        // Match "/skills" exactly or "/skills " with args - avoids matching e.g. "/skillsextra"
+        s if s == CMD_SKILLS || s.starts_with(&format!("{CMD_SKILLS} ")) => {
+            let args = s.get(CMD_SKILLS.len()..).unwrap_or("").trim();
+            if args.is_empty() {
+                Some(InputResult::ListSkills)
+            } else {
+                let names: Vec<String> = args.split_whitespace().map(String::from).collect();
+                Some(InputResult::LoadSkills(names))
+            }
+        }
         s if s == CMD_SUMMARIZE_DEPRECATED => {
             println!("{}", console::style("⚠️  Note: /summarize has been renamed to /compact and will be removed in a future release.").yellow());
             Some(InputResult::Compact)
@@ -417,6 +430,7 @@ fn print_help() {
 /compact - Compact the current conversation to reduce context length while preserving key information.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
+/skills - List available skills or enable skills by name (usage: /skills [<name>...])
 /? or /help - Display this help message
 /clear - Clears the current chat history
 
@@ -746,5 +760,49 @@ mod tests {
 
         // Test /editfoo is not a valid command
         assert!(handle_slash_command("/editfoo").is_none());
+    }
+
+    #[test]
+    fn test_skill_command() {
+        // Test with a single skill name
+        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills coding") else {
+            panic!(
+                "Expected LoadSkills, got {:?}",
+                handle_slash_command("/skills coding")
+            );
+        };
+        assert_eq!(names, vec!["coding"]);
+
+        // Test with multiple skill names
+        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills coding insight")
+        else {
+            panic!(
+                "Expected LoadSkills, got {:?}",
+                handle_slash_command("/skills coding insight")
+            );
+        };
+        assert_eq!(names, vec!["coding", "insight"]);
+
+        // Test with extra whitespace
+        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills  my-skill  ")
+        else {
+            panic!(
+                "Expected LoadSkills, got {:?}",
+                handle_slash_command("/skills  my-skill  ")
+            );
+        };
+        assert_eq!(names, vec!["my-skill"]);
+
+        // Test with no name: ListSkills
+        assert!(matches!(
+            handle_slash_command("/skills"),
+            Some(InputResult::ListSkills)
+        ));
+
+        // Test with only whitespace after /skills: ListSkills
+        assert!(matches!(
+            handle_slash_command("/skills   "),
+            Some(InputResult::ListSkills)
+        ));
     }
 }

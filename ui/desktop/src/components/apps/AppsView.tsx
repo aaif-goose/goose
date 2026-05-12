@@ -28,7 +28,7 @@ const i18n = defineMessages({
   description: {
     id: 'appsView.description',
     defaultMessage:
-      'Applications from your MCP servers and Apps build by goose itself. You can ask it to create new apps through the chat interface and they will appear here.',
+      'Applications from your MCP servers and Apps built by goose itself. You can ask it to create new apps through the chat interface and they will appear here.',
   },
   loading: {
     id: 'appsView.loading',
@@ -313,7 +313,9 @@ export default function AppsView() {
                       )}
                       {app.mcpServers && app.mcpServers.length > 0 && (
                         <span className="inline-block px-2 py-1 text-xs bg-background-secondary text-text-secondary rounded">
-                          {isCustomApp ? intl.formatMessage(i18n.customApp) : app.mcpServers.join(', ')}
+                          {isCustomApp
+                            ? intl.formatMessage(i18n.customApp)
+                            : app.mcpServers.join(', ')}
                         </span>
                       )}
                     </div>

@@ -19,6 +19,8 @@
         "title": "Goose",
         "width": 800,
         "height": 600,
+        "minWidth": 608,
+        "minHeight": 600,
         "visible": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -44,6 +46,22 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["../../../target/release/goose"]
+    "resources": {
+      "../distro": "distro",
+      "../builtin-sources": "builtin-sources"
+    },
+    "externalBin": ["../../../target/release/goose"],
+    "linux": {
+      "deb": {
+        "depends": ["libvulkan1"]
+      },
+      "rpm": {
+        "depends": ["vulkan-loader"]
+      }
+    },
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    }
   }
 }

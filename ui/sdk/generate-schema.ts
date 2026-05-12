@@ -16,8 +16,8 @@ import * as prettier from "prettier";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT = resolve(__dirname, "../..");
-const SCHEMA_PATH = resolve(ROOT, "crates/goose-acp/acp-schema.json");
-const META_PATH = resolve(ROOT, "crates/goose-acp/acp-meta.json");
+const SCHEMA_PATH = resolve(ROOT, "crates/goose/acp-schema.json");
+const META_PATH = resolve(ROOT, "crates/goose/acp-meta.json");
 const OUTPUT_DIR = resolve(__dirname, "src/generated");
 
 // Export the main function so it can be imported by build-schema.ts

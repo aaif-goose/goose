@@ -4,21 +4,27 @@ import { Camera, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import { savePersonaAvatar, savePersonaAvatarBytes } from "@/shared/api/agents";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Avatar } from "@/shared/types/agents";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
+function filePathToFileUrl(filePath: string): string {
+  const normalizedPath = filePath.replaceAll("\\", "/");
+  const url = new URL("file://");
+  url.pathname = normalizedPath.startsWith("/")
+    ? normalizedPath
+    : `/${normalizedPath}`;
+  return url.href;
+}
+
 interface AvatarDropZoneProps {
-  personaId: string;
   avatar: Avatar | null | undefined;
   onChange: (avatar: Avatar | null) => void;
   disabled?: boolean;
 }
 
 export function AvatarDropZone({
-  personaId,
   avatar,
   onChange,
   disabled = false,
@@ -44,11 +50,20 @@ export function AvatarDropZone({
 
       setIsUploading(true);
       try {
-        const buffer = await file.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buffer));
-        const filename = await savePersonaAvatarBytes(personaId, bytes, ext);
+        const value = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result);
+            } else {
+              reject(new Error("Avatar file could not be read as a data URL"));
+            }
+          });
+          reader.addEventListener("error", () => reject(reader.error));
+          reader.readAsDataURL(file);
+        });
 
-        onChange({ type: "local", value: filename });
+        onChange({ type: "url", value });
       } catch (err) {
         console.error("Failed to save avatar:", err);
         setError(t("avatar.saveFailed"));
@@ -56,7 +71,7 @@ export function AvatarDropZone({
         setIsUploading(false);
       }
     },
-    [personaId, onChange, t],
+    [onChange, t],
   );
 
   /** Save a file selected via the native file picker (has a path). */
@@ -72,9 +87,7 @@ export function AvatarDropZone({
 
       setIsUploading(true);
       try {
-        const filename = await savePersonaAvatar(personaId, filePath);
-
-        onChange({ type: "local", value: filename });
+        onChange({ type: "url", value: filePathToFileUrl(filePath) });
       } catch (err) {
         console.error("Failed to save avatar:", err);
         setError(t("avatar.saveFailed"));
@@ -82,7 +95,7 @@ export function AvatarDropZone({
         setIsUploading(false);
       }
     },
-    [personaId, onChange, t],
+    [onChange, t],
   );
 
   // Standard HTML5 drag-and-drop (works when dragDropEnabled is false)
@@ -190,10 +203,10 @@ export function AvatarDropZone({
           onDrop={handleDrop}
           onClick={handleClick}
           className={cn(
-            "size-16 overflow-hidden border-2 bg-muted shadow-sm",
+            "size-16 overflow-hidden border-2 bg-muted shadow-none",
             isDragOver
-              ? "scale-105 border-accent bg-accent/15 shadow-md ring-4 ring-accent/20"
-              : "border-border hover:border-border hover:bg-accent",
+              ? "scale-105 border-brand bg-brand/10 shadow-none ring-4 ring-brand/20"
+              : "border-border hover:border-brand/50 hover:bg-brand/10",
             disabled && "opacity-70 cursor-not-allowed",
             isUploading && "animate-pulse",
           )}
@@ -220,7 +233,7 @@ export function AvatarDropZone({
             size="icon-xs"
             aria-label={t("avatar.removeAria")}
             onClick={handleClear}
-            className="absolute -top-0.5 -right-0.5 z-10 size-5 bg-background text-muted-foreground shadow-sm hover:text-foreground"
+            className="absolute -top-0.5 -right-0.5 z-10 size-5 bg-background text-muted-foreground shadow-none hover:text-foreground"
           >
             <X className="size-3" />
           </Button>

@@ -1,17 +1,16 @@
 {
   "name": "goose2",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.19.1",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "check:file-sizes": "node ./scripts/check-file-sizes.mjs",
     "check:i18n": "node ./scripts/check-i18n-strings.mjs",
     "lint": "biome lint .",
-    "check": "biome check . && pnpm check:file-sizes && pnpm check:i18n",
+    "check": "biome check . && pnpm check:i18n",
     "format": "biome format --write .",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -29,6 +28,7 @@
   "dependencies": {
     "@aaif/goose-sdk": "workspace:*",
     "@agentclientprotocol/sdk": "^0.19.0",
+    "@mcp-ui/client": "7.1.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
