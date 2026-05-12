@@ -474,6 +474,36 @@ end
         );
     }
 
+    #[test]
+    fn elixir_defimpl_listed_as_class() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("impl.ex");
+        fs::write(
+            &file,
+            r#"defmodule MyProto do
+  defprotocol Greeter do
+    def hello(thing)
+  end
+end
+
+defimpl MyProto.Greeter, for: BitString do
+  def hello(s), do: "hi " <> s
+end
+"#,
+        )
+        .unwrap();
+
+        let analysis =
+            AnalyzeClient::analyze_file(&file).expect("analyze_file should return an analysis");
+        let class_names: Vec<&str> = analysis.classes.iter().map(|c| c.name.as_str()).collect();
+        for expected in ["MyProto", "Greeter", "MyProto.Greeter"] {
+            assert!(
+                class_names.contains(&expected),
+                "expected `{expected}` in classes; got {class_names:?}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn elixir_function_parent_is_module() {
         let tmp = tempdir().unwrap();

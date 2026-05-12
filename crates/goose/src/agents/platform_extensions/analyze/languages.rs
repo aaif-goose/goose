@@ -350,7 +350,7 @@ static LANGUAGES: &[LangInfo] = &[
                 (call
                   target: (identifier) @_ignore
                   (arguments (alias) @name)
-                  (#any-of? @_ignore "defmodule" "defprotocol"))
+                  (#any-of? @_ignore "defmodule" "defprotocol" "defimpl"))
             "#,
             imports: r#"
                 (call
