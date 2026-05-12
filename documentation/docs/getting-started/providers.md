@@ -37,6 +37,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [LiteLLM](https://docs.litellm.ai/docs/) | LiteLLM proxy supporting multiple models with automatic prompt caching and unified API access. | `LITELLM_HOST`, `LITELLM_BASE_PATH` (optional), `LITELLM_API_KEY` (optional), `LITELLM_CUSTOM_HEADERS` (optional), `LITELLM_TIMEOUT` (optional) |
 | [LM Studio](https://lmstudio.ai/)                                          | Run local models with LM Studio's OpenAI-compatible server. **Because this provider runs locally, you must first [download a model](#local-llms).**                                                           | None required. Connects to local server at `localhost:1234` by default.                                                                                                             |
 | [Mistral AI](https://mistral.ai/)                                           | Provides access to Mistral models including general-purpose models, specialized coding models (Codestral), and multimodal models (Pixtral).                                                                   | `MISTRAL_API_KEY`                                                                                                 |
+| [Novita AI](https://novita.ai/)                                             | 90+ open-source models with OpenAI-compatible API and competitive pricing. Supports Kimi K2.5, DeepSeek, GLM, MiniMax, Qwen, and more.                                                                       | `NOVITA_API_KEY`                                                                                                  |
 | [Ollama](https://ollama.com/)                                               | Local model runner supporting Qwen, Llama, DeepSeek, and other open-source models. **Because this provider runs locally, you must first [download and run a model](#local-llms).**  | `OLLAMA_HOST`                                                                                                                                                                       |
 | [Ollama Cloud](https://ollama.com/)                                         | Access hosted models on ollama.com via OpenAI-compatible API. Requires an Ollama account and API key.  | `OLLAMA_CLOUD_API_KEY`                                                                                                                                                                       |
 | [OpenAI](https://platform.openai.com/api-keys)                              | Provides gpt-4o, o1, and other advanced language models. Also supports OpenAI-compatible endpoints (e.g., self-hosted LLaMA, vLLM, KServe). **o1-mini and o1-preview are not supported because goose uses tool calling.** | `OPENAI_API_KEY`, `OPENAI_HOST` (optional), `OPENAI_ORGANIZATION` (optional), `OPENAI_PROJECT` (optional), `OPENAI_CUSTOM_HEADERS` (optional)                                       |
@@ -66,9 +67,8 @@ goose supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) a
 
 | Provider                                                                    | Description                                                                                                                                                                                                               | Requirements                                                                                                                                                                          |
 |-----------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Claude ACP](https://github.com/zed-industries/claude-agent-acp) (`claude-acp`) | Uses Claude Code via ACP. Passes goose extensions to the agent as MCP servers. | `npm install -g @zed-industries/claude-agent-acp`, active Claude Code subscription |
+| [Claude ACP](https://github.com/agentclientprotocol/claude-agent-acp) (`claude-acp`) | Uses Claude Code via ACP. Passes goose extensions to the agent as MCP servers. | `npm install -g @agentclientprotocol/claude-agent-acp`, active Claude Code subscription |
 | [Codex ACP](https://github.com/zed-industries/codex-acp) (`codex-acp`) | Uses OpenAI Codex via ACP. Passes goose extensions to the agent as MCP servers. | `npm install -g @zed-industries/codex-acp`, active ChatGPT Plus/Pro subscription |
-| [Gemini ACP](https://github.com/google-gemini/gemini-cli) (`gemini-acp`) | Uses Google's Gemini CLI via ACP (native `--acp` support). Passes goose extensions to the agent as MCP servers. | `npm install -g @google/gemini-cli`, authenticated with Google account |
 
 :::tip ACP Providers
 See the [ACP Providers guide](/docs/guides/acp-providers) for detailed setup instructions.
@@ -691,6 +691,45 @@ To set up Groq with goose, follow these steps:
     3. Follow the prompts to choose `Groq` as the provider.
     4. Enter your API key when prompted.
     5. Select the Groq model of your choice.
+  </TabItem>
+</Tabs>
+
+### Novita AI
+[Novita AI](https://novita.ai/) provides access to 90+ open-source models via an OpenAI-compatible API with competitive pricing. To use Novita AI with goose, you need an API key from [Novita AI](https://novita.ai/settings#key-management).
+
+Novita AI offers many models that support tool calling, including:
+- **moonshotai/kimi-k2.5** - Moonshot's latest model with 262K context window
+- **minimax/minimax-m2.7** - MiniMax M2.7 with 205K context
+- **zai-org/glm-5.1** - Zhipu's GLM-5.1 with 205K context
+- **deepseek/deepseek-v3.2** - DeepSeek V3.2 with 164K context
+- **google/gemma-4-31b-it** - Google Gemma 4 31B with 262K context
+
+For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/novita.json).
+
+To set up Novita AI with goose, follow these steps:
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  **To update your LLM provider and API key:** 
+
+    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click the `Models` tab.
+    4. Click `Configure Providers`
+    5. Choose `Novita AI` as provider from the list.
+    6. Click `Configure`, enter your API key, and click `Submit`.
+    7. Select the Novita AI model of your choice.
+
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    1. Run: 
+    ```sh
+    goose configure
+    ```
+    2. Select `Configure Providers` from the menu.
+    3. Follow the prompts to choose `Novita AI` as the provider.
+    4. Enter your API key when prompted.
+    5. Select the Novita AI model of your choice.
   </TabItem>
 </Tabs>
 

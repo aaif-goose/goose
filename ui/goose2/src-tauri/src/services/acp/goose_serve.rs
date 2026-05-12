@@ -1,16 +1,20 @@
+use tauri::{Manager, Runtime};
+use tauri_plugin_shell::ShellExt;
+
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use futures::{SinkExt, StreamExt};
+use crate::services::distro_bundle::DistroBundleState;
+
 use tokio::process::{Child, Command};
 use tokio::sync::OnceCell;
-use tokio_tungstenite::connect_async;
 
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
-pub(crate) const WS_BRIDGE_BUFFER_BYTES: usize = 64 * 1024;
-
+const ADDITIONAL_AGENT_SOURCE_ROOTS_ENV: &str = "ADDITIONAL_AGENT_SOURCE_ROOTS";
+const BUNDLED_AGENT_ROOT_DIR: &str = "builtin-sources/agents";
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
 // ---------------------------------------------------------------------------
@@ -22,6 +26,7 @@ pub(crate) const WS_BRIDGE_BUFFER_BYTES: usize = 64 * 1024;
 /// concurrent sessions.
 pub struct GooseServeProcess {
     port: u16,
+    secret_key: String,
     _child: Child,
 }
 
@@ -34,30 +39,27 @@ impl GooseServeProcess {
         format!("ws://{LOCALHOST}:{}/acp", self.port)
     }
 
-    /// Start the singleton `goose serve` process.
-    ///
-    /// This is called once from `lib.rs` during app startup.  Subsequent calls
-    /// are no-ops (the `OnceCell` ensures single initialisation).  The process
-    /// is spawned with `kill_on_drop(true)` so it is automatically terminated
-    /// when the Tauri app exits.
-    pub async fn start() -> Result<(), String> {
-        GOOSE_SERVE
-            .get_or_try_init(|| async { Self::spawn().await })
-            .await
-            .map(|_| ())
+    /// Return the HTTP base URL for authenticated Goose server routes.
+    pub fn http_base_url(&self) -> String {
+        format!("http://{LOCALHOST}:{}", self.port)
+    }
+
+    /// Return the secret key used to authenticate local HTTP requests.
+    pub fn secret_key(&self) -> &str {
+        &self.secret_key
     }
 
     /// Get a reference to the running process, or an error if it was never
     /// started (should not happen in normal operation).
-    pub fn get() -> Result<&'static GooseServeProcess, String> {
+    pub async fn get(app_handle: tauri::AppHandle) -> Result<&'static GooseServeProcess, String> {
         GOOSE_SERVE
-            .get()
-            .ok_or_else(|| "Goose serve process has not been started".to_string())
+            .get_or_try_init(|| async { Self::spawn(app_handle).await })
+            .await
     }
 
-    async fn spawn() -> Result<GooseServeProcess, String> {
-        let binary_path = resolve_goose_binary()?;
+    async fn spawn(app_handle: tauri::AppHandle) -> Result<GooseServeProcess, String> {
         let port = reserve_free_port()?;
+        let secret_key = format!("goose2-{}", uuid::Uuid::new_v4().simple());
 
         // Use a stable working directory for the long-lived server process.
         // Individual sessions will set their own cwd via the ACP protocol.
@@ -69,63 +71,121 @@ impl GooseServeProcess {
             )
         })?;
 
-        let mut command = Command::new(&binary_path);
+        let mut command: Command = get_goose_command(&app_handle)?;
+        let binary_display = command.as_std().get_program().to_string_lossy().to_string();
+
+        if let Some(distro_state) = app_handle.try_state::<DistroBundleState>() {
+            if let Some(bundle) = distro_state.bundle() {
+                if let Some(bin_dir) = &bundle.bin_dir {
+                    prepend_path_env(&mut command, bin_dir);
+                }
+                if let Some(config_path) = &bundle.config_path {
+                    append_additional_config_env(&mut command, config_path);
+                }
+                command.env("GOOSE_DISTRO_DIR", &bundle.root_dir);
+            }
+        }
+
+        command.arg("serve");
+        add_bundled_agent_root_env(&app_handle, &mut command);
+
         command
-            .arg("serve")
             .arg("--host")
             .arg(LOCALHOST)
             .arg("--port")
             .arg(port.to_string())
             .current_dir(&working_dir)
+            .env("GOOSE_SERVER__SECRET_KEY", &secret_key)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
 
         log::info!(
-            "Spawning long-lived goose serve: binary={} port={} cwd={}",
-            binary_path.display(),
-            port,
+            "Spawning long-lived goose serve: binary={binary_display} port={port} cwd={}",
             working_dir.display(),
         );
 
         let mut child = command.spawn().map_err(|error| {
             format!(
-                "Failed to spawn goose serve (binary: {}, cwd: {}): {error}",
-                binary_path.display(),
+                "Failed to spawn goose serve (binary: {binary_display}, cwd: {}): {error}",
                 working_dir.display()
             )
         })?;
 
-        // Wait for the server to become ready by polling the WebSocket endpoint.
-        let ws_url = format!("ws://{LOCALHOST}:{port}/acp");
-        wait_for_server_ready(&ws_url, &mut child).await?;
+        wait_for_server_ready(port, &mut child).await?;
 
         log::info!("Goose serve is ready on port {port}");
 
         Ok(GooseServeProcess {
             port,
+            secret_key,
             _child: child,
         })
     }
 }
 
-/// Wait for the goose serve process to accept WebSocket connections.
-///
-/// We do a connect-then-immediately-close loop until the server responds,
-/// the child exits, or we time out.
-async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), String> {
+fn add_bundled_agent_root_env<R: Runtime>(manager: &impl Manager<R>, command: &mut Command) {
+    let resource_dir = match manager.path().resource_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            log::warn!("Failed to resolve Tauri resource dir for bundled sources: {error}");
+            return;
+        }
+    };
+
+    let root = resource_dir.join(BUNDLED_AGENT_ROOT_DIR);
+    if !root.is_dir() {
+        log::debug!(
+            "No bundled source root found at {}; skipping",
+            root.display()
+        );
+        return;
+    }
+
+    append_additional_agent_roots_env(command, &root);
+}
+
+fn append_additional_agent_roots_env(command: &mut Command, root: &std::path::Path) {
+    let existing = std::env::var_os(ADDITIONAL_AGENT_SOURCE_ROOTS_ENV);
+    let mut roots: Vec<PathBuf> = existing
+        .as_ref()
+        .map(std::env::split_paths)
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    roots.push(root.to_path_buf());
+
+    match std::env::join_paths(&roots) {
+        Ok(joined) => {
+            command.env(ADDITIONAL_AGENT_SOURCE_ROOTS_ENV, joined);
+        }
+        Err(error) => {
+            eprintln!("Failed to set {ADDITIONAL_AGENT_SOURCE_ROOTS_ENV}: {error}");
+        }
+    }
+}
+
+pub fn get_goose_command(app_handle: &tauri::AppHandle) -> Result<Command, String> {
+    if let Ok(override_path) = std::env::var("GOOSE_BIN") {
+        Ok(Command::new(override_path))
+    } else {
+        let tauri_command = app_handle
+            .shell()
+            .sidecar("goose")
+            .map_err(|e| format!("could not resolve goose binary: {e}"))?;
+        let std_command: std::process::Command = tauri_command.into();
+        Ok(std_command.into())
+    }
+}
+
+async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), String> {
     let deadline = Instant::now() + GOOSE_SERVE_CONNECT_TIMEOUT;
+    let addr = format!("{LOCALHOST}:{port}");
 
     loop {
-        match connect_async(ws_url).await {
-            Ok((ws_stream, _)) => {
-                // Server is up — close the probe connection.
-                let (mut writer, _) = ws_stream.split();
-                let _ = writer.close().await;
-                return Ok(());
-            }
-            Err(connect_error) => {
+        match tokio::net::TcpStream::connect(&addr).await {
+            Ok(_) => return Ok(()),
+            Err(_) => {
                 if let Some(status) = child
                     .try_wait()
                     .map_err(|e| format!("Failed to poll goose serve process: {e}"))?
@@ -136,9 +196,7 @@ async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), St
                 }
 
                 if Instant::now() >= deadline {
-                    return Err(format!(
-                        "Timed out waiting for goose serve at {ws_url}: {connect_error}"
-                    ));
+                    return Err(format!("Timed out waiting for goose serve on port {port}"));
                 }
 
                 tokio::time::sleep(GOOSE_SERVE_CONNECT_RETRY_DELAY).await;
@@ -148,112 +206,55 @@ async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), St
 }
 
 fn default_serve_working_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".goose")
-        .join("artifacts")
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
-// ---------------------------------------------------------------------------
-// Binary resolution
-// ---------------------------------------------------------------------------
+fn prepend_path_env(command: &mut Command, extra_dir: &std::path::Path) {
+    let mut paths = vec![extra_dir.to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
 
-pub(crate) fn resolve_goose_binary() -> Result<PathBuf, String> {
-    let binary_path = if let Ok(override_path) = std::env::var("GOOSE_BIN") {
-        let path = PathBuf::from(&override_path);
-        if !path.exists() {
-            return Err(format!(
-                "GOOSE_BIN points to non-existent path: {override_path}"
-            ));
-        }
-        if !goose_binary_supports_serve(&path)? {
-            return Err(format!(
-                "GOOSE_BIN points to a goose binary without `serve` support: {}",
-                path.display()
-            ));
-        }
-        log::info!("Using GOOSE_BIN override: {override_path}");
-        path
+    set_path_list_env(command, "PATH", paths, Some(extra_dir.as_os_str()));
+}
+
+fn append_additional_config_env(command: &mut Command, config_path: &std::path::Path) {
+    let existing = std::env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES");
+    let mut paths: Vec<PathBuf> = existing
+        .as_ref()
+        .map(std::env::split_paths)
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    paths.push(config_path.to_path_buf());
+
+    if let Ok(joined) = std::env::join_paths(&paths) {
+        command.env("GOOSE_ADDITIONAL_CONFIG_FILES", joined);
     } else {
-        let agent = acp_client::find_acp_agent_by_id("goose")
-            .ok_or_else(|| "Unknown or unavailable agent provider: goose".to_string())?;
-
-        if !goose_binary_supports_serve(&agent.binary_path)? {
-            return Err(format!(
-                "Resolved goose binary does not support `serve`: {}. Set GOOSE_BIN to a newer goose binary.",
-                agent.binary_path.display()
-            ));
+        let mut fallback = existing.unwrap_or_default();
+        if !fallback.is_empty() {
+            fallback.push(if cfg!(windows) { ";" } else { ":" });
         }
-
-        log::info!(
-            "Resolved goose binary via login-shell discovery: {}",
-            agent.binary_path.display()
-        );
-        agent.binary_path
-    };
-
-    // Log the binary version for debugging.
-    match std::process::Command::new(&binary_path)
-        .env("GOOSE_PATH_ROOT", goose_probe_root())
-        .arg("--version")
-        .output()
-    {
-        Ok(output) => {
-            let version = String::from_utf8_lossy(&output.stdout);
-            log::info!(
-                "Goose binary version: {} (path: {})",
-                version.trim(),
-                binary_path.display()
-            );
-        }
-        Err(err) => {
-            log::warn!(
-                "Could not determine goose binary version at {}: {err}",
-                binary_path.display()
-            );
-        }
+        fallback.push(config_path.as_os_str());
+        command.env("GOOSE_ADDITIONAL_CONFIG_FILES", fallback);
     }
-
-    Ok(binary_path)
 }
 
-fn goose_binary_supports_serve(binary_path: &PathBuf) -> Result<bool, String> {
-    let output = std::process::Command::new(binary_path)
-        .env("GOOSE_PATH_ROOT", goose_probe_root())
-        .arg("serve")
-        .arg("--help")
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to probe goose binary {}: {error}",
-                binary_path.display()
-            )
-        })?;
-
-    if output.status.success() {
-        return Ok(true);
+fn set_path_list_env(
+    command: &mut Command,
+    key: &str,
+    paths: Vec<PathBuf>,
+    fallback_prefix: Option<&std::ffi::OsStr>,
+) {
+    if let Ok(joined) = std::env::join_paths(&paths) {
+        command.env(key, joined);
+    } else if let Some(prefix) = fallback_prefix {
+        let mut fallback = OsString::from(prefix);
+        for path in paths.iter().skip(1) {
+            fallback.push(if cfg!(windows) { ";" } else { ":" });
+            fallback.push(path.as_os_str());
+        }
+        command.env(key, fallback);
     }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    log::warn!(
-        "Goose binary probe failed for {}: status={} stderr={} stdout={}",
-        binary_path.display(),
-        output
-            .status
-            .code()
-            .map(|code| code.to_string())
-            .unwrap_or_else(|| "signal".to_string()),
-        stderr.trim(),
-        stdout.trim(),
-    );
-
-    Ok(false)
-}
-
-fn goose_probe_root() -> PathBuf {
-    std::env::temp_dir().join("block-goose2-goose-probe")
 }
 
 fn reserve_free_port() -> Result<u16, String> {

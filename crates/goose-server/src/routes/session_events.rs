@@ -35,8 +35,6 @@ pub struct SessionReplyRequest {
     pub user_message: Message,
     #[serde(default)]
     pub override_conversation: Option<Vec<Message>>,
-    pub recipe_name: Option<String>,
-    pub recipe_version: Option<String>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -287,7 +285,7 @@ pub async fn session_reply(
     }
 
     // Validate session exists before allocating a bus/registering work
-    state
+    let session_data = state
         .session_manager()
         .get_session(&session_id, false)
         .await
@@ -302,22 +300,49 @@ pub async fn session_reply(
         "Session started"
     );
 
-    if let Some(recipe_name) = request.recipe_name.clone() {
+    if let Some(ref recipe) = session_data.recipe {
         if state.mark_recipe_run_if_absent(&session_id).await {
-            let recipe_version = request
-                .recipe_version
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string());
-
             tracing::info!(
                 monotonic_counter.goose.recipe_runs = 1,
-                recipe_name = %recipe_name,
-                recipe_version = %recipe_version,
+                recipe_name = %recipe.title,
+                recipe_version = %recipe.version,
                 session_type = "app",
                 interface = "ui",
                 "Recipe execution started"
             );
         }
+    }
+
+    let user_message = request.user_message;
+    let override_conversation = request.override_conversation;
+
+    // An elicitation response unblocks an in-flight tool call that is already
+    // streaming on another request_id — don't register a new active request or
+    // open a new SSE stream; route it to the agent's short-circuit path.
+    let is_elicitation_response = user_message.content.iter().any(|c| {
+        matches!(
+            c,
+            goose::conversation::message::MessageContent::ActionRequired(ar)
+                if matches!(
+                    ar.data,
+                    goose::conversation::message::ActionRequiredData::ElicitationResponse { .. }
+                )
+        )
+    });
+
+    if is_elicitation_response {
+        let agent = state.get_agent_for_route(session_id.clone()).await?;
+        let session_config = goose::agents::types::SessionConfig {
+            id: session_id.clone(),
+            schedule_id: session_data.schedule_id.clone(),
+            max_turns: None,
+            retry_config: None,
+        };
+        let _ = agent
+            .reply(user_message, session_config, None)
+            .await
+            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+        return Ok(Json(SessionReplyResponse { request_id }));
     }
 
     let bus = state.get_or_create_event_bus(&session_id).await;
@@ -328,9 +353,6 @@ pub async fn session_reply(
         .map_err(|_| {
             ErrorResponse::bad_request("Session already has an active request. Cancel it first.")
         })?;
-
-    let user_message = request.user_message;
-    let override_conversation = request.override_conversation;
 
     let task_state = state.clone();
     let task_session_id = session_id.clone();

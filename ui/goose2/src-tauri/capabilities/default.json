@@ -9,21 +9,42 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-show",
     "core:window:allow-close",
+    "core:window:allow-set-size",
+    "core:window:allow-set-min-size",
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
       "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$HOME/.goose/**" },
-        { "path": "$HOME/.goose/artifacts/**" },
-        { "path": "$TEMP/**" },
-        { "path": "/Volumes/**" },
-        { "path": "/mnt/**" },
-        { "path": "/workspace/**" },
-        { "path": "/workspaces/**" },
-        { "path": "/opt/**" },
-        { "path": "/srv/**" },
-        { "path": "*:/**" }
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.goose/**"
+        },
+        {
+          "path": "$TEMP/**"
+        },
+        {
+          "path": "/Volumes/**"
+        },
+        {
+          "path": "/mnt/**"
+        },
+        {
+          "path": "/workspace/**"
+        },
+        {
+          "path": "/workspaces/**"
+        },
+        {
+          "path": "/opt/**"
+        },
+        {
+          "path": "/srv/**"
+        },
+        {
+          "path": "*:/**"
+        }
       ]
     },
     "window-state:allow-restore-state",

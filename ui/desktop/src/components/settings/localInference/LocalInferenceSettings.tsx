@@ -5,6 +5,7 @@ import { useModelAndProvider } from '../../ModelAndProviderContext';
 import { defineMessages, useIntl } from '../../../i18n';
 import {
   listLocalModels,
+  syncFeaturedModels,
   downloadHfModel,
   getLocalModelDownloadProgress,
   cancelLocalModelDownload,
@@ -159,6 +160,7 @@ export const LocalInferenceSettings = () => {
 
   const loadModels = useCallback(async (): Promise<LocalModelResponse[] | undefined> => {
     try {
+      await syncFeaturedModels();
       const response = await listLocalModels();
       if (response.data) {
         setModels(response.data);

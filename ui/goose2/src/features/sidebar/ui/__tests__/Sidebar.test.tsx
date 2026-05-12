@@ -9,35 +9,38 @@ const mockSessions: Array<{
   updatedAt: string;
   messageCount: number;
   projectId?: string;
-  draft?: boolean;
   archivedAt?: string;
 }> = [];
 
 vi.mock("@/features/chat/stores/chatStore", () => ({
-  useChatStore: () => ({
-    getSessionRuntime: () => ({
-      chatState: "idle",
-      hasUnread: false,
+  useChatStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      messagesBySession: {},
+      sessionStateById: {},
     }),
-  }),
 }));
 
 vi.mock("@/features/chat/stores/chatSessionStore", () => ({
-  useChatSessionStore: () => ({
-    sessions: mockSessions,
-  }),
+  getVisibleSessions: (sessions: typeof mockSessions) =>
+    sessions.filter((session) => session.messageCount > 0),
+  useChatSessionStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      sessions: mockSessions,
+    }),
 }));
 
 vi.mock("@/features/agents/stores/agentStore", () => ({
-  useAgentStore: () => ({
-    getPersonaById: () => undefined,
-  }),
+  useAgentStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      getPersonaById: () => undefined,
+    }),
 }));
 
 vi.mock("@/features/projects/stores/projectStore", () => ({
-  useProjectStore: () => ({
-    projects: [],
-  }),
+  useProjectStore: (selector: (state: unknown) => unknown) =>
+    selector({
+      projects: [],
+    }),
 }));
 
 describe("Sidebar", () => {
@@ -60,6 +63,40 @@ describe("Sidebar", () => {
       />,
     );
 
+    expect(screen.getByText("Recovered Session")).toBeInTheDocument();
+
+    mockSessions.splice(0, mockSessions.length);
+  });
+
+  it("hides zero-message sessions from recents", () => {
+    mockSessions.splice(
+      0,
+      mockSessions.length,
+      {
+        id: "home-session",
+        title: "New Chat",
+        updatedAt: "2026-04-09T12:00:00.000Z",
+        messageCount: 0,
+      },
+      {
+        id: "session-1",
+        title: "Recovered Session",
+        updatedAt: "2026-04-09T12:01:00.000Z",
+        messageCount: 3,
+      },
+    );
+
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectSession={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    expect(screen.queryByText("New Chat")).not.toBeInTheDocument();
     expect(screen.getByText("Recovered Session")).toBeInTheDocument();
 
     mockSessions.splice(0, mockSessions.length);

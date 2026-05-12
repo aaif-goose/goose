@@ -48,6 +48,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "gcp_vertex_ai" => "google-vertex",
         "gemini_oauth" => "google",
         "zhipu" => "zhipuai",
+        "novita" => "novita-ai",
         _ => provider,
     }
 }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Mic,
   ArrowUp,
@@ -6,17 +6,15 @@ import {
   Paperclip,
   File,
   FolderOpen,
+  Settings2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { IconLibraryPlusFilled } from "@tabler/icons-react";
 import type { AcpProvider } from "@/shared/api/acp";
-import type { Persona } from "@/shared/types/agents";
 import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
-import { PersonaPicker } from "./PersonaPicker";
-import type { ProjectOption } from "./ChatInput";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -24,59 +22,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { Progress } from "@/shared/ui/progress";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
-import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
-import { useAgentProviderStatus } from "@/features/providers/hooks/useAgentProviderStatus";
-import {
-  getCatalogEntry,
-  resolveAgentProviderCatalogIdStrict,
-} from "@/features/providers/providerCatalog";
+import { getCatalogEntryFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import { supportsContextCompactionControls } from "../lib/autoCompact";
+import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
+import { ProjectSelectorIcon } from "./ProjectSelectorIcon";
+import type {
+  ChatInputAgentModelPicker,
+  ChatInputContextUsage,
+  ChatInputPersonaPicker,
+  ChatInputProjectPicker,
+} from "../types";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
 
-function ProjectDot({ color }: { color?: string | null }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-block size-2 rounded-full",
-        color ? "" : "bg-muted-foreground/40",
-      )}
-      style={color ? { backgroundColor: color } : undefined}
-    />
-  );
-}
-
-interface ChatInputToolbarProps {
-  // Personas
-  personas: Persona[];
-  selectedPersonaId: string | null;
-  onPersonaChange?: (personaId: string | null) => void;
-  onCreatePersona?: () => void;
-  // Provider
-  providers: AcpProvider[];
-  providersLoading?: boolean;
-  selectedProvider: string;
-  onProviderChange: (providerId: string) => void;
-  // Model
-  currentModelId?: string | null;
-  currentModel?: string;
-  availableModels: ModelOption[];
-  onModelChange?: (modelId: string) => void;
-  // Project
-  selectedProjectId: string | null;
-  availableProjects: ProjectOption[];
-  onProjectChange?: (projectId: string | null) => void;
-  onCreateProject?: (options?: {
-    onCreated?: (projectId: string) => void;
-  }) => void;
-  // Context
-  contextTokens: number;
-  contextLimit: number;
-  // Actions
+interface ChatInputToolbarComposerActions {
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;
@@ -85,70 +51,106 @@ interface ChatInputToolbarProps {
   onAttachFiles?: () => void;
   onAttachFolders?: () => void;
   disabled?: boolean;
-  // Layout
+  voiceEnabled?: boolean;
+  voiceRecording?: boolean;
+  voiceTranscribing?: boolean;
+  onVoiceToggle?: () => void;
+}
+
+interface ChatInputToolbarProps {
+  personaPicker: Pick<ChatInputPersonaPicker, "selectedPersonaId">;
+  agentModelPicker: ChatInputAgentModelPicker;
+  projectPicker: ChatInputProjectPicker;
+  contextUsage: ChatInputContextUsage;
+  composerActions: ChatInputToolbarComposerActions;
   isCompact: boolean;
 }
 
 export function ChatInputToolbar({
-  personas,
-  selectedPersonaId,
-  onPersonaChange,
-  onCreatePersona,
-  providers,
-  providersLoading,
-  selectedProvider,
-  onProviderChange,
-  currentModelId,
-  currentModel,
-  availableModels,
-  onModelChange,
-  selectedProjectId,
-  availableProjects,
-  onProjectChange,
-  onCreateProject,
-  contextTokens,
-  contextLimit,
-  canSend,
-  isStreaming,
-  hasQueuedMessage,
-  onSend,
-  onStop,
-  onAttachFiles,
-  onAttachFolders,
-  disabled = false,
+  personaPicker,
+  agentModelPicker,
+  projectPicker,
+  contextUsage,
+  composerActions,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
-  const { readyAgentIds } = useAgentProviderStatus();
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
+  const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
+  const { selectedPersonaId = null } = personaPicker;
+  const {
+    providers = [],
+    providersLoading,
+    selectedProvider = "goose",
+    onProviderChange,
+    currentModelId,
+    currentModelProviderId,
+    currentModel,
+    availableModels = [],
+    modelsLoading = false,
+    modelStatusMessage = null,
+    onModelChange,
+    onPickerOpen,
+  } = agentModelPicker;
+  const {
+    selectedProjectId = null,
+    availableProjects = [],
+    onProjectChange,
+    onCreateProject,
+  } = projectPicker;
+  const {
+    contextTokens = 0,
+    contextLimit = 0,
+    isContextUsageReady,
+    supportsCompactionControls,
+    canCompactContext = false,
+    isCompactingContext = false,
+    onCompactContext,
+  } = contextUsage;
+  const {
+    canSend,
+    isStreaming,
+    hasQueuedMessage,
+    onSend,
+    onStop,
+    onAttachFiles,
+    onAttachFolders,
+    disabled = false,
+    voiceEnabled = false,
+    voiceRecording = false,
+    voiceTranscribing = false,
+    onVoiceToggle,
+  } = composerActions;
+  const compactionControlsSupported =
+    supportsCompactionControls ??
+    supportsContextCompactionControls(selectedProvider);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
-    const connected: AcpProvider[] = [];
-    for (const p of providers) {
-      const catalogId = resolveAgentProviderCatalogIdStrict(p.id);
-      if (
-        catalogId === null ||
-        !readyAgentIds.has(catalogId) ||
-        seen.has(catalogId)
-      )
+    const available: AcpProvider[] = [];
+    for (const provider of providers) {
+      if (seen.has(provider.id)) {
         continue;
-      seen.add(catalogId);
-      connected.push({
-        id: p.id,
-        label: getCatalogEntry(catalogId)?.displayName ?? p.label,
+      }
+      seen.add(provider.id);
+      available.push({
+        id: provider.id,
+        label:
+          getCatalogEntryFromEntries(catalogEntries, provider.id)
+            ?.displayName ?? provider.label,
       });
     }
-    if (connected.length > 0) return connected;
+    if (available.length > 0) return available;
     return [
       {
         id: selectedProvider,
         label:
-          getCatalogEntry(selectedProvider)?.displayName ??
-          formatProviderLabel(selectedProvider),
+          getCatalogEntryFromEntries(catalogEntries, selectedProvider)
+            ?.displayName ?? formatProviderLabel(selectedProvider),
       },
     ];
-  }, [providers, readyAgentIds, selectedProvider]);
+  }, [catalogEntries, providers, selectedProvider]);
   const selectedProject = availableProjects.find(
     (project) => project.id === selectedProjectId,
   );
@@ -156,6 +158,22 @@ export function ChatInputToolbar({
   const projectTitle = selectedProject?.workingDirs.length
     ? selectedProject.workingDirs.join(", ")
     : undefined;
+  const contextProgress =
+    contextLimit > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
+  const showContextUsage = isContextUsageReady ?? contextLimit > 0;
+  const contextPercentDigits =
+    contextProgress > 0 && contextProgress < 0.1 ? 1 : 0;
+  const usedPercentLabel = formatNumber(contextProgress, {
+    style: "percent",
+    minimumFractionDigits: contextPercentDigits,
+    maximumFractionDigits: contextPercentDigits,
+  });
+  const formatCompactTokenCount = (value: number) =>
+    formatNumber(value, {
+      notation: "compact",
+      compactDisplay: "short",
+      maximumFractionDigits: value < 10_000 ? 1 : 0,
+    });
 
   const handleProjectValueChange = (value: string) => {
     if (value === CREATE_PROJECT_VALUE) {
@@ -166,21 +184,56 @@ export function ChatInputToolbar({
     onProjectChange?.(value === NO_PROJECT_VALUE ? null : value);
   };
 
+  const handleCompactContext = () => {
+    if (!canCompactContext || isCompactingContext || !onCompactContext) {
+      return;
+    }
+
+    setIsContextPopoverOpen(false);
+    void onCompactContext();
+  };
+
+  const handleOpenAutoCompactSettings = () => {
+    setIsContextPopoverOpen(false);
+    requestOpenSettings("compaction");
+  };
+
+  useEffect(() => {
+    if (!showContextUsage && isContextPopoverOpen) {
+      setIsContextPopoverOpen(false);
+    }
+  }, [isContextPopoverOpen, showContextUsage]);
+
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-2",
+        isCompact && "flex-wrap gap-y-2",
+      )}
+    >
       {/* Left side: pickers */}
-      <div className="flex items-center gap-0.5">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-0.5",
+          isCompact && "flex-1",
+        )}
+      >
         {(agentProviders.length > 0 || providersLoading) && (
           <AgentModelPicker
             agents={agentProviders}
             selectedAgentId={selectedProvider}
-            onAgentChange={onProviderChange}
+            onAgentChange={(providerId) => onProviderChange?.(providerId)}
             currentModelId={currentModelId}
+            currentModelProviderId={currentModelProviderId}
             currentModelName={currentModel ?? null}
             availableModels={availableModels}
+            modelsLoading={modelsLoading}
+            modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
+            onOpen={onPickerOpen}
             loading={providersLoading}
             isCompact={isCompact}
+            showSelectedModelInTrigger={selectedPersonaId === null}
           />
         )}
 
@@ -189,7 +242,7 @@ export function ChatInputToolbar({
           value={selectedProjectId ?? NO_PROJECT_VALUE}
           triggerLabel={projectLabel}
           triggerTitle={projectTitle}
-          icon={<ProjectDot color={selectedProject?.color} />}
+          icon={<ProjectSelectorIcon icon={selectedProject?.icon} />}
           triggerVariant="toolbar"
           triggerSize="sm"
           menuLabel={t("toolbar.chooseProject")}
@@ -201,7 +254,7 @@ export function ChatInputToolbar({
                   value: NO_PROJECT_VALUE,
                   label: t("toolbar.noProject"),
                   description: t("toolbar.generalChatWithoutProject"),
-                  icon: <ProjectDot />,
+                  icon: <ProjectSelectorIcon />,
                 },
                 ...availableProjects.map((project) => ({
                   value: project.id,
@@ -209,7 +262,7 @@ export function ChatInputToolbar({
                   description: project.workingDirs.length
                     ? project.workingDirs.join(", ")
                     : undefined,
-                  icon: <ProjectDot color={project.color} />,
+                  icon: <ProjectSelectorIcon icon={project.icon} />,
                 })),
               ],
             },
@@ -234,32 +287,88 @@ export function ChatInputToolbar({
       </div>
 
       {/* Right side: actions */}
-      <div className="flex items-center">
+      <div className={cn("flex shrink-0 items-center", isCompact && "ml-auto")}>
         <div className="flex items-center gap-px">
-          {personas.length > 0 && (
-            <PersonaPicker
-              personas={personas}
-              selectedPersonaId={selectedPersonaId}
-              onPersonaChange={(id) => onPersonaChange?.(id)}
-              onCreatePersona={onCreatePersona}
-              triggerVariant="icon"
-            />
-          )}
-
-          {contextLimit > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label={t("toolbar.contextUsage")}
-              title={t("toolbar.contextUsageTitle", {
-                tokens: formatNumber(contextTokens),
-                limit: formatNumber(contextLimit),
-              })}
+          {showContextUsage && (
+            <Popover
+              open={isContextPopoverOpen}
+              onOpenChange={setIsContextPopoverOpen}
             >
-              <ContextRing tokens={contextTokens} limit={contextLimit} />
-            </Button>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size={isCompact ? "icon-sm" : "sm"}
+                  className={cn(
+                    "group rounded-full bg-transparent text-foreground/80 shadow-none hover:bg-transparent hover:text-foreground data-[state=open]:bg-transparent data-[state=open]:text-foreground",
+                    isCompact ? "px-0" : "px-2.5",
+                  )}
+                  aria-label={t("toolbar.contextUsage")}
+                  title={t("toolbar.contextUsageTitle", {
+                    tokens: formatNumber(contextTokens),
+                    limit: formatNumber(contextLimit),
+                  })}
+                >
+                  <ContextRing
+                    tokens={contextTokens}
+                    limit={contextLimit}
+                    size={18}
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                sideOffset={8}
+                className="w-60 rounded-2xl p-1 text-left"
+              >
+                <div className="px-2 py-1.5 text-sm font-semibold text-foreground">
+                  {t("toolbar.contextWindow")}
+                </div>
+                <div className="space-y-2 px-2 pb-1.5">
+                  <Progress
+                    className="h-1.5 bg-muted"
+                    value={contextProgress * 100}
+                  />
+                  <div className="flex items-center justify-between gap-3 text-xs text-foreground">
+                    <div className="truncate">
+                      {t("toolbar.contextTokensBreakdown", {
+                        tokens: formatCompactTokenCount(contextTokens),
+                        limit: formatCompactTokenCount(contextLimit),
+                      })}
+                    </div>
+                    <div className="shrink-0">{usedPercentLabel}</div>
+                  </div>
+                  {compactionControlsSupported ? (
+                    <div className="flex items-center gap-1 pt-0.5">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="xs"
+                        className="min-w-0 flex-1 justify-center"
+                        onClick={handleCompactContext}
+                        disabled={!canCompactContext || isCompactingContext}
+                      >
+                        {isCompactingContext
+                          ? t("toolbar.compacting")
+                          : t("toolbar.compactNow")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="shrink-0 rounded-full"
+                        onClick={handleOpenAutoCompactSettings}
+                        aria-label={t("toolbar.settings")}
+                        title={t("toolbar.settings")}
+                      >
+                        <Settings2 className="size-4" />
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </PopoverContent>
+            </Popover>
           )}
 
           <DropdownMenu>
@@ -300,14 +409,32 @@ export function ChatInputToolbar({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  disabled
-                  aria-label={t("toolbar.voiceInputSoon")}
+                  disabled={!voiceRecording && (!voiceEnabled || disabled)}
+                  onClick={onVoiceToggle}
+                  aria-label={
+                    voiceRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : t("toolbar.voiceInput")
+                  }
+                  className={cn(
+                    voiceRecording &&
+                      "bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive",
+                    voiceTranscribing && "animate-pulse",
+                  )}
                 >
-                  <Mic />
+                  <Mic className="h-4 w-4" />
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>{t("toolbar.voiceInputSoon")}</TooltipContent>
+            <TooltipContent>
+              {!voiceEnabled
+                ? t("toolbar.voiceInputDisabled")
+                : voiceRecording
+                  ? t("toolbar.voiceInputRecording")
+                  : voiceTranscribing
+                    ? t("toolbar.voiceInputTranscribing")
+                    : t("toolbar.voiceInput")}
+            </TooltipContent>
           </Tooltip>
         </div>
 

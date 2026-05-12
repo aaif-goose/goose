@@ -48,12 +48,13 @@ fn create_test_provider(mock_server_url: &str) -> Box<dyn Provider> {
 async fn setup_mock_server() -> (MockServer, HeaderCapture, Box<dyn Provider>) {
     let mock_server = MockServer::start().await;
     let capture = HeaderCapture::new();
-    let capture_clone = capture.clone();
+    let chat_capture = capture.clone();
+    let responses_capture = capture.clone();
 
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .respond_with(move |req: &Request| {
-            capture_clone.capture_session_header(req);
+            chat_capture.capture_session_header(req);
             // Return SSE streaming format
             let sse_response = format!(
                 "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
@@ -75,6 +76,57 @@ async fn setup_mock_server() -> (MockServer, HeaderCapture, Box<dyn Provider>) {
                         "completion_tokens": 10,
                         "prompt_tokens": 8,
                         "total_tokens": 18
+                    }
+                })
+            );
+            ResponseTemplate::new(200)
+                .set_body_string(sse_response)
+                .insert_header("content-type", "text/event-stream")
+        })
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(move |req: &Request| {
+            responses_capture.capture_session_header(req);
+            let sse_response = format!(
+                "data: {}\n\ndata: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+                json!({
+                    "type": "response.created",
+                    "sequence_number": 1,
+                    "response": {
+                        "id": "resp_test",
+                        "object": "response",
+                        "created_at": 1755133833,
+                        "status": "in_progress",
+                        "model": "gpt-5-nano",
+                        "output": []
+                    }
+                }),
+                json!({
+                    "type": "response.output_text.delta",
+                    "sequence_number": 2,
+                    "item_id": "msg_test",
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": "Hi there! How can I help you today?"
+                }),
+                json!({
+                    "type": "response.completed",
+                    "sequence_number": 3,
+                    "response": {
+                        "id": "resp_test",
+                        "object": "response",
+                        "created_at": 1755133833,
+                        "status": "completed",
+                        "model": "gpt-5-nano",
+                        "output": [],
+                        "usage": {
+                            "input_tokens": 8,
+                            "output_tokens": 10,
+                            "total_tokens": 18
+                        }
                     }
                 })
             );

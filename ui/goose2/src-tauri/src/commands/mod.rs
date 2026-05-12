@@ -1,12 +1,11 @@
 pub mod acp;
 pub mod agent_setup;
 pub mod agents;
-pub mod credentials;
+pub mod distro;
 pub mod doctor;
-pub mod extensions;
 pub mod git;
 pub mod git_changes;
 pub mod model_setup;
-pub mod projects;
-pub mod skills;
+pub mod path_resolver;
+pub mod project_icons;
 pub mod system;

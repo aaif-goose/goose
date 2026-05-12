@@ -26,6 +26,9 @@ pub enum InputResult {
     Recipe(Option<String>),
     Compact,
     ToggleFullToolOutput,
+    Edit(Option<String>),
+    ListSkills,
+    LoadSkills(Vec<String>),
 }
 
 #[derive(Debug)]
@@ -88,85 +91,45 @@ pub fn get_newline_key() -> char {
         .unwrap_or('j')
 }
 
+/// Determine whether the editor should be used for every prompt.
+///
+/// When `goose_prompt_editor` is configured, defaults to `true` (backward compat).
+/// Users can override by explicitly setting `goose_prompt_editor_always` to `false`.
+/// When no editor is configured, defaults to `false`.
+fn should_use_editor_always(
+    prompt_editor: Option<&str>,
+    editor_always_override: Option<bool>,
+) -> bool {
+    let has_editor = prompt_editor.map(|s| !s.is_empty()).unwrap_or(false);
+    editor_always_override.unwrap_or(has_editor)
+}
+
 pub fn get_input(
     editor: &mut Editor<GooseCompleter, rustyline::history::DefaultHistory>,
     conversation_messages: Option<&Vec<String>>,
 ) -> Result<InputResult> {
     let config = Config::global();
-    if let Ok(Some(editor_cmd)) = config.get_goose_prompt_editor() {
-        let messages = extract_recent_messages(conversation_messages);
-        let message_refs: Vec<&str> = messages.iter().map(|s| s.as_str()).collect();
-        let (message, has_meaningful_content) =
-            crate::session::editor::get_editor_input(&editor_cmd, &message_refs)?;
+    let prompt_editor = config.get_goose_prompt_editor().ok().flatten();
+    let editor_always_override = config.get_goose_prompt_editor_always().ok().flatten();
+    let editor_always = should_use_editor_always(prompt_editor.as_deref(), editor_always_override);
 
-        if !has_meaningful_content {
-            return get_regular_input(editor);
+    if editor_always {
+        if let Ok(Some(editor_cmd)) = config.get_goose_prompt_editor() {
+            if !editor_cmd.is_empty() {
+                let messages = extract_recent_messages(conversation_messages);
+                let message_refs: Vec<&str> = messages.iter().map(|s| s.as_str()).collect();
+                let (message, has_meaningful_content) =
+                    crate::session::editor::get_editor_input(&editor_cmd, &message_refs, None)?;
+
+                if has_meaningful_content {
+                    editor.add_history_entry(message.as_str())?;
+                    return Ok(InputResult::Message(message));
+                }
+                // Empty editor content — fall through to inline prompt
+            }
         }
-        editor.add_history_entry(message.as_str())?;
-        return Ok(InputResult::Message(message));
     }
 
-    let completion_cache = editor
-        .helper()
-        .map(|h| h.completion_cache.clone())
-        .ok_or_else(|| anyhow::anyhow!("Editor helper not set"))?;
-
-    let newline_key = get_newline_key();
-    editor.bind_sequence(
-        rustyline::KeyEvent(
-            rustyline::KeyCode::Char(newline_key),
-            rustyline::Modifiers::CTRL,
-        ),
-        rustyline::EventHandler::Simple(rustyline::Cmd::Newline),
-    );
-
-    editor.bind_sequence(
-        rustyline::KeyEvent(rustyline::KeyCode::Char('c'), rustyline::Modifiers::CTRL),
-        rustyline::EventHandler::Conditional(Box::new(CtrlCHandler::new(completion_cache))),
-    );
-
-    let prompt = get_input_prompt_string();
-
-    let input = match editor.readline(&prompt) {
-        Ok(text) => text,
-        Err(e) => match e {
-            rustyline::error::ReadlineError::Interrupted => return Ok(InputResult::Exit),
-            rustyline::error::ReadlineError::Eof => return Ok(InputResult::Exit),
-            _ => return Err(e.into()),
-        },
-    };
-
-    // Add valid input to history (history saving to file is handled in the Session::interactive method)
-    if !input.trim().is_empty() {
-        editor.add_history_entry(input.as_str())?;
-    }
-
-    // Handle non-slash commands first
-    if !input.starts_with('/') {
-        let trimmed = input.trim();
-        if trimmed.is_empty()
-            || trimmed.eq_ignore_ascii_case("exit")
-            || trimmed.eq_ignore_ascii_case("quit")
-        {
-            return Ok(if trimmed.is_empty() {
-                InputResult::Retry
-            } else {
-                InputResult::Exit
-            });
-        }
-        return Ok(InputResult::Message(trimmed.to_string()));
-    }
-
-    // Handle slash commands
-    match handle_slash_command(&input) {
-        Some(result) => Ok(result),
-        None => Ok(InputResult::Message(input.trim().to_string())),
-    }
-}
-
-fn get_regular_input(
-    editor: &mut Editor<GooseCompleter, rustyline::history::DefaultHistory>,
-) -> Result<InputResult> {
     let completion_cache = editor
         .helper()
         .map(|h| h.completion_cache.clone())
@@ -241,6 +204,9 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_RECIPE: &str = "/recipe";
     const CMD_COMPACT: &str = "/compact";
     const CMD_SUMMARIZE_DEPRECATED: &str = "/summarize";
+    const CMD_EDIT: &str = "/edit";
+    const CMD_EDIT_WITH_SPACE: &str = "/edit ";
+    const CMD_SKILLS: &str = "/skills";
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
@@ -304,11 +270,33 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         s if s == CMD_CLEAR => Some(InputResult::Clear),
         s if s.starts_with(CMD_RECIPE) => parse_recipe_command(s),
         s if s == CMD_COMPACT => Some(InputResult::Compact),
+        // Match "/skills" exactly or "/skills " with args - avoids matching e.g. "/skillsextra"
+        s if s == CMD_SKILLS || s.starts_with(&format!("{CMD_SKILLS} ")) => {
+            let args = s.get(CMD_SKILLS.len()..).unwrap_or("").trim();
+            if args.is_empty() {
+                Some(InputResult::ListSkills)
+            } else {
+                let names: Vec<String> = args.split_whitespace().map(String::from).collect();
+                Some(InputResult::LoadSkills(names))
+            }
+        }
         s if s == CMD_SUMMARIZE_DEPRECATED => {
             println!("{}", console::style("⚠️  Note: /summarize has been renamed to /compact and will be removed in a future release.").yellow());
             Some(InputResult::Compact)
         }
         "/r" => Some(InputResult::ToggleFullToolOutput),
+        s if s == CMD_EDIT => Some(InputResult::Edit(None)),
+        s if s.starts_with(CMD_EDIT_WITH_SPACE) => {
+            let prefill = s
+                .strip_prefix(CMD_EDIT_WITH_SPACE)
+                .unwrap_or_default()
+                .trim();
+            if prefill.is_empty() {
+                Some(InputResult::Edit(None))
+            } else {
+                Some(InputResult::Edit(Some(prefill.to_string())))
+            }
+        }
         _ => None,
     }
 }
@@ -440,6 +428,9 @@ fn print_help() {
 /recipe [filepath] - Generate a recipe from the current conversation and save it to the specified filepath (must end with .yaml).
                        If no filepath is provided, it will be saved to ./recipe.yaml.
 /compact - Compact the current conversation to reduce context length while preserving key information.
+/edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
+               Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
+/skills - List available skills or enable skills by name (usage: /skills [<name>...])
 /? or /help - Display this help message
 /clear - Clears the current chat history
 
@@ -451,7 +442,7 @@ Up/Down arrows - Navigate through command history"
 }
 
 /// Extract recent messages for editor context
-fn extract_recent_messages(conversation_messages: Option<&Vec<String>>) -> Vec<String> {
+pub(super) fn extract_recent_messages(conversation_messages: Option<&Vec<String>>) -> Vec<String> {
     match conversation_messages {
         Some(messages) => {
             // Return the messages in reverse chronological order (newest first)
@@ -465,9 +456,13 @@ fn extract_recent_messages(conversation_messages: Option<&Vec<String>>) -> Vec<S
 fn print_editor_help() {
     println!(
         "Editor Input:
-When goose_prompt_editor is configured, prompts will open in your editor instead of the CLI.
-Previous conversation is included as markdown headings for context.
-Configure with: goose configure set goose_prompt_editor \"vim\""
+  /edit opens your configured editor for composing prompts.
+  Use '/edit some text' to pre-fill the editor with initial text.
+  Previous conversation is included as markdown headings for context.
+  Configure editor: goose configure set goose_prompt_editor \"vim\"
+  Falls back to $VISUAL or $EDITOR if goose_prompt_editor is not set.
+  When goose_prompt_editor is set, the editor is used for every prompt by default.
+  To use inline prompts with on-demand /edit: goose configure set goose_prompt_editor_always false"
     );
 }
 
@@ -700,5 +695,114 @@ mod tests {
         // Test recipe with invalid extension
         let result = handle_slash_command("/recipe /path/to/file.txt");
         assert!(matches!(result, Some(InputResult::Retry)));
+    }
+
+    // --- should_use_editor_always tests ---
+
+    #[test]
+    fn test_editor_always_defaults_true_when_prompt_editor_set() {
+        assert!(should_use_editor_always(Some("vim"), None));
+    }
+
+    #[test]
+    fn test_editor_always_defaults_false_when_no_prompt_editor() {
+        assert!(!should_use_editor_always(None, None));
+    }
+
+    #[test]
+    fn test_editor_always_defaults_false_when_prompt_editor_empty() {
+        assert!(!should_use_editor_always(Some(""), None));
+    }
+
+    #[test]
+    fn test_editor_always_explicit_false_overrides_default() {
+        // Even with a prompt editor configured, explicit false wins
+        assert!(!should_use_editor_always(Some("vim"), Some(false)));
+    }
+
+    #[test]
+    fn test_editor_always_explicit_true_without_editor() {
+        // Explicit true works even without a prompt editor configured
+        assert!(should_use_editor_always(None, Some(true)));
+    }
+
+    #[test]
+    fn test_editor_always_explicit_true_with_editor() {
+        assert!(should_use_editor_always(Some("vim"), Some(true)));
+    }
+
+    #[test]
+    fn test_editor_always_explicit_false_without_editor() {
+        assert!(!should_use_editor_always(None, Some(false)));
+    }
+
+    #[test]
+    fn test_edit_command() {
+        // Test /edit with no arguments
+        assert!(matches!(
+            handle_slash_command("/edit"),
+            Some(InputResult::Edit(None))
+        ));
+
+        // Test /edit with prefill text
+        if let Some(InputResult::Edit(Some(text))) = handle_slash_command("/edit fix the login bug")
+        {
+            assert_eq!(text, "fix the login bug");
+        } else {
+            panic!("Expected Edit with prefill text");
+        }
+
+        // Test /edit with only whitespace after command
+        assert!(matches!(
+            handle_slash_command("/edit   "),
+            Some(InputResult::Edit(None))
+        ));
+
+        // Test /editfoo is not a valid command
+        assert!(handle_slash_command("/editfoo").is_none());
+    }
+
+    #[test]
+    fn test_skill_command() {
+        // Test with a single skill name
+        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills coding") else {
+            panic!(
+                "Expected LoadSkills, got {:?}",
+                handle_slash_command("/skills coding")
+            );
+        };
+        assert_eq!(names, vec!["coding"]);
+
+        // Test with multiple skill names
+        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills coding insight")
+        else {
+            panic!(
+                "Expected LoadSkills, got {:?}",
+                handle_slash_command("/skills coding insight")
+            );
+        };
+        assert_eq!(names, vec!["coding", "insight"]);
+
+        // Test with extra whitespace
+        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills  my-skill  ")
+        else {
+            panic!(
+                "Expected LoadSkills, got {:?}",
+                handle_slash_command("/skills  my-skill  ")
+            );
+        };
+        assert_eq!(names, vec!["my-skill"]);
+
+        // Test with no name: ListSkills
+        assert!(matches!(
+            handle_slash_command("/skills"),
+            Some(InputResult::ListSkills)
+        ));
+
+        // Test with only whitespace after /skills: ListSkills
+        assert!(matches!(
+            handle_slash_command("/skills   "),
+            Some(InputResult::ListSkills)
+        ));
     }
 }

@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
-import type { WorkingContext } from "../../stores/chatSessionStore";
+import type { ActiveWorkspace } from "../../stores/chatSessionStore";
 import { formatErrorMessage } from "./formatError";
 import { shortenPath } from "./WorkingContextPicker";
 
@@ -35,7 +35,7 @@ interface WorkspaceCreateDialogProps {
   currentPath: string;
   activeBranch: string | null;
   onClose: () => void;
-  onContextChange: (context: WorkingContext) => void;
+  onContextChange: (context: ActiveWorkspace) => void;
   onCreateBranch: (
     path: string,
     name: string,

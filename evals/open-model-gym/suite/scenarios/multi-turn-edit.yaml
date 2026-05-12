@@ -12,6 +12,8 @@ setup:
     version = "0.1.0"
     edition = "2021"
 
+    [workspace]
+
   src/main.rs: |
     mod models;
 

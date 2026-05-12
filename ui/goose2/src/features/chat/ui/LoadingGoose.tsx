@@ -21,12 +21,12 @@ const LOADING_SHIMMER_REPEAT_DELAY_S = 0.9;
 
 const MESSAGE_KEY_BY_STATE: Record<
   Exclude<LoadingChatState, "idle">,
-  "thinking" | "responding"
+  "thinking" | "responding" | "compacting"
 > = {
   thinking: "thinking",
   streaming: "responding",
   waiting: "responding",
-  compacting: "responding",
+  compacting: "compacting",
 };
 
 export function LoadingGoose({ chatState = "idle" }: LoadingGooseProps) {

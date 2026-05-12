@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::permission::Permission;
-use sacp::schema::{
+use agent_client_protocol::schema::{
     PermissionOption, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome,
 };
@@ -110,7 +110,9 @@ fn find_option(options: &[PermissionOption], kind: PermissionOptionKind) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sacp::schema::{PermissionOptionId, ToolCallId, ToolCallUpdate, ToolCallUpdateFields};
+    use agent_client_protocol::schema::{
+        PermissionOptionId, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+    };
     use test_case::test_case;
 
     fn make_request(options: Vec<PermissionOption>) -> RequestPermissionRequest {

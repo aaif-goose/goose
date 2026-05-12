@@ -10,7 +10,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "1.31.0"
+    "version": "1.34.0"
   },
   "paths": {
     "/action-required/tool-confirmation": {
@@ -747,29 +747,6 @@
         }
       }
     },
-    "/config/backup": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "backup_config",
-        "responses": {
-          "200": {
-            "description": "Config file backed up",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
     "/config/canonical-model-info": {
       "post": {
         "tags": [
@@ -1058,29 +1035,6 @@
           },
           "404": {
             "description": "Extension not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/config/init": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "init_config",
-        "responses": {
-          "200": {
-            "description": "Config initialization check completed",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
           },
           "500": {
             "description": "Internal server error"
@@ -1481,29 +1435,6 @@
           },
           "500": {
             "description": "Unable to get the configuration value"
-          }
-        }
-      }
-    },
-    "/config/recover": {
-      "post": {
-        "tags": [
-          "super::routes::config_management"
-        ],
-        "operationId": "recover_config",
-        "responses": {
-          "200": {
-            "description": "Config recovery attempted",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
           }
         }
       }
@@ -2283,6 +2214,19 @@
         }
       }
     },
+    "/local-inference/sync-featured": {
+      "post": {
+        "tags": [
+          "super::routes::local_inference"
+        ],
+        "operationId": "sync_featured_models",
+        "responses": {
+          "200": {
+            "description": "Featured models synced to registry"
+          }
+        }
+      }
+    },
     "/mcp-ui-proxy": {
       "get": {
         "tags": [
@@ -2805,7 +2749,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Scheduled job deleted successfully"
+            "description": "Scheduled job removed successfully"
           },
           "404": {
             "description": "Scheduled job not found"
@@ -4152,7 +4096,8 @@
         "enum": [
           "Builtin",
           "Recipe",
-          "Skill"
+          "Skill",
+          "Agent"
         ]
       },
       "ConfigKey": {
@@ -4629,6 +4574,10 @@
             },
             "nullable": true
           },
+          "model_doc_link": {
+            "type": "string",
+            "nullable": true
+          },
           "models": {
             "type": "array",
             "items": {
@@ -4640,6 +4589,12 @@
           },
           "requires_auth": {
             "type": "boolean"
+          },
+          "setup_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "skip_canonical_filtering": {
             "type": "boolean"
@@ -5119,6 +5074,11 @@
                 "type": "string",
                 "description": "The name used to identify this extension"
               },
+              "socket": {
+                "type": "string",
+                "description": "Optional Unix domain socket path for HTTP-over-UDS transport.\nWhen set, the HTTP connection is routed through this socket while\n`uri` is used for the Host header and path.\nUse `@name` for Linux abstract sockets.",
+                "nullable": true
+              },
               "timeout": {
                 "type": "integer",
                 "format": "int64",
@@ -5549,8 +5509,34 @@
           },
           "src": {
             "type": "string"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IconTheme"
+              },
+              {
+                "type": "object"
+              }
+            ]
           }
         }
+      },
+      "IconTheme": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "light"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "dark"
+            ]
+          }
+        ]
       },
       "ImageContent": {
         "type": "object",
@@ -6820,6 +6806,11 @@
             "type": "string",
             "description": "Link to the docs where models can be found"
           },
+          "model_selection_hint": {
+            "type": "string",
+            "description": "Hint shown in the model picker when this provider manages its own model selection.",
+            "nullable": true
+          },
           "name": {
             "type": "string",
             "description": "The unique identifier for this provider"
@@ -7729,6 +7720,11 @@
             "format": "int32",
             "nullable": true
           },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "conversation": {
             "allOf": [
               {
@@ -7775,6 +7771,10 @@
             "format": "int32",
             "nullable": true
           },
+          "project_id": {
+            "type": "string",
+            "nullable": true
+          },
           "provider_name": {
             "type": "string",
             "nullable": true
@@ -7793,10 +7793,6 @@
           },
           "session_type": {
             "$ref": "#/components/schemas/SessionType"
-          },
-          "thread_id": {
-            "type": "string",
-            "nullable": true
           },
           "total_tokens": {
             "type": "integer",
@@ -7942,14 +7938,6 @@
             "items": {
               "$ref": "#/components/schemas/Message"
             },
-            "nullable": true
-          },
-          "recipe_name": {
-            "type": "string",
-            "nullable": true
-          },
-          "recipe_version": {
-            "type": "string",
             "nullable": true
           },
           "request_id": {

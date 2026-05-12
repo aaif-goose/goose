@@ -123,7 +123,7 @@ jobs:
             echo ""
             echo "### npm Packages"
             cd ui
-            for pkg in acp text goose-binary/*/; do
+            for pkg in sdk text goose-binary/*/; do
               if [ -f "$pkg/package.json" ]; then
                 name=$(jq -r '.name' "$pkg/package.json")
                 version=$(jq -r '.version' "$pkg/package.json")
@@ -139,7 +139,7 @@ jobs:
     environment: npm-production-publishing
     steps:
       - name: Download built packages
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: npm-packages
           path: ui/
@@ -165,7 +165,7 @@ jobs:
           # Publish each package individually so one failure doesn't abort the rest.
           # Skips packages whose version is already published (409/403).
           failed=0
-          for pkg in acp goose-binary/*/ text; do
+          for pkg in sdk goose-binary/*/ text; do
             if [ -f "$pkg/package.json" ]; then
               name=$(jq -r '.name' "$pkg/package.json")
               version=$(jq -r '.version' "$pkg/package.json")
@@ -195,7 +195,7 @@ jobs:
           {
             echo "## 🚀 Published Packages"
             echo ""
-            for pkg in acp text goose-binary/*/; do
+            for pkg in sdk text goose-binary/*/; do
               if [ -f "$pkg/package.json" ]; then
                 name=$(jq -r '.name' "$pkg/package.json")
                 version=$(jq -r '.version' "$pkg/package.json")

@@ -369,6 +369,7 @@ impl CliSession {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(timeout),
+            socket: None,
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -499,6 +500,28 @@ impl CliSession {
 
     /// Start an interactive session, optionally with an initial message
     pub async fn interactive(&mut self, prompt: Option<String>) -> Result<()> {
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionStart, &self.session_id)
+            .await;
+
+        let result = self.run_interactive(prompt).await;
+
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
+            .await;
+
+        if result.is_ok() {
+            println!(
+                "\n  {} {}",
+                console::style("●").red(),
+                console::style(format!("session closed · {}", &self.session_id)).dim()
+            );
+        }
+
+        result
+    }
+
+    async fn run_interactive(&mut self, prompt: Option<String>) -> Result<()> {
         if let Some(prompt) = prompt {
             let msg = Message::user().with_text(&prompt);
             self.process_message(msg, CancellationToken::default(), true)
@@ -531,15 +554,9 @@ impl CliSession {
             if matches!(input, InputResult::Exit) {
                 break;
             }
-            self.handle_input(input, &history_manager, &mut editor)
+            self.handle_input(input, &history_manager, &mut editor, &conversation_strings)
                 .await?;
         }
-
-        println!(
-            "\n  {} {}",
-            console::style("●").red(),
-            console::style(format!("session closed · {}", &self.session_id)).dim()
-        );
 
         Ok(())
     }
@@ -568,6 +585,7 @@ impl CliSession {
         input: InputResult,
         history: &HistoryManager,
         editor: &mut rustyline::Editor<GooseCompleter, rustyline::history::DefaultHistory>,
+        conversation_messages: &[String],
     ) -> Result<()> {
         match input {
             InputResult::Message(content) => {
@@ -634,6 +652,43 @@ impl CliSession {
             InputResult::Compact => {
                 history.save(editor);
                 self.handle_compact().await?;
+            }
+            InputResult::Edit(prefill) => {
+                history.save(editor);
+                match crate::session::editor::resolve_editor_command() {
+                    Some(editor_cmd) => {
+                        let messages: Vec<&str> =
+                            conversation_messages.iter().map(|s| s.as_str()).collect();
+                        match crate::session::editor::get_editor_input(
+                            &editor_cmd,
+                            &messages,
+                            prefill.as_deref(),
+                        ) {
+                            Ok((message, true)) => {
+                                self.handle_message_input(&message, history, editor).await?;
+                            }
+                            Ok((_, false)) => {}
+                            Err(e) => {
+                                output::render_error(&format!("Failed to open editor: {}", e));
+                            }
+                        }
+                    }
+                    None => {
+                        output::render_error(
+                            "No editor found. Set one with:\n  \
+                                 goose configure set goose_prompt_editor \"vim\"\n  \
+                                 or set $VISUAL or $EDITOR in your shell.",
+                        );
+                    }
+                }
+            }
+            InputResult::LoadSkills(names) => {
+                history.save(editor);
+                self.handle_load_skills(&names).await?;
+            }
+            InputResult::ListSkills => {
+                history.save(editor);
+                self.handle_list_skills().await?;
             }
         }
         Ok(())
@@ -844,6 +899,55 @@ impl CliSession {
         }
     }
 
+    async fn handle_load_skills(&mut self, names: &[String]) -> Result<()> {
+        // NOTE: We don't validate the skill names here because the load_skill tool will
+        // handle that and provide feedback to the user if any skill names are invalid.
+        let message = format!(
+            "Use the load_skill tool to load the following skills: {}.",
+            names
+                .iter()
+                .map(|n| format!("\"{}\"", n))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        self.push_message(Message::user().with_text(&message));
+        output::show_thinking();
+        let result = self
+            .process_agent_response(true, CancellationToken::default())
+            .await;
+        output::hide_thinking();
+        result?;
+
+        Ok(())
+    }
+
+    async fn handle_list_skills(&mut self) -> Result<()> {
+        use comfy_table::{presets, Cell, ContentArrangement, Table};
+        use goose::skills::list_installed_skills;
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let skills = list_installed_skills(Some(&cwd));
+
+        if skills.is_empty() {
+            println!("{}", console::style("No skills available.").yellow());
+            return Ok(());
+        }
+
+        let mut table = Table::new();
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+        table.load_preset(presets::ASCII_FULL);
+        table.set_header(vec!["Skill", "Description"]);
+
+        let mut sorted_skills = skills;
+        sorted_skills.sort_by(|a, b| a.name.cmp(&b.name));
+
+        for skill in &sorted_skills {
+            table.add_row(vec![Cell::new(&skill.name), Cell::new(&skill.description)]);
+        }
+
+        println!("{table}");
+        Ok(())
+    }
+
     async fn handle_compact(&mut self) -> Result<()> {
         let prompt = "Are you sure you want to compact this conversation? This will condense the message history.";
         let should_summarize = match cliclack::confirm(prompt).initial_value(true).interact() {
@@ -956,9 +1060,17 @@ impl CliSession {
 
     /// Process a single message and exit
     pub async fn headless(&mut self, prompt: String) -> Result<()> {
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionStart, &self.session_id)
+            .await;
         let message = Message::user().with_text(&prompt);
-        self.process_message(message, CancellationToken::default(), false)
-            .await?;
+        let result = self
+            .process_message(message, CancellationToken::default(), false)
+            .await;
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
+            .await;
+        result?;
         Ok(())
     }
 
@@ -2130,6 +2242,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -2145,6 +2258,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -2160,6 +2274,7 @@ mod tests {
             headers: HashMap::new(),
             description: goose::config::DEFAULT_EXTENSION_DESCRIPTION.to_string(),
             timeout: Some(300),
+            socket: None,
             bundled: None,
             available_tools: vec![],
         }

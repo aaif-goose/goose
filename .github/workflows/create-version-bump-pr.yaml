@@ -67,11 +67,22 @@ jobs:
 
     - name: Create Pull Request
       run: |
+        PR_BODY=$(cat <<'EOF'
+        Bumps version to **${{ env.version }}**.
+
+        **Please follow these steps:**
+
+        1. Close and reopen this PR to trigger CI checks. Reason: workflows don't run on PRs opened by `GITHUB_TOKEN` ([docs](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow)).
+        2. Review and resolve any merge conflicts.
+        3. Approve and merge this PR.
+        4. The `release/${{ env.version }}` PR will be created automatically.
+        EOF
+        )
         PR_URL=$(gh pr create \
           -B main \
           -H "${{ env.branch_name }}" \
           --title "chore(release): bump version to ${{ env.version }} (minor)" \
-          --body "Bumps version to **${{ env.version }}**. Merging this PR will trigger creation of the \`release/${{ env.version }}\` branch and release PR.")
+          --body "$PR_BODY")
         echo "pr_url=$PR_URL" >> $GITHUB_ENV
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

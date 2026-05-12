@@ -1,8 +1,6 @@
-// Provider types — these map to goose serve provider names.
-// All sessions run through goose serve; the provider ID selects which
-// backend provider goose uses for inference.  The list is dynamic
-// (fetched from the backend via discover_acp_providers) so this is a
-// plain string rather than a narrow union.
+// Provider types map to goose serve provider names.
+// The provider list is dynamic, so this remains a plain string rather than
+// a narrow union.
 export type ProviderType = string;
 
 export interface ProviderConfig {
@@ -23,10 +21,8 @@ export interface ModelInfo {
   supportsThinking: boolean;
 }
 
-// Avatar type — either a remote URL or a local file in ~/.goose/avatars/
-export type Avatar =
-  | { type: "url"; value: string }
-  | { type: "local"; value: string };
+// Avatar type — remote, data, and file URLs are stored directly in source properties.
+export type Avatar = { type: "url"; value: string };
 
 // Persona types (from sprout)
 export interface Persona {
@@ -38,6 +34,7 @@ export interface Persona {
   model?: string;
   isBuiltin: boolean;
   isFromDisk?: boolean;
+  writable?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,4 +85,4 @@ export interface CreateAgentRequest {
   acpEndpoint?: string;
 }
 
-// Session, TokenState, ChatState, and MessageEventType are defined in ./chat.ts
+// Session, TokenState, and ChatState are defined in ./chat.ts

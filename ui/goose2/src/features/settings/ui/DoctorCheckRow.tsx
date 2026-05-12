@@ -124,21 +124,19 @@ export function DoctorCheckRow({ check, onFixed }: DoctorCheckRowProps) {
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle>{t("settings:doctor.runFix")}</AlertDialogTitle>
-            <AlertDialogDescription className="break-all font-mono">
-              {check.fixCommand}
+            <AlertDialogDescription>
+              {t("settings:doctor.runFixDescription")}
             </AlertDialogDescription>
+            <code className="block break-all rounded bg-muted px-3 py-2 font-mono text-xs">
+              {check.fixCommand}
+            </code>
           </AlertDialogHeader>
           {fixError && <p className="text-xs text-destructive">{fixError}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={fixing}>
               {t("common:actions.cancel")}
             </AlertDialogCancel>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={fixing}
-              onClick={confirmFix}
-            >
+            <Button disabled={fixing} onClick={confirmFix}>
               {fixing && <Loader2 className="h-3 w-3 animate-spin" />}
               {fixing
                 ? t("common:actions.running")

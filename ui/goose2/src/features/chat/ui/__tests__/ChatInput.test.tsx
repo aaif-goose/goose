@@ -2,8 +2,23 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { ChatInput } from "../ChatInput";
+import { ChatInput } from "./chatInputTestUtils";
+import { ChatInputToolbar } from "../ChatInputToolbar";
+import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import type { Persona } from "@/shared/types/agents";
+
+const mockVoiceDictation = {
+  isEnabled: true,
+  isRecording: false,
+  isTranscribing: false,
+  isStarting: vi.fn(() => false),
+  stopRecording: vi.fn(),
+  toggleRecording: vi.fn(),
+};
+
+vi.mock("../hooks/useVoiceDictation", () => ({
+  useVoiceDictation: () => mockVoiceDictation,
+}));
 
 vi.mock("@/features/providers/hooks/useAgentProviderStatus", () => ({
   useAgentProviderStatus: () => ({
@@ -19,6 +34,10 @@ const mockListFilesForMentions = vi.fn<
 vi.mock("@/shared/api/system", () => ({
   listFilesForMentions: (roots: string[], maxResults?: number) =>
     mockListFilesForMentions(roots, maxResults),
+}));
+
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
 }));
 
 const TEST_PERSONAS: Persona[] = [
@@ -43,7 +62,7 @@ const TEST_PERSONAS: Persona[] = [
 function StatefulChatInput({
   onSend = vi.fn(),
 }: {
-  onSend?: (text: string, personaId?: string) => void;
+  onSend?: (text: string, personaId?: string) => boolean | Promise<boolean>;
 }) {
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(
     "builtin-solo",
@@ -63,12 +82,19 @@ describe("ChatInput", () => {
   beforeEach(() => {
     mockListFilesForMentions.mockClear();
     mockListFilesForMentions.mockResolvedValue([]);
+    mockVoiceDictation.isEnabled = true;
+    mockVoiceDictation.isRecording = false;
+    mockVoiceDictation.isTranscribing = false;
+    mockVoiceDictation.isStarting.mockReset();
+    mockVoiceDictation.isStarting.mockReturnValue(false);
+    mockVoiceDictation.stopRecording.mockReset();
+    mockVoiceDictation.toggleRecording.mockReset();
   });
 
   it("renders with default placeholder", () => {
     render(<ChatInput onSend={vi.fn()} />);
     expect(
-      screen.getByPlaceholderText("Message Goose, @ to mention personas"),
+      screen.getByPlaceholderText("Chat with Goose or @ mention an agent"),
     ).toBeInTheDocument();
   });
 
@@ -128,7 +154,7 @@ describe("ChatInput", () => {
     ).toHaveTextContent("GPT-4o");
   });
 
-  it("shows default model name in model picker", () => {
+  it("shows provider label when no current model is selected", () => {
     render(
       <ChatInput
         onSend={vi.fn()}
@@ -138,7 +164,27 @@ describe("ChatInput", () => {
     );
     expect(
       screen.getByRole("button", { name: /choose agent and model/i }),
-    ).toHaveTextContent("Claude Sonnet 4");
+    ).toHaveTextContent("Goose");
+  });
+
+  it("shows provider label while the current model id is unresolved", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        currentModelId="opus"
+        currentModelProviderId="claude-acp"
+        currentModel="opus"
+        availableModels={[]}
+        providers={[{ id: "claude-acp", label: "Claude Code" }]}
+        selectedProvider="claude-acp"
+      />,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /choose agent and model/i,
+    });
+    expect(trigger).toHaveTextContent("Claude Code");
+    expect(trigger).not.toHaveTextContent("opus");
   });
 
   it("shows default provider label", () => {
@@ -153,6 +199,18 @@ describe("ChatInput", () => {
       name: /choose agent and model/i,
     });
     expect(providerButton).toHaveTextContent("Goose");
+  });
+
+  it("resets the textarea when initialValue changes", () => {
+    const { rerender } = render(
+      <ChatInput onSend={vi.fn()} initialValue="alpha draft" />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveValue("alpha draft");
+
+    rerender(<ChatInput onSend={vi.fn()} initialValue="" />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
   });
 
   it("opens the agent and model picker", async () => {
@@ -223,6 +281,92 @@ describe("ChatInput", () => {
     expect(screen.getByText("goose2")).toBeInTheDocument();
   });
 
+  it("opens a context usage popover when token tracking is available", async () => {
+    const user = userEvent.setup();
+    render(
+      <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={8192} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+
+    expect(screen.getByText("Context window")).toBeInTheDocument();
+    expect(screen.getByText("1.5K / 8.2K tokens used")).toBeInTheDocument();
+    expect(screen.getByText("19%")).toBeInTheDocument();
+  });
+
+  it("runs compaction from the context usage popover", async () => {
+    const user = userEvent.setup();
+    const onCompactContext = vi.fn();
+
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        contextTokens={1536}
+        contextLimit={8192}
+        canCompactContext
+        onCompactContext={onCompactContext}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+    await user.click(screen.getByRole("button", { name: "Compact" }));
+
+    expect(onCompactContext).toHaveBeenCalledOnce();
+  });
+
+  it("opens compaction settings from the context usage popover", async () => {
+    const user = userEvent.setup();
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        selectedProvider="goose"
+        contextTokens={1536}
+        contextLimit={8192}
+        canCompactContext
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /context usage/i }));
+
+    await user.click(screen.getByRole("button", { name: /settings/i }));
+
+    expect(dispatchEventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: OPEN_SETTINGS_EVENT,
+        detail: { section: "compaction" },
+      }),
+    );
+
+    dispatchEventSpy.mockRestore();
+  });
+
+  it("hides the context usage control when the context limit is unavailable", () => {
+    render(
+      <ChatInput onSend={vi.fn()} contextTokens={1536} contextLimit={0} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /context usage/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the context usage control until usage is ready", () => {
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        contextTokens={1536}
+        contextLimit={8192}
+        isContextUsageReady={false}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /context usage/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows stop button when streaming", () => {
     render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} isStreaming />);
     expect(
@@ -265,7 +409,7 @@ describe("ChatInput", () => {
     await user.click(screen.getByRole("option", { name: /reviewer/i }));
 
     expect(input).toHaveValue("");
-    expect(screen.getByText("@Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
   });
 
   it("shows project files in @mention results and inserts the selected path", async () => {
@@ -375,6 +519,60 @@ describe("ChatInput", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("does not stop dictation when send is blocked", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    mockVoiceDictation.isRecording = true;
+
+    render(
+      <ChatInput
+        onSend={onSend}
+        isStreaming
+        queuedMessage={{ text: "queued msg" }}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "another message");
+    await user.keyboard("{Enter}");
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockVoiceDictation.stopRecording).not.toHaveBeenCalled();
+  });
+
+  it("keeps the mic toggle enabled while recording even if voice input becomes unavailable", () => {
+    render(
+      <ChatInputToolbar
+        personaPicker={{ selectedPersonaId: null }}
+        agentModelPicker={{
+          providers: [],
+          selectedProvider: "goose",
+          onProviderChange: vi.fn(),
+          availableModels: [],
+        }}
+        projectPicker={{
+          selectedProjectId: null,
+          availableProjects: [],
+        }}
+        contextUsage={{
+          contextTokens: 0,
+          contextLimit: 0,
+        }}
+        composerActions={{
+          canSend: false,
+          isStreaming: false,
+          hasQueuedMessage: false,
+          onSend: vi.fn(),
+          voiceEnabled: false,
+          voiceRecording: true,
+          onVoiceToggle: vi.fn(),
+        }}
+        isCompact={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Listening..." })).toBeEnabled();
+  });
+
   it("keeps the selected assistant chip after sending subsequent messages", async () => {
     const onSend = vi.fn();
     const user = userEvent.setup();
@@ -389,6 +587,6 @@ describe("ChatInput", () => {
     await user.keyboard("{Enter}");
 
     expect(onSend).toHaveBeenCalledWith("hello", "reviewer", undefined);
-    expect(screen.getByText("@Reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
   });
 });

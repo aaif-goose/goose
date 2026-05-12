@@ -1,4 +1,4 @@
-import { Sliders, Bot, Settings } from 'lucide-react';
+import { Sliders, Bot, LoaderCircle, Settings } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import { SwitchModelModal } from '../subcomponents/SwitchModelModal';
@@ -25,6 +25,10 @@ const i18n = defineMessages({
   currentModel: {
     id: 'modelsBottomBar.currentModel',
     defaultMessage: 'Current model',
+  },
+  loadingModel: {
+    id: 'modelsBottomBar.loadingModel',
+    defaultMessage: 'Loading model...',
   },
   changeModel: {
     id: 'modelsBottomBar.changeModel',
@@ -73,10 +77,13 @@ export default function ModelsBottomBar({
   const [isLocalModelSettingsOpen, setIsLocalModelSettingsOpen] = useState(false);
   const [providerDefaultModel, setProviderDefaultModel] = useState<string | null>(null);
 
-  // Hide label while session data is still being fetched (avoids flashing
-  // the config default before the session's actual model arrives).
-  const isModelLoading = sessionId && !sessionLoaded;
+  // Show a visible loading placeholder while session metadata is still being fetched,
+  // rather than flashing the config default or leaving the footer blank.
+  const isModelLoading = Boolean(sessionId && !sessionLoaded);
   const displayModel = currentModel || providerDefaultModel || displayModelName;
+  const loadingModelLabel = intl.formatMessage(i18n.loadingModel);
+  const triggerLabel = isModelLoading ? loadingModelLabel : displayModel;
+  const menuModelLabel = isModelLoading ? loadingModelLabel : displayModelName;
 
   useEffect(() => {
     if (!currentProvider) return;
@@ -121,16 +128,24 @@ export default function ModelsBottomBar({
         <DropdownMenuTrigger className="flex items-center hover:cursor-pointer max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 hover:text-text-primary transition-colors">
           <div className="flex items-center truncate max-w-[130px] md:max-w-[200px] lg:max-w-[360px] min-w-0">
             <Bot className="mr-1 h-4 w-4 flex-shrink-0" />
-            <span className={`truncate text-xs${isModelLoading ? ' opacity-0' : ''}`}>
-              {displayModel}
-            </span>
+            {isModelLoading ? (
+              <span
+                data-testid="model-loading-state"
+                className="inline-flex items-center gap-1 truncate text-xs"
+              >
+                <LoaderCircle className="h-3 w-3 animate-spin flex-shrink-0" />
+                <span className="truncate">{triggerLabel}</span>
+              </span>
+            ) : (
+              <span className="truncate text-xs">{triggerLabel}</span>
+            )}
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="center" className="w-64 text-sm">
           <h6 className="text-xs text-text-primary mt-2 ml-2">{intl.formatMessage(i18n.currentModel)}</h6>
           <p className="flex items-center justify-between text-sm mx-2 pb-2 border-b mb-2">
-            {displayModelName}
-            {displayProvider && ` — ${displayProvider}`}
+            {menuModelLabel}
+            {!isModelLoading && displayProvider && ` — ${displayProvider}`}
           </p>
           <DropdownMenuItem onClick={() => setIsAddModelModalOpen(true)}>
             <span>{intl.formatMessage(i18n.changeModel)}</span>

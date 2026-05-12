@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "ui/goose2/**"
+      - "ui/sdk/**"
   pull_request:
     branches: [main]
     paths:
       - "ui/goose2/**"
+      - "ui/sdk/**"
   merge_group:
     branches: [main]
   workflow_dispatch:
@@ -35,8 +37,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/goose2/pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
       - run: pnpm check
       - run: pnpm typecheck
 
@@ -53,8 +58,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/goose2/pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
       - run: pnpm test
 
   desktop:
@@ -70,7 +78,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/goose2/pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Install system dependencies
         run: |
@@ -83,7 +91,9 @@ jobs:
             patchelf
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          rust-src-dir: ui/goose2
 
       - name: Cache Rust
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -96,8 +106,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Build SDK
+        run: pnpm build
+        working-directory: ui/sdk
+
       - name: Build frontend
         run: pnpm build
+
+      - name: Mock goose binary
+        working-directory: .
+        run: mkdir -p target/release && touch target/release/goose-$(rustc --print host-tuple)
 
       - name: Check Tauri
         run: cd src-tauri && cargo check
@@ -142,8 +160,9 @@ jobs:
             patchelf
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
+          rust-src-dir: ui/goose2
           components: rustfmt, clippy
 
       - name: Cache Rust
@@ -154,6 +173,10 @@ jobs:
             ~/.cargo/git
             ui/goose2/src-tauri/target
           key: ${{ runner.os }}-goose2-cargo-${{ hashFiles('ui/goose2/src-tauri/Cargo.lock') }}
+
+      - name: Mock goose binary
+        working-directory: .
+        run: mkdir -p target/release && touch target/release/goose-$(rustc --print host-tuple)
 
       - name: Format check
         run: cd src-tauri && cargo fmt --check

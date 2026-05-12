@@ -1,28 +1,26 @@
 #!/usr/bin/env node
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { MultilineInput } from "ink-multiline-input";
 import meow from "meow";
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type {
   SessionNotification,
-  RequestPermissionRequest,
-  RequestPermissionResponse,
   Stream,
   ContentChunk,
   ToolCall,
   ToolCallUpdate,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
-import { ndJsonStream } from "@agentclientprotocol/sdk";
+import { PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
 import { GooseClient } from "@aaif/goose-sdk";
+import { resolveGooseBinary } from "@aaif/goose-sdk/node";
 import Onboarding from "./onboarding.js";
 import ConfigureScreen, { ConfigureIntent } from "./configure.js";
 import ExtensionsManager from "./extensions.js";
-import type { PendingPermission, ResponseItem, Turn } from "./types.js";
+import type { Turn } from "./types.js";
 import {
   emptyLine,
   renderUserPrompt,
@@ -34,8 +32,17 @@ import {
 } from "./components/ContentRenderers.js";
 import { Header } from "./components/Header.js";
 import { Rule } from "./components/Rule.js";
+import { ToolCallExpanded } from "./components/ToolCallExpanded.js";
+import type { ToolCallInfo } from "./toolcall.js";
 import { isErrorStatus, formatError } from "./utils.js";
-import { CRANBERRY, TEAL, GOLD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM, RULE_COLOR } from "./colors.js";
+import {
+  CRANBERRY,
+  TEAL,
+  GOLD,
+  TEXT_PRIMARY,
+  TEXT_DIM,
+  RULE_COLOR,
+} from "./colors.js";
 import { Spinner, SPINNER_FRAMES } from "./components/Spinner.js";
 import {
   PASTE_THRESHOLD,
@@ -43,8 +50,8 @@ import {
   SENT_PREVIEW_LEN,
   GOOSE_FRAMES,
   INITIAL_GREETING,
-  PERMISSION_LABELS,
-  PERMISSION_KEYS,
+  SCROLL_STEP,
+  SCROLL_FAST_MULTIPLIER,
 } from "./constants.js";
 
 const InputBar = React.memo(function InputBar({
@@ -137,7 +144,9 @@ const InputBar = React.memo(function InputBar({
       flexShrink={0}
     >
       <Box>
-        <Text color={CRANBERRY} bold>{"❯ "}</Text>
+        <Text color={CRANBERRY} bold>
+          {"❯ "}
+        </Text>
         {isPasteMode ? (
           <Box width={contentWidth} justifyContent="space-between">
             <Box width={Math.max(contentWidth - 20, 10)}>
@@ -145,15 +154,23 @@ const InputBar = React.memo(function InputBar({
                 {(() => {
                   const text = pastedFull;
                   const availableWidth = Math.max(contentWidth - 20, 10);
-                  const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+                  const flat = text
+                    .replace(/\n/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
                   if (flat.length <= availableWidth) return flat;
                   const suffix = ` (${flat.length.toLocaleString()} chars)`;
-                  const previewLen = Math.max(availableWidth - suffix.length - 1, 5);
+                  const previewLen = Math.max(
+                    availableWidth - suffix.length - 1,
+                    5,
+                  );
                   return flat.slice(0, previewLen) + "…" + suffix;
                 })()}
               </Text>
             </Box>
-            {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+            {scrollHint && (
+              <Text color={TEXT_DIM}>↑↓ scroll · ⌥↑↓ fast · shift+↑↓ history</Text>
+            )}
           </Box>
         ) : (
           <Box flexGrow={1} justifyContent="space-between">
@@ -170,13 +187,18 @@ const InputBar = React.memo(function InputBar({
                 newline: (key) => key.return && key.ctrl,
               }}
               useCustomInput={(handler, isActive) => {
-                useInput((ch, key) => {
-                  if (key.shift && (key.upArrow || key.downArrow)) return;
-                  handler(ch, key);
-                }, { isActive });
+                useInput(
+                  (ch, key) => {
+                    if (key.shift && (key.upArrow || key.downArrow)) return;
+                    handler(ch, key);
+                  },
+                  { isActive },
+                );
               }}
             />
-            {scrollHint && <Text color={TEXT_DIM}>shift+↑↓ history</Text>}
+            {scrollHint && (
+              <Text color={TEXT_DIM}>↑↓ scroll · ⌥↑↓ fast · shift+↑↓ history</Text>
+            )}
           </Box>
         )}
       </Box>
@@ -198,6 +220,17 @@ const InputBar = React.memo(function InputBar({
   );
 });
 
+export interface ToolCallRange {
+  responseItemIndex: number;
+  startLine: number;
+  endLine: number;
+}
+
+export interface ContentLayout {
+  lines: React.ReactElement[];
+  toolCallRanges: ToolCallRange[];
+}
+
 function buildContentLines({
   turn,
   turnIndex,
@@ -205,9 +238,7 @@ function buildContentLines({
   loading,
   status,
   spinIdx,
-  pendingPermission,
-  permissionIdx,
-  toolCallsExpanded,
+  selectedToolCallIdx,
   queuedMessages,
 }: {
   turn: Turn | undefined;
@@ -216,47 +247,69 @@ function buildContentLines({
   loading: boolean;
   status: string;
   spinIdx: number;
-  pendingPermission: PendingPermission | null;
-  permissionIdx: number;
-  toolCallsExpanded: boolean;
+  selectedToolCallIdx: number | null;
   queuedMessages: string[];
-}): React.ReactElement[] {
+}): ContentLayout {
   const lines: React.ReactElement[] = [];
-  if (!turn) return lines;
+  const toolCallRanges: ToolCallRange[] = [];
+  if (!turn) return { lines, toolCallRanges };
 
   const safeWidth = Math.max(width, 20);
 
   const turnId = String(turnIndex);
-  lines.push(...renderUserPrompt(turn.userText, safeWidth, turnId, (text: string, availableWidth: number) => {
-    const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
-    const safeWidth = Math.max(availableWidth, 10);
-    const maxPreview = Math.max(safeWidth - 30, Math.min(SENT_PREVIEW_LEN, safeWidth - 10));
-    if (flat.length <= maxPreview + 10) {
-      return (
-        <Box width={safeWidth}>
-          <Text color={TEXT_PRIMARY} bold wrap="wrap">{flat}</Text>
-        </Box>
-      );
-    }
-    const preview = flat.slice(0, maxPreview) + "…";
-    const remaining = flat.length - maxPreview;
-    return (
-      <Box width={safeWidth}>
-        <Text color={TEXT_PRIMARY} bold wrap="wrap">{preview}</Text>
-        <Text color={TEXT_DIM}> ({remaining.toLocaleString()} more chars)</Text>
-      </Box>
-    );
-  }));
+  lines.push(
+    ...renderUserPrompt(
+      turn.userText,
+      safeWidth,
+      turnId,
+      (text: string, availableWidth: number) => {
+        const flat = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+        const safeWidth = Math.max(availableWidth, 10);
+        const maxPreview = Math.max(
+          safeWidth - 30,
+          Math.min(SENT_PREVIEW_LEN, safeWidth - 10),
+        );
+        if (flat.length <= maxPreview + 10) {
+          return (
+            <Box width={safeWidth}>
+              <Text color={TEXT_PRIMARY} bold wrap="wrap">
+                {flat}
+              </Text>
+            </Box>
+          );
+        }
+        const preview = flat.slice(0, maxPreview) + "…";
+        const remaining = flat.length - maxPreview;
+        return (
+          <Box width={safeWidth}>
+            <Text color={TEXT_PRIMARY} bold wrap="wrap">
+              {preview}
+            </Text>
+            <Text color={TEXT_DIM}>
+              {" "}
+              ({remaining.toLocaleString()} more chars)
+            </Text>
+          </Box>
+        );
+      },
+    ),
+  );
 
-  // Process response items
-  const hasToolCalls = turn.responseItems.some((it) => it.itemType === "tool_call");
   let tcIdx = 0;
 
   for (let i = 0; i < turn.responseItems.length; i++) {
     const item = turn.responseItems[i]!;
 
     if (item.itemType === "tool_call") {
-      lines.push(...renderToolCallItem(item, i, safeWidth, toolCallsExpanded, tcIdx === 0, hasToolCalls));
+      const isSelected = selectedToolCallIdx === tcIdx;
+      const rendered = renderToolCallItem(item, i, safeWidth, isSelected);
+      const startLine = lines.length;
+      lines.push(...rendered);
+      toolCallRanges.push({
+        responseItemIndex: i,
+        startLine,
+        endLine: lines.length - 1,
+      });
       tcIdx++;
     } else if (item.itemType === "error") {
       lines.push(...renderErrorItem(item, i, safeWidth));
@@ -265,75 +318,13 @@ function buildContentLines({
     }
   }
 
-  // Loading indicator
-  if (loading && !pendingPermission) {
+  if (loading) {
     lines.push(...renderLoadingIndicator(status, spinIdx, safeWidth));
   }
 
-  // Permission dialog
-  if (pendingPermission) {
-    const perm = pendingPermission;
-    const selectedIdx = permissionIdx;
-    const fullWidth = safeWidth;
-    const dialogWidth = Math.min(fullWidth - 2, 58);
-    const innerWidth = Math.max(dialogWidth - 4, 10);
-    const hRule = "─".repeat(Math.max(dialogWidth - 2, 0));
-    const permissionLines: React.ReactElement[] = [];
-
-    permissionLines.push(emptyLine(`pm-gap-${perm.toolTitle.slice(0, 10).replace(/[^a-zA-Z0-9]/g, '')}`, fullWidth));
-
-    permissionLines.push(
-      <Box key="pm-t" width={fullWidth} height={1}>
-        <Text color={GOLD}>╭{hRule}╮</Text>
-      </Box>,
-    );
-
-    const row = (key: string, content: React.ReactNode) => {
-      permissionLines.push(
-        <Box key={key} width={fullWidth} height={1}>
-          <Text color={GOLD}>│ </Text>
-          <Box width={innerWidth} height={1}>{content}</Box>
-          <Text color={GOLD}> │</Text>
-        </Box>,
-      );
-    };
-
-    row("pm-title", <Text color={GOLD} bold>🔒 Permission required</Text>);
-    row("pm-g1", <Text> </Text>);
-    row("pm-tool", <Text wrap="truncate-end" color={TEXT_PRIMARY}>{perm.toolTitle}</Text>);
-    row("pm-g2", <Text> </Text>);
-
-    for (let i = 0; i < perm.options.length; i++) {
-      const opt = perm.options[i]!;
-      const k = PERMISSION_KEYS[opt.kind] ?? String(i + 1);
-      const label = PERMISSION_LABELS[opt.kind] ?? opt.name;
-      const active = i === selectedIdx;
-      row(`pm-o${i}`, (
-        <>
-          <Text color={active ? GOLD : RULE_COLOR}>{active ? "▸ " : "  "}</Text>
-          <Text color={active ? TEXT_PRIMARY : TEXT_SECONDARY} bold={active}>
-            [{k}] {label}
-          </Text>
-        </>
-      ));
-    }
-
-    row("pm-g3", <Text> </Text>);
-    row("pm-help", <Text color={TEXT_DIM}>↑↓ select · enter confirm · esc cancel</Text>);
-
-    permissionLines.push(
-      <Box key="pm-b" width={fullWidth} height={1}>
-        <Text color={GOLD}>╰{hRule}╯</Text>
-      </Box>,
-    );
-
-    lines.push(...permissionLines);
-  }
-
-  // Queued messages
   lines.push(...renderQueuedMessages(queuedMessages, safeWidth));
 
-  return lines;
+  return { lines, toolCallRanges };
 }
 
 const Viewport = React.memo(function Viewport({
@@ -367,9 +358,11 @@ const Viewport = React.memo(function Viewport({
     const above = startIdx;
     elements.push(
       <Box key="si-up" width={width} height={1} justifyContent="center">
-        {above > 0
-          ? <Text color={TEXT_DIM}>▲ {above} more (↑)</Text>
-          : <Text> </Text>}
+        {above > 0 ? (
+          <Text color={TEXT_DIM}>▲ {above} more (↑)</Text>
+        ) : (
+          <Text> </Text>
+        )}
       </Box>,
     );
   }
@@ -383,9 +376,11 @@ const Viewport = React.memo(function Viewport({
     const below = total - endIdx;
     elements.push(
       <Box key="si-dn" width={width} height={1} justifyContent="center">
-        {below > 0
-          ? <Text color={TEXT_DIM}>▼ {below} more (↓)</Text>
-          : <Text> </Text>}
+        {below > 0 ? (
+          <Text color={TEXT_DIM}>▼ {below} more (↓)</Text>
+        ) : (
+          <Text> </Text>
+        )}
       </Box>,
     );
   }
@@ -394,7 +389,11 @@ const Viewport = React.memo(function Viewport({
   const constrainedHeight = Math.max(height, 1);
 
   return (
-    <Box flexDirection="column" height={constrainedHeight} width={constrainedWidth}>
+    <Box
+      flexDirection="column"
+      height={constrainedHeight}
+      width={constrainedWidth}
+    >
       {elements}
     </Box>
   );
@@ -438,11 +437,15 @@ const SplashScreen = React.memo(function SplashScreen({
       {topPad > 0 && <Box height={topPad} />}
       <Box flexDirection="column" alignItems="center">
         {frame.map((line, i) => (
-          <Text key={i} color={TEXT_PRIMARY}>{line}</Text>
+          <Text key={i} color={TEXT_PRIMARY}>
+            {line}
+          </Text>
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text color={TEXT_PRIMARY} bold>goose</Text>
+        <Text color={TEXT_PRIMARY} bold>
+          goose
+        </Text>
       </Box>
       <Box alignItems="center">
         <Text color={TEXT_DIM}>your on-machine AI agent</Text>
@@ -464,8 +467,29 @@ function App({
 }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const termWidth = stdout?.columns ?? 80;
-  const termHeight = stdout?.rows ?? 24;
+  // `useStdout()` returns the live stream but does not trigger a React
+  // re-render when the terminal is resized. Without this subscription the
+  // outer Box keeps its old width/height after SIGWINCH, producing a
+  // misaligned frame until some other state change forces a render.
+  const [termSize, setTermSize] = useState(() => ({
+    width: stdout?.columns ?? 80,
+    height: stdout?.rows ?? 24,
+  }));
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => {
+      setTermSize({
+        width: stdout.columns ?? 80,
+        height: stdout.rows ?? 24,
+      });
+    };
+    stdout.on("resize", onResize);
+    return () => {
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
+  const termWidth = termSize.width;
+  const termHeight = termSize.height;
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -474,17 +498,20 @@ function App({
   const [spinIdx, setSpinIdx] = useState(0);
   const [gooseFrame, setGooseFrame] = useState(0);
   const [bannerVisible, setBannerVisible] = useState(true);
-  const [pendingPermission, setPendingPermission] =
-    useState<PendingPermission | null>(null);
-  const [permissionIdx, setPermissionIdx] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const [viewTurnIdx, setViewTurnIdx] = useState(-1);
-  const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
+  const [selectedToolCallIdx, setSelectedToolCallIdx] = useState<number | null>(
+    null,
+  );
+  const [toolCallExpanded, setToolCallExpanded] = useState(false);
+  const [toolCallExpandedScroll, setToolCallExpandedScroll] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [pastedFull, setPastedFull] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  type Overlay = { screen: "configure"; intent: ConfigureIntent } | { screen: "extensions" };
+  type Overlay =
+    | { screen: "configure"; intent: ConfigureIntent }
+    | { screen: "extensions" };
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   const clientRef = useRef<GooseClient | null>(null);
@@ -494,22 +521,35 @@ function App({
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
 
+  // Only run the animation tick when something is actually animating:
+  // the splash goose while the banner is up, or the spinner while loading.
+  // Otherwise we were re-rendering the entire viewport every 300ms forever,
+  // which rebuilds every turn's markdown and can OOM long-running sessions.
   useEffect(() => {
+    if (!bannerVisible && !loading) return;
     const t = setInterval(() => {
-      setSpinIdx((i) => (i + 1) % SPINNER_FRAMES.length);
-      setGooseFrame((f) => f + 1);
+      if (loading) setSpinIdx((i) => (i + 1) % SPINNER_FRAMES.length);
+      if (bannerVisible) setGooseFrame((f) => (f + 1) % GOOSE_FRAMES.length);
     }, 300);
     return () => clearInterval(t);
-  }, []);
+  }, [bannerVisible, loading]);
 
   useEffect(() => {
     if (turns.length > 0) setBannerVisible(false);
   }, [turns]);
 
   useEffect(() => {
-    setToolCallsExpanded(false);
+    setSelectedToolCallIdx(null);
+    setToolCallExpanded(false);
+    setToolCallExpandedScroll(0);
     setScrollOffset(0);
   }, [viewTurnIdx, turns.length]);
+
+  // Re-layout invalidates any scroll offset we were holding (line counts
+  // change with width), so snap back to the latest content on resize.
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [termWidth, termHeight]);
 
   const appendAgent = useCallback((text: string) => {
     setTurns((prev) => {
@@ -527,13 +567,22 @@ function App({
         if (lastItem.content.type === "text") {
           newItems[newItems.length - 1] = {
             ...lastItem,
-            content: { ...lastItem.content, text: lastItem.content.text + text },
+            content: {
+              ...lastItem.content,
+              text: lastItem.content.text + text,
+            },
           };
         } else {
-          newItems.push({ itemType: "content_chunk", content: { type: "text", text } });
+          newItems.push({
+            itemType: "content_chunk",
+            content: { type: "text", text },
+          });
         }
       } else {
-        newItems.push({ itemType: "content_chunk", content: { type: "text", text } });
+        newItems.push({
+          itemType: "content_chunk",
+          content: { type: "text", text },
+        });
       }
 
       return [...prev.slice(0, -1), { ...last, responseItems: newItems }];
@@ -594,24 +643,11 @@ function App({
       { userText: text, responseItems: [], toolCallsById: new Map() },
     ]);
     setViewTurnIdx(-1);
-    setToolCallsExpanded(false);
+    setSelectedToolCallIdx(null);
+    setToolCallExpanded(false);
+    setToolCallExpandedScroll(0);
     setScrollOffset(0);
   }, []);
-
-  const resolvePermission = useCallback(
-    (option: { optionId: string } | "cancelled") => {
-      if (!pendingPermission) return;
-      const { resolve } = pendingPermission;
-      if (option === "cancelled") {
-        resolve({ outcome: { outcome: "cancelled" } });
-      } else {
-        resolve({ outcome: { outcome: "selected", optionId: option.optionId } });
-      }
-      setPendingPermission(null);
-      setPermissionIdx(0);
-    },
-    [pendingPermission],
-  );
 
   const executePrompt = useCallback(
     async (text: string) => {
@@ -665,29 +701,32 @@ function App({
     [executePrompt, processQueue],
   );
 
-  const createSession = useCallback(async (client: GooseClient) => {
-    setStatus("creating session…");
-    setLoading(true);
-    try {
-      const session = await client.newSession({
-        cwd: process.cwd(),
-        mcpServers: [],
-      });
-      sessionIdRef.current = session.sessionId;
-      setLoading(false);
-      setStatus("ready");
+  const createSession = useCallback(
+    async (client: GooseClient) => {
+      setStatus("creating session…");
+      setLoading(true);
+      try {
+        const session = await client.newSession({
+          cwd: process.cwd(),
+          mcpServers: [],
+        });
+        sessionIdRef.current = session.sessionId;
+        setLoading(false);
+        setStatus("ready");
 
-      if (initialPrompt && !sentInitialPrompt.current) {
-        sentInitialPrompt.current = true;
-        await sendPrompt(initialPrompt);
-        setTimeout(() => exit(), 100);
+        if (initialPrompt && !sentInitialPrompt.current) {
+          sentInitialPrompt.current = true;
+          await sendPrompt(initialPrompt);
+          setTimeout(() => exit(), 100);
+        }
+      } catch (e: unknown) {
+        const errorMsg = formatError(e);
+        setStatus(`failed: ${errorMsg}`);
+        setLoading(false);
       }
-    } catch (e: unknown) {
-      const errorMsg = formatError(e);
-      setStatus(`failed: ${errorMsg}`);
-      setLoading(false);
-    }
-  }, [initialPrompt, sendPrompt, exit]);
+    },
+    [initialPrompt, sendPrompt, exit],
+  );
 
   const handleOnboardingComplete = useCallback(() => {
     setNeedsOnboarding(false);
@@ -704,6 +743,17 @@ function App({
 
         const client = new GooseClient(
           () => ({
+            requestPermission: async (
+              params: RequestPermissionRequest,
+            ): Promise<RequestPermissionResponse> => {
+              const optionId = params.options?.[0]?.optionId ?? "approve";
+              return {
+                outcome: {
+                  outcome: "selected",
+                  optionId,
+                },
+              };
+            },
             sessionUpdate: async (params: SessionNotification) => {
               const update = params.update;
               if (update.sessionUpdate === "agent_message_chunk") {
@@ -717,22 +767,6 @@ function App({
                 handleToolCallUpdate(update);
               }
             },
-            requestPermission: async (
-              params: RequestPermissionRequest,
-            ): Promise<RequestPermissionResponse> => {
-              return new Promise<RequestPermissionResponse>((resolve) => {
-                setPendingPermission({
-                  toolTitle: params.toolCall.title ?? "unknown tool",
-                  options: params.options.map((o) => ({
-                    optionId: o.optionId,
-                    name: o.name,
-                    kind: o.kind,
-                  })),
-                  resolve,
-                });
-                setPermissionIdx(0);
-              });
-            },
           }),
           serverConnection,
         );
@@ -742,7 +776,7 @@ function App({
 
         setStatus("handshaking…");
         await client.initialize({
-          protocolVersion: 0,
+          protocolVersion: PROTOCOL_VERSION,
           clientInfo: { name: "goose-text", version: "0.1.0" },
           clientCapabilities: {},
         });
@@ -751,8 +785,11 @@ function App({
         setStatus("checking provider…");
         let hasProvider = false;
         try {
-          const resp = await client.goose.GooseConfigRead({ key: "GOOSE_PROVIDER" });
-          hasProvider = resp.value != null && resp.value !== "" && resp.value !== "null";
+          const resp = await client.goose.GooseDefaultsRead({});
+          hasProvider =
+            resp.providerId != null &&
+            resp.providerId !== "" &&
+            resp.providerId !== "null";
         } catch {
           hasProvider = false;
         }
@@ -774,10 +811,17 @@ function App({
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [
-    serverConnection, initialPrompt, createSession,
-    appendAgent, handleToolCall, handleToolCallUpdate, exit,
+    serverConnection,
+    initialPrompt,
+    createSession,
+    appendAgent,
+    handleToolCall,
+    handleToolCallUpdate,
+    exit,
   ]);
 
   const handleSubmit = useCallback(
@@ -787,7 +831,9 @@ function App({
       setInput("");
       setPastedFull(null);
       setViewTurnIdx(-1);
-      setToolCallsExpanded(false);
+      setSelectedToolCallIdx(null);
+      setToolCallExpanded(false);
+      setToolCallExpandedScroll(0);
       setScrollOffset(0);
 
       if (loading || isProcessingRef.current) {
@@ -800,87 +846,6 @@ function App({
     [loading, sendPrompt],
   );
 
-  useInput((ch, key) => {
-    if (key.escape || (ch === "c" && key.ctrl)) {
-      if (pendingPermission) { resolvePermission("cancelled"); return; }
-      if (key.escape && pastedFull !== null) return;
-      exit();
-    }
-
-    if (!loading && !pendingPermission && sessionIdRef.current) {
-      if (key.ctrl && (ch === "p" || ch === "P")) { setOverlay({ screen: "configure", intent: "provider" }); return; }
-      if (key.ctrl && (ch === "m" || ch === "M")) { setOverlay({ screen: "configure", intent: "model" }); return; }
-      if (key.ctrl && (ch === "e" || ch === "E")) { setOverlay({ screen: "extensions" }); return; }
-      if (ch === "g" && key.ctrl) { setOverlay({ screen: "configure", intent: "provider" }); return; }
-    }
-
-    if (pendingPermission) {
-      const opts = pendingPermission.options;
-      if (key.upArrow) { setPermissionIdx((i) => (i - 1 + opts.length) % opts.length); return; }
-      if (key.downArrow) { setPermissionIdx((i) => (i + 1) % opts.length); return; }
-      if (key.return) {
-        const sel = opts[permissionIdx];
-        if (sel) resolvePermission({ optionId: sel.optionId });
-        return;
-      }
-      const keyMap: Record<string, string> = {
-        y: "allow_once", a: "allow_always", n: "reject_once", N: "reject_always",
-      };
-      const kind = keyMap[ch];
-      if (kind) {
-        const m = opts.find((o) => o.kind === kind);
-        if (m) resolvePermission({ optionId: m.optionId });
-      }
-      return;
-    }
-
-    const viewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
-    const multilineOwnsArrows =
-      !pendingPermission && !initialPrompt && !viewingHistory && pastedFull === null;
-
-    if (key.tab) {
-      const idx = viewTurnIdx === -1 ? turns.length - 1 : viewTurnIdx;
-      const t = turns[idx];
-      if (t && t.responseItems.some((it) => it.itemType === "tool_call")) {
-        setToolCallsExpanded((prev) => !prev);
-      }
-      return;
-    }
-
-    if (key.upArrow && !key.shift) {
-      if (!multilineOwnsArrows) setScrollOffset((prev) => prev + 3);
-      return;
-    }
-    if (key.downArrow && !key.shift) {
-      if (!multilineOwnsArrows) setScrollOffset((prev) => Math.max(prev - 3, 0));
-      return;
-    }
-
-    if (key.upArrow && key.shift) {
-      setTurns((cur) => {
-        if (cur.length <= 1) return cur;
-        setViewTurnIdx((prev) => {
-          const eff = prev === -1 ? cur.length - 1 : prev;
-          return Math.max(eff - 1, 0);
-        });
-        return cur;
-      });
-      return;
-    }
-    if (key.downArrow && key.shift) {
-      setTurns((cur) => {
-        if (cur.length <= 1) return cur;
-        setViewTurnIdx((prev) => {
-          if (prev === -1) return -1;
-          const next = prev + 1;
-          return next >= cur.length ? -1 : next;
-        });
-        return cur;
-      });
-      return;
-    }
-  }, { isActive: !needsOnboarding && !overlay });
-
   const PAD_X = 2;
   const PAD_Y = 1;
   const safeTermWidth = Math.max(termWidth, 40);
@@ -891,7 +856,7 @@ function App({
   const currentTurn = turns[effectiveTurnIdx];
   const isViewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
   const isLatest = !isViewingHistory;
-  const showInputBar = !pendingPermission && !initialPrompt && !isViewingHistory;
+  const showInputBar = !initialPrompt && !isViewingHistory;
 
   const headerH = 2;
   const isPasteMode = pastedFull !== null;
@@ -909,26 +874,205 @@ function App({
     3,
   );
 
-  const contentLines = buildContentLines({
-    turn: currentTurn,
-    turnIndex: effectiveTurnIdx,
-    width: contentWidth,
-    loading: isLatest && loading,
-    status,
-    spinIdx,
-    pendingPermission: isLatest ? pendingPermission : null,
-    permissionIdx,
-    toolCallsExpanded,
-    queuedMessages: isLatest ? queuedMessages : [],
-  });
+  const contentLayout = useMemo(
+    () =>
+      buildContentLines({
+        turn: currentTurn,
+        turnIndex: effectiveTurnIdx,
+        width: contentWidth,
+        loading: isLatest && loading,
+        status,
+        spinIdx,
+        selectedToolCallIdx,
+        queuedMessages: isLatest ? queuedMessages : [],
+      }),
+    [
+      currentTurn,
+      effectiveTurnIdx,
+      contentWidth,
+      isLatest,
+      loading,
+      status,
+      spinIdx,
+      selectedToolCallIdx,
+      queuedMessages,
+    ],
+  );
+  const contentLines = contentLayout.lines;
+  const toolCallRanges = contentLayout.toolCallRanges;
+
+  useEffect(() => {
+    if (
+      selectedToolCallIdx !== null &&
+      selectedToolCallIdx >= toolCallRanges.length
+    ) {
+      setSelectedToolCallIdx(
+        toolCallRanges.length === 0 ? null : toolCallRanges.length - 1,
+      );
+    }
+  }, [toolCallRanges.length, selectedToolCallIdx]);
+
+  const selectedToolCallInfo = useMemo<ToolCallInfo | null>(() => {
+    if (selectedToolCallIdx === null || !currentTurn) return null;
+    const range = toolCallRanges[selectedToolCallIdx];
+    if (!range) return null;
+    const item = currentTurn.responseItems[range.responseItemIndex];
+    if (!item || item.itemType !== "tool_call") return null;
+    return {
+      toolCallId: item.toolCallId,
+      title: item.title,
+      status: item.status ?? "pending",
+      kind: item.kind,
+      rawInput: item.rawInput,
+      rawOutput: item.rawOutput,
+      content: item.content,
+      locations: item.locations,
+    };
+  }, [selectedToolCallIdx, toolCallRanges, currentTurn]);
+
+  // Compute a scroll offset that keeps the given tool-call range fully
+  // visible, moving just enough from the current offset. scrollOffset is
+  // measured in lines-from-bottom, matching Viewport's math.
+  const scrollOffsetForRange = useCallback(
+    (range: ToolCallRange, current: number): number => {
+      const total = contentLines.length;
+      const overflows = total > viewportHeight;
+      const contentHeight = overflows
+        ? Math.max(viewportHeight - 2, 1)
+        : viewportHeight;
+      if (!overflows) return 0;
+      const maxOffset = total - contentHeight;
+      const minForTop = total - range.startLine - contentHeight;
+      const maxForBottom = total - range.endLine - 1;
+      const lo = Math.max(0, minForTop);
+      const hi = Math.max(lo, Math.min(maxOffset, maxForBottom));
+      if (current < lo) return lo;
+      if (current > hi) return hi;
+      return current;
+    },
+    [contentLines.length, viewportHeight],
+  );
+
+  const moveSelection = useCallback(
+    (direction: -1 | 1) => {
+      if (toolCallRanges.length === 0) return false;
+      let nextIdx: number;
+      if (selectedToolCallIdx === null) {
+        nextIdx = direction === -1 ? toolCallRanges.length - 1 : 0;
+      } else {
+        nextIdx = selectedToolCallIdx + direction;
+        if (nextIdx < 0 || nextIdx >= toolCallRanges.length) return false;
+      }
+      setSelectedToolCallIdx(nextIdx);
+      const range = toolCallRanges[nextIdx]!;
+      setScrollOffset((prev) => scrollOffsetForRange(range, prev));
+      return true;
+    },
+    [toolCallRanges, selectedToolCallIdx, scrollOffsetForRange],
+  );
+
+  useInput(
+    (ch, key) => {
+      if (toolCallExpanded) return;
+
+      if (key.escape || (ch === "c" && key.ctrl)) {
+        if (key.escape && pastedFull !== null) return;
+        exit();
+      }
+
+      if (!loading && sessionIdRef.current) {
+        if (key.ctrl && (ch === "p" || ch === "P")) {
+          setOverlay({ screen: "configure", intent: "provider" });
+          return;
+        }
+        if (key.ctrl && (ch === "m" || ch === "M")) {
+          setOverlay({ screen: "configure", intent: "model" });
+          return;
+        }
+        if (key.ctrl && (ch === "e" || ch === "E")) {
+          setOverlay({ screen: "extensions" });
+          return;
+        }
+        if (ch === "g" && key.ctrl) {
+          setOverlay({ screen: "configure", intent: "provider" });
+          return;
+        }
+      }
+
+      const viewingHistory =
+        viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
+      const multilineOwnsArrows =
+        !initialPrompt &&
+        !viewingHistory &&
+        pastedFull === null &&
+        input.includes("\n");
+
+      if (ch === " " && selectedToolCallIdx !== null) {
+        setToolCallExpandedScroll(0);
+        setToolCallExpanded(true);
+        return;
+      }
+
+      if ((key.upArrow || key.downArrow) && !key.shift) {
+        if (multilineOwnsArrows) return;
+
+        if (key.meta) {
+          const step = SCROLL_STEP * SCROLL_FAST_MULTIPLIER;
+          if (key.upArrow) {
+            setScrollOffset((prev) => prev + step);
+          } else {
+            setScrollOffset((prev) => Math.max(prev - step, 0));
+          }
+          return;
+        }
+
+        if (toolCallRanges.length > 0) {
+          const direction: -1 | 1 = key.upArrow ? -1 : 1;
+          if (moveSelection(direction)) return;
+          if (selectedToolCallIdx !== null) {
+            setSelectedToolCallIdx(null);
+          }
+        }
+
+        const step = SCROLL_STEP;
+        if (key.upArrow) {
+          setScrollOffset((prev) => prev + step);
+        } else {
+          setScrollOffset((prev) => Math.max(prev - step, 0));
+        }
+        return;
+      }
+
+      if (key.upArrow && key.shift) {
+        setTurns((cur) => {
+          if (cur.length <= 1) return cur;
+          setViewTurnIdx((prev) => {
+            const eff = prev === -1 ? cur.length - 1 : prev;
+            return Math.max(eff - 1, 0);
+          });
+          return cur;
+        });
+        return;
+      }
+      if (key.downArrow && key.shift) {
+        setTurns((cur) => {
+          if (cur.length <= 1) return cur;
+          setViewTurnIdx((prev) => {
+            if (prev === -1) return -1;
+            const next = prev + 1;
+            return next >= cur.length ? -1 : next;
+          });
+          return cur;
+        });
+        return;
+      }
+    },
+    { isActive: !needsOnboarding && !overlay },
+  );
 
   if (needsOnboarding && clientRef.current) {
     return (
-      <Box
-        flexDirection="column"
-        width={safeTermWidth}
-        height={safeTermHeight}
-      >
+      <Box flexDirection="column" width={safeTermWidth} height={safeTermHeight}>
         <Onboarding
           client={clientRef.current}
           width={safeTermWidth}
@@ -943,13 +1087,20 @@ function App({
     if (overlay.screen === "configure") {
       const intent = overlay.intent;
       return (
-        <Box flexDirection="column" width={safeTermWidth} height={safeTermHeight}>
+        <Box
+          flexDirection="column"
+          width={safeTermWidth}
+          height={safeTermHeight}
+        >
           <ConfigureScreen
             client={clientRef.current}
             sessionId={sessionIdRef.current}
             width={safeTermWidth}
             height={safeTermHeight}
-            onComplete={() => { setOverlay(null); setStatus("ready"); }}
+            onComplete={() => {
+              setOverlay(null);
+              setStatus("ready");
+            }}
             onCancel={() => setOverlay(null)}
             initialIntent={intent}
           />
@@ -957,7 +1108,11 @@ function App({
       );
     } else if (overlay.screen === "extensions") {
       return (
-        <Box flexDirection="column" width={safeTermWidth} height={safeTermHeight}>
+        <Box
+          flexDirection="column"
+          width={safeTermWidth}
+          height={safeTermHeight}
+        >
           <ExtensionsManager
             client={clientRef.current}
             sessionId={sessionIdRef.current}
@@ -993,7 +1148,6 @@ function App({
             status={status}
             loading={loading}
             spinIdx={spinIdx}
-            hasPendingPermission={!!pendingPermission}
             turnInfo={
               turns.length > 1
                 ? { current: effectiveTurnIdx + 1, total: turns.length }
@@ -1001,12 +1155,26 @@ function App({
             }
           />
 
-          <Viewport
-            lines={contentLines}
-            height={viewportHeight}
-            width={contentWidth}
-            scrollOffset={scrollOffset}
-          />
+          {toolCallExpanded && selectedToolCallInfo ? (
+            <ToolCallExpanded
+              info={selectedToolCallInfo}
+              width={contentWidth}
+              height={viewportHeight}
+              scrollOffset={toolCallExpandedScroll}
+              onScroll={setToolCallExpandedScroll}
+              onClose={() => {
+                setToolCallExpanded(false);
+                setToolCallExpandedScroll(0);
+              }}
+            />
+          ) : (
+            <Viewport
+              lines={contentLines}
+              height={viewportHeight}
+              width={contentWidth}
+              scrollOffset={scrollOffset}
+            />
+          )}
 
           {isViewingHistory && (
             <Box flexDirection="column" width={contentWidth} flexShrink={0}>
@@ -1057,14 +1225,23 @@ const cli = meow(
   },
 );
 
-
-
 let serverProcess: ReturnType<typeof spawn> | null = null;
 
 async function runTextMode(serverConnection: Stream | string, prompt: string) {
   try {
     const client = new GooseClient(
       () => ({
+        requestPermission: async (
+          params: RequestPermissionRequest,
+        ): Promise<RequestPermissionResponse> => {
+          const optionId = params.options?.[0]?.optionId ?? "approve";
+          return {
+            outcome: {
+              outcome: "selected",
+              optionId,
+            },
+          };
+        },
         sessionUpdate: async (params: SessionNotification) => {
           const update = params.update;
           if (update.sessionUpdate === "agent_message_chunk") {
@@ -1073,24 +1250,12 @@ async function runTextMode(serverConnection: Stream | string, prompt: string) {
             }
           }
         },
-        requestPermission: async (
-          params: RequestPermissionRequest,
-        ): Promise<RequestPermissionResponse> => {
-          // Auto-reject in text mode
-          const rejectOption = params.options.find(o => o.kind === "reject_once");
-          if (rejectOption) {
-            return {
-              outcome: { outcome: "selected", optionId: rejectOption.optionId },
-            };
-          }
-          return { outcome: { outcome: "cancelled" } };
-        },
       }),
       serverConnection,
     );
 
     await client.initialize({
-      protocolVersion: 0,
+      protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: "goose-text", version: "0.1.0" },
       clientCapabilities: {},
     });
@@ -1119,29 +1284,7 @@ async function main() {
   if (cli.flags.server) {
     serverConnection = cli.flags.server;
   } else {
-    const binary = (() => {
-      const __dirname = dirname(fileURLToPath(import.meta.url));
-      const candidates = [
-        join(__dirname, "..", "server-binary.json"),
-        join(__dirname, "server-binary.json"),
-      ];
-      for (const candidate of candidates) {
-        try {
-          const data = JSON.parse(readFileSync(candidate, "utf-8"));
-          return data.binaryPath ?? null;
-        } catch {
-          // not found here, try next
-        }
-      }
-      return null;
-    })();
-    if (!binary) {
-      console.error(
-        "No goose binary found. Use --server <url> or install the native package.",
-      );
-      process.exit(1);
-    }
-
+    const binary = resolveGooseBinary();
     serverProcess = spawn(binary, ["acp"], {
       stdio: ["pipe", "pipe", "ignore"],
       detached: false,
@@ -1152,8 +1295,12 @@ async function main() {
       process.exit(1);
     });
 
-    const output = Writable.toWeb(serverProcess.stdin!) as WritableStream<Uint8Array>;
-    const input = Readable.toWeb(serverProcess.stdout!) as ReadableStream<Uint8Array>;
+    const output = Writable.toWeb(
+      serverProcess.stdin!,
+    ) as WritableStream<Uint8Array>;
+    const input = Readable.toWeb(
+      serverProcess.stdout!,
+    ) as ReadableStream<Uint8Array>;
     serverConnection = ndJsonStream(output, input);
   }
 
@@ -1180,8 +1327,14 @@ function cleanup() {
 }
 
 process.on("exit", cleanup);
-process.on("SIGINT", () => { cleanup(); process.exit(0); });
-process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+process.on("SIGINT", () => {
+  cleanup();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  cleanup();
+  process.exit(0);
+});
 
 main().catch((err) => {
   console.error(err);

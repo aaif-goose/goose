@@ -1,7 +1,7 @@
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::services::acp::resolve_goose_binary;
+use crate::services::acp::goose_serve::get_goose_command;
 
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -20,9 +20,9 @@ pub async fn authenticate_model_provider(
         return Err("Native Goose sign-in is not supported on Windows yet".to_string());
     }
 
-    let goose_binary = resolve_goose_binary()?;
+    let goose_command = get_goose_command(&app_handle)?;
     let quoted_label = shell_quote(&provider_label);
-    let quoted_binary = shell_quote(&goose_binary.to_string_lossy());
+    let quoted_binary = shell_quote(&goose_command.as_std().get_program().to_string_lossy());
 
     let command = if cfg!(target_os = "linux") {
         format!(

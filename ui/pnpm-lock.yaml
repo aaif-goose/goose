@@ -353,6 +353,15 @@ importers:
 
   goose2:
     dependencies:
+      '@aaif/goose-sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@agentclientprotocol/sdk':
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.3.6)
+      '@mcp-ui/client':
+        specifier: 7.1.0
+        version: 7.1.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@radix-ui/react-accordion':
         specifier: ^1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -462,11 +471,14 @@ importers:
         specifier: ^2
         version: 2.10.1
       '@tauri-apps/plugin-dialog':
-        specifier: ^2.6.0
+        specifier: ~2.7.0
         version: 2.7.0
       '@tauri-apps/plugin-opener':
         specifier: ^2.5.3
         version: 2.5.3
+      '@tauri-apps/plugin-shell':
+        specifier: ~2.3.5
+        version: 2.3.5
       '@xyflow/react':
         specifier: ^12.10.2
         version: 12.10.2(@types/react@19.2.14)(immer@11.1.4)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -639,13 +651,19 @@ importers:
 
   sdk:
     dependencies:
+      '@modelcontextprotocol/ext-apps':
+        specifier: ^0.3.1
+        version: 0.3.1(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@3.25.76)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.27.0
+        version: 1.27.1(zod@3.25.76)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.14.1
-        version: 0.14.1(zod@3.25.76)
+        specifier: ^0.19.0
+        version: 0.19.0(zod@3.25.76)
       '@hey-api/openapi-ts':
         specifier: ^0.92.3
         version: 0.92.4(magicast@0.5.2)(typescript@5.9.3)
@@ -661,6 +679,22 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+    optionalDependencies:
+      '@aaif/goose-binary-darwin-arm64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-darwin-arm64
+      '@aaif/goose-binary-darwin-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-darwin-x64
+      '@aaif/goose-binary-linux-arm64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-linux-arm64
+      '@aaif/goose-binary-linux-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-linux-x64
+      '@aaif/goose-binary-win32-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-win32-x64
 
   text:
     dependencies:
@@ -668,8 +702,8 @@ importers:
         specifier: workspace:*
         version: link:../sdk
       '@agentclientprotocol/sdk':
-        specifier: ^0.14.1
-        version: 0.14.1(zod@4.3.6)
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.3.6)
       '@inkjs/ui':
         specifier: ^2.0.0
         version: 2.0.0(ink@6.8.0(@types/react@19.2.14)(react@19.2.4))
@@ -710,22 +744,6 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
-    optionalDependencies:
-      '@aaif/goose-binary-darwin-arm64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-arm64
-      '@aaif/goose-binary-darwin-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-x64
-      '@aaif/goose-binary-linux-arm64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-arm64
-      '@aaif/goose-binary-linux-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-x64
-      '@aaif/goose-binary-win32-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-win32-x64
 
 packages:
 
@@ -735,8 +753,8 @@ packages:
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
-  '@agentclientprotocol/sdk@0.14.1':
-    resolution: {integrity: sha512-b6r3PS3Nly+Wyw9U+0nOr47bV8tfS476EgyEMhoKvJCZLbgqoDFN7DJwkxL88RR0aiOqOYV1ZnESHqb+RmdH8w==}
+  '@agentclientprotocol/sdk@0.19.0':
+    resolution: {integrity: sha512-U9I8ws9WTOk6jCBAWpXefGSDgVXn14/kV6HFzwWGcstQ02mOQgClMAROHmoIn9GqZbDBDEOkdIbP4P4TEMQdug==}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
@@ -1902,6 +1920,12 @@ packages:
 
   '@mcp-ui/client@6.1.0':
     resolution: {integrity: sha512-Wk/9uhu8xdOgHjiaEtAq2RbXn4WGstpFeJ6I71JCP7JC7MtvQB/qnEKDVGSbjwyLnIeZYMSILHf5E+57/YCftQ==}
+    peerDependencies:
+      react: ^19.2.4
+      react-dom: ^19.2.4
+
+  '@mcp-ui/client@7.1.0':
+    resolution: {integrity: sha512-XWhYULwXtBtrniOR/8mZFa+Vn85NePCle0nUHz+Iupxu8kCpORXO2m+sTza27jFgif8LCV4lWVUjL7lDb2XwlA==}
     peerDependencies:
       react: ^19.2.4
       react-dom: ^19.2.4
@@ -3489,6 +3513,9 @@ packages:
 
   '@tauri-apps/plugin-opener@2.5.3':
     resolution: {integrity: sha512-CCcUltXMOfUEArbf3db3kCE7Ggy1ExBEBl51Ko2ODJ6GDYHRp1nSNlQm5uNCFY5k7/ufaK5Ib3Du/Zir19IYQQ==}
+
+  '@tauri-apps/plugin-shell@2.3.5':
+    resolution: {integrity: sha512-jewtULhiQ7lI7+owCKAjc8tYLJr92U16bPOeAa472LHJdgaibLP83NcfAF2e+wkEcA53FxKQAZ7byDzs2eeizg==}
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -8842,11 +8869,11 @@ snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@agentclientprotocol/sdk@0.14.1(zod@3.25.76)':
+  '@agentclientprotocol/sdk@0.19.0(zod@3.25.76)':
     dependencies:
       zod: 3.25.76
 
-  '@agentclientprotocol/sdk@0.14.1(zod@4.3.6)':
+  '@agentclientprotocol/sdk@0.19.0(zod@4.3.6)':
     dependencies:
       zod: 4.3.6
 
@@ -10324,6 +10351,17 @@ snapshots:
       - preact
       - supports-color
 
+  '@mcp-ui/client@7.1.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@modelcontextprotocol/ext-apps': 1.2.2(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.27.1(zod@4.3.6)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+
   '@mermaid-js/parser@1.1.0':
     dependencies:
       langium: 4.2.2
@@ -10379,6 +10417,28 @@ snapshots:
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
       zod: 3.25.76
+      zod-to-json-schema: 3.25.1(zod@3.25.76)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@modelcontextprotocol/sdk@1.27.1(zod@4.3.6)':
+    dependencies:
+      '@hono/node-server': 1.19.11(hono@4.12.8)
+      ajv: 8.18.0
+      ajv-formats: 3.0.1(ajv@8.18.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.0.6
+      express: 5.2.1
+      express-rate-limit: 8.3.1(express@5.2.1)
+      hono: 4.12.8
+      jose: 6.2.2
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.3.6
       zod-to-json-schema: 3.25.1(zod@3.25.76)
     transitivePeerDependencies:
       - supports-color
@@ -11784,6 +11844,10 @@ snapshots:
       '@tauri-apps/api': 2.10.1
 
   '@tauri-apps/plugin-opener@2.5.3':
+    dependencies:
+      '@tauri-apps/api': 2.10.1
+
+  '@tauri-apps/plugin-shell@2.3.5':
     dependencies:
       '@tauri-apps/api': 2.10.1
 

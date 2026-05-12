@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   listLocalModels,
+  syncFeaturedModels,
   downloadHfModel,
   getLocalModelDownloadProgress,
   cancelLocalModelDownload,
@@ -128,6 +129,7 @@ export default function LocalModelPicker({ onConfigured, onBack }: LocalModelPic
   useEffect(() => {
     const load = async () => {
       try {
+        await syncFeaturedModels();
         const response = await listLocalModels({ throwOnError: true });
         if (response.data) {
           setModels(response.data);

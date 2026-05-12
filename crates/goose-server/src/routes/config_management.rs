@@ -11,6 +11,7 @@ use goose::config::declarative_providers::LoadedProvider;
 use goose::config::paths::Paths;
 use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
+use goose::custom_requests::SourceType;
 use goose::model::ModelConfig;
 use goose::providers::base::{ProviderMetadata, ProviderType};
 use goose::providers::canonical::maybe_get_canonical_model;
@@ -107,6 +108,11 @@ fn default_requires_auth() -> bool {
     true
 }
 
+fn normalize_custom_provider_api_key(api_key: String) -> Option<String> {
+    let api_key = api_key.trim().to_string();
+    (!api_key.is_empty()).then_some(api_key)
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct CheckProviderRequest {
     pub provider: String,
@@ -136,6 +142,7 @@ pub enum CommandType {
     Builtin,
     Recipe,
     Skill,
+    Agent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -426,14 +433,31 @@ pub async fn get_slash_commands(
     }
 
     let working_dir = query.working_dir.map(std::path::PathBuf::from);
-    for source in
-        goose::agents::platform_extensions::skills::list_installed_skills(working_dir.as_deref())
-    {
+    for source in goose::skills::list_installed_skills(working_dir.as_deref()) {
         commands.push(SlashCommand {
             command: source.name,
             help: source.description,
             command_type: CommandType::Skill,
         });
+    }
+
+    let discover_dir = working_dir
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    for source in
+        goose::agents::platform_extensions::summon::discover_filesystem_sources(discover_dir)
+    {
+        if matches!(
+            source.source_type,
+            SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
+        ) && !source.content.is_empty()
+        {
+            commands.push(SlashCommand {
+                command: source.name,
+                help: source.description,
+                command_type: CommandType::Agent,
+            });
+        }
     }
 
     Ok(Json(SlashCommandsResponse { commands }))
@@ -498,33 +522,6 @@ pub async fn get_canonical_model_info(
 
 #[utoipa::path(
     post,
-    path = "/config/init",
-    responses(
-        (status = 200, description = "Config initialization check completed", body = String),
-        (status = 500, description = "Internal server error")
-    )
-)]
-pub async fn init_config() -> Result<Json<String>, ErrorResponse> {
-    let config = Config::global();
-
-    if config.exists() {
-        return Ok(Json("Config already exists".to_string()));
-    }
-
-    // Use the shared function to load init-config.yaml
-    match goose::config::base::load_init_config_from_workspace() {
-        Ok(init_values) => {
-            config.initialize_if_empty(init_values)?;
-            Ok(Json("Config initialized successfully".to_string()))
-        }
-        Err(_) => Ok(Json(
-            "No init-config.yaml found, using default configuration".to_string(),
-        )),
-    }
-}
-
-#[utoipa::path(
-    post,
     path = "/config/permissions",
     request_body = UpsertPermissionsQuery,
     responses(
@@ -545,59 +542,6 @@ pub async fn upsert_permissions(
     }
 
     Ok(Json("Permissions updated successfully".to_string()))
-}
-
-#[utoipa::path(
-    post,
-    path = "/config/backup",
-    responses(
-        (status = 200, description = "Config file backed up", body = String),
-        (status = 500, description = "Internal server error")
-    )
-)]
-pub async fn backup_config() -> Result<Json<String>, ErrorResponse> {
-    let config_path = Paths::config_dir().join("config.yaml");
-
-    if !config_path.exists() {
-        return Err(ErrorResponse::not_found("Config file does not exist"));
-    }
-
-    let file_name = config_path
-        .file_name()
-        .ok_or_else(|| ErrorResponse::internal("Invalid config file path"))?;
-
-    let mut backup_name = file_name.to_os_string();
-    backup_name.push(".bak");
-
-    let backup = config_path.with_file_name(backup_name);
-    std::fs::copy(&config_path, &backup)?;
-    Ok(Json(format!("Copied {:?} to {:?}", config_path, backup)))
-}
-
-#[utoipa::path(
-    post,
-    path = "/config/recover",
-    responses(
-        (status = 200, description = "Config recovery attempted", body = String),
-        (status = 500, description = "Internal server error")
-    )
-)]
-pub async fn recover_config() -> Result<Json<String>, ErrorResponse> {
-    let config = Config::global();
-
-    // Force a reload which will trigger recovery if needed
-    let values = config.all_values()?;
-    let recovered_keys: Vec<String> = values.keys().cloned().collect();
-
-    if recovered_keys.is_empty() {
-        Ok(Json("Config recovery completed, but no data was recoverable. Starting with empty configuration.".to_string()))
-    } else {
-        Ok(Json(format!(
-            "Config recovery completed. Recovered {} keys: {}",
-            recovered_keys.len(),
-            recovered_keys.join(", ")
-        )))
-    }
 }
 
 #[utoipa::path(
@@ -644,7 +588,7 @@ pub async fn create_custom_provider(
             engine: request.engine,
             display_name: request.display_name,
             api_url: request.api_url,
-            api_key: request.api_key,
+            api_key: normalize_custom_provider_api_key(request.api_key),
             models: request.models,
             supports_streaming: request.supports_streaming,
             headers: request.headers,
@@ -736,7 +680,7 @@ pub async fn update_custom_provider(
             engine: request.engine,
             display_name: request.display_name,
             api_url: request.api_url,
-            api_key: request.api_key,
+            api_key: normalize_custom_provider_api_key(request.api_key),
             models: request.models,
             supports_streaming: request.supports_streaming,
             headers: request.headers,
@@ -923,9 +867,6 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/config/canonical-model-info",
             post(get_canonical_model_info),
         )
-        .route("/config/init", post(init_config))
-        .route("/config/backup", post(backup_config))
-        .route("/config/recover", post(recover_config))
         .route("/config/validate", get(validate_config))
         .route("/config/permissions", post(upsert_permissions))
         .route("/config/custom-providers", post(create_custom_provider))

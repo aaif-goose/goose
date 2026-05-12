@@ -8,7 +8,7 @@ authors:
 You can use your subscriptions for codex, claude and gemini now with goose, thanks to ACP! (Agent Client Protocol).
 Codex is also special in that you can login directly to chatgpt - nothing else needs to be installed. 
 
-Gemini natively supports ACP, so it now works with a gemini acp provider in goose. At the time of writing, claude requires just one utility installed just once.
+Gemini now works via OAuth — just sign in with your Google account. At the time of writing, claude requires just one utility installed just once.
 
 <!--truncate-->
 
@@ -47,17 +47,11 @@ The first time you run it, goose will open a browser window for you to sign in w
 
 The recommended model is `gpt-5.3-codex`, which is the default. You can also select `gpt-5.4` (OpenAI's latest omni model) or `gpt-5.2-codex` from the model picker.
 
-## Gemini — via ACP (native)
+## Gemini — via OAuth
 
-If you have a Google account with Gemini access, the Gemini CLI speaks ACP natively — no separate adapter needed. Just install the Gemini CLI itself:
+If you have a Google account with Gemini access, the `Gemini` (`gemini_oauth`) provider lets you use goose with your existing account. Just pick Gemini when setting up goose for the first time (or changing providers).
 
-```bash
-npm install -g @google/gemini-cli
-```
-
-... and run `gemini` at least once. 
-
-On first run, Gemini CLI will ask you to authenticate with your Google account. After that, goose passes your extensions directly through to Gemini via ACP. 
+The first time you run it, goose will open a browser window for you to sign in with your Google account. After that, your session is cached locally.
 
 ## What about the old CLI providers?
 
@@ -69,6 +63,6 @@ Goose previously supported `claude-code`, `codex`, and `gemini-cli` as "pass-thr
 |---|---|---|---|
 | Claude Code | `claude-acp` | `npm install -g @zed-industries/claude-agent-acp` | ✅ via MCP |
 | ChatGPT Plus/Pro | `chatgpt_codex` | Nothing — OAuth sign-in | ✅ via MCP |
-| Gemini | `gemini-acp` | `npm install -g @google/gemini-cli` | ✅ via MCP |
+| Gemini | `gemini_oauth` | Nothing — OAuth sign-in | ✅ native |
 
 Pick the one that matches what you're already paying for, and you're good to go.

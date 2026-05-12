@@ -4,6 +4,7 @@ import {
   createProject,
   updateProject,
   deleteProject,
+  reorderProjects as apiReorderProjects,
   type ProjectInfo,
 } from "../api/projects";
 
@@ -33,7 +34,7 @@ function persistProjects(projects: ProjectInfo[]): void {
   }
 }
 
-interface ProjectState {
+export interface ProjectStore {
   projects: ProjectInfo[];
   loading: boolean;
   activeProjectId: string | null;
@@ -64,11 +65,12 @@ interface ProjectState {
     useWorktrees: boolean,
   ) => Promise<ProjectInfo>;
   removeProject: (id: string) => Promise<void>;
+  reorderProjects: (fromId: string, toId: string) => void;
   setActiveProject: (id: string | null) => void;
   getActiveProject: () => ProjectInfo | null;
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
+export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: loadCachedProjects(),
   loading: false,
   activeProjectId: null,
@@ -123,8 +125,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     workingDirs,
     useWorktrees,
   ) => {
-    const project = await updateProject(
-      id,
+    const existing = get().projects.find((p) => p.id === id);
+    if (!existing) throw new Error(`Project ${id} not found`);
+    const project = await updateProject(existing, {
       name,
       description,
       prompt,
@@ -134,7 +137,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       preferredModel,
       workingDirs,
       useWorktrees,
-    );
+    });
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? project : p)),
     }));
@@ -150,6 +153,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         state.activeProjectId === id ? null : state.activeProjectId,
     }));
     persistProjects(get().projects);
+  },
+
+  reorderProjects: (fromId, toId) => {
+    set((state) => {
+      const projects = [...state.projects];
+      const fromIndex = projects.findIndex((p) => p.id === fromId);
+      const toIndex = projects.findIndex((p) => p.id === toId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex)
+        return state;
+      const [moved] = projects.splice(fromIndex, 1);
+      // When dragging down, removing the source shifts the target index
+      const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex;
+      projects.splice(insertAt, 0, moved);
+      // Update order fields so views sorting by .order stay consistent
+      for (let i = 0; i < projects.length; i++) {
+        projects[i] = { ...projects[i], order: i };
+      }
+      return { projects };
+    });
+    const projects = get().projects;
+    persistProjects(projects);
+    void apiReorderProjects(projects.map((p, i) => [p.id, i]));
   },
 
   setActiveProject: (id) => set({ activeProjectId: id }),

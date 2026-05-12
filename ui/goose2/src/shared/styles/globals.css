@@ -85,9 +85,11 @@
   --radius: 20px;
 
   /* theming accents */
-  --background-accent: var(--color-gray-900);
-  --border-accent: var(--color-gray-900);
-  --text-accent: var(--color-gray-900);
+  --brand: var(--color-gray-900);
+  --brand-foreground: #ffffff;
+  --background-accent: var(--brand);
+  --border-accent: var(--brand);
+  --text-accent: var(--brand);
 
   /* Semantic backgrounds */
   --background-default: var(--color-white);
@@ -102,6 +104,12 @@
 
   /* Semantic borders */
   --border-default: var(--color-gray-200);
+  --border-soft: color-mix(in srgb, var(--border-default) 80%, transparent);
+  --border-soft-divider: color-mix(
+    in srgb,
+    var(--border-default) 70%,
+    transparent
+  );
   --border-input: var(--color-gray-300);
   --border-input-hover: var(--color-gray-400);
   --border-strong: var(--color-gray-900);
@@ -122,8 +130,9 @@
   --text-success: var(--color-green-300);
   --text-warning: var(--color-yellow-200);
   --text-info: var(--color-blue-200);
+  --text-placeholder: var(--color-gray-400);
 
-  --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
+  --ring: color-mix(in oklab, var(--brand) 42%, transparent);
 
   /* Alpha variants */
   --dark-10: rgba(26, 26, 26, 0.1);
@@ -161,13 +170,13 @@
   --card-foreground: var(--text-default);
   --popover: var(--background-default);
   --popover-foreground: var(--text-default);
-  --primary: var(--background-accent);
-  --primary-foreground: var(--text-inverse);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
   --secondary: var(--background-muted);
   --secondary-foreground: var(--text-default);
   --muted: var(--background-muted);
   --muted-foreground: var(--text-muted);
-  --accent: var(--background-muted);
+  --accent: color-mix(in oklab, var(--brand) 12%, var(--background-muted));
   --accent-foreground: var(--text-default);
   --destructive: var(--background-danger);
   --destructive-foreground: #ffffff;
@@ -177,9 +186,9 @@
   /* Sidebar */
   --sidebar: var(--background-default);
   --sidebar-foreground: var(--text-default);
-  --sidebar-primary: var(--background-accent);
-  --sidebar-primary-foreground: var(--text-inverse);
-  --sidebar-accent: var(--background-muted);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--text-default);
   --sidebar-border: var(--border-default);
   --sidebar-ring: var(--border-default);
@@ -240,16 +249,28 @@
   --duration-slow: 0.4s;
 
   /* goose2 custom — brand accent + density */
-  --color-brand: #3b82f6;
-  --color-brand-foreground: #ffffff;
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --density-spacing: 1;
+}
+
+[data-density="compact"] {
+  --density-spacing: 0.75;
+  --spacing: 0.1875rem;
+}
+
+[data-density="spacious"] {
+  --density-spacing: 1.25;
+  --spacing: 0.3125rem;
 }
 
 .dark {
   /* theming accents */
-  --background-accent: var(--color-white);
-  --border-accent: var(--color-white);
-  --text-accent: var(--color-white);
+  --brand: var(--color-white);
+  --brand-foreground: #000000;
+  --background-accent: var(--brand);
+  --border-accent: var(--brand);
+  --text-accent: var(--brand);
 
   /* shadcn/ui standard tokens — same aliases, dark values cascade via custom vars */
   --background: var(--background-default);
@@ -258,13 +279,13 @@
   --card-foreground: var(--text-default);
   --popover: var(--background-default);
   --popover-foreground: var(--text-default);
-  --primary: var(--background-accent);
-  --primary-foreground: var(--text-inverse);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
   --secondary: var(--background-muted);
   --secondary-foreground: var(--text-default);
   --muted: var(--background-muted);
   --muted-foreground: var(--text-muted);
-  --accent: var(--background-muted);
+  --accent: color-mix(in oklab, var(--brand) 18%, var(--background-muted));
   --accent-foreground: var(--text-default);
   --destructive: var(--background-danger);
   --destructive-foreground: #ffffff;
@@ -284,6 +305,12 @@
 
   /* semantic borders */
   --border-default: var(--color-gray-700);
+  --border-soft: color-mix(in srgb, var(--border-default) 80%, transparent);
+  --border-soft-divider: color-mix(
+    in srgb,
+    var(--border-default) 70%,
+    transparent
+  );
   --border-input: var(--color-gray-700);
   --border-input-hover: var(--color-gray-600);
   --border-strong: var(--color-white);
@@ -304,8 +331,9 @@
   --text-success: var(--color-green-100);
   --text-warning: var(--color-yellow-100);
   --text-info: var(--color-blue-100);
+  --text-placeholder: var(--color-gray-600);
 
-  --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
+  --ring: color-mix(in oklab, var(--brand) 52%, transparent);
 
   /* Alpha variants (dark mode) */
   --dark-10: rgba(242, 242, 242, 0.1);
@@ -333,9 +361,9 @@
   /* Sidebar */
   --sidebar: var(--background-default);
   --sidebar-foreground: var(--text-default);
-  --sidebar-primary: var(--background-accent);
-  --sidebar-primary-foreground: var(--text-inverse);
-  --sidebar-accent: var(--background-muted);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--text-default);
   --sidebar-border: var(--border-default);
   --sidebar-ring: var(--border-default);
@@ -356,6 +384,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-placeholder: var(--text-placeholder);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -364,8 +393,8 @@
   --color-input: var(--input);
 
   /* brand accent */
-  --color-brand: var(--color-brand);
-  --color-brand-foreground: var(--color-brand-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
 
   /* danger (alias for destructive) */
   --color-danger: var(--destructive);
@@ -387,6 +416,8 @@
 
   /* semantic borders */
   --color-border-default: var(--border-default);
+  --color-border-soft: var(--border-soft);
+  --color-border-soft-divider: var(--border-soft-divider);
   --color-border-input: var(--border-input);
   --color-border-input-hover: var(--border-input-hover);
   --color-border-strong: var(--border-strong);
@@ -407,6 +438,7 @@
   --color-text-success: var(--text-success);
   --color-text-warning: var(--text-warning);
   --color-text-info: var(--text-info);
+  --color-text-placeholder: var(--text-placeholder);
 
   /* alpha variants */
   --color-dark-10: var(--dark-10);
@@ -483,6 +515,9 @@
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-accordion-content-open: accordion-content-open 0.2s
+    cubic-bezier(0.25, 1, 0.5, 1) both;
+  --animate-accordion-content-close: accordion-content-close 0.2s ease-out both;
   --animate-caret-blink: caret-blink 1s ease-out infinite;
   --animate-scale-in: scale-in 0.2s ease;
   --animate-scale-out: scale-out 0.15s ease;
@@ -509,6 +544,28 @@
     }
     to {
       height: 0;
+    }
+  }
+
+  @keyframes accordion-content-open {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes accordion-content-close {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-2px);
     }
   }
 
@@ -674,6 +731,8 @@ body,
     @apply border-border;
   }
   html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
     font-variation-settings: normal;
   }
@@ -686,8 +745,8 @@ body,
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--color-brand) 60%, transparent);
-    color: #ffffff;
+    background: color-mix(in oklab, var(--brand) 60%, transparent);
+    color: var(--brand-foreground);
   }
 
   ::-webkit-scrollbar {
@@ -751,6 +810,34 @@ body,
       @apply ring-ring ring-offset-background ring-2 ring-offset-2 outline-hidden;
     }
   }
+}
+
+[data-streamdown="table-wrapper"],
+[data-streamdown="code-block"],
+[data-streamdown="mermaid-block"] {
+  border: none;
+}
+
+/* Doubled attribute selector bumps specificity above Tailwind's `flex` class
+   (0,2,0 vs 0,1,0) so grid wins regardless of source order. */
+[data-streamdown="code-block"][data-streamdown] {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+[data-streamdown="code-block"] > [data-streamdown="code-block-header"] {
+  grid-column: 1;
+}
+
+[data-streamdown="code-block"]
+  > [data-streamdown="code-block-header"]
+  + div:has([data-streamdown="code-block-actions"]) {
+  grid-column: 2;
+  margin-top: 0;
+}
+
+[data-streamdown="code-block"] > :last-child {
+  grid-column: 1 / -1;
 }
 
 /* ═══════════════════════════════════════════════════════════
