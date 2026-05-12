@@ -6,7 +6,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use chrono::DateTime;
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Response, StatusCode};
 use serde_json::Value;
@@ -60,10 +60,29 @@ fn parse_retry_after_header(value: &str) -> Option<Duration> {
     if let Ok(secs) = value.parse::<u64>() {
         return duration_from_finite_secs(secs as f64);
     }
-    let target = DateTime::parse_from_rfc2822(value).ok()?;
-    let target = SystemTime::from(target);
+    let target = parse_http_date(value)?;
     let delay = target.duration_since(SystemTime::now()).ok()?;
     duration_from_finite_secs(delay.as_secs_f64())
+}
+
+/// Parse the three HTTP-date forms RFC 7231 §7.1.1.1 requires recipients to
+/// accept: IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`), the obsolete RFC 850
+/// form (`Sunday, 06-Nov-94 08:49:37 GMT`), and asctime (`Sun Nov  6 08:49:37
+/// 1994`). All three are interpreted as GMT.
+fn parse_http_date(value: &str) -> Option<SystemTime> {
+    let value = value.trim();
+    if let Ok(dt) = DateTime::parse_from_rfc2822(value) {
+        return Some(SystemTime::from(dt));
+    }
+    if let Some(body) = value.strip_suffix(" GMT") {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(body, "%A, %d-%b-%y %H:%M:%S") {
+            return Some(SystemTime::from(Utc.from_utc_datetime(&naive)));
+        }
+    }
+    if let Ok(naive) = NaiveDateTime::parse_from_str(value, "%a %b %e %H:%M:%S %Y") {
+        return Some(SystemTime::from(Utc.from_utc_datetime(&naive)));
+    }
+    None
 }
 
 fn check_context_length_exceeded(text: &str) -> bool {
@@ -249,6 +268,34 @@ mod tests {
         assert!(
             delay >= Duration::from_secs(30) && delay <= Duration::from_secs(60),
             "expected ~45s, got {delay:?}"
+        );
+    }
+
+    #[test]
+    fn retry_after_parses_rfc850_http_date() {
+        // RFC 7231 recipients must accept the obsolete RFC 850 date syntax.
+        // Build a future date in that form and assert it round-trips.
+        let target = chrono::Utc::now() + chrono::Duration::seconds(90);
+        let header_value = target.format("%A, %d-%b-%y %H:%M:%S GMT").to_string();
+        let headers = headers_with_retry_after(&header_value);
+        let delay = extract_retry_after(&headers, None).expect("rfc850 date should parse");
+        assert!(
+            delay >= Duration::from_secs(60) && delay <= Duration::from_secs(120),
+            "expected ~90s, got {delay:?}"
+        );
+    }
+
+    #[test]
+    fn retry_after_parses_asctime_http_date() {
+        // The third HTTP-date form RFC 7231 requires recipients to accept.
+        // asctime has no timezone marker; we interpret it as GMT.
+        let target = chrono::Utc::now() + chrono::Duration::seconds(120);
+        let header_value = target.format("%a %b %e %H:%M:%S %Y").to_string();
+        let headers = headers_with_retry_after(&header_value);
+        let delay = extract_retry_after(&headers, None).expect("asctime date should parse");
+        assert!(
+            delay >= Duration::from_secs(90) && delay <= Duration::from_secs(150),
+            "expected ~120s, got {delay:?}"
         );
     }
 
