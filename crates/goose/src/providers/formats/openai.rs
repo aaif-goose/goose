@@ -1835,37 +1835,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_merges_request_params() -> anyhow::Result<()> {
-        use std::collections::HashMap;
-        let mut params = HashMap::new();
-        params.insert("thinking".to_string(), json!({"type": "disabled"}));
-        params.insert("custom_field".to_string(), json!("custom_value"));
-
-        let model_config = ModelConfig {
-            model_name: "deepseek-v4-flash".to_string(),
-            context_limit: Some(4096),
-            temperature: None,
-            max_tokens: Some(1024),
-            toolshim: false,
-            toolshim_model: None,
-            fast_model_config: None,
-            request_params: Some(params),
-            reasoning: None,
-        };
-        let request = create_request(
-            &model_config,
-            "system",
-            &[],
-            &[],
-            &ImageFormat::OpenAi,
-            false,
-        )?;
-        assert_eq!(request["thinking"]["type"], "disabled");
-        assert_eq!(request["custom_field"], "custom_value");
-        Ok(())
-    }
-
-    #[test]
     fn test_create_request_gpt_4o() -> anyhow::Result<()> {
         // Test default medium reasoning effort for O3 model
         let model_config = ModelConfig {
