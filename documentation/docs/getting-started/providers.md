@@ -738,9 +738,9 @@ To set up Novita AI with goose, follow these steps:
 [Routstr](https://routstr.com/) is an OpenAI-compatible aggregator that fronts dozens of upstream providers behind a single API. Payment is handled by the Routstr instance itself, so all goose needs is the `sk-...` bearer that instance issues you. To use Routstr with goose, pick an instance (the default is `https://api.routstr.com`) and obtain an API key from its payment flow.
 
 Routstr aggregates models from many upstream providers, including:
-- **anthropic/claude-opus-4.7** — Anthropic's Claude opus 4.7
-- **deepseek/deepseek-v4-pro** — DeepSeek V4 Pro
-- **google/gemini-3.1-pro-preview** — google/gemini-3.1-pro-preview
+- **claude-opus-4.7** — Anthropic's Claude opus 4.7
+- **deepseek-v4-pro** — DeepSeek V4 Pro
+- **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
 
 `/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/routstr.json).
 
