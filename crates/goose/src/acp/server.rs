@@ -1431,10 +1431,6 @@ impl GooseAcpAgent {
             SessionUpdate::ToolCall(initial_tool_call),
         ))?;
 
-        // The block below spawns a per-tool-call provider.complete_fast request to upgrade
-        // the synchronous fallback_title above with a model-generated phrase. On rate-limited
-        // providers this auxiliary call is the difference between a session that finishes and
-        // one that gets throttled, so allow opting out — the client keeps the fallback title.
         if Config::global()
             .get_goose_disable_tool_call_summary()
             .unwrap_or(false)
