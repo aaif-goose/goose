@@ -54,7 +54,8 @@ pub struct ImportSessionRequest {
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareSessionNostrRequest {
-    relays: Option<Vec<String>>,
+    #[serde(default)]
+    relays: Vec<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -415,8 +416,7 @@ async fn share_session_nostr(
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let relays = request.relays.unwrap_or_default();
-    let relays = nostr_share::resolve_relays(relays, goose::config::Config::global());
+    let relays = nostr_share::resolve_relays(request.relays, goose::config::Config::global());
     let share = nostr_share::publish_session_json(&exported, relays)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

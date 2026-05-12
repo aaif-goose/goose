@@ -59,7 +59,7 @@ native-tls = [
     "oauth2/reqwest",
     "oauth2/native-tls",
 ]
-rustls = ["dep:rustls"]
+
 
 [lints]
 workspace = true

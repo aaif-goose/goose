@@ -4,6 +4,17 @@ import { errorMessage } from './utils/conversionUtils';
 import { importSessionNostr } from './api';
 
 /**
+ * Imports a session from an encrypted Nostr deep link.
+ * Separated from shared-session handling so callers can route independently.
+ */
+export async function importNostrSessionFromDeepLink(url: string): Promise<void> {
+  await importSessionNostr({
+    body: { deeplink: url },
+    throwOnError: true,
+  });
+}
+
+/**
  * Handles opening a shared session from a deep link
  * @param url The deep link URL (goose://sessions/:shareToken)
  * @param setView Function to set the current view
@@ -18,15 +29,6 @@ export async function openSharedSessionFromDeepLink(
   try {
     if (!url.startsWith('goose://sessions/')) {
       throw new Error('Invalid URL: URL must use the goose://sessions/ scheme');
-    }
-
-    if (url.startsWith('goose://sessions/nostr')) {
-      await importSessionNostr({
-        body: { deeplink: url },
-        throwOnError: true,
-      });
-      setView('sessions');
-      return null;
     }
 
     // Extract the share token from the URL

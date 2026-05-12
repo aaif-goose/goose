@@ -625,7 +625,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         await navigator.clipboard.writeText(shareLink);
         toast.success(intl.formatMessage(i18n.copied));
       } catch (error) {
-        toast.error(intl.formatMessage(i18n.importFailed, { error: errorMessage(error, 'Unknown error') }));
+        toast.error(`Failed to copy: ${errorMessage(error, 'Unknown error')}`);
       }
     }, [intl, shareLink]);
 

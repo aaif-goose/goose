@@ -1358,7 +1358,7 @@ export type SetupResponse = {
 };
 
 export type ShareSessionNostrRequest = {
-    relays?: Array<string> | null;
+    relays?: Array<string>;
 };
 
 export type ShareSessionNostrResponse = {
