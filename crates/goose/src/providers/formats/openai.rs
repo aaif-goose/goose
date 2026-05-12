@@ -710,10 +710,6 @@ fn ensure_valid_json_schema(schema: &mut Value) {
             if let Some(properties) = params_obj.get_mut("properties") {
                 if let Some(properties_obj) = properties.as_object_mut() {
                     for (_key, prop) in properties_obj.iter_mut() {
-                        // Normalize nullable schemas to a scalar type for providers like Vertex
-                        // Gemini that don't support array types or anyOf with null:
-                        //   schemars 1.x: type: ["integer", "null"] -> type: "integer"
-                        //   anyOf: [T, {type: "null"}]              -> T
                         normalize_nullable(prop);
                         if prop.is_object()
                             && prop.get("type").and_then(|t| t.as_str()) == Some("object")
@@ -753,24 +749,32 @@ fn normalize_nullable(schema: &mut Value) {
         }
     }
 
-    // Handle anyOf: [T, {type: "null"}] form
-    if let Some(any_of) = obj.get("anyOf").cloned() {
+    // Handle anyOf: [T, {type: "null"}] form — merge the non-null variant's fields
+    // into the current object (preserving sibling keys like "description" or "default")
+    // rather than replacing the whole schema.
+    if let Some(any_of) = obj.remove("anyOf") {
         if let Some(variants) = any_of.as_array() {
             if variants.len() == 2 {
-                let is_null =
-                    |v: &Value| v.get("type").and_then(|t| t.as_str()) == Some("null");
+                let is_null = |v: &Value| v.get("type").and_then(|t| t.as_str()) == Some("null");
                 let non_null = if is_null(&variants[0]) {
-                    Some(variants[1].clone())
+                    Some(&variants[1])
                 } else if is_null(&variants[1]) {
-                    Some(variants[0].clone())
+                    Some(&variants[0])
                 } else {
                     None
                 };
                 if let Some(replacement) = non_null {
-                    *schema = replacement;
+                    if let Some(replacement_obj) = replacement.as_object() {
+                        for (k, v) in replacement_obj {
+                            obj.entry(k.clone()).or_insert(v.clone());
+                        }
+                        return;
+                    }
                 }
             }
         }
+        // Put it back if we couldn't simplify
+        obj.insert("anyOf".to_string(), any_of);
     }
 }
 
@@ -1192,8 +1196,7 @@ mod tests {
         validate_tool_schemas(&mut tools);
         assert_eq!(tools[0], original_schema);
 
-        // Test case 4: anyOf nullable (schemars 1.x style) is unwrapped to non-null type
-        // This is needed for Vertex Gemini compatibility via Bifrost
+        // Test case 4: anyOf nullable is unwrapped, preserving sibling metadata
         let mut tools = vec![json!({
             "type": "function",
             "function": {
@@ -1204,6 +1207,7 @@ mod tests {
                     "properties": {
                         "command": { "type": "string" },
                         "timeout_secs": {
+                            "description": "timeout in seconds",
                             "anyOf": [
                                 { "type": "integer", "format": "uint64", "minimum": 0 },
                                 { "type": "null" }
@@ -1217,6 +1221,8 @@ mod tests {
         validate_tool_schemas(&mut tools);
         let timeout_schema = &tools[0]["function"]["parameters"]["properties"]["timeout_secs"];
         assert_eq!(timeout_schema["type"], "integer");
+        assert_eq!(timeout_schema["format"], "uint64");
+        assert_eq!(timeout_schema["description"], "timeout in seconds");
         assert!(timeout_schema.get("anyOf").is_none());
 
         // Test case 4b: type array form (schemars 1.x style for nullable primitives)
@@ -1264,7 +1270,10 @@ mod tests {
             timeout.get("anyOf").is_none(),
             "timeout_secs should not have anyOf after validation, got: {timeout}"
         );
-        assert_eq!(timeout["type"], "integer", "timeout_secs should have type=integer");
+        assert_eq!(
+            timeout["type"], "integer",
+            "timeout_secs should have type=integer"
+        );
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
