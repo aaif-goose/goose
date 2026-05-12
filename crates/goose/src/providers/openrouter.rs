@@ -212,6 +212,65 @@ impl Provider for OpenRouterProvider {
         self.model.clone()
     }
 
+    /// Override the default canonical-filtered inventory so `openrouter/auto`
+    /// survives refresh. The default filter drops any model that does not map
+    /// to a canonical id, and the auto-routing alias intentionally has no
+    /// single canonical mapping (it resolves to whatever backend OpenRouter
+    /// picks at request time). Without this override, clicking "Refresh
+    /// inventory" silently removes the auto-routing option until a user
+    /// resets their inventory data. Logic mirrors the trait's default
+    /// implementation with a carve-out for the auto alias.
+    async fn fetch_recommended_models(&self) -> Result<Vec<String>, ProviderError> {
+        use crate::providers::canonical::{
+            map_to_canonical_model, CanonicalModelRegistry, Modality,
+        };
+        const AUTO_ROUTE_MODEL: &str = "openrouter/auto";
+
+        let all_models = self.fetch_supported_models().await?;
+
+        let registry = CanonicalModelRegistry::bundled().map_err(|e| {
+            ProviderError::ExecutionError(format!("Failed to load canonical registry: {}", e))
+        })?;
+
+        let provider_name = self.get_name();
+        let mut models_with_dates: Vec<(String, Option<String>)> = all_models
+            .iter()
+            .filter_map(|model| {
+                if model == AUTO_ROUTE_MODEL {
+                    return Some((model.clone(), None));
+                }
+                let canonical_id = map_to_canonical_model(provider_name, model, registry)?;
+                let (provider, model_name) = canonical_id.split_once('/')?;
+                let canonical_model = registry.get(provider, model_name)?;
+                if !canonical_model.modalities.input.contains(&Modality::Text) {
+                    return None;
+                }
+                if !canonical_model.tool_call && !self.get_model_config().toolshim {
+                    return None;
+                }
+                Some((model.clone(), canonical_model.release_date.clone()))
+            })
+            .collect();
+
+        models_with_dates.sort_by(|a, b| match (&a.1, &b.1) {
+            (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.0.cmp(&b.0),
+        });
+
+        let inventory_models: Vec<String> = models_with_dates
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+
+        if inventory_models.is_empty() {
+            Ok(all_models)
+        } else {
+            Ok(inventory_models)
+        }
+    }
+
     /// Fetch supported models from OpenRouter API
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
         let response = self
