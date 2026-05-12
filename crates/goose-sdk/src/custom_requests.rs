@@ -852,6 +852,10 @@ pub struct SourceEntry {
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.
     pub global: bool,
+    /// True when this source can be modified through source CRUD methods.
+    /// Client-provided bundled sources are returned as read-only.
+    #[serde(default)]
+    pub writable: bool,
     /// Paths (absolute) of additional files that live alongside the source.
     /// Only skills currently populate this; empty for other source types.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -10,7 +10,7 @@ use agent_client_protocol::schema::{
 };
 use async_trait::async_trait;
 use fs_err as fs;
-use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
+use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent, GooseAcpAgentOptions};
 pub use goose::acp::{map_permission_response, PermissionDecision};
 use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
@@ -186,15 +186,16 @@ pub async fn spawn_acp_server_in_process(
         })
     });
 
-    let agent = GooseAcpAgent::new(
+    let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
         provider_factory,
-        builtins.to_vec(),
-        data_root.to_path_buf(),
-        data_root.to_path_buf(),
+        builtins: builtins.to_vec(),
+        data_dir: data_root.to_path_buf(),
+        config_dir: data_root.to_path_buf(),
         goose_mode,
         disable_session_naming,
-        GoosePlatform::GooseCli,
-    )
+        goose_platform: GoosePlatform::GooseCli,
+        additional_source_roots: Vec::new(),
+    })
     .await
     .unwrap();
     let agent = Arc::new(agent);

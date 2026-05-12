@@ -1957,6 +1957,11 @@
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
         },
+        "writable": {
+          "type": "boolean",
+          "description": "True when this source can be modified through source CRUD methods.\nClient-provided bundled sources are returned as read-only.",
+          "default": false
+        },
         "supportingFiles": {
           "type": "array",
           "items": {

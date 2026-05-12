@@ -798,6 +798,11 @@ export type SourceEntry = {
      */
     global: boolean;
     /**
+     * True when this source can be modified through source CRUD methods.
+     * Client-provided bundled sources are returned as read-only.
+     */
+    writable?: boolean;
+    /**
      * Paths (absolute) of additional files that live alongside the source.
      * Only skills currently populate this; empty for other source types.
      */

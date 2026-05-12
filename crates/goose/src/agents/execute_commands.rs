@@ -43,6 +43,34 @@ static COMMANDS: &[CommandDef] = &[
     },
 ];
 
+pub struct ParsedSlashCommand<'a> {
+    pub command: &'a str,
+    pub params_str: &'a str,
+}
+
+pub fn parse_slash_command(message_text: &str) -> Option<ParsedSlashCommand<'_>> {
+    let mut trimmed = message_text.trim();
+
+    if COMPACT_TRIGGERS.contains(&trimmed) {
+        trimmed = COMPACT_TRIGGERS[0];
+    }
+
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+
+    let command_str = trimmed.strip_prefix('/').unwrap_or(trimmed);
+    let (command, params_str) = command_str
+        .split_once(' ')
+        .map(|(cmd, p)| (cmd, p.trim()))
+        .unwrap_or((command_str, ""));
+
+    Some(ParsedSlashCommand {
+        command,
+        params_str,
+    })
+}
+
 pub fn list_commands() -> &'static [CommandDef] {
     COMMANDS
 }
@@ -53,21 +81,12 @@ impl Agent {
         message_text: &str,
         session_id: &str,
     ) -> Result<Option<Message>> {
-        let mut trimmed = message_text.trim().to_string();
-
-        if COMPACT_TRIGGERS.contains(&trimmed.as_str()) {
-            trimmed = COMPACT_TRIGGERS[0].to_string();
-        }
-
-        if !trimmed.starts_with('/') {
+        let Some(parsed) = parse_slash_command(message_text) else {
             return Ok(None);
-        }
+        };
 
-        let command_str = trimmed.strip_prefix('/').unwrap_or(&trimmed);
-        let (command, params_str) = command_str
-            .split_once(' ')
-            .map(|(cmd, p)| (cmd, p.trim()))
-            .unwrap_or((command_str, ""));
+        let command = parsed.command;
+        let params_str = parsed.params_str;
 
         let params: Vec<&str> = if params_str.is_empty() {
             vec![]
@@ -440,5 +459,29 @@ impl Agent {
             .join("\n\n");
 
         Ok(Some(Message::user().with_text(prompt)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_slash_command_splits_on_literal_space() {
+        let parsed = parse_slash_command("/speckit.plan hello world").unwrap();
+
+        assert_eq!(parsed.command, "speckit.plan");
+        assert_eq!(parsed.params_str, "hello world");
+    }
+
+    #[test]
+    fn parse_slash_command_does_not_split_on_tab_or_newline() {
+        let parsed = parse_slash_command("/speckit.plan\thello").unwrap();
+        assert_eq!(parsed.command, "speckit.plan\thello");
+        assert_eq!(parsed.params_str, "");
+
+        let parsed = parse_slash_command("/speckit.plan\nhello").unwrap();
+        assert_eq!(parsed.command, "speckit.plan\nhello");
+        assert_eq!(parsed.params_str, "");
     }
 }
