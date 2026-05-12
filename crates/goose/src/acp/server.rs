@@ -2153,7 +2153,7 @@ impl GooseAcpAgent {
         Ok(())
     }
 
-    fn command_input_hint_from_params(
+    fn input_hint_for_recipe(
         params: Option<&Vec<crate::recipe::RecipeParameter>>,
     ) -> Option<String> {
         let params = params?;
@@ -2212,9 +2212,7 @@ impl GooseAcpAgent {
             let mut command =
                 AvailableCommand::new(mapping.command, validation_result.description.clone());
 
-            if let Some(hint) =
-                Self::command_input_hint_from_params(validation_result.parameters.as_ref())
-            {
+            if let Some(hint) = Self::input_hint_for_recipe(validation_result.parameters.as_ref()) {
                 command = command.input(AvailableCommandInput::Unstructured(
                     UnstructuredCommandInput::new(hint),
                 ));
