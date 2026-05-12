@@ -158,7 +158,11 @@ impl ModelConfig {
                 self.context_limit = Some(canonical.limit.context);
             }
             if self.max_tokens.is_none() {
-                self.max_tokens = canonical.limit.output.map(|o| o as i32);
+                self.max_tokens = canonical
+                    .limit
+                    .output
+                    .filter(|&output| output < canonical.limit.context)
+                    .map(|output| output as i32);
             }
             if self.reasoning.is_none() {
                 self.reasoning = canonical.reasoning;
@@ -489,6 +493,20 @@ mod tests {
             let config = config.with_canonical_limits("openai");
 
             assert_eq!(config.max_tokens, Some(1_000));
+        }
+
+        #[test]
+        fn skips_canonical_output_limit_when_it_equals_context_limit() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let config =
+                ModelConfig::new_or_fail("moonshotai/kimi-k2.5").with_canonical_limits("nvidia");
+
+            assert_eq!(config.context_limit, Some(262_144));
+            assert_eq!(config.max_tokens, None);
+            assert_eq!(config.max_output_tokens(), 4_096);
         }
 
         #[test]

@@ -19,6 +19,7 @@ pub mod execution;
 pub mod gateway;
 pub mod goose_apps;
 pub mod hints;
+pub mod hooks;
 pub mod instance_id;
 pub mod logging;
 pub mod mcp_utils;
@@ -27,6 +28,7 @@ pub mod oauth;
 #[cfg(feature = "otel")]
 pub mod otel;
 pub mod permission;
+pub mod plugins;
 #[cfg(feature = "telemetry")]
 pub mod posthog;
 pub mod prompt_template;
@@ -38,7 +40,9 @@ pub mod scheduler_trait;
 pub mod security;
 pub mod session;
 pub mod session_context;
+pub mod skills;
 pub mod slash_commands;
+pub mod source_roots;
 pub mod sources;
 pub mod subprocess;
 pub mod token_counter;

@@ -440,13 +440,16 @@ const PROVIDER_ICON_MAP: Record<string, (className: string) => ReactNode> = {
   amp: (className) => <AmpIcon className={className} />,
   "amp-acp": (className) => <AmpIcon className={className} />,
   azure: (className) => <AzureOpenAIIcon className={className} />,
+  azure_openai: (className) => <AzureOpenAIIcon className={className} />,
   bedrock: (className) => <BedrockIcon className={className} />,
+  aws_bedrock: (className) => <BedrockIcon className={className} />,
   databricks: (className) => <DatabricksIcon className={className} />,
   gcp_vertex_ai: (className) => <VertexAIIcon className={className} />,
   ollama: (className) => <OllamaIcon className={className} />,
   openrouter: (className) => <OpenRouterIcon className={className} />,
   snowflake: (className) => <SnowflakeIcon className={className} />,
   xai: (className) => <XAIIcon className={className} />,
+  lmstudio: (className) => <OllamaIcon className={className} />,
 };
 
 function normalizeProviderId(providerId: string) {
@@ -482,10 +485,11 @@ export function getProviderIcon(
     return NORMALIZED_PROVIDER_ICON_MAP[normalizedId](className);
   }
 
-  for (const [key, render] of Object.entries(NORMALIZED_PROVIDER_ICON_MAP)) {
-    if (normalizedId.includes(key)) {
-      return render(className);
-    }
+  const fallback = Object.entries(NORMALIZED_PROVIDER_ICON_MAP).find(
+    ([providerFamily]) => normalizedId.includes(providerFamily),
+  )?.[1];
+  if (fallback) {
+    return fallback(className);
   }
 
   return null;

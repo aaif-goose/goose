@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9  # v2.14.1
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
         with:
           egress-policy: audit
       
@@ -252,7 +252,7 @@ jobs:
 
       - name: Post scan results to PR
         if: always() && steps.find_recipes.outputs.has_recipes == 'true' && steps.recipe_changes.outputs.recipe_files_changed == 'true'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         env:
           WORKSPACE: ${{ github.workspace }}
           RUNNER_TEMP: ${{ runner.temp }}
@@ -347,7 +347,7 @@ jobs:
 
       - name: Set GitHub status check
         if: always() && steps.find_recipes.outputs.has_recipes == 'true' && steps.recipe_changes.outputs.recipe_files_changed == 'true'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         env:
           RUNNER_TEMP: ${{ runner.temp }}
         with:

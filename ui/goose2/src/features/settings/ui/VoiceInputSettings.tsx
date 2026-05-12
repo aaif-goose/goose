@@ -11,6 +11,7 @@ import {
   getDefaultDictationProvider,
 } from "@/features/chat/lib/voiceInput";
 import { useVoiceInputPreferences } from "@/features/chat/hooks/useVoiceInputPreferences";
+import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 import type {
   DictationProvider,
   DictationProviderStatus,
@@ -26,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 const DISABLED_PROVIDER = "__disabled__";
 
@@ -144,11 +146,7 @@ export function VoiceInputSettings() {
 
     setError(null);
     try {
-      await saveDictationProviderSecret(
-        selectedProvider,
-        apiKeyInput,
-        selectedStatus?.configKey ?? undefined,
-      );
+      await saveDictationProviderSecret(selectedProvider, apiKeyInput);
       setApiKeyInput("");
       setIsEditingApiKey(false);
       await refreshConfig();
@@ -160,7 +158,7 @@ export function VoiceInputSettings() {
           : t("general.voiceInput.saveError"),
       );
     }
-  }, [apiKeyInput, refreshConfig, selectedProvider, selectedStatus, t]);
+  }, [apiKeyInput, refreshConfig, selectedProvider, t]);
 
   const removeApiKey = useCallback(async () => {
     if (!selectedProvider) {
@@ -169,10 +167,7 @@ export function VoiceInputSettings() {
 
     setError(null);
     try {
-      await deleteDictationProviderSecret(
-        selectedProvider,
-        selectedStatus?.configKey ?? undefined,
-      );
+      await deleteDictationProviderSecret(selectedProvider);
       setApiKeyInput("");
       setIsEditingApiKey(false);
       await refreshConfig();
@@ -184,7 +179,7 @@ export function VoiceInputSettings() {
           : t("general.voiceInput.deleteError"),
       );
     }
-  }, [refreshConfig, selectedProvider, selectedStatus, t]);
+  }, [refreshConfig, selectedProvider, t]);
 
   const handleModelChange = useCallback(
     async (modelId: string) => {
@@ -221,28 +216,19 @@ export function VoiceInputSettings() {
 
   if (loading) {
     return (
-      <div className="space-y-3">
-        <h4 className="text-sm font-semibold">
-          {t("general.voiceInput.label")}
-        </h4>
+      <SettingsPage title={t("general.voiceInput.label")}>
         <p className="text-xs text-muted-foreground">
           {t("common:labels.loading")}
         </p>
-      </div>
+      </SettingsPage>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h4 className="text-sm font-semibold">
-          {t("general.voiceInput.label")}
-        </h4>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("general.voiceInput.description")}
-        </p>
-      </div>
-
+    <SettingsPage
+      title={t("general.voiceInput.label")}
+      contentClassName="space-y-4"
+    >
       <div className="space-y-2 rounded-lg border border-border px-3 py-3">
         <p className="text-xs font-medium text-foreground">
           {t("general.voiceInput.providerLabel")}
@@ -341,6 +327,27 @@ export function VoiceInputSettings() {
 
       {selectedStatus ? (
         <>
+          {selectedStatus.usesProviderConfig ? (
+            <div className="space-y-3 rounded-lg border border-border px-3 py-3">
+              <div>
+                <p className="text-xs font-medium text-foreground">
+                  {t("general.voiceInput.providerConfigLabel")}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("general.voiceInput.providerConfigDescription")}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline-flat"
+                onClick={() => requestOpenSettings("providers")}
+              >
+                {t("general.voiceInput.openProviders")}
+              </Button>
+            </div>
+          ) : null}
+
           {!selectedStatus.usesProviderConfig &&
           selectedProvider !== "local" ? (
             <div className="space-y-3 rounded-lg border border-border px-3 py-3">
@@ -484,6 +491,6 @@ export function VoiceInputSettings() {
       </div>
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+    </SettingsPage>
   );
 }

@@ -68,8 +68,8 @@
   "view": {
     "copyName": "{{name}} (Copy)",
     "deleteFailed": "Failed to delete agent.",
-    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
-    "deleteTitle": "Delete agent?",
+    "deleteDescription": "This agent and its configuration will be permanently removed.",
+    "deleteTitle": "Delete \"{{name}}\" permanently?",
     "deleted": "\"{{name}}\" deleted.",
     "description": "Custom agent configurations for specific workflows",
     "emptyAgentsDescription": "Create an agent to get started.",

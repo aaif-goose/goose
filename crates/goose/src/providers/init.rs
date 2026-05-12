@@ -239,6 +239,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_nvidia_declarative_provider_registry_wiring() {
+        let nvidia = get_from_registry("nvidia")
+            .await
+            .expect("nvidia provider should be registered");
+        let meta = nvidia.metadata();
+
+        assert_eq!(nvidia.provider_type(), ProviderType::Declarative);
+        assert!(nvidia.supports_inventory_refresh());
+        assert_eq!(meta.display_name, "NVIDIA");
+        assert_eq!(meta.default_model, "z-ai/glm-4.7");
+        assert_eq!(meta.model_doc_link, "https://build.nvidia.com/models");
+        assert!(!meta.setup_steps.is_empty());
+
+        let api_key = meta
+            .config_keys
+            .iter()
+            .find(|k| k.name == "NVIDIA_API_KEY")
+            .expect("NVIDIA_API_KEY config key should exist");
+        assert!(api_key.required, "NVIDIA_API_KEY should be required");
+        assert!(api_key.secret, "NVIDIA_API_KEY should be secret");
+        assert!(api_key.primary, "NVIDIA_API_KEY should be primary");
+        assert!(
+            !meta.config_keys.iter().any(|k| k.name == "OPENAI_HOST"),
+            "NVIDIA should not expose OpenAI host configuration"
+        );
+        assert!(
+            !meta
+                .config_keys
+                .iter()
+                .any(|k| k.name == "OPENAI_BASE_PATH"),
+            "NVIDIA should not expose OpenAI base path configuration"
+        );
+    }
+
+    #[tokio::test]
     async fn test_openai_compatible_providers_config_keys() {
         let providers_list = providers().await;
         let required_api_key_cases = vec![
