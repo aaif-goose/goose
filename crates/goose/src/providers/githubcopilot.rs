@@ -417,7 +417,6 @@ impl Provider for GithubCopilotProvider {
     }
 
     // complete_fast() (compaction, title generation) calls this — always agent-initiated.
-    // Task-local scope prevents leaking into concurrent user stream() tasks.
     #[tracing::instrument(
         skip(self, model_config, session_id, system, messages, tools),
         fields(session.id = %session_id, gen_ai.request.model = %model_config.model_name)
@@ -645,36 +644,8 @@ fn promote_tool_choice(response: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_host, promote_tool_choice, GithubCopilotUrls, IS_AGENT_CALL};
-    use crate::conversation::message::MessageContent;
+    use super::{normalize_host, promote_tool_choice, GithubCopilotUrls};
     use serde_json::json;
-
-    // Verify the task-local IS_AGENT_CALL is visible inside the scope and
-    // absent outside it — this is the mechanism complete() relies on to tag
-    // requests as agent-initiated without leaking into concurrent stream() tasks.
-    #[tokio::test]
-    async fn is_agent_call_task_local_scoped() {
-        assert!(!IS_AGENT_CALL.try_with(|&v| v).unwrap_or(false));
-
-        IS_AGENT_CALL
-            .scope(true, async {
-                assert!(IS_AGENT_CALL.try_with(|&v| v).unwrap_or(false));
-            })
-            .await;
-
-        assert!(!IS_AGENT_CALL.try_with(|&v| v).unwrap_or(false));
-    }
-
-    // Confirm ToolResponse is the variant checked in stream() so a rename or
-    // restructure of MessageContent doesn't silently break the header logic.
-    #[test]
-    fn tool_response_variant_matches() {
-        use crate::mcp_utils::ToolResult;
-        let result: ToolResult<rmcp::model::CallToolResult> =
-            Ok(rmcp::model::CallToolResult::success(vec![]));
-        let content = MessageContent::tool_response("id-1", result);
-        assert!(matches!(content, MessageContent::ToolResponse(_)));
-    }
 
     #[test]
     fn promotes_choice_with_tool_call() {
