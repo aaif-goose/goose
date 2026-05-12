@@ -6,6 +6,11 @@ import { createServer } from 'net';
 import { Buffer } from 'node:buffer';
 import { status } from './api';
 import { Client, createClient, createConfig } from './api/client';
+import {
+  appendTail,
+  createStartupDiagnostics,
+  type StartupDiagnostics,
+} from './startupDiagnostics';
 
 export interface Logger {
   info: (...args: unknown[]) => void;
@@ -77,24 +82,36 @@ export const findGoosedBinaryPath = (options: FindBinaryOptions = {}): string =>
   );
 };
 
-export const checkServerStatus = async (client: Client, errorLog: string[]): Promise<boolean> => {
+export interface CheckServerStatusOptions {
+  onEvent?: (name: string, details?: Record<string, unknown>) => void;
+}
+
+export const checkServerStatus = async (
+  client: Client,
+  errorLog: string[],
+  options: CheckServerStatusOptions = {}
+): Promise<boolean> => {
   const timeout = 30000;
   const interval = 100;
   const maxAttempts = Math.ceil(timeout / interval);
+  options.onEvent?.('healthcheck_start', { timeoutMs: timeout, intervalMs: interval });
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (errorLog.some(isFatalError)) {
+      options.onEvent?.('healthcheck_fatal_error', { attempt });
       return false;
     }
 
     try {
       await status({ client, throwOnError: true });
+      options.onEvent?.('healthcheck_success', { attempt });
       return true;
     } catch {
       await new Promise((resolve) => setTimeout(resolve, interval));
     }
   }
 
+  options.onEvent?.('healthcheck_timeout', { timeoutMs: timeout });
   return false;
 };
 
@@ -153,6 +170,7 @@ export interface StartGoosedOptions {
   isPackaged?: boolean;
   resourcesPath?: string;
   logger?: Logger;
+  diagnosticsDir?: string;
 }
 
 export interface GoosedResult {
@@ -164,6 +182,9 @@ export interface GoosedResult {
   cleanup: () => Promise<void>;
   client: Client;
   certFingerprint: string | null;
+  startupDiagnosticsPath: string | null;
+  getStartupDiagnostics: () => StartupDiagnostics | null;
+  recordStartupEvent: (name: string, details?: Record<string, unknown>) => void;
 }
 
 const goosedClientForUrlAndSecret = (url: string, secret: string): Client => {
@@ -187,14 +208,19 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     env: additionalEnv = {},
     externalGoosed,
     logger = defaultLogger,
+    diagnosticsDir,
   } = options;
 
   const errorLog: string[] = [];
   const workingDir = dir || os.homedir();
+  const startupTrace = createStartupDiagnostics(diagnosticsDir, workingDir);
 
   if (externalGoosed?.enabled && externalGoosed.url) {
     const url = externalGoosed.url.replace(/\/$/, '');
     logger.info(`Using external goosed backend at ${url}`);
+    if (startupTrace) {
+      startupTrace.diagnostics.baseUrl = url;
+    }
 
     return {
       baseUrl: url,
@@ -207,6 +233,9 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
       },
       client: goosedClientForUrlAndSecret(url, serverSecret),
       certFingerprint: null,
+      startupDiagnosticsPath: startupTrace?.diagnosticsPath ?? null,
+      getStartupDiagnostics: () => startupTrace?.diagnostics ?? null,
+      recordStartupEvent: (name, details) => startupTrace?.record(name, details),
     };
   }
 
@@ -214,6 +243,9 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     const port = process.env.GOOSE_PORT || '3000';
     const url = `https://127.0.0.1:${port}`;
     logger.info(`Using external goosed backend from env at ${url}`);
+    if (startupTrace) {
+      startupTrace.diagnostics.baseUrl = url;
+    }
 
     return {
       baseUrl: url,
@@ -226,6 +258,9 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
       },
       client: goosedClientForUrlAndSecret(url, serverSecret),
       certFingerprint: null,
+      startupDiagnosticsPath: startupTrace?.diagnosticsPath ?? null,
+      getStartupDiagnostics: () => startupTrace?.diagnostics ?? null,
+      recordStartupEvent: (name, details) => startupTrace?.record(name, details),
     };
   }
 
@@ -235,6 +270,11 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
   logger.info(`Starting goosed from: ${goosedPath} on port ${port} in dir ${workingDir}`);
 
   const baseUrl = `https://127.0.0.1:${port}`;
+  if (startupTrace) {
+    startupTrace.diagnostics.goosedPath = goosedPath;
+    startupTrace.diagnostics.baseUrl = baseUrl;
+    startupTrace.record('spawn_start', { goosedPath, port, workingDir });
+  }
 
   const spawnEnv: Record<string, string | undefined> = {
     ...process.env,
@@ -273,6 +313,10 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
   logger.info('Spawn options:', JSON.stringify(safeSpawnOptions, null, 2));
 
   const goosedProcess = spawn(spawnCommand, spawnArgs, spawnOptions);
+  if (startupTrace) {
+    startupTrace.diagnostics.pid = goosedProcess.pid ?? null;
+    startupTrace.record('spawn_success', { pid: goosedProcess.pid ?? null });
+  }
 
   let certFingerprint: string | null = null;
   const fingerprintReady = new Promise<string | null>((resolve) => {
@@ -288,6 +332,10 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
           if (line.startsWith(FINGERPRINT_PREFIX)) {
             certFingerprint = line.slice(FINGERPRINT_PREFIX.length).trim();
             logger.info(`Pinned cert fingerprint: ${certFingerprint}`);
+            if (startupTrace) {
+              startupTrace.diagnostics.certFingerprintSeen = true;
+              startupTrace.record('fingerprint_received', { certFingerprint });
+            }
             resolved = true;
             resolve(certFingerprint);
             break;
@@ -319,6 +367,8 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
 
   const onStderrData = (data: Buffer) => {
     const lines = data.toString().split('\n');
+    const nonEmptyLines = lines.filter((line) => line.trim());
+    appendTail(startupTrace?.diagnostics.stderrTail ?? [], nonEmptyLines);
     for (const line of lines) {
       if (line.trim()) {
         errorLog.push(line);
@@ -334,13 +384,19 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     goosedProcess.stderr?.off('data', onStderrData);
   };
 
-  goosedProcess.on('exit', (code) => {
+  goosedProcess.on('exit', (code, signal) => {
     logger.info(`goosed process exited with code ${code} for port ${port} and dir ${workingDir}`);
+    if (startupTrace) {
+      startupTrace.diagnostics.childExitCode = code;
+      startupTrace.diagnostics.childExitSignal = signal;
+      startupTrace.record('child_exit', { code, signal });
+    }
   });
 
   goosedProcess.on('error', (err) => {
     logger.error(`Failed to start goosed on port ${port} and dir ${workingDir}`, err);
     errorLog.push(err.message);
+    startupTrace?.record('spawn_error', { message: err.message, name: err.name });
   });
 
   const cleanup = async (): Promise<void> => {
@@ -387,5 +443,8 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     cleanup,
     client: goosedClientForUrlAndSecret(baseUrl, serverSecret),
     certFingerprint,
+    startupDiagnosticsPath: startupTrace?.diagnosticsPath ?? null,
+    getStartupDiagnostics: () => startupTrace?.diagnostics ?? null,
+    recordStartupEvent: (name, details) => startupTrace?.record(name, details),
   };
 };

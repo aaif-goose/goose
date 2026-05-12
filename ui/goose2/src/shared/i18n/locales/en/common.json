@@ -24,7 +24,7 @@
     "run": "Run",
     "running": "Running",
     "save": "Save",
-    "saveChanges": "Save Changes",
+    "saveChanges": "Save changes",
     "search": "Search",
     "select": "Select",
     "send": "Send",
@@ -42,7 +42,7 @@
     },
     "environmentVariables": {
       "copyLabel": "Copy environment variable",
-      "title": "Environment Variables",
+      "title": "Environment variables",
       "toggleVisibility": "Toggle value visibility"
     },
     "linkSafety": {
@@ -78,7 +78,7 @@
   },
   "labels": {
     "assistant": "Assistant",
-    "copyPath": "Copy Path",
+    "copyPath": "Copy path",
     "revealInFileManager_mac": "Reveal in Finder",
     "revealInFileManager_windows": "Reveal in Explorer",
     "revealInFileManager_linux": "Reveal in File Manager",
@@ -91,7 +91,7 @@
     "required": "Required"
   },
   "session": {
-    "defaultTitle": "New Chat"
+    "defaultTitle": "New chat"
   },
   "usage": {
     "cache": "Cache",

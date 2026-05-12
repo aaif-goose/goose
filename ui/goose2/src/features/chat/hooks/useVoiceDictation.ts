@@ -23,6 +23,7 @@ interface UseVoiceDictationOptions {
     personaId?: string,
     attachments?: ChatAttachmentDraft[],
   ) => boolean | Promise<boolean>;
+  onAutoSubmit?: (text: string) => boolean | Promise<boolean>;
   resetTextarea: () => void;
   /**
    * When true, auto-submit on trigger phrase will NOT call `onSend`.
@@ -43,6 +44,7 @@ export function useVoiceDictation({
   clearAttachments,
   selectedPersonaId,
   onSend,
+  onAutoSubmit,
   resetTextarea,
   isSendLocked = false,
 }: UseVoiceDictationOptions) {
@@ -140,11 +142,13 @@ export function useVoiceDictation({
           textRef.current = merged;
           return;
         }
-        const sendResult = onSend(
-          merged.trim(),
-          selectedPersonaId ?? undefined,
-          attachments.length > 0 ? attachments : undefined,
-        );
+        const sendResult = onAutoSubmit
+          ? onAutoSubmit(merged.trim())
+          : onSend(
+              merged.trim(),
+              selectedPersonaId ?? undefined,
+              attachments.length > 0 ? attachments : undefined,
+            );
         if (isPromiseLike<boolean>(sendResult)) {
           void sendResult
             .then((accepted) => {
@@ -183,6 +187,7 @@ export function useVoiceDictation({
       attachments,
       clearAttachments,
       isSendLocked,
+      onAutoSubmit,
       onSend,
       resetTextarea,
       selectedPersonaId,

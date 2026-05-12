@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      windows_variant:
+        description: 'Windows artifact variant to build'
+        required: false
+        type: string
+        default: 'standard'
   workflow_call:
     inputs:
       version:
@@ -24,6 +29,11 @@ on:
         required: false
         type: string
         default: ''
+      windows_variant:
+        description: 'Windows artifact variant to build'
+        required: false
+        type: string
+        default: 'standard'
 
 # Permissions required for OIDC authentication with Azure Trusted Signing
 permissions:
@@ -64,7 +74,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: windows-msvc-desktop
+          key: windows-msvc-desktop-${{ inputs.windows_variant }}
 
       - name: Setup Rust
         shell: bash
@@ -72,21 +82,53 @@ jobs:
           rustup show
           rustup target add x86_64-pc-windows-msvc
 
-      - name: Build Windows executable
-        shell: bash
+      - name: Install CUDA toolkit (Windows CUDA)
+        if: ${{ inputs.windows_variant == 'cuda' }}
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.9.1'
+          method: 'local'
+          log-file-suffix: 'bundle-desktop-windows-cuda.txt'
+
+      - name: Set up MSVC developer environment (Windows CUDA)
+        if: ${{ inputs.windows_variant == 'cuda' }}
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: amd64
+
+      - name: Verify CUDA toolchain (Windows CUDA)
+        if: ${{ inputs.windows_variant == 'cuda' }}
+        shell: pwsh
+        env:
+          CUDA_COMPUTE_CAP: "80"
         run: |
-          echo "🚀 Building Windows executable..."
-          cargo build --release --target x86_64-pc-windows-msvc
+          Write-Output "CUDA_PATH=$env:CUDA_PATH"
+          Write-Output "CUDA_COMPUTE_CAP=$env:CUDA_COMPUTE_CAP"
+          where.exe cl
+          where.exe nvcc
+          nvcc -V
+
+      - name: Build Windows executable
+        shell: pwsh
+        env:
+          CUDA_COMPUTE_CAP: ${{ inputs.windows_variant == 'cuda' && '80' || '' }}
+        run: |
+          Write-Output "Building Windows executable..."
+          if ("${{ inputs.windows_variant }}" -eq "cuda") {
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-server --features cuda
+          } else {
+            cargo build --release --target x86_64-pc-windows-msvc -p goose-server
+          }
 
           # Verify build succeeded
-          if [ ! -f "./target/x86_64-pc-windows-msvc/release/goosed.exe" ]; then
-            echo "❌ Windows binary not found."
-            ls -la ./target/x86_64-pc-windows-msvc/release/ || echo "Release directory doesn't exist"
+          if (-not (Test-Path "./target/x86_64-pc-windows-msvc/release/goosed.exe")) {
+            Write-Error "Windows binary not found."
+            Get-ChildItem ./target/x86_64-pc-windows-msvc/release/ -ErrorAction SilentlyContinue
             exit 1
-          fi
+          }
 
-          echo "✅ Windows binary found!"
-          ls -la ./target/x86_64-pc-windows-msvc/release/goosed.exe
+          Write-Output "Windows binary found."
+          Get-Item ./target/x86_64-pc-windows-msvc/release/goosed.exe
 
       - name: Prepare Windows binary
         shell: bash
@@ -155,7 +197,7 @@ jobs:
       - name: Upload unsigned distribution
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: windows-unsigned
+          name: windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: ui/desktop/dist-windows/
 
   sign-desktop-windows:
@@ -167,13 +209,13 @@ jobs:
 
     steps:
       - name: Download unsigned distribution
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          name: windows-unsigned
+          name: windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: dist-windows
 
       - name: Azure login
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2.3.0
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43  # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -206,13 +248,17 @@ jobs:
       - name: Create Windows zip package
         shell: bash
         run: |
-          7z a -tzip "Goose-win32-x64.zip" dist-windows/
+          ZIP_NAME="Goose-win32-x64"
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            ZIP_NAME="${ZIP_NAME}-cuda"
+          fi
+          7z a -tzip "${ZIP_NAME}.zip" dist-windows/
 
       - name: Upload signed Windows build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: Goose-win32-x64
-          path: Goose-win32-x64.zip
+          name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
+          path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
 
   # When signing is disabled, package the unsigned build directly
   package-desktop-windows:
@@ -223,18 +269,22 @@ jobs:
 
     steps:
       - name: Download unsigned distribution
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          name: windows-unsigned
+          name: windows-unsigned${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: dist-windows
 
       - name: Create Windows zip package
         shell: bash
         run: |
-          7z a -tzip "Goose-win32-x64.zip" dist-windows/
+          ZIP_NAME="Goose-win32-x64"
+          if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
+            ZIP_NAME="${ZIP_NAME}-cuda"
+          fi
+          7z a -tzip "${ZIP_NAME}.zip" dist-windows/
 
       - name: Upload Windows build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: Goose-win32-x64
-          path: Goose-win32-x64.zip
+          name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
+          path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip

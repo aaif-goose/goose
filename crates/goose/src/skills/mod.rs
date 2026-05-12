@@ -8,11 +8,13 @@ pub mod client;
 pub use client::{SkillsClient, EXTENSION_NAME};
 
 use crate::config::paths::Paths;
+use crate::plugins::installed_plugin_skill_dirs;
 use crate::sources::parse_frontmatter;
+use agent_client_protocol::Error;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
-use sacp::Error;
 use serde::Deserialize;
-use std::collections::HashSet;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
@@ -22,6 +24,12 @@ pub struct SkillFrontmatter {
     pub name: Option<String>,
     #[serde(default)]
     pub description: String,
+    /// Free-form bag for caller-defined fields. Per the agentskills.io spec
+    /// (<https://agentskills.io/specification#frontmatter>), arbitrary
+    /// metadata lives in this nested mapping so it doesn't collide with
+    /// reserved frontmatter fields.
+    #[serde(default)]
+    pub metadata: HashMap<String, Value>,
 }
 
 /// Canonical writable location for global user skills: `~/.agents/skills`.
@@ -30,9 +38,9 @@ pub fn global_skills_dir() -> Option<PathBuf> {
 }
 
 /// Canonical writable location for project-scoped skills:
-/// `<project>/.goose/skills`.
+/// `<project>/.agents/skills`.
 pub fn project_skills_dir(project_dir: &Path) -> PathBuf {
-    project_dir.join(".goose").join("skills")
+    project_dir.join(".agents").join("skills")
 }
 
 pub(crate) fn skills_dir_global_or_err() -> Result<PathBuf, Error> {
@@ -104,6 +112,7 @@ fn inferred_discoverable_skill_root(path: &Path) -> Option<PathBuf> {
         global_roots.push(home.join(".claude").join("skills"));
         global_roots.push(home.join(".config").join("agents").join("skills"));
     }
+    global_roots.extend(installed_plugin_skill_dirs());
 
     for root in global_roots {
         let canonical_root = canonicalize_or_original(&root);
@@ -168,9 +177,31 @@ pub(crate) fn infer_skill_name(dir: &Path) -> String {
         .to_string()
 }
 
-pub(crate) fn build_skill_md(name: &str, description: &str, content: &str) -> String {
+pub(crate) fn build_skill_md(
+    name: &str,
+    description: &str,
+    content: &str,
+    metadata: &HashMap<String, Value>,
+) -> String {
     let safe_desc = description.replace('\'', "''");
-    let mut md = format!("---\nname: {}\ndescription: '{}'\n---\n", name, safe_desc);
+    let mut md = String::from("---\n");
+    md.push_str(&format!("name: {}\n", name));
+    md.push_str(&format!("description: '{}'\n", safe_desc));
+    if !metadata.is_empty() {
+        md.push_str("metadata:\n");
+        // Use YAML for the nested metadata block. We render it with serde_yaml
+        // and indent every line by two spaces so it nests under `metadata:`.
+        let yaml = serde_yaml::to_string(metadata).unwrap_or_default();
+        for line in yaml.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            md.push_str("  ");
+            md.push_str(line);
+            md.push('\n');
+        }
+    }
+    md.push_str("---\n");
     if !content.is_empty() {
         md.push('\n');
         md.push_str(content);
@@ -196,9 +227,9 @@ pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
     let mut dirs: Vec<(PathBuf, bool)> = Vec::new();
 
     if let Some(wd) = working_dir {
+        dirs.push((wd.join(".agents").join("skills"), false));
         dirs.push((wd.join(".goose").join("skills"), false));
         dirs.push((wd.join(".claude").join("skills"), false));
-        dirs.push((wd.join(".agents").join("skills"), false));
     }
 
     let home = dirs::home_dir();
@@ -210,6 +241,12 @@ pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
         dirs.push((h.join(".claude").join("skills"), true));
         dirs.push((h.join(".config").join("agents").join("skills"), true));
     }
+
+    dirs.extend(
+        installed_plugin_skill_dirs()
+            .into_iter()
+            .map(|dir| (dir, true)),
+    );
 
     dirs
 }
@@ -245,9 +282,11 @@ fn parse_skill_content(content: &str, path: &Path, global: bool) -> Option<Sourc
         name,
         description: metadata.description,
         content: body,
-        directory: path.to_string_lossy().into_owned(),
+        path: path.to_string_lossy().into_owned(),
         global,
+        writable: true,
         supporting_files: Vec::new(),
+        properties: metadata.metadata,
     })
 }
 
@@ -362,8 +401,10 @@ pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
         if let Some(source) = parse_skill_content(content, &PathBuf::new(), true) {
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
+                let path = format!("builtin://skills/{}", source.name);
                 sources.push(SourceEntry {
                     source_type: SourceType::BuiltinSkill,
+                    path,
                     ..source
                 });
             }

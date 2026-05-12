@@ -40,7 +40,7 @@ jobs:
       # This prevents attackers from triggering builds on their own malicious PRs
       - name: Verify commenter permissions
         id: security_check
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // workflow_dispatch requires repo write access, so it's inherently safe
@@ -122,7 +122,7 @@ jobs:
 
     steps:
       - name: Download CLI artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           pattern: goose-*
           path: cli-dist
@@ -140,7 +140,8 @@ jobs:
             - [📦 Linux (aarch64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-gnu.zip)
             - [📦 macOS (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-apple-darwin.zip)
             - [📦 macOS (aarch64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-apple-darwin.zip)
-            - [📦 Windows (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-pc-windows-gnu.zip)
+            - [📦 Windows (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-pc-windows-msvc.zip)
+            - [📦 Windows CUDA (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-pc-windows-msvc-cuda.zip)
 
             These links are provided by nightly.link and will work even if you're not logged into GitHub.
   

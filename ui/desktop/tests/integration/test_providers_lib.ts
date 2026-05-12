@@ -69,7 +69,12 @@ function getProviders(): ProviderConfig[] {
     },
     {
       provider: 'openai',
-      models: ['gpt-4o', 'gpt-4o-mini', { name: 'gpt-3.5-turbo', flaky: true }, 'gpt-5'],
+      models: [
+        'gpt-4o',
+        'gpt-4o-mini',
+        { name: 'gpt-3.5-turbo', flaky: true },
+        { name: 'gpt-5', flaky: true },
+      ],
       available: () => hasEnv('OPENAI_API_KEY'),
     },
     {

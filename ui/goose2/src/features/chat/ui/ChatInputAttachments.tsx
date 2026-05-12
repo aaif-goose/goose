@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { FileText, FolderClosed, X } from "lucide-react";
+import { X } from "lucide-react";
+import { IconFileText } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { ImageLightbox } from "@/shared/ui/ImageLightbox";
 import type {
@@ -8,6 +9,7 @@ import type {
   ChatFileAttachmentDraft,
   ChatImageAttachmentDraft,
 } from "@/shared/types/messages";
+import { ComposerChip } from "./ComposerChip";
 
 function DraftImageAttachment({
   attachment,
@@ -64,24 +66,16 @@ function DraftPathAttachment({
   onRemove: (id: string) => void;
 }) {
   const { t } = useTranslation("chat");
-  const Icon = attachment.kind === "directory" ? FolderClosed : FileText;
 
   return (
-    <div
-      className="group relative flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1.5 pr-8 text-xs text-foreground"
+    <ComposerChip
+      tone="file"
+      label={attachment.name}
+      leading={<IconFileText className="size-3.5" />}
       title={attachment.path ?? attachment.name}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="max-w-44 truncate">{attachment.name}</span>
-      <button
-        type="button"
-        onClick={() => onRemove(attachment.id)}
-        className="absolute right-2 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-foreground"
-        aria-label={t("attachments.remove")}
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
+      onRemove={() => onRemove(attachment.id)}
+      removeLabel={t("attachments.remove")}
+    />
   );
 }
 
@@ -97,7 +91,7 @@ export function ChatInputAttachments({
   }
 
   return (
-    <div className="mb-2 flex flex-wrap gap-2">
+    <div className="mb-2 flex flex-wrap items-center gap-2">
       {attachments.map((attachment, index) =>
         attachment.kind === "image" ? (
           <DraftImageAttachment
