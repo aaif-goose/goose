@@ -334,8 +334,12 @@ impl Provider for OpenRouterProvider {
 /// `<function=...>` XML tool-call blocks instead of OpenAI-style structured
 /// `tool_calls`. OpenRouter ids embed the family in either segment, so we
 /// match on the lowercased full id (e.g. `nousresearch/hermes-…`,
-/// `…/qwen-2.5-…`).
-const XML_TOOL_CALL_FAMILIES: &[&str] = &["hermes", "qwen"];
+/// `…/qwen-2.5-…`). `openrouter/auto` is included because OpenRouter's
+/// auto-routing can resolve to any backend — including Hermes/Qwen — and
+/// the upstream model id we receive stays `openrouter/auto`. The XML
+/// fallback is a no-op on responses that emit proper structured
+/// `tool_calls`, so applying it speculatively here is safe.
+const XML_TOOL_CALL_FAMILIES: &[&str] = &["hermes", "qwen", "openrouter/auto"];
 
 /// Returns true when the model belongs to a family that needs the Ollama
 /// fallback parser to extract tool calls from text. All other models route
@@ -358,6 +362,15 @@ mod tests {
         ));
         assert!(model_emits_xml_tool_calls("qwen/qwen-2.5-72b-instruct"));
         assert!(model_emits_xml_tool_calls("Hermes-3-LLaMA"));
+    }
+
+    #[test]
+    fn xml_tool_call_models_include_openrouter_auto() {
+        // openrouter/auto can route to a Hermes/Qwen backend without that
+        // being visible in the upstream model id; route it through the
+        // fallback parser so XML tool calls survive auto-routed turns.
+        assert!(model_emits_xml_tool_calls("openrouter/auto"));
+        assert!(model_emits_xml_tool_calls("OpenRouter/Auto"));
     }
 
     #[test]
