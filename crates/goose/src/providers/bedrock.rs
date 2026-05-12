@@ -12,7 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_bedrockruntime::config::ProvideCredentials;
 use aws_sdk_bedrockruntime::operation::converse::ConverseError;
-use aws_sdk_bedrockruntime::{types as bedrock, Client};
+use aws_sdk_bedrockruntime::{Client, types as bedrock};
 use futures::future::BoxFuture;
 use reqwest::header::HeaderValue;
 use rmcp::model::Tool;
@@ -81,11 +81,7 @@ impl BedrockProvider {
         let bearer_token = match config.get_secret::<String>("AWS_BEARER_TOKEN_BEDROCK") {
             Ok(token) => {
                 let token = token.trim().to_string();
-                if token.is_empty() {
-                    None
-                } else {
-                    Some(token)
-                }
+                if token.is_empty() { None } else { Some(token) }
             }
             Err(_) => None,
         };
@@ -232,14 +228,7 @@ impl BedrockProvider {
         let visible_messages: Vec<&Message> =
             messages.iter().filter(|m| m.is_agent_visible()).collect();
 
-        // Place the cache point on the trailing message. Cache entries are keyed by
-        // the hash of the prefix ending at the breakpoint; on each new turn, the
-        // lookback walks backward from the new trailing position and finds the
-        // previous turn's entry, so fresh processing is bounded to the content added
-        // since the last request. See
-        // https://platform.claude.com/docs/en/build-with-claude/prompt-caching
-        let last_idx = visible_messages.len().checked_sub(1);
-        let cache_last = enable_caching && last_idx.is_some();
+        let last_idx = visible_messages.len().saturating_sub(1);
 
         let mut request = self
             .client
@@ -251,7 +240,7 @@ impl BedrockProvider {
                     .iter()
                     .enumerate()
                     .map(|(idx, m)| {
-                        to_bedrock_message_with_caching(m, cache_last && Some(idx) == last_idx)
+                        to_bedrock_message_with_caching(m, enable_caching && idx == last_idx)
                     })
                     .collect::<Result<_>>()?,
             ));
