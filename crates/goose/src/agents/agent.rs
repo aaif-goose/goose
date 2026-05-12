@@ -333,7 +333,6 @@ impl Agent {
             };
         }
 
-
         let hook_manager = self.hook_manager.clone();
         let session_id = session.id.clone();
         let working_dir = session.working_dir.to_string_lossy().to_string();
