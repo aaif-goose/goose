@@ -1,16 +1,60 @@
-import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import type { Message } from "@/shared/types/messages";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
+import { openPath } from "@tauri-apps/plugin-opener";
+const mockWriteText = vi.fn().mockResolvedValue(undefined);
 
-const mockOpenPath = vi.fn();
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: (path: string) => mockOpenPath(path),
+const providerCatalogEntries: ProviderCatalogEntry[] = [
+  {
+    id: "claude-acp",
+    displayName: "Claude Code",
+    category: "agent",
+    description: "Anthropic's agentic coding tool",
+    setupMethod: "cli_auth",
+    binaryName: "claude-agent-acp",
+    group: "default",
+    aliases: ["claude-acp", "claude_code", "claude"],
+  },
+  {
+    id: "codex-acp",
+    displayName: "Codex",
+    category: "agent",
+    description: "OpenAI's coding agent",
+    setupMethod: "cli_auth",
+    binaryName: "codex-acp",
+    group: "default",
+    aliases: ["codex-acp", "codex_cli", "codex"],
+  },
+];
+
+vi.mock("@mcp-ui/client", () => ({
+  UI_EXTENSION_CONFIG: { mimeTypes: ["text/html;profile=mcp-app"] },
+  AppRenderer: (props: { toolName?: string }) => (
+    <div data-testid="mock-app-renderer">
+      {props.toolName ?? "app-renderer"}
+    </div>
+  ),
 }));
 
-// ── helpers ───────────────────────────────────────────────────────────
+vi.mock("@/shared/api/gooseServeHost", () => ({
+  getGooseServeHostInfo: vi.fn().mockResolvedValue({
+    httpBaseUrl: "http://127.0.0.1:4242",
+    secretKey: "test-secret",
+  }),
+}));
+
+vi.mock("@/shared/theme/ThemeProvider", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openPath: vi.fn(),
+}));
 
 function userMessage(text: string, overrides: Partial<Message> = {}): Message {
   return {
@@ -35,12 +79,23 @@ function assistantMessage(
   };
 }
 
-// ── tests ─────────────────────────────────────────────────────────────
-
 describe("MessageBubble", () => {
   beforeEach(() => {
     useAgentStore.setState({ personas: [] });
-    mockOpenPath.mockClear();
+    useProviderCatalogStore.getState().setEntries(providerCatalogEntries);
+    vi.mocked(openPath).mockClear();
+    mockWriteText.mockClear();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: mockWriteText,
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useProviderCatalogStore.getState().reset();
   });
 
   it("renders user message with correct alignment", () => {
@@ -70,6 +125,44 @@ describe("MessageBubble", () => {
     expect(screen.getByText("hello world")).toBeInTheDocument();
   });
 
+  it("renders compaction notifications as centered success messages", () => {
+    const { container } = render(
+      <MessageBubble
+        message={{
+          id: "s1",
+          role: "system",
+          created: Date.now(),
+          content: [
+            {
+              type: "systemNotification",
+              notificationType: "compaction",
+              text: "Conversation compacted.",
+            },
+          ],
+          metadata: {
+            userVisible: true,
+            agentVisible: false,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Conversation compacted.")).toBeInTheDocument();
+    expect(container.querySelector(".text-success")).toBeInTheDocument();
+  });
+
+  it("renders user text inside a muted bubble shell", () => {
+    const { container } = render(
+      <MessageBubble message={userMessage("hello world")} />,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-role="user-message"] .rounded-2xl.bg-muted',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders multiple content blocks", () => {
     const msg = assistantMessage([
       { type: "text", text: "first block" },
@@ -80,16 +173,105 @@ describe("MessageBubble", () => {
     expect(screen.getByText("second block")).toBeInTheDocument();
   });
 
-  it("shows action buttons on hover (retry for assistant)", () => {
+  it("renders a reserved actions tray for assistant messages", () => {
     const onRetryMessage = vi.fn();
-    render(
+    const { container } = render(
       <MessageBubble
         message={assistantMessage([{ type: "text", text: "response" }])}
         onRetryMessage={onRetryMessage}
       />,
     );
-    const retryBtn = screen.getByRole("button", { name: /retry/i });
-    expect(retryBtn).toBeInTheDocument();
+
+    expect(
+      container.querySelector('[data-role="assistant-message"] .pb-8'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-role="assistant-message"] [data-role="message-actions"]',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps the action tray timestamp on one line", () => {
+    const { container } = render(
+      <MessageBubble
+        message={assistantMessage([{ type: "text", text: "response" }])}
+      />,
+    );
+
+    const timestamp = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-timestamp"]',
+    );
+    expect(timestamp).toHaveClass("whitespace-nowrap");
+    expect(timestamp).toHaveClass("shrink-0");
+  });
+
+  it("anchors assistant and user actions on opposite sides of the timestamp", () => {
+    const { container } = render(
+      <>
+        <MessageBubble
+          message={assistantMessage([{ type: "text", text: "response" }])}
+          onRetryMessage={vi.fn()}
+        />
+        <MessageBubble message={userMessage("draft")} onEditMessage={vi.fn()} />
+      </>,
+    );
+
+    const assistantActions = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-actions"]',
+    );
+    const userActions = container.querySelector(
+      '[data-role="user-message"] [data-role="message-actions"]',
+    );
+
+    expect(
+      Array.from(assistantActions?.firstElementChild?.children ?? []).map(
+        (element) => element.tagName,
+      ),
+    ).toEqual(["BUTTON", "BUTTON", "SPAN"]);
+    expect(
+      Array.from(userActions?.firstElementChild?.children ?? []).map(
+        (element) => element.tagName,
+      ),
+    ).toEqual(["SPAN", "BUTTON", "BUTTON"]);
+  });
+
+  it("keeps copy confirmation visible until it resets", async () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <MessageBubble
+        message={assistantMessage([{ type: "text", text: "response" }])}
+      />,
+    );
+
+    const actions = container.querySelector(
+      '[data-role="assistant-message"] [data-role="message-actions"]',
+    );
+    expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+    const copyButton = screen.getByRole("button", { name: /copy/i });
+    expect(copyButton).not.toHaveClass("bg-accent");
+
+    await act(async () => {
+      fireEvent.click(copyButton);
+      await Promise.resolve();
+    });
+
+    expect(mockWriteText).toHaveBeenCalledWith("response");
+    expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+    expect(copyButton).toHaveClass("bg-accent");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1999);
+    });
+    expect(actions).toHaveAttribute("data-copy-confirmed", "true");
+    expect(copyButton).toHaveClass("bg-accent");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(actions).toHaveAttribute("data-copy-confirmed", "false");
+    expect(copyButton).not.toHaveClass("bg-accent");
   });
 
   it("renders tool request content as ToolCallCard", () => {
@@ -133,7 +315,7 @@ describe("MessageBubble", () => {
     await user.click(
       screen.getByRole("button", { name: /open attachment report\.pdf/i }),
     );
-    expect(mockOpenPath).toHaveBeenCalledWith("/Users/test/report.pdf");
+    expect(vi.mocked(openPath)).toHaveBeenCalledWith("/Users/test/report.pdf");
     expect(
       screen.getByRole("button", { name: /open attachment screenshots/i }),
     ).toBeInTheDocument();
@@ -167,7 +349,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: { path: "/tmp/demo.txt" },
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -192,7 +374,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: {},
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -228,7 +410,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: {},
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -346,14 +528,19 @@ describe("MessageBubble", () => {
       },
     ]);
 
-    render(<MessageBubble message={msg} />);
+    const { container } = render(<MessageBubble message={msg} />);
+
+    // Completed-on-mount chains render collapsed; expand the parent card first.
+    const chainHeader = container.querySelector<HTMLButtonElement>(
+      '[data-role="tool-chain-card"] > button[aria-expanded]',
+    );
+    if (!chainHeader) throw new Error("expected tool-chain-card header");
+    await user.click(chainHeader);
 
     expect(screen.getByText("Create PDF about whales")).toBeInTheDocument();
     expect(screen.getByText("Write whales.pdf")).toBeInTheDocument();
-    expect(
-      screen.queryByText("python3 create_whales.py"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("ls -lh whales.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByText("python3 create_whales.py")).toBeNull();
+    expect(screen.queryByText("ls -lh whales.pdf")).toBeNull();
     expect(screen.getByText("Show internal steps (2)")).toBeInTheDocument();
 
     await user.click(screen.getByText("Show internal steps (2)"));

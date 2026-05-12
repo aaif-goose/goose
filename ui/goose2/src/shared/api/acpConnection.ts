@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { GooseClient } from "@aaif/goose-sdk";
+import {
+  DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,
+  GooseClient,
+  type GooseInitializeRequest,
+} from "@aaif/goose-sdk";
 import {
   PROTOCOL_VERSION,
   type Client,
@@ -7,6 +11,7 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
+import packageJson from "../../../package.json";
 import { createWebSocketStream } from "./createWebSocketStream";
 import { perfLog } from "@/shared/lib/perfLog";
 
@@ -81,12 +86,18 @@ async function initializeConnection(): Promise<GooseClient> {
   const tInit = performance.now();
   await client.initialize({
     protocolVersion: PROTOCOL_VERSION,
-    clientCapabilities: {},
-    clientInfo: {
-      name: "goose2",
-      version: "0.1.0",
+    clientCapabilities: {
+      _meta: {
+        goose: {
+          mcpHostCapabilities: DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,
+        },
+      },
     },
-  });
+    clientInfo: {
+      name: packageJson.name,
+      version: packageJson.version,
+    },
+  } satisfies GooseInitializeRequest);
   perfLog(
     `[perf:conn] client.initialize in ${(performance.now() - tInit).toFixed(1)}ms (total ${(performance.now() - tStart).toFixed(1)}ms)`,
   );

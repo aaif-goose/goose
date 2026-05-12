@@ -92,10 +92,8 @@ export class GooseClient {
     return this.conn.unstable_forkSession(params);
   }
 
-  unstable_listSessions(
-    params: ListSessionsRequest,
-  ): Promise<ListSessionsResponse> {
-    return this.conn.unstable_listSessions(params);
+  listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
+    return this.conn.listSessions(params);
   }
 
   unstable_resumeSession(

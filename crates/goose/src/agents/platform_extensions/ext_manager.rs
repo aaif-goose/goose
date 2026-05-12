@@ -53,8 +53,7 @@ pub struct ManageExtensionsParams {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReadResourceParams {
     pub uri: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension_name: Option<String>,
+    pub extension_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -325,15 +324,17 @@ impl ExtensionManagerClient {
             files, database schemas, or application-specific information. This tool lists resources
             in the provided extension, and returns a list for the user to browse. If no extension
             is provided, the tool will search all extensions for the resource.
-        "#}.to_string(),
+        "#}
+                            .to_string(),
                             Arc::new(
                                 serde_json::to_value(schema_for!(ListResourcesParams))
                                     .expect("Failed to serialize schema")
                                     .as_object()
                                     .expect("Schema must be an object")
-                                    .clone()
+                                    .clone(),
                             ),
-                        ).annotate(ToolAnnotations::from_raw(
+                        )
+                        .annotate(ToolAnnotations::from_raw(
                             Some("List resources".to_string()),
                             Some(true),
                             Some(false),
@@ -343,21 +344,24 @@ impl ExtensionManagerClient {
                         Tool::new(
                             READ_RESOURCE_TOOL_NAME.to_string(),
                             indoc! {r#"
-            Read a resource from an extension.
+            Read a resource from a specific extension.
 
             Resources allow extensions to share data that provide context to LLMs, such as
-            files, database schemas, or application-specific information. This tool searches for the
-            resource URI in the provided extension, and reads in the resource content. If no extension
-            is provided, the tool will search all extensions for the resource.
-        "#}.to_string(),
+            files, database schemas, or application-specific information. You must pass the
+            owning extension as `extension_name`; if you don't know which extension owns a
+            URI, call `list_resources` first — its output labels each resource with its
+            extension.
+        "#}
+                            .to_string(),
                             Arc::new(
                                 serde_json::to_value(schema_for!(ReadResourceParams))
                                     .expect("Failed to serialize schema")
                                     .as_object()
                                     .expect("Schema must be an object")
-                                    .clone()
+                                    .clone(),
                             ),
-                        ).annotate(ToolAnnotations::from_raw(
+                        )
+                        .annotate(ToolAnnotations::from_raw(
                             Some("Read a resource".to_string()),
                             Some(true),
                             Some(false),

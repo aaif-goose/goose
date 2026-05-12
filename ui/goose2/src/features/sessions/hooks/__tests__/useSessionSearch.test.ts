@@ -20,8 +20,7 @@ function createDeferredPromise<T>() {
 
 const sessions: ChatSession[] = [
   {
-    id: "session-1",
-    acpSessionId: "acp-1",
+    id: "acp-1",
     title: "Needle notes",
     createdAt: "2026-04-10T12:00:00Z",
     updatedAt: "2026-04-10T12:00:00Z",

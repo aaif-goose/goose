@@ -1,51 +1,42 @@
-export type ProviderCategory = "agent" | "model";
+import type {
+  ProviderSetupCatalogEntryDto,
+  ProviderSetupCategoryDto,
+  ProviderSetupFieldDto,
+  ProviderSetupMethodDto,
+  ProviderSetupGroupDto,
+} from "@aaif/goose-sdk";
 
-export type ProviderSetupMethod =
-  | "none"
-  | "single_api_key"
-  | "config_fields"
-  | "host_with_oauth_fallback"
-  | "oauth_browser"
-  | "oauth_device_code"
-  | "cloud_credentials"
-  | "local"
-  | "cli_auth";
+export type ProviderCategory = ProviderSetupCategoryDto;
+export type ProviderSetupMethod = ProviderSetupMethodDto;
+export type ProviderGroup = ProviderSetupGroupDto;
+export type ProviderField = ProviderSetupFieldDto;
 
-export type ProviderTier = "promoted" | "standard" | "advanced";
+export type { ProviderConfigFieldValueDto as ProviderFieldValue } from "@aaif/goose-sdk";
 
-export interface ProviderField {
-  key: string;
-  label: string;
-  secret: boolean;
-  required: boolean;
-  placeholder?: string;
-}
-
-export interface ProviderFieldValue {
-  key: string;
-  value: string | null;
-  isSet: boolean;
-  isSecret: boolean;
-  required: boolean;
-}
-
-export interface ProviderCatalogEntry {
+export type ProviderCatalogEntry = Omit<
+  ProviderSetupCatalogEntryDto,
+  | "providerId"
+  | "name"
+  | "nativeConnectQuery"
+  | "binaryName"
+  | "docUrl"
+  | "showOnlyWhenInstalled"
+  | "supportsInstall"
+  | "supportsAuth"
+  | "supportsAuthStatus"
+> & {
   id: string;
   displayName: string;
-  category: ProviderCategory;
-  description: string;
-  setupMethod: ProviderSetupMethod;
-  nativeConnectQuery?: string;
-  envVar?: string;
-  fields?: ProviderField[];
-  binaryName?: string;
-  installCommand?: string;
-  authCommand?: string;
-  authStatusCommand?: string;
-  docsUrl?: string;
-  tier: ProviderTier;
-  showOnlyWhenInstalled?: boolean;
-}
+  nativeConnectQuery?: NonNullable<
+    ProviderSetupCatalogEntryDto["nativeConnectQuery"]
+  >;
+  binaryName?: NonNullable<ProviderSetupCatalogEntryDto["binaryName"]>;
+  docsUrl?: NonNullable<ProviderSetupCatalogEntryDto["docUrl"]>;
+  showOnlyWhenInstalled?: ProviderSetupCatalogEntryDto["showOnlyWhenInstalled"];
+  supportsInstall?: ProviderSetupCatalogEntryDto["supportsInstall"];
+  supportsAuth?: ProviderSetupCatalogEntryDto["supportsAuth"];
+  supportsAuthStatus?: ProviderSetupCatalogEntryDto["supportsAuthStatus"];
+};
 
 export type ProviderSetupStatus =
   | "built_in"

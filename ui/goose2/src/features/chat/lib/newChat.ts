@@ -5,9 +5,6 @@ import { DEFAULT_CHAT_TITLE } from "./sessionTitle";
 interface NewChatRequest {
   title: string;
   projectId?: string;
-  agentId?: string;
-  providerId?: string;
-  personaId?: string;
 }
 
 interface FindExistingDraftArgs {
@@ -22,12 +19,7 @@ function isMatchingContext(
   session: ChatSession,
   request: Omit<NewChatRequest, "title">,
 ): boolean {
-  return (
-    session.projectId === request.projectId &&
-    session.agentId === request.agentId &&
-    session.providerId === request.providerId &&
-    session.personaId === request.personaId
-  );
+  return session.projectId === request.projectId;
 }
 
 function isReusableDraft(
@@ -35,7 +27,6 @@ function isReusableDraft(
   localMessages: Message[] | undefined,
 ): boolean {
   return (
-    !!session.draft &&
     !session.archivedAt &&
     session.messageCount === 0 &&
     (localMessages?.length ?? 0) === 0
@@ -64,18 +55,14 @@ export function findExistingDraft({
   }
 
   const withContent = candidates.filter(
-    (s) => (draftsBySession[s.id] ?? "").length > 0,
+    (session) => (draftsBySession[session.id] ?? "").length > 0,
   );
   if (withContent.length > 0) {
-    return withContent.find((s) => s.id === activeSessionId) ?? withContent[0];
+    return (
+      withContent.find((session) => session.id === activeSessionId) ??
+      withContent[0]
+    );
   }
 
-  const active = candidates.find((s) => s.id === activeSessionId);
-  if (active) {
-    return active;
-  }
-
-  return candidates.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  )[0];
+  return undefined;
 }

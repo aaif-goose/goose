@@ -139,6 +139,8 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
   }, []);
 
   useEffect(() => {
+    let fetchVersion = 0;
+
     const handleSessionDeleted = (event: Event) => {
       const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
 
@@ -148,11 +150,28 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
+      const version = ++fetchVersion;
+      listSessions({ throwOnError: false })
+        .then((response) => {
+          if (version !== fetchVersion || !response.data) return;
+          const apiSessions = [...response.data.sessions]
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            .slice(0, MAX_RECENT_SESSIONS);
+          setRecentSessions((prev) => {
+            const emptyLocalSessions = prev.filter(
+              (local) =>
+                local.message_count === 0 && !apiSessions.some((api) => api.id === local.id)
+            );
+            return [...emptyLocalSessions, ...apiSessions].slice(0, MAX_RECENT_SESSIONS);
+          });
+          sessionsRef.current = response.data.sessions;
+        })
+        .catch((error) => console.error('Failed to fetch sessions:', error));
     };
 
     const handleSessionRenamed = (event: Event) => {
-      const { sessionId, newName } =
-        (event as CustomEvent<{ sessionId: string; newName: string }>).detail;
+      const { sessionId, newName } = (event as CustomEvent<{ sessionId: string; newName: string }>)
+        .detail;
 
       setRecentSessions((prev) =>
         prev.map((session) => (session.id === sessionId ? { ...session, name: newName } : session))

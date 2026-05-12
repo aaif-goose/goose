@@ -57,10 +57,16 @@ function buildTarget(platform: string): void {
   console.log(`==> Building goose for ${platform} (${rustTarget})`);
 
   try {
-    execSync(`cargo build --release --target ${rustTarget} --bin goose`, {
-      cwd: ROOT,
-      stdio: "inherit",
-    });
+    const featureArgs = platform.startsWith("linux-")
+      ? " --features vulkan"
+      : "";
+    execSync(
+      `cargo build --release --target ${rustTarget} --bin goose${featureArgs}`,
+      {
+        cwd: ROOT,
+        stdio: "inherit",
+      },
+    );
   } catch (err) {
     console.error(`Failed to build for ${platform}`);
     throw err;

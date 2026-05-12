@@ -4,6 +4,11 @@ import { beforeEach, vi } from "vitest";
 
 import { DEFAULT_LOCALE, TRANSLATION_NAMESPACES, i18n } from "@/shared/i18n";
 
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openPath: vi.fn(),
+  openUrl: vi.fn(),
+}));
+
 vi.mock("react-syntax-highlighter", () => ({
   Prism: ({ children }: { children: React.ReactNode }) =>
     React.createElement(
