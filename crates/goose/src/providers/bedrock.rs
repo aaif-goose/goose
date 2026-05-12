@@ -12,7 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_bedrockruntime::config::ProvideCredentials;
 use aws_sdk_bedrockruntime::operation::converse::ConverseError;
-use aws_sdk_bedrockruntime::{Client, types as bedrock};
+use aws_sdk_bedrockruntime::{types as bedrock, Client};
 use futures::future::BoxFuture;
 use reqwest::header::HeaderValue;
 use rmcp::model::Tool;
@@ -81,7 +81,11 @@ impl BedrockProvider {
         let bearer_token = match config.get_secret::<String>("AWS_BEARER_TOKEN_BEDROCK") {
             Ok(token) => {
                 let token = token.trim().to_string();
-                if token.is_empty() { None } else { Some(token) }
+                if token.is_empty() {
+                    None
+                } else {
+                    Some(token)
+                }
             }
             Err(_) => None,
         };
