@@ -16,7 +16,14 @@
     }
   ],
   "dynamic_models": true,
-  "models": [],
+  "models": [
+    "claude-opus-4.7",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+    "deepseek-v4-pro",
+    "glm-5.1",
+    "minimax-m2.7"
+  ],
   "supports_streaming": true,
   "skip_canonical_filtering": true,
   "model_doc_link": "https://routstr.com/docs",
