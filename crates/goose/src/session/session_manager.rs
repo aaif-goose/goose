@@ -1088,11 +1088,11 @@ impl SessionStorage {
                 }
             }
             13 => {
-                // Only backfill on first-time v13 users: if any session already
-                // has a non-NULL project_id, the user has used the feature in
-                // v12, which means existing NULL rows could include intentional
-                // unlinks. Preserving user intent (Codex P1 on #9171) > catching
-                // a few legacy rows; users can manually link later if they want.
+                // Only backfill when no session has a non-NULL project_id yet.
+                // Once the user has used the feature in v12, an existing NULL
+                // may represent an intentional unlink rather than a never-set
+                // row, and a working-dir-keyed backfill would silently relink
+                // it. Users can manually link any unbackfilled session later.
                 let has_any_project_id: i64 = sqlx::query_scalar(
                     "SELECT COUNT(*) FROM sessions WHERE project_id IS NOT NULL",
                 )
@@ -1789,11 +1789,11 @@ impl SessionStorage {
     }
 }
 
-/// Skips rows that already have a `project_id` so reruns are no-ops. Callers
-/// (currently only the v13 migration) must additionally gate on whether NULL
-/// rows could be intentional unlinks — this helper writes blindly to every
-/// matching `project_id IS NULL` row. Trailing slashes on either side are
-/// ignored.
+/// Sets `project_id` on every row whose `working_dir` matches one of the
+/// given `(working_dir, slug)` pairs and currently has `project_id IS NULL`.
+/// Callers must gate on whether NULL rows could represent intentional
+/// unlinks — this helper does not distinguish never-set from unlinked.
+/// Trailing slashes on either side are ignored.
 async fn backfill_session_project_ids(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     pairs: &[(String, String)],
