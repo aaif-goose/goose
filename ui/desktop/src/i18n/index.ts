@@ -27,6 +27,10 @@ const SUPPORTED_LOCALES = new Set(['en', 'zh-CN']);
  */
 function matchSupported(tag: string): string | null {
   if (!tag) return null;
+
+  // Normalize underscores to hyphens so POSIX-style tags like "zh_CN" work.
+  tag = tag.replace(/_/g, '-');
+
   // Exact match first
   if (SUPPORTED_LOCALES.has(tag)) return tag;
 

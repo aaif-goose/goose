@@ -140,12 +140,10 @@ function detectMenuLocale(): string {
 }
 
 function menuT(label: string): string {
-  const locale = detectMenuLocale();
-  // Map Simplified Chinese variants (zh, zh-CN, zh-Hans, zh-Hans-CN, zh-SG, zh-MY)
-  // to the zh-CN dictionary; Traditional variants (zh-TW, zh-HK, zh-Hant*) fall through.
-  const lower = locale.toLowerCase();
+  // Normalize underscores to hyphens so POSIX-style tags like "zh_CN" work.
+  const lower = detectMenuLocale().replace(/_/g, '-').toLowerCase();
   const isTraditional = /^zh-(hant|tw|hk|mo)\b/.test(lower);
-  const isSimplifiedChinese = !isTraditional && (lower === 'zh' || lower.startsWith('zh-') || lower.startsWith('zh_'));
+  const isSimplifiedChinese = !isTraditional && (lower === 'zh' || lower.startsWith('zh-'));
   if (isSimplifiedChinese) {
     return MENU_TRANSLATIONS_ZH_CN[label] ?? label;
   }
