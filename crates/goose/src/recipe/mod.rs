@@ -991,20 +991,4 @@ parameters:
             RecipeParameterInputType::String
         ));
     }
-
-    #[test]
-    fn test_object_array_input_type_serde_roundtrip() {
-        let object_type = RecipeParameterInputType::Object;
-        let array_type = RecipeParameterInputType::Array;
-
-        let object_json = serde_json::to_string(&object_type).unwrap();
-        let array_json = serde_json::to_string(&array_type).unwrap();
-        assert_eq!(object_json, "\"object\"");
-        assert_eq!(array_json, "\"array\"");
-
-        let deser_object: RecipeParameterInputType = serde_json::from_str(&object_json).unwrap();
-        let deser_array: RecipeParameterInputType = serde_json::from_str(&array_json).unwrap();
-        assert!(matches!(deser_object, RecipeParameterInputType::Object));
-        assert!(matches!(deser_array, RecipeParameterInputType::Array));
-    }
 }

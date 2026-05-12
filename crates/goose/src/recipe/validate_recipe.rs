@@ -164,9 +164,6 @@ fn validate_parameters_in_template(
     Err(anyhow::anyhow!("{}", message.trim_end()))
 }
 
-/// Extracts the root identifier from a template variable path.
-/// Handles dot-notation (`signal.name`) and bracket notation
-/// (`findings[0].name`, `signal["ns"]`).
 fn extract_root_identifier(var: &str) -> &str {
     var.split(['.', '[']).next().unwrap_or(var)
 }

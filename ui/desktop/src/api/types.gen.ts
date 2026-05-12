@@ -213,6 +213,14 @@ export type DeclarativeProviderConfig = {
     catalog_provider_id?: string | null;
     description?: string | null;
     display_name: string;
+    /**
+     * Controls whether `fetch_supported_models` calls the provider's `/v1/models`
+     * endpoint or returns the static `models` list directly.
+     *
+     * - `Some(false)` + non-empty `models`: return the static list; no API call.
+     * Construction fails if `models` is empty.
+     * - `Some(true)` or `None`: try the API; fall back to `models` on 404.
+     */
     dynamic_models?: boolean | null;
     engine: ProviderEngine;
     env_vars?: Array<EnvVarConfig> | null;
@@ -1756,18 +1764,24 @@ export type CallToolErrors = {
      */
     401: unknown;
     /**
+     * Forbidden - tool is not app-visible
+     */
+    403: ErrorResponse;
+    /**
      * Resource not found
      */
-    404: unknown;
+    404: ErrorResponse;
     /**
-     * Agent not initialized
+     * Frontend tool execution requires the frontend host
      */
-    424: unknown;
+    424: ErrorResponse;
     /**
      * Internal server error
      */
-    500: unknown;
+    500: ErrorResponse;
 };
+
+export type CallToolError = CallToolErrors[keyof CallToolErrors];
 
 export type CallToolResponses = {
     /**
