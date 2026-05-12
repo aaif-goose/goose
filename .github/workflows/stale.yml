@@ -75,9 +75,6 @@ jobs:
           # Skip PRs with these labels (comma-separated)
           exempt-pr-labels: 'keep-open,wip,work-in-progress,security,pinned,dependencies'
           
-          # Skip draft PRs (they're typically work in progress)
-          exempt-draft-pr: true
-          
           # === ISSUE CONFIGURATION (DISABLED) ===
           # We only want to manage PRs, not issues
           days-before-issue-stale: -1

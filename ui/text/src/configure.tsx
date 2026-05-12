@@ -37,7 +37,6 @@ interface ConfigureProps {
 }
 
 interface ModelSelectorProps {
-  client: GooseClient;
   provider: ProviderInventoryEntryDto;
   height: number;
   onSelect: (model: string) => void;
@@ -45,7 +44,6 @@ interface ModelSelectorProps {
 }
 
 const ModelSelector = React.memo(function ModelSelector({
-  client,
   provider,
   height,
   onSelect,
@@ -53,7 +51,6 @@ const ModelSelector = React.memo(function ModelSelector({
 }: ModelSelectorProps) {
   const [loading, setLoading] = useState(true);
   const [models, setModels] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [manualEntry, setManualEntry] = useState(false);
@@ -61,42 +58,12 @@ const ModelSelector = React.memo(function ModelSelector({
   const columns = stdout?.columns ?? 80;
 
   useEffect(() => {
-    let cancelled = false;
-    const timeoutId = setTimeout(() => {
-      if (!cancelled) {
-        setError("Request timed out. The provider may be slow to respond.");
-        setLoading(false);
-      }
-    }, LOAD_MODELS_TIMEOUT_MS);
-
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const resp = await client.goose.GooseProvidersModels({
-          providerName: provider.providerId,
-        });
-        if (!cancelled) {
-          setModels(resp.models);
-          const defaultIdx = resp.models.findIndex((m) => m === provider.defaultModel);
-          setSelectedIdx(defaultIdx >= 0 ? defaultIdx : 0);
-          setLoading(false);
-          clearTimeout(timeoutId);
-        }
-      } catch (e: unknown) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-          clearTimeout(timeoutId);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [client, provider.providerId, provider.defaultModel]);
+    const availableModels = provider.models.map((model) => model.id);
+    setModels(availableModels);
+    const defaultIdx = availableModels.findIndex((model) => model === provider.defaultModel);
+    setSelectedIdx(defaultIdx >= 0 ? defaultIdx : 0);
+    setLoading(false);
+  }, [provider.models, provider.defaultModel]);
 
   const filtered = (() => {
     if (!searchQuery) return models;
@@ -199,7 +166,7 @@ const ModelSelector = React.memo(function ModelSelector({
     );
   }
 
-  if (error) {
+  if (models.length === 0) {
     return (
       <Box flexDirection="column" height={height} width={columns} paddingX={2}>
         <Box marginTop={1} />
@@ -207,11 +174,13 @@ const ModelSelector = React.memo(function ModelSelector({
           <Text color={TEXT_PRIMARY} bold>◆ Select model ◆</Text>
         </Box>
         <Box justifyContent="center" marginBottom={2}>
-          <Text color={GOLD}>⚠ Failed to load models</Text>
+          <Text color={GOLD}>⚠ No models available</Text>
         </Box>
         <Box justifyContent="center">
           <Box width={maxWidth}>
-            <Text color={TEXT_DIM} wrap="wrap">{error}</Text>
+            <Text color={TEXT_DIM} wrap="wrap">
+              This provider does not currently expose any models in inventory.
+            </Text>
           </Box>
         </Box>
         <Box justifyContent="center" marginTop={2}>
@@ -390,9 +359,9 @@ export default function ConfigureScreen({
 
         if (initialIntent === "model") {
           try {
-            const cfg = await client.goose.GooseConfigRead({ key: "GOOSE_PROVIDER" });
+            const cfg = await client.goose.GooseDefaultsRead({});
             if (cancelled) return;
-            const current = sorted.find((p) => p.providerId === cfg.value);
+            const current = sorted.find((p) => p.providerId === cfg.providerId);
             if (current) {
               setSelectedProvider(current);
               setPendingConfigValues({});
@@ -426,23 +395,22 @@ export default function ConfigureScreen({
     ) => {
       setPhase("saving");
       try {
-        for (const [key, value] of Object.entries(configValues)) {
-          const configKey = provider.configKeys.find((k) => k.name === key);
-          if (configKey?.secret) {
-            await client.goose.GooseSecretUpsert({ key, value });
-          } else {
-            await client.goose.GooseConfigUpsert({ key, value });
-          }
-        }
-        await client.goose.GooseConfigUpsert({
-          key: "GOOSE_PROVIDER",
+        await client.goose.GooseProvidersConfigSave({
+          providerId: provider.providerId,
+          fields: Object.entries(configValues).map(([key, value]) => ({
+            key,
+            value,
+          })),
+        });
+        await client.setSessionConfigOption({
+          sessionId,
+          configId: "provider",
           value: provider.providerId,
         });
-        await client.goose.GooseConfigUpsert({ key: "GOOSE_MODEL", value: model });
-        await client.goose.GooseSessionProviderUpdate({
+        await client.setSessionConfigOption({
           sessionId,
-          provider: provider.providerId,
-          model,
+          configId: "model",
+          value: model,
         });
         onComplete();
       } catch (e: unknown) {
@@ -544,7 +512,6 @@ export default function ConfigureScreen({
   if (phase === "select_model" && selectedProvider) {
     return (
       <ModelSelector
-        client={client}
         provider={selectedProvider}
         height={height}
         onSelect={handleModelSelected}

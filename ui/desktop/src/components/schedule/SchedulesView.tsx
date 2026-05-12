@@ -45,7 +45,10 @@ const i18n = defineMessages({
   noSchedules: { id: 'schedulesView.noSchedules', defaultMessage: 'No schedules yet' },
   scheduleUpdated: { id: 'schedulesView.scheduleUpdated', defaultMessage: 'Schedule Updated' },
   scheduleUpdatedMsg: { id: 'schedulesView.scheduleUpdatedMsg', defaultMessage: 'Successfully updated schedule "{id}"' },
-  confirmDelete: { id: 'schedulesView.confirmDelete', defaultMessage: 'Are you sure you want to delete schedule "{id}"?' },
+  confirmDelete: {
+    id: 'schedulesView.confirmDelete',
+    defaultMessage: 'Remove schedule "{id}"? The recipe will be kept.',
+  },
   schedulePaused: { id: 'schedulesView.schedulePaused', defaultMessage: 'Schedule Paused' },
   schedulePausedMsg: { id: 'schedulesView.schedulePausedMsg', defaultMessage: 'Successfully paused schedule "{id}"' },
   pauseError: { id: 'schedulesView.pauseError', defaultMessage: 'Pause Schedule Error' },
@@ -326,8 +329,8 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       trackScheduleDeleted(true);
       await fetchSchedules();
     } catch (error) {
-      console.error(`Failed to delete schedule "${id}":`, error);
-      const errorMsg = errorMessage(error, `Unknown error deleting "${id}".`);
+      console.error(`Failed to remove schedule "${id}":`, error);
+      const errorMsg = errorMessage(error, `Unknown error removing schedule "${id}".`);
       setApiError(errorMsg);
       trackScheduleDeleted(false, getErrorType(error));
     } finally {

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "@/shared/lib/cn";
 
 /**
  * Layout wrapper for full-page views (Skills, Agents, etc.).
@@ -9,12 +10,20 @@ import type { ReactNode } from "react";
 export function MainPanelLayout({
   children,
   backgroundColor = "bg-background",
+  className,
 }: {
   children: ReactNode;
   backgroundColor?: string;
+  className?: string;
 }) {
   return (
-    <div className={`flex flex-col ${backgroundColor} min-w-0 h-full min-h-0`}>
+    <div
+      className={cn(
+        "flex h-full min-h-0 min-w-0 flex-col",
+        backgroundColor,
+        className,
+      )}
+    >
       {children}
     </div>
   );

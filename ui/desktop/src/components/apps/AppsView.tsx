@@ -313,7 +313,9 @@ export default function AppsView() {
                       )}
                       {app.mcpServers && app.mcpServers.length > 0 && (
                         <span className="inline-block px-2 py-1 text-xs bg-background-secondary text-text-secondary rounded">
-                          {isCustomApp ? intl.formatMessage(i18n.customApp) : app.mcpServers.join(', ')}
+                          {isCustomApp
+                            ? intl.formatMessage(i18n.customApp)
+                            : app.mcpServers.join(', ')}
                         </span>
                       )}
                     </div>

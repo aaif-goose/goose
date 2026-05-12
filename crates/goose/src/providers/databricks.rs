@@ -13,7 +13,10 @@ use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::embedding::EmbeddingCapable;
 use super::errors::ProviderError;
 use super::formats::databricks::create_request;
@@ -22,7 +25,7 @@ use super::formats::openai_responses::{
 };
 use super::oauth;
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, map_http_error_to_provider_error,
+    handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
     stream_openai_compat,
 };
 use super::retry::ProviderRetry;
@@ -41,7 +44,6 @@ use serde_json::json;
 const DEFAULT_CLIENT_ID: &str = "databricks-cli";
 const DEFAULT_REDIRECT_URL: &str = "http://localhost";
 const DEFAULT_SCOPES: &[&str] = &["all-apis", "offline_access"];
-const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
 const DATABRICKS_PROVIDER_NAME: &str = "databricks";
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
@@ -177,8 +179,11 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client =
-            ApiClient::with_timeout(host, auth_method, Duration::from_secs(DEFAULT_TIMEOUT_SECS))?;
+        let api_client = ApiClient::with_timeout(
+            host,
+            auth_method,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )?;
 
         let mut provider = Self {
             api_client,
@@ -242,7 +247,11 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client = ApiClient::with_timeout(host, auth_method, Duration::from_secs(600))?;
+        let api_client = ApiClient::with_timeout(
+            host,
+            auth_method,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )?;
 
         Ok(Self {
             api_client,
@@ -396,7 +405,7 @@ impl Provider for DatabricksProvider {
                         .api_client
                         .response_post(Some(session_id), &path, &payload_clone)
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {

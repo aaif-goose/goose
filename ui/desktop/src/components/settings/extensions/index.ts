@@ -6,7 +6,7 @@ export {
   deleteExtension,
 } from './extension-manager';
 
-export { syncBundledExtensions, initializeBundledExtensions } from './bundled-extensions';
+export { pruneDeprecatedBundledExtensions, syncBundledExtensions } from './bundled-extensions';
 
 export { addExtensionFromDeepLink } from './deeplink';
 

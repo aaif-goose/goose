@@ -1,23 +1,19 @@
-import { invoke } from "@tauri-apps/api/core";
+import { getClient } from "@/shared/api/acpConnection";
 import type { ExtensionConfig, ExtensionEntry } from "../types";
 
-export function nameToKey(name: string): string {
-  return name
-    .replace(/\s/g, "")
-    .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .toLowerCase();
-}
-
 export async function listExtensions(): Promise<ExtensionEntry[]> {
-  return invoke("list_extensions");
+  const client = await getClient();
+  const response = await client.goose.GooseConfigExtensions({});
+  return response.extensions as ExtensionEntry[];
 }
 
 export async function addExtension(
   name: string,
   extensionConfig: ExtensionConfig,
-  enabled: boolean,
+  enabled = false,
 ): Promise<void> {
-  return invoke("add_extension", {
+  const client = await getClient();
+  await client.goose.GooseConfigExtensionsAdd({
     name,
     extensionConfig,
     enabled,
@@ -25,12 +21,6 @@ export async function addExtension(
 }
 
 export async function removeExtension(configKey: string): Promise<void> {
-  return invoke("remove_extension", { configKey });
-}
-
-export async function toggleExtension(
-  configKey: string,
-  enabled: boolean,
-): Promise<void> {
-  return invoke("toggle_extension", { configKey, enabled });
+  const client = await getClient();
+  await client.goose.GooseConfigExtensionsRemove({ configKey });
 }

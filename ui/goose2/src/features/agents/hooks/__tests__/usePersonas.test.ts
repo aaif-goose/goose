@@ -81,6 +81,7 @@ describe("usePersonas", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
   });
 

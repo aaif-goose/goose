@@ -14,7 +14,7 @@ use crate::providers::base::{ProviderDef, ProviderMetadata};
 use crate::providers::inventory::InventoryIdentityInput;
 
 const CLAUDE_ACP_PROVIDER_NAME: &str = "claude-acp";
-const CLAUDE_ACP_DOC_URL: &str = "https://github.com/zed-industries/claude-agent-acp";
+const CLAUDE_ACP_DOC_URL: &str = "https://github.com/agentclientprotocol/claude-agent-acp";
 const CLAUDE_ACP_BINARY: &str = "claude-agent-acp";
 
 pub struct ClaudeAcpProvider;
@@ -33,7 +33,7 @@ impl ProviderDef for ClaudeAcpProvider {
             vec![],
         )
         .with_setup_steps(vec![
-            "Install the ACP adapter: `npm install -g @zed-industries/claude-agent-acp`",
+            "Install the ACP adapter: `npm install -g @agentclientprotocol/claude-agent-acp`",
             "Ensure your Claude CLI is authenticated (run `claude` to verify)",
             "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: claude-acp\n  GOOSE_MODEL: current",
             "Restart goose for changes to take effect",

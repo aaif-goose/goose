@@ -5,6 +5,7 @@ import {
   sanitizeSessionModelPreference,
   type SessionModelPreference,
 } from "@/features/chat/lib/sessionModelPreference";
+import { getStoredModelPreference } from "@/features/chat/lib/modelPreferences";
 
 export async function resolveSupportedSessionModelPreference(
   providerId: string,
@@ -20,6 +21,15 @@ export async function resolveSupportedSessionModelPreference(
     return sessionModelPreference;
   }
 
+  const exactStoredPreference = preferredModel
+    ? null
+    : getStoredModelPreference(providerId);
+  const shouldPreserveWithoutInventory =
+    sessionModelPreference.providerId === providerId &&
+    exactStoredPreference?.modelId === sessionModelPreference.modelId &&
+    (exactStoredPreference.providerId ?? providerId) ===
+      sessionModelPreference.providerId;
+
   const inventoryEntry =
     inventoryEntries.get(sessionModelPreference.providerId) ??
     (await getProviderInventory([sessionModelPreference.providerId])
@@ -27,6 +37,10 @@ export async function resolveSupportedSessionModelPreference(
       .catch(() => undefined));
 
   if (!inventoryEntry) {
+    if (shouldPreserveWithoutInventory) {
+      return sessionModelPreference;
+    }
+
     return {
       providerId: sessionModelPreference.providerId,
     };

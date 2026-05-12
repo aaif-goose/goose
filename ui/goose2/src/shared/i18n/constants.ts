@@ -6,11 +6,11 @@ export const TRANSLATION_NAMESPACES = [
   "common",
   "chat",
   "home",
+  "onboarding",
   "projects",
   "settings",
   "skills",
   "sidebar",
-  "status",
   "sessions",
 ] as const;
 export const LOCALE_STORAGE_KEY = "goose:locale";

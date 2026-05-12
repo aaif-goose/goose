@@ -38,6 +38,11 @@ on:
         required: false
         default: ""
         type: string
+      windows-signing:
+        description: "Whether to perform Windows signing via Azure Trusted Signing"
+        required: false
+        default: false
+        type: boolean
       cli-run-id:
         description: >
           Run ID of a prior build-cli.yml workflow run to download the goose
@@ -105,7 +110,7 @@ jobs:
       # ── Goose CLI: download from prior run OR build from source ──
       - name: Download goose CLI from build-cli run
         if: inputs.cli-run-id != ''
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: goose-aarch64-apple-darwin
           run-id: ${{ inputs.cli-run-id }}
@@ -125,7 +130,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-arm64
 
@@ -175,13 +180,11 @@ jobs:
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       # ── Tauri bundle ──
-      - name: Check disk space before bundle
-        run: df -h
-
       - name: Bundle Goose 2 (pnpm tauri build)
         env:
+          APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
           APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
         working-directory: ui/goose2
         run: |
@@ -241,7 +244,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-macos-intel:
     name: "macOS x86_64"
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     environment: ${{ inputs.environment || '' }}
     timeout-minutes: 60
     env:
@@ -272,7 +275,7 @@ jobs:
       # ── Goose CLI: download from prior run OR build from source ──
       - name: Download goose CLI from build-cli run
         if: inputs.cli-run-id != ''
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: goose-x86_64-apple-darwin
           run-id: ${{ inputs.cli-run-id }}
@@ -291,7 +294,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-x86_64
 
@@ -357,11 +360,12 @@ jobs:
           certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      # ── Tauri bundle (cross-compile for Intel) ──
+      # ── Tauri bundle ──
       - name: Bundle Goose 2 for Intel
         env:
+          APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
           APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
         working-directory: ui/goose2
         run: |
@@ -419,7 +423,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-linux:
     name: "Linux x86_64"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -440,7 +444,10 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            protobuf-compiler
+            protobuf-compiler \
+            libvulkan-dev \
+            libvulkan1 \
+            glslc
 
       - name: Update versions
         if: inputs.version != ''
@@ -458,7 +465,7 @@ jobs:
       # ── Goose CLI: download from prior run OR build from source ──
       - name: Download goose CLI from build-cli run
         if: inputs.cli-run-id != ''
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: goose-x86_64-unknown-linux-gnu
           run-id: ${{ inputs.cli-run-id }}
@@ -477,7 +484,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-linux-x86_64
 
@@ -485,7 +492,7 @@ jobs:
         if: inputs.cli-run-id == ''
         run: |
           source ./bin/activate-hermit
-          cargo build --release -p goose-cli --bin goose
+          cargo build --release -p goose-cli --bin goose --features vulkan
 
       - name: Prepare goose binary with target triple
         if: inputs.cli-run-id == ''
@@ -564,6 +571,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
+      id-token: write
       contents: read
       actions: read
     steps:
@@ -597,7 +605,7 @@ jobs:
       # ── Goose CLI: download from prior run OR build from source ──
       - name: Download goose CLI from build-cli run
         if: inputs.cli-run-id != ''
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: goose-x86_64-pc-windows-msvc
           run-id: ${{ inputs.cli-run-id }}
@@ -621,7 +629,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-windows-x86_64
 
@@ -697,3 +705,70 @@ jobs:
           name: Goose2-windows-x64-msi
           path: ui/goose2/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
           if-no-files-found: warn
+
+  sign-windows:
+    name: "Sign Windows installers"
+    needs: bundle-windows
+    if: inputs.windows-signing
+    runs-on: windows-latest
+    environment: signing
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - name: Download NSIS installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Goose2-windows-x64-nsis
+          path: unsigned/nsis
+
+      - name: Download MSI installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Goose2-windows-x64-msi
+          path: unsigned/msi
+
+      - name: Azure login
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows installers with Azure Trusted Signing
+        uses: azure/trusted-signing-action@db7a3a6bd3912025c705162fb7475389f5b69ec6 # v1
+        with:
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          files-folder: ${{ github.workspace }}/unsigned
+          files-folder-filter: exe,msi
+          files-folder-recurse: true
+
+      - name: Verify signed installers
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path unsigned -Recurse -Include *.exe,*.msi
+          foreach ($file in $files) {
+            Write-Output "Verifying signature: $($file.FullName)"
+            $sig = Get-AuthenticodeSignature $file.FullName
+            if ($sig.Status -ne "Valid") {
+              throw "Signature invalid for $($file.Name): $($sig.Status)"
+            }
+            Write-Output "✅ Signature valid: $($file.Name)"
+          }
+
+      - name: Upload signed NSIS installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: Goose2-windows-x64-nsis-signed
+          path: unsigned/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload signed MSI installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: Goose2-windows-x64-msi-signed
+          path: unsigned/msi/*.msi
+          if-no-files-found: error

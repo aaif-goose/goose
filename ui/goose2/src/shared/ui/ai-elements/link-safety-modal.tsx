@@ -14,12 +14,14 @@ import {
 interface LinkSafetyModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenLink?: (url: string) => Promise<void>;
   url: string;
 }
 
 export function LinkSafetyModal({
   isOpen,
   onClose,
+  onOpenLink,
   url,
 }: LinkSafetyModalProps) {
   const { t } = useTranslation("common");
@@ -39,12 +41,12 @@ export function LinkSafetyModal({
 
   const handleOpen = useCallback(async () => {
     try {
-      await openUrl(url);
+      await (onOpenLink ?? openUrl)(url);
     } catch (e: unknown) {
       console.error("[linkSafety] openUrl failed:", e);
     }
     onClose();
-  }, [url, onClose]);
+  }, [url, onClose, onOpenLink]);
 
   const handleCopy = useCallback(() => {
     if (isCopied) return;

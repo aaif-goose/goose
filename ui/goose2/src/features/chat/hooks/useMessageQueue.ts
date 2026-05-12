@@ -2,6 +2,7 @@ import { useEffect, useCallback } from "react";
 import type { ChatState } from "@/shared/types/chat";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import { useChatStore } from "../stores/chatStore";
+import type { ChatSendOptions } from "../types";
 
 /**
  * Single-slot message queue that holds one pending message while the agent is
@@ -18,6 +19,7 @@ export function useMessageQueue(
     text: string,
     overridePersona?: { id: string; name?: string },
     attachments?: ChatAttachmentDraft[],
+    sendOptions?: ChatSendOptions,
   ) => void,
 ) {
   const queuedMessage = useChatStore(
@@ -26,18 +28,37 @@ export function useMessageQueue(
 
   useEffect(() => {
     if (chatState === "idle" && queuedMessage) {
-      const { text, personaId, attachments } = queuedMessage;
+      const { text, personaId, attachments, sendOptions } = queuedMessage;
       useChatStore.getState().dismissQueuedMessage(sessionId);
-      sendMessage(text, personaId ? { id: personaId } : undefined, attachments);
+      if (sendOptions) {
+        sendMessage(
+          text,
+          personaId ? { id: personaId } : undefined,
+          attachments,
+          sendOptions,
+        );
+      } else {
+        sendMessage(
+          text,
+          personaId ? { id: personaId } : undefined,
+          attachments,
+        );
+      }
     }
   }, [chatState, queuedMessage, sendMessage, sessionId]);
 
   const enqueue = useCallback(
-    (text: string, personaId?: string, attachments?: ChatAttachmentDraft[]) => {
+    (
+      text: string,
+      personaId?: string,
+      attachments?: ChatAttachmentDraft[],
+      sendOptions?: ChatSendOptions,
+    ) => {
       useChatStore.getState().enqueueMessage(sessionId, {
         text,
         personaId,
         attachments,
+        sendOptions,
       });
     },
     [sessionId],

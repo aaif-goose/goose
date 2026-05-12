@@ -1,5 +1,9 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useAgentStore } from "../stores/agentStore";
+import {
+  selectPersonas,
+  selectPersonasLoading,
+} from "../stores/agentSelectors";
 import type {
   CreatePersonaRequest,
   UpdatePersonaRequest,
@@ -9,32 +13,36 @@ import * as api from "@/shared/api/agents";
 const REFRESH_INTERVAL_MS = 60_000;
 
 export function usePersonas() {
-  const store = useAgentStore();
+  const personas = useAgentStore(selectPersonas);
+  const personasLoading = useAgentStore(selectPersonasLoading);
+  const setPersonas = useAgentStore((s) => s.setPersonas);
+  const addPersona = useAgentStore((s) => s.addPersona);
+  const updatePersonaInStore = useAgentStore((s) => s.updatePersona);
+  const removePersona = useAgentStore((s) => s.removePersona);
+  const setPersonasLoading = useAgentStore((s) => s.setPersonasLoading);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: store is stable and should not trigger re-creation
   const loadPersonas = useCallback(async () => {
-    store.setPersonasLoading(true);
+    setPersonasLoading(true);
     try {
       const personas = await api.listPersonas();
-      store.setPersonas(personas);
+      setPersonas(personas);
     } catch (error) {
       console.error("Failed to load personas:", error);
       // Fall back to empty list - builtins will come from backend
     } finally {
-      store.setPersonasLoading(false);
+      setPersonasLoading(false);
     }
-  }, []);
+  }, [setPersonas, setPersonasLoading]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: store is stable and should not trigger re-creation
   const refreshFromDisk = useCallback(async () => {
     try {
       const personas = await api.refreshPersonas();
-      store.setPersonas(personas);
+      setPersonas(personas);
     } catch (error) {
       console.error("Failed to refresh personas from disk:", error);
     }
-  }, []);
+  }, [setPersonas]);
 
   useEffect(() => {
     loadPersonas();
@@ -57,32 +65,35 @@ export function usePersonas() {
     };
   }, [refreshFromDisk]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: store is stable and should not trigger re-creation
-  const createPersona = useCallback(async (req: CreatePersonaRequest) => {
-    const persona = await api.createPersona(req);
-    store.addPersona(persona);
-    return persona;
-  }, []);
+  const createPersona = useCallback(
+    async (req: CreatePersonaRequest) => {
+      const persona = await api.createPersona(req);
+      addPersona(persona);
+      return persona;
+    },
+    [addPersona],
+  );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: store is stable and should not trigger re-creation
   const updatePersona = useCallback(
     async (id: string, req: UpdatePersonaRequest) => {
       const persona = await api.updatePersona(id, req);
-      store.updatePersona(id, persona);
+      updatePersonaInStore(id, persona);
       return persona;
     },
-    [],
+    [updatePersonaInStore],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: store is stable and should not trigger re-creation
-  const deletePersona = useCallback(async (id: string) => {
-    await api.deletePersona(id);
-    store.removePersona(id);
-  }, []);
+  const deletePersona = useCallback(
+    async (id: string) => {
+      await api.deletePersona(id);
+      removePersona(id);
+    },
+    [removePersona],
+  );
 
   return {
-    personas: store.personas,
-    isLoading: store.personasLoading,
+    personas,
+    isLoading: personasLoading,
     createPersona,
     updatePersona,
     deletePersona,
