@@ -899,6 +899,9 @@
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
   },
+  "elicitationRequest.accept": {
+    "defaultMessage": "Accept"
+  },
   "elicitationRequest.cancelled": {
     "defaultMessage": "Information request was cancelled."
   },
@@ -3537,7 +3540,7 @@
     "defaultMessage": "YAML"
   },
   "schedulesView.confirmDelete": {
-    "defaultMessage": "Are you sure you want to delete schedule \"{id}\"?"
+    "defaultMessage": "Remove schedule \"{id}\"? The recipe will be kept."
   },
   "schedulesView.createSchedule": {
     "defaultMessage": "Create Schedule"

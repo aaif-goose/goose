@@ -67,7 +67,7 @@ impl ProviderDef for CodexAcpProvider {
             // servers are configured so codex-acp can connect to them.
             let has_http_mcp = mcp_servers
                 .iter()
-                .any(|s| matches!(s, sacp::schema::McpServer::Http(_)));
+                .any(|s| matches!(s, agent_client_protocol::schema::McpServer::Http(_)));
             if has_http_mcp {
                 args.extend([
                     "-c".to_string(),

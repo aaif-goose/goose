@@ -13,6 +13,9 @@
     "openPanel": "Open context panel",
     "ringAria": "Context: {{percent}}% used"
   },
+  "errors": {
+    "sessionPreparationSuperseded": "Session configuration changed while preparing. Try sending again."
+  },
   "contextPanel": {
     "actions": {
       "chooseCreateAction": "Choose create action",
@@ -25,7 +28,7 @@
       "branchName": "Branch name",
       "branchNamePlaceholder": "feature/my-branch",
       "branchSuccess": "Created and switched to {{branch}}.",
-      "branchTitle": "New Branch",
+      "branchTitle": "New branch",
       "branchToOpen": "Branch to open",
       "cancel": "Cancel",
       "createBranch": "Create branch",
@@ -40,17 +43,15 @@
       "worktreeNamePlaceholder": "my-worktree",
       "worktreePath": "Folder: {{path}}",
       "worktreeSuccess": "Created worktree {{worktree}}.",
-      "worktreeTitle": "New Worktree"
+      "worktreeTitle": "New worktree"
     },
     "empty": {
       "folderNotSet": "Folder not set",
       "noChanges": "No uncommitted changes",
-      "noProjectAssigned": "No project assigned.",
-      "noExtensions": "No extensions enabled",
-      "noMatchingExtensions": "No matching extensions"
+      "noProjectAssigned": "No project assigned"
     },
     "errors": {
-      "gitRead": "Unable to read git status."
+      "gitRead": "Couldn't read git status."
     },
     "picker": {
       "selectContext": "Select worktree or branch",
@@ -58,8 +59,9 @@
       "allBranches": "All branches",
       "checkedOutBranch": "{{branch}}",
       "currentBranch": "Current branch",
-      "dirtyTitle": "Uncommitted Changes",
-      "dirtyDescription": "You have {{count}} uncommitted change(s). How would you like to proceed?",
+      "dirtyTitle": "Uncommitted changes",
+      "dirtyDescription_one": "You have {{count}} uncommitted change. How would you like to proceed?",
+      "dirtyDescription_other": "You have {{count}} uncommitted changes. How would you like to proceed?",
       "stashAndSwitch": "Stash & Switch",
       "carryChanges": "Carry to Branch",
       "cancel": "Cancel",
@@ -90,25 +92,23 @@
       "artifacts": "Artifacts",
       "changes": "Changes",
       "changesOnBranch": "on",
-      "extensions": "Extensions",
-      "searchExtensions": "Search extensions...",
       "workspace": "Workspace"
     }
   },
   "files": {
-    "empty": "Project files are unavailable until a project with working directories is assigned.",
+    "empty": "Files will show here after you assign a project.",
     "folderEmpty": "Folder is empty",
-    "loadError": "Unable to load folder contents.",
+    "loadError": "Couldn't load this folder. Try again.",
     "loading": "Loading files...",
     "openFolder": "Open folder: {{path}}",
-    "rootLoadError": "Unable to load this folder."
+    "rootLoadError": "Couldn't load this folder. Try again."
   },
   "image": {
     "view": "View {{label}}"
   },
   "input": {
     "ariaLabel": "Chat message input",
-    "placeholder": "Message {{agent}}, @ to mention agents"
+    "placeholder": "Chat with {{agent}} or @ mention an agent"
   },
   "loading": {
     "compacting": "Compacting conversation...",
@@ -118,14 +118,20 @@
   "mention": {
     "ariaLabel": "Mention suggestions",
     "title": "Mention an agent",
+    "skillsTitle": "Skills",
     "filesTitle": "Files"
   },
   "notifications": {
-    "compactionComplete": "Conversation compacted. Older context was summarized."
+    "compactionComplete": "Conversation compacted. Older context was summarized.",
+    "moveError": "Failed to move chat",
+    "renameError": "Failed to rename chat"
   },
   "message": {
     "copied": "Copied",
     "defaultImageAlt": "Attached",
+    "mcpApp": "MCP App",
+    "mcpAppLoading": "Loading MCP App…",
+    "mcpAppRenderError": "Unable to render MCP App inline.",
     "redactedThinking": "(thinking redacted)"
   },
   "persona": {
@@ -133,6 +139,9 @@
     "create": "Create agent...",
     "clearActive": "Clear active assistant",
     "defaultDescription": "No agent selected - chat directly with Goose"
+  },
+  "skill": {
+    "clearSelected": "Remove {{skill}} skill"
   },
   "queue": {
     "dismiss": "Dismiss queued message",
@@ -187,11 +196,46 @@
     "voiceInputAutoSubmitHint": "Say \"submit\" to send"
   },
   "tools": {
+    "content": "Content",
     "fileNotFound": "File not found: {{path}}",
+    "inputSummary": {
+      "command": "Command",
+      "line": "Line",
+      "path": "Path",
+      "query": "Query",
+      "resource": "Resource",
+      "tool": "Tool",
+      "workingDirectory": "Working directory"
+    },
     "moreOutputs": "More outputs ({{count}})",
     "openFile": "Open file",
     "openFolder": "Open folder",
+    "openNamed": "Open {{name}}",
     "openPath": "Open path",
-    "pathOutsideRoots": "Path is outside allowed project/artifacts roots."
+    "pathOutsideRoots": "Path is outside allowed roots",
+    "structuredContent": "Structured content",
+    "structuredOutput": "Structured output",
+    "structuredOutputLines": "{{count}} lines"
+  },
+  "tool_chain": {
+    "summary": {
+      "active": "working",
+      "reviewing_files": "reviewing files",
+      "running_commands": "running commands",
+      "checking_resources": "checking resources",
+      "updating_files": "updating files",
+      "steps_one": "{{count}} step",
+      "steps_other": "{{count}} steps"
+    },
+    "internalSteps": {
+      "show": "Show internal steps ({{count}})",
+      "hide": "Hide internal steps ({{count}})"
+    },
+    "title": {
+      "active": "working through {{count}} step",
+      "active_other": "working through {{count}} steps",
+      "labeled": "{{label}} ({{count}} step)",
+      "labeled_other": "{{label}} ({{count}} steps)"
+    }
   }
 }

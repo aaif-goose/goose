@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { GripVerticalIcon } from "lucide-react";
+import { IconArrowsHorizontal, IconGripVertical } from "@tabler/icons-react";
 import * as ResizablePrimitive from "react-resizable-panels";
 
 import { cn } from "@/shared/lib/cn";
@@ -11,10 +11,7 @@ function ResizablePanelGroup({
   return (
     <ResizablePrimitive.Group
       data-slot="resizable-panel-group"
-      className={cn(
-        "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
-        className,
-      )}
+      className={cn("flex min-h-0 w-full", className)}
       {...props}
     />
   );
@@ -28,23 +25,47 @@ function ResizablePanel({
 
 function ResizableHandle({
   withHandle,
+  variant = "default",
+  indicator = "grip",
   className,
+  handleClassName,
   ...props
 }: React.ComponentProps<typeof ResizablePrimitive.Separator> & {
   withHandle?: boolean;
+  variant?: "default" | "subtle";
+  indicator?: "grip" | "arrows";
+  handleClassName?: string;
 }) {
+  const indicatorIcon =
+    indicator === "arrows" ? (
+      <IconArrowsHorizontal className="size-2.5" />
+    ) : (
+      <IconGripVertical className="size-2.5" />
+    );
+
   return (
     <ResizablePrimitive.Separator
       data-slot="resizable-handle"
       className={cn(
-        "bg-border-default focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90",
+        "group focus-visible:ring-ring relative flex w-px shrink-0 items-center justify-center focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden after:absolute after:inset-y-0 after:left-1/2 after:-translate-x-1/2 aria-[orientation=horizontal]:h-px aria-[orientation=horizontal]:w-full aria-[orientation=horizontal]:after:left-0 aria-[orientation=horizontal]:after:top-1/2 aria-[orientation=horizontal]:after:-translate-y-1/2 aria-[orientation=horizontal]:after:translate-x-0 [&[aria-orientation=horizontal]>div]:rotate-90",
+        variant === "subtle"
+          ? "bg-transparent transition-colors after:w-5 hover:bg-border data-[separator=active]:bg-border-default focus-visible:bg-border-default aria-[orientation=horizontal]:after:h-5 aria-[orientation=horizontal]:after:w-full"
+          : "bg-border-default after:w-1 aria-[orientation=horizontal]:after:h-1 aria-[orientation=horizontal]:after:w-full",
         className,
       )}
       {...props}
     >
       {withHandle && (
-        <div className="bg-border-default z-10 flex h-4 w-3 items-center justify-center rounded-xs border">
-          <GripVerticalIcon className="size-2.5" />
+        <div
+          className={cn(
+            "z-10 flex items-center justify-center border text-muted-foreground",
+            variant === "subtle"
+              ? "bg-background/95 shadow-xs h-5 w-5 rounded-full border-border-soft opacity-0 transition-all duration-150 ease-out group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 group-data-[separator=active]:scale-100 group-data-[separator=active]:opacity-100 scale-95"
+              : "bg-border-default h-4 w-3 rounded-xs",
+            handleClassName,
+          )}
+        >
+          {indicatorIcon}
         </div>
       )}
     </ResizablePrimitive.Separator>

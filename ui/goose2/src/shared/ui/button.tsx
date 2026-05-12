@@ -1,46 +1,47 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { IconChevronLeft } from "@tabler/icons-react";
 
 import { cn } from "@/shared/lib/cn";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-left text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-left text-sm font-normal transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+          "bg-primary text-primary-foreground shadow-none hover:bg-primary/90",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "bg-destructive text-destructive-foreground shadow-none hover:bg-destructive/90",
         "destructive-flat":
           "bg-destructive text-destructive-foreground shadow-none hover:bg-destructive/90",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
-        "outline-flat":
           "border border-input bg-background shadow-none hover:bg-accent hover:text-accent-foreground",
+        "outline-flat":
+          "border border-border-soft bg-background shadow-none hover:bg-accent hover:text-accent-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         "ghost-light":
           "font-normal hover:bg-accent hover:text-accent-foreground",
+        "inline-subtle":
+          "rounded-md bg-transparent font-normal text-muted-foreground shadow-none hover:bg-muted/70 hover:text-foreground",
         toolbar:
           "justify-start bg-transparent font-normal text-foreground shadow-none hover:bg-accent hover:text-accent-foreground active:bg-accent active:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground",
+        back: "justify-start text-muted-foreground hover:text-foreground",
         link: "text-brand underline-offset-4 hover:underline",
       },
       size: {
-        xs: "h-7 px-2.5 text-xs [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-3",
-        default:
-          "h-9 px-4 py-2 [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-3.5",
-        sm: "h-8 px-3 text-xs [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-3",
-        lg: "h-10 px-8 [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-4",
-        icon: "h-9 w-9 [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-4",
-        "icon-xs":
-          "h-7 w-7 [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-3",
-        "icon-sm":
-          "h-8 w-8 [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-3.5",
-        "icon-lg":
-          "h-10 w-10 [&_svg:not([class*='size-']):not([class*='h-']):not([class*='w-'])]:size-5",
+        xxs: "h-6 gap-1.5 px-2 text-[11px]",
+        xs: "h-7 px-2.5 text-xs",
+        default: "h-9 px-4 py-2",
+        sm: "h-8 px-3 text-xs",
+        lg: "h-10 px-8",
+        icon: "h-9 w-9",
+        "icon-xs": "h-7 w-7",
+        "icon-sm": "h-8 w-8",
+        "icon-lg": "h-10 w-10",
       },
     },
     compoundVariants: [
@@ -60,28 +61,33 @@ const buttonVariants = cva(
         className: "gap-1.5 px-2.5 text-[13px]",
       },
       {
+        variant: "inline-subtle",
+        size: "xs",
+        className: "h-6 gap-1.5 px-2 text-[11px]",
+      },
+      {
         variant: "ghost",
         size: "icon-xs",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
       {
         variant: "ghost",
         size: "icon-sm",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
       {
         variant: "ghost",
         size: "icon",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
       {
         variant: "ghost",
         size: "icon-lg",
         className:
-          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+          "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent data-[state=open]:text-foreground aria-expanded:text-foreground",
       },
     ],
     defaultVariants: {
@@ -90,6 +96,68 @@ const buttonVariants = cva(
     },
   },
 );
+
+const buttonIconSizeClasses = {
+  xxs: "size-3",
+  xs: "size-3",
+  default: "size-3.5",
+  sm: "size-3",
+  lg: "size-4",
+  icon: "size-4",
+  "icon-xs": "size-3",
+  "icon-sm": "size-3.5",
+  "icon-lg": "size-5",
+} satisfies Record<
+  NonNullable<VariantProps<typeof buttonVariants>["size"]>,
+  string
+>;
+
+type ButtonIconProps = {
+  className?: string;
+  size?: number | string;
+  width?: number | string;
+  height?: number | string;
+  style?: React.CSSProperties;
+};
+
+function hasExplicitIconDimensions(icon: React.ReactElement<ButtonIconProps>) {
+  return (
+    icon.props.size !== undefined ||
+    icon.props.width !== undefined ||
+    icon.props.height !== undefined ||
+    icon.props.style?.width !== undefined ||
+    icon.props.style?.height !== undefined
+  );
+}
+
+function renderButtonIcon(
+  icon: React.ReactNode,
+  slot: "button-left-icon" | "button-right-icon",
+  size: VariantProps<typeof buttonVariants>["size"],
+) {
+  if (!icon) {
+    return null;
+  }
+
+  const iconSizeClass = buttonIconSizeClasses[size ?? "default"];
+  const content =
+    React.isValidElement<ButtonIconProps>(icon) &&
+    icon.type !== React.Fragment &&
+    !hasExplicitIconDimensions(icon)
+      ? React.cloneElement(icon, {
+          className: cn(iconSizeClass, icon.props.className),
+        })
+      : icon;
+
+  return (
+    <span
+      data-slot={slot}
+      className="inline-flex shrink-0 items-center justify-center"
+    >
+      {content}
+    </span>
+  );
+}
 
 export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   VariantProps<typeof buttonVariants> & {
@@ -113,6 +181,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const Comp = asChild ? Slot : "button";
+    const resolvedLeftIcon =
+      variant === "back"
+        ? (leftIcon ?? <IconChevronLeft aria-hidden="true" />)
+        : leftIcon;
+
     return (
       <Comp
         data-slot="button"
@@ -124,23 +197,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           children
         ) : (
           <>
-            {leftIcon ? (
-              <span
-                data-slot="button-left-icon"
-                className="inline-flex shrink-0 items-center justify-center"
-              >
-                {leftIcon}
-              </span>
-            ) : null}
+            {renderButtonIcon(resolvedLeftIcon, "button-left-icon", size)}
             {children}
-            {rightIcon ? (
-              <span
-                data-slot="button-right-icon"
-                className="inline-flex shrink-0 items-center justify-center"
-              >
-                {rightIcon}
-              </span>
-            ) : null}
+            {renderButtonIcon(rightIcon, "button-right-icon", size)}
           </>
         )}
       </Comp>

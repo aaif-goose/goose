@@ -32,10 +32,17 @@ type ToolCallData = HashMap<
     ),
 >;
 
+fn deserialize_null_default_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct DeltaToolCallFunction {
     name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default_string")]
     arguments: String,
 }
 
@@ -2434,5 +2441,22 @@ data: [DONE]"#;
             "expected thinking content from merged reasoning fields"
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_delta_tool_call_function_accepts_null_arguments() {
+        let raw = r#"{"arguments":null}"#;
+        let parsed: DeltaToolCallFunction =
+            serde_json::from_str(raw).expect("null arguments must deserialize");
+        assert_eq!(parsed.arguments, "");
+
+        let raw = r#"{}"#;
+        let parsed: DeltaToolCallFunction =
+            serde_json::from_str(raw).expect("missing arguments must deserialize");
+        assert_eq!(parsed.arguments, "");
+
+        let raw = r#"{"arguments":"{\"k\":1}"}"#;
+        let parsed: DeltaToolCallFunction = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.arguments, "{\"k\":1}");
     }
 }

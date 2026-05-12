@@ -1,5 +1,12 @@
 # Release v{{VERSION}}
 
+## Test before Release
+
+1. Close and reopen this PR to trigger CI and produce the Desktop bundle for testing. Reason: workflows don't run on PRs opened by `GITHUB_TOKEN` ([docs](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow)).
+2. Make sure all check workflows pass.
+3. Install the Desktop bundle from the download links (posted as a comment below when it is ready).
+4. Complete the goose Release Manual Testing Checklist (posted as a comment below).
+
 ## How to Release
 
 Push the release tag to trigger the release:
