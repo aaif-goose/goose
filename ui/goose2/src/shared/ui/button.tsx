@@ -11,13 +11,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+          "bg-primary text-primary-foreground shadow-none hover:bg-primary/90",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "bg-destructive text-destructive-foreground shadow-none hover:bg-destructive/90",
         "destructive-flat":
           "bg-destructive text-destructive-foreground shadow-none hover:bg-destructive/90",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
+          "border border-input bg-background shadow-none hover:bg-accent hover:text-accent-foreground",
         "outline-flat":
           "border border-border-soft bg-background shadow-none hover:bg-accent hover:text-accent-foreground",
         secondary:
@@ -33,6 +33,7 @@ const buttonVariants = cva(
         link: "text-brand underline-offset-4 hover:underline",
       },
       size: {
+        xxs: "h-6 gap-1.5 px-2 text-[11px]",
         xs: "h-7 px-2.5 text-xs",
         default: "h-9 px-4 py-2",
         sm: "h-8 px-3 text-xs",
@@ -97,6 +98,7 @@ const buttonVariants = cva(
 );
 
 const buttonIconSizeClasses = {
+  xxs: "size-3",
   xs: "size-3",
   default: "size-3.5",
   sm: "size-3",

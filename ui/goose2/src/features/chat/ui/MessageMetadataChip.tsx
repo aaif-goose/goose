@@ -1,4 +1,4 @@
-import { IconStack2 } from "@tabler/icons-react";
+import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import { cn } from "@/shared/lib/cn";
 import type { MessageChip } from "@/shared/types/messages";
 
@@ -12,7 +12,7 @@ const messageChipClasses: Record<MessageChip["type"], string> = {
 };
 
 export function MessageMetadataChip({ chip }: { chip: MessageChip }) {
-  const Icon = chip.type === "skill" ? IconStack2 : null;
+  const Icon = chip.type === "skill" ? SkillIcon : null;
 
   return (
     <span

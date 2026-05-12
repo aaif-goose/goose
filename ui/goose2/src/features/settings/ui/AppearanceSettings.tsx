@@ -4,6 +4,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/toggle-group";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { Sun, Moon, Monitor, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { SettingsPage } from "@/shared/ui/SettingsPage";
 
 const THEME_OPTIONS = [
   { value: "light", icon: Sun },
@@ -19,7 +20,6 @@ const ACCENT_COLORS = [
   { name: "red", value: "#ef4444" },
   { name: "pink", value: "#ec4899" },
   { name: "purple", value: "#a855f7" },
-  { name: "indigo", value: "#6366f1" },
 ];
 
 const DENSITY_OPTIONS = [
@@ -52,17 +52,18 @@ function SettingRow({
 
 export function AppearanceSettings() {
   const { t } = useTranslation("settings");
-  const { theme, setTheme, accentColor, setAccentColor, density, setDensity } =
-    useTheme();
+  const {
+    theme,
+    setTheme,
+    accentColorPreference,
+    resetAccentColor,
+    setAccentColor,
+    density,
+    setDensity,
+  } = useTheme();
 
   return (
-    <div>
-      <h3 className="text-lg font-semibold font-display tracking-tight">
-        {t("appearance.title")}
-      </h3>
-
-      <Separator className="my-4" />
-
+    <SettingsPage title={t("appearance.title")}>
       <SettingRow
         label={t("appearance.theme.label")}
         description={t("appearance.theme.description")}
@@ -77,7 +78,7 @@ export function AppearanceSettings() {
             <ToggleGroupItem
               key={option.value}
               value={option.value}
-              className="gap-1.5 rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+              className="gap-1.5 rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-none"
             >
               <option.icon className="h-3.5 w-3.5" />
               {t(`appearance.theme.options.${option.value}`)}
@@ -92,21 +93,38 @@ export function AppearanceSettings() {
         label={t("appearance.accent.label")}
         description={t("appearance.accent.description")}
       >
-        <div className="grid grid-cols-4 gap-2">
+        <div className="flex max-w-36 flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            title={t("appearance.accent.colors.default")}
+            aria-label={t("appearance.accent.colors.default")}
+            onClick={resetAccentColor}
+            className={cn(
+              "relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-border transition-transform hover:scale-110",
+              accentColorPreference === "default" &&
+                "ring-2 ring-ring ring-offset-2 ring-offset-background",
+            )}
+          >
+            <span className="absolute inset-0 bg-[linear-gradient(135deg,#1a1a1a_0_50%,#ffffff_50%_100%)]" />
+            {accentColorPreference === "default" && (
+              <Check className="relative h-4 w-4 rounded-full bg-background p-0.5 text-foreground shadow-none" />
+            )}
+          </button>
           {ACCENT_COLORS.map((color) => (
             <button
               type="button"
               key={color.value}
               title={t(`appearance.accent.colors.${color.name}`)}
+              aria-label={t(`appearance.accent.colors.${color.name}`)}
               onClick={() => setAccentColor(color.value)}
               className={cn(
                 "flex h-7 w-7 items-center justify-center rounded-full transition-transform hover:scale-110",
-                accentColor === color.value &&
+                accentColorPreference === color.value &&
                   "ring-2 ring-ring ring-offset-2 ring-offset-background",
               )}
               style={{ backgroundColor: color.value }}
             >
-              {accentColor === color.value && (
+              {accentColorPreference === color.value && (
                 <Check className="h-3.5 w-3.5 text-white" />
               )}
             </button>
@@ -130,13 +148,13 @@ export function AppearanceSettings() {
             <ToggleGroupItem
               key={option.value}
               value={option.value}
-              className="rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+              className="rounded-md px-3 py-1.5 text-sm data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-none"
             >
               {t(`appearance.density.options.${option.value}`)}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       </SettingRow>
-    </div>
+    </SettingsPage>
   );
 }

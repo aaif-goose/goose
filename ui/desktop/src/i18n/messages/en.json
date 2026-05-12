@@ -119,6 +119,24 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose finished the task."
   },
+  "chatHistorySearch.keyboardHintMac": {
+    "defaultMessage": "⌘K"
+  },
+  "chatHistorySearch.keyboardHintOther": {
+    "defaultMessage": "Ctrl+K"
+  },
+  "chatHistorySearch.messageCount": {
+    "defaultMessage": "{count,plural,one{# message} other{# messages}}"
+  },
+  "chatHistorySearch.noResults": {
+    "defaultMessage": "No chats found"
+  },
+  "chatHistorySearch.searchError": {
+    "defaultMessage": "Search failed"
+  },
+  "chatHistorySearch.searchPlaceholder": {
+    "defaultMessage": "Search chats…"
+  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
   },
@@ -518,11 +536,20 @@
   "cronPicker.august": {
     "defaultMessage": "August"
   },
+  "cronPicker.cronExpression": {
+    "defaultMessage": "Cron expression"
+  },
+  "cronPicker.custom": {
+    "defaultMessage": "Custom cron"
+  },
   "cronPicker.day": {
     "defaultMessage": "Day"
   },
   "cronPicker.december": {
     "defaultMessage": "December"
+  },
+  "cronPicker.emptyCronError": {
+    "defaultMessage": "Cron expression cannot be empty"
   },
   "cronPicker.every": {
     "defaultMessage": "Every"
@@ -538,6 +565,9 @@
   },
   "cronPicker.inMonth": {
     "defaultMessage": "in"
+  },
+  "cronPicker.invalidDayOfMonth": {
+    "defaultMessage": "Day must be between 1 and {max}"
   },
   "cronPicker.january": {
     "defaultMessage": "January"
@@ -557,6 +587,9 @@
   "cronPicker.minute": {
     "defaultMessage": "Minute"
   },
+  "cronPicker.mode": {
+    "defaultMessage": "Mode"
+  },
   "cronPicker.monday": {
     "defaultMessage": "Monday"
   },
@@ -575,11 +608,17 @@
   "cronPicker.onDay": {
     "defaultMessage": "on day"
   },
+  "cronPicker.quarter": {
+    "defaultMessage": "Quarter"
+  },
   "cronPicker.saturday": {
     "defaultMessage": "Saturday"
   },
   "cronPicker.september": {
     "defaultMessage": "September"
+  },
+  "cronPicker.startingMonth": {
+    "defaultMessage": "starting month"
   },
   "cronPicker.sunday": {
     "defaultMessage": "Sunday"
@@ -896,8 +935,29 @@
   "dictationSettings.voiceDictationProvider": {
     "defaultMessage": "Voice Dictation Provider"
   },
+  "dirSwitcher.chooseDirectory": {
+    "defaultMessage": "Choose directory…"
+  },
+  "dirSwitcher.currentDirectory": {
+    "defaultMessage": "Current directory"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
+  },
+  "dirSwitcher.gitWorktrees": {
+    "defaultMessage": "Git worktrees"
+  },
+  "dirSwitcher.noWorktreesFound": {
+    "defaultMessage": "No worktrees found"
+  },
+  "dirSwitcher.openInFinder": {
+    "defaultMessage": "Open in file manager"
+  },
+  "dirSwitcher.recentDirectories": {
+    "defaultMessage": "Recent directories"
+  },
+  "elicitationRequest.accept": {
+    "defaultMessage": "Accept"
   },
   "elicitationRequest.cancelled": {
     "defaultMessage": "Information request was cancelled."
@@ -3537,7 +3597,7 @@
     "defaultMessage": "YAML"
   },
   "schedulesView.confirmDelete": {
-    "defaultMessage": "Are you sure you want to delete schedule \"{id}\"?"
+    "defaultMessage": "Remove schedule \"{id}\"? The recipe will be kept."
   },
   "schedulesView.createSchedule": {
     "defaultMessage": "Create Schedule"

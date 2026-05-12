@@ -1,6 +1,6 @@
 import { useCallback, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { IconMessage } from "@tabler/icons-react";
+import { IconEdit, IconMessage } from "@tabler/icons-react";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
@@ -96,16 +96,16 @@ export function SidebarRecentsSection({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="icon-xs"
             onClick={onNewChat}
             aria-label={t("actions.newChat")}
             title={t("actions.newChat")}
             className={cn(
-              "mr-1 h-6 flex-shrink-0 rounded-full bg-muted px-2 text-[11px] text-foreground opacity-0 transition-opacity duration-150 ease-out hover:bg-muted/80 hover:text-foreground",
-              "pointer-events-none group-hover/chats-header:pointer-events-auto group-hover/chats-header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100",
+              "mr-1 size-6 flex-shrink-0 rounded-md",
+              "opacity-0 pointer-events-none group-hover/chats-header:opacity-100 group-hover/chats-header:pointer-events-auto group-focus-within/chats-header:opacity-100 group-focus-within/chats-header:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto",
             )}
           >
-            {t("actions.newChat")}
+            <IconEdit className="size-4" />
           </Button>
         )}
 

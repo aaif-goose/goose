@@ -1,0 +1,233 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="referrer" content="no-referrer"/>
+    <meta name="color-scheme" content="light dark"/>
+    <meta http-equiv="Content-Security-Policy" content="{{OUTER_CSP}}"/>
+    <title>MCP App Sandbox</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      (function () {
+        'use strict';
+
+        let guestIframe = null;
+
+        function getProxyParams() {
+          var params = new URLSearchParams(window.location.search);
+          var colorScheme = params.get('color_scheme');
+          return {
+            secret: params.get('secret') || '',
+            baseUrl: getProxyBaseUrl(),
+            colorScheme: colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : null
+          };
+        }
+
+        function getProxyBaseUrl() {
+          var marker = '/mcp-app-proxy';
+          var path = window.location.pathname || '';
+          var markerIndex = path.lastIndexOf(marker);
+          var prefix = markerIndex === -1 ? '' : path.slice(0, markerIndex);
+          return window.location.origin + prefix;
+        }
+
+        function applyProxyColorScheme(nextColorScheme) {
+          var proxyParams = getProxyParams();
+          var colorScheme = nextColorScheme || proxyParams.colorScheme || 'light dark';
+          document.documentElement.style.colorScheme = colorScheme;
+          document.body.style.colorScheme = colorScheme;
+          if (guestIframe) {
+            guestIframe.style.setProperty('color-scheme', colorScheme);
+          }
+        }
+
+        function createColorSchemePrelude(colorScheme) {
+          var hostColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
+          var matchMediaScript = [
+            '<scr' + 'ipt>',
+            '(function(){',
+            'var nativeMatchMedia=window.matchMedia&&window.matchMedia.bind(window);',
+            'function normalizeColorScheme(value){return value==="dark"?"dark":"light";}',
+            'function setHostColorScheme(value){window.__mcpHostColorScheme=normalizeColorScheme(value);document.documentElement.style.colorScheme=window.__mcpHostColorScheme;if(document.body){document.body.style.colorScheme=window.__mcpHostColorScheme;}var meta=document.querySelector("meta[name=\\"color-scheme\\"]");if(meta){meta.setAttribute("content",window.__mcpHostColorScheme);}}',
+            'setHostColorScheme(' + JSON.stringify(hostColorScheme) + ');',
+            'document.addEventListener("DOMContentLoaded",function(){setHostColorScheme(window.__mcpHostColorScheme);});',
+            'if(nativeMatchMedia){window.matchMedia=function(query){var normalized=String(query).replace(/\\s+/g," ").trim().toLowerCase();var isDark=normalized==="(prefers-color-scheme: dark)";var isLight=normalized==="(prefers-color-scheme: light)";if(!isDark&&!isLight){return nativeMatchMedia(query);}return {matches:isDark?window.__mcpHostColorScheme==="dark":window.__mcpHostColorScheme==="light",media:String(query),onchange:null,addListener:function(){},removeListener:function(){},addEventListener:function(){},removeEventListener:function(){},dispatchEvent:function(){return false;}};};}',
+            'window.addEventListener("message",function(event){var data=event.data;if(!data||data.method!=="ui/notifications/host-context-changed"){return;}var theme=data.params&&data.params.theme;if(theme==="light"||theme==="dark"){setHostColorScheme(theme);}});',
+            '})();',
+            '</scr' + 'ipt>'
+          ].join('');
+
+          return '<meta name="color-scheme" content="' + hostColorScheme + '"><style id="mcp-app-host-color-scheme">:root{color-scheme:' + hostColorScheme + ';}html,body{background-color:transparent;}</style>' + matchMediaScript;
+        }
+
+        function injectGuestColorScheme(html, colorScheme) {
+          if (!colorScheme) {
+            return html;
+          }
+
+          var prelude = createColorSchemePrelude(colorScheme);
+          var cleanedHtml = html.replace(/<meta\s+[^>]*name\s*=\s*["']color-scheme["'][^>]*>/gi, '');
+
+          if (/<head\b[^>]*>/i.test(cleanedHtml)) {
+            return cleanedHtml.replace(/<head\b[^>]*>/i, function (match) {
+              return match + prelude;
+            });
+          }
+
+          if (/<html\b[^>]*>/i.test(cleanedHtml)) {
+            return cleanedHtml.replace(/<html\b[^>]*>/i, function (match) {
+              return match + '<head>' + prelude + '</head>';
+            });
+          }
+
+          return prelude + cleanedHtml;
+        }
+
+        function renderSandboxError(message) {
+          if (guestIframe) {
+            guestIframe.remove();
+            guestIframe = null;
+          }
+
+          document.body.textContent = '';
+          var errorElement = document.createElement('div');
+          errorElement.setAttribute('role', 'alert');
+          errorElement.style.cssText = 'box-sizing:border-box; width:100%; height:100%; padding:16px; color:CanvasText; background:transparent; font:13px system-ui, sans-serif;';
+          errorElement.textContent = message;
+          document.body.appendChild(errorElement);
+        }
+
+        async function storeGuestHtml(html) {
+          var proxyParams = getProxyParams();
+          var cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+          var response = await fetch(proxyParams.baseUrl + '/mcp-app-guest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              secret: proxyParams.secret,
+              html: html,
+              csp: cspMeta ? cspMeta.content : ''
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to store guest HTML: ' + response.status);
+          }
+
+          var data = await response.json();
+          if (typeof data.guestUrl !== 'string') {
+            throw new Error('Guest URL missing from store response');
+          }
+          return data.guestUrl;
+        }
+
+        async function createGuestIframe(html, permissions) {
+          if (guestIframe) {
+            guestIframe.remove();
+          }
+
+          guestIframe = document.createElement('iframe');
+          guestIframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+          guestIframe.referrerPolicy = 'no-referrer';
+
+          var allowList = [];
+          if (permissions && permissions.camera) allowList.push('camera');
+          if (permissions && permissions.microphone) allowList.push('microphone');
+          if (permissions && permissions.geolocation) allowList.push('geolocation');
+          if (permissions && permissions.clipboardWrite) allowList.push('clipboard-write');
+          if (allowList.length > 0) {
+            guestIframe.setAttribute('allow', allowList.join('; '));
+          }
+
+          var proxyParams = getProxyParams();
+          var colorScheme = proxyParams.colorScheme || 'light dark';
+          guestIframe.style.cssText = 'width:100%; height:100%; border:none; background-color:transparent; color-scheme:' + colorScheme + ';';
+          var guestHtml = injectGuestColorScheme(html, proxyParams.colorScheme);
+
+          try {
+            guestIframe.src = await storeGuestHtml(guestHtml);
+          } catch (e) {
+            console.error('Failed to store MCP app guest HTML:', e);
+            renderSandboxError('Unable to load MCP app sandbox.');
+            return;
+          }
+
+          document.body.appendChild(guestIframe);
+        }
+
+        function handleHostMessage(event) {
+          if (event.source !== window.parent) {
+            return;
+          }
+
+          var data = event.data;
+          if (!data || typeof data !== 'object') {
+            return;
+          }
+
+          if (data.method === 'ui/notifications/host-context-changed') {
+            var theme = data.params && data.params.theme;
+            if (theme === 'light' || theme === 'dark') {
+              applyProxyColorScheme(theme);
+            }
+          }
+
+          if (data.method === 'ui/notifications/sandbox-resource-ready') {
+            var params = data.params || {};
+            createGuestIframe(params.html || '', params.permissions || null);
+            return;
+          }
+
+          if (guestIframe && guestIframe.contentWindow) {
+            guestIframe.contentWindow.postMessage(data, '*');
+          }
+        }
+
+        function handleGuestMessage(event) {
+          if (!guestIframe || event.source !== guestIframe.contentWindow) {
+            return;
+          }
+
+          var data = event.data;
+          if (!data || typeof data !== 'object') {
+            return;
+          }
+
+          window.parent.postMessage(data, '*');
+        }
+
+        function handleMessage(event) {
+          if (event.source === window.parent) {
+            handleHostMessage(event);
+          } else if (guestIframe && event.source === guestIframe.contentWindow) {
+            handleGuestMessage(event);
+          }
+        }
+
+        window.addEventListener('message', handleMessage);
+        applyProxyColorScheme();
+        window.parent.postMessage({
+          jsonrpc: '2.0',
+          method: 'ui/notifications/sandbox-proxy-ready',
+          params: {}
+        }, '*');
+      })();
+    </script>
+  </body>
+</html>

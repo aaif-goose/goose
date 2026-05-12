@@ -12,6 +12,7 @@ import type { ComponentProps } from "react";
 import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { getUsage } from "tokenlens";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
 
 const PERCENT_MAX = 100;
 const ICON_RADIUS = 10;
@@ -60,6 +61,13 @@ export const Context = ({
     </ContextContext.Provider>
   );
 };
+
+function useCostTrackingEnabled() {
+  const featureToggles = useDistroStore(
+    (state) => state.manifest.featureToggles,
+  );
+  return featureToggles?.costTracking !== false;
+}
 
 const ContextIcon = () => {
   const { t } = useTranslation("common");
@@ -199,6 +207,7 @@ export const ContextContentFooter = ({
   className,
   ...props
 }: ContextContentFooterProps) => {
+  const costTrackingEnabled = useCostTrackingEnabled();
   const { t } = useTranslation("common");
   const { formatNumber } = useLocaleFormatting();
   const { modelId, usage } = useContextValue();
@@ -215,6 +224,10 @@ export const ContextContentFooter = ({
     currency: "USD",
     style: "currency",
   });
+
+  if (!costTrackingEnabled) {
+    return null;
+  }
 
   return (
     <div
@@ -241,6 +254,7 @@ const TokensWithCost = ({
   tokens?: number;
   costText?: string;
 }) => {
+  const costTrackingEnabled = useCostTrackingEnabled();
   const { formatNumber } = useLocaleFormatting();
 
   return (
@@ -250,7 +264,7 @@ const TokensWithCost = ({
         : formatNumber(tokens, {
             notation: "compact",
           })}
-      {costText ? (
+      {costTrackingEnabled && costText ? (
         <span className="ml-2 text-muted-foreground">• {costText}</span>
       ) : null}
     </span>

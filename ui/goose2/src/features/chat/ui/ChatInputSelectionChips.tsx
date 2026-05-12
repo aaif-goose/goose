@@ -1,5 +1,5 @@
-import { IconStack2 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
+import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import type { Persona } from "@/shared/types/agents";
 import type { ChatSkillDraft } from "../types";
 import { ComposerChip } from "./ComposerChip";
@@ -40,7 +40,7 @@ export function ChatInputSelectionChips({
           key={skill.id}
           tone="skill"
           label={skill.name}
-          leading={<IconStack2 className="size-3.5" />}
+          leading={<SkillIcon className="size-3.5" />}
           onRemove={() => onRemoveSkill(skill.id)}
           removeLabel={t("skill.clearSelected", {
             skill: skill.name,

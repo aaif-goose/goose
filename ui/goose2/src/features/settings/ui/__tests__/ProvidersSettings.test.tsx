@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
 import { ProvidersSettings } from "../ProvidersSettings";
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +30,7 @@ function providerEntry(
     defaultModel: "",
     configured: true,
     providerType: "Custom",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: true,
@@ -38,10 +41,46 @@ function providerEntry(
   };
 }
 
+const providerCatalog: ProviderCatalogEntry[] = [
+  {
+    id: "goose",
+    displayName: "Goose",
+    category: "agent",
+    description: "Block's open-source coding agent",
+    setupMethod: "none",
+    group: "default",
+  },
+  {
+    id: "openai",
+    displayName: "OpenAI",
+    category: "model",
+    description: "GPT and o-series models",
+    setupMethod: "config_fields",
+    group: "default",
+  },
+  {
+    id: "databricks",
+    displayName: "Databricks",
+    category: "model",
+    description: "Databricks Foundation Models",
+    setupMethod: "host_with_oauth_fallback",
+    group: "default",
+  },
+  {
+    id: "anthropic",
+    displayName: "Anthropic",
+    category: "model",
+    description: "Claude models",
+    setupMethod: "single_api_key",
+    group: "default",
+  },
+];
+
 describe("ProvidersSettings", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    useProviderCatalogStore.getState().setEntries(providerCatalog);
     useProviderInventoryStore.getState().setEntries([]);
     mocks.useCredentials.mockReturnValue({
       configuredIds: new Set<string>(),
@@ -89,7 +128,7 @@ describe("ProvidersSettings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders the static provider catalog while credential status is loading", () => {
+  it("renders the loaded provider catalog while credential status is loading", () => {
     mocks.useCredentials.mockReturnValue({
       configuredIds: new Set<string>(),
       loading: true,

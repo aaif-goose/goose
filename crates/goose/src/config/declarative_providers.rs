@@ -689,6 +689,23 @@ mod tests {
     }
 
     #[test]
+    fn test_vercel_ai_gateway_json_deserializes() {
+        let json = include_str!("../providers/declarative/vercel_ai_gateway.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("vercel_ai_gateway.json should parse");
+        assert_eq!(config.name, "vercel_ai_gateway");
+        assert_eq!(config.display_name, "Vercel AI Gateway");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "AI_GATEWAY_API_KEY");
+        assert_eq!(
+            config.base_url,
+            "https://ai-gateway.vercel.sh/v1/chat/completions"
+        );
+        assert_eq!(config.supports_streaming, Some(true));
+        assert!(!config.models.is_empty());
+    }
+
+    #[test]
     fn test_validate_provider_id_rejects_legacy_punctuation_for_new_ids() {
         assert!(validate_provider_id("custom_z.ai").is_err());
     }

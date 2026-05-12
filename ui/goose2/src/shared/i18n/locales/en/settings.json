@@ -1,6 +1,18 @@
 {
   "about": {
-    "description": "View app version, build info, and licenses.",
+    "buildModes": {
+      "development": "Development",
+      "production": "Production"
+    },
+    "fields": {
+      "buildMode": "Build mode",
+      "identifier": "App identifier",
+      "license": "License",
+      "name": "App name",
+      "tauriVersion": "Tauri version",
+      "version": "App version"
+    },
+    "unavailable": "Not available",
     "title": "About"
   },
   "appearance": {
@@ -8,8 +20,8 @@
       "colors": {
         "blue": "Blue",
         "cyan": "Cyan",
+        "default": "Default",
         "green": "Green",
-        "indigo": "Indigo",
         "orange": "Orange",
         "pink": "Pink",
         "purple": "Purple",
@@ -39,7 +51,6 @@
     "title": "Appearance"
   },
   "chats": {
-    "description": "View and restore your archived chats.",
     "empty": "No archived chats.",
     "messageCount_one": "{{displayCount}} message",
     "messageCount_other": "{{displayCount}} messages",
@@ -51,19 +62,16 @@
     }
   },
   "compaction": {
-    "description": "Manage how Goose trims older context in long-running chats.",
     "goose": {
       "autoCompact": {
-        "current": "Threshold",
-        "description": "Choose when Goose should compact older context before replying. This applies to all Goose chats.",
         "helper": "Set to 100% to turn auto-compaction off.",
-        "label": "Auto-compact context",
+        "label": "Auto-compact threshold",
         "loading": "Loading...",
         "off": "Off",
         "saveError": "Failed to save auto-compaction setting."
       },
       "builtIn": "Built in",
-      "description": "Goose-specific context controls for long-running chats.",
+      "description": "Choose when the Goose agent compacts older context during sessions. This applies to all goose chats.",
       "label": "Goose (Agent)"
     },
     "title": "Compaction"
@@ -74,18 +82,19 @@
   },
   "extensions": {
     "title": "Extensions",
-    "description": "Manage MCP extensions that add tools and capabilities to Goose.",
+    "description": "Connect Goose to apps, services, and built-in capabilities.",
     "search": "Search extensions...",
-    "enabled": "Enabled",
-    "enabledCount": "Enabled ({{count}})",
-    "available": "Available",
-    "availableCount": "Available ({{count}})",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
-    "addExtension": "Add Extension",
+    "addExtension": "Add extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
-    "toggle": "Toggle {{name}}",
+    "deleteConfirmation": {
+      "title": "Delete \"{{name}}\" permanently?",
+      "description": "This will permanently remove this extension and all of its settings.",
+      "confirm": "Delete Extension",
+      "deleting": "Deleting..."
+    },
     "configure": "Configure {{name}}",
     "save": "Save",
     "cancel": "Cancel",
@@ -113,8 +122,20 @@
       "streamable_http": "HTTP",
       "builtin": "Built-in"
     },
+    "filters": {
+      "all": "All"
+    },
+    "categories": {
+      "appsServices": "Apps & services",
+      "gooseCapabilities": "Goose capabilities"
+    },
+    "sections": {
+      "extensions": "Extensions",
+      "gooseCapabilities": "Built-in Goose capabilities"
+    },
+    "showGooseCapabilities": "Show {{count}} built-in Goose capabilities",
+    "hideGooseCapabilities": "Hide built-in Goose capabilities",
     "errors": {
-      "toggleFailed": "Failed to toggle extension. Please try again.",
       "saveFailed": "Failed to save extension. Please try again.",
       "deleteFailed": "Failed to delete extension. Please try again.",
       "nameConflict": "An extension named \"{{name}}\" already exists."
@@ -133,7 +154,6 @@
     "tools": "Tools"
   },
   "general": {
-    "description": "Manage language and other app preferences.",
     "language": {
       "description": "Choose how Goose formats and displays the interface.",
       "english": "English",
@@ -141,10 +161,15 @@
       "spanish": "Spanish",
       "system": "System default ({{language}})"
     },
+    "onboarding": {
+      "description": "Show setup again the next time Goose opens.",
+      "label": "Onboarding",
+      "reset": "Reset onboarding",
+      "resetDescription": "Onboarding will appear the next time Goose opens."
+    },
     "title": "General",
     "voiceInput": {
-      "label": "Voice Input",
-      "description": "Configure voice dictation for hands-free input.",
+      "label": "Voice input",
       "providerLabel": "Transcription Provider",
       "disabled": "Disabled",
       "notConfiguredSuffix": "(not configured)",
@@ -157,6 +182,9 @@
       "addApiKey": "Add API key",
       "updateApiKey": "Update API key",
       "removeApiKey": "Remove API key",
+      "providerConfigLabel": "Provider credentials",
+      "providerConfigDescription": "This transcription provider uses the credentials from its model provider setup.",
+      "openProviders": "Open Providers",
       "localModelLabel": "Local Whisper Model",
       "localModelDescription": "Download a Whisper model to run transcription locally. Selecting a model sets it as your active local transcription model.",
       "noLocalModels": "No local Whisper models available.",
@@ -193,12 +221,10 @@
     "doctor": "Doctor",
     "general": "General",
     "projects": "Projects",
-    "extensions": "Extensions",
     "providers": "Providers",
     "voice": "Voice"
   },
   "projects": {
-    "description": "Manage your projects.",
     "empty": "No archived projects.",
     "sectionTitle": "Archived projects",
     "title": "Projects"
@@ -311,6 +337,9 @@
         "useTemplate": "Use a template",
         "useTemplateDescription": "Start with endpoint and model defaults for a known provider."
       }
+    },
+    "catalog": {
+      "loading": "Loading provider catalog..."
     },
     "disconnect": "Disconnect",
     "models": {

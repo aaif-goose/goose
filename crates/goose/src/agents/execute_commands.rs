@@ -161,6 +161,7 @@ impl Agent {
             output.push_str("No skills installed.\n\n");
             output.push_str("Skills are loaded from SKILL.md files in:\n");
             output.push_str("  - ~/.agents/skills/ (global)\n");
+            output.push_str("  - ~/.agents/plugins/*/skills/ (installed plugins)\n");
             output.push_str("  - .agents/skills/ (in current project)\n");
         } else {
             output.push_str(&format!("**Installed skills ({}):**\n\n", skills.len()));

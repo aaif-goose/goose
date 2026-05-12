@@ -1,39 +1,53 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, ChevronRight } from "lucide-react";
+import { ChevronRight, FolderOpen } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { CodeBlock } from "@/shared/ui/ai-elements/code-block";
 import {
   Tool,
-  ToolHeader,
   ToolContent,
+  ToolHeader,
   ToolInput,
   ToolOutput,
+  ToolSurface,
 } from "@/shared/ui/ai-elements/tool";
 import { toolStatusMap } from "../lib/toolStatusMap";
-import type { ToolCallStatus } from "@/shared/types/messages";
+import {
+  getToolInputSummaryRows,
+  isHoistableText,
+  isStringifiedCopyOfStructured,
+  type ToolInputSummaryRow,
+} from "@/features/chat/lib/toolCallPresentation";
+import type { ToolCallLocation, ToolCallStatus } from "@/shared/types/messages";
 import { useArtifactPolicyContext } from "@/features/chat/hooks/ArtifactPolicyContext";
-import type { ArtifactPathCandidate } from "@/features/chat/lib/artifactPathPolicy";
 
 interface ToolCallAdapterProps {
   name: string;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
+  locations?: ToolCallLocation[];
   result?: string;
+  structuredContent?: unknown;
   isError?: boolean;
   /** Epoch ms when the tool call started executing. */
   startedAt?: number;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** When false, the chevron-side status badge is hidden (used inside chains). */
+  showStatusBadge?: boolean;
+  /** When false, hides the trailing disclosure chevron in the header. */
+  showChevron?: boolean;
+  /** When true, the card sizes to its content rather than filling its parent. */
+  fitWidth?: boolean;
 }
 
 function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    if (status === "executing") {
+    if (status === "in_progress") {
       const origin = startedAt ?? Date.now();
-      // Compute initial elapsed immediately so the first render is accurate.
       setElapsed(Math.floor((Date.now() - origin) / 1000));
       const interval = setInterval(() => {
         setElapsed(Math.floor((Date.now() - origin) / 1000));
@@ -46,105 +60,96 @@ function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
   return elapsed;
 }
 
-function ArtifactActions({
-  args,
-  name,
-  result,
-}: {
-  args: Record<string, unknown>;
-  name: string;
-  result?: string;
-}) {
+function getLocationKind(path: string): "file" | "folder" | "path" {
+  const normalized = path.trim();
+  if (normalized.endsWith("/") || normalized.endsWith("\\")) return "folder";
+  const name =
+    normalized
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() ?? normalized;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? "file" : "path";
+}
+
+function visibleLocations(locations: ToolCallLocation[] | undefined) {
+  const seen = new Set<string>();
+  return (locations ?? []).filter(
+    (location): location is ToolCallLocation & { path: string } => {
+      if (
+        typeof location.path !== "string" ||
+        location.path.trim().length === 0
+      ) {
+        return false;
+      }
+      const key = `${location.path}:${location.line ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    },
+  );
+}
+
+function ArtifactActions({ locations }: { locations?: ToolCallLocation[] }) {
   const { t } = useTranslation(["chat", "common"]);
   const [moreOutputsOpen, setMoreOutputsOpen] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
-  const { resolveToolCardDisplay, pathExists, openResolvedPath } =
-    useArtifactPolicyContext();
+  const { openResolvedPath } = useArtifactPolicyContext();
+  const artifactLocations = visibleLocations(locations);
 
-  const display = useMemo(
-    () => resolveToolCardDisplay(args, name, result),
-    [args, name, resolveToolCardDisplay, result],
-  );
+  if (artifactLocations.length === 0) return null;
 
-  if (display.role !== "primary_host" || !display.primaryCandidate) return null;
-
-  const openCandidate = async (
-    candidate: ArtifactPathCandidate,
-    allowFallback: boolean,
-  ) => {
-    const candidates = allowFallback
-      ? [
-          candidate,
-          ...display.secondaryCandidates.filter((c) => c.id !== candidate.id),
-        ]
-      : [candidate];
-
+  const openLocation = async (location: ToolCallLocation) => {
     try {
       setOpenError(null);
-      for (const c of candidates) {
-        const exists = await pathExists(c.resolvedPath);
-        if (c.allowed && exists) {
-          await openResolvedPath(c.resolvedPath);
-          return;
-        }
-      }
-      for (const c of candidates) {
-        const exists = await pathExists(c.resolvedPath);
-        if (exists && !c.allowed) {
-          setOpenError(c.blockedReason || t("tools.pathOutsideRoots"));
-          return;
-        }
-      }
-      const firstAllowed = candidates.find((c) => c.allowed);
-      if (firstAllowed) {
-        setOpenError(
-          t("tools.fileNotFound", { path: firstAllowed.resolvedPath }),
-        );
-        return;
-      }
-      setOpenError(candidate.blockedReason || t("tools.pathOutsideRoots"));
+      await openResolvedPath(location.path);
     } catch (error) {
       setOpenError(error instanceof Error ? error.message : String(error));
     }
   };
 
-  const primary = display.primaryCandidate;
+  const primary = artifactLocations[0];
+  const secondaryLocations = artifactLocations.slice(1);
   const kindLabel: Record<string, string> = {
     file: t("tools.openFile"),
     folder: t("tools.openFolder"),
     path: t("tools.openPath"),
   };
 
-  return (
-    <div className="mt-1.5 ml-1 space-y-1.5">
+  const renderLocationButton = (
+    location: ToolCallLocation & { path: string },
+    className: string,
+    iconClassName: string,
+  ) => {
+    const kind = getLocationKind(location.path);
+    return (
       <Button
         type="button"
         variant="outline-flat"
-        onClick={() => void openCandidate(primary, true)}
-        className={cn(
-          "h-auto max-w-full justify-start rounded-md px-2.5 py-1 text-xs",
-          primary.allowed
-            ? "border-accent/45 bg-background text-accent-foreground hover:bg-accent/55"
-            : "cursor-not-allowed border-red-500/30 bg-red-500/[0.04] text-red-500/70",
-        )}
-        disabled={!primary.allowed}
-        title={primary.resolvedPath}
+        onClick={() => void openLocation(location)}
+        className={className}
+        title={location.path}
       >
-        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        <FolderOpen className={iconClassName} />
         <span className="truncate">
-          {kindLabel[primary.kind] ?? t("common:actions.open")}
+          {kindLabel[kind] ?? t("common:actions.open")}
         </span>
         <span className="truncate text-[10px] text-muted-foreground">
-          {primary.rawPath || primary.resolvedPath}
+          {location.path}
         </span>
       </Button>
-      {!primary.allowed && primary.blockedReason && (
-        <p className="text-[11px] text-destructive ml-1">
-          {primary.blockedReason}
-        </p>
+    );
+  };
+
+  return (
+    <div className="mt-1.5 ml-1 space-y-1.5">
+      {renderLocationButton(
+        primary,
+        "h-auto max-w-full justify-start rounded-md border-accent/45 bg-background px-2.5 py-1 text-xs text-accent-foreground hover:bg-accent/55",
+        "h-3.5 w-3.5 shrink-0",
       )}
 
-      {display.secondaryCandidates.length > 0 && (
+      {secondaryLocations.length > 0 && (
         <div className="space-y-1">
           <button
             type="button"
@@ -158,38 +163,20 @@ function ArtifactActions({
               )}
             />
             {t("tools.moreOutputs", {
-              count: display.secondaryCandidates.length,
+              count: secondaryLocations.length,
             })}
           </button>
           {moreOutputsOpen && (
             <div className="space-y-1.5 pl-4">
-              {display.secondaryCandidates.map((candidate) => (
-                <div key={candidate.id} className="space-y-0.5">
-                  <Button
-                    type="button"
-                    variant="outline-flat"
-                    onClick={() => void openCandidate(candidate, false)}
-                    className={cn(
-                      "h-auto max-w-full justify-start rounded-md px-2 py-1 text-[11px]",
-                      candidate.allowed
-                        ? "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-                        : "cursor-not-allowed border-red-500/20 bg-red-500/[0.03] text-red-500/70",
-                    )}
-                    disabled={!candidate.allowed}
-                    title={candidate.resolvedPath}
-                  >
-                    <FolderOpen className="h-3 w-3 shrink-0" />
-                    <span className="truncate">
-                      {kindLabel[candidate.kind] ?? t("common:actions.open")}
-                    </span>
-                    <span className="truncate text-[10px] text-muted-foreground">
-                      {candidate.rawPath || candidate.resolvedPath}
-                    </span>
-                  </Button>
-                  {!candidate.allowed && candidate.blockedReason && (
-                    <p className="text-[11px] text-destructive">
-                      {candidate.blockedReason}
-                    </p>
+              {secondaryLocations.map((location) => (
+                <div
+                  key={`${location.path}:${location.line ?? ""}`}
+                  className="space-y-0.5"
+                >
+                  {renderLocationButton(
+                    location,
+                    "h-auto max-w-full justify-start rounded-md border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground",
+                    "h-3 w-3 shrink-0",
                   )}
                 </div>
               ))}
@@ -203,42 +190,250 @@ function ArtifactActions({
   );
 }
 
+const COMMAND_PREVIEW_CODEBLOCK_CLASSES =
+  "rounded-none border-0 bg-transparent shadow-none [&>div]:overflow-hidden [&_pre]:m-0 [&_pre]:bg-transparent [&_pre]:p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:text-[12px] [&_pre]:leading-5 [&_code]:font-mono [&_code]:text-[12px] [&_code]:leading-5";
+
+function InputSummary({
+  rows,
+  isOpen,
+}: {
+  rows: ToolInputSummaryRow[];
+  isOpen: boolean;
+}) {
+  const { t } = useTranslation("chat");
+  if (rows.length === 0) return null;
+
+  return (
+    <dl className="space-y-1.5">
+      {rows.map((row) => {
+        const label = t(`tools.inputSummary.${row.kind}`);
+        const key = `${row.kind}:${row.value}`;
+        if (row.renderAs === "bash") {
+          return (
+            <div key={key} className="space-y-0.5">
+              <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {label}
+              </dt>
+              <dd>
+                <CodeBlock
+                  code={row.value}
+                  language="bash"
+                  data-tool-command-preview={!isOpen ? "" : undefined}
+                  className={cn(
+                    COMMAND_PREVIEW_CODEBLOCK_CLASSES,
+                    !isOpen && "[&_pre]:line-clamp-3 [&_pre]:overflow-hidden",
+                  )}
+                />
+              </dd>
+            </div>
+          );
+        }
+        return (
+          <div key={key} className="flex items-baseline gap-2">
+            <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {label}
+            </dt>
+            <dd
+              className={cn(
+                "min-w-0 truncate text-[12px] text-foreground",
+                row.monospace && "font-mono",
+              )}
+              title={row.title ?? row.value}
+            >
+              {row.value}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+function splitHeaderTitleByPath(name: string, fileLabel: string) {
+  const index = name.toLowerCase().lastIndexOf(fileLabel.toLowerCase());
+  if (index === -1) return null;
+  return {
+    prefix: name.slice(0, index),
+    fileLabel: name.slice(index, index + fileLabel.length),
+    suffix: name.slice(index + fileLabel.length),
+  };
+}
+
 export function ToolCallAdapter({
   name,
   arguments: args,
   status,
+  locations,
   result,
+  structuredContent,
   isError,
   startedAt,
   open,
   onOpenChange,
+  showStatusBadge = true,
+  showChevron = true,
+  fitWidth = false,
 }: ToolCallAdapterProps) {
+  const { t } = useTranslation("chat");
   const elapsed = useElapsedTime(status, startedAt);
   const state = toolStatusMap[status];
-
+  const summaryRows = useMemo(
+    () => getToolInputSummaryRows({ name, arguments: args }),
+    [args, name],
+  );
   const elapsedSeconds =
-    status === "executing" && elapsed >= 3 ? elapsed : undefined;
+    status === "in_progress" && elapsed >= 3 ? elapsed : undefined;
+
+  const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();
+
+  const pathRow = summaryRows.find((row) => row.kind === "path");
+  const headerFileLabel = pathRow?.value;
+  const headerFilePath = pathRow?.title ?? pathRow?.value;
+  const headerTitleParts =
+    headerFileLabel && headerFilePath
+      ? splitHeaderTitleByPath(name, headerFileLabel)
+      : null;
+  const headerFileCandidate = useMemo(
+    () => (headerFilePath ? resolveMarkdownHref(headerFilePath) : null),
+    [headerFilePath, resolveMarkdownHref],
+  );
+  const canOpenHeaderFile = Boolean(headerTitleParts && headerFileCandidate);
+
+  const hasStructuredArgs = Object.keys(args).length > 0;
+  const hasOutput = Boolean(result);
+  const hasStructuredContent = !isError && structuredContent !== undefined;
+
+  // De-dupe + title-hoisting matrix: when both a text result and structured
+  // content are present, decide whether the text is a redundant stringified
+  // copy of the structured payload (hide), short enough to hoist into the
+  // header subtitle (lift), or worth rendering in the body alongside the
+  // structured block (keep).
+  const textIsStringifiedCopy =
+    hasOutput &&
+    hasStructuredContent &&
+    isStringifiedCopyOfStructured(result, structuredContent);
+  const canHoistResultIntoHeader =
+    hasOutput &&
+    hasStructuredContent &&
+    !textIsStringifiedCopy &&
+    !headerTitleParts &&
+    isHoistableText(result);
+  const showResultBody =
+    hasOutput && !textIsStringifiedCopy && !canHoistResultIntoHeader;
+
+  const headerTitle: ReactNode = headerTitleParts ? (
+    <>
+      <span data-tool-title-prefix>{headerTitleParts.prefix}</span>
+      {canOpenHeaderFile ? (
+        <button
+          type="button"
+          data-clickable-file
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!headerFileCandidate) return;
+            void openResolvedPath(headerFileCandidate.resolvedPath).catch(
+              () => {},
+            );
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          title={headerFileCandidate?.resolvedPath ?? headerFilePath}
+          aria-label={t("tools.openNamed", {
+            name: headerTitleParts.fileLabel,
+          })}
+          className="inline truncate text-foreground underline-offset-2 hover:underline"
+        >
+          {headerTitleParts.fileLabel}
+        </button>
+      ) : (
+        <span>{headerTitleParts.fileLabel}</span>
+      )}
+      <span>{headerTitleParts.suffix}</span>
+    </>
+  ) : canHoistResultIntoHeader ? (
+    <>
+      <span>{name}</span>
+      <span aria-hidden="true" className="text-muted-foreground">
+        {" · "}
+      </span>
+      <span data-tool-title-hoisted className="truncate text-foreground">
+        {(result ?? "").trim()}
+      </span>
+    </>
+  ) : (
+    name
+  );
+
+  const showCombinedSurface = summaryRows.length > 0 || hasStructuredArgs;
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-full">
       <Tool open={open} onOpenChange={onOpenChange}>
         <ToolHeader
           type="dynamic-tool"
           toolName={name}
-          title={name}
+          title={headerTitle}
           state={state}
           showIcon={false}
+          showStatusBadge={showStatusBadge}
+          showChevron={showChevron}
+          splitTrigger={canOpenHeaderFile}
+          layout={fitWidth ? "fit" : "fill"}
           elapsedSeconds={elapsedSeconds}
         />
         <ToolContent>
-          {Object.keys(args).length > 0 && <ToolInput input={args} />}
-          <ToolOutput
-            output={isError ? undefined : result}
-            errorText={isError ? result : undefined}
-          />
+          {showCombinedSurface ? (
+            <ToolSurface tone="muted" className="bg-muted">
+              <ToolInput
+                input={args}
+                showLabel={false}
+                embedded
+                summary={({ isOpen }) => (
+                  <InputSummary rows={summaryRows} isOpen={isOpen} />
+                )}
+              />
+              {showResultBody && (
+                <ToolOutput
+                  output={isError ? undefined : result}
+                  errorText={isError ? result : undefined}
+                  showLabel={false}
+                  embedded
+                  embeddedMaxHeightClass="max-h-32"
+                />
+              )}
+              {hasStructuredContent && (
+                <ToolOutput
+                  output={structuredContent}
+                  errorText={undefined}
+                  showLabel={false}
+                  embedded
+                  embeddedMaxHeightClass="max-h-32"
+                />
+              )}
+            </ToolSurface>
+          ) : (
+            <>
+              {showResultBody && (
+                <ToolOutput
+                  output={isError ? undefined : result}
+                  errorText={isError ? result : undefined}
+                  contentClassName="max-h-[28rem] overflow-y-auto"
+                />
+              )}
+              {hasStructuredContent && (
+                <ToolOutput
+                  output={structuredContent}
+                  errorText={undefined}
+                  label={t("tools.structuredContent")}
+                  contentClassName="max-h-[28rem] overflow-y-auto"
+                />
+              )}
+            </>
+          )}
         </ToolContent>
       </Tool>
-      <ArtifactActions args={args} name={name} result={result} />
+      <ArtifactActions locations={locations} />
     </div>
   );
 }

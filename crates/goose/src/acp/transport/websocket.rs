@@ -11,13 +11,6 @@ use tracing::{debug, error, info, trace, warn};
 use super::connection::ConnectionRegistry;
 use super::HEADER_CONNECTION_ID;
 
-/// GET /acp with `Upgrade: websocket`
-///
-/// Creates a new connection (same lifecycle as Streamable HTTP), upgrades to a
-/// WebSocket, and runs a bidirectional message loop. The client still sends
-/// `initialize` as the first WS text frame — unlike the HTTP path, the
-/// initialize response is streamed back over the same WebSocket rather than
-/// returned synchronously.
 pub(crate) async fn handle_ws_upgrade(
     registry: Arc<ConnectionRegistry>,
     ws: WebSocketUpgrade,
@@ -34,10 +27,7 @@ pub(crate) async fn handle_ws_upgrade(
         }
     };
 
-    // WebSocket does not need the synchronous initialize split — start the
-    // broadcast fan-out immediately so the WS sink reads from the same stream
-    // of server→client messages as any HTTP SSE subscribers would.
-    connection.start_fanout().await;
+    connection.start_router().await;
 
     let conn_id_for_handler = connection_id.clone();
     let registry_for_handler = registry.clone();
@@ -65,7 +55,7 @@ async fn run_ws(
     connection: Arc<super::connection::Connection>,
 ) {
     let (mut ws_tx, mut ws_rx) = socket.split();
-    let (replay, mut outbound_rx) = connection.subscribe_with_replay().await;
+    let (replay, mut outbound_rx) = connection.subscribe_all_outbound().await;
 
     debug!(connection_id = %connection_id, "Starting WebSocket message loop");
 
