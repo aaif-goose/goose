@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose",
-  "version": "0.19.0",
+  "version": "0.19.1",
   "description": "Goose - an open-source AI agent",
   "license": "Apache-2.0",
   "repository": {
@@ -16,7 +16,7 @@
   ],
   "type": "module",
   "bin": {
-    "goose": "dist/tui.js"
+    "goose-tui": "dist/tui.js"
   },
   "files": [
     "dist"

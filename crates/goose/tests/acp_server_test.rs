@@ -11,8 +11,8 @@ use common_tests::{
     run_model_list, run_model_set, run_model_set_error_session_not_found,
     run_new_session_returns_initial_config, run_permission_persistence, run_prompt_basic,
     run_prompt_codemode, run_prompt_error, run_prompt_image, run_prompt_image_attachment,
-    run_prompt_mcp, run_prompt_model_mismatch, run_prompt_skill, run_shell_terminal_false,
-    run_shell_terminal_true,
+    run_prompt_mcp, run_prompt_model_mismatch, run_prompt_skill,
+    run_session_name_update_notification, run_shell_terminal_false, run_shell_terminal_true,
 };
 
 tests_config_option_set_error!(AcpServerConnection);
@@ -31,6 +31,11 @@ fn test_config_option_mode_set() {
 #[test]
 fn test_list_sessions() {
     run_test(async { run_list_sessions::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_session_name_update_notification() {
+    run_test(async { run_session_name_update_notification::<AcpServerConnection>().await });
 }
 
 #[test]

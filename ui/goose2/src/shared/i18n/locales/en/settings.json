@@ -1,6 +1,18 @@
 {
   "about": {
-    "description": "About information will appear here.",
+    "buildModes": {
+      "development": "Development",
+      "production": "Production"
+    },
+    "fields": {
+      "buildMode": "Build mode",
+      "identifier": "App identifier",
+      "license": "License",
+      "name": "App name",
+      "tauriVersion": "Tauri version",
+      "version": "App version"
+    },
+    "unavailable": "Not available",
     "title": "About"
   },
   "appearance": {
@@ -8,26 +20,25 @@
       "colors": {
         "blue": "Blue",
         "cyan": "Cyan",
+        "default": "Default",
         "green": "Green",
-        "indigo": "Indigo",
         "orange": "Orange",
         "pink": "Pink",
         "purple": "Purple",
         "red": "Red"
       },
       "description": "Choose your accent color",
-      "label": "Accent Color"
+      "label": "Accent color"
     },
     "density": {
       "description": "Adjust the spacing of UI elements",
-      "label": "Interface Density",
+      "label": "Interface density",
       "options": {
         "comfortable": "Comfortable",
         "compact": "Compact",
         "spacious": "Spacious"
       }
     },
-    "description": "Customize the look and feel of Goose",
     "theme": {
       "description": "Choose your preferred color scheme",
       "label": "Theme",
@@ -40,11 +51,10 @@
     "title": "Appearance"
   },
   "chats": {
-    "description": "Restore archived chats.",
     "empty": "No archived chats.",
     "messageCount_one": "{{displayCount}} message",
     "messageCount_other": "{{displayCount}} messages",
-    "sectionTitle": "Archived Chats",
+    "sectionTitle": "Archived chats",
     "title": "Chats",
     "types": {
       "project": "Project chat",
@@ -52,41 +62,39 @@
     }
   },
   "compaction": {
-    "description": "Manage how Goose trims older context in long-running chats.",
     "goose": {
       "autoCompact": {
-        "current": "Threshold",
-        "description": "Choose when Goose should compact older context before replying. This applies to all Goose chats.",
         "helper": "Set to 100% to turn auto-compaction off.",
-        "label": "Auto-compact context",
+        "label": "Auto-compact threshold",
         "loading": "Loading...",
         "off": "Off",
         "saveError": "Failed to save auto-compaction setting."
       },
       "builtIn": "Built in",
-      "description": "Goose-specific context controls for long-running chats.",
+      "description": "Choose when the Goose agent compacts older context during sessions. This applies to all goose chats.",
       "label": "Goose (Agent)"
     },
     "title": "Compaction"
   },
   "deleteProject": {
-    "description": "Are you sure you want to permanently delete \"{{name}}\"? This cannot be undone.",
-    "title": "Delete project permanently?"
+    "description": "This project and all its data will be permanently removed.",
+    "title": "Delete \"{{name}}\" permanently?"
   },
   "extensions": {
     "title": "Extensions",
-    "description": "Manage MCP extensions that add tools and capabilities to Goose.",
+    "description": "Connect Goose to apps, services, and built-in capabilities.",
     "search": "Search extensions...",
-    "enabled": "Enabled",
-    "enabledCount": "Enabled ({{count}})",
-    "available": "Available",
-    "availableCount": "Available ({{count}})",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
-    "addExtension": "Add Extension",
+    "addExtension": "Add extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
-    "toggle": "Toggle {{name}}",
+    "deleteConfirmation": {
+      "title": "Delete \"{{name}}\" permanently?",
+      "description": "This will permanently remove this extension and all of its settings.",
+      "confirm": "Delete Extension",
+      "deleting": "Deleting..."
+    },
     "configure": "Configure {{name}}",
     "save": "Save",
     "cancel": "Cancel",
@@ -114,8 +122,20 @@
       "streamable_http": "HTTP",
       "builtin": "Built-in"
     },
+    "filters": {
+      "all": "All"
+    },
+    "categories": {
+      "appsServices": "Apps & services",
+      "gooseCapabilities": "Goose capabilities"
+    },
+    "sections": {
+      "extensions": "Extensions",
+      "gooseCapabilities": "Built-in Goose capabilities"
+    },
+    "showGooseCapabilities": "Show {{count}} built-in Goose capabilities",
+    "hideGooseCapabilities": "Hide built-in Goose capabilities",
     "errors": {
-      "toggleFailed": "Failed to toggle extension. Please try again.",
       "saveFailed": "Failed to save extension. Please try again.",
       "deleteFailed": "Failed to delete extension. Please try again.",
       "nameConflict": "An extension named \"{{name}}\" already exists."
@@ -125,16 +145,15 @@
     "agents": "Agents",
     "copied": "Copied",
     "copyDetails": "Copy details",
-    "description": "Verify required tools and agent availability for Goose.",
     "empty": "No checks are available yet.",
-    "rerun": "Re-run",
+    "rerun": "Try again",
     "runFix": "Run fix command?",
+    "runFixDescription": "This will run the following command:",
     "running": "Running checks...",
     "title": "Doctor",
     "tools": "Tools"
   },
   "general": {
-    "description": "Manage language and other app preferences.",
     "language": {
       "description": "Choose how Goose formats and displays the interface.",
       "english": "English",
@@ -142,10 +161,15 @@
       "spanish": "Spanish",
       "system": "System default ({{language}})"
     },
+    "onboarding": {
+      "description": "Show setup again the next time Goose opens.",
+      "label": "Onboarding",
+      "reset": "Reset onboarding",
+      "resetDescription": "Onboarding will appear the next time Goose opens."
+    },
     "title": "General",
     "voiceInput": {
-      "label": "Voice Input",
-      "description": "Configure voice dictation for hands-free input.",
+      "label": "Voice input",
       "providerLabel": "Transcription Provider",
       "disabled": "Disabled",
       "notConfiguredSuffix": "(not configured)",
@@ -158,6 +182,9 @@
       "addApiKey": "Add API key",
       "updateApiKey": "Update API key",
       "removeApiKey": "Remove API key",
+      "providerConfigLabel": "Provider credentials",
+      "providerConfigDescription": "This transcription provider uses the credentials from its model provider setup.",
+      "openProviders": "Open Providers",
       "localModelLabel": "Local Whisper Model",
       "localModelDescription": "Download a Whisper model to run transcription locally. Selecting a model sets it as your active local transcription model.",
       "noLocalModels": "No local Whisper models available.",
@@ -194,19 +221,17 @@
     "doctor": "Doctor",
     "general": "General",
     "projects": "Projects",
-    "extensions": "Extensions",
     "providers": "Providers",
     "voice": "Voice"
   },
   "projects": {
-    "description": "Manage your projects.",
     "empty": "No archived projects.",
-    "sectionTitle": "Archived Projects",
+    "sectionTitle": "Archived projects",
     "title": "Projects"
   },
   "providers": {
     "agents": {
-      "description": "Agents handle your requests using their own tools and models",
+      "description": "Goose is built in to your workspace. Install others to extend your setup.",
       "errors": {
         "installVerificationFailed": "Install finished but the CLI was not found on PATH. You may need to restart your terminal."
       },
@@ -220,14 +245,105 @@
       "signInLabel": "Sign in to {{name}}",
       "status": {
         "checking": "Checking...",
+        "inProgress": "Setup in progress",
         "setupFailed": "Setup failed"
       },
-      "title": "Agents"
+      "title": "Agent harnesses"
     },
-    "description": "Connect agents and AI models to use with Goose",
+    "custom": {
+      "actions": {
+        "addHeader": "Add header",
+        "addModel": "Add model",
+        "back": "Back",
+        "create": "Create provider",
+        "delete": "Delete",
+        "deleteProvider": "Delete {{name}}",
+        "deleting": "Deleting...",
+        "editProvider": "Edit {{name}}",
+        "hideApiKey": "Hide API key",
+        "removeHeader": "Remove header",
+        "removeModel": "Remove {{model}}",
+        "save": "Save changes",
+        "saving": "Saving...",
+        "showApiKey": "Show API key"
+      },
+      "addButton": "Add custom provider",
+      "addTitle": "Add custom provider",
+      "confirmDelete": "This removes {{name}} and any API key owned by it.",
+      "confirmDeleteTitle": "Delete {{name}}?",
+      "description": "Connect an OpenAI-compatible, Anthropic-compatible, or local model endpoint.",
+      "editTitle": "Edit custom provider",
+      "emptyHeaders": "No custom headers.",
+      "emptyModels": "Add at least one model.",
+      "engines": {
+        "anthropic_compatible": "Anthropic-compatible",
+        "ollama_compatible": "Ollama-compatible",
+        "openai_compatible": "OpenAI-compatible"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete custom provider.",
+        "loadFailed": "Failed to load custom provider.",
+        "saveFailed": "Failed to save custom provider.",
+        "templatesFailed": "Failed to load provider templates."
+      },
+      "fields": {
+        "apiKey": "API key",
+        "apiKeyEditPlaceholder": "Leave blank to keep the saved key",
+        "apiKeyPlaceholder": "Paste your API key",
+        "apiUrl": "API URL",
+        "apiUrlPlaceholder": "https://api.example.com/v1",
+        "basePath": "Base path",
+        "basePathPlaceholder": "/v1/chat/completions",
+        "displayName": "Display name",
+        "displayNamePlaceholder": "My provider",
+        "engine": "Engine",
+        "headerKey": "Header",
+        "headerValue": "Value",
+        "headers": "Custom headers",
+        "models": "Models",
+        "modelsPlaceholder": "gpt-4.1, claude-3-5-sonnet",
+        "requiresAuth": "Requires authentication",
+        "requiresAuthDescription": "Store an API key for requests to this provider.",
+        "supportsStreaming": "Supports streaming",
+        "supportsStreamingDescription": "Stream responses as the model generates tokens."
+      },
+      "modelCount_one": "{{count}} model",
+      "modelCount_other": "{{count}} models",
+      "notConfigured": "Not configured",
+      "validation": {
+        "apiKeyRequired": "API key is required.",
+        "apiUrlInvalid": "Enter a valid HTTP or HTTPS URL.",
+        "apiUrlRequired": "API URL is required.",
+        "displayNameRequired": "Display name is required.",
+        "engineRequired": "Choose a provider engine.",
+        "headerDuplicate": "Header names must be unique.",
+        "headerNameInvalid": "Header names can only contain valid HTTP token characters.",
+        "headerNameRequired": "Header name is required.",
+        "headerValueRequired": "Header value is required.",
+        "modelsRequired": "Add at least one model."
+      },
+      "sections": {
+        "template": "Start from template"
+      },
+      "templates": {
+        "compatibility": {
+          "all": "All compatibility types"
+        },
+        "clear": "Clear template",
+        "empty": "No templates available yet.",
+        "manual": "Fully custom",
+        "manualDescription": "Start from a blank provider configuration.",
+        "searchPlaceholder": "Search templates",
+        "useTemplate": "Use a template",
+        "useTemplateDescription": "Start with endpoint and model defaults for a known provider."
+      }
+    },
+    "catalog": {
+      "loading": "Loading provider catalog..."
+    },
     "disconnect": "Disconnect",
     "models": {
-      "description": "AI models that power Goose. Expand a provider to review what it needs. Connect signs in with an existing account, while Set up saves API keys or other provider settings.",
+      "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",
       "notSet": "Not set",
       "setup": {
         "connected": {
@@ -237,24 +353,25 @@
           "oauthDeviceCode": "Connected through Goose device-code sign-in."
         },
         "fieldDescription": {
-          "cloudCredentials": "Set up saves any provider details Goose needs here. Your actual authentication still comes from your cloud credentials.",
-          "configFields": "Set up saves the provider details Goose needs, such as an API key, endpoint, or model settings.",
-          "hostWithOauthFallback": "Set up saves the host details Goose needs here. You can add a token now, or leave it blank and sign in afterward from Goose.",
-          "singleApiKey": "Set up saves the API key Goose needs for this provider."
+          "cloudCredentials": "Add the required details to use this provider.",
+          "configFields": "Add the required details to use this provider.",
+          "hostWithOauthFallback": "Add the required details to use this provider.",
+          "singleApiKey": "Add your API key to use this provider."
         },
         "hostWithOauthFallbackTerminal": "Leave Access Token blank, save your host URL, then run `goose configure` in your terminal to sign in.",
         "nativeConnectDescription": "Sign in with your existing account.",
         "pending": {
           "cloudCredentials": "Configure your cloud credentials in your terminal environment before using this provider.",
-          "local": "This provider runs locally and does not need saved settings here.",
-          "oauthGuided": "Goose will guide you through sign-in from here.",
+          "local": "This provider runs locally and doesn't need saved settings.",
+          "oauthGuided": "Goose will guide you through sign-in.",
           "oauthTerminal": "Run `goose configure` in your terminal to finish sign-in."
         }
       },
+      "checkingStatus": "Checking provider status...",
       "title": "Models"
     },
-    "restartButton": "Restart now",
-    "restartMessage": "Restart to apply credential changes.",
+    "loadingModels": "Loading models...",
+    "modelRefreshWarning": "Credentials saved. Model refresh needs attention: {{message}}",
     "saved": "Saved",
     "showFewer": "Show fewer",
     "showMore": "Show {{count}} more providers",

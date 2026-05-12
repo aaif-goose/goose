@@ -1,78 +1,188 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { invoke } from "@tauri-apps/api/core";
-import { exportPersona, importPersonas, refreshPersonas } from "../agents";
+import {
+  createPersona,
+  deletePersona,
+  exportPersona,
+  importPersonas,
+  listPersonas,
+  refreshPersonas,
+  updatePersona,
+} from "../agents";
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+const mockGooseSourcesCreate = vi.fn();
+const mockGooseSourcesDelete = vi.fn();
+const mockGooseSourcesExport = vi.fn();
+const mockGooseSourcesImport = vi.fn();
+const mockGooseSourcesList = vi.fn();
+const mockGooseSourcesUpdate = vi.fn();
+
+vi.mock("@/shared/api/acpConnection", () => ({
+  getClient: async () => ({
+    goose: {
+      GooseSourcesCreate: (...args: unknown[]) =>
+        mockGooseSourcesCreate(...args),
+      GooseSourcesDelete: (...args: unknown[]) =>
+        mockGooseSourcesDelete(...args),
+      GooseSourcesExport: (...args: unknown[]) =>
+        mockGooseSourcesExport(...args),
+      GooseSourcesImport: (...args: unknown[]) =>
+        mockGooseSourcesImport(...args),
+      GooseSourcesList: (...args: unknown[]) => mockGooseSourcesList(...args),
+      GooseSourcesUpdate: (...args: unknown[]) =>
+        mockGooseSourcesUpdate(...args),
+    },
+  }),
 }));
 
-const mockedInvoke = vi.mocked(invoke);
+const source = {
+  type: "agent",
+  name: "Scout",
+  description: "Agent",
+  content: "Research carefully.",
+  path: "/Users/test/.agents/agents/scout.md",
+  global: true,
+  writable: true,
+  properties: {
+    provider: "goose",
+    model: "claude-sonnet-4",
+    avatar: "file:///Users/test/.goose/avatars/agents/scout.png",
+  },
+};
 
 describe("agents API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  // ── exportPersona ────────────────────────────────────────────────────
+  it("listPersonas maps agent sources to personas", async () => {
+    mockGooseSourcesList.mockResolvedValue({ sources: [source] });
 
-  it("exportPersona invokes correct Tauri command with ID", async () => {
-    const mockResult = {
-      json: '{"displayName":"Test"}',
-      suggestedFilename: "test.json",
-    };
-    mockedInvoke.mockResolvedValue(mockResult);
+    const result = await listPersonas();
 
-    const result = await exportPersona("persona-123");
-
-    expect(mockedInvoke).toHaveBeenCalledWith("export_persona", {
-      id: "persona-123",
-    });
-    expect(result).toEqual(mockResult);
+    expect(mockGooseSourcesList).toHaveBeenCalledWith({ type: "agent" });
+    expect(result).toEqual([
+      {
+        id: source.path,
+        displayName: "Scout",
+        avatar: { type: "url", value: source.properties.avatar },
+        systemPrompt: "Research carefully.",
+        provider: "goose",
+        model: "claude-sonnet-4",
+        isBuiltin: false,
+        isFromDisk: true,
+        writable: true,
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
   });
 
-  // ── importPersonas ───────────────────────────────────────────────────
+  it("createPersona creates a global agent source", async () => {
+    mockGooseSourcesCreate.mockResolvedValue({ source });
 
-  it("importPersonas invokes correct Tauri command with bytes and filename", async () => {
-    const mockPersonas = [
-      {
-        id: "imported-1",
-        displayName: "Imported",
-        systemPrompt: "Hello",
-        isBuiltin: false,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-    mockedInvoke.mockResolvedValue(mockPersonas);
-
-    const fileBytes = [0x7b, 0x7d]; // "{}"
-    const result = await importPersonas(fileBytes, "personas.json");
-
-    expect(mockedInvoke).toHaveBeenCalledWith("import_personas", {
-      fileBytes,
-      fileName: "personas.json",
+    const result = await createPersona({
+      displayName: "Scout",
+      avatar: { type: "url", value: source.properties.avatar },
+      systemPrompt: "Research carefully.",
+      provider: "goose",
+      model: "claude-sonnet-4",
     });
-    expect(result).toEqual(mockPersonas);
+
+    expect(mockGooseSourcesCreate).toHaveBeenCalledWith({
+      type: "agent",
+      name: "Scout",
+      description: "Agent",
+      content: "Research carefully.",
+      properties: {
+        provider: "goose",
+        model: "claude-sonnet-4",
+        avatar: source.properties.avatar,
+      },
+      global: true,
+    });
+    expect(result.displayName).toBe("Scout");
   });
 
-  // ── refreshPersonas ──────────────────────────────────────────────────
+  it("updatePersona loads existing agent source and updates by path", async () => {
+    mockGooseSourcesList.mockResolvedValue({ sources: [source] });
+    mockGooseSourcesUpdate.mockResolvedValue({
+      source: { ...source, name: "Scout 2" },
+    });
 
-  it("refreshPersonas invokes correct Tauri command", async () => {
-    const mockPersonas = [
-      {
-        id: "p1",
-        displayName: "Refreshed",
-        systemPrompt: "Prompt",
-        isBuiltin: false,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
+    const result = await updatePersona(source.path, {
+      displayName: "Scout 2",
+    });
+
+    expect(mockGooseSourcesUpdate).toHaveBeenCalledWith({
+      type: "agent",
+      path: source.path,
+      name: "Scout 2",
+      description: "Agent",
+      content: "Research carefully.",
+      properties: {
+        provider: "goose",
+        model: "claude-sonnet-4",
+        avatar: source.properties.avatar,
       },
-    ];
-    mockedInvoke.mockResolvedValue(mockPersonas);
+    });
+    expect(result.displayName).toBe("Scout 2");
+  });
+
+  it("deletePersona deletes an agent source by path", async () => {
+    mockGooseSourcesDelete.mockResolvedValue(undefined);
+
+    await deletePersona(source.path);
+
+    expect(mockGooseSourcesDelete).toHaveBeenCalledWith({
+      type: "agent",
+      path: source.path,
+    });
+  });
+
+  it("exportPersona exports an agent source", async () => {
+    mockGooseSourcesExport.mockResolvedValue({
+      json: '{"type":"agent"}',
+      filename: "scout.agent.json",
+    });
+
+    const result = await exportPersona(source.path);
+
+    expect(mockGooseSourcesExport).toHaveBeenCalledWith({
+      type: "agent",
+      path: source.path,
+    });
+    expect(result).toEqual({
+      json: '{"type":"agent"}',
+      suggestedFilename: "scout.agent.json",
+    });
+  });
+
+  it("importPersonas imports agent source JSON", async () => {
+    mockGooseSourcesImport.mockResolvedValue({ sources: [source] });
+    const data = JSON.stringify({
+      version: 1,
+      type: "agent",
+      name: "Scout",
+      description: "Agent",
+      content: "Research carefully.",
+    });
+    const fileBytes = Array.from(new TextEncoder().encode(data));
+
+    const result = await importPersonas(fileBytes, "scout.agent.json");
+
+    expect(mockGooseSourcesImport).toHaveBeenCalledWith({
+      data,
+      global: true,
+    });
+    expect(result).toHaveLength(1);
+  });
+
+  it("refreshPersonas lists personas", async () => {
+    mockGooseSourcesList.mockResolvedValue({ sources: [source] });
 
     const result = await refreshPersonas();
 
-    expect(mockedInvoke).toHaveBeenCalledWith("refresh_personas");
-    expect(result).toEqual(mockPersonas);
+    expect(mockGooseSourcesList).toHaveBeenCalledWith({ type: "agent" });
+    expect(result).toHaveLength(1);
   });
 });

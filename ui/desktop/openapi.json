@@ -10,7 +10,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "1.33.0"
+    "version": "1.34.0"
   },
   "paths": {
     "/action-required/tool-confirmation": {
@@ -2749,7 +2749,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Scheduled job deleted successfully"
+            "description": "Scheduled job removed successfully"
           },
           "404": {
             "description": "Scheduled job not found"
@@ -7720,6 +7720,11 @@
             "format": "int32",
             "nullable": true
           },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "conversation": {
             "allOf": [
               {
@@ -7766,6 +7771,10 @@
             "format": "int32",
             "nullable": true
           },
+          "project_id": {
+            "type": "string",
+            "nullable": true
+          },
           "provider_name": {
             "type": "string",
             "nullable": true
@@ -7784,10 +7793,6 @@
           },
           "session_type": {
             "$ref": "#/components/schemas/SessionType"
-          },
-          "thread_id": {
-            "type": "string",
-            "nullable": true
           },
           "total_tokens": {
             "type": "integer",

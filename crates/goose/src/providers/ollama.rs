@@ -1,5 +1,8 @@
 use super::api_client::{ApiClient, AuthMethod};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::errors::ProviderError;
 use super::inventory::InventoryIdentityInput;
 use super::openai_compatible::handle_status;
@@ -26,7 +29,7 @@ use url::Url;
 
 const OLLAMA_PROVIDER_NAME: &str = "ollama";
 pub const OLLAMA_HOST: &str = "localhost";
-pub const OLLAMA_TIMEOUT: u64 = 600;
+pub const OLLAMA_TIMEOUT: u64 = DEFAULT_PROVIDER_TIMEOUT_SECS;
 pub const OLLAMA_DEFAULT_PORT: u16 = 11434;
 pub const OLLAMA_DEFAULT_MODEL: &str = "qwen3";
 pub const OLLAMA_KNOWN_MODELS: &[&str] = &[
@@ -120,6 +123,10 @@ fn apply_ollama_options(payload: &mut Value, model_config: &ModelConfig) {
             }
         }
     }
+}
+
+fn ollama_host_configured(config: &crate::config::Config) -> bool {
+    config.get_param::<String>("OLLAMA_HOST").is_ok()
 }
 
 impl OllamaProvider {
@@ -260,6 +267,10 @@ impl ProviderDef for OllamaProvider {
 
     fn supports_inventory_refresh() -> bool {
         true
+    }
+
+    fn inventory_configured() -> bool {
+        ollama_host_configured(crate::config::Config::global())
     }
 
     fn inventory_identity() -> Result<InventoryIdentityInput> {
@@ -464,6 +475,51 @@ fn stream_ollama(response: Response, mut log: RequestLog) -> Result<MessageStrea
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ollama_host_default_does_not_mark_inventory_configured() {
+        let _guard = env_lock::lock_env([("OLLAMA_HOST", None::<&str>)]);
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config = crate::config::Config::new_with_config_paths(
+            vec![config_file.path().to_path_buf()],
+            secrets_file.path(),
+        )
+        .unwrap();
+
+        assert!(!ollama_host_configured(&config));
+    }
+
+    #[test]
+    fn test_ollama_host_env_marks_inventory_configured() {
+        let _guard = env_lock::lock_env([("OLLAMA_HOST", Some("http://127.0.0.1:11435"))]);
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config = crate::config::Config::new_with_config_paths(
+            vec![config_file.path().to_path_buf()],
+            secrets_file.path(),
+        )
+        .unwrap();
+
+        assert!(ollama_host_configured(&config));
+    }
+
+    #[test]
+    fn test_ollama_host_config_marks_inventory_configured() {
+        let _guard = env_lock::lock_env([("OLLAMA_HOST", None::<&str>)]);
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config = crate::config::Config::new_with_config_paths(
+            vec![config_file.path().to_path_buf()],
+            secrets_file.path(),
+        )
+        .unwrap();
+        config
+            .set_param("OLLAMA_HOST", "http://127.0.0.1:11435")
+            .unwrap();
+
+        assert!(ollama_host_configured(&config));
+    }
 
     #[test]
     fn test_apply_ollama_options_uses_input_limit() {

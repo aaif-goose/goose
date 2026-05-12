@@ -22,7 +22,7 @@ function makeSession(
 
 describe("filterSessions", () => {
   const sessions: ChatSession[] = [
-    makeSession({ id: "1", title: "Fix sidebar bug", personaId: "p1" }),
+    makeSession({ id: "1", title: "Fix sidebar bug", agentId: "p1" }),
     makeSession({
       id: "2",
       title: "Add pagination",

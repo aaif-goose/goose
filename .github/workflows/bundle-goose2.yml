@@ -130,7 +130,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-arm64
 
@@ -244,7 +244,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-macos-intel:
     name: "macOS x86_64"
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     environment: ${{ inputs.environment || '' }}
     timeout-minutes: 60
     env:
@@ -294,7 +294,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-x86_64
 
@@ -360,7 +360,7 @@ jobs:
           certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      # ── Tauri bundle (cross-compile for Intel) ──
+      # ── Tauri bundle ──
       - name: Bundle Goose 2 for Intel
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
@@ -423,7 +423,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-linux:
     name: "Linux x86_64"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -444,7 +444,10 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            protobuf-compiler
+            protobuf-compiler \
+            libvulkan-dev \
+            libvulkan1 \
+            glslc
 
       - name: Update versions
         if: inputs.version != ''
@@ -481,7 +484,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-linux-x86_64
 
@@ -489,7 +492,7 @@ jobs:
         if: inputs.cli-run-id == ''
         run: |
           source ./bin/activate-hermit
-          cargo build --release -p goose-cli --bin goose
+          cargo build --release -p goose-cli --bin goose --features vulkan
 
       - name: Prepare goose binary with target triple
         if: inputs.cli-run-id == ''
@@ -626,7 +629,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-windows-x86_64
 
@@ -727,7 +730,7 @@ jobs:
           path: unsigned/msi
 
       - name: Azure login
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}

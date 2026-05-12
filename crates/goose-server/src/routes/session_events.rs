@@ -313,6 +313,38 @@ pub async fn session_reply(
         }
     }
 
+    let user_message = request.user_message;
+    let override_conversation = request.override_conversation;
+
+    // An elicitation response unblocks an in-flight tool call that is already
+    // streaming on another request_id — don't register a new active request or
+    // open a new SSE stream; route it to the agent's short-circuit path.
+    let is_elicitation_response = user_message.content.iter().any(|c| {
+        matches!(
+            c,
+            goose::conversation::message::MessageContent::ActionRequired(ar)
+                if matches!(
+                    ar.data,
+                    goose::conversation::message::ActionRequiredData::ElicitationResponse { .. }
+                )
+        )
+    });
+
+    if is_elicitation_response {
+        let agent = state.get_agent_for_route(session_id.clone()).await?;
+        let session_config = goose::agents::types::SessionConfig {
+            id: session_id.clone(),
+            schedule_id: session_data.schedule_id.clone(),
+            max_turns: None,
+            retry_config: None,
+        };
+        let _ = agent
+            .reply(user_message, session_config, None)
+            .await
+            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+        return Ok(Json(SessionReplyResponse { request_id }));
+    }
+
     let bus = state.get_or_create_event_bus(&session_id).await;
 
     let cancel_token = bus
@@ -321,9 +353,6 @@ pub async fn session_reply(
         .map_err(|_| {
             ErrorResponse::bad_request("Session already has an active request. Cancel it first.")
         })?;
-
-    let user_message = request.user_message;
-    let override_conversation = request.override_conversation;
 
     let task_state = state.clone();
     let task_session_id = session_id.clone();

@@ -6,6 +6,9 @@ export function getPersonaSource(persona: Persona): PersonaSource {
   if (persona.isBuiltin) {
     return "builtin";
   }
+  if (persona.writable === true) {
+    return "custom";
+  }
   if (persona.isFromDisk) {
     return "file";
   }
@@ -13,5 +16,5 @@ export function getPersonaSource(persona: Persona): PersonaSource {
 }
 
 export function isPersonaReadOnly(persona: Persona): boolean {
-  return getPersonaSource(persona) !== "custom";
+  return persona.writable === false || getPersonaSource(persona) !== "custom";
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ActionRequired } from '../api';
 import { defineMessages, useIntl } from '../i18n';
+import { Button } from './ui/button';
 import JsonSchemaForm from './ui/JsonSchemaForm';
 import type { JsonSchema } from './ui/JsonSchemaForm';
 
@@ -24,6 +25,10 @@ const i18n = defineMessages({
   submit: {
     id: 'elicitationRequest.submit',
     defaultMessage: 'Submit',
+  },
+  accept: {
+    id: 'elicitationRequest.accept',
+    defaultMessage: 'Accept',
   },
   waitingForResponse: {
     id: 'elicitationRequest.waitingForResponse',
@@ -79,9 +84,17 @@ export default function ElicitationRequest({
 
   const { id: elicitationId, message, requested_schema } = actionRequiredContent.data;
 
+  const schema = (requested_schema ?? {}) as JsonSchema;
+  const hasSchemaFields = Boolean(schema.properties && Object.keys(schema.properties).length > 0);
+
   const handleSubmit = (formData: Record<string, unknown>) => {
     setSubmitted(true);
     onSubmit(elicitationId, formData);
+  };
+
+  const handleAccept = () => {
+    setSubmitted(true);
+    onSubmit(elicitationId, {});
   };
 
   if (isCancelledMessage) {
@@ -147,11 +160,19 @@ export default function ElicitationRequest({
         </div>
       </div>
       <div className="goose-message-content bg-background-primary border border-border-primary dark:border-gray-700 rounded-b-2xl px-4 py-3">
-        <JsonSchemaForm
-          schema={requested_schema as JsonSchema}
-          onSubmit={handleSubmit}
-          submitLabel={intl.formatMessage(i18n.submit)}
-        />
+        {hasSchemaFields ? (
+          <JsonSchemaForm
+            schema={schema}
+            onSubmit={handleSubmit}
+            submitLabel={intl.formatMessage(i18n.submit)}
+          />
+        ) : (
+          <div className="flex gap-2">
+            <Button type="button" onClick={handleAccept}>
+              {intl.formatMessage(i18n.accept)}
+            </Button>
+          </div>
+        )}
         <div
           className={`mt-3 pt-3 border-t border-border-primary flex items-center gap-2 text-sm ${isUrgent ? 'text-red-500' : 'text-text-secondary'}`}
         >
@@ -169,7 +190,11 @@ export default function ElicitationRequest({
               d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <span>{intl.formatMessage(i18n.waitingForResponse, { timeRemaining: formatTime(timeRemaining) })}</span>
+          <span>
+            {intl.formatMessage(i18n.waitingForResponse, {
+              timeRemaining: formatTime(timeRemaining),
+            })}
+          </span>
         </div>
       </div>
     </div>

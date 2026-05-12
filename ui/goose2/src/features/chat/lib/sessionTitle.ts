@@ -1,9 +1,10 @@
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
 
-export const DEFAULT_CHAT_TITLE = "New Chat";
+export const DEFAULT_CHAT_TITLE = "New chat";
+const ACP_DEFAULT_CHAT_TITLE = "New Chat";
 
 export function isDefaultChatTitle(title: string): boolean {
-  return title === DEFAULT_CHAT_TITLE;
+  return title === DEFAULT_CHAT_TITLE || title === ACP_DEFAULT_CHAT_TITLE;
 }
 
 function attachmentKindLabel(kind: ChatAttachmentDraft["kind"], count: number) {
@@ -15,6 +16,14 @@ function attachmentKindLabel(kind: ChatAttachmentDraft["kind"], count: number) {
     default:
       return count === 1 ? "file" : "files";
   }
+}
+
+// The goose ACP backend uses "New Chat" (title case) as its default — normalize to ours.
+export function normalizeAcpTitle(
+  title: string | null | undefined,
+): string | undefined {
+  if (!title) return undefined;
+  return title === ACP_DEFAULT_CHAT_TITLE ? DEFAULT_CHAT_TITLE : title;
 }
 
 export function getSessionTitleFromDraft(

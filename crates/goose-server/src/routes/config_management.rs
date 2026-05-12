@@ -108,6 +108,11 @@ fn default_requires_auth() -> bool {
     true
 }
 
+fn normalize_custom_provider_api_key(api_key: String) -> Option<String> {
+    let api_key = api_key.trim().to_string();
+    (!api_key.is_empty()).then_some(api_key)
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct CheckProviderRequest {
     pub provider: String,
@@ -583,7 +588,7 @@ pub async fn create_custom_provider(
             engine: request.engine,
             display_name: request.display_name,
             api_url: request.api_url,
-            api_key: request.api_key,
+            api_key: normalize_custom_provider_api_key(request.api_key),
             models: request.models,
             supports_streaming: request.supports_streaming,
             headers: request.headers,
@@ -675,7 +680,7 @@ pub async fn update_custom_provider(
             engine: request.engine,
             display_name: request.display_name,
             api_url: request.api_url,
-            api_key: request.api_key,
+            api_key: normalize_custom_provider_api_key(request.api_key),
             models: request.models,
             supports_streaming: request.supports_streaming,
             headers: request.headers,
