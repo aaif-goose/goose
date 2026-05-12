@@ -19,7 +19,8 @@ struct CachedWorkbook {
 
 static WORKBOOK_CACHE: Lazy<Mutex<Option<CachedWorkbook>>> = Lazy::new(|| Mutex::new(None));
 
-fn _test_reset_cache() {
+#[cfg(test)]
+fn reset_cache_for_test() {
     if let Ok(mut g) = WORKBOOK_CACHE.lock() {
         *g = None;
     }
@@ -205,9 +206,11 @@ impl XlsxTool {
         value: &str,
     ) -> Result<()> {
         // Drop the cache's reference before mutating so `Arc::make_mut`
-        // doesn't deep-clone a multi-MB Spreadsheet on every cell write.
-        // `save()` would invalidate after the write anyway, so the cache
-        // bust is harmless either way.
+        // usually finds strong_count == 1 and avoids a deep clone of the
+        // multi-MB Spreadsheet. Best-effort: if another reader cloned the
+        // Arc before this invalidate ran, `make_mut` falls back to a deep
+        // clone, which is still correct. `save()` would invalidate after
+        // the write anyway, so the cache bust is harmless either way.
         invalidate_cache(&self.canonical);
         let worksheet = Arc::make_mut(&mut self.workbook)
             .get_sheet_by_name_mut(worksheet_name)
@@ -507,7 +510,7 @@ mod tests {
     #[test]
     fn cache_hit_shares_workbook_arc() -> Result<()> {
         let _g = lock();
-        _test_reset_cache();
+        reset_cache_for_test();
         let path = get_test_file();
         let first = XlsxTool::new(&path)?;
         let second = XlsxTool::new(&path)?;
