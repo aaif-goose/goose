@@ -1793,22 +1793,25 @@ impl SessionStorage {
 /// given `(working_dir, slug)` pairs and currently has `project_id IS NULL`.
 /// Callers must gate on whether NULL rows could represent intentional
 /// unlinks — this helper does not distinguish never-set from unlinked.
-/// Trailing slashes on either side are ignored.
+/// Backslashes are normalized to forward slashes and trailing separators
+/// on either side are ignored, so Windows paths like `C:\repo\` match
+/// project workingDirs entered as `C:/repo`.
 async fn backfill_session_project_ids(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     pairs: &[(String, String)],
 ) -> Result<u64> {
     let mut total = 0u64;
     for (working_dir, slug) in pairs {
-        let normalized = working_dir.trim_end_matches('/');
+        let normalized = working_dir.replace('\\', "/");
+        let normalized = normalized.trim_end_matches('/');
         if normalized.is_empty() {
             continue;
         }
         let result = sqlx::query(
-            "UPDATE sessions
-             SET project_id = ?
-             WHERE project_id IS NULL
-               AND rtrim(working_dir, '/') = ?",
+            r"UPDATE sessions
+              SET project_id = ?
+              WHERE project_id IS NULL
+                AND rtrim(replace(working_dir, '\', '/'), '/') = ?",
         )
         .bind(slug)
         .bind(normalized)
@@ -2350,6 +2353,7 @@ mod tests {
         let in_repo_a = make_test_session(&sm, "/Users/me/Projects/repo-a").await;
         let in_repo_a_with_slash = make_test_session(&sm, "/Users/me/Projects/repo-a/").await;
         let in_repo_b = make_test_session(&sm, "/Users/me/Projects/repo-b").await;
+        let win_session = make_test_session(&sm, r"C:\Users\me\Projects\repo-c\").await;
         let unmatched = make_test_session(&sm, "/tmp/scratch").await;
 
         // Pre-tag one session: backfill must not overwrite an explicit assignment.
@@ -2370,12 +2374,18 @@ mod tests {
                 "/Users/me/Projects/repo-b/".to_string(),
                 "repo-b".to_string(),
             ),
+            // Windows-style project path with backslash separators; the
+            // session was inserted with `C:\...\repo-c\` and must still match.
+            (
+                r"C:\Users\me\Projects\repo-c".to_string(),
+                "repo-c".to_string(),
+            ),
         ];
 
         let mut tx = pool.begin().await.unwrap();
         let updated = backfill_session_project_ids(&mut tx, &pairs).await.unwrap();
         tx.commit().await.unwrap();
-        assert_eq!(updated, 2, "two NULL rows should be backfilled");
+        assert_eq!(updated, 3, "three NULL rows should be backfilled");
 
         let pre_tagged = sm.get_session(&in_repo_a.id, false).await.unwrap();
         assert_eq!(pre_tagged.project_id.as_deref(), Some("manual-slug"));
@@ -2386,6 +2396,8 @@ mod tests {
         assert_eq!(slashed.project_id.as_deref(), Some("repo-a"));
         let b = sm.get_session(&in_repo_b.id, false).await.unwrap();
         assert_eq!(b.project_id.as_deref(), Some("repo-b"));
+        let win = sm.get_session(&win_session.id, false).await.unwrap();
+        assert_eq!(win.project_id.as_deref(), Some("repo-c"));
         let outside = sm.get_session(&unmatched.id, false).await.unwrap();
         assert_eq!(outside.project_id, None);
 
