@@ -3,47 +3,64 @@ import { getClient } from "@/shared/api/acpConnection";
 import {
   DEFAULT_AUTO_SUBMIT_PHRASES_RAW,
   DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
-  VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY,
-  VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY,
-  VOICE_DICTATION_PROVIDER_CONFIG_KEY,
   normalizeDictationProvider,
   parseAutoSubmitPhrases,
 } from "../lib/voiceInput";
 import type { DictationProvider } from "@/shared/types/dictation";
 
 const VOICE_INPUT_PREFERENCES_EVENT = "goose:voice-input-preferences";
+const VOICE_AUTO_SUBMIT_PHRASES_PREFERENCE_KEY = "voiceAutoSubmitPhrases";
+const VOICE_DICTATION_PROVIDER_PREFERENCE_KEY = "voiceDictationProvider";
+const VOICE_DICTATION_PREFERRED_MIC_PREFERENCE_KEY =
+  "voiceDictationPreferredMic";
+type VoicePreferenceKey =
+  | typeof VOICE_AUTO_SUBMIT_PHRASES_PREFERENCE_KEY
+  | typeof VOICE_DICTATION_PROVIDER_PREFERENCE_KEY
+  | typeof VOICE_DICTATION_PREFERRED_MIC_PREFERENCE_KEY;
 
 type ConfigReadResult = { ok: true; value: string | null } | { ok: false };
 
-async function readConfigString(key: string): Promise<ConfigReadResult> {
+async function readPreferenceStrings(
+  keys: VoicePreferenceKey[],
+): Promise<Record<VoicePreferenceKey, ConfigReadResult>> {
+  const unavailable = Object.fromEntries(
+    keys.map((key) => [key, { ok: false }]),
+  ) as Record<VoicePreferenceKey, ConfigReadResult>;
+
   try {
     const client = await getClient();
-    const response = await client.goose.GooseConfigRead({ key });
-    return {
-      ok: true,
-      value: typeof response.value === "string" ? response.value : null,
-    };
+    const response = await client.goose.GoosePreferencesRead({ keys });
+    const values = new Map(
+      response.values.map((entry) => [entry.key, entry.value]),
+    );
+    return Object.fromEntries(
+      keys.map((key) => {
+        const value = values.get(key);
+        return [
+          key,
+          {
+            ok: true,
+            value: typeof value === "string" ? value : null,
+          },
+        ];
+      }),
+    ) as Record<VoicePreferenceKey, ConfigReadResult>;
   } catch {
-    return { ok: false };
+    return unavailable;
   }
 }
 
-async function writeConfigString(key: string, value: string): Promise<void> {
-  try {
-    const client = await getClient();
-    await client.goose.GooseConfigUpsert({ key, value });
-  } catch {
-    // goose config may be unavailable
-  }
+async function writePreferenceString(
+  key: VoicePreferenceKey,
+  value: string,
+): Promise<void> {
+  const client = await getClient();
+  await client.goose.GoosePreferencesSave({ values: [{ key, value }] });
 }
 
-async function removeConfigKey(key: string): Promise<void> {
-  try {
-    const client = await getClient();
-    await client.goose.GooseConfigRemove({ key });
-  } catch {
-    // goose config may be unavailable
-  }
+async function removePreferenceKey(key: VoicePreferenceKey): Promise<void> {
+  const client = await getClient();
+  await client.goose.GoosePreferencesRemove({ keys: [key] });
 }
 
 export function useVoiceInputPreferences() {
@@ -65,11 +82,14 @@ export function useVoiceInputPreferences() {
   const [isHydrated, setIsHydrated] = useState(false);
 
   const syncFromConfig = useCallback(async () => {
-    const [phrasesResult, providerResult, micResult] = await Promise.all([
-      readConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY),
-      readConfigString(VOICE_DICTATION_PROVIDER_CONFIG_KEY),
-      readConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY),
+    const results = await readPreferenceStrings([
+      VOICE_AUTO_SUBMIT_PHRASES_PREFERENCE_KEY,
+      VOICE_DICTATION_PROVIDER_PREFERENCE_KEY,
+      VOICE_DICTATION_PREFERRED_MIC_PREFERENCE_KEY,
     ]);
+    const phrasesResult = results[VOICE_AUTO_SUBMIT_PHRASES_PREFERENCE_KEY];
+    const providerResult = results[VOICE_DICTATION_PROVIDER_PREFERENCE_KEY];
+    const micResult = results[VOICE_DICTATION_PREFERRED_MIC_PREFERENCE_KEY];
 
     if (phrasesResult.ok) {
       setRawAutoSubmitPhrasesState(
@@ -99,7 +119,9 @@ export function useVoiceInputPreferences() {
         // through to the default cleanly.
         setSelectedProviderState(null);
         setHasStoredProviderPreferenceState(false);
-        void removeConfigKey(VOICE_DICTATION_PROVIDER_CONFIG_KEY);
+        void removePreferenceKey(VOICE_DICTATION_PROVIDER_PREFERENCE_KEY).catch(
+          () => undefined,
+        );
       }
     } else {
       setSelectedProviderState(null);
@@ -135,18 +157,23 @@ export function useVoiceInputPreferences() {
 
   const persistAndBroadcast = useCallback(
     (operation: Promise<void>) => {
-      void operation.finally(() => {
-        dispatchPreferencesEvent();
-      });
+      void operation
+        .then(() => {
+          dispatchPreferencesEvent();
+        })
+        .catch((error: unknown) => {
+          console.warn("Failed to persist voice input preferences", error);
+          void syncFromConfig();
+        });
     },
-    [dispatchPreferencesEvent],
+    [dispatchPreferencesEvent, syncFromConfig],
   );
 
   const setRawAutoSubmitPhrases = useCallback(
     (value: string) => {
       setRawAutoSubmitPhrasesState(value);
       persistAndBroadcast(
-        writeConfigString(VOICE_AUTO_SUBMIT_PHRASES_CONFIG_KEY, value),
+        writePreferenceString(VOICE_AUTO_SUBMIT_PHRASES_PREFERENCE_KEY, value),
       );
     },
     [persistAndBroadcast],
@@ -157,8 +184,8 @@ export function useVoiceInputPreferences() {
       setSelectedProviderState(value);
       setHasStoredProviderPreferenceState(true);
       persistAndBroadcast(
-        writeConfigString(
-          VOICE_DICTATION_PROVIDER_CONFIG_KEY,
+        writePreferenceString(
+          VOICE_DICTATION_PROVIDER_PREFERENCE_KEY,
           value ?? DISABLED_DICTATION_PROVIDER_CONFIG_VALUE,
         ),
       );
@@ -172,7 +199,9 @@ export function useVoiceInputPreferences() {
   const clearSelectedProvider = useCallback(() => {
     setSelectedProviderState(null);
     setHasStoredProviderPreferenceState(false);
-    persistAndBroadcast(removeConfigKey(VOICE_DICTATION_PROVIDER_CONFIG_KEY));
+    persistAndBroadcast(
+      removePreferenceKey(VOICE_DICTATION_PROVIDER_PREFERENCE_KEY),
+    );
   }, [persistAndBroadcast]);
 
   const setPreferredMicrophoneId = useCallback(
@@ -180,11 +209,14 @@ export function useVoiceInputPreferences() {
       setPreferredMicrophoneIdState(value);
       if (value) {
         persistAndBroadcast(
-          writeConfigString(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY, value),
+          writePreferenceString(
+            VOICE_DICTATION_PREFERRED_MIC_PREFERENCE_KEY,
+            value,
+          ),
         );
       } else {
         persistAndBroadcast(
-          removeConfigKey(VOICE_DICTATION_PREFERRED_MIC_CONFIG_KEY),
+          removePreferenceKey(VOICE_DICTATION_PREFERRED_MIC_PREFERENCE_KEY),
         );
       }
     },

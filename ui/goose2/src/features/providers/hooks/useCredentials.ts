@@ -6,6 +6,8 @@ import {
   type ProviderStatus,
   checkAllProviderStatus,
 } from "@/features/providers/api/credentials";
+import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
+import { notifyVoiceDictationConfigChanged } from "@/features/chat/lib/voiceInput";
 import {
   syncProviderInventory,
   type SyncProviderInventoryResult,
@@ -30,7 +32,10 @@ interface UseCredentialsReturn {
   getConfig: (providerId: string) => Promise<ProviderFieldValue[]>;
   save: (providerId: string, fields: ProviderFieldSave[]) => Promise<void>;
   remove: (providerId: string) => Promise<void>;
-  completeNativeSetup: (providerId: string) => Promise<void>;
+  completeNativeSetup: (
+    providerId: string,
+    result?: ProviderConfigChangeResponse,
+  ) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -208,6 +213,7 @@ export function useCredentials(): UseCredentialsReturn {
           fields.map(({ key, value }) => ({ key, value })),
         );
         updateProviderStatus(result.status);
+        notifyVoiceDictationConfigChanged();
         startInventorySync(providerId, result.refresh);
       } finally {
         setProviderSaving(providerId, false);
@@ -222,6 +228,7 @@ export function useCredentials(): UseCredentialsReturn {
       try {
         const result = await deleteProviderConfig(providerId);
         updateProviderStatus(result.status);
+        notifyVoiceDictationConfigChanged();
         startInventorySync(providerId, result.refresh);
       } finally {
         setProviderSaving(providerId, false);
@@ -231,7 +238,14 @@ export function useCredentials(): UseCredentialsReturn {
   );
 
   const completeNativeSetup = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, result?: ProviderConfigChangeResponse) => {
+      if (result) {
+        updateProviderStatus(result.status);
+        notifyVoiceDictationConfigChanged();
+        startInventorySync(providerId, result.refresh);
+        return;
+      }
+
       // Native OAuth returns only after the subprocess writes credentials.
       // Inventory refresh invalidates ACP's secret cache before status reads it.
       let initialRefresh: SyncProviderInventoryResult["refresh"] | undefined;
@@ -241,9 +255,15 @@ export function useCredentials(): UseCredentialsReturn {
         setProviderInventoryWarning(providerId, errorMessage(error));
       }
       await refreshStatuses();
+      notifyVoiceDictationConfigChanged();
       startInventorySync(providerId, initialRefresh);
     },
-    [refreshStatuses, setProviderInventoryWarning, startInventorySync],
+    [
+      refreshStatuses,
+      setProviderInventoryWarning,
+      startInventorySync,
+      updateProviderStatus,
+    ],
   );
 
   return {

@@ -1,5 +1,6 @@
 use super::base::{ConfigKey, ModelInfo, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
+use super::catalog::ProviderSetupCategory;
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
 use crate::session::session_manager::SessionStorage;
@@ -23,6 +24,7 @@ pub struct ProviderInventoryEntry {
     pub default_model: String,
     pub configured: bool,
     pub provider_type: ProviderType,
+    pub category: ProviderSetupCategory,
     pub config_keys: Vec<ConfigKey>,
     pub setup_steps: Vec<String>,
     pub supports_refresh: bool,
@@ -248,6 +250,7 @@ struct ProviderDescriptor {
     identity: InventoryIdentity,
     configured: bool,
     provider_type: ProviderType,
+    category: ProviderSetupCategory,
     config_keys: Vec<ConfigKey>,
     setup_steps: Vec<String>,
     supports_refresh: bool,
@@ -289,6 +292,7 @@ impl ProviderInventoryService {
             default_model: descriptor.default_model,
             configured: descriptor.configured,
             provider_type: descriptor.provider_type,
+            category: descriptor.category,
             config_keys: descriptor.config_keys,
             setup_steps: descriptor.setup_steps,
             supports_refresh: descriptor.supports_refresh,
@@ -582,6 +586,8 @@ impl ProviderInventoryService {
             identity,
             configured: entry.inventory_configured(),
             provider_type: entry.provider_type(),
+            category: crate::providers::catalog::get_provider_setup_category(&metadata.name)
+                .unwrap_or(ProviderSetupCategory::Model),
             config_keys: metadata.config_keys.clone(),
             setup_steps: metadata.setup_steps.clone(),
             supports_refresh: entry.supports_inventory_refresh(),

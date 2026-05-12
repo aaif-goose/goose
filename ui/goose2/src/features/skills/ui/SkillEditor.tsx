@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -11,29 +11,54 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
-import { createSkill, updateSkill, type EditingSkill } from "../api/skills";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/select";
+import { useProjectStore } from "@/features/projects/stores/projectStore";
+import {
+  createSkill,
+  updateSkill,
+  type EditingSkill,
+  type SkillInfo,
+} from "../api/skills";
 import { formatSkillName, isValidSkillName } from "../lib/skillsHelpers";
 import { getRenamedSkillFileLocation } from "../lib/skillsPath";
+
+/** Sentinel value for the "Global" option in the save-location picker. */
+const GLOBAL_VALUE = "__global__";
 
 interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated?: () => void;
+  onSaved?: (savedSkill?: SkillInfo) => void | Promise<void>;
   editingSkill?: EditingSkill;
 }
 
 export function SkillEditor({
   isOpen,
   onClose,
-  onCreated,
+  onSaved,
   editingSkill,
 }: SkillEditorProps) {
   const { t } = useTranslation(["skills", "common"]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [saveLocation, setSaveLocation] = useState(GLOBAL_VALUE);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const projects = useProjectStore((s) => s.projects);
+
+  // Only projects with working directories can hold skills
+  const projectsWithDirs = useMemo(
+    () => projects.filter((p) => p.workingDirs.length > 0),
+    [projects],
+  );
 
   const isEditing = !!editingSkill;
 
@@ -43,11 +68,13 @@ export function SkillEditor({
       setName(editingSkill.name);
       setDescription(editingSkill.description);
       setInstructions(editingSkill.instructions);
+      setSaveLocation(GLOBAL_VALUE); // location is fixed for existing skills
       setError(null);
     } else if (isOpen) {
       setName("");
       setDescription("");
       setInstructions("");
+      setSaveLocation(GLOBAL_VALUE);
       setError(null);
     }
   }, [isOpen, editingSkill]);
@@ -64,6 +91,7 @@ export function SkillEditor({
     setName("");
     setDescription("");
     setInstructions("");
+    setSaveLocation(GLOBAL_VALUE);
     setError(null);
     onClose();
   };
@@ -74,20 +102,26 @@ export function SkillEditor({
     setSaving(true);
     setError(null);
     try {
+      let savedSkill: SkillInfo | undefined;
       if (isEditing) {
-        await updateSkill(
+        savedSkill = await updateSkill(
           editingSkill.path,
           name,
           description.trim(),
           instructions,
         );
       } else {
-        await createSkill(name, description.trim(), instructions);
+        const projectId =
+          saveLocation !== GLOBAL_VALUE ? saveLocation : undefined;
+        await createSkill(name, description.trim(), instructions, {
+          projectId,
+        });
       }
       setName("");
       setDescription("");
       setInstructions("");
-      onCreated?.();
+      setSaveLocation(GLOBAL_VALUE);
+      await onSaved?.(savedSkill);
       onClose();
     } catch (err) {
       setError(String(err));
@@ -126,6 +160,35 @@ export function SkillEditor({
               </p>
             )}
           </div>
+
+          {/* Save location — only shown when creating */}
+          {!isEditing && projectsWithDirs.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-muted-foreground">
+                {t("dialog.saveLocation")}
+              </Label>
+              <Select value={saveLocation} onValueChange={setSaveLocation}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={GLOBAL_VALUE}>
+                    {t("dialog.global")}
+                  </SelectItem>
+                  {projectsWithDirs.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                {saveLocation === GLOBAL_VALUE
+                  ? t("dialog.globalHint")
+                  : t("dialog.projectHint")}
+              </p>
+            </div>
+          )}
 
           {/* Description */}
           <div className="space-y-1">

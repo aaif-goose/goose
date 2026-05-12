@@ -897,15 +897,26 @@ export function useChatStream({
         return;
       }
 
+      // An elicitation response unblocks an in-flight tool call on the original
+      // request's SSE stream — don't start a new stream or flip chat state.
       const responseMessage = createElicitationResponseMessage(elicitationId, userData);
-      const currentMessages = [...currentState.messages, responseMessage];
+      const nextMessages = [...currentState.messages, responseMessage];
+      dispatch({ type: 'SET_MESSAGES', payload: nextMessages });
 
-      dispatch({ type: 'SET_MESSAGES', payload: currentMessages });
-      dispatch({ type: 'START_STREAMING' });
-
-      await submitToSession(sessionId, responseMessage, currentMessages);
+      try {
+        await sessionReply({
+          path: { id: sessionId },
+          body: {
+            request_id: uuidv7(),
+            user_message: responseMessage,
+          },
+          throwOnError: true,
+        });
+      } catch (error) {
+        onFinish('Submit error: ' + errorMessage(error));
+      }
     },
-    [sessionId, submitToSession]
+    [sessionId, onFinish]
   );
 
   const setRecipeUserParams = useCallback(

@@ -40,7 +40,7 @@ jobs:
       # This prevents attackers from triggering builds on their own malicious PRs
       - name: Verify commenter permissions
         id: security_check
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // workflow_dispatch requires repo write access, so it's inherently safe

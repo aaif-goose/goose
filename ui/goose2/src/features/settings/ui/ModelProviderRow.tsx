@@ -19,6 +19,7 @@ import {
   authenticateModelProvider,
   onModelSetupOutput,
 } from "@/features/providers/api/modelSetup";
+import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
 import type {
   ProviderDisplayInfo,
   ProviderField,
@@ -51,7 +52,10 @@ interface ModelProviderRowProps {
   onGetConfig: (providerId: string) => Promise<ProviderFieldValue[]>;
   onSaveFields: (fields: ProviderFieldSaveInput[]) => Promise<void>;
   onRemoveConfig?: () => Promise<void>;
-  onCompleteNativeSetup: (providerId: string) => Promise<void>;
+  onCompleteNativeSetup: (
+    providerId: string,
+    result?: ProviderConfigChangeResponse,
+  ) => Promise<void>;
   saving?: boolean;
   inventorySyncing?: boolean;
   inventoryWarning?: string | null;
@@ -165,7 +169,6 @@ export function ModelProviderRow({
     setAuthenticating(true);
     setSetupError("");
     setSetupOutput([]);
-    setupLineCounter.current = 0;
     setEditingKey(null);
     setError("");
     setShowSavedState(false);
@@ -173,10 +176,11 @@ export function ModelProviderRow({
     const unlisten = await onModelSetupOutput(provider.id, appendSetupOutput);
 
     try {
-      // The native connector exits after writing credentials; only then do we
-      // ask the credentials hook to refresh ACP inventory for this provider.
-      await authenticateModelProvider(provider.id, provider.nativeConnectQuery);
-      await onCompleteNativeSetup(provider.id);
+      const result = await authenticateModelProvider(
+        provider.id,
+        provider.nativeConnectQuery,
+      );
+      await onCompleteNativeSetup(provider.id, result);
     } catch (nextError) {
       setSetupError(
         nextError instanceof Error
@@ -377,7 +381,7 @@ export function ModelProviderRow({
           )}
           {authenticating ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner className="size-3.5 text-accent" />
+              <Spinner className="size-3.5 text-brand" />
               <span>{t("providers.waitingForSignIn")}</span>
             </div>
           ) : null}
@@ -468,13 +472,17 @@ export function ModelProviderRow({
         disabled={authenticating}
         className="flex w-full items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent"
       >
-        <div className="flex size-6 flex-shrink-0 items-center justify-center">
-          {icon || (
+        {icon ? (
+          <div className="flex size-6 flex-shrink-0 items-center justify-center">
+            {icon}
+          </div>
+        ) : (
+          <div className="flex size-6 flex-shrink-0 items-center justify-center">
             <span className="text-xs font-medium text-muted-foreground">
               {formatProviderLabel(provider.id).charAt(0)}
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         <span className="min-w-0 flex-1 text-sm">{provider.displayName}</span>
 
@@ -482,10 +490,10 @@ export function ModelProviderRow({
           <IconCheck className="size-4 flex-shrink-0 text-success" />
         ) : null}
         {inventorySyncing ? (
-          <Spinner className="size-3.5 flex-shrink-0 text-accent" />
+          <Spinner className="size-3.5 flex-shrink-0 text-brand" />
         ) : null}
         {!isConnected && authenticating ? (
-          <Spinner className="size-3.5 flex-shrink-0 text-accent" />
+          <Spinner className="size-3.5 flex-shrink-0 text-brand" />
         ) : null}
       </button>
 

@@ -16,7 +16,10 @@ use tokio::pin;
 use tokio_util::io::StreamReader;
 use uuid::Uuid;
 
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::errors::ProviderError;
 use super::formats::anthropic::{create_request, response_to_streaming_message};
 use super::oauth_device_flow::{
@@ -162,7 +165,7 @@ impl KimiCodeProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
         let model = model.with_fast(KIMI_CODE_DEFAULT_FAST_MODEL, KIMI_CODE_PROVIDER_NAME)?;
         let client = Client::builder()
-            .timeout(StdDuration::from_secs(600))
+            .timeout(StdDuration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
             .build()?;
         let device_id = Self::get_or_create_device_id().await?;
         Ok(Self {
