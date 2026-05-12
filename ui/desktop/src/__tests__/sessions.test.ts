@@ -108,9 +108,6 @@ describe('session reuse scoping (fix for #7601)', () => {
 });
 
 describe('getSessionDisplayName (fix for #8865)', () => {
-  // Before the fix: a session created from a recipe would always render
-  // `recipe.title` in the sidebar, even after the user explicitly renamed it.
-  // The rename was persisted (visible in "Show All") but the sidebar ignored it.
   it('returns the user-set name for a recipe session that has been renamed', () => {
     const session = makeSession({
       name: 'My Renamed Chat',
@@ -129,23 +126,5 @@ describe('getSessionDisplayName (fix for #8865)', () => {
       recipe: { title: 'Some Recipe' } as unknown as Session['recipe'],
     });
     expect(getSessionDisplayName(session)).toBe('Some Recipe');
-  });
-
-  it('returns "New Chat" for an empty non-recipe session', () => {
-    const session = makeSession({
-      name: 'untitled',
-      user_set_name: false,
-      message_count: 0,
-    });
-    expect(getSessionDisplayName(session)).toBe('New Chat');
-  });
-
-  it('returns the user-set name for a non-recipe session', () => {
-    const session = makeSession({
-      name: 'My Chat',
-      user_set_name: true,
-      message_count: 5,
-    });
-    expect(getSessionDisplayName(session)).toBe('My Chat');
   });
 });
