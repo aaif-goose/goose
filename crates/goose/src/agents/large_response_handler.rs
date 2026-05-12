@@ -4,25 +4,35 @@ use std::fs::File;
 use std::io::Write;
 
 const DEFAULT_LARGE_TEXT_THRESHOLD: usize = 200_000;
-const RANGE_AWARE_TOOL_THRESHOLD: usize = 50_000;
+const SHELL_TOOL_THRESHOLD: usize = 50_000;
 
 fn threshold_for_tool(tool_name: &str) -> usize {
     // Tool names vary by provider (`shell`, `developer__shell`, `platform__developer__shell`,
-    // `read`, `developer__read`, ...), so suffix-match. Tools that already self-truncate
-    // or accept range parameters get a tighter safety net; opaque extension outputs keep
-    // the default.
-    if tool_name.ends_with("shell") || tool_name.ends_with("read") {
-        RANGE_AWARE_TOOL_THRESHOLD
+    // ...), so suffix-match. Shell output is easy to re-slice with `sed`/`head`/`tail`, so
+    // it gets a tighter safety net. The `read` tool is intentionally kept on the default
+    // threshold: a single-line file between the two thresholds would be uninspectable
+    // because `line`/`limit` cannot slice within a line.
+    if tool_name.ends_with("shell") {
+        SHELL_TOOL_THRESHOLD
     } else {
         DEFAULT_LARGE_TEXT_THRESHOLD
     }
 }
 
+fn shell_slice_example(path: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!("Get-Content {path} -TotalCount B | Select-Object -Skip A")
+    } else {
+        format!("sed -n 'A,Bp' {path}")
+    }
+}
+
 fn redirect_message(char_count: usize, path: &str) -> String {
+    let shell_example = shell_slice_example(path);
     format!(
         "Tool output was {char_count} characters and is saved to {path}. To view portions, \
          use the `read` tool with `path: {path}` (and `line`/`limit` for ranges) if available, \
-         or `sed -n 'A,Bp' {path}` via shell. Do NOT re-run the tool to see different slices."
+         or `{shell_example}` via shell. Do NOT re-run the tool to see different slices."
     )
 }
 
@@ -206,11 +216,11 @@ mod tests {
     }
 
     #[test]
-    fn threshold_lower_for_shell_and_read_tools() {
-        // 60K-char output: above shell/read threshold (50K) but below default (200K).
-        let text = "a".repeat(RANGE_AWARE_TOOL_THRESHOLD + 10_000);
-        let response = Ok(CallToolResult::success(vec![Content::text(text.clone())]));
+    fn threshold_lower_for_shell_but_not_read() {
+        // 60K-char output: above shell threshold (50K) but below default (200K).
+        let text = "a".repeat(SHELL_TOOL_THRESHOLD + 10_000);
 
+        let response = Ok(CallToolResult::success(vec![Content::text(text.clone())]));
         let processed_shell = process_tool_response(response, "developer__shell").unwrap();
         let shell_msg = &processed_shell.content[0]
             .as_text()
@@ -222,6 +232,19 @@ mod tests {
         );
         let _ = fs::remove_file(extract_saved_path(shell_msg));
 
+        // `read` stays on the default threshold so single-line files between 50K and
+        // 200K aren't bounced through a redirect that can't be unstuck with `line`/`limit`.
+        let response = Ok(CallToolResult::success(vec![Content::text(text.clone())]));
+        let processed_read = process_tool_response(response, "read").unwrap();
+        assert!(
+            !processed_read.content[0]
+                .as_text()
+                .expect("expected text")
+                .text
+                .contains("Tool output was"),
+            "read stays under default threshold for outputs below 200K"
+        );
+
         let response = Ok(CallToolResult::success(vec![Content::text(text)]));
         let processed_other = process_tool_response(response, "some_extension__tool").unwrap();
         assert!(
@@ -230,7 +253,7 @@ mod tests {
                 .expect("expected text")
                 .text
                 .contains("Tool output was"),
-            "non-range-aware tool stays under default threshold"
+            "non-shell tool stays under default threshold"
         );
     }
 
@@ -243,7 +266,15 @@ mod tests {
 
         assert!(msg.contains("`read` tool"), "mentions read tool");
         assert!(msg.contains("`line`/`limit`"), "mentions range params");
-        assert!(msg.contains("sed -n"), "mentions shell fallback");
+        let expected_shell_hint = if cfg!(target_os = "windows") {
+            "Get-Content"
+        } else {
+            "sed -n"
+        };
+        assert!(
+            msg.contains(expected_shell_hint),
+            "mentions OS-appropriate shell fallback ({expected_shell_hint})"
+        );
         assert!(
             msg.contains("Do NOT re-run"),
             "anti-loop language is present"
