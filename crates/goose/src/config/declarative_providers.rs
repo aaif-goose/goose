@@ -869,7 +869,7 @@ mod tests {
         assert_eq!(config.dynamic_models, Some(true));
         assert_eq!(config.supports_streaming, Some(true));
         assert!(config.skip_canonical_filtering);
-        assert!(config.models.is_empty());
+        assert_eq!(config.models.len(), 6);
 
         let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
         assert_eq!(env_vars.len(), 1);
