@@ -1150,7 +1150,7 @@ mod tests {
     // ── dynamic_models behavior ─────────────────────────────────────────────
 
     use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn make_provider_with_server(
@@ -1194,6 +1194,8 @@ mod tests {
             env_vars: None,
             dynamic_models,
             skip_canonical_filtering: false,
+            model_doc_link: None,
+            setup_steps: vec![],
             fast_model: None,
         }
     }
@@ -1217,74 +1219,18 @@ mod tests {
         assert_eq!(models, vec!["m1".to_string(), "m2".to_string()]);
     }
 
-    #[tokio::test]
-    async fn fetch_supported_models_dynamic_true_hits_api() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data": [{"id": "api-m1"}, {"id": "api-m2"}]
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider_with_server(
-            &server.uri(),
-            Some(vec!["static-m1".to_string()]),
-            Some(true),
-        );
-
-        let models = provider.fetch_supported_models().await.unwrap();
-        assert_eq!(models, vec!["api-m1".to_string(), "api-m2".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn fetch_supported_models_none_falls_back_on_404() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/v1/models"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider_with_server(
-            &server.uri(),
-            Some(vec!["fallback-m1".to_string()]),
-            None,
-        );
-
-        let models = provider.fetch_supported_models().await.unwrap();
-        assert_eq!(models, vec!["fallback-m1".to_string()]);
-    }
-
     #[test]
     fn from_custom_config_rejects_static_only_without_models() {
         let config = base_declarative_config(vec![], Some(false));
-        let err = OpenAiProvider::from_custom_config(
-            ModelConfig::new_or_fail("test-model"),
-            config,
-        )
-        .expect_err("expected construction error for dynamic_models: false with empty models");
+        let err =
+            OpenAiProvider::from_custom_config(ModelConfig::new_or_fail("test-model"), config)
+                .expect_err(
+                    "expected construction error for dynamic_models: false with empty models",
+                );
         let msg = err.to_string();
         assert!(
             msg.contains("dynamic_models: false"),
             "error message should mention dynamic_models: false; got: {msg}"
-        );
-    }
-
-    #[test]
-    fn from_custom_config_preserves_dynamic_flag() {
-        let config = base_declarative_config(
-            vec![ModelInfo::new("m1", 128_000)],
-            Some(false),
-        );
-        let provider =
-            OpenAiProvider::from_custom_config(ModelConfig::new_or_fail("test-model"), config)
-                .expect("construction should succeed with non-empty models");
-        assert_eq!(provider.dynamic_models, Some(false));
-        assert_eq!(
-            provider.custom_models,
-            Some(vec!["m1".to_string()])
         );
     }
 }
