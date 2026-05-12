@@ -11,7 +11,7 @@ function HeroSection() {
     <header className={styles.hero}>
       <div className={styles.heroInner}>
         <div className={styles.heroBadge}>
-          Open Source · Apache 2.0 · Linux Foundation
+          Open Source · Apache 2.0 · Agentic AI Foundation
         </div>
         <div className={styles.heroLogo}>
           <GooseLogo />

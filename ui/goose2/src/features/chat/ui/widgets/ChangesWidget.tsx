@@ -34,7 +34,8 @@ function ChangedFileRow({
       type="button"
       disabled={isDeleted}
       className={cn(
-        "flex w-full select-none items-center gap-2 px-3 py-1.5 text-left",
+        "relative flex w-full select-none items-center gap-2 px-4 py-1.5 text-left",
+        "before:pointer-events-none before:absolute before:inset-x-4 before:top-0 before:h-px before:bg-border/70 before:content-['']",
         "transition-colors duration-100",
         isDeleted ? "cursor-default opacity-60" : "hover:bg-muted/80",
       )}
@@ -47,11 +48,11 @@ function ChangedFileRow({
         )}
       >
         {dir && (
-          <span className="shrink truncate text-xs text-muted-foreground">
+          <span className="shrink truncate text-sm text-muted-foreground">
             {dir}
           </span>
         )}
-        <span className="shrink-0 whitespace-nowrap text-xs font-medium text-foreground">
+        <span className="shrink-0 whitespace-nowrap text-sm font-normal text-foreground">
           {name}
         </span>
       </div>
@@ -69,6 +70,8 @@ interface ChangesWidgetProps {
   currentBranch: string | null;
   repoPath: string;
   onOpenFile: (path: string) => void;
+  isOpen: boolean;
+  onToggleOpen: () => void;
 }
 
 export function ChangesWidget({
@@ -77,6 +80,8 @@ export function ChangesWidget({
   currentBranch,
   repoPath,
   onOpenFile,
+  isOpen,
+  onToggleOpen,
 }: ChangesWidgetProps) {
   const { t } = useTranslation("chat");
 
@@ -97,7 +102,7 @@ export function ChangesWidget({
     <div className="flex min-w-0 items-center gap-1">
       <span>{t("contextPanel.widgets.changes")}</span>
       {currentBranch && (
-        <span className="flex min-w-0 items-center gap-1 font-normal text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1 font-normal normal-case tracking-normal text-muted-foreground">
           <span className="shrink-0">
             {t("contextPanel.widgets.changesOnBranch")}
           </span>
@@ -128,9 +133,11 @@ export function ChangesWidget({
       icon={<IconGitBranch className="size-3.5 shrink-0" />}
       action={headerAction}
       flush={hasChanges}
+      isOpen={isOpen}
+      onToggleOpen={onToggleOpen}
     >
       {isLoading && !files ? (
-        <div className="space-y-2 px-3 py-2.5">
+        <div className="space-y-2 px-4 pb-3">
           <Skeleton className="h-3 w-3/4" />
           <Skeleton className="h-3 w-1/2" />
           <Skeleton className="h-3 w-2/3" />
@@ -147,7 +154,7 @@ export function ChangesWidget({
           ))}
         </div>
       ) : (
-        <p className="text-foreground-subtle">
+        <p className="px-4 text-sm text-foreground-subtle">
           {t("contextPanel.empty.noChanges")}
         </p>
       )}
