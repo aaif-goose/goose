@@ -163,6 +163,29 @@ export type ContentBlock = ({
 
 export type Conversation = Array<Message>;
 
+export type CopilotReviewRequest = {
+    /**
+     * The recipe updates this Check Run on completion.
+     */
+    check_run_id?: number | null;
+    github_token: string;
+    head_sha: string;
+    pr_number: number;
+    pr_url: string;
+    /**
+     * `owner/repo` form, e.g. `block/goose`.
+     */
+    repo: string;
+};
+
+export type CopilotReviewResponse = {
+    session_id: string;
+};
+
+export type CopilotSetupResponse = {
+    installation_id: number;
+};
+
 export type CreateCustomProviderResponse = {
     provider_name: string;
 };
@@ -2969,6 +2992,60 @@ export type ValidateConfigResponses = {
 };
 
 export type ValidateConfigResponse = ValidateConfigResponses[keyof ValidateConfigResponses];
+
+export type ReviewData = {
+    body: CopilotReviewRequest;
+    path?: never;
+    query?: never;
+    url: '/copilot/review';
+};
+
+export type ReviewErrors = {
+    /**
+     * Recipe missing or invalid
+     */
+    400: unknown;
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type ReviewResponses = {
+    /**
+     * Review session spawned
+     */
+    200: CopilotReviewResponse;
+};
+
+export type ReviewResponse = ReviewResponses[keyof ReviewResponses];
+
+export type SetupData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/copilot/setup';
+};
+
+export type SetupErrors = {
+    /**
+     * Install timed out
+     */
+    408: unknown;
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type SetupResponses = {
+    /**
+     * Goose Copilot connected
+     */
+    200: CopilotSetupResponse;
+};
+
+export type SetupResponse2 = SetupResponses[keyof SetupResponses];
 
 export type DiagnosticsData = {
     body?: never;

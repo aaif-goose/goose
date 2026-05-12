@@ -1,0 +1,21 @@
+name = "goose-copilot-switchboard"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (set via `wrangler secret put`):
+#   GITHUB_APP_ID            — numeric App ID
+#   GITHUB_APP_PRIVATE_KEY   — PEM contents (full PRIVATE KEY block, newlines preserved)
+#   GITHUB_WEBHOOK_SECRET    — HMAC shared secret configured on the App's webhook
+#   REGISTER_SHARED_SECRET   — bearer token Desktop presents on POST /register
+#
+# Optional vars (set via [vars] below or `wrangler secret put`):
+#   REVIEW_RECIPE_ID         — recipe id goosed should run; default `goose-copilot-review`
+
+[[kv_namespaces]]
+binding = "INSTALL_REGISTRY"
+# After running `wrangler kv namespace create INSTALL_REGISTRY`, paste the id here:
+id = "<your-kv-namespace-id>"
+
+[observability]
+enabled = true

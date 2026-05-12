@@ -305,6 +305,63 @@
   "conversationLimitsDropdown.maxTurnsDescription": {
     "defaultMessage": "Maximum agent turns before Goose asks for user input"
   },
+  "copilotView.activeMessage": {
+    "defaultMessage": "Goose Copilot is active. Open a PR to try it."
+  },
+  "copilotView.awaitingInstall": {
+    "defaultMessage": "Finish installing on GitHub in your browser…"
+  },
+  "copilotView.awaitingInstallHint": {
+    "defaultMessage": "A browser tab just opened to GitHub. Pick the repos you want reviewed and click Install & Authorize. This page will pick it up automatically."
+  },
+  "copilotView.cardDescription": {
+    "defaultMessage": "When enabled, every PR opened on a connected repository triggers a review on your local goose. The review is posted as inline comments on the PR."
+  },
+  "copilotView.cardTitle": {
+    "defaultMessage": "Code review on pull requests"
+  },
+  "copilotView.disconnectAction": {
+    "defaultMessage": "Disconnect"
+  },
+  "copilotView.disconnectHint": {
+    "defaultMessage": "Opens the GitHub App settings so you can uninstall. After you uninstall on GitHub, this side disconnects automatically."
+  },
+  "copilotView.installAction": {
+    "defaultMessage": "Connect GitHub"
+  },
+  "copilotView.installationLabel": {
+    "defaultMessage": "Installation {id}"
+  },
+  "copilotView.notConnected": {
+    "defaultMessage": "Not connected"
+  },
+  "copilotView.pageDescription": {
+    "defaultMessage": "Auto-review pull requests using your local goose. Your code and API keys never leave your machine."
+  },
+  "copilotView.pageTitle": {
+    "defaultMessage": "Goose Copilot"
+  },
+  "copilotView.setupFailed": {
+    "defaultMessage": "Failed to connect Goose Copilot"
+  },
+  "copilotView.statusGithubApp": {
+    "defaultMessage": "GitHub App"
+  },
+  "copilotView.statusLocalTunnel": {
+    "defaultMessage": "Local tunnel"
+  },
+  "copilotView.tunnelError": {
+    "defaultMessage": "Error"
+  },
+  "copilotView.tunnelIdle": {
+    "defaultMessage": "Idle"
+  },
+  "copilotView.tunnelRunning": {
+    "defaultMessage": "Running"
+  },
+  "copilotView.tunnelStarting": {
+    "defaultMessage": "Starting…"
+  },
   "costTracker.costUnavailable": {
     "defaultMessage": "Cost data not available for {model} ({inputTokens} input, {outputTokens} output tokens)"
   },

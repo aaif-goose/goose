@@ -45,6 +45,7 @@ import PermissionSettingsView from './components/settings/permission/PermissionS
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
 import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
+import CopilotView from './components/copilot/CopilotView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
@@ -211,6 +212,10 @@ const RecipesRoute = () => {
 
 const SkillsRoute = () => {
   return <SkillsView />;
+};
+
+const CopilotRoute = () => {
+  return <CopilotView />;
 };
 
 const PermissionRoute = () => {
@@ -486,13 +491,18 @@ export function AppInner() {
   // Show a toast if mesh is the configured provider but isn't running.
   useEffect(() => {
     const handler = () => {
-      toast.warn('Inference Mesh is set as your provider but isn\'t running. Open Settings → Mesh to start it. Keep goose running to stay connected.', {
-        autoClose: false,
-        toastId: 'mesh-not-running',
-      });
+      toast.warn(
+        "Inference Mesh is set as your provider but isn't running. Open Settings → Mesh to start it. Keep goose running to stay connected.",
+        {
+          autoClose: false,
+          toastId: 'mesh-not-running',
+        }
+      );
     };
     window.electron.on('mesh-not-running', handler);
-    return () => { window.electron.off('mesh-not-running', handler); };
+    return () => {
+      window.electron.off('mesh-not-running', handler);
+    };
   }, []);
 
   // Prevent default drag and drop behavior globally to avoid opening files in new windows
@@ -691,6 +701,7 @@ export function AppInner() {
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
               <Route path="skills" element={<SkillsRoute />} />
+              <Route path="copilot" element={<CopilotRoute />} />
               <Route
                 path="shared-session"
                 element={

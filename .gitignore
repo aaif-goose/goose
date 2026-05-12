@@ -61,6 +61,9 @@ do_not_version/
 /ui/desktop/src/bin/goose-scheduler-executor
 /ui/desktop/src/bin/goose
 /.env
+**/.env
+!**/.env.example
+**/*.pem
 
 /working_dir
 

@@ -1663,6 +1663,68 @@
         }
       }
     },
+    "/copilot/review": {
+      "post": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "review",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Review session spawned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotReviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Recipe missing or invalid"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/setup": {
+      "post": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "setup",
+        "responses": {
+          "200": {
+            "description": "Goose Copilot connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotSetupResponse"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Install timed out"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
     "/diagnostics/{session_id}": {
       "get": {
         "tags": [
@@ -4592,6 +4654,67 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Message"
+        }
+      },
+      "CopilotReviewRequest": {
+        "type": "object",
+        "required": [
+          "github_token",
+          "repo",
+          "pr_number",
+          "head_sha",
+          "pr_url"
+        ],
+        "properties": {
+          "check_run_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The recipe updates this Check Run on completion.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "github_token": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pr_url": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string",
+            "description": "`owner/repo` form, e.g. `block/goose`."
+          }
+        }
+      },
+      "CopilotReviewResponse": {
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        }
+      },
+      "CopilotSetupResponse": {
+        "type": "object",
+        "required": [
+          "installation_id"
+        ],
+        "properties": {
+          "installation_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
         }
       },
       "CreateCustomProviderResponse": {

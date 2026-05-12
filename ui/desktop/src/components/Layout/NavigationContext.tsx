@@ -25,6 +25,7 @@ export const DEFAULT_ITEM_ORDER = [
   'apps',
   'scheduler',
   'extensions',
+  'copilot',
   'settings',
 ];
 
@@ -103,9 +104,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
         // Only backfill truly new default IDs (not previously known to the user).
         // Using itemOrder as the source of truth ensures items the user
         // intentionally disabled stay disabled.
-        const newIds = DEFAULT_ITEM_ORDER.filter(
-          (id) => !parsed.itemOrder?.includes(id)
-        );
+        const newIds = DEFAULT_ITEM_ORDER.filter((id) => !parsed.itemOrder?.includes(id));
         return {
           itemOrder: [...(parsed.itemOrder ?? []), ...newIds],
           enabledItems: [...(parsed.enabledItems ?? []), ...newIds],

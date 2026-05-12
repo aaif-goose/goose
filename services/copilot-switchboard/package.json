@@ -1,0 +1,20 @@
+{
+  "name": "goose-copilot-switchboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Webhook switchboard for the Goose Copilot GitHub App. Verifies GitHub webhooks and routes PR reviews into the user's local goosed via the lapstone tunnel. Stores no API keys, no user code.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.4",
+    "@cloudflare/workers-types": "^4.20251101.0",
+    "typescript": "^5.5.2",
+    "vitest": "~3.2.0",
+    "wrangler": "^4.84.1"
+  }
+}
