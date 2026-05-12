@@ -330,17 +330,21 @@ impl Provider for OpenRouterProvider {
     }
 }
 
-/// Returns true for OpenRouter model ids whose upstream stream emits
-/// Hermes/Qwen-style `<function=...>` XML tool-call blocks. These families
-/// don't produce OpenAI-style structured `tool_calls`, so we need the Ollama
-/// fallback parser to extract calls from text. All other models route through
-/// the plain OpenAI-compatible parser.
+/// Model-family substrings whose upstream stream emits Hermes/Qwen-style
+/// `<function=...>` XML tool-call blocks instead of OpenAI-style structured
+/// `tool_calls`. OpenRouter ids embed the family in either segment, so we
+/// match on the lowercased full id (e.g. `nousresearch/hermes-…`,
+/// `…/qwen-2.5-…`).
+const XML_TOOL_CALL_FAMILIES: &[&str] = &["hermes", "qwen"];
+
+/// Returns true when the model belongs to a family that needs the Ollama
+/// fallback parser to extract tool calls from text. All other models route
+/// through the plain OpenAI-compatible parser.
 fn model_emits_xml_tool_calls(model_name: &str) -> bool {
     let m = model_name.to_ascii_lowercase();
-    // Match by family substrings — OpenRouter model ids embed the family in
-    // either the provider segment (`nousresearch/hermes-…`) or the model
-    // segment (`…/qwen-2.5-…`).
-    m.contains("hermes") || m.contains("qwen")
+    XML_TOOL_CALL_FAMILIES
+        .iter()
+        .any(|family| m.contains(family))
 }
 
 #[cfg(test)]
