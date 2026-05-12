@@ -256,19 +256,21 @@ pub fn project_working_dirs(slug: &str) -> Vec<String> {
 
 /// Flat list of `(workingDir, projectSlug)` pairs across all projects, used by
 /// storage migrations that map session paths to a project.
-pub fn project_working_dir_pairs() -> Vec<(String, String)> {
-    let projects = match read_project_dir() {
-        Ok(p) => p,
-        Err(_) => return Vec::new(),
-    };
-    projects
+///
+/// Returns the error from `read_project_dir` so the migration caller can choose
+/// to fail (transient FS/permissions issues shouldn't be silently treated as
+/// "no projects exist" — that would advance schema version without backfilling,
+/// and the migration won't re-run).
+pub fn project_working_dir_pairs() -> Result<Vec<(String, String)>, Error> {
+    let projects = read_project_dir()?;
+    Ok(projects
         .into_iter()
         .flat_map(|proj| {
             working_dirs_of(&proj)
                 .into_iter()
                 .map(move |dir| (dir, proj.name.clone()))
         })
-        .collect()
+        .collect())
 }
 
 /// Validate that the given path is a project file we manage and the file
@@ -1538,11 +1540,9 @@ mod tests {
     #[test]
     fn list_skill_excludes_builtin_skills() {
         let listed = list_sources(Some(SourceType::Skill), None, false).unwrap();
-        assert!(
-            !listed
-                .iter()
-                .any(|source| source.source_type == SourceType::BuiltinSkill)
-        );
+        assert!(!listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
     }
 
     #[test]
@@ -1571,11 +1571,9 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(
-            !builtins
-                .iter()
-                .any(|source| source.name == "goose-doc-guide")
-        );
+        assert!(!builtins
+            .iter()
+            .any(|source| source.name == "goose-doc-guide"));
 
         let skills = list_sources(
             Some(SourceType::Skill),
@@ -1643,11 +1641,9 @@ mod tests {
         assert!(format!("{:?}", err).contains("not supported"));
 
         let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
-        assert!(
-            listed
-                .iter()
-                .any(|source| source.source_type == SourceType::BuiltinSkill)
-        );
+        assert!(listed
+            .iter()
+            .any(|source| source.source_type == SourceType::BuiltinSkill));
 
         let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));

@@ -1,12 +1,12 @@
-use crate::config::GooseMode;
 use crate::config::paths::Paths;
-use crate::conversation::Conversation;
+use crate::config::GooseMode;
 use crate::conversation::message::Message;
+use crate::conversation::Conversation;
 use crate::model::ModelConfig;
-use crate::providers::base::{MSG_COUNT_FOR_SESSION_NAME_GENERATION, Provider};
+use crate::providers::base::{Provider, MSG_COUNT_FOR_SESSION_NAME_GENERATION};
 use crate::recipe::Recipe;
 use crate::session::extension_data::ExtensionData;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use utoipa::ToSchema;
 
 pub const CURRENT_SCHEMA_VERSION: i32 = 13;
@@ -1088,10 +1088,29 @@ impl SessionStorage {
                 }
             }
             13 => {
-                let pairs = crate::sources::project_working_dir_pairs();
-                let updated = backfill_session_project_ids(tx, &pairs).await?;
-                if updated > 0 {
-                    info!("Backfilled project_id on {updated} legacy session(s)");
+                // Only backfill on first-time v13 users: if any session already
+                // has a non-NULL project_id, the user has used the feature in
+                // v12, which means existing NULL rows could include intentional
+                // unlinks. Preserving user intent (Codex P1 on #9171) > catching
+                // a few legacy rows; users can manually link later if they want.
+                let has_any_project_id: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM sessions WHERE project_id IS NOT NULL",
+                )
+                .fetch_one(&mut **tx)
+                .await?;
+                if has_any_project_id == 0 {
+                    let pairs = crate::sources::project_working_dir_pairs()
+                        .context("read project directory for v13 backfill")?;
+                    let updated = backfill_session_project_ids(tx, &pairs).await?;
+                    if updated > 0 {
+                        info!("Backfilled project_id on {updated} legacy session(s)");
+                    }
+                } else {
+                    debug!(
+                        "Skipping v13 project_id backfill: \
+                         sessions already have project_id assignments, \
+                         NULL rows may represent explicit unlinks"
+                    );
                 }
             }
             _ => {
@@ -1770,9 +1789,11 @@ impl SessionStorage {
     }
 }
 
-/// Skips rows that already have a `project_id` so explicit UI unlinks aren't
-/// silently re-tagged and reruns are no-ops. Trailing slashes on either side
-/// are ignored.
+/// Skips rows that already have a `project_id` so reruns are no-ops. Callers
+/// (currently only the v13 migration) must additionally gate on whether NULL
+/// rows could be intentional unlinks — this helper writes blindly to every
+/// matching `project_id IS NULL` row. Trailing slashes on either side are
+/// ignored.
 async fn backfill_session_project_ids(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     pairs: &[(String, String)],
