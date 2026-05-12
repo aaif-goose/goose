@@ -166,7 +166,6 @@ pub struct Agent {
     pub extension_manager: Arc<ExtensionManager>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
     pub(super) frontend_extensions: Mutex<HashMap<String, ExtensionConfig>>,
-    pub(super) frontend_state_sync: Mutex<()>,
     pub(super) frontend_tools: Mutex<HashMap<String, FrontendTool>>,
     pub(super) frontend_instructions: Mutex<Option<String>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
@@ -278,7 +277,6 @@ impl Agent {
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
             frontend_extensions: Mutex::new(HashMap::new()),
-            frontend_state_sync: Mutex::new(()),
             frontend_tools: Mutex::new(HashMap::new()),
             frontend_instructions: Mutex::new(None),
             prompt_manager: Mutex::new(PromptManager::new()),
@@ -665,66 +663,59 @@ impl Agent {
             .collect()
     }
 
-    async fn sync_frontend_state(&self) {
-        let frontend_configs = self.frontend_extension_configs().await;
-        let multiple_frontend_extensions = frontend_configs.len() > 1;
+    async fn rebuild_frontend_derived_state(&self, extensions: &HashMap<String, ExtensionConfig>) {
+        let multiple = extensions.len() > 1;
+        let mut tools = HashMap::new();
+        let mut instructions = Vec::new();
 
-        let mut frontend_tools = HashMap::new();
-        let mut frontend_instructions = Vec::new();
-
-        for config in frontend_configs {
+        for config in extensions.values() {
             if let ExtensionConfig::Frontend {
                 name,
-                tools,
-                instructions,
+                tools: ext_tools,
+                instructions: ext_instructions,
                 ..
             } = config
             {
-                for tool in tools {
+                for tool in ext_tools {
                     let tool_name = tool.name.to_string();
-                    frontend_tools.insert(
+                    tools.insert(
                         tool_name.clone(),
                         FrontendTool {
                             name: tool_name,
-                            tool,
+                            tool: tool.clone(),
                         },
                     );
                 }
 
-                let instructions =
-                    instructions.unwrap_or_else(|| DEFAULT_FRONTEND_INSTRUCTIONS.to_string());
-                frontend_instructions.push(if multiple_frontend_extensions {
-                    format!("{name}: {instructions}")
+                let text = ext_instructions
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_FRONTEND_INSTRUCTIONS.to_string());
+                instructions.push(if multiple {
+                    format!("{name}: {text}")
                 } else {
-                    instructions
+                    text
                 });
             }
         }
 
-        *self.frontend_tools.lock().await = frontend_tools;
-        *self.frontend_instructions.lock().await = if frontend_instructions.is_empty() {
+        *self.frontend_tools.lock().await = tools;
+        *self.frontend_instructions.lock().await = if instructions.is_empty() {
             None
         } else {
-            Some(frontend_instructions.join("\n\n"))
+            Some(instructions.join("\n\n"))
         };
     }
 
     async fn insert_frontend_extension(&self, extension: ExtensionConfig) {
-        let _sync_guard = self.frontend_state_sync.lock().await;
-        self.frontend_extensions
-            .lock()
-            .await
-            .insert(extension.key(), extension);
-        self.sync_frontend_state().await;
+        let mut extensions = self.frontend_extensions.lock().await;
+        extensions.insert(extension.key(), extension);
+        self.rebuild_frontend_derived_state(&extensions).await;
     }
 
     async fn remove_frontend_extension(&self, name: &str) {
-        let _sync_guard = self.frontend_state_sync.lock().await;
-        self.frontend_extensions
-            .lock()
-            .await
-            .remove(&name_to_key(name));
-        self.sync_frontend_state().await;
+        let mut extensions = self.frontend_extensions.lock().await;
+        extensions.remove(&name_to_key(name));
+        self.rebuild_frontend_derived_state(&extensions).await;
     }
 
     async fn extension_configs_for_persistence(&self) -> Vec<ExtensionConfig> {
