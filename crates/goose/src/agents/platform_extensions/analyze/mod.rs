@@ -438,4 +438,41 @@ fn helper() { validate(0); }
         assert!(format::check_size(&big, false).is_err());
         assert!(format::check_size(&big, true).is_ok());
     }
+
+    #[tokio::test]
+    async fn elixir_function_parent_is_module() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("demo.ex");
+        fs::write(
+            &file,
+            r#"defmodule MyMod do
+  def foo do
+    bar()
+  end
+
+  def bar, do: 1
+end
+"#,
+        )
+        .unwrap();
+
+        let client = AnalyzeClient::new(ctx()).unwrap();
+        let result = client.analyze(
+            AnalyzeParams {
+                path: file.to_str().unwrap().into(),
+                focus: None,
+                max_depth: 3,
+                follow_depth: 2,
+                force: false,
+            },
+            file.clone(),
+        );
+        let out = text(&result);
+
+        // Functions must be parented to their enclosing module, not themselves.
+        assert!(out.contains("MyMod.foo"), "missing MyMod.foo in {out}");
+        assert!(out.contains("MyMod.bar"), "missing MyMod.bar in {out}");
+        assert!(!out.contains("foo.foo"), "self-parented foo.foo in {out}");
+        assert!(!out.contains("bar.bar"), "self-parented bar.bar in {out}");
+    }
 }

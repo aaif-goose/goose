@@ -378,11 +378,13 @@ fn find_enclosing_class(node: tree_sitter::Node, source: &str, info: &LangInfo) 
     let mut cur = node;
     while let Some(parent) = cur.parent() {
         if info.class_kinds.contains(&parent.kind()) {
-            // Elixir: defmodule/defprotocol/defimpl are also `call` nodes. Reuse
-            // the same matcher used by find_enclosing_fn; defmodule's first
-            // argument is an `alias` node containing the module name.
+            // Elixir: defmodule/defprotocol/defimpl are also `call` nodes, but so
+            // are `def`/`defp`/... — both share the `call` kind. Only treat
+            // module-defining calls as the enclosing class; walk past function
+            // defs (otherwise a captured `foo` inside `def foo` would self-parent
+            // to `foo.foo` instead of its surrounding module).
             if info.name == "elixir" && parent.kind() == "call" {
-                if let Some(name) = elixir_def_name(&parent, source) {
+                if let Some(name) = elixir_module_def_name(&parent, source) {
                     return Some(name);
                 }
                 cur = parent;
@@ -804,6 +806,19 @@ fn elixir_def_name(call: &tree_sitter::Node, source: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Like `elixir_def_name`, but only for module-defining macros
+/// (`defmodule`/`defprotocol`/`defimpl`). Function defs (`def`/`defp`/...)
+/// return `None` so `find_enclosing_class` walks past them to the surrounding
+/// module instead of attributing a function to itself.
+fn elixir_module_def_name(call: &tree_sitter::Node, source: &str) -> Option<String> {
+    let target = find_child_by_kind(call, "identifier")?;
+    let target_text = node_text(source, &target);
+    if !matches!(target_text, "defmodule" | "defprotocol" | "defimpl") {
+        return None;
+    }
+    elixir_def_name(call, source)
 }
 
 fn find_child_text(node: &tree_sitter::Node, kinds: &[&str], source: &str) -> Option<String> {
