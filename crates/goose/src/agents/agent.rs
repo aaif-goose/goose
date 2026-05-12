@@ -311,8 +311,8 @@ impl Agent {
         session: &Session,
     ) -> ToolCallResult {
         // Default-install case: no PostToolUse/PostToolUseFailure hooks are
-        // registered, so skip cloning session id, working_dir, tool name, and
-        // (potentially multi-KB) tool args for every tool call.
+        // registered, so skip cloning session id, working_dir, and (potentially
+        // multi-KB) tool args for every tool call.
         let has_success_hook = self
             .hook_manager
             .has_hooks(crate::hooks::HookEvent::PostToolUse);
