@@ -167,7 +167,7 @@ fn next_buffer_event(buffer: &str, inside_think: bool) -> Option<BufferEvent> {
             if inside_think || matches!(kind, ThinkTag::Open | ThinkTag::SelfClosing) {
                 return Some(BufferEvent::Tag { pos, end, kind });
             }
-        } else if !suffix.contains('>') && is_possible_partial_think_tag(suffix) {
+        } else if !contains_unquoted_gt(suffix) && is_possible_partial_think_tag(suffix) {
             return Some(BufferEvent::Partial(pos));
         }
 
@@ -227,18 +227,31 @@ fn parse_think_tag(buffer: &str, start: usize) -> Option<(ThinkTag, usize)> {
         return None;
     }
 
+    let mut quote: Option<u8> = None;
     let mut last_non_ws: Option<u8> = None;
     while let Some(&byte) = bytes.get(idx) {
-        if byte == b'>' {
-            let kind = if last_non_ws == Some(b'/') {
-                ThinkTag::SelfClosing
-            } else {
-                ThinkTag::Open
-            };
-            return Some((kind, idx + 1));
-        }
-        if !byte.is_ascii_whitespace() {
-            last_non_ws = Some(byte);
+        match quote {
+            Some(quote_byte) => {
+                if byte == quote_byte {
+                    quote = None;
+                }
+            }
+            None if matches!(byte, b'"' | b'\'') => {
+                quote = Some(byte);
+                last_non_ws = Some(byte);
+            }
+            None if byte == b'>' => {
+                let kind = if last_non_ws == Some(b'/') {
+                    ThinkTag::SelfClosing
+                } else {
+                    ThinkTag::Open
+                };
+                return Some((kind, idx + 1));
+            }
+            None if !byte.is_ascii_whitespace() => {
+                last_non_ws = Some(byte);
+            }
+            None => {}
         }
         idx += 1;
     }
@@ -247,18 +260,38 @@ fn parse_think_tag(buffer: &str, start: usize) -> Option<(ThinkTag, usize)> {
 }
 
 fn is_possible_partial_think_tag(suffix: &str) -> bool {
+    if contains_unquoted_gt(suffix) {
+        return false;
+    }
+
     // Allow a trailing `/` so a chunk boundary that lands between `<think` and
     // `>` in a self-closing `<think/>` (or `<thinking/>`) is still recognised
     // as a partial tag and buffered until the `>` arrives in the next chunk.
     static OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)^<(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s[^>]*|/)?$")
-            .unwrap()
+        Regex::new(r"(?is)^<(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s.*|/)?$").unwrap()
     });
     static CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?is)^</(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s*)?$").unwrap()
     });
 
     OPEN_RE.is_match(suffix) || CLOSE_RE.is_match(suffix)
+}
+
+fn contains_unquoted_gt(text: &str) -> bool {
+    let mut quote: Option<u8> = None;
+    for &byte in text.as_bytes() {
+        match quote {
+            Some(quote_byte) => {
+                if byte == quote_byte {
+                    quote = None;
+                }
+            }
+            None if matches!(byte, b'"' | b'\'') => quote = Some(byte),
+            None if byte == b'>' => return true,
+            None => {}
+        }
+    }
+    false
 }
 
 fn strip_xml_tags(text: &str) -> String {
@@ -1161,6 +1194,28 @@ mod tests {
     }
 
     #[test]
+    fn test_split_think_blocks_handles_quoted_gt_in_self_closing_attributes() {
+        for input in [
+            r#"<think data="a>b"/>Visible"#,
+            "<think data='a>b'/>Visible",
+        ] {
+            assert_eq!(
+                split_think_blocks(input),
+                ("Visible".to_string(), String::new()),
+                "mismatch for {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_split_think_blocks_handles_quoted_gt_in_open_attributes() {
+        assert_eq!(
+            split_think_blocks(r#"<think data="a>b">Hidden</think>Visible"#),
+            ("Visible".to_string(), "Hidden".to_string())
+        );
+    }
+
+    #[test]
     fn test_split_think_blocks_handles_thinking_variant() {
         assert_eq!(
             split_think_blocks("<thinking>a</thinking>b"),
@@ -1323,6 +1378,24 @@ mod tests {
                 out.thinking
             );
         }
+    }
+
+    #[test]
+    fn test_think_filter_streaming_across_quoted_attribute_boundary() {
+        let mut filter = ThinkFilter::new();
+        let mut out = filter.push(r#"<think data="a>b"#);
+        assert!(out.content.is_empty());
+        assert!(out.thinking.is_empty());
+
+        let second = filter.push(r#""/>Visible"#);
+        let final_out = filter.finish();
+        out.content.push_str(&second.content);
+        out.content.push_str(&final_out.content);
+        out.thinking.push_str(&second.thinking);
+        out.thinking.push_str(&final_out.thinking);
+
+        assert_eq!(out.content, "Visible");
+        assert!(out.thinking.is_empty());
     }
 
     #[test]
