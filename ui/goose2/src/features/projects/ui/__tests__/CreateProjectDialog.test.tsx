@@ -28,6 +28,7 @@ vi.mock("@/shared/api/system", () => ({
 vi.mock("../../api/projects", () => ({
   createProject: vi.fn().mockResolvedValue({
     id: "new-1",
+    path: "/tmp/projects/new-1.md",
     name: "Test",
     description: "",
     prompt: "",
@@ -39,11 +40,10 @@ vi.mock("../../api/projects", () => ({
     useWorktrees: false,
     order: 0,
     archivedAt: null,
-    createdAt: "2024-01-01",
-    updatedAt: "2024-01-01",
   }),
   updateProject: vi.fn().mockResolvedValue({
     id: "proj-1",
+    path: "/tmp/projects/proj-1.md",
     name: "Updated",
     description: "",
     prompt: "",
@@ -55,8 +55,6 @@ vi.mock("../../api/projects", () => ({
     useWorktrees: false,
     order: 0,
     archivedAt: null,
-    createdAt: "2024-01-01",
-    updatedAt: "2024-01-01",
   }),
   scanProjectIcons: vi.fn().mockResolvedValue([]),
   readProjectIcon: vi.fn().mockResolvedValue({
@@ -93,6 +91,7 @@ vi.mock("../PromptEditor", () => ({
 function makeEditingProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
   return {
     id: "proj-1",
+    path: "/tmp/projects/proj-1.md",
     name: "My Project",
     description: "A test project",
     prompt: "Do the thing",
@@ -104,9 +103,6 @@ function makeEditingProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
     useWorktrees: false,
     order: 0,
     archivedAt: null,
-    createdAt: "2024-01-01",
-    updatedAt: "2024-01-01",
-    artifactsDir: "/home/user/code/.goose",
     ...overrides,
   };
 }
@@ -155,13 +151,13 @@ describe("CreateProjectDialog", () => {
         />,
       );
 
-      expect(screen.getByText("Edit Project")).toBeInTheDocument();
+      expect(screen.getByText("Edit project")).toBeInTheDocument();
     });
 
     it("shows New Project title without editingProject", () => {
       render(<CreateProjectDialog {...defaultProps} isOpen={true} />);
 
-      expect(screen.getByText("New Project")).toBeInTheDocument();
+      expect(screen.getByText("New project")).toBeInTheDocument();
     });
 
     it("populates the prompt editor with working dirs and prompt text", () => {

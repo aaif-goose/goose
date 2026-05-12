@@ -2,7 +2,6 @@ import {
   formatSkillInstructionPrompt,
   type SkillCommandMatch,
 } from "@/features/skills/lib/skillChatPrompt";
-import type { MessageChip } from "@/shared/types/messages";
 import type { ChatSendOptions, ChatSkillDraft } from "../types";
 
 interface SkillSendPayload {
@@ -48,21 +47,5 @@ export function buildSkillSendPayload(
       displayText,
       assistantPrompt,
     },
-  };
-}
-
-export function buildSkillRetryOptions(
-  text: string,
-  chips?: MessageChip[],
-): ChatSendOptions | undefined {
-  const skillChips = chips?.filter((chip) => chip.type === "skill") ?? [];
-  if (skillChips.length === 0) return undefined;
-
-  return {
-    displayText: text,
-    assistantPrompt: formatSkillInstructionPrompt(
-      skillChips.map((chip) => ({ name: chip.label })),
-    ),
-    chips: skillChips,
   };
 }

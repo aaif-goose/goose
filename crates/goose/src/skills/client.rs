@@ -36,7 +36,7 @@ impl SkillsClient {
                     s.source_type == SourceType::Skill || s.source_type == SourceType::BuiltinSkill
                 })
                 .collect();
-            skills.sort_by(|a, b| (&a.name, &a.directory).cmp(&(&b.name, &b.directory)));
+            skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
 
             if !skills.is_empty() {
                 instructions.push_str(
@@ -131,10 +131,10 @@ impl McpClientTrait for SkillsClient {
             );
 
             if !skill.supporting_files.is_empty() {
-                let skill_dir = Path::new(&skill.directory);
+                let skill_dir = Path::new(&skill.path);
                 output.push_str(&format!(
                     "\n## Supporting Files\n\nSkill directory: {}\n\n",
-                    skill.directory
+                    skill.path
                 ));
                 for file in &skill.supporting_files {
                     if let Ok(relative) = Path::new(file).strip_prefix(skill_dir) {
@@ -157,7 +157,7 @@ impl McpClientTrait for SkillsClient {
                 s.name == parent_skill_name
                     && matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill)
             }) {
-                let skill_dir = PathBuf::from(&skill.directory);
+                let skill_dir = PathBuf::from(&skill.path);
                 let canonical_skill_dir = skill_dir
                     .canonicalize()
                     .unwrap_or_else(|_| skill_dir.clone());

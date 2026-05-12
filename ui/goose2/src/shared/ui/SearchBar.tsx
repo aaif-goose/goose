@@ -4,6 +4,14 @@ import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
 
 const searchBarSizes = {
+  compact: {
+    wrapper:
+      "rounded-md border border-border-soft px-2 py-1 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground",
+    icon: "left-2.5 size-3",
+    input:
+      "h-auto border-none bg-transparent px-0 pl-5 pr-0 text-[11px] font-normal shadow-none focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0",
+    inputVariant: "ghost" as const,
+  },
   small: {
     wrapper:
       "rounded-md border border-border-soft px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground",
@@ -36,6 +44,8 @@ interface SearchBarProps {
   size?: keyof typeof searchBarSizes;
   /** Optional ref for the underlying input */
   inputRef?: React.Ref<HTMLInputElement>;
+  /** Accessible label for the search input */
+  "aria-label"?: string;
 }
 
 export function SearchBar({
@@ -46,6 +56,7 @@ export function SearchBar({
   className,
   size = "default",
   inputRef,
+  "aria-label": ariaLabel,
 }: SearchBarProps) {
   const styles = searchBarSizes[size];
 
@@ -62,11 +73,14 @@ export function SearchBar({
         variant={styles.inputVariant}
         type="search"
         autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
         spellCheck={false}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         className={cn("w-full placeholder:text-placeholder", styles.input)}
       />
     </div>

@@ -1,14 +1,14 @@
 {
   "dialog": {
     "addDirectory": "Add directory",
-    "addDirectoryDialogTitle": "Select Directory",
+    "addDirectoryDialogTitle": "Select directory",
     "color": "Color",
     "colorAria": "Color {{color}}",
-    "createProject": "Create Project",
+    "createProject": "Create project",
     "creating": "Creating...",
     "customIcon": "Custom icon",
     "customIconDialogTitle": "Select Icon",
-    "editTitle": "Edit Project",
+    "editTitle": "Edit project",
     "icon": "Icon",
     "iconAria": "Icon {{icon}}",
     "iconCandidateTitle": "{{sourceDir}}: {{label}}",
@@ -37,26 +37,26 @@
     "instructionsPlaceholder": "System prompt or context for agents working in this project...",
     "name": "Name",
     "namePlaceholder": "My Project",
-    "newTitle": "New Project",
+    "newTitle": "New project",
     "noneUseDefault": "None (use default)",
     "provider": "Provider",
     "saving": "Saving...",
     "scanningIcons": "Scanning...",
     "uploadIcon": "Upload",
-    "useWorktrees": "Use git worktrees for branch isolation"
+    "useWorktrees": "Use Git worktrees for branch isolation"
   },
   "view": {
-    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
-    "deleteTitle": "Delete project?",
+    "deleteDescription": "This project and all its data will be permanently removed.",
+    "deleteTitle": "Delete \"{{name}}\" permanently?",
     "description": "Organize your work into focused project contexts",
     "emptyDescription": "Create a project to organize your work.",
     "emptyTitle": "No projects yet",
-    "newProject": "New Project",
+    "newProject": "New project",
     "noMatchesDescription": "Try a different search term.",
     "noMatchesTitle": "No matching projects",
     "optionsAria": "Options for {{name}}",
     "searchPlaceholder": "Search projects by name or description...",
-    "startChat": "Start Chat",
+    "startChat": "Start chat",
     "title": "Projects"
   }
 }

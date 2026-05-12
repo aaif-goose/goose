@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   IconFile,
@@ -61,49 +61,15 @@ function getArtifactIcon(artifact: SessionArtifact) {
 
 export function ArtifactsWidget() {
   const { t } = useTranslation("chat");
-  const { getAllSessionArtifacts, openResolvedPath, pathExists } =
+  const { getAllSessionArtifacts, openResolvedPath } =
     useArtifactPolicyContext();
-  const [existingPaths, setExistingPaths] = useState<Set<string> | null>(null);
 
   const artifacts = useMemo(
     () => getAllSessionArtifacts(),
     [getAllSessionArtifacts],
   );
 
-  useEffect(() => {
-    if (artifacts.length === 0) {
-      setExistingPaths((current) => {
-        if (current?.size === 0) return current;
-        return new Set<string>();
-      });
-      return;
-    }
-
-    let cancelled = false;
-    const paths = artifacts.map((a) => a.resolvedPath);
-
-    Promise.all(paths.map((p) => pathExists(p).catch(() => false))).then(
-      (results) => {
-        if (cancelled) return;
-        const existing = new Set<string>();
-        for (let i = 0; i < paths.length; i++) {
-          if (results[i]) existing.add(paths[i]);
-        }
-        setExistingPaths(existing);
-      },
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [artifacts, pathExists]);
-
-  const verifiedArtifacts =
-    existingPaths === null
-      ? artifacts
-      : artifacts.filter((a) => existingPaths.has(a.resolvedPath));
-
-  if (verifiedArtifacts.length === 0) {
+  if (artifacts.length === 0) {
     return null;
   }
 
@@ -113,12 +79,12 @@ export function ArtifactsWidget() {
       icon={<IconFileDescription className="size-3.5" />}
       action={
         <span className="text-xxs text-foreground-subtle">
-          {verifiedArtifacts.length}
+          {artifacts.length}
         </span>
       }
       flush
     >
-      {verifiedArtifacts.map((artifact) => {
+      {artifacts.map((artifact) => {
         const Icon = getArtifactIcon(artifact);
         return (
           <FileContextMenu

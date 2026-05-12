@@ -1,12 +1,13 @@
 import type { SourceEntry } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
+import {
+  basename,
+  deriveProjectRoot,
+  getSkillFileLocation,
+} from "../lib/skillsPath";
 
 const SKILL_SOURCE_TYPE = "skill" as const;
-const PROJECT_SKILLS_MARKERS = [
-  "/.agents/skills/",
-  "/.goose/skills/",
-  "/.claude/skills/",
-];
+const BUILTIN_SKILL_SOURCE_TYPE = "builtinSkill" as const;
 
 export interface SkillProjectLink {
   id: string;
@@ -14,7 +15,7 @@ export interface SkillProjectLink {
   workingDir: string;
 }
 
-export type SkillSourceKind = "global" | "project";
+export type SkillSourceKind = "global" | "project" | "builtin";
 
 export interface SkillInfo {
   id: string;
@@ -23,55 +24,68 @@ export interface SkillInfo {
   instructions: string;
   path: string;
   fileLocation: string;
-  directoryPath: string;
   sourceKind: SkillSourceKind;
   sourceLabel: string;
   projectLinks: SkillProjectLink[];
-  editable: boolean;
 }
 
-type SkillSourceEntry = SourceEntry & { type: typeof SKILL_SOURCE_TYPE };
+export type EditingSkill = Pick<
+  SkillInfo,
+  "name" | "description" | "instructions" | "path" | "fileLocation"
+>;
 
-function isSkillSource(source: SourceEntry): source is SkillSourceEntry {
+type FilesystemSkillSourceEntry = SourceEntry & {
+  type: typeof SKILL_SOURCE_TYPE;
+};
+type BuiltinSkillSourceEntry = SourceEntry & {
+  type: typeof BUILTIN_SKILL_SOURCE_TYPE;
+};
+type SkillSourceEntry = FilesystemSkillSourceEntry | BuiltinSkillSourceEntry;
+
+function isFilesystemSkillSource(
+  source: SourceEntry,
+): source is FilesystemSkillSourceEntry {
   return source.type === SKILL_SOURCE_TYPE;
 }
 
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/");
-}
-
-function basename(path: string): string {
-  const trimmed = normalizePath(path).replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function getSkillFileLocation(directory: string): string {
-  const separator = directory.includes("\\") ? "\\" : "/";
-  return directory.endsWith(separator)
-    ? `${directory}SKILL.md`
-    : `${directory}${separator}SKILL.md`;
-}
-
-function deriveProjectRoot(directory: string): string | null {
-  const normalizedDirectory = normalizePath(directory);
-
-  for (const marker of PROJECT_SKILLS_MARKERS) {
-    const idx = normalizedDirectory.lastIndexOf(marker);
-    if (idx >= 0) {
-      return directory.slice(0, idx);
-    }
-  }
-
-  return null;
+function isSkillSource(source: SourceEntry): source is SkillSourceEntry {
+  return (
+    source.type === SKILL_SOURCE_TYPE ||
+    source.type === BUILTIN_SKILL_SOURCE_TYPE
+  );
 }
 
 function toSkillInfo(source: SkillSourceEntry): SkillInfo {
+  if (source.type === BUILTIN_SKILL_SOURCE_TYPE) {
+    return {
+      id: `builtin:${source.name}`,
+      name: source.name,
+      description: source.description,
+      instructions: source.content,
+      path: source.path,
+      fileLocation: source.path,
+      sourceKind: "builtin",
+      sourceLabel: "Built in",
+      projectLinks: [],
+    };
+  }
+
   const sourceKind: SkillSourceKind = source.global ? "global" : "project";
+  const props = (source.properties ?? {}) as Record<string, unknown>;
+
+  // Backend tags project-scoped skills with these when listing via
+  // include_project_sources. Prefer them over path-derived values so badges
+  // show the user-visible project title.
+  const taggedProjectDir =
+    typeof props.projectDir === "string" ? props.projectDir : null;
+  const taggedProjectName =
+    typeof props.projectName === "string" ? props.projectName : null;
+
   const projectRoot = source.global
     ? null
-    : deriveProjectRoot(source.directory);
-  const projectName = projectRoot ? basename(projectRoot) : "";
+    : (taggedProjectDir ?? deriveProjectRoot(source.path));
+  const projectName =
+    taggedProjectName ?? (projectRoot ? basename(projectRoot) : "");
 
   const projectLinks: SkillProjectLink[] = projectRoot
     ? [
@@ -84,18 +98,16 @@ function toSkillInfo(source: SkillSourceEntry): SkillInfo {
     : [];
 
   return {
-    id: `${sourceKind}:${source.directory}`,
+    id: `${sourceKind}:${source.path}`,
     name: source.name,
     description: source.description,
     instructions: source.content,
-    path: source.directory,
-    fileLocation: getSkillFileLocation(source.directory),
-    directoryPath: source.directory,
+    path: source.path,
+    fileLocation: getSkillFileLocation(source.path),
     sourceKind,
     sourceLabel:
       sourceKind === "global" ? "Personal" : projectName || "Project",
     projectLinks,
-    editable: true,
   };
 }
 
@@ -103,10 +115,17 @@ function uniqueProjectDirs(projectDirs: string[]) {
   return [...new Set(projectDirs.map((dir) => dir.trim()).filter(Boolean))];
 }
 
+export interface CreateSkillOptions {
+  /** Project source ID (kebab slug). When set, the skill is created under
+   *  that project's first working directory. */
+  projectId?: string;
+}
+
 export async function createSkill(
   name: string,
   description: string,
   instructions: string,
+  options: CreateSkillOptions = {},
 ): Promise<void> {
   const client = await getClient();
   await client.goose.GooseSourcesCreate({
@@ -114,7 +133,8 @@ export async function createSkill(
     name,
     description,
     content: instructions,
-    global: true,
+    global: !options.projectId,
+    ...(options.projectId ? { projectId: options.projectId } : {}),
   });
 }
 
@@ -122,20 +142,29 @@ export async function listSkills(
   projectDirs: string[] = [],
 ): Promise<SkillInfo[]> {
   const client = await getClient();
-  const fetchSources = (projectDir?: string) =>
+  const fetchSources = (
+    type: typeof SKILL_SOURCE_TYPE | typeof BUILTIN_SKILL_SOURCE_TYPE,
+    projectDir?: string,
+  ) =>
     client.goose.GooseSourcesList({
-      type: SKILL_SOURCE_TYPE,
+      type,
       ...(projectDir ? { projectDir } : {}),
     });
 
-  const globalResponse = await fetchSources();
+  const [globalResponse, builtinResponse] = await Promise.all([
+    fetchSources(SKILL_SOURCE_TYPE),
+    fetchSources(BUILTIN_SKILL_SOURCE_TYPE).catch(() => null),
+  ]);
   const projectResponses = await Promise.allSettled(
     uniqueProjectDirs(projectDirs).map((projectDir) =>
-      fetchSources(projectDir),
+      fetchSources(SKILL_SOURCE_TYPE, projectDir),
     ),
   );
   const responses = [
     { response: globalResponse, projectResponse: false },
+    ...(builtinResponse
+      ? [{ response: builtinResponse, projectResponse: false }]
+      : []),
     ...projectResponses.flatMap((result) =>
       result.status === "fulfilled"
         ? [{ response: result.value, projectResponse: true }]
@@ -151,7 +180,10 @@ export async function listSkills(
         continue;
       }
 
-      const key = `${source.global ? "global" : "project"}:${source.directory}`;
+      const key =
+        source.type === BUILTIN_SKILL_SOURCE_TYPE
+          ? `builtin:${source.name}`
+          : `${source.global ? "global" : "project"}:${source.path}`;
       if (seen.has(key)) {
         continue;
       }
@@ -187,7 +219,7 @@ export async function updateSkill(
     content: instructions,
   });
 
-  if (!isSkillSource(response.source)) {
+  if (!isFilesystemSkillSource(response.source)) {
     throw new Error(`Unexpected source type returned: ${response.source.type}`);
   }
 
@@ -220,5 +252,5 @@ export async function importSkills(
     global: true,
   });
 
-  return response.sources.filter(isSkillSource).map(toSkillInfo);
+  return response.sources.filter(isFilesystemSkillSource).map(toSkillInfo);
 }

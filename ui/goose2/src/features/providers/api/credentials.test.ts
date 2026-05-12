@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  authenticateProviderConfig,
   checkAllProviderStatus,
   deleteProviderConfig,
   getProviderConfig,
@@ -8,6 +9,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   configRead: vi.fn(),
+  configAuthenticate: vi.fn(),
   configSave: vi.fn(),
   configDelete: vi.fn(),
   configStatus: vi.fn(),
@@ -24,6 +26,7 @@ describe("provider credential API", () => {
     mocks.getClient.mockResolvedValue({
       goose: {
         GooseProvidersConfigRead: mocks.configRead,
+        GooseProvidersConfigAuthenticate: mocks.configAuthenticate,
         GooseProvidersConfigSave: mocks.configSave,
         GooseProvidersConfigDelete: mocks.configDelete,
         GooseProvidersConfigStatus: mocks.configStatus,
@@ -105,6 +108,28 @@ describe("provider credential API", () => {
 
     expect(mocks.configDelete).toHaveBeenCalledWith({
       providerId: "anthropic",
+    });
+  });
+
+  it("authenticates provider config through ACP", async () => {
+    const response = {
+      status: {
+        providerId: "chatgpt_codex",
+        isConfigured: true,
+      },
+      refresh: {
+        started: ["chatgpt_codex"],
+        skipped: [],
+      },
+    };
+    mocks.configAuthenticate.mockResolvedValue(response);
+
+    await expect(authenticateProviderConfig("chatgpt_codex")).resolves.toEqual(
+      response,
+    );
+
+    expect(mocks.configAuthenticate).toHaveBeenCalledWith({
+      providerId: "chatgpt_codex",
     });
   });
 

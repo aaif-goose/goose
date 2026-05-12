@@ -2,6 +2,48 @@ import type {
   GooseReadResourceResult,
   GooseToolMetadata,
 } from "@aaif/goose-sdk";
+import type {
+  Annotations,
+  ImageContent as AcpImageContent,
+  Role,
+  TextContent as AcpTextContent,
+  ToolCallLocation as AcpToolCallLocation,
+  ToolCallStatus as AcpToolCallStatus,
+  ToolKind,
+} from "@agentclientprotocol/sdk";
+
+// ── Wire types (re-exported from ACP SDK) ─────────────────────────────
+//
+// These are the exact types that come off the ACP WebSocket. We re-export
+// them so feature code imports everything from this module. Aliases exist
+// only for readability — no reshaping, no field-dropping.
+
+export type { Annotations, Role, ToolKind };
+export type ToolCallLocation = AcpToolCallLocation;
+
+/** ACP TextContent with discriminator. */
+export type TextContent = AcpTextContent & { type: "text" };
+
+/** ACP ImageContent with discriminator. */
+export type ImageContent = AcpImageContent & { type: "image" };
+
+/**
+ * Tool call execution status.
+ *
+ * The four ACP wire values plus `"stopped"`, a renderer-only extension
+ * for user-cancelled tool calls.
+ */
+export type ToolCallStatus = AcpToolCallStatus | "stopped";
+
+// ── Message role ──────────────────────────────────────────────────────
+
+/**
+ * ACP defines `Role = "user" | "assistant"`. The renderer adds `"system"`
+ * for locally-synthesized notification messages.
+ */
+export type MessageRole = Role | "system";
+
+// ── Composer attachment drafts ────────────────────────────────────────
 
 export type ChatAttachmentKind = "image" | "file" | "directory";
 
@@ -35,38 +77,11 @@ export type ChatAttachmentDraft =
   | ChatFileAttachmentDraft
   | ChatDirectoryAttachmentDraft;
 
-// Message roles
-export type MessageRole = "user" | "assistant" | "system";
-
-/** ACP audience restriction — which roles may see a content block. */
-export type Audience = ("user" | "assistant")[];
-
-/** ACP content-block annotations (mirrors the SDK's Annotations shape). */
-export interface ContentAnnotations {
-  audience?: Audience;
-}
-
-// Content block types
-export interface TextContent {
-  type: "text";
-  text: string;
-  annotations?: ContentAnnotations;
-}
-
-export interface ImageContent {
-  type: "image";
-  source:
-    | { type: "base64"; mediaType: string; data: string }
-    | { type: "url"; url: string };
-  annotations?: ContentAnnotations;
-}
-
-export type ToolCallStatus =
-  | "pending"
-  | "executing"
-  | "completed"
-  | "error"
-  | "stopped";
+// ── Renderer-only content block types ─────────────────────────────────
+//
+// These types have no ACP equivalent. They are synthesized by the
+// notification handler from _meta payloads, tool call reductions, or
+// local UI events.
 
 export type MessageCompletionStatus =
   | "inProgress"
@@ -74,15 +89,24 @@ export type MessageCompletionStatus =
   | "error"
   | "stopped";
 
+export interface ToolChainSummary {
+  summary: string;
+  count: number;
+}
+
 export interface ToolRequestContent {
   type: "toolRequest";
   id: string;
   name: string;
+  toolName?: string;
+  extensionName?: string;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
-  /** Epoch ms when the tool call started executing (set on event receipt). */
+  toolKind?: ToolKind;
+  locations?: AcpToolCallLocation[];
   startedAt?: number;
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
+  chainSummary?: ToolChainSummary;
 }
 
 export interface ToolResponseContent {
@@ -90,13 +114,13 @@ export interface ToolResponseContent {
   id: string;
   name: string;
   result: string;
+  structuredContent?: unknown;
   isError: boolean;
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
 }
 
 export interface McpAppPayload {
   sessionId: string;
-  gooseSessionId: string | null;
   toolCallId: string;
   toolCallTitle: string;
   source: "toolCallUpdateMeta";
@@ -121,18 +145,18 @@ export interface McpAppContent {
 export interface ThinkingContent {
   type: "thinking";
   text: string;
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
 }
 
 export interface RedactedThinkingContent {
   type: "redactedThinking";
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
 }
 
 export interface ReasoningContent {
   type: "reasoning";
   text: string;
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
 }
 
 export interface ActionRequiredContent {
@@ -143,15 +167,17 @@ export interface ActionRequiredContent {
   toolName?: string;
   arguments?: Record<string, unknown>;
   schema?: Record<string, unknown>;
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
 }
 
 export interface SystemNotificationContent {
   type: "systemNotification";
   notificationType: "compaction" | "info" | "warning" | "error";
   text: string;
-  annotations?: ContentAnnotations;
+  annotations?: Annotations;
 }
+
+// ── Message ───────────────────────────────────────────────────────────
 
 export type MessageContent =
   | TextContent
@@ -183,11 +209,9 @@ export interface MessageMetadata {
   agentVisible?: boolean;
   attachments?: MessageAttachment[];
   chips?: MessageChip[];
-  /** Persona that generated this assistant message (set on send). */
   personaId?: string;
   personaName?: string;
   providerId?: string;
-  /** Which persona this user message is addressed to. */
   targetPersonaId?: string;
   targetPersonaName?: string;
   completionStatus?: MessageCompletionStatus;
@@ -201,7 +225,8 @@ export interface Message {
   metadata?: MessageMetadata;
 }
 
-// Type guards for content blocks
+// ── Type guards ───────────────────────────────────────────────────────
+
 export function isTextContent(c: MessageContent): c is TextContent {
   return c.type === "text";
 }
@@ -231,7 +256,8 @@ export function isSystemNotification(
   return c.type === "systemNotification";
 }
 
-// Helpers
+// ── Helpers ───────────────────────────────────────────────────────────
+
 export function getTextContent(message: Message): string {
   return message.content
     .filter(isTextContent)

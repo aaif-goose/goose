@@ -40,26 +40,18 @@ export async function saveDictationModelSelection(
 }
 
 export async function saveDictationProviderSecret(
-  _provider: DictationProvider,
+  provider: DictationProvider,
   value: string,
-  configKey?: string,
 ): Promise<void> {
-  if (!configKey) {
-    throw new Error("No config key for this provider");
-  }
   const client = await getClient();
-  await client.goose.GooseSecretUpsert({ key: configKey, value });
+  await client.goose.GooseDictationSecretSave({ provider, value });
 }
 
 export async function deleteDictationProviderSecret(
-  _provider: DictationProvider,
-  configKey?: string,
+  provider: DictationProvider,
 ): Promise<void> {
-  if (!configKey) {
-    throw new Error("Cannot delete secrets for this provider");
-  }
   const client = await getClient();
-  await client.goose.GooseSecretRemove({ key: configKey });
+  await client.goose.GooseDictationSecretDelete({ provider });
 }
 
 export async function listDictationLocalModels(): Promise<
@@ -67,7 +59,7 @@ export async function listDictationLocalModels(): Promise<
 > {
   const client = await getClient();
   const response = await client.goose.GooseDictationModelsList({});
-  return response.models as unknown as WhisperModelStatus[];
+  return response.models;
 }
 
 export async function downloadDictationLocalModel(
@@ -84,7 +76,7 @@ export async function getDictationLocalModelDownloadProgress(
   const response = await client.goose.GooseDictationModelsDownloadProgress({
     modelId,
   });
-  return (response.progress ?? null) as DictationDownloadProgress | null;
+  return response.progress ?? null;
 }
 
 export async function cancelDictationLocalModelDownload(

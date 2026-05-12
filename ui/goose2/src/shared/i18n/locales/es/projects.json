@@ -46,8 +46,8 @@
     "useWorktrees": "Usar git worktrees para aislar ramas"
   },
   "view": {
-    "deleteDescription": "¿Seguro que quieres eliminar \"{{name}}\"? Esto no se puede deshacer.",
-    "deleteTitle": "¿Eliminar proyecto?",
+    "deleteDescription": "Este proyecto y todos sus datos se eliminarán de forma permanente.",
+    "deleteTitle": "¿Eliminar \"{{name}}\" de forma permanente?",
     "description": "Organiza tu trabajo en contextos de proyecto enfocados",
     "emptyDescription": "Crea un proyecto para organizar tu trabajo.",
     "emptyTitle": "Aún no hay proyectos",

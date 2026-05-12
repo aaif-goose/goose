@@ -103,10 +103,24 @@ export function getNativeConnectDescription(
   }
 }
 
+function hasSingleApiKeyField(fields?: ProviderField[]): boolean {
+  if (fields?.length !== 1) {
+    return false;
+  }
+
+  const [field] = fields;
+  return field.secret && field.required && /(?:^|_)API_KEY$/.test(field.key);
+}
+
 export function getFieldSetupDescription(
   setupMethod: ProviderSetupMethod,
   t: (key: string) => string,
+  fields?: ProviderField[],
 ): string | null {
+  if (setupMethod === "config_fields" && hasSingleApiKeyField(fields)) {
+    return t("providers.models.setup.fieldDescription.singleApiKey");
+  }
+
   switch (setupMethod) {
     case "single_api_key":
       return t("providers.models.setup.fieldDescription.singleApiKey");

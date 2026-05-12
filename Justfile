@@ -394,6 +394,7 @@ release-notes old:
 
 ### s = file separator based on OS
 s := if os() == "windows" { "\\" } else { "/" }
+linux_vulkan_features := if os() == "linux" { "--features vulkan" } else { "" }
 
 ### testing/debugging
 os:
@@ -486,6 +487,6 @@ record-mcp-tests: build-test-tools
   git add crates/goose/tests/mcp_replays/
 
 bundle-goose2:
-  cargo build --release --package goose-cli --bin goose
+  cargo build --release --package goose-cli --bin goose {{linux_vulkan_features}}
   cp target/release/goose target/release/goose-$(rustc --print host-tuple)
   @just goose2::bundle
