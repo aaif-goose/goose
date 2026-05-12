@@ -385,6 +385,18 @@ mod tests {
     use super::*;
     use tempfile::NamedTempFile;
 
+    /// Full set of env keys that `ModelConfig::new` reads through
+    /// `config.get_param(...)`. Tests that exercise `ModelConfig::new_or_fail`
+    /// or `new_or_fail_with_config` should lock these alongside the hermetic
+    /// config so neither side of the read can leak a developer's local value.
+    const ENV_LOCK_KEYS: [(&str, Option<&str>); 5] = [
+        ("GOOSE_MAX_TOKENS", None),
+        ("GOOSE_TEMPERATURE", None),
+        ("GOOSE_CONTEXT_LIMIT", None),
+        ("GOOSE_TOOLSHIM", None),
+        ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None),
+    ];
+
     /// Hermetic Config pointed at empty temp files. Use this instead of
     /// `Config::global()` so a stray `GOOSE_MAX_TOKENS: …` in the developer's
     /// `~/.config/goose/config.yaml` doesn't bleed into the test.
@@ -392,6 +404,13 @@ mod tests {
         let cfg = NamedTempFile::new().unwrap();
         let secrets = NamedTempFile::new().unwrap();
         crate::config::Config::new_with_file_secrets(cfg.path(), secrets.path()).unwrap()
+    }
+
+    /// `ModelConfig::new_or_fail` against a hermetic config — the test-only
+    /// constructor that bypasses `Config::global()`. Pair with
+    /// `env_lock::lock_env(ENV_LOCK_KEYS)` to fully isolate from local state.
+    fn hermetic_model(model_name: &str) -> ModelConfig {
+        ModelConfig::new_or_fail_with_config(model_name, &hermetic_config())
     }
 
     #[test]
@@ -503,8 +522,7 @@ mod tests {
                 ("GOOSE_MAX_TOKENS", None::<&str>),
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
-            let config = ModelConfig::new_or_fail_with_config("gpt-4o", &hermetic_config())
-                .with_canonical_limits("openai");
+            let config = hermetic_model("gpt-4o").with_canonical_limits("openai");
 
             assert_eq!(config.context_limit, Some(128_000));
             assert_eq!(config.max_tokens, Some(16_384));
@@ -517,7 +535,7 @@ mod tests {
                 ("GOOSE_MAX_TOKENS", None::<&str>),
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
-            let mut config = ModelConfig::new_or_fail_with_config("gpt-4o", &hermetic_config());
+            let mut config = hermetic_model("gpt-4o");
             config.context_limit = Some(64_000);
             let config = config.with_canonical_limits("openai");
 
@@ -530,7 +548,7 @@ mod tests {
                 ("GOOSE_MAX_TOKENS", None::<&str>),
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
-            let mut config = ModelConfig::new_or_fail_with_config("gpt-4o", &hermetic_config());
+            let mut config = hermetic_model("gpt-4o");
             config.max_tokens = Some(1_000);
             let config = config.with_canonical_limits("openai");
 
@@ -543,9 +561,7 @@ mod tests {
                 ("GOOSE_MAX_TOKENS", None::<&str>),
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
-            let config =
-                ModelConfig::new_or_fail_with_config("moonshotai/kimi-k2.5", &hermetic_config())
-                    .with_canonical_limits("nvidia");
+            let config = hermetic_model("moonshotai/kimi-k2.5").with_canonical_limits("nvidia");
 
             assert_eq!(config.context_limit, Some(262_144));
             assert_eq!(config.max_tokens, None);
@@ -558,9 +574,7 @@ mod tests {
                 ("GOOSE_MAX_TOKENS", None::<&str>),
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
-            let config =
-                ModelConfig::new_or_fail_with_config("totally-unknown-model", &hermetic_config())
-                    .with_canonical_limits("openai");
+            let config = hermetic_model("totally-unknown-model").with_canonical_limits("openai");
 
             assert_eq!(config.context_limit, None);
             assert_eq!(config.max_tokens, None);
@@ -576,19 +590,15 @@ mod tests {
 
             // "databricks-gpt-5.4-high" should resolve via "databricks-gpt-5.4"
             let config =
-                ModelConfig::new_or_fail_with_config("databricks-gpt-5.4-high", &hermetic_config())
-                    .with_canonical_limits("databricks");
+                hermetic_model("databricks-gpt-5.4-high").with_canonical_limits("databricks");
             assert_eq!(config.context_limit, Some(1_050_000));
 
             // "gpt-5.4-xhigh" should resolve via "gpt-5.4"
-            let config = ModelConfig::new_or_fail_with_config("gpt-5.4-xhigh", &hermetic_config())
-                .with_canonical_limits("openai");
+            let config = hermetic_model("gpt-5.4-xhigh").with_canonical_limits("openai");
             assert_eq!(config.context_limit, Some(1_050_000));
 
             // "gpt-5.4-nano-low" should resolve via "gpt-5.4-nano"
-            let config =
-                ModelConfig::new_or_fail_with_config("gpt-5.4-nano-low", &hermetic_config())
-                    .with_canonical_limits("openai");
+            let config = hermetic_model("gpt-5.4-nano-low").with_canonical_limits("openai");
             assert_eq!(config.context_limit, Some(400_000));
         }
     }
@@ -596,52 +606,42 @@ mod tests {
     mod is_openai_reasoning_model {
         use super::*;
 
-        const ENV_LOCK_KEYS: [(&str, Option<&str>); 5] = [
-            ("GOOSE_MAX_TOKENS", None),
-            ("GOOSE_TEMPERATURE", None),
-            ("GOOSE_CONTEXT_LIMIT", None),
-            ("GOOSE_TOOLSHIM", None),
-            ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None),
-        ];
-
         #[test]
         fn bare_reasoning_models() {
             let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(ModelConfig::new_or_fail("o1").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("o1-preview").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("o3").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("o3-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("o4-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("gpt-5").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("gpt-5-3-codex").is_openai_reasoning_model());
+            assert!(hermetic_model("o1").is_openai_reasoning_model());
+            assert!(hermetic_model("o1-preview").is_openai_reasoning_model());
+            assert!(hermetic_model("o3").is_openai_reasoning_model());
+            assert!(hermetic_model("o3-mini").is_openai_reasoning_model());
+            assert!(hermetic_model("o4-mini").is_openai_reasoning_model());
+            assert!(hermetic_model("gpt-5").is_openai_reasoning_model());
+            assert!(hermetic_model("gpt-5-3-codex").is_openai_reasoning_model());
         }
 
         #[test]
         fn goose_prefixed_reasoning_models() {
             let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(ModelConfig::new_or_fail("goose-o3-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("goose-o4-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("goose-gpt-5").is_openai_reasoning_model());
+            assert!(hermetic_model("goose-o3-mini").is_openai_reasoning_model());
+            assert!(hermetic_model("goose-o4-mini").is_openai_reasoning_model());
+            assert!(hermetic_model("goose-gpt-5").is_openai_reasoning_model());
         }
 
         #[test]
         fn databricks_prefixed_reasoning_models() {
             let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(ModelConfig::new_or_fail("databricks-o3-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("databricks-o4-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new_or_fail("databricks-gpt-5").is_openai_reasoning_model());
+            assert!(hermetic_model("databricks-o3-mini").is_openai_reasoning_model());
+            assert!(hermetic_model("databricks-o4-mini").is_openai_reasoning_model());
+            assert!(hermetic_model("databricks-gpt-5").is_openai_reasoning_model());
         }
 
         #[test]
         fn non_reasoning_models() {
             let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(!ModelConfig::new_or_fail("claude-sonnet-4").is_openai_reasoning_model());
-            assert!(!ModelConfig::new_or_fail("gpt-4o").is_openai_reasoning_model());
-            assert!(
-                !ModelConfig::new_or_fail("databricks-claude-sonnet-4").is_openai_reasoning_model()
-            );
-            assert!(!ModelConfig::new_or_fail("goose-claude-sonnet-4").is_openai_reasoning_model());
-            assert!(!ModelConfig::new_or_fail("llama-3-70b").is_openai_reasoning_model());
+            assert!(!hermetic_model("claude-sonnet-4").is_openai_reasoning_model());
+            assert!(!hermetic_model("gpt-4o").is_openai_reasoning_model());
+            assert!(!hermetic_model("databricks-claude-sonnet-4").is_openai_reasoning_model());
+            assert!(!hermetic_model("goose-claude-sonnet-4").is_openai_reasoning_model());
+            assert!(!hermetic_model("llama-3-70b").is_openai_reasoning_model());
         }
     }
 }
