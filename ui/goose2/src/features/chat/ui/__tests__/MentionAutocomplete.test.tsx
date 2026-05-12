@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MentionAutocomplete,
   type FileMentionItem,
+  type SkillMentionItem,
   fuzzyMatch,
 } from "../MentionAutocomplete";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
@@ -48,9 +49,19 @@ const FILES: FileMentionItem[] = [
   },
 ];
 
+const SKILLS: SkillMentionItem[] = [
+  {
+    id: "global:/skills/code-review",
+    name: "code-review",
+    description: "Reviews code before it ships",
+    sourceLabel: "Personal",
+  },
+];
+
 function renderAutocomplete(props: {
   selectedIndex?: number;
   filteredPersonas?: Persona[];
+  filteredSkills?: SkillMentionItem[];
   filteredFiles?: FileMentionItem[];
 }) {
   return render(
@@ -60,9 +71,11 @@ function renderAutocomplete(props: {
       </PopoverAnchor>
       <MentionAutocomplete
         filteredPersonas={props.filteredPersonas ?? PERSONAS}
+        filteredSkills={props.filteredSkills ?? []}
         filteredFiles={props.filteredFiles ?? FILES}
         isOpen
         onSelectPersona={vi.fn()}
+        onSelectSkill={vi.fn()}
         onSelectFile={vi.fn()}
         selectedIndex={props.selectedIndex}
       />
@@ -77,6 +90,15 @@ describe("MentionAutocomplete", () => {
     expect(screen.getByText("file0.ts")).toBeInTheDocument();
   });
 
+  it("renders skill items", () => {
+    renderAutocomplete({ filteredSkills: SKILLS, filteredFiles: [] });
+    expect(screen.getByText("Skills")).toBeInTheDocument();
+    expect(screen.getByText("code-review")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reviews code before it ships"),
+    ).toBeInTheDocument();
+  });
+
   it("calls scrollIntoView on the selected item", () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
@@ -88,9 +110,11 @@ describe("MentionAutocomplete", () => {
         </PopoverAnchor>
         <MentionAutocomplete
           filteredPersonas={PERSONAS}
+          filteredSkills={[]}
           filteredFiles={FILES}
           isOpen
           onSelectPersona={vi.fn()}
+          onSelectSkill={vi.fn()}
           onSelectFile={vi.fn()}
           selectedIndex={0}
         />
@@ -106,9 +130,11 @@ describe("MentionAutocomplete", () => {
         </PopoverAnchor>
         <MentionAutocomplete
           filteredPersonas={PERSONAS}
+          filteredSkills={[]}
           filteredFiles={FILES}
           isOpen
           onSelectPersona={vi.fn()}
+          onSelectSkill={vi.fn()}
           onSelectFile={vi.fn()}
           selectedIndex={10}
         />
@@ -140,9 +166,11 @@ describe("MentionAutocomplete", () => {
         </PopoverAnchor>
         <MentionAutocomplete
           filteredPersonas={PERSONAS}
+          filteredSkills={[]}
           filteredFiles={FILES}
           isOpen={false}
           onSelectPersona={vi.fn()}
+          onSelectSkill={vi.fn()}
           onSelectFile={vi.fn()}
         />
       </Popover>,

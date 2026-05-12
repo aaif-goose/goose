@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Message } from "@/shared/types/messages";
 import { findExistingDraft } from "./newChat";
 import type { ChatSession } from "../stores/chatSessionStore";
 
@@ -8,7 +9,7 @@ function makeSession(
 ): ChatSession {
   return {
     id,
-    title: "New Chat",
+    title: "New chat",
     createdAt: "2026-04-01T00:00:00.000Z",
     updatedAt: "2026-04-01T00:00:00.000Z",
     messageCount: 0,
@@ -30,7 +31,7 @@ describe("findExistingDraft", () => {
         draftsBySession: { "alpha-draft": "alpha draft" },
         messagesBySession: {},
         request: {
-          title: "New Chat",
+          title: "New chat",
           projectId: "alpha",
         },
       }),
@@ -111,7 +112,12 @@ describe("findExistingDraft", () => {
         draftsBySession: {},
         messagesBySession: {
           "alpha-session": [
-            { id: "msg-1", role: "user", content: "hello" } as any,
+            {
+              id: "msg-1",
+              role: "user",
+              created: 1,
+              content: [{ type: "text", text: "hello" }],
+            } satisfies Message,
           ],
         },
         request: {

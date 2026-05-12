@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listSkills } from "@/features/skills/api/skills";
+import {
+  expandSkillSlashCommand,
+  resolveSkillSlashCommand,
+} from "@/features/skills/lib/skillChatPrompt";
 import { listFilesForMentions } from "@/shared/api/system";
 import type { Persona } from "@/shared/types/agents";
 import {
   useMentionDetection,
   type FileMentionItem,
   type MentionItem,
+  type SkillMentionItem,
 } from "../ui/MentionAutocomplete";
 import { useArtifactPolicyContext } from "./ArtifactPolicyContext";
 
@@ -15,6 +21,7 @@ interface MentionHandlersOptions {
   setText: (value: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onPersonaChange?: ((id: string | null) => void) | undefined;
+  onSkillMentionSelect?: (skill: SkillMentionItem) => void;
 }
 
 function basename(path: string): string {
@@ -55,7 +62,7 @@ function sameStringArray(a: string[], b: string[]): boolean {
 }
 
 /**
- * Combines persona + file mention detection, filtering, and selection handlers.
+ * Combines persona + skill + file mention detection, filtering, and selection handlers.
  * Keeps ChatInput under the file-size limit by centralising mention logic.
  */
 export function useMentionHandlers({
@@ -65,6 +72,7 @@ export function useMentionHandlers({
   setText,
   textareaRef,
   onPersonaChange,
+  onSkillMentionSelect,
 }: MentionHandlersOptions) {
   const { getAllSessionArtifacts } = useArtifactPolicyContext();
   const normalizedProjectRoots = useMemo(
@@ -76,6 +84,35 @@ export function useMentionHandlers({
     [normalizedProjectRoots],
   );
   const [projectFilePaths, setProjectFilePaths] = useState<string[]>([]);
+  const [skillMentionItems, setSkillMentionItems] = useState<
+    SkillMentionItem[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void listSkills(normalizedProjectRoots)
+      .then((skills) => {
+        if (cancelled) return;
+        setSkillMentionItems(
+          skills.map((skill) => ({
+            id: skill.id,
+            name: skill.name,
+            description: skill.description,
+            sourceLabel: skill.sourceLabel,
+          })),
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Failed to load skills for mentions:", error);
+        setSkillMentionItems([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedProjectRoots]);
 
   useEffect(() => {
     // Clear stale results immediately so users never see files from the
@@ -140,12 +177,13 @@ export function useMentionHandlers({
     mentionStartIndex,
     mentionSelectedIndex,
     filteredPersonas,
+    filteredSkills,
     filteredFiles,
     detectMention,
     closeMention,
     navigateMention,
     confirmMention,
-  } = useMentionDetection(personas, fileMentionItems);
+  } = useMentionDetection(personas, skillMentionItems, fileMentionItems);
 
   // ---- post-selection cursor placement ------------------------------------
   // After a mention is confirmed we update `text` via setState. A useEffect
@@ -202,30 +240,63 @@ export function useMentionHandlers({
     [text, mentionStartIndex, mentionQuery, closeMention, setText],
   );
 
+  const handleSkillMentionSelect = useCallback(
+    (skill: SkillMentionItem) => {
+      const before = text.slice(0, mentionStartIndex);
+      const after = text.slice(mentionStartIndex + 1 + mentionQuery.length);
+      const newText = `${before}${after}`.trimStart();
+      pendingCursorRef.current = Math.min(before.length, newText.length);
+      setText(newText);
+      closeMention();
+      onSkillMentionSelect?.(skill);
+    },
+    [
+      text,
+      mentionStartIndex,
+      mentionQuery,
+      closeMention,
+      onSkillMentionSelect,
+      setText,
+    ],
+  );
+
   const handleMentionConfirm = useCallback(
     (item: MentionItem) => {
       if (item.type === "persona") {
         handlePersonaMentionSelect(item.persona);
+      } else if (item.type === "skill") {
+        handleSkillMentionSelect(item.skill);
       } else {
         handleFileMentionSelect(item.file);
       }
     },
-    [handlePersonaMentionSelect, handleFileMentionSelect],
+    [
+      handlePersonaMentionSelect,
+      handleSkillMentionSelect,
+      handleFileMentionSelect,
+    ],
   );
 
   return {
     fileMentionItems,
+    skillMentionItems,
     mentionOpen,
     mentionQuery,
     mentionStartIndex,
     mentionSelectedIndex,
     filteredPersonas,
+    filteredSkills,
     filteredFiles,
+    expandSkillSlashCommand: (message: string) =>
+      expandSkillSlashCommand(message, skillMentionItems),
+    resolveSkillSlashCommand: (message: string) =>
+      resolveSkillSlashCommand(message, skillMentionItems),
     detectMention,
     closeMention,
     navigateMention,
     confirmMention,
     handlePersonaMentionSelect,
+    handleSkillMentionSelect,
     handleFileMentionSelect,
     handleMentionConfirm,
   };

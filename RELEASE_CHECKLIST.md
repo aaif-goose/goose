@@ -17,7 +17,7 @@ Make a copy of this document for each version and check off as steps are verifie
 
 ### Provider Testing
 
-- [ ] Run `./scripts/test_providers.sh` locally from the release branch and verify all providers/models work
+- [ ] Run `cd ui/desktop && pnpm run test:integration:providers` locally from the release branch and verify all providers/models work
 - [ ] Launch goose, click reset providers, choose databricks and a model
 
 ### Starting Conversations

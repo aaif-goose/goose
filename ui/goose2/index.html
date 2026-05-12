@@ -4,6 +4,80 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (() => {
+        const getDefaultAccent = (theme) =>
+          theme === "dark" ? "#ffffff" : "#1a1a1a";
+
+        const normalizeHexColor = (color) => {
+          const value = color?.trim();
+          if (!value || value === "default") return null;
+
+          const hex = value.startsWith("#") ? value.slice(1) : value;
+          if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+            return `#${hex
+              .split("")
+              .map((char) => char + char)
+              .join("")
+              .toLowerCase()}`;
+          }
+          if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+            return `#${hex.toLowerCase()}`;
+          }
+
+          return null;
+        };
+
+        const getRelativeLuminance = (hexColor) => {
+          const hex = hexColor.slice(1);
+          const channels = [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)]
+            .map((channel) => {
+              const value = Number.parseInt(channel, 16) / 255;
+              return value <= 0.04045
+                ? value / 12.92
+                : ((value + 0.055) / 1.055) ** 2.4;
+            });
+
+          return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+        };
+
+        const getContrastColor = (hexColor) => {
+          const luminance = getRelativeLuminance(hexColor);
+          const blackContrast = (luminance + 0.05) / 0.05;
+          const whiteContrast = 1.05 / (luminance + 0.05);
+          return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
+        };
+
+        try {
+          const root = document.documentElement;
+          const storedTheme = localStorage.getItem("goose-theme") || "system";
+          const resolvedTheme =
+            storedTheme === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : storedTheme;
+          const accent =
+            normalizeHexColor(localStorage.getItem("goose-accent-color")) ||
+            getDefaultAccent(resolvedTheme);
+          const foreground = getContrastColor(accent);
+          const density = localStorage.getItem("goose-density") || "comfortable";
+
+          root.classList.add(resolvedTheme === "dark" ? "dark" : "light");
+          root.style.colorScheme = resolvedTheme === "dark" ? "dark" : "light";
+          root.style.setProperty("--brand", accent);
+          root.style.setProperty("--brand-foreground", foreground);
+          root.style.setProperty("--color-brand", accent);
+          root.style.setProperty("--color-brand-foreground", foreground);
+          root.style.accentColor = accent;
+          if (density === "compact" || density === "spacious") {
+            root.dataset.density = density;
+          }
+        } catch {
+          // ThemeProvider applies the canonical theme state after React mounts.
+        }
+      })();
+    </script>
     <title>Goose</title>
   </head>
   <body>

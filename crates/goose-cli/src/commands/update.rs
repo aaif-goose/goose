@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
-use sigstore_verify::trust_root::TrustedRoot;
+use sigstore_verify::trust_root::{TrustedRoot, SIGSTORE_PRODUCTION_TRUSTED_ROOT};
 use sigstore_verify::types::{Bundle, Sha256Hash};
 use sigstore_verify::VerificationPolicy;
 use std::env;
@@ -26,7 +26,11 @@ fn asset_name() -> &'static str {
     {
         "goose-aarch64-unknown-linux-gnu.tar.bz2"
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[cfg(all(target_os = "windows", target_arch = "x86_64", feature = "cuda"))]
+    {
+        "goose-x86_64-pc-windows-msvc-cuda.zip"
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64", not(feature = "cuda")))]
     {
         "goose-x86_64-pc-windows-msvc.zip"
     }
@@ -165,7 +169,8 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
         }
     };
 
-    let trusted_root = TrustedRoot::production().context("Failed to load Sigstore trusted root")?;
+    let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
+        .context("Failed to load Sigstore trusted root")?;
     let policy = VerificationPolicy::with_issuer(GITHUB_ACTIONS_ISSUER);
     let artifact_digest =
         Sha256Hash::from_hex(&digest).context("Failed to parse artifact digest")?;
