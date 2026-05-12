@@ -4,18 +4,26 @@
 //! Google, etc.). Parses both `{"error":{"message":"..."}}` and
 //! `{"message":"..."}` error shapes.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use chrono::DateTime;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Response, StatusCode};
 use serde_json::Value;
 
 use super::errors::ProviderError;
 
+/// Hard cap on retry delays we'll honor from remote responses. A malformed
+/// 429 with `retry_after_seconds: 1e30` (or a far-future HTTP-date) should
+/// degrade to "no retry hint" rather than freeze the agent or panic when
+/// converting to `Duration`. One hour is well past any legitimate
+/// rate-limit window.
+const MAX_RETRY_AFTER_SECS: f64 = 3600.0;
+
 /// Extract a retry delay from a 429 response. Prefers the body's
 /// `error.metadata.retry_after_seconds` (OpenRouter shape, more precise than
 /// the integer header) and falls back to the RFC 7231 `Retry-After` header
-/// in its delay-seconds form.
+/// in either its delay-seconds form or its HTTP-date form.
 fn extract_retry_after(headers: &HeaderMap, payload: Option<&Value>) -> Option<Duration> {
     if let Some(secs) = payload
         .and_then(|p| p.get("error"))
@@ -23,16 +31,39 @@ fn extract_retry_after(headers: &HeaderMap, payload: Option<&Value>) -> Option<D
         .and_then(|m| m.get("retry_after_seconds"))
         .and_then(|v| v.as_f64())
     {
-        if secs.is_finite() && secs >= 0.0 {
-            return Some(Duration::from_secs_f64(secs));
+        if let Some(d) = duration_from_finite_secs(secs) {
+            return Some(d);
         }
     }
 
     headers
         .get(RETRY_AFTER)
         .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .map(Duration::from_secs)
+        .and_then(|s| parse_retry_after_header(s.trim()))
+}
+
+/// Convert a finite, non-negative, in-range seconds value to a `Duration`.
+/// Returns `None` for NaN, negative, infinite, or absurdly large inputs —
+/// `Duration::from_secs_f64` panics on the latter.
+fn duration_from_finite_secs(secs: f64) -> Option<Duration> {
+    if !secs.is_finite() || secs < 0.0 {
+        return None;
+    }
+    let clamped = secs.min(MAX_RETRY_AFTER_SECS);
+    Some(Duration::from_secs_f64(clamped))
+}
+
+/// Parse `Retry-After` per RFC 7231 §7.1.3: either a non-negative integer
+/// number of seconds, or an HTTP-date (interpreted as the absolute time at
+/// which the request may be retried).
+fn parse_retry_after_header(value: &str) -> Option<Duration> {
+    if let Ok(secs) = value.parse::<u64>() {
+        return duration_from_finite_secs(secs as f64);
+    }
+    let target = DateTime::parse_from_rfc2822(value).ok()?;
+    let target = SystemTime::from(target);
+    let delay = target.duration_since(SystemTime::now()).ok()?;
+    duration_from_finite_secs(delay.as_secs_f64())
 }
 
 fn check_context_length_exceeded(text: &str) -> bool {
@@ -199,11 +230,39 @@ mod tests {
     }
 
     #[test]
-    fn retry_after_ignores_non_numeric_header() {
-        // HTTP-date form is technically valid per RFC 7231 but rare in API
-        // responses; we don't parse it and fall back to None.
+    fn retry_after_past_http_date_returns_none() {
+        // RFC 7231 allows an HTTP-date in `Retry-After`; a past date means
+        // "you may retry now" — duration_since returns Err and we degrade to None.
         let headers = headers_with_retry_after("Fri, 31 Dec 1999 23:59:59 GMT");
         let delay = extract_retry_after(&headers, None);
         assert!(delay.is_none());
+    }
+
+    #[test]
+    fn retry_after_future_http_date_parsed() {
+        // A future HTTP-date should produce a positive duration up to the cap.
+        let target = chrono::Utc::now() + chrono::Duration::seconds(45);
+        let header_value = target.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+        let headers = headers_with_retry_after(&header_value);
+        let delay = extract_retry_after(&headers, None).expect("should parse future HTTP-date");
+        // Allow some slack for the clock advancing between header creation and parse.
+        assert!(
+            delay >= Duration::from_secs(30) && delay <= Duration::from_secs(60),
+            "expected ~45s, got {delay:?}"
+        );
+    }
+
+    #[test]
+    fn retry_after_clamps_absurd_body_seconds() {
+        // `Duration::from_secs_f64(1e30)` panics; the clamp keeps the agent alive.
+        let payload = json!({ "error": { "metadata": { "retry_after_seconds": 1e30 } } });
+        let delay = extract_retry_after(&empty_headers(), Some(&payload));
+        assert_eq!(delay, Some(Duration::from_secs_f64(MAX_RETRY_AFTER_SECS)));
+    }
+
+    #[test]
+    fn retry_after_clamps_infinite_body_seconds() {
+        let payload = json!({ "error": { "metadata": { "retry_after_seconds": f64::INFINITY } } });
+        assert!(extract_retry_after(&empty_headers(), Some(&payload)).is_none());
     }
 }
