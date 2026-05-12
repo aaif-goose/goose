@@ -10,7 +10,6 @@ default:
 
 # Install dependencies, build workspace packages, and activate git hooks
 setup:
-    git config core.hooksPath .husky
     cd ../ && pnpm install
     cd ../sdk && pnpm build
     cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
