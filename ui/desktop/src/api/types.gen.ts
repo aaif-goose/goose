@@ -1756,18 +1756,24 @@ export type CallToolErrors = {
      */
     401: unknown;
     /**
+     * Forbidden - tool is not app-visible
+     */
+    403: ErrorResponse;
+    /**
      * Resource not found
      */
-    404: unknown;
+    404: ErrorResponse;
     /**
-     * Agent not initialized
+     * Frontend tool execution requires the frontend host
      */
-    424: unknown;
+    424: ErrorResponse;
     /**
      * Internal server error
      */
-    500: unknown;
+    500: ErrorResponse;
 };
+
+export type CallToolError = CallToolErrors[keyof CallToolErrors];
 
 export type CallToolResponses = {
     /**
