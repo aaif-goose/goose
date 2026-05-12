@@ -1086,20 +1086,6 @@ impl SessionStorage {
                         .execute(&mut **tx)
                         .await?;
                 }
-
-                // Drop thread tables and thread_id column (no longer used).
-                sqlx::query("DROP TABLE IF EXISTS thread_messages")
-                    .execute(&mut **tx)
-                    .await?;
-                sqlx::query("DROP TABLE IF EXISTS threads")
-                    .execute(&mut **tx)
-                    .await?;
-                sqlx::query("DROP INDEX IF EXISTS idx_sessions_thread")
-                    .execute(&mut **tx)
-                    .await?;
-                sqlx::query("ALTER TABLE sessions DROP COLUMN thread_id")
-                    .execute(&mut **tx)
-                    .await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);

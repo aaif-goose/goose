@@ -14,8 +14,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+// Task-local so complete() and stream() can't race on the same provider instance.
+tokio::task_local! {
+    static IS_AGENT_CALL: bool;
+}
+
 use super::base::{
-    Provider, ProviderDef, ProviderMetadata, ProviderUsage, Usage, DEFAULT_PROVIDER_TIMEOUT_SECS,
+    collect_stream, Provider, ProviderDef, ProviderMetadata, ProviderUsage, Usage,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use super::errors::ProviderError;
 use super::formats::openai::{create_request, get_usage, response_to_message};
@@ -24,7 +30,7 @@ use super::retry::ProviderRetry;
 use super::utils::{get_model, ImageFormat, RequestLog};
 
 use crate::config::{Config, ConfigError};
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 
 use crate::model::ModelConfig;
 use crate::providers::base::{ConfigKey, MessageStream};
@@ -244,6 +250,7 @@ impl GithubCopilotProvider {
     async fn post(
         &self,
         session_id: Option<&str>,
+        is_user_initiated: bool,
         payload: &mut Value,
     ) -> Result<Response, ProviderError> {
         let (endpoint, token) = self.get_api_info().await?;
@@ -252,6 +259,8 @@ impl GithubCopilotProvider {
         if Self::payload_contains_image(payload) {
             headers.insert("Copilot-Vision-Request", "true".parse().unwrap());
         }
+        let initiator = if is_user_initiated { "user" } else { "agent" };
+        headers.insert("X-Initiator", initiator.parse().unwrap());
         let api_client = ApiClient::new(endpoint.clone(), auth)?.with_headers(headers)?;
 
         api_client
@@ -407,6 +416,30 @@ impl Provider for GithubCopilotProvider {
         self.model.clone()
     }
 
+    // complete_fast() (compaction, title generation) calls this — always agent-initiated.
+    #[tracing::instrument(
+        skip(self, model_config, session_id, system, messages, tools),
+        fields(session.id = %session_id, gen_ai.request.model = %model_config.model_name)
+    )]
+    async fn complete(
+        &self,
+        model_config: &ModelConfig,
+        session_id: &str,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+    ) -> Result<(Message, ProviderUsage), ProviderError> {
+        IS_AGENT_CALL
+            .scope(true, async {
+                collect_stream(
+                    self.stream(model_config, session_id, system, messages, tools)
+                        .await?,
+                )
+                .await
+            })
+            .await
+    }
+
     async fn stream(
         &self,
         model_config: &ModelConfig,
@@ -415,6 +448,14 @@ impl Provider for GithubCopilotProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let is_agent_call = IS_AGENT_CALL.try_with(|&v| v).unwrap_or(false);
+        let last_is_tool_response = messages.last().is_some_and(|m| {
+            m.content
+                .iter()
+                .any(|c| matches!(c, MessageContent::ToolResponse(_)))
+        });
+        let is_user_initiated = !is_agent_call && !last_is_tool_response;
+
         // Check if this model supports streaming
         let supports_streaming = GITHUB_COPILOT_STREAM_MODELS
             .iter()
@@ -435,7 +476,9 @@ impl Provider for GithubCopilotProvider {
             let response = self
                 .with_retry(|| async {
                     let mut payload_clone = payload.clone();
-                    let resp = self.post(Some(session_id), &mut payload_clone).await?;
+                    let resp = self
+                        .post(Some(session_id), is_user_initiated, &mut payload_clone)
+                        .await?;
                     handle_status(resp).await
                 })
                 .await
@@ -465,7 +508,8 @@ impl Provider for GithubCopilotProvider {
             let response = self
                 .with_retry(|| async {
                     let mut payload_clone = payload.clone();
-                    self.post(session_id_opt, &mut payload_clone).await
+                    self.post(session_id_opt, is_user_initiated, &mut payload_clone)
+                        .await
                 })
                 .await?;
             let response = handle_response_openai_compat(response).await?;
