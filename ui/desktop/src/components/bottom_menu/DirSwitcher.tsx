@@ -71,6 +71,9 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
 
   const refreshMenuData = useCallback(async () => {
     const version = ++refreshVersionRef.current;
+    setRecentDirs([]);
+    setWorktreeDirs([]);
+
     const [recent, worktrees] = await Promise.all([
       window.electron.listRecentDirs().catch(() => []),
       window.electron.listGitWorktreeDirs(workingDir).catch(() => []),
