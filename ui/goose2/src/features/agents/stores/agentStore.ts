@@ -219,5 +219,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   getBuiltinPersonas: () => get().personas.filter((p) => p.isBuiltin),
 
-  getCustomPersonas: () => get().personas.filter((p) => !p.isBuiltin),
+  getCustomPersonas: () =>
+    get().personas.filter((p) => !p.isBuiltin && p.writable !== false),
 }));

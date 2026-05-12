@@ -184,6 +184,8 @@ type ElectronAPI = {
   refreshApp: (app: GooseApp) => Promise<void>;
   closeApp: (appName: string) => Promise<void>;
   addRecentDir: (dir: string) => Promise<boolean>;
+  listRecentDirs: () => Promise<string[]>;
+  listGitWorktreeDirs: (dir: string) => Promise<string[]>;
 };
 
 type AppConfigAPI = {
@@ -338,6 +340,8 @@ const electronAPI: ElectronAPI = {
   refreshApp: (app: GooseApp) => ipcRenderer.invoke('refresh-app', app),
   closeApp: (appName: string) => ipcRenderer.invoke('close-app', appName),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
+  listRecentDirs: () => ipcRenderer.invoke('list-recent-dirs'),
+  listGitWorktreeDirs: (dir: string) => ipcRenderer.invoke('list-git-worktree-dirs', dir),
 };
 
 const appConfigAPI: AppConfigAPI = {

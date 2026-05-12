@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 use uuid::Uuid;
 
-use super::finalize_usage;
+use super::super::finalize_usage;
 use super::inference_engine::{
     context_cap, create_and_prefill_context, create_and_prefill_multimodal,
     estimate_max_context_for_memory, generation_loop, validate_and_compute_context,
@@ -28,7 +28,7 @@ pub(super) fn generate_with_native_tools(
         0
     };
     let memory_max_ctx =
-        estimate_max_context_for_memory(&ctx.loaded.model, ctx.runtime, mmproj_overhead);
+        estimate_max_context_for_memory(&ctx.loaded.model, ctx.backend, mmproj_overhead);
     let cap = context_cap(ctx.settings, ctx.context_limit, n_ctx_train, memory_max_ctx);
     let token_budget = cap.saturating_sub(min_generation_headroom);
 
@@ -97,7 +97,7 @@ pub(super) fn generate_with_native_tools(
     let (mut llama_ctx, prompt_token_count, effective_ctx) = if !ctx.images.is_empty() {
         create_and_prefill_multimodal(
             ctx.loaded,
-            ctx.runtime,
+            ctx.backend,
             &template_result.prompt,
             ctx.images,
             ctx.context_limit,
@@ -111,13 +111,13 @@ pub(super) fn generate_with_native_tools(
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         let (ptc, ectx) = validate_and_compute_context(
             ctx.loaded,
-            ctx.runtime,
+            ctx.backend,
             tokens.len(),
             ctx.context_limit,
             ctx.settings,
         )?;
         let lctx =
-            create_and_prefill_context(ctx.loaded, ctx.runtime, &tokens, ectx, ctx.settings)?;
+            create_and_prefill_context(ctx.loaded, ctx.backend, &tokens, ectx, ctx.settings)?;
         (lctx, ptc, ectx)
     };
 

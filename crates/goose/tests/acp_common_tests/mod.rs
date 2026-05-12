@@ -108,6 +108,9 @@ pub async fn run_list_sessions<C: Connection>() {
         if let Some(ref mut meta) = s.meta {
             assert!(meta.get("createdAt").and_then(|v| v.as_str()).is_some());
             meta.remove("createdAt");
+            // Provider/model metadata varies by test fixture; not relevant here.
+            meta.remove("providerId");
+            meta.remove("modelId");
         }
     }
     let mut expected_meta = serde_json::Map::new();

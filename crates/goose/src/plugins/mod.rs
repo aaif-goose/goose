@@ -1,3 +1,4 @@
+pub mod discovery;
 pub mod formats;
 
 use crate::config::paths::Paths;
@@ -27,6 +28,11 @@ impl std::fmt::Display for PluginFormat {
             PluginFormat::OpenPlugins => write!(f, "open-plugins"),
         }
     }
+}
+
+/// Directory where plugins installed via `install_plugin` live.
+pub fn plugin_install_dir() -> PathBuf {
+    Paths::plugins_dir()
 }
 
 #[derive(Debug, Clone)]
@@ -254,24 +260,29 @@ fn install_from_checkout_at_root(
     options: &PluginInstallOptions,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
-    for try_install in [
-        formats::gemini::try_install_from_manifest_at_root,
-        formats::open_plugins::try_install_from_manifest_at_root,
-    ] {
-        match try_install(
-            source,
-            checkout_dir,
-            install_root,
-            options,
-            last_update_check,
-        ) {
-            Ok(install) => return Ok(install),
-            Err(err) if err.is::<FormatNotSupported>() => continue,
-            Err(err) => return Err(err),
-        }
+    match formats::open_plugins::try_install_from_manifest_at_root(
+        source,
+        checkout_dir,
+        install_root,
+        options,
+        last_update_check,
+    ) {
+        Ok(install) => return Ok(install),
+        Err(err) if err.is::<FormatNotSupported>() => {}
+        Err(err) => return Err(err),
     }
 
-    bail!("No supported plugin format found")
+    match formats::gemini::try_install_from_manifest_at_root(
+        source,
+        checkout_dir,
+        install_root,
+        options,
+        last_update_check,
+    ) {
+        Ok(install) => Ok(install),
+        Err(err) if err.is::<FormatNotSupported>() => bail!("No supported plugin format found"),
+        Err(err) => Err(err),
+    }
 }
 
 fn clone_git_repo(source: &str, destination: &Path) -> Result<()> {
@@ -367,28 +378,9 @@ fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
             copy_dir_all(&source_path, &destination_path)?;
         } else if file_type.is_file() {
             fs::copy(&source_path, &destination_path)?;
-        } else if file_type.is_symlink() {
-            copy_symlink(&source_path, &destination_path)?;
         }
     }
 
-    Ok(())
-}
-
-#[cfg(unix)]
-fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
-    let target = fs::read_link(source)?;
-    if source.is_dir() {
-        std::os::windows::fs::symlink_dir(target, destination)?;
-    } else {
-        std::os::windows::fs::symlink_file(target, destination)?;
-    }
     Ok(())
 }
 

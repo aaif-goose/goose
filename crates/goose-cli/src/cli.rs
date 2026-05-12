@@ -7,6 +7,7 @@ use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
 use goose::recipe::Recipe;
+use goose::source_roots::SourceRoot;
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
@@ -1123,11 +1124,24 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         builtins
     };
 
+    let additional_source_roots = Config::global()
+        .get_param::<String>("ADDITIONAL_AGENT_SOURCE_ROOTS")
+        .ok()
+        .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| {
+            let path = path.canonicalize().unwrap_or(path);
+            SourceRoot::read_only(path)
+        })
+        .collect();
+
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         goose_platform: GoosePlatform::GooseCli,
+        additional_source_roots,
     }));
     let secret_key = std::env::var(GOOSE_SERVER_SECRET_KEY_ENV)
         .ok()

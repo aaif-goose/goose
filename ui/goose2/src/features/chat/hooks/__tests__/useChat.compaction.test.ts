@@ -80,11 +80,7 @@ describe("useChat compaction", () => {
       await result.current.compactConversation();
     });
 
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "/compact",
-      undefined,
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact");
     expect(mockAcpLoadSession).toHaveBeenCalledWith("session-1", undefined);
 
     const messages = useChatStore.getState().messagesBySession["session-1"];
@@ -121,35 +117,6 @@ describe("useChat compaction", () => {
     );
   });
 
-  it("prepares and compacts the override persona session", async () => {
-    let preparedPersonaId: string | undefined;
-    const ensurePrepared = vi.fn(async (personaId?: string) => {
-      preparedPersonaId = personaId;
-      return undefined;
-    });
-
-    const { result } = renderHook(() =>
-      useChat(
-        "session-1",
-        undefined,
-        undefined,
-        { id: "persona-b", name: "Persona B" },
-        { ensurePrepared },
-      ),
-    );
-
-    await act(async () => {
-      await result.current.compactConversation({ id: "persona-a" });
-    });
-
-    expect(ensurePrepared).toHaveBeenCalledWith("persona-a");
-    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact", {
-      personaId: "persona-a",
-    });
-    expect(mockAcpLoadSession).toHaveBeenCalledWith("session-1", undefined);
-    expect(preparedPersonaId).toBe("persona-a");
-  });
-
   it("blocks new sends while compaction is in flight", async () => {
     const compactDeferred = createDeferredPromise();
     mockAcpSendMessage.mockImplementation(
@@ -174,11 +141,7 @@ describe("useChat compaction", () => {
     });
 
     expect(mockAcpSendMessage).toHaveBeenCalledTimes(1);
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "/compact",
-      undefined,
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact");
     expect(
       useChatStore.getState().messagesBySession["session-1"],
     ).toBeUndefined();
@@ -214,11 +177,7 @@ describe("useChat compaction", () => {
     });
 
     expect(mockAcpSendMessage).toHaveBeenCalledTimes(1);
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "/compact",
-      undefined,
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact");
     expect(mockAcpLoadSession).not.toHaveBeenCalled();
     expect(
       useChatStore.getState().getSessionRuntime("session-1").chatState,

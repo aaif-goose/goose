@@ -561,11 +561,11 @@ mod tests {
                 &self,
                 _model_config: &ModelConfig,
                 _session_id: &str,
-                _system_prompt: &str,
+                system_prompt: &str,
                 _messages: &[Message],
-                tools: &[Tool],
+                _tools: &[Tool],
             ) -> Result<MessageStream, ProviderError> {
-                let message = if tools.is_empty() {
+                let message = if system_prompt.contains("summarize a tool call") {
                     // Summarization call — return a unique summary
                     let n = self.summary_count.fetch_add(1, Ordering::SeqCst);
                     Message::assistant().with_text(format!("Summary of tool call #{}", n))
@@ -619,21 +619,25 @@ mod tests {
 
             agent.update_provider(provider, &session.id).await?;
 
-            // Pre-populate: start with a user message, then 13 tool call/response pairs
-            // (need > cutoff + 10 = 12 to trigger batch summarization)
-            let initial_msg = Message::user().with_text("help me read some files");
+            // Pre-populate 13 tool pairs (need > cutoff + batch_size = 12 to trigger).
+            // Timestamps in the past so DB ordering places summaries before current turn.
+            let base_ts = chrono::Utc::now().timestamp() - 100;
+
+            let mut initial_msg = Message::user().with_text("help me read some files");
+            initial_msg.created = base_ts;
             session_manager
                 .add_message(&session.id, &initial_msg)
                 .await?;
 
             for i in 0..13 {
                 let call_id = format!("precall_{}", i);
-                let req_msg = Message::assistant()
+                let mut req_msg = Message::assistant()
                     .with_tool_request(&call_id, Ok(CallToolRequestParams::new("read_file")))
                     .with_generated_id();
+                req_msg.created = base_ts + i as i64 + 1;
                 session_manager.add_message(&session.id, &req_msg).await?;
 
-                let resp_msg = Message::user()
+                let mut resp_msg = Message::user()
                     .with_tool_response(
                         &call_id,
                         Ok(CallToolResult::success(vec![RawContent::text(format!(
@@ -643,6 +647,7 @@ mod tests {
                         .no_annotation()])),
                     )
                     .with_generated_id();
+                resp_msg.created = base_ts + i as i64 + 1;
                 session_manager.add_message(&session.id, &resp_msg).await?;
             }
 
@@ -715,6 +720,28 @@ mod tests {
                 20, // 10 pairs × 2 messages
                 "Expected 20 invisible tool messages (10 summarized pairs), got {}",
                 invisible_tool_msgs.len()
+            );
+
+            // Summaries must appear before the current turn's reply, not after it
+            let agent_visible: Vec<&Message> = messages
+                .iter()
+                .filter(|m| m.metadata.agent_visible)
+                .collect();
+
+            let last_summary_pos = agent_visible
+                .iter()
+                .rposition(|m| m.as_concat_text().starts_with("Summary of tool call #"))
+                .expect("Should have at least one summary");
+            let agent_reply_pos = agent_visible
+                .iter()
+                .position(|m| m.as_concat_text().contains("Done processing."))
+                .expect("Should have the agent reply");
+
+            assert!(
+                last_summary_pos < agent_reply_pos,
+                "Summaries appeared after the current turn's reply: last_summary={}, reply={}",
+                last_summary_pos,
+                agent_reply_pos,
             );
 
             // Clean up the config override
@@ -1089,6 +1116,194 @@ mod tests {
             );
 
             Ok(())
+        }
+    }
+
+    mod frontend_extension_tests {
+        use super::*;
+        use goose::agents::{AgentConfig, ExtensionConfig};
+        use goose::config::permission::PermissionManager;
+        use goose::config::GooseMode;
+        use goose::session::session_manager::SessionType;
+        use goose::session::{
+            EnabledExtensionsState, ExtensionData, ExtensionState, SessionManager,
+        };
+        use rmcp::model::Tool;
+        use rmcp::object;
+        use tempfile::TempDir;
+
+        fn frontend_extension_with_tool(name: &str, tool_name: &str) -> ExtensionConfig {
+            ExtensionConfig::Frontend {
+                name: name.to_string(),
+                description: format!("Frontend test extension {name}"),
+                tools: vec![Tool::new(
+                    tool_name.to_string(),
+                    format!("Run {tool_name} from the frontend"),
+                    object!({
+                        "type": "object",
+                        "properties": {
+                            "message": { "type": "string" }
+                        },
+                        "required": ["message"]
+                    }),
+                )],
+                instructions: Some(format!("Use the {tool_name} tool.")),
+                bundled: None,
+                available_tools: vec![],
+            }
+        }
+
+        fn frontend_extension() -> ExtensionConfig {
+            frontend_extension_with_tool("frontend-e2e", "frontend__echo")
+        }
+
+        #[tokio::test]
+        async fn test_frontend_extensions_are_persisted_listed_and_removed() {
+            let temp_dir = TempDir::new().unwrap();
+            let data_dir = temp_dir.path().to_path_buf();
+            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
+            let permission_manager = Arc::new(PermissionManager::new(data_dir));
+            let agent = Agent::with_config(AgentConfig::new(
+                session_manager.clone(),
+                permission_manager,
+                None,
+                GooseMode::default(),
+                false,
+                GoosePlatform::GooseDesktop,
+            ));
+
+            let session = session_manager
+                .create_session(
+                    std::env::current_dir().unwrap(),
+                    "frontend-extension-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await
+                .unwrap();
+
+            agent
+                .add_extension(frontend_extension(), &session.id)
+                .await
+                .unwrap();
+
+            let listed_tools = agent.list_tools(&session.id, None).await;
+            assert!(listed_tools
+                .iter()
+                .any(|tool| tool.name == "frontend__echo"));
+
+            let filtered_tools = agent
+                .list_tools(&session.id, Some("frontend-e2e".to_string()))
+                .await;
+            assert_eq!(filtered_tools.len(), 1);
+            assert_eq!(filtered_tools[0].name, "frontend__echo");
+
+            let extension_names = agent.list_extensions().await;
+            assert!(extension_names.iter().any(|name| name == "frontend-e2e"));
+
+            let persisted_session = session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap();
+            let persisted_extensions =
+                EnabledExtensionsState::from_extension_data(&persisted_session.extension_data)
+                    .unwrap()
+                    .extensions;
+            assert!(persisted_extensions
+                .iter()
+                .any(|extension| extension.name() == "frontend-e2e"));
+
+            agent
+                .remove_extension("frontend-e2e", &session.id)
+                .await
+                .unwrap();
+
+            let listed_tools = agent.list_tools(&session.id, None).await;
+            assert!(!listed_tools
+                .iter()
+                .any(|tool| tool.name == "frontend__echo"));
+
+            let persisted_session = session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap();
+            let persisted_extensions =
+                EnabledExtensionsState::from_extension_data(&persisted_session.extension_data)
+                    .unwrap()
+                    .extensions;
+            assert!(persisted_extensions
+                .iter()
+                .all(|extension| extension.name() != "frontend-e2e"));
+        }
+
+        #[tokio::test]
+        async fn test_concurrent_frontend_session_load_keeps_all_tools() {
+            let temp_dir = TempDir::new().unwrap();
+            let data_dir = temp_dir.path().to_path_buf();
+            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
+            let permission_manager = Arc::new(PermissionManager::new(data_dir));
+            let agent = Arc::new(Agent::with_config(AgentConfig::new(
+                session_manager.clone(),
+                permission_manager,
+                None,
+                GooseMode::default(),
+                false,
+                GoosePlatform::GooseDesktop,
+            )));
+
+            let session = session_manager
+                .create_session(
+                    std::env::current_dir().unwrap(),
+                    "frontend-extension-load-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await
+                .unwrap();
+
+            let expected_tools = (0..12)
+                .map(|index| format!("frontend__tool_{index}"))
+                .collect::<Vec<_>>();
+            let extensions = expected_tools
+                .iter()
+                .enumerate()
+                .map(|(index, tool_name)| {
+                    frontend_extension_with_tool(&format!("frontend-{index}"), tool_name)
+                })
+                .collect::<Vec<_>>();
+
+            let mut extension_data = ExtensionData::new();
+            EnabledExtensionsState::new(extensions)
+                .to_extension_data(&mut extension_data)
+                .unwrap();
+            session_manager
+                .update(&session.id)
+                .extension_data(extension_data)
+                .apply()
+                .await
+                .unwrap();
+
+            let session = session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap();
+            let load_results = agent.load_extensions_from_session(&session).await;
+            assert!(
+                load_results.iter().all(|result| result.success),
+                "failed to load frontend extensions: {load_results:?}",
+            );
+
+            let listed_tools = agent.list_tools(&session.id, None).await;
+            for tool_name in expected_tools {
+                assert!(
+                    listed_tools.iter().any(|tool| tool.name == tool_name),
+                    "expected listed frontend tool {tool_name}",
+                );
+                assert!(
+                    agent.is_frontend_tool(&tool_name).await,
+                    "expected frontend dispatch state for {tool_name}",
+                );
+            }
         }
     }
 }

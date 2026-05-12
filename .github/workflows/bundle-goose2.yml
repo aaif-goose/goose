@@ -130,7 +130,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-arm64
 
@@ -294,7 +294,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-x86_64
 
@@ -484,7 +484,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-linux-x86_64
 
@@ -629,7 +629,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-windows-x86_64
 

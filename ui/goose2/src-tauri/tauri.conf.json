@@ -47,7 +47,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../distro": "distro"
+      "../distro": "distro",
+      "../builtin-sources": "builtin-sources"
     },
     "externalBin": ["../../../target/release/goose"],
     "linux": {
