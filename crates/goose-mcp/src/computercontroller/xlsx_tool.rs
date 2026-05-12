@@ -8,12 +8,14 @@ use umya_spreadsheet::{Spreadsheet, Worksheet};
 
 // Single-entry cache for the most recently parsed workbook. Sequential
 // xlsx ops in one MCP turn (list → get_columns → get_range) all parse
-// the same file; this skips the re-parse on cache hit. Mtime-keyed so
-// any external write busts the cache. The Arc keeps cache hits to a
-// refcount bump instead of a deep Spreadsheet clone.
+// the same file; this skips the re-parse on cache hit. Keyed on (mtime,
+// len) so external writes bust the cache even on coarse-timestamp
+// filesystems where two writes can share an mtime. The Arc keeps cache
+// hits to a refcount bump instead of a deep Spreadsheet clone.
 struct CachedWorkbook {
     canonical: PathBuf,
     mtime: SystemTime,
+    len: u64,
     spreadsheet: Arc<Spreadsheet>,
 }
 
@@ -71,13 +73,13 @@ impl XlsxTool {
         let canonical = path_ref
             .canonicalize()
             .unwrap_or_else(|_| path_ref.to_path_buf());
-        let mtime = std::fs::metadata(&canonical)
-            .and_then(|m| m.modified())
-            .context("Failed to read xlsx mtime")?;
+        let meta = std::fs::metadata(&canonical).context("Failed to read xlsx metadata")?;
+        let mtime = meta.modified().context("Failed to read xlsx mtime")?;
+        let len = meta.len();
 
         if let Ok(guard) = WORKBOOK_CACHE.lock() {
             if let Some(cached) = guard.as_ref() {
-                if cached.canonical == canonical && cached.mtime == mtime {
+                if cached.canonical == canonical && cached.mtime == mtime && cached.len == len {
                     return Ok(Self {
                         workbook: Arc::clone(&cached.spreadsheet),
                         canonical,
@@ -94,6 +96,7 @@ impl XlsxTool {
             *guard = Some(CachedWorkbook {
                 canonical: canonical.clone(),
                 mtime,
+                len,
                 spreadsheet: Arc::clone(&workbook),
             });
         }
