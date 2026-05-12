@@ -26,7 +26,9 @@ import type {
 const textBlock: TextContent = { type: "text", text: "hello" };
 const imageBlock: ImageContent = {
   type: "image",
-  source: { type: "url", url: "https://img.png" },
+  data: "",
+  mimeType: "image/png",
+  uri: "https://img.png",
 };
 const toolRequestBlock: ToolRequestContent = {
   type: "toolRequest",

@@ -943,6 +943,10 @@ impl ProviderDef for ChatGptCodexProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn inventory_configured() -> bool {
+        TokenCache::new().load().is_some()
+    }
 }
 
 #[async_trait]
@@ -1048,6 +1052,29 @@ mod tests {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn inventory_configured_uses_oauth_token_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root_path.as_str()))]);
+
+        TokenCache::new().clear();
+        assert!(!ChatGptCodexProvider::inventory_configured());
+
+        TokenCache::new()
+            .save(&TokenData {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                id_token: None,
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+                account_id: Some("account".to_string()),
+            })
+            .unwrap();
+
+        assert!(ChatGptCodexProvider::inventory_configured());
     }
 
     #[test_case(

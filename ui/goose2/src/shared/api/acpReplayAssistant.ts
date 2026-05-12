@@ -15,12 +15,16 @@ export function getTrackedReplayAssistantMessageId(
 export function ensureReplayAssistantMessage(
   sessionId: string,
   preferredMessageId?: string | null,
+  created?: number,
 ): Message {
   const trackedMessageId = replayAssistantMessageIds.get(sessionId);
 
   if (preferredMessageId) {
     const preferredMessage = getBufferedMessage(sessionId, preferredMessageId);
     if (preferredMessage?.role === "assistant") {
+      if (created !== undefined) {
+        preferredMessage.created = created;
+      }
       replayAssistantMessageIds.set(sessionId, preferredMessageId);
       return preferredMessage;
     }
@@ -33,6 +37,9 @@ export function ensureReplayAssistantMessage(
         trackedMessage.id = preferredMessageId;
         replayAssistantMessageIds.set(sessionId, preferredMessageId);
       }
+      if (created !== undefined) {
+        trackedMessage.created = created;
+      }
       return trackedMessage;
     }
   }
@@ -42,7 +49,7 @@ export function ensureReplayAssistantMessage(
   const message: Message = {
     id: messageId,
     role: "assistant",
-    created: Date.now(),
+    created: created ?? Date.now(),
     content: [],
     metadata: {
       userVisible: true,

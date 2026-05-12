@@ -32,10 +32,6 @@ function deriveNameFromValue(addType: AddType, value: string): string {
   try { return new URL(value.trim()).hostname; } catch { return value.trim(); }
 }
 
-function keyFromName(name: string): string {
-  return name.replace(/[^A-Za-z0-9_-]/g, "_").toLowerCase();
-}
-
 function buildConfig(addType: AddType, value: string, name: string, description: string): ExtEntry {
   if (addType === "stdio") {
     const parts = value.trim().split(/\s+/);
@@ -125,15 +121,12 @@ export default function ExtensionsManager({
 
   const saveNewExtension = useCallback((description: string) => {
     const config = buildConfig(addType, addValue, addName, description);
-    const key = keyFromName(config.name);
     withSaving(async () => {
-      let extMap: Record<string, unknown> = {};
-      try {
-        const raw = await client.goose.GooseConfigRead({key: "extensions"});
-        if (raw.value && typeof raw.value === "object") extMap = raw.value as Record<string, unknown>;
-      } catch { }
-      extMap[key] = config;
-      await client.goose.GooseConfigUpsert({key: "extensions", value: extMap as any});
+      await client.goose.GooseConfigExtensionsAdd({
+        name: config.name,
+        extensionConfig: config as any,
+        enabled: true,
+      });
       await client.goose.GooseExtensionsAdd({sessionId, config: config as any});
     });
   }, [addType, addValue, addName, client, sessionId, withSaving]);

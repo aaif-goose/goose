@@ -10,44 +10,36 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { buttonVariants } from "@/shared/ui/button";
-import { CreateSkillDialog } from "./CreateSkillDialog";
-import type { SkillInfo } from "../api/skills";
+import { SkillEditor } from "./SkillEditor";
+import type { EditingSkill, SkillInfo } from "../api/skills";
 
 interface SkillsDialogsProps {
   dialogOpen: boolean;
   onDialogClose: () => void;
-  onCreated: () => void | Promise<void>;
-  editingSkill?: {
-    name: string;
-    description: string;
-    instructions: string;
-    path: string;
-    fileLocation: string;
-  };
+  onSaved: (savedSkill?: SkillInfo) => void | Promise<void>;
+  editingSkill?: EditingSkill;
   deletingSkill: SkillInfo | null;
   onDeletingSkillChange: (skill: SkillInfo | null) => void;
   onConfirmDelete: () => void | Promise<void>;
-  notification: string | null;
 }
 
 export function SkillsDialogs({
   dialogOpen,
   onDialogClose,
-  onCreated,
+  onSaved,
   editingSkill,
   deletingSkill,
   onDeletingSkillChange,
   onConfirmDelete,
-  notification,
 }: SkillsDialogsProps) {
   const { t } = useTranslation(["skills", "common"]);
 
   return (
     <>
-      <CreateSkillDialog
+      <SkillEditor
         isOpen={dialogOpen}
         onClose={onDialogClose}
-        onCreated={onCreated}
+        onSaved={onSaved}
         editingSkill={editingSkill}
       />
 
@@ -57,7 +49,9 @@ export function SkillsDialogs({
       >
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("view.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("view.deleteTitle", { name: deletingSkill?.name ?? "" })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("view.deleteDescription", {
                 name: deletingSkill?.name ?? "",
@@ -75,12 +69,6 @@ export function SkillsDialogs({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {notification && (
-        <div className="fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-background px-4 py-3 text-sm shadow-popover animate-in fade-in slide-in-from-bottom-2">
-          {notification}
-        </div>
-      )}
     </>
   );
 }

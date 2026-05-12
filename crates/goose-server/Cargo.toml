@@ -17,6 +17,7 @@ code-mode = ["goose/code-mode"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]
+vulkan = ["goose/vulkan", "local-inference"]
 telemetry = ["goose/telemetry"]
 otel = ["goose/otel"]
 rustls-tls = [

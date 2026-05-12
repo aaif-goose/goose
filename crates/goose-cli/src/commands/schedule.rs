@@ -180,10 +180,10 @@ pub async fn handle_schedule_remove(schedule_id: String) -> Result<()> {
         .await
         .context("Failed to initialize scheduler")?;
 
-    match scheduler.remove_scheduled_job(&schedule_id, true).await {
+    match scheduler.remove_scheduled_job(&schedule_id, false).await {
         Ok(_) => {
             println!(
-                "Scheduled job '{}' and its associated recipe removed.",
+                "Scheduled job '{}' removed. Associated recipe was kept.",
                 schedule_id
             );
             Ok(())

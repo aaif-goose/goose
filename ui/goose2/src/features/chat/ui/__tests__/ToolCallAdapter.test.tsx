@@ -1,59 +1,31 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-import type { ToolCardDisplay } from "@/features/chat/hooks/ArtifactPolicyContext";
-import type { ArtifactPathCandidate } from "@/features/chat/lib/artifactPathPolicy";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ArtifactLinkCandidate } from "@/features/chat/hooks/ArtifactPolicyContext";
+import type { ToolCallLocation } from "@/shared/types/messages";
 import { ToolCallAdapter } from "../ToolCallAdapter";
 
-// ── mocks ────────────────────────────────────────────────────────────
-
-const mockResolveToolCardDisplay =
-  vi.fn<
-    (
-      args: Record<string, unknown>,
-      name: string,
-      result?: string,
-    ) => ToolCardDisplay
-  >();
+const mockResolveMarkdownHref =
+  vi.fn<(href: string) => ArtifactLinkCandidate | null>();
 const mockPathExists = vi.fn<(path: string) => Promise<boolean>>();
 const mockOpenResolvedPath = vi.fn<(path: string) => Promise<void>>();
 
 vi.mock("@/features/chat/hooks/ArtifactPolicyContext", () => ({
   useArtifactPolicyContext: () => ({
-    resolveToolCardDisplay: mockResolveToolCardDisplay,
-    resolveMarkdownHref: () => null,
+    resolveMarkdownHref: mockResolveMarkdownHref,
     pathExists: mockPathExists,
     openResolvedPath: mockOpenResolvedPath,
+    getAllSessionArtifacts: () => [],
   }),
 }));
 
-// ── helpers ──────────────────────────────────────────────────────────
+beforeEach(() => {
+  mockResolveMarkdownHref.mockReturnValue(null);
+});
 
-const EMPTY_DISPLAY: ToolCardDisplay = {
-  role: "none",
-  primaryCandidate: null,
-  secondaryCandidates: [],
-};
-
-function makeCandidate(
-  overrides: Partial<ArtifactPathCandidate> = {},
-): ArtifactPathCandidate {
-  return {
-    id: "c-1",
-    rawPath: "/project/output.md",
-    resolvedPath: "/Users/test/project/output.md",
-    source: "arg_key",
-    confidence: "high",
-    kind: "file",
-    allowed: true,
-    blockedReason: null,
-    toolCallId: "tool-1",
-    toolName: "write_file",
-    toolCallIndex: 0,
-    appearanceIndex: 0,
-    ...overrides,
-  };
-}
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 function renderAdapter(
   overrides: Partial<Parameters<typeof ToolCallAdapter>[0]> = {},
@@ -69,26 +41,21 @@ function renderAdapter(
   );
 }
 
-// ── tests ────────────────────────────────────────────────────────────
-
 describe("ToolCallAdapter — ArtifactActions", () => {
-  it('renders "Open file" button when primary candidate exists', () => {
-    const primary = makeCandidate();
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: primary,
-      secondaryCandidates: [],
-    });
+  it('renders "Open file" button when a location is provided', () => {
+    const locations: ToolCallLocation[] = [
+      { path: "/Users/test/project/output.md" },
+    ];
 
-    renderAdapter();
+    renderAdapter({ locations });
 
     expect(screen.getByRole("button", { name: /open file/i })).toBeEnabled();
-    expect(screen.getByText(primary.rawPath)).toBeInTheDocument();
+    expect(
+      screen.getByText("/Users/test/project/output.md"),
+    ).toBeInTheDocument();
   });
 
-  it("does NOT render artifact actions when display role is none", () => {
-    mockResolveToolCardDisplay.mockReturnValue(EMPTY_DISPLAY);
-
+  it("does NOT render artifact actions when no locations are provided", () => {
     renderAdapter();
 
     expect(
@@ -96,158 +63,140 @@ describe("ToolCallAdapter — ArtifactActions", () => {
     ).not.toBeInTheDocument();
   });
 
-  it('shows "More outputs" toggle for secondary candidates', async () => {
+  it('shows "More outputs" toggle when there are multiple locations', async () => {
     const user = userEvent.setup();
-    const primary = makeCandidate();
-    const secondary = makeCandidate({
-      id: "c-2",
-      rawPath: "/project/notes.md",
-      resolvedPath: "/Users/test/project/notes.md",
-    });
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: primary,
-      secondaryCandidates: [secondary],
-    });
+    const locations: ToolCallLocation[] = [
+      { path: "/Users/test/project/output.md" },
+      { path: "/Users/test/project/notes.md" },
+    ];
 
-    renderAdapter();
+    renderAdapter({ locations });
 
     const toggle = screen.getByText(/more outputs/i);
     expect(toggle).toBeInTheDocument();
 
-    // Secondary button not visible initially
-    expect(screen.queryByText(secondary.rawPath)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("/Users/test/project/notes.md"),
+    ).not.toBeInTheDocument();
 
     await user.click(toggle);
 
-    // After expanding, secondary candidate is visible
-    expect(screen.getByText(secondary.rawPath)).toBeInTheDocument();
-  });
-
-  it("disables button and shows blocked reason for disallowed primary candidate", () => {
-    const blocked = makeCandidate({
-      allowed: false,
-      blockedReason: "Path is outside allowed project/artifacts roots.",
-    });
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: blocked,
-      secondaryCandidates: [],
-    });
-
-    renderAdapter();
-
-    expect(screen.getByRole("button", { name: /open file/i })).toBeDisabled();
     expect(
-      screen.getByText("Path is outside allowed project/artifacts roots."),
+      screen.getByText("/Users/test/project/notes.md"),
     ).toBeInTheDocument();
   });
 
-  it("shows blocked reason for disallowed secondary candidates", async () => {
+  it("invokes openResolvedPath when an artifact button is clicked", async () => {
     const user = userEvent.setup();
-    const primary = makeCandidate();
-    const blockedSecondary = makeCandidate({
-      id: "c-2",
-      rawPath: "/outside/secret.md",
-      resolvedPath: "/Users/test/outside/secret.md",
-      allowed: false,
-      blockedReason: "Path is outside allowed project/artifacts roots.",
-    });
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: primary,
-      secondaryCandidates: [blockedSecondary],
-    });
-
-    renderAdapter();
-    await user.click(screen.getByText(/more outputs/i));
-
-    const secondaryBtn = screen.getByTitle(blockedSecondary.resolvedPath);
-    expect(secondaryBtn).toBeDisabled();
-    expect(
-      screen.getByText("Path is outside allowed project/artifacts roots."),
-    ).toBeInTheDocument();
-  });
-
-  it('does not show "detected" label for low-confidence primary candidate', () => {
-    const lowConf = makeCandidate({ confidence: "low" });
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: lowConf,
-      secondaryCandidates: [],
-    });
-
-    renderAdapter();
-
-    expect(screen.queryByText("detected")).not.toBeInTheDocument();
-  });
-
-  it('does NOT show "detected" label for high-confidence candidate', () => {
-    const highConf = makeCandidate({ confidence: "high" });
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: highConf,
-      secondaryCandidates: [],
-    });
-
-    renderAdapter();
-
-    expect(screen.queryByText("detected")).not.toBeInTheDocument();
-  });
-
-  it('does not show "detected" label for low-confidence secondary candidate', async () => {
-    const user = userEvent.setup();
-    const primary = makeCandidate();
-    const lowConfSecondary = makeCandidate({
-      id: "c-2",
-      rawPath: "/project/maybe.md",
-      resolvedPath: "/Users/test/project/maybe.md",
-      confidence: "low",
-    });
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: primary,
-      secondaryCandidates: [lowConfSecondary],
-    });
-
-    renderAdapter();
-    await user.click(screen.getByText(/more outputs/i));
-
-    expect(screen.queryByText("detected")).not.toBeInTheDocument();
-  });
-
-  it("opens file when primary button is clicked", async () => {
-    const user = userEvent.setup();
-    const primary = makeCandidate();
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: primary,
-      secondaryCandidates: [],
-    });
-    mockPathExists.mockResolvedValue(true);
     mockOpenResolvedPath.mockResolvedValue(undefined);
+    const locations: ToolCallLocation[] = [
+      { path: "/Users/test/project/output.md" },
+    ];
 
-    renderAdapter();
+    renderAdapter({ locations });
+
     await user.click(screen.getByRole("button", { name: /open file/i }));
 
-    expect(mockOpenResolvedPath).toHaveBeenCalledWith(primary.resolvedPath);
+    expect(mockOpenResolvedPath).toHaveBeenCalledWith(
+      "/Users/test/project/output.md",
+    );
+  });
+});
+
+describe("ToolCallAdapter — expanded body", () => {
+  it("renders the tool name and status badge in the header", () => {
+    renderAdapter();
+    expect(
+      screen.getByRole("button", { name: /write_file/i }),
+    ).toBeInTheDocument();
   });
 
-  it("shows file-not-found error when path does not exist", async () => {
-    const user = userEvent.setup();
-    const primary = makeCandidate();
-    mockResolveToolCardDisplay.mockReturnValue({
-      role: "primary_host",
-      primaryCandidate: primary,
-      secondaryCandidates: [],
+  it("shows the text result when expanded", () => {
+    renderAdapter({ open: true, structuredContent: undefined });
+    expect(screen.getByText(/created \/project\/output\.md/i)).toBeVisible();
+  });
+
+  it("renders structured content when present without a text result", () => {
+    renderAdapter({
+      open: true,
+      result: undefined,
+      structuredContent: { kind: "summary", count: 3 },
     });
-    mockPathExists.mockResolvedValue(false);
 
-    renderAdapter();
-    await user.click(screen.getByRole("button", { name: /open file/i }));
+    expect(screen.getByText(/"kind"/)).toBeInTheDocument();
+    expect(screen.getByText(/"summary"/)).toBeInTheDocument();
+  });
 
-    expect(
-      await screen.findByText(`File not found: ${primary.resolvedPath}`),
-    ).toBeInTheDocument();
+  it("renders the error result when isError is true", () => {
+    renderAdapter({ open: true, isError: true, result: "Boom" });
+    expect(screen.getByText("Boom")).toBeInTheDocument();
+  });
+});
+
+describe("ToolCallAdapter — text + structured de-dupe matrix", () => {
+  it("hides redundant text when result is a stringified copy of structured", () => {
+    const structured = { kind: "summary", count: 3 };
+    renderAdapter({
+      open: true,
+      arguments: {},
+      result: JSON.stringify(structured),
+      structuredContent: structured,
+    });
+
+    // The structured payload renders exactly once, not twice.
+    const summaryMatches = screen.getAllByText(/"summary"/);
+    expect(summaryMatches).toHaveLength(1);
+  });
+
+  it("hoists short single-line text into the header when both differ", () => {
+    renderAdapter({
+      open: true,
+      arguments: {},
+      result: "Found 3 matches",
+      structuredContent: { matches: 3 },
+    });
+
+    // The hoisted text renders inside the header subtitle slot.
+    const hoisted = document.querySelector("[data-tool-title-hoisted]");
+    expect(hoisted).not.toBeNull();
+    expect(hoisted?.textContent).toContain("Found 3 matches");
+
+    // Body shows the structured payload but does NOT duplicate the hoisted
+    // text — i.e. "Found 3 matches" appears exactly once across the card.
+    const allMatches = screen.getAllByText(/Found 3 matches/);
+    expect(allMatches).toHaveLength(1);
+    expect(screen.getByText(/"matches"/)).toBeInTheDocument();
+  });
+
+  it("renders both text and structured in the body when text is multi-line", () => {
+    renderAdapter({
+      open: true,
+      arguments: {},
+      result: "line one\nline two\nline three",
+      structuredContent: { matches: 3 },
+    });
+
+    // No header hoisting for multi-line text.
+    expect(document.querySelector("[data-tool-title-hoisted]")).toBeNull();
+
+    // Both blocks render in the body.
+    expect(screen.getByText(/line one/)).toBeInTheDocument();
+    expect(screen.getByText(/"matches"/)).toBeInTheDocument();
+  });
+
+  it("does not hoist text when path-based header hoisting takes precedence", () => {
+    // Tool name contains the basename → path-based hoisting activates.
+    renderAdapter({
+      open: true,
+      name: "Write file output.md",
+      arguments: { path: "/project/output.md" },
+      result: "Wrote file",
+      structuredContent: { bytes: 42 },
+    });
+
+    // Path-based hoisting wins; result text stays in the body.
+    expect(document.querySelector("[data-tool-title-hoisted]")).toBeNull();
+    expect(screen.getByText(/wrote file/i)).toBeInTheDocument();
+    expect(screen.getByText(/"bytes"/)).toBeInTheDocument();
   });
 });
