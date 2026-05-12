@@ -76,17 +76,27 @@ export const MOCK_PROJECTS = [
 
 export const MOCK_SKILLS = [
   {
+    name: "layout",
+    description: "Improves layout, spacing, and visual hierarchy",
+    instructions:
+      "When asked to improve a UI layout, tighten spacing, strengthen hierarchy, and refine composition.",
+    path: "/mock/.agents/skills/layout/SKILL.md",
+    global: true,
+  },
+  {
     name: "code-review",
     description: "Reviews code for quality and best practices",
     instructions:
       "When asked to review code, analyze the diff and provide feedback on code quality, potential bugs, and best practices.",
     path: "/mock/.agents/skills/code-review/SKILL.md",
+    global: true,
   },
   {
     name: "test-writer",
     description: "Generates unit tests for given code",
     instructions:
       "When asked to write tests, generate comprehensive unit tests covering edge cases, happy paths, and error scenarios.",
-    path: "/mock/.agents/skills/test-writer/SKILL.md",
+    path: "/tmp/alpha/.goose/skills/test-writer/SKILL.md",
+    global: false,
   },
 ];

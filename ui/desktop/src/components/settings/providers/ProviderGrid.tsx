@@ -68,7 +68,9 @@ const CustomProviderCard = memo(function CustomProviderCard({ onClick }: { onCli
           <Plus className="w-8 h-8 text-gray-400 mb-2" />
           <div className="text-sm text-gray-600 dark:text-gray-400 text-center">
             <div className="font-medium">{intl.formatMessage(i18n.addProvider)}</div>
-            <div className="text-xs text-gray-500 mt-1">{intl.formatMessage(i18n.fromTemplateOrManual)}</div>
+            <div className="text-xs text-gray-500 mt-1">
+              {intl.formatMessage(i18n.fromTemplateOrManual)}
+            </div>
           </div>
         </div>
       }
@@ -117,7 +119,7 @@ function ProviderCards({
 
   const configureProviderViaModal = useCallback(
     async (provider: ProviderDetails) => {
-      if (provider.provider_type === 'Custom' || provider.provider_type === 'Declarative') {
+      if (provider.provider_type === 'Custom') {
         const { getCustomProvider } = await import('../../../api');
         const result = await getCustomProvider({ path: { id: provider.name }, throwOnError: true });
 
@@ -277,7 +279,9 @@ function ProviderCards({
 
   const editable = editingProvider ? editingProvider.isEditable : true;
   const title = editingProvider
-    ? (editable ? intl.formatMessage(i18n.editProvider) : intl.formatMessage(i18n.configureProvider))
+    ? editable
+      ? intl.formatMessage(i18n.editProvider)
+      : intl.formatMessage(i18n.configureProvider)
     : intl.formatMessage(i18n.addProviderTitle);
   return (
     <>

@@ -61,32 +61,10 @@ export function autoCompactPercentToThreshold(value: number): number {
   return clampAutoCompactThresholdPercent(value) / 100;
 }
 
-export function shouldAutoCompactContext(
-  usedTokens: number,
-  contextLimit: number,
-  threshold: number,
-): boolean {
-  if (usedTokens <= 0 || contextLimit <= 0) {
-    return false;
-  }
-
-  if (threshold <= 0 || threshold >= 1) {
-    return false;
-  }
-
-  return usedTokens / contextLimit > threshold;
-}
-
 function supportsContextCompactionProvider(
   providerId: string | null | undefined,
 ): boolean {
   return providerId != null && CONTEXT_COMPACTION_PROVIDER_IDS.has(providerId);
-}
-
-export function supportsContextAutoCompaction(
-  providerId: string | null | undefined,
-): boolean {
-  return supportsContextCompactionProvider(providerId);
 }
 
 export function supportsContextCompactionControls(

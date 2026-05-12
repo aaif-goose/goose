@@ -9,7 +9,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.31.0"
+version = "1.34.0"
 rust-version = "1.91.1"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
@@ -22,8 +22,8 @@ string_slice = "warn"
 
 [workspace.dependencies]
 rmcp = { version = "1.5.0", features = ["schemars", "auth"] }
-agent-client-protocol-schema = { version = "0.11", features = ["unstable"] }
-sacp = "11.0.0"
+agent-client-protocol-schema = { version = "0.12", features = ["unstable"] }
+agent-client-protocol = "0.11"
 arboard = "3"
 anyhow = "1.0"
 async-stream = "0.3"
@@ -65,12 +65,12 @@ tracing-appender = "0.2"
 tracing-subscriber = "0.3"
 urlencoding = "2.1"
 utoipa = "4.1"
-uuid = { version = "1.11", features = ["v4"] }
-webbrowser = "1.0"
+uuid = { version = "1.23", features = ["v4"] }
+webbrowser = "1.2"
 which = "8.0.0"
 winapi = { version = "0.3", features = ["wincred"] }
 wiremock = "0.6"
-zip = { version = "^8.0", default-features = false, features = ["deflate"] }
+zip = { version = "^8.6", default-features = false, features = ["deflate"] }
 serial_test = "3.2.0"
 sha2 = "0.10"
 shell-words = "1.1.1"
@@ -84,7 +84,7 @@ opentelemetry-stdout = { version = "0.31", features = ["trace", "metrics", "logs
 tracing-futures = { version = "0.2", features = ["futures-03"] }
 tracing-opentelemetry = "0.32"
 
-rayon = "1.10"
+rayon = "1.12"
 tree-sitter = "0.26"
 tree-sitter-go = "0.25"
 tree-sitter-java = "0.23"
@@ -98,9 +98,7 @@ tree-sitter-typescript = "0.23"
 
 [patch.crates-io]
 v8 = { path = "vendor/v8" }
-# TODO: switch to crates.io release once it includes the unstable feature and updates org from symposium-dev to agentclientprotocol
-sacp = { git = "https://github.com/agentclientprotocol/symposium-acp", rev = "14086c9" }
-sacp-derive = { git = "https://github.com/agentclientprotocol/symposium-acp", rev = "14086c9" }
+cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 # TODO: switch to released version in opentelemetry 0.32.0
 # https://github.com/open-telemetry/opentelemetry-rust/issues/3408
 opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "345cd74a" }

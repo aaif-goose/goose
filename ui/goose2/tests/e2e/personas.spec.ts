@@ -205,9 +205,13 @@ test.describe("Agents view", () => {
     await card.getByLabel("Agent options").click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
 
-    await expect(page.getByText("Delete agent?")).toBeVisible();
     await expect(
-      page.getByText(/Are you sure you want to delete.*Code Reviewer/),
+      page.getByText('Delete "Code Reviewer" permanently?'),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "This agent and its configuration will be permanently removed.",
+      ),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Delete" })).toBeVisible();
@@ -221,14 +225,18 @@ test.describe("Agents view", () => {
     const card = page.getByLabel("Agent: Code Reviewer");
     await card.getByLabel("Agent options").click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
-    await expect(page.getByText("Delete agent?")).toBeVisible();
+    await expect(
+      page.getByText('Delete "Code Reviewer" permanently?'),
+    ).toBeVisible();
 
     const confirmDialog = page.locator(".max-w-sm", {
-      has: page.getByText("Delete agent?"),
+      has: page.getByText('Delete "Code Reviewer" permanently?'),
     });
     await confirmDialog.getByRole("button", { name: "Cancel" }).click();
 
-    await expect(page.getByText("Delete agent?")).not.toBeVisible();
+    await expect(
+      page.getByText('Delete "Code Reviewer" permanently?'),
+    ).not.toBeVisible();
     await expect(page.getByLabel("Agent: Code Reviewer")).toBeVisible();
   });
 

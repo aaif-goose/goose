@@ -34,6 +34,9 @@ export function buildInitScript(options?: {
       const PERSONAS = ${personas};
       const SKILLS = ${skills};
       const PROJECTS = ${projects};
+      const DISTRO = {
+        present: false,
+      };
       const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
       const ACP_SESSIONS = [];
       const PROVIDER_INVENTORY = [
@@ -44,6 +47,7 @@ export function buildInitScript(options?: {
           defaultModel: "claude-sonnet-4-20250514",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -69,6 +73,7 @@ export function buildInitScript(options?: {
           defaultModel: "gpt-4.1",
           configured: true,
           providerType: "Preferred",
+          category: "model",
           configKeys: [],
           setupSteps: [],
           supportsRefresh: true,
@@ -89,13 +94,71 @@ export function buildInitScript(options?: {
         },
       ];
 
+      localStorage.setItem(
+        "goose:onboarding:v1",
+        JSON.stringify({
+          completedAt: new Date().toISOString(),
+          providerId: "openai",
+          modelId: "gpt-4.1",
+        }),
+      );
+      localStorage.setItem("goose:defaultProvider", "goose");
+      localStorage.setItem(
+        "goose:preferredModelsByAgent",
+        JSON.stringify({
+          goose: {
+            providerId: "openai",
+            modelId: "gpt-4.1",
+            modelName: "GPT-4.1",
+          },
+        }),
+      );
+
       const skillToSourceEntry = (s) => ({
         type: "skill",
         name: s.name,
         description: s.description,
         content: s.instructions ?? s.content ?? "",
-        directory: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
+        path: (s.path ?? ("/mock/.agents/skills/" + s.name + "/SKILL.md")).replace(/\\/SKILL\\.md$/, ""),
+        global: s.global ?? true,
+        supportingFiles: [],
+      });
+
+      const personaToSourceEntry = (p) => ({
+        type: "agent",
+        name: p.displayName ?? p.name,
+        description: p.description ?? "Agent",
+        content: p.systemPrompt ?? p.content ?? "",
+        path: p.id ?? p.path ?? ("/mock/.agents/agents/" + (p.displayName ?? p.name)),
+        global: p.global ?? true,
+        writable: p.writable ?? !p.isBuiltin,
+        supportingFiles: [],
+        properties: {
+          provider: p.provider,
+          model: p.model,
+          avatar: typeof p.avatar === "string" ? p.avatar : p.avatar?.value,
+        },
+      });
+
+      const projectToSourceEntry = (p) => ({
+        type: "project",
+        name: p.id ?? p.name?.toLowerCase(),
+        description: p.description ?? "",
+        content: p.prompt ?? "",
+        path: "/mock/.agents/projects/" + (p.id ?? p.name?.toLowerCase()),
         global: true,
+        supportingFiles: [],
+        properties: {
+          title: p.name,
+          icon: p.icon ?? "",
+          color: p.color ?? "",
+          preferredProvider: p.preferredProvider ?? null,
+          preferredModel: p.preferredModel ?? null,
+          workingDirs: p.workingDirs ?? [],
+          useWorktrees: p.useWorktrees ?? false,
+          order: p.order ?? 0,
+          archivedAt: null,
+        },
       });
 
       function nowIso() {
@@ -179,42 +242,110 @@ export function buildInitScript(options?: {
           }
           case "_goose/providers/list":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
+          case "_goose/providers/setup/catalog/list":
+            return jsonRpcResult(message.id, { providers: [] });
           case "_goose/providers/inventory/refresh":
             return jsonRpcResult(message.id, { started: [], skipped: [] });
+          case "_goose/defaults/read":
+          case "_goose/defaults/save":
+            return jsonRpcResult(message.id, {
+              providerId: message.params?.providerId ?? "openai",
+              modelId: message.params?.modelId ?? "gpt-4.1",
+            });
+          case "_goose/onboarding/import/scan":
+            return jsonRpcResult(message.id, { candidates: [] });
+          case "_goose/onboarding/import/apply":
+            return jsonRpcResult(message.id, {
+              imported: {
+                providers: 0,
+                extensions: 0,
+                sessions: 0,
+                skills: 0,
+                projects: 0,
+                preferences: 0,
+              },
+              skipped: {
+                providers: 0,
+                extensions: 0,
+                sessions: 0,
+                skills: 0,
+                projects: 0,
+                preferences: 0,
+              },
+              warnings: [],
+            });
           case "_goose/working_dir/update":
           case "goose/working_dir/update":
             return jsonRpcResult(message.id, {});
-          case "_goose/sources/list":
+          case "_goose/sources/list": {
+            const sourceType = message.params?.type;
+            if (sourceType === "agent") {
+              return jsonRpcResult(message.id, { sources: PERSONAS.map(personaToSourceEntry) });
+            }
+            if (sourceType === "project") {
+              return jsonRpcResult(message.id, { sources: PROJECTS.map(projectToSourceEntry) });
+            }
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
-          case "_goose/sources/create":
+          }
+          case "_goose/sources/create": {
+            const sourceType = message.params?.type ?? "skill";
+            const name = message.params?.name ?? (sourceType === "agent" ? "New Agent" : "new-skill");
             return jsonRpcResult(message.id, {
               source: {
-                name: message.params?.name ?? "new-skill",
-                type: "skill",
+                name,
+                type: sourceType,
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "new-skill"),
+                path: "/mock/.agents/" + (sourceType === "agent" ? "agents" : "skills") + "/" + name,
                 global: message.params?.global ?? true,
+                writable: true,
+                supportingFiles: [],
+                properties: message.params?.properties ?? {},
               },
             });
+          }
           case "_goose/sources/update":
+          case "goose/sources/update": {
+            const sourceType = message.params?.type ?? "skill";
+            const path =
+              message.params?.path ??
+              (sourceType === "agent" ? "/mock/.agents/agents/updated-agent" : "/mock/.agents/skills/updated-skill");
+            const nextName = message.params?.name;
+            const name =
+              typeof nextName === "string" && nextName.length > 0
+                ? nextName
+                : String(path).split("/").filter(Boolean).at(-1) ?? (sourceType === "agent" ? "updated-agent" : "updated-skill");
+            const segments = String(path).split("/").filter(Boolean);
+            if (segments.length > 0) {
+              segments[segments.length - 1] = name;
+            }
+            const updatedPath = \`/\${segments.join("/")}\`;
             return jsonRpcResult(message.id, {
               source: {
-                name: message.params?.name ?? "updated-skill",
-                type: "skill",
+                name,
+                type: sourceType,
                 description: message.params?.description ?? "",
                 content: message.params?.content ?? "",
-                directory: "/mock/.agents/skills/" + (message.params?.name ?? "updated-skill"),
+                path: updatedPath,
                 global: message.params?.global ?? true,
+                writable: true,
+                supportingFiles: [],
+                properties: message.params?.properties ?? {},
               },
             });
+          }
           case "_goose/sources/delete":
+          case "goose/sources/delete":
             return jsonRpcResult(message.id, {});
           case "_goose/sources/export":
+          case "goose/sources/export": {
+            const path = message.params?.path ?? "/mock/.agents/skills/skill";
+            const name = String(path).split("/").filter(Boolean).at(-1) ?? "skill";
             return jsonRpcResult(message.id, {
               json: "{}",
-              filename: (message.params?.name ?? "skill") + ".skill.json",
+              filename: name + ".skill.json",
             });
+          }
           case "_goose/sources/import":
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
           default:
@@ -265,6 +396,8 @@ export function buildInitScript(options?: {
             // ---- ACP transport ----
             case "get_goose_serve_url":
               return Promise.resolve(FAKE_ACP_URL);
+            case "get_distro_bundle":
+              return Promise.resolve(DISTRO);
 
             // ---- Personas ----
             case "list_personas":

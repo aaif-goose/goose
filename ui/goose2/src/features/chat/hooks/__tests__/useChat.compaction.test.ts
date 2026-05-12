@@ -6,7 +6,6 @@ import { clearReplayBuffer, ensureReplayBuffer } from "../replayBuffer";
 
 const mockAcpSendMessage = vi.fn();
 const mockAcpLoadSession = vi.fn();
-const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
@@ -14,10 +13,6 @@ vi.mock("@/shared/api/acp", () => ({
   acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
   acpPrepareSession: vi.fn(),
   acpSetModel: vi.fn(),
-}));
-
-vi.mock("@/shared/api/acpSessionTracker", () => ({
-  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -51,7 +46,6 @@ describe("useChat compaction", () => {
   beforeEach(() => {
     mockAcpSendMessage.mockReset();
     mockAcpLoadSession.mockReset();
-    mockGetGooseSessionId.mockReset();
     clearReplayBuffer("session-1");
     useChatStore.setState({
       messagesBySession: {},
@@ -62,11 +56,9 @@ describe("useChat compaction", () => {
     });
     mockAcpSendMessage.mockResolvedValue(undefined);
     mockAcpLoadSession.mockResolvedValue(undefined);
-    mockGetGooseSessionId.mockReturnValue(null);
   });
 
   it("reloads compacted history after sending the compact command", async () => {
-    mockGetGooseSessionId.mockReturnValue("goose-session-1");
     mockAcpLoadSession.mockImplementation(async (sessionId: string) => {
       const buffer = ensureReplayBuffer(sessionId);
       buffer.push(createTextMessage("user-1", "user", "Before compact"));
@@ -88,28 +80,23 @@ describe("useChat compaction", () => {
       await result.current.compactConversation();
     });
 
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "/compact",
-      undefined,
-    );
-    expect(mockAcpLoadSession).toHaveBeenCalledWith(
-      "session-1",
-      "goose-session-1",
-      undefined,
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact");
+    expect(mockAcpLoadSession).toHaveBeenCalledWith("session-1", undefined);
 
     const messages = useChatStore.getState().messagesBySession["session-1"];
     const runtime = useChatStore.getState().getSessionRuntime("session-1");
 
-    expect(messages).toHaveLength(3);
+    expect(messages).toHaveLength(4);
     expect(messages[0]).toEqual(
       createTextMessage("user-1", "user", "Before compact"),
     );
     expect(messages[1]).toEqual(
+      createTextMessage("compact-1", "user", "/compact/compact"),
+    );
+    expect(messages[2]).toEqual(
       createTextMessage("assistant-1", "assistant", "After compact"),
     );
-    expect(messages[2]).toMatchObject({
+    expect(messages[3]).toMatchObject({
       role: "system",
       content: [
         {
@@ -130,45 +117,7 @@ describe("useChat compaction", () => {
     );
   });
 
-  it("prepares and compacts the override persona session", async () => {
-    let preparedPersonaId: string | undefined;
-    const ensurePrepared = vi.fn(async (personaId?: string) => {
-      preparedPersonaId = personaId;
-    });
-    mockGetGooseSessionId.mockImplementation(
-      (_sessionId: string, personaId?: string) =>
-        personaId === "persona-a" && preparedPersonaId === "persona-a"
-          ? "goose-session-a"
-          : null,
-    );
-
-    const { result } = renderHook(() =>
-      useChat(
-        "session-1",
-        undefined,
-        undefined,
-        { id: "persona-b", name: "Persona B" },
-        { ensurePrepared },
-      ),
-    );
-
-    await act(async () => {
-      await result.current.compactConversation({ id: "persona-a" });
-    });
-
-    expect(ensurePrepared).toHaveBeenCalledWith("persona-a");
-    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact", {
-      personaId: "persona-a",
-    });
-    expect(mockAcpLoadSession).toHaveBeenCalledWith(
-      "session-1",
-      "goose-session-a",
-      undefined,
-    );
-  });
-
   it("blocks new sends while compaction is in flight", async () => {
-    mockGetGooseSessionId.mockReturnValue("goose-session-1");
     const compactDeferred = createDeferredPromise();
     mockAcpSendMessage.mockImplementation(
       (_sessionId: string, prompt: string) =>
@@ -192,11 +141,7 @@ describe("useChat compaction", () => {
     });
 
     expect(mockAcpSendMessage).toHaveBeenCalledTimes(1);
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "/compact",
-      undefined,
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact");
     expect(
       useChatStore.getState().messagesBySession["session-1"],
     ).toBeUndefined();
@@ -215,7 +160,6 @@ describe("useChat compaction", () => {
   });
 
   it("ignores a second compact request while the first one is still in flight", async () => {
-    mockGetGooseSessionId.mockReturnValue("goose-session-1");
     const compactDeferred = createDeferredPromise();
     mockAcpSendMessage.mockImplementation(
       (_sessionId: string, prompt: string) =>
@@ -233,11 +177,7 @@ describe("useChat compaction", () => {
     });
 
     expect(mockAcpSendMessage).toHaveBeenCalledTimes(1);
-    expect(mockAcpSendMessage).toHaveBeenCalledWith(
-      "session-1",
-      "/compact",
-      undefined,
-    );
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", "/compact");
     expect(mockAcpLoadSession).not.toHaveBeenCalled();
     expect(
       useChatStore.getState().getSessionRuntime("session-1").chatState,
@@ -254,13 +194,22 @@ describe("useChat compaction", () => {
     ).toBe("idle");
   });
 
-  it("surfaces an error when compacting before the session is prepared", async () => {
-    const { result } = renderHook(() => useChat("session-1"));
+  it("surfaces an error when preparing for compaction fails", async () => {
+    const ensurePrepared = vi
+      .fn()
+      .mockRejectedValue(new Error("prepare failed"));
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
 
     await act(async () => {
       await result.current.compactConversation();
     });
 
+    expect(ensurePrepared).toHaveBeenCalledWith(undefined);
     expect(mockAcpSendMessage).not.toHaveBeenCalled();
     expect(mockAcpLoadSession).not.toHaveBeenCalled();
 
@@ -272,11 +221,46 @@ describe("useChat compaction", () => {
       {
         type: "systemNotification",
         notificationType: "error",
-        text: "Session not prepared. Send a message before compacting.",
+        text: "prepare failed",
+      },
+    ]);
+    expect(runtime.error).toBe("prepare failed");
+    expect(runtime.chatState).toBe("idle");
+  });
+
+  it("does not compact when preparation is superseded", async () => {
+    const ensurePrepared = vi.fn().mockResolvedValue(false);
+
+    const { result } = renderHook(() =>
+      useChat("session-1", undefined, undefined, undefined, {
+        ensurePrepared,
+      }),
+    );
+
+    let compactResult: unknown;
+    await act(async () => {
+      compactResult = await result.current.compactConversation();
+    });
+
+    expect(compactResult).toBe("failed");
+    expect(ensurePrepared).toHaveBeenCalledWith(undefined);
+    expect(mockAcpSendMessage).not.toHaveBeenCalled();
+    expect(mockAcpLoadSession).not.toHaveBeenCalled();
+
+    const messages = useChatStore.getState().messagesBySession["session-1"];
+    const runtime = useChatStore.getState().getSessionRuntime("session-1");
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toEqual([
+      {
+        type: "systemNotification",
+        notificationType: "error",
+        text: "Session configuration changed while preparing. Try sending again.",
       },
     ]);
     expect(runtime.error).toBe(
-      "Session not prepared. Send a message before compacting.",
+      "Session configuration changed while preparing. Try sending again.",
     );
+    expect(runtime.chatState).toBe("idle");
   });
 });

@@ -3,28 +3,20 @@ import type {
   MessageAttachment,
 } from "@/shared/types/messages";
 
-function formatAttachmentReference(attachment: ChatAttachmentDraft): string {
-  const location =
-    attachment.kind === "image"
-      ? `${attachment.name} (image attached)`
-      : (attachment.path ?? attachment.name);
-  return `- [${attachment.kind}] ${location}`;
-}
-
-export function buildAttachmentPromptPreamble(
+export function appendAttachmentPaths(
+  text: string,
   attachments: ChatAttachmentDraft[] | undefined,
 ): string {
-  const referencedAttachments = attachments ?? [];
+  const paths = (attachments ?? [])
+    .filter((attachment) => attachment.kind !== "image" && attachment.path)
+    .map((attachment) => attachment.path as string);
 
-  if (referencedAttachments.length === 0) {
-    return "";
+  if (paths.length === 0) {
+    return text;
   }
 
-  return [
-    "Attached items:",
-    ...referencedAttachments.map(formatAttachmentReference),
-    "",
-  ].join("\n");
+  const joined = paths.join(" ");
+  return text ? `${text} ${joined}` : joined;
 }
 
 export function buildMessageAttachments(

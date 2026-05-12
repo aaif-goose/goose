@@ -785,11 +785,11 @@ function App({
         setStatus("checking provider…");
         let hasProvider = false;
         try {
-          const resp = await client.goose.GooseConfigRead({
-            key: "GOOSE_PROVIDER",
-          });
+          const resp = await client.goose.GooseDefaultsRead({});
           hasProvider =
-            resp.value != null && resp.value !== "" && resp.value !== "null";
+            resp.providerId != null &&
+            resp.providerId !== "" &&
+            resp.providerId !== "null";
         } catch {
           hasProvider = false;
         }

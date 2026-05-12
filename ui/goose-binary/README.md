@@ -32,6 +32,11 @@ npx tsx scripts/build-native.ts darwin-arm64 linux-x64
 The built binaries are placed into `ui/goose-binary/goose-binary-{platform}/bin/`.
 These directories are git-ignored.
 
+Linux native binaries are built with local inference Vulkan support. Linux build
+hosts need Vulkan headers and `glslc`; Linux runtime hosts need the Vulkan loader
+package, such as `libvulkan1` on Debian/Ubuntu or `vulkan-loader` on RPM-based
+distributions.
+
 ## Publishing
 
 Publishing is handled by GitHub Actions. See `.github/workflows/publish-npm.yml`.
