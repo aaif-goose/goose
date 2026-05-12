@@ -1159,7 +1159,7 @@ fn mlx_variants_from_model_info(repo_id: &str, info: &ModelInfo) -> Vec<HfModelV
             .filter(|s| s.rfilename.ends_with(".safetensors"))
             .count()
             > 1,
-        supported: mlx_model_type(&info.config).is_some_and(is_mlx_runtime_supported_model_type)
+        supported: is_mlx_runtime_supported(&info.config)
             && cfg!(target_os = "macos")
             && cfg!(feature = "mlx"),
         unsupported_reason: mlx_unsupported_reason(&info.config),
@@ -1187,6 +1187,20 @@ fn is_mlx_runtime_supported_model_type(model_type: &str) -> bool {
     matches!(model_type, "gemma4" | "gemma4_text" | "llama" | "qwen3")
 }
 
+fn is_mlx_moe_model(config: &Option<serde_json::Value>) -> bool {
+    config
+        .as_ref()
+        .and_then(|config| config.get("text_config"))
+        .and_then(|text_config| text_config.get("enable_moe_block"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn is_mlx_runtime_supported(config: &Option<serde_json::Value>) -> bool {
+    mlx_model_type(config).is_some_and(is_mlx_runtime_supported_model_type)
+        && !is_mlx_moe_model(config)
+}
+
 fn mlx_unsupported_reason(config: &Option<serde_json::Value>) -> Option<String> {
     if !cfg!(target_os = "macos") {
         return Some("MLX requires macOS".to_string());
@@ -1196,23 +1210,22 @@ fn mlx_unsupported_reason(config: &Option<serde_json::Value>) -> Option<String> 
     }
 
     let model_type = mlx_model_type(config)?;
-    if is_mlx_runtime_supported_model_type(model_type) {
-        None
-    } else {
-        Some(format!(
+    if !is_mlx_runtime_supported_model_type(model_type) {
+        return Some(format!(
             "MLX backend does not support '{}' models yet",
             model_type
-        ))
+        ));
     }
+    if is_mlx_moe_model(config) {
+        return Some("MLX backend does not support Gemma 4 MoE models yet".to_string());
+    }
+    None
 }
 
 fn mlx_variant_description(config: &Option<serde_json::Value>) -> String {
-    match mlx_model_type(config) {
-        Some(model_type) if is_mlx_runtime_supported_model_type(model_type) => {
-            "MLX safetensors snapshot".to_string()
-        }
-        Some(model_type) => format!("MLX safetensors snapshot ({model_type}; unsupported yet)"),
+    match mlx_unsupported_reason(config) {
         None => "MLX safetensors snapshot".to_string(),
+        Some(reason) => format!("MLX safetensors snapshot ({reason})"),
     }
 }
 
