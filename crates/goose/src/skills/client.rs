@@ -1783,6 +1783,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_watcher_spawned_on_session_carrying_repopulate() {
+        // First registration runs with `session_id=None` — no watcher is
+        // spawned and the cache is empty. A second `add_extension` for
+        // the same extension with `session_id=Some(...)` hits the fast
+        // path's repopulate branch, which should both fill the cache
+        // AND spawn the watcher (previously this only filled the
+        // cache, leaving the extension permanently un-watched).
+        let tmp = TempDir::new().unwrap();
+
+        let mut initial = HashMap::new();
+        initial.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"}"#,
+            ),
+        );
+        let fake = Arc::new(FakeMcp::new(initial));
+
+        let mgr = Arc::new(ExtensionManager::new_without_provider(
+            tmp.path().to_path_buf(),
+        ));
+
+        // First registration: no session id → no fetch, no watcher.
+        let trait_handle: Arc<dyn McpClientTrait> = fake.clone();
+        mgr.add_client(
+            "srv".to_string(),
+            ExtensionConfig::Builtin {
+                name: "srv".to_string(),
+                display_name: Some("srv".to_string()),
+                description: "fake".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+            trait_handle,
+            None,
+            None,
+            None, // ← deliberately no session_id
+        )
+        .await;
+        assert!(
+            mgr.aggregated_mcp_skills().await.is_empty(),
+            "cache should be empty after session-less registration"
+        );
+
+        // Second pass via `add_extension` with a session id. The config
+        // matches the existing entry, so the fast-path repopulate runs.
+        mgr.add_extension(
+            ExtensionConfig::Builtin {
+                name: "srv".to_string(),
+                display_name: Some("srv".to_string()),
+                description: "fake".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+            Some(tmp.path().to_path_buf()),
+            None,
+            Some("s"),
+        )
+        .await
+        .expect("repopulate add_extension should succeed");
+
+        // Cache should be populated now.
+        let after_repopulate = mgr.aggregated_mcp_skills().await;
+        assert_eq!(after_repopulate.len(), 1);
+        assert_eq!(after_repopulate[0].name, "alpha");
+
+        // Wait for the watcher to subscribe (spawned by the repopulate
+        // path), then drive a list_changed and confirm the cache picks
+        // up the new entry.
+        assert!(
+            fake.wait_for_subscriber(Duration::from_secs(2)).await,
+            "repopulate path should have spawned the watcher; no subscriber present"
+        );
+
+        let mut updated = HashMap::new();
+        updated.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"},
+                   {"name":"beta","type":"skill-md","description":"b","url":"skill://beta/SKILL.md"}"#,
+            ),
+        );
+        fake.swap_resources(updated);
+        fake.notify_resources_list_changed().await;
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let mut refreshed = mgr.aggregated_mcp_skills().await;
+        while refreshed.len() < 2 && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            refreshed = mgr.aggregated_mcp_skills().await;
+        }
+        assert_eq!(
+            refreshed.len(),
+            2,
+            "list_changed should refresh through the spawn-on-repopulate path; got: {:?}",
+            refreshed
+        );
+    }
+
+    #[tokio::test]
     async fn test_list_changed_refreshes_cache() {
         // Server initially advertises only `alpha`; after we hot-swap the
         // index and fire `notifications/resources/list_changed`, the

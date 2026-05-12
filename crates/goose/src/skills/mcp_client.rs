@@ -29,6 +29,15 @@ pub(crate) const SKILLS_EXTENSION_ID: &str = "io.modelcontextprotocol/skills";
 /// `skill://index.json` regardless of which scheme the listed skills use.
 pub(crate) const INDEX_URI: &str = "skill://index.json";
 
+/// The Agent Skills discovery schema URI this host has been tested
+/// against. Per the SEP ("Clients SHOULD match against known $schema
+/// URIs before processing"), we log at `debug!` when the server's
+/// declared `$schema` doesn't match — but still attempt to process the
+/// index leniently. Newer schemas typically remain wire-compatible for
+/// the small subset of fields we read.
+pub(crate) const KNOWN_INDEX_SCHEMA: &str =
+    "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
+
 /// How long to wait for a server's index fetch before giving up.
 /// Applied at extension-registration time so a misbehaving server cannot
 /// stall session startup indefinitely. An empty cache on timeout is
@@ -146,9 +155,14 @@ pub fn server_declares_skills_capability(info: &InitializeResult) -> bool {
 
 /// Minimal index shape matching the SEP / agentskills.io discovery schema.
 /// Lenient: unknown fields are ignored; unknown `type` values cause the
-/// entry to be skipped (handled by the caller).
+/// entry to be skipped (handled by the caller). `$schema` is captured
+/// so [`fetch_server_skills`] can log when it diverges from the schema
+/// the host was built against — per the SEP, clients SHOULD match
+/// against known `$schema` URIs before processing.
 #[derive(Debug, Deserialize)]
 struct IndexDoc {
+    #[serde(default, rename = "$schema")]
+    schema: Option<String>,
     #[serde(default)]
     skills: Vec<IndexEntry>,
 }
@@ -214,6 +228,25 @@ pub async fn fetch_server_skills(
             return ServerSkills::default();
         }
     };
+
+    // SEP SHOULD: match against known $schema URIs before processing.
+    // Lenient — we still process. A server publishing a newer schema
+    // typically stays wire-compatible for our subset (name, type,
+    // description, url), and a server omitting `$schema` is common
+    // enough to not be worth blocking on.
+    match doc.schema.as_deref() {
+        Some(KNOWN_INDEX_SCHEMA) => {}
+        Some(other) => debug!(
+            server,
+            declared = other,
+            expected = KNOWN_INDEX_SCHEMA,
+            "skill index `$schema` does not match the host-known URI; processing leniently"
+        ),
+        None => debug!(
+            server,
+            "skill index has no `$schema` field; processing leniently"
+        ),
+    }
 
     let mut out = ServerSkills::default();
     let mut template_counter = 0usize;
@@ -546,6 +579,71 @@ mod tests {
             entries[0].skill_root_uri(),
             "github://github/repo/skills/pull-requests/"
         );
+    }
+
+    #[tokio::test]
+    async fn test_discover_tolerates_unknown_schema_uri() {
+        // SEP says clients SHOULD match against known $schema URIs before
+        // processing; our policy is to log at debug! and still process,
+        // since the subset of fields we read (name, type, description,
+        // url) is stable across the schema revisions we know about.
+        let mut resources = HashMap::new();
+        resources.insert(
+            INDEX_URI.to_string(),
+            // Hand-rolled to override the `$schema` value (the `index_with`
+            // helper hardcodes the canonical one).
+            r#"{
+              "$schema": "https://schemas.agentskills.io/discovery/9.9.9/schema.json",
+              "skills": [
+                {"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"}
+              ]
+            }"#
+            .to_string(),
+        );
+        let server = FakeSkillsServer {
+            info: FakeSkillsServer::with_capability(),
+            resources,
+            delay: None,
+        };
+
+        let skills = fetch_server_skills(
+            "gh",
+            &server as &dyn McpClientTrait,
+            "s",
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(skills.concrete.len(), 1);
+        assert_eq!(skills.concrete[0].name, "alpha");
+    }
+
+    #[tokio::test]
+    async fn test_discover_tolerates_missing_schema_field() {
+        // Same lenient posture for an index with no `$schema` at all —
+        // common in early servers — should not block discovery.
+        let mut resources = HashMap::new();
+        resources.insert(
+            INDEX_URI.to_string(),
+            r#"{
+              "skills": [
+                {"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"}
+              ]
+            }"#
+            .to_string(),
+        );
+        let server = FakeSkillsServer {
+            info: FakeSkillsServer::with_capability(),
+            resources,
+            delay: None,
+        };
+        let skills = fetch_server_skills(
+            "gh",
+            &server as &dyn McpClientTrait,
+            "s",
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(skills.concrete.len(), 1);
     }
 
     #[tokio::test]

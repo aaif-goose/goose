@@ -86,6 +86,12 @@ struct Extension {
     /// a background subscriber task (spawned in `add_extension` /
     /// `add_client`) update the cache without holding `&mut Extension`.
     mcp_skills: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+    /// Set once when this Extension's `list_changed` watcher task is
+    /// spawned. Used by `spawn_skill_list_changed_watcher` to stay
+    /// idempotent across multiple registration paths — the repopulate
+    /// fast-path in `add_extension` calls spawn too, so we don't end up
+    /// with two watcher tasks both refetching on each notification.
+    watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Extension {
@@ -96,6 +102,7 @@ impl Extension {
         server_info: Option<ServerInfo>,
         temp_dir: Option<tempfile::TempDir>,
         mcp_skills: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+        watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
         Self {
             client,
@@ -104,6 +111,7 @@ impl Extension {
             server_info,
             _temp_dir: temp_dir,
             mcp_skills,
+            watcher_spawned,
         }
     }
 
@@ -722,20 +730,31 @@ async fn populate_mcp_skills_cache(
 /// skill index and writes it into the shared cache. The task ends naturally
 /// when the client drops its notification senders on disconnect.
 ///
-/// A no-op when `session_id` is `None` — without a session id the host
-/// cannot dispatch the `resources/read` for `skill://index.json`, so
-/// there's no point listening for change notifications either. The cache
-/// will be repopulated on the next `add_extension` call that does carry
-/// a session id (via the fast-path repopulate in `add_extension`).
+/// Idempotent per Extension via `watcher_spawned`: callers may invoke this
+/// from both the first-registration path and the repopulate fast-path
+/// without ending up with two tasks. The first invocation that has a
+/// `session_id` flips the bool and spawns; subsequent calls are no-ops.
+///
+/// Returns early without flipping the bool when `session_id` is `None` —
+/// without a session id the host cannot dispatch `resources/read` for
+/// `skill://index.json`, so there's nothing for the watcher to do. A
+/// later call carrying a real session id will then spawn correctly.
 fn spawn_skill_list_changed_watcher(
     server_name: String,
     client: McpClientBox,
     cache: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+    watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
     session_id: Option<&str>,
 ) {
     let Some(sid) = session_id.map(str::to_owned) else {
         return;
     };
+    // CAS-once: if the bool was already true, another path already
+    // spawned. The atomic swap here also guards against two concurrent
+    // calls racing on the same Extension.
+    if watcher_spawned.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     tokio::spawn(async move {
         let mut rx = client.subscribe().await;
         while let Some(notif) = rx.recv().await {
@@ -848,17 +867,26 @@ impl ExtensionManager {
         //
         // The `list_changed` watcher spawned at first registration already
         // owns the cache Arc, so an in-place repopulate here keeps it
-        // pointed at the same shared `RwLock`.
+        // pointed at the same shared `RwLock`. If the original
+        // registration ran with `session_id=None`, no watcher was
+        // spawned at that point — this is the path that fixes that
+        // case: we now have a session id, so we spawn (idempotent via
+        // `watcher_spawned`).
         let fast_path: Option<(
             McpClientBox,
             std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+            std::sync::Arc<std::sync::atomic::AtomicBool>,
         )> = {
             let extensions = self.extensions.lock().await;
             match extensions.get(&sanitized_name) {
                 Some(existing)
                     if existing.config == config && existing.resolved_config == resolved_config =>
                 {
-                    Some((existing.client.clone(), existing.mcp_skills.clone()))
+                    Some((
+                        existing.client.clone(),
+                        existing.mcp_skills.clone(),
+                        existing.watcher_spawned.clone(),
+                    ))
                 }
                 Some(_) => {
                     tracing::debug!(
@@ -871,7 +899,7 @@ impl ExtensionManager {
             }
         };
 
-        if let Some((client, cache)) = fast_path {
+        if let Some((client, cache, watcher_spawned)) = fast_path {
             // True no-op unless we both have a session id AND the cache is
             // empty (meaning the earlier registration never fetched the
             // index). Reading through the Arc lets us check without
@@ -881,6 +909,17 @@ impl ExtensionManager {
                 let refreshed =
                     populate_mcp_skills_cache(&sanitized_name, client.as_ref(), session_id).await;
                 *cache.write().await = refreshed;
+                // If the original registration didn't have a session id,
+                // its watcher was never spawned. Now that we do, ensure
+                // one is running so future `list_changed` notifications
+                // refresh the cache. Idempotent — no-op if already spawned.
+                spawn_skill_list_changed_watcher(
+                    sanitized_name.clone(),
+                    client.clone(),
+                    cache.clone(),
+                    watcher_spawned,
+                    session_id,
+                );
             }
             return Ok(());
         }
@@ -1105,15 +1144,19 @@ impl ExtensionManager {
         let mcp_skills =
             populate_mcp_skills_cache(&sanitized_name, client_arc.as_ref(), session_id).await;
         let cache = std::sync::Arc::new(tokio::sync::RwLock::new(mcp_skills));
+        let watcher_spawned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         // Subscribe-and-refresh task. Spawned BEFORE insert so the task
         // is live the moment the extension is reachable through the
         // manager; ends naturally when the client's notification
-        // channel closes on disconnect.
+        // channel closes on disconnect. Idempotent per Extension —
+        // the repopulate fast-path may also call this if the first
+        // registration ran with session_id=None.
         spawn_skill_list_changed_watcher(
             sanitized_name.clone(),
             client_arc.clone(),
             cache.clone(),
+            watcher_spawned.clone(),
             session_id,
         );
 
@@ -1127,6 +1170,7 @@ impl ExtensionManager {
                 server_info,
                 temp_dir,
                 cache,
+                watcher_spawned,
             ),
         );
         drop(extensions);
@@ -1148,11 +1192,13 @@ impl ExtensionManager {
 
         let mcp_skills = populate_mcp_skills_cache(&normalized, client.as_ref(), session_id).await;
         let cache = std::sync::Arc::new(tokio::sync::RwLock::new(mcp_skills));
+        let watcher_spawned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         spawn_skill_list_changed_watcher(
             normalized.clone(),
             client.clone(),
             cache.clone(),
+            watcher_spawned.clone(),
             session_id,
         );
 
@@ -1165,6 +1211,7 @@ impl ExtensionManager {
                 info,
                 temp_dir,
                 cache,
+                watcher_spawned,
             ),
         );
         self.invalidate_tools_cache_and_bump_version().await;
@@ -2260,6 +2307,7 @@ mod tests {
                 std::sync::Arc::new(tokio::sync::RwLock::new(
                     crate::skills::mcp_client::ServerSkills::default(),
                 )),
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             );
             self.extensions
                 .lock()
