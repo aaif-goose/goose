@@ -61,8 +61,8 @@ mod tests {
     #[test]
     fn joins_absolute_path_and_subpath() {
         assert_eq!(
-            resolve_path_parts(vec!["/tmp/project".to_string(), "artifacts".to_string()]),
-            Ok("/tmp/project/artifacts".to_string())
+            resolve_path_parts(vec!["/tmp/project".to_string(), "src".to_string()]),
+            Ok("/tmp/project/src".to_string())
         );
     }
 
@@ -81,24 +81,16 @@ mod tests {
         };
 
         assert_eq!(
-            resolve_path_parts(vec![
-                "~".to_string(),
-                ".goose".to_string(),
-                "artifacts".to_string()
-            ]),
-            Ok(home
-                .join(".goose")
-                .join("artifacts")
-                .to_string_lossy()
-                .into_owned())
+            resolve_path_parts(vec!["~".to_string()]),
+            Ok(home.to_string_lossy().into_owned())
         );
         assert_eq!(
-            resolve_path_parts(vec!["~/artifacts".to_string()]),
-            Ok(home.join("artifacts").to_string_lossy().into_owned())
+            resolve_path_parts(vec!["~/Documents".to_string()]),
+            Ok(home.join("Documents").to_string_lossy().into_owned())
         );
         assert_eq!(
-            resolve_path_parts(vec!["~\\artifacts".to_string()]),
-            Ok(home.join("artifacts").to_string_lossy().into_owned())
+            resolve_path_parts(vec!["~\\Documents".to_string()]),
+            Ok(home.join("Documents").to_string_lossy().into_owned())
         );
     }
 

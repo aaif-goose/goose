@@ -1,7 +1,10 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
-use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use crate::providers::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use crate::providers::errors::ProviderError;
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
 use crate::providers::google::GOOGLE_DOC_URL;
@@ -35,11 +38,9 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
-const HTTP_TIMEOUT_SECS: u64 = 600;
-
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .build()
         .expect("failed to build HTTP client")
 });
@@ -303,11 +304,15 @@ struct LoadCodeAssistResponse {
     cloudaicompanion_project: Option<String>,
     current_tier: Option<TierInfo>,
     onboard_tiers: Option<Vec<TierInfo>>,
+    allowed_tiers: Option<Vec<TierInfo>>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TierInfo {
     id: Option<String>,
+    #[serde(default)]
+    is_default: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -424,7 +429,15 @@ async fn setup_code_assist(access_token: &str) -> Result<String> {
         .as_ref()
         .and_then(|tiers| tiers.first())
         .and_then(|t| t.id.clone())
-        .unwrap_or_else(|| "FREE".to_string());
+        .or_else(|| {
+            load_resp
+                .allowed_tiers
+                .as_ref()
+                .and_then(|tiers| tiers.iter().find(|t| t.is_default.unwrap_or(false)))
+                .or_else(|| load_resp.allowed_tiers.as_ref().and_then(|t| t.first()))
+                .and_then(|t| t.id.clone())
+        })
+        .unwrap_or_else(|| "free-tier".to_string());
 
     tracing::info!("Onboarding user with tier: {}", tier_id);
 

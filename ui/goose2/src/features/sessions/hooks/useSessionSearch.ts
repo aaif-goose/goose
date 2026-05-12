@@ -72,10 +72,8 @@ export function useSessionSearch({
     setError(null);
     setResults(metadataResults);
 
-    const acpSessionIds = sessions.map(
-      (session) => session.acpSessionId ?? session.id,
-    );
-    if (trimmed.length < 2 || acpSessionIds.length === 0) {
+    const sessionIds = sessions.map((session) => session.id);
+    if (trimmed.length < 2 || sessionIds.length === 0) {
       setIsSearching(false);
       return;
     }
@@ -83,7 +81,7 @@ export function useSessionSearch({
     setIsSearching(true);
 
     try {
-      const messageResults = await acpSearchSessions(trimmed, acpSessionIds);
+      const messageResults = await acpSearchSessions(trimmed, sessionIds);
       if (requestIdRef.current !== requestId) {
         return;
       }

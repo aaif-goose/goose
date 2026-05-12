@@ -39,9 +39,7 @@ describe("FilesList", () => {
     render(<FilesList />);
 
     expect(
-      screen.getByText(
-        "Project files are unavailable until a project with working directories is assigned.",
-      ),
+      screen.getByText("Files will show here after you assign a project."),
     ).toBeInTheDocument();
   });
 

@@ -1,10 +1,12 @@
 import { HomeScreen } from "@/features/home/ui/HomeScreen";
 import { ChatView } from "@/features/chat/ui/ChatView";
 import { SkillsView } from "@/features/skills/ui/SkillsView";
+import { ExtensionsView } from "@/features/extensions/ui/ExtensionsView";
 import { AgentsView } from "@/features/agents/ui/AgentsView";
 import { ProjectsView } from "@/features/projects/ui/ProjectsView";
 import { SessionHistoryView } from "@/features/sessions/ui/SessionHistoryView";
 import type { ChatSession } from "@/features/chat/stores/chatSessionStore";
+import type { SkillInfo } from "@/features/skills/api/skills";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import type { AppView } from "../AppShell";
 
@@ -27,6 +29,7 @@ interface AppShellContentProps {
     query?: string,
   ) => void;
   onStartChatFromProject: (project: ProjectInfo) => void;
+  onStartChatWithSkill: (skill: SkillInfo, projectId?: string | null) => void;
 }
 
 export function AppShellContent({
@@ -41,10 +44,13 @@ export function AppShellContent({
   onSelectSession,
   onSelectSearchResult,
   onStartChatFromProject,
+  onStartChatWithSkill,
 }: AppShellContentProps) {
   switch (activeView) {
     case "skills":
-      return <SkillsView />;
+      return <SkillsView onStartChatWithSkill={onStartChatWithSkill} />;
+    case "extensions":
+      return <ExtensionsView />;
     case "agents":
       return <AgentsView />;
     case "projects":

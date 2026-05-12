@@ -1,0 +1,24 @@
+{
+  "name": "nvidia",
+  "engine": "openai",
+  "display_name": "NVIDIA",
+  "description": "Hosted NVIDIA NIM models through the OpenAI-compatible API.",
+  "api_key_env": "NVIDIA_API_KEY",
+  "base_url": "https://integrate.api.nvidia.com/v1",
+  "catalog_provider_id": "nvidia",
+  "dynamic_models": true,
+  "models": [
+    {
+      "name": "z-ai/glm-4.7",
+      "context_limit": 131072
+    }
+  ],
+  "supports_streaming": true,
+  "model_doc_link": "https://build.nvidia.com/models",
+  "setup_steps": [
+    "Sign in to https://build.nvidia.com",
+    "Choose a Free Endpoint model from the model catalog",
+    "Create an API key",
+    "Copy the key and paste it above"
+  ]
+}
