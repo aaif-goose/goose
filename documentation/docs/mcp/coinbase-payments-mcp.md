@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
 import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 
-This tutorial covers how to add the [Coinbase Agentic Wallet MCP Server](https://docs.cdp.coinbase.com/agentic-wallet/mcp/welcome) as a goose extension. Lets agents discover and pay for HTTP APIs autonomously via the x402 protocol, using a Coinbase-managed embedded wallet -- no API keys, no manual onramp, no seed phrases.
+This tutorial covers how to add the [Coinbase Agentic Wallet MCP Server](https://docs.cdp.coinbase.com/agentic-wallet/mcp/welcome) as a goose extension. Agents can discover and pay for HTTP APIs autonomously via the x402 protocol, using a Coinbase-managed embedded wallet. Funding happens through the built-in Coinbase Onramp when needed, with no API keys or seed phrases to manage.
 
 ## Install Agentic Wallet MCP
 
@@ -59,7 +59,7 @@ You'll need [Node.js](https://nodejs.org/) installed on your system to run this 
       name="Coinbase Agentic Wallet"
       description="Discover and pay for x402 APIs with USDC"
       type="stdio"
-      command="sh -c 'node \"$HOME/.payments-mcp/bundle.js\"'"
+      command={`sh -c 'node "$HOME/.payments-mcp/bundle.js"'`}
       timeout={300}
     />
   </TabItem>
