@@ -10,7 +10,7 @@ use axum::{
 };
 use futures::future::join_all;
 use goose::config::paths::Paths;
-use goose::download_manager::{get_download_manager, DownloadProgress};
+use goose::download_manager::{get_download_manager, DownloadProgress, DownloadStatus};
 use goose::providers::local_inference::hf_models::{self, HfModelInfo, HfModelVariant};
 use goose::providers::local_inference::{
     available_inference_memory_bytes,
@@ -415,6 +415,44 @@ pub struct DownloadModelRequest {
     pub spec: String,
 }
 
+async fn local_model_id_from_spec(spec: &str) -> anyhow::Result<String> {
+    if let Ok((repo_id, quantization)) = hf_models::parse_model_spec(spec) {
+        return Ok(model_id_from_repo(&repo_id, &quantization));
+    }
+
+    let variants = hf_models::get_repo_local_variants(spec).await?;
+    let has_llamacpp = variants
+        .iter()
+        .any(|variant| variant.backend_id == "llamacpp");
+    let mlx_variants: Vec<_> = variants
+        .iter()
+        .filter(|variant| variant.backend_id == "mlx")
+        .collect();
+    if mlx_variants.len() == 1 && !has_llamacpp {
+        Ok(spec.to_string())
+    } else {
+        anyhow::bail!(
+            "Model spec '{}' is ambiguous; choose one of: {}",
+            spec,
+            variants
+                .iter()
+                .map(|variant| variant.download_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+fn mark_download_failed(model_id: &str, error: impl std::fmt::Display) {
+    get_download_manager().update_progress(&format!("{}-model", model_id), |progress| {
+        if progress.status != DownloadStatus::Cancelled {
+            progress.status = DownloadStatus::Failed;
+            progress.error = Some(error.to_string());
+        }
+        progress.task_exited = true;
+    });
+}
+
 #[utoipa::path(
     post,
     path = "/local-inference/download",
@@ -427,11 +465,21 @@ pub struct DownloadModelRequest {
 pub async fn download_hf_model(
     Json(req): Json<DownloadModelRequest>,
 ) -> Result<(StatusCode, Json<String>), ErrorResponse> {
-    let resolved = resolve_local_model_spec(&req.spec)
+    let model_id = local_model_id_from_spec(&req.spec)
         .await
         .map_err(|e| ErrorResponse::bad_request(format!("Invalid spec: {}", e)))?;
-    let model_id = register_resolved_model(resolved, &req.spec)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to register model: {}", e)))?;
+    let spec = req.spec.clone();
+    let model_id_for_task = model_id.clone();
+    tokio::spawn(async move {
+        match resolve_local_model_spec(&spec).await {
+            Ok(resolved) => {
+                if let Err(error) = register_resolved_model(resolved, &spec) {
+                    mark_download_failed(&model_id_for_task, error);
+                }
+            }
+            Err(error) => mark_download_failed(&model_id_for_task, error),
+        }
+    });
 
     Ok((StatusCode::ACCEPTED, Json(model_id)))
 }

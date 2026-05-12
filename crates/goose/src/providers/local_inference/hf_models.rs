@@ -1480,12 +1480,22 @@ impl HfDownloadProgress {
         );
     }
 
+    fn is_cancelled(&self) -> bool {
+        crate::download_manager::get_download_manager()
+            .get_progress(&format!("{}-model", self.model_id))
+            .is_some_and(|progress| {
+                progress.status == crate::download_manager::DownloadStatus::Cancelled
+            })
+    }
+
     fn complete(&self) {
         crate::download_manager::get_download_manager().update_progress(
             &format!("{}-model", self.model_id),
             |progress| {
-                progress.status = crate::download_manager::DownloadStatus::Completed;
-                progress.progress_percent = 100.0;
+                if progress.status != crate::download_manager::DownloadStatus::Cancelled {
+                    progress.status = crate::download_manager::DownloadStatus::Completed;
+                    progress.progress_percent = 100.0;
+                }
                 progress.task_exited = true;
             },
         );
@@ -1495,8 +1505,10 @@ impl HfDownloadProgress {
         crate::download_manager::get_download_manager().update_progress(
             &format!("{}-model", self.model_id),
             |progress| {
-                progress.status = crate::download_manager::DownloadStatus::Failed;
-                progress.error = Some(error.to_string());
+                if progress.status != crate::download_manager::DownloadStatus::Cancelled {
+                    progress.status = crate::download_manager::DownloadStatus::Failed;
+                    progress.error = Some(error.to_string());
+                }
                 progress.task_exited = true;
             },
         );
@@ -1521,6 +1533,9 @@ impl ProgressHandler for HfDownloadProgress {
                 );
             }
             DownloadEvent::Progress { files } => {
+                if self.is_cancelled() {
+                    return;
+                }
                 let bytes_downloaded = files
                     .iter()
                     .map(|file| {
@@ -1541,6 +1556,9 @@ impl ProgressHandler for HfDownloadProgress {
                 total_bytes,
                 bytes_per_sec,
             } => {
+                if self.is_cancelled() {
+                    return;
+                }
                 if let Ok(mut state) = self.state.lock() {
                     state.bytes_downloaded = *bytes_completed;
                     state.total_bytes = (*total_bytes).max(state.total_bytes);
@@ -1638,6 +1656,9 @@ fn update_download_manager_progress(model_id: &str, state: &HfDownloadState) {
     crate::download_manager::get_download_manager().update_progress(
         &format!("{}-model", model_id),
         |progress| {
+            if progress.status == crate::download_manager::DownloadStatus::Cancelled {
+                return;
+            }
             progress.bytes_downloaded = state.bytes_downloaded;
             progress.total_bytes = state.total_bytes;
             progress.progress_percent = if state.total_bytes > 0 {
