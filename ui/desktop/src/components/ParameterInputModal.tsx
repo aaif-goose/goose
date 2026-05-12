@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Parameter } from '../recipe';
 import { Button } from './ui/button';
 import { defineMessages, useIntl } from '../i18n';
@@ -68,6 +68,8 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
   initialValues,
 }) => {
   const intl = useIntl();
+  const formId = useId();
+  const fieldId = (key: string): string => `${formId}-${key}`;
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [showCancelOptions, setShowCancelOptions] = useState(false);
@@ -153,7 +155,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
               {parameters.map((param) => (
                 <div key={param.key}>
                   <label
-                    htmlFor={param.key}
+                    htmlFor={fieldId(param.key)}
                     className="block text-md font-medium text-text-primary mb-2"
                   >
                     {param.description || param.key}
@@ -164,7 +166,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
 
                   {param.input_type === 'select' && param.options ? (
                     <select
-                      id={param.key}
+                      id={fieldId(param.key)}
                       value={inputValues[param.key] || ''}
                       onChange={(e) => handleChange(param.key, e.target.value)}
                       className={`w-full p-3 border rounded-lg bg-background-secondary text-text-primary focus:outline-none focus:ring-2 ${
@@ -182,7 +184,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
                     </select>
                   ) : param.input_type === 'boolean' ? (
                     <select
-                      id={param.key}
+                      id={fieldId(param.key)}
                       value={inputValues[param.key] || ''}
                       onChange={(e) => handleChange(param.key, e.target.value)}
                       className={`w-full p-3 border rounded-lg bg-background-secondary text-text-primary focus:outline-none focus:ring-2 ${
@@ -197,7 +199,7 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
                     </select>
                   ) : (
                     <input
-                      id={param.key}
+                      id={fieldId(param.key)}
                       type={param.input_type === 'number' ? 'number' : 'text'}
                       value={inputValues[param.key] || ''}
                       onChange={(e) => handleChange(param.key, e.target.value)}
