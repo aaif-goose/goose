@@ -3,11 +3,12 @@ import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { setStoredModelPreference } from "@/features/chat/lib/modelPreferences";
 import {
-  getAgentProviders,
-  getModelProviders,
+  getAgentProvidersFromEntries,
+  getModelProvidersFromEntries,
 } from "@/features/providers/providerCatalog";
 import { filterModelProvidersForDistro } from "@/features/providers/distroProviderConstraints";
 import { useCredentials } from "@/features/providers/hooks/useCredentials";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import { useDistroStore } from "@/features/settings/stores/distroStore";
 import { saveDefaults } from "../api/onboarding";
@@ -42,6 +43,7 @@ export function useOnboardingProviderStep({
   );
 
   const inventoryEntries = useProviderInventoryStore((state) => state.entries);
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const agentStore = useAgentStore();
   const distro = useDistroStore((state) => state.manifest);
 
@@ -57,8 +59,16 @@ export function useOnboardingProviderStep({
     completeNativeSetup,
   } = useCredentials();
 
+  const agentProviders = useMemo(
+    () => getAgentProvidersFromEntries(catalogEntries),
+    [catalogEntries],
+  );
+
   const modelProviders = useMemo(() => {
-    const all = filterModelProvidersForDistro(getModelProviders(), distro);
+    const all = filterModelProvidersForDistro(
+      getModelProvidersFromEntries(catalogEntries),
+      distro,
+    );
     return [...all].sort((a, b) => {
       const aIndex = PROMOTED_MODEL_ORDER.indexOf(a.id);
       const bIndex = PROMOTED_MODEL_ORDER.indexOf(b.id);
@@ -67,7 +77,7 @@ export function useOnboardingProviderStep({
       }
       return a.displayName.localeCompare(b.displayName);
     });
-  }, [distro]);
+  }, [catalogEntries, distro]);
 
   const visibleModelProviders = modelProviders.filter(
     (provider) =>
@@ -93,12 +103,10 @@ export function useOnboardingProviderStep({
         (entry) =>
           entry.configured &&
           entry.providerId !== "goose" &&
-          getAgentProviders().some(
-            (provider) => provider.id === entry.providerId,
-          ) &&
+          agentProviders.some((provider) => provider.id === entry.providerId) &&
           entry.models.length > 0,
       ),
-    [inventoryEntries],
+    [agentProviders, inventoryEntries],
   );
 
   const usableDefaultEntries = useMemo<UsableDefaultEntry[]>(
@@ -167,7 +175,7 @@ export function useOnboardingProviderStep({
       modelId: readiness.modelId,
       modelName: readiness.modelName,
     };
-    const isAgentProvider = getAgentProviders().some(
+    const isAgentProvider = agentProviders.some(
       (provider) => provider.id === readiness.providerId,
     );
 

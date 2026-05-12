@@ -1,0 +1,5 @@
+{
+  "name": "hello-hooks",
+  "version": "0.1.0",
+  "description": "A tiny demo plugin that prints messages so you can see goose's hook system firing in real time."
+}

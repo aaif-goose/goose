@@ -141,11 +141,8 @@ describe("useChat attachments", () => {
       { type: "text", text: "" },
       {
         type: "image",
-        source: {
-          type: "base64",
-          mediaType: "image/png",
-          data: "abc123",
-        },
+        data: "abc123",
+        mimeType: "image/png",
       },
     ]);
     expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", " ", {

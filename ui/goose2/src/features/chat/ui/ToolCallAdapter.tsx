@@ -46,7 +46,7 @@ function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    if (status === "executing") {
+    if (status === "in_progress") {
       const origin = startedAt ?? Date.now();
       setElapsed(Math.floor((Date.now() - origin) / 1000));
       const interval = setInterval(() => {
@@ -282,7 +282,7 @@ export function ToolCallAdapter({
     [args, name],
   );
   const elapsedSeconds =
-    status === "executing" && elapsed >= 3 ? elapsed : undefined;
+    status === "in_progress" && elapsed >= 3 ? elapsed : undefined;
 
   const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();
 

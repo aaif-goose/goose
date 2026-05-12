@@ -108,6 +108,9 @@ pub async fn run_list_sessions<C: Connection>() {
         if let Some(ref mut meta) = s.meta {
             assert!(meta.get("createdAt").and_then(|v| v.as_str()).is_some());
             meta.remove("createdAt");
+            // Provider/model metadata varies by test fixture; not relevant here.
+            meta.remove("providerId");
+            meta.remove("modelId");
         }
     }
     let mut expected_meta = serde_json::Map::new();
@@ -244,7 +247,7 @@ pub async fn run_config_mcp<C: Connection>() {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -294,7 +297,7 @@ pub async fn run_config_mcp<C: Connection>() {
 pub async fn run_fs_read_text_file_true<C: Connection>() {
     let temp_dir = tempfile::tempdir().unwrap();
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  developer:\n    enabled: true\n    type: platform\n    name: developer\n    description: Developer\n    display_name: Developer\n    bundled: true\n    available_tools: []\n"
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  developer:\n    enabled: true\n    type: platform\n    name: developer\n    description: Developer\n    display_name: Developer\n    bundled: true\n    available_tools: []\n"
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
 
@@ -463,7 +466,7 @@ pub async fn run_load_mode<C: Connection>() {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -703,7 +706,7 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions_on_demand_migration: true\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -1305,7 +1308,7 @@ pub async fn run_prompt_skill<C: Connection>() {
     .await;
 
     let config = TestConnectionConfig {
-        builtins: vec!["summon".to_string(), "skills".to_string()],
+        builtins: vec!["summon".to_string()],
         cwd: Some(cwd),
         ..Default::default()
     };

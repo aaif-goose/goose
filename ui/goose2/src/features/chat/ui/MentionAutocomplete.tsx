@@ -246,12 +246,12 @@ function MentionAvatar({ persona }: { persona: Persona }) {
     <div
       className={cn(
         "flex h-7 w-7 items-center justify-center rounded-full",
-        persona.isBuiltin
+        persona.isBuiltin || persona.writable === false
           ? "bg-foreground/10 text-foreground"
           : "bg-brand/10 text-brand",
       )}
     >
-      {persona.isBuiltin ? (
+      {persona.isBuiltin || persona.writable === false ? (
         <Sparkles className="h-3.5 w-3.5" />
       ) : (
         <User className="h-3.5 w-3.5" />

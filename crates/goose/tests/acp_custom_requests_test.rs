@@ -140,7 +140,7 @@ fn test_custom_list_builtin_skill_sources() {
         );
         assert_eq!(builtin.get("global"), Some(&serde_json::json!(true)));
         assert_eq!(
-            builtin.get("directory"),
+            builtin.get("path"),
             Some(&serde_json::json!("builtin://skills/goose-doc-guide"))
         );
     });
@@ -523,7 +523,6 @@ fn test_developer_fs_requests_use_acp_session_id() {
             // gpt-5-nano routes to the Responses API; use a Chat Completions
             // model so the canned SSE fixtures are parsed correctly.
             current_model: "gpt-4.1".to_string(),
-            builtins: vec!["developer".to_string()],
             read_text_file: Some(Arc::new(move |req| {
                 *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
                 Ok(agent_client_protocol::schema::ReadTextFileResponse::new(

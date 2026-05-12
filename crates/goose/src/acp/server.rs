@@ -23,25 +23,27 @@ use crate::providers::inventory::{
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
+use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
 use agent_client_protocol::schema::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
-    AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
-    CloseSessionResponse, ConfigOptionUpdate, Content, ContentBlock, ContentChunk,
-    CurrentModeUpdate, EmbeddedResource, EmbeddedResourceResource, FileSystemCapabilities,
-    ForkSessionRequest, ForkSessionResponse, ImageContent, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    McpCapabilities, McpServer, Meta, ModelId, ModelInfo, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
-    SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionId, SessionInfo, SessionInfoUpdate, SessionListCapabilities,
-    SessionMode, SessionModeId, SessionModeState, SessionModelState, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
-    StopReason, TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId,
-    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage,
-    UsageUpdate,
+    AuthenticateResponse, AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
+    BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
+    ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
+    EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest, ForkSessionResponse,
+    ImageContent, InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer, Meta, ModelId, ModelInfo,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption, SessionId,
+    SessionInfo, SessionInfoUpdate, SessionListCapabilities, SessionMode, SessionModeId,
+    SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
+    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
+    Usage, UsageUpdate,
 };
 use agent_client_protocol::util::MatchDispatchFrom;
 use agent_client_protocol::{
@@ -148,18 +150,10 @@ async fn ensure_refresh_identity_current(
 /// called "Session" (the `sessions` DB table) which represents the agent's working
 /// state: the message list the LLM sees, compaction state, provider binding, etc.
 ///
-/// To bridge these two worlds without rewriting the existing Session model:
-/// - **Thread** (`threads` table) = the ACP session. The `sessionId` that ACP clients
-///   see is actually a thread ID. Threads own the human-visible message log.
-/// - **Session** (`sessions` table) = an internal execution context. A thread may have
-///   many sessions over its lifetime (e.g. when the provider or persona changes).
-///   Clients never see or manage these directly.
-///
-/// The `sessions` HashMap below is keyed by **thread ID** (= ACP session ID).
-/// The `internal_session_id` field tracks which goose Session is currently active.
+/// The ACP session ID maps directly to a `sessions` row. The `sessions` HashMap
+/// below is keyed by session ID.
 struct GooseAcpSession {
     agent: AgentHandle,
-    internal_session_id: String,
     tool_requests: HashMap<String, crate::conversation::message::ToolRequest>,
     /// For each tool_call_id that belongs to a multi-tool chain (run of
     /// consecutive ToolRequest blocks within one assistant message), the chain
@@ -184,11 +178,11 @@ struct GooseAcpSession {
 /// LLM summary for the whole run once every step has a recorded ToolResponse.
 #[derive(Debug, Clone)]
 struct ToolChain {
-    /// Assistant message id where every tool request in this chain lives.
-    /// This is also the row we patch when persisting the chain summary.
-    message_id: String,
     /// Tool call ids in document order. Always `len() >= 2`.
     ids: Vec<String>,
+    /// The message_id of the assistant message containing these tool calls.
+    /// Used to persist chain summaries back to the messages table.
+    message_id: String,
 }
 
 /// Progress stages signalled by the background agent setup task via the watch
@@ -224,6 +218,17 @@ struct AgentSetupRequest {
     prebuilt_provider: Option<Arc<dyn Provider>>,
 }
 
+pub struct GooseAcpAgentOptions {
+    pub provider_factory: AcpProviderFactory,
+    pub builtins: Vec<String>,
+    pub data_dir: std::path::PathBuf,
+    pub config_dir: std::path::PathBuf,
+    pub goose_mode: GooseMode,
+    pub disable_session_naming: bool,
+    pub goose_platform: GoosePlatform,
+    pub additional_source_roots: Vec<SourceRoot>,
+}
+
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
     provider_factory: AcpProviderFactory,
@@ -233,12 +238,12 @@ pub struct GooseAcpAgent {
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
-    thread_manager: Arc<crate::session::ThreadManager>,
     permission_manager: Arc<PermissionManager>,
     goose_mode: GooseMode,
     disable_session_naming: bool,
     provider_inventory: ProviderInventoryService,
     goose_platform: GoosePlatform,
+    additional_source_roots: Vec<SourceRoot>,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -248,19 +253,17 @@ fn sid_short(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
-fn thread_session_meta(
-    thread: &crate::session::Thread,
-) -> serde_json::Map<String, serde_json::Value> {
+fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value> {
     let mut meta = serde_json::Map::new();
     meta.insert(
         "messageCount".to_string(),
-        serde_json::Value::Number(thread.message_count.into()),
+        serde_json::Value::Number(session.message_count.into()),
     );
     meta.insert(
         "createdAt".to_string(),
-        serde_json::Value::String(thread.created_at.to_rfc3339()),
+        serde_json::Value::String(session.created_at.to_rfc3339()),
     );
-    if let Some(ref archived_at) = thread.archived_at {
+    if let Some(ref archived_at) = session.archived_at {
         meta.insert(
             "archivedAt".to_string(),
             serde_json::Value::String(archived_at.to_rfc3339()),
@@ -268,30 +271,25 @@ fn thread_session_meta(
     }
     meta.insert(
         "userSetName".to_string(),
-        serde_json::Value::Bool(thread.user_set_name),
+        serde_json::Value::Bool(session.user_set_name),
     );
-    if let Some(ref pid) = thread.metadata.project_id {
+
+    if let Some(ref pid) = session.project_id {
         meta.insert(
             "projectId".to_string(),
             serde_json::Value::String(pid.clone()),
         );
     }
-    if let Some(ref provider_id) = thread.metadata.provider_id {
+    if let Some(ref provider) = session.provider_name {
         meta.insert(
             "providerId".to_string(),
-            serde_json::Value::String(provider_id.clone()),
+            serde_json::Value::String(provider.clone()),
         );
     }
-    if let Some(ref model_id) = thread.metadata.model_id {
+    if let Some(ref mc) = session.model_config {
         meta.insert(
             "modelId".to_string(),
-            serde_json::Value::String(model_id.clone()),
-        );
-    }
-    if let Some(ref persona_id) = thread.metadata.persona_id {
-        meta.insert(
-            "personaId".to_string(),
-            serde_json::Value::String(persona_id.clone()),
+            serde_json::Value::String(mc.model_name.clone()),
         );
     }
     meta
@@ -303,21 +301,27 @@ fn spawn_session_name_update_notifier(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
     tokio::spawn(async move {
         while let Some(update) = rx.recv().await {
-            let thread = update.thread;
-            let thread_id = thread.id.clone();
-            let meta = thread_session_meta(&thread);
+            let mut meta = serde_json::Map::new();
+            meta.insert(
+                "messageCount".to_string(),
+                serde_json::Value::Number(update.message_count.into()),
+            );
+            meta.insert(
+                "userSetName".to_string(),
+                serde_json::Value::Bool(update.user_set_name),
+            );
             let notification = SessionNotification::new(
-                SessionId::new(thread_id.clone()),
+                SessionId::new(update.session_id.clone()),
                 SessionUpdate::SessionInfoUpdate(
                     SessionInfoUpdate::new()
-                        .title(thread.name)
-                        .updated_at(thread.updated_at.to_rfc3339())
+                        .title(update.name)
+                        .updated_at(update.updated_at.to_rfc3339())
                         .meta(meta),
                 ),
             );
             if let Err(error) = cx.send_notification(notification) {
                 warn!(
-                    thread_id = %thread_id,
+                    session_id = %update.session_id,
                     error = %error,
                     "Failed to send generated session name update"
                 );
@@ -732,7 +736,7 @@ fn extract_tool_chains(
 
 /// If `buffer` holds a multi-tool run (≥ 2 tool requests), (re)register a
 /// [`ToolChain`] in `chain_membership` anchored on the **first** tool's
-/// message_id (the row [`ThreadManager::update_tool_request_meta`] will patch
+/// message_id (the row [`SessionManager::update_tool_request_meta`] will patch
 /// when persisting the LLM-generated summary). Does **not** clear the buffer
 /// — chains can grow as more tools arrive (sequential tool use), so callers
 /// keep accumulating and re-registering with the larger set of ids.
@@ -750,11 +754,11 @@ fn extend_chain_membership(
     chain_membership: &mut HashMap<String, Arc<ToolChain>>,
 ) {
     if buffer.len() >= 2 {
-        let anchor_message_id = buffer[0].1.clone();
         let ids: Vec<String> = buffer.iter().map(|(id, _)| id.clone()).collect();
+        let message_id = buffer[0].1.clone();
         let chain = Arc::new(ToolChain {
-            message_id: anchor_message_id,
             ids: ids.clone(),
+            message_id,
         });
         for id in ids {
             chain_membership.insert(id, chain.clone());
@@ -1046,16 +1050,8 @@ impl GooseAcpAgent {
     }
 
     // TODO: goose reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
-    pub async fn new(
-        provider_factory: AcpProviderFactory,
-        builtins: Vec<String>,
-        data_dir: std::path::PathBuf,
-        config_dir: std::path::PathBuf,
-        goose_mode: GooseMode,
-        disable_session_naming: bool,
-        goose_platform: GoosePlatform,
-    ) -> Result<Self> {
-        let session_manager = Arc::new(SessionManager::new(data_dir));
+    pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
+        let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
         let storage_clone = session_manager.storage().clone();
@@ -1063,27 +1059,24 @@ impl GooseAcpAgent {
             let _ = storage_clone.pool().await;
         });
 
-        let thread_manager = Arc::new(crate::session::ThreadManager::new(
-            session_manager.storage().clone(),
-        ));
-        let permission_manager = Arc::new(PermissionManager::new(config_dir.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
 
         Ok(Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            provider_factory,
-            builtins,
+            provider_factory: options.provider_factory,
+            builtins: options.builtins,
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
-            config_dir,
+            config_dir: options.config_dir,
             session_manager,
-            thread_manager,
             permission_manager,
-            goose_mode,
-            disable_session_naming,
+            goose_mode: options.goose_mode,
+            disable_session_naming: options.disable_session_naming,
             provider_inventory,
-            goose_platform,
+            goose_platform: options.goose_platform,
+            additional_source_roots: options.additional_source_roots,
         })
     }
 
@@ -1289,8 +1282,8 @@ impl GooseAcpAgent {
         } = req;
 
         let goose_mode = goose_session.goose_mode;
-        let internal_session_id = goose_session.id.clone();
-        let agent_session_id = SessionId::new(internal_session_id.clone());
+        let setup_session_id = goose_session.id.clone();
+        let agent_session_id = SessionId::new(setup_session_id.clone());
         let sid = sid_short(session_id.0.as_ref());
 
         let cx = cx.clone();
@@ -1365,7 +1358,7 @@ impl GooseAcpAgent {
                     .map_err(|e| e.to_string())?;
 
                 agent
-                    .update_goose_mode(goose_mode, &internal_session_id)
+                    .update_goose_mode(goose_mode, &setup_session_id)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -1473,7 +1466,7 @@ impl GooseAcpAgent {
                         .await;
                 }
 
-                GooseAcpAgent::add_mcp_extensions(&agent, mcp_servers, &internal_session_id)
+                GooseAcpAgent::add_mcp_extensions(&agent, mcp_servers, &setup_session_id)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -1590,7 +1583,7 @@ impl GooseAcpAgent {
         &self,
         content_item: &MessageContent,
         session_id: &SessionId,
-        thread_id: &str,
+        session_id_str: &str,
         message_id: Option<&str>,
         agent: &Arc<Agent>,
         session: &mut GooseAcpSession,
@@ -1609,7 +1602,7 @@ impl GooseAcpAgent {
                 self.handle_tool_request(
                     tool_request,
                     session_id,
-                    thread_id,
+                    session_id_str,
                     message_id,
                     session,
                     cx,
@@ -1620,7 +1613,7 @@ impl GooseAcpAgent {
                 self.handle_tool_response(
                     tool_response,
                     session_id,
-                    thread_id,
+                    session_id_str,
                     message_id,
                     session,
                     cx,
@@ -1663,7 +1656,7 @@ impl GooseAcpAgent {
         &self,
         tool_request: &crate::conversation::message::ToolRequest,
         session_id: &SessionId,
-        thread_id: &str,
+        session_id_for_persist: &str,
         message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
@@ -1681,6 +1674,13 @@ impl GooseAcpAgent {
             SessionUpdate::ToolCall(initial_tool_call),
         ))?;
 
+        if Config::global()
+            .get_goose_disable_tool_call_summary()
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+
         if let Ok(tool_call) = &tool_request.tool_call {
             let agent = match &session.agent {
                 AgentHandle::Ready(a) => a.clone(),
@@ -1692,6 +1692,9 @@ impl GooseAcpAgent {
             let name = tool_call.name.to_string();
             let identity_meta = pending_tool_call.identity_meta.clone();
             let fallback_title = pending_tool_call.fallback_title.clone();
+            let session_id_for_persist = session_id_for_persist.to_string();
+            let message_id_for_persist = message_id.map(|s| s.to_string());
+            let session_manager = self.session_manager.clone();
             let args_json = tool_call
                 .arguments
                 .as_ref()
@@ -1704,10 +1707,6 @@ impl GooseAcpAgent {
                     }
                 })
                 .unwrap_or_default();
-
-            let thread_id_for_persist = thread_id.to_string();
-            let message_id_for_persist = message_id.map(|s| s.to_string());
-            let thread_manager = self.thread_manager.clone();
 
             tokio::spawn(async move {
                 let (title, from_llm) = match agent.provider().await {
@@ -1794,17 +1793,15 @@ impl GooseAcpAgent {
 
                 // Best-effort persistence: only persist the LLM-generated title
                 // (not the deterministic fallback) so reload uses fallback_title
-                // for older or failed cases just like today. Surface persist
-                // errors at warn level so the "occasional bad replay" symptom is
-                // diagnosable from logs alone.
+                // for older or failed cases just like today.
                 if from_llm {
                     if let Some(msg_id) = message_id_for_persist {
                         let patch = serde_json::json!({
                             crate::conversation::message::TOOL_META_TITLE_KEY: title,
                         });
-                        if let Err(e) = thread_manager
+                        if let Err(e) = session_manager
                             .update_tool_request_meta(
-                                &thread_id_for_persist,
+                                &session_id_for_persist,
                                 &msg_id,
                                 &request_id,
                                 patch,
@@ -1831,7 +1828,7 @@ impl GooseAcpAgent {
         &self,
         tool_response: &crate::conversation::message::ToolResponse,
         session_id: &SessionId,
-        thread_id: &str,
+        session_id_str: &str,
         message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
@@ -1876,7 +1873,7 @@ impl GooseAcpAgent {
         // Chain summarization: when this response completes a multi-tool
         // chain, fire one LLM summary covering the run.
         session.responded_tool_ids.insert(tool_response.id.clone());
-        self.maybe_summarize_chain(&tool_response.id, session_id, thread_id, session, cx);
+        self.maybe_summarize_chain(&tool_response.id, session_id, session_id_str, session, cx);
         let _ = message_id;
 
         Ok(())
@@ -1891,7 +1888,7 @@ impl GooseAcpAgent {
         &self,
         tool_call_id: &str,
         session_id: &SessionId,
-        thread_id: &str,
+        _session_id_str: &str,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
     ) {
@@ -1974,10 +1971,9 @@ impl GooseAcpAgent {
             .and_then(tool_call_identity_meta);
 
         let sid = session_id.clone();
-        let thread_id_for_persist = thread_id.to_string();
         let chain_for_task = chain.clone();
         let cx = cx.clone();
-        let thread_manager = self.thread_manager.clone();
+        let session_manager = self.session_manager.clone();
 
         let first_id = first_id.clone();
         tokio::spawn(async move {
@@ -2065,13 +2061,8 @@ impl GooseAcpAgent {
                     "count": count,
                 },
             });
-            if let Err(e) = thread_manager
-                .update_tool_request_meta(
-                    &thread_id_for_persist,
-                    &chain_for_task.message_id,
-                    &first_id,
-                    patch,
-                )
+            if let Err(e) = session_manager
+                .update_tool_request_meta(&sid.0, &chain_for_task.message_id, &first_id, patch)
                 .await
             {
                 warn!(
@@ -2167,6 +2158,104 @@ impl GooseAcpAgent {
             })?;
 
         Ok(())
+    }
+
+    fn input_hint_for_recipe(
+        params: Option<&Vec<crate::recipe::RecipeParameter>>,
+    ) -> Option<String> {
+        let params = params?;
+
+        params
+            .iter()
+            .find(|p| p.key == "args")
+            .or_else(|| params.iter().find(|p| p.default.is_none()))
+            .or_else(|| params.first())
+            .map(|p| p.description.clone())
+    }
+
+    async fn build_available_commands_from_slash_commands() -> Vec<AvailableCommand> {
+        let mut commands = Vec::new();
+
+        for mapping in crate::slash_commands::list_commands() {
+            if Self::is_builtin_agent_command(&mapping.command) {
+                continue;
+            }
+
+            let recipe_path = std::path::PathBuf::from(&mapping.recipe_path);
+
+            if !recipe_path.exists() {
+                continue;
+            }
+
+            let Ok(recipe_content) = tokio::fs::read_to_string(&recipe_path).await else {
+                continue;
+            };
+
+            let Some(recipe_dir) = recipe_path.parent() else {
+                continue;
+            };
+
+            let recipe_dir_str = recipe_dir.display().to_string();
+
+            let Ok(validation_result) =
+                crate::recipe::validate_recipe::validate_recipe_template_from_content(
+                    &recipe_content,
+                    Some(recipe_dir_str),
+                )
+            else {
+                continue;
+            };
+
+            let required_param_count = validation_result
+                .parameters
+                .as_ref()
+                .map(|params| params.iter().filter(|p| p.default.is_none()).count())
+                .unwrap_or(0);
+
+            if required_param_count > 1 {
+                continue;
+            }
+
+            let mut command =
+                AvailableCommand::new(mapping.command, validation_result.description.clone());
+
+            if let Some(hint) = Self::input_hint_for_recipe(validation_result.parameters.as_ref()) {
+                command = command.input(AvailableCommandInput::Unstructured(
+                    UnstructuredCommandInput::new(hint),
+                ));
+            }
+
+            commands.push(command);
+        }
+
+        commands
+    }
+
+    async fn send_available_commands_update(
+        &self,
+        cx: &ConnectionTo<Client>,
+        session_id: &SessionId,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let commands = Self::build_available_commands_from_slash_commands().await;
+
+        cx.send_notification(SessionNotification::new(
+            session_id.clone(),
+            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands)),
+        ))?;
+
+        Ok(())
+    }
+
+    fn is_builtin_agent_command(command: &str) -> bool {
+        let normalized = command.trim_start_matches('/');
+
+        crate::agents::execute_commands::list_commands()
+            .iter()
+            .any(|cmd| cmd.name == normalized)
+            || crate::agents::execute_commands::COMPACT_TRIGGERS
+                .iter()
+                .filter_map(|trigger| trigger.strip_prefix('/'))
+                .any(|trigger| trigger == normalized)
     }
 }
 
@@ -2338,54 +2427,57 @@ impl GooseAcpAgent {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let persona_id = args
+        // When _meta.client is set, the session is created by a known client
+        // (e.g. "goose" for the desktop app) and treated as a User session.
+        // Without it, sessions default to Acp for programmatic ACP clients.
+        let session_type = match args
             .meta
             .as_ref()
-            .and_then(|m| m.get("personaId"))
+            .and_then(|m| m.get("client"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        // Create the Thread — this IS the ACP session from the client's perspective.
-        let thread_metadata = crate::session::ThreadMetadata {
-            provider_id: requested_provider.clone(),
-            project_id,
-            persona_id,
-            mode: Some(self.goose_mode.to_string()),
-            ..Default::default()
+        {
+            Some(_) => SessionType::User,
+            None => SessionType::Acp,
         };
+
         let t0 = std::time::Instant::now();
-        let thread = self
-            .thread_manager
-            .create_thread(
-                None,
-                Some(thread_metadata),
-                Some(args.cwd.display().to_string()),
+        let goose_session = self
+            .session_manager
+            .create_session(
+                args.cwd.clone(),
+                "New Chat".to_string(),
+                session_type,
+                self.goose_mode,
             )
             .await
-            .internal_err_ctx("Failed to create thread")?;
-        let thread_id = thread.id.clone();
-        let sid = sid_short(&thread_id);
-        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: new_session create_thread");
+            .internal_err_ctx("Failed to create session")?;
 
-        // Create the first internal Session linked to this thread.
-        let t1 = std::time::Instant::now();
+        let mut builder = self.session_manager.update(&goose_session.id);
+        if let Some(ref provider) = requested_provider {
+            builder = builder.provider_name(provider);
+        }
+        if let Some(pid) = project_id {
+            builder = builder.project_id(Some(pid));
+        }
+        builder
+            .apply()
+            .await
+            .internal_err_ctx("Failed to update session")?;
+
         let goose_session = self
-            .create_internal_session(
-                &thread_id,
-                args.cwd.clone(),
-                requested_provider.as_deref(),
-                None,
-            )
-            .await?;
-        debug!(target: "perf", sid = %sid, ms = t1.elapsed().as_millis() as u64, "perf: new_session create_internal_session");
+            .session_manager
+            .get_session(&goose_session.id, false)
+            .await
+            .internal_err_ctx("Failed to reload session")?;
 
-        let internal_session_id = goose_session.id.clone();
+        let session_id_str = goose_session.id.clone();
+        let sid = sid_short(&session_id_str);
+        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: new_session create_session");
 
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
-        let session = GooseAcpSession {
+        let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
-            internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
@@ -2396,18 +2488,16 @@ impl GooseAcpAgent {
         self.sessions
             .lock()
             .await
-            .insert(thread_id.clone(), session);
+            .insert(session_id_str.clone(), acp_session);
 
         let mode_state = build_mode_state(self.goose_mode)?;
 
-        // Resolve provider + model from config so we can include the current
-        // model in the response without waiting for the full agent setup.
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
         let initial_usage_update = resolved
             .as_ref()
             .ok()
             .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()));
-        let session_id = SessionId::new(thread_id.clone());
+        let acp_session_id = SessionId::new(session_id_str);
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
             .await;
@@ -2416,7 +2506,7 @@ impl GooseAcpAgent {
             cx,
             agent_tx,
             AgentSetupRequest {
-                session_id: session_id.clone(),
+                session_id: acp_session_id.clone(),
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: resolved.as_ref().ok().cloned(),
@@ -2424,7 +2514,7 @@ impl GooseAcpAgent {
             },
         );
 
-        let mut response = NewSessionResponse::new(session_id.clone()).modes(mode_state);
+        let mut response = NewSessionResponse::new(acp_session_id.clone()).modes(mode_state);
         if let Some(ms) = model_state {
             response = response.models(ms);
         }
@@ -2433,10 +2523,14 @@ impl GooseAcpAgent {
         }
         if let Some(usage_update) = initial_usage_update {
             cx.send_notification(SessionNotification::new(
-                session_id,
+                acp_session_id.clone(),
                 SessionUpdate::UsageUpdate(usage_update),
             ))?;
         }
+
+        self.send_available_commands_update(cx, &acp_session_id)
+            .await?;
+
         debug!(
             target: "perf",
             sid = %sid,
@@ -2446,62 +2540,21 @@ impl GooseAcpAgent {
         Ok(response)
     }
 
-    /// Create a new internal goose Session linked to a thread.
-    /// This is the agent's working state — invisible to ACP clients.
-    async fn create_internal_session(
-        &self,
-        thread_id: &str,
-        cwd: std::path::PathBuf,
-        provider_name: Option<&str>,
-        model_name: Option<&str>,
-    ) -> Result<Session, agent_client_protocol::Error> {
-        let goose_session = self
-            .session_manager
-            .create_session(
-                cwd,
-                "ACP Session".to_string(),
-                SessionType::Acp,
-                self.goose_mode,
-            )
-            .await
-            .internal_err_ctx("Failed to create session")?;
-
-        let mut builder = self.session_manager.update(&goose_session.id);
-        builder = builder.thread_id(Some(thread_id.to_string()));
-        if let Some(provider) = provider_name {
-            builder = builder.provider_name(provider);
-        }
-        if let Some(model) = model_name {
-            if let Ok(mc) = crate::model::ModelConfig::new(model) {
-                builder = builder.model_config(mc);
-            }
-        }
-        builder
-            .apply()
-            .await
-            .internal_err_ctx("Failed to link session to thread")?;
-
-        self.session_manager
-            .get_session(&goose_session.id, false)
-            .await
-            .internal_err_ctx("Failed to reload session")
-    }
-
     /// Look up the session and return the agent if already ready, or the watch
     /// receiver if still loading.  Optionally sets a cancellation token on the
     /// session (needed by `on_prompt`).
     async fn get_agent_or_receiver(
         &self,
-        thread_id: &str,
+        session_id: &str,
         cancel_token: Option<CancellationToken>,
     ) -> Result<
         Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>,
         agent_client_protocol::Error,
     > {
         let mut sessions = self.sessions.lock().await;
-        let session = sessions.get_mut(thread_id).ok_or_else(|| {
-            agent_client_protocol::Error::resource_not_found(Some(thread_id.to_string()))
-                .data(format!("Session not found: {}", thread_id))
+        let session = sessions.get_mut(session_id).ok_or_else(|| {
+            agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                .data(format!("Session not found: {}", session_id))
         })?;
         if let Some(token) = cancel_token {
             session.cancel_token = Some(token);
@@ -2516,10 +2569,10 @@ impl GooseAcpAgent {
     /// Most callers (e.g. `on_prompt`, `on_get_tools`) should use this.
     async fn get_session_agent(
         &self,
-        thread_id: &str,
+        session_id: &str,
         cancel_token: Option<CancellationToken>,
     ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
-        let mut rx = match self.get_agent_or_receiver(thread_id, cancel_token).await? {
+        let mut rx = match self.get_agent_or_receiver(session_id, cancel_token).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
@@ -2549,9 +2602,9 @@ impl GooseAcpAgent {
     /// the provider (e.g. `update_provider`, `set_model`, `build_config_update`).
     async fn get_session_agent_provider_ready(
         &self,
-        thread_id: &str,
+        session_id: &str,
     ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
-        let mut rx = match self.get_agent_or_receiver(thread_id, None).await? {
+        let mut rx = match self.get_agent_or_receiver(session_id, None).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
@@ -2572,7 +2625,7 @@ impl GooseAcpAgent {
     async fn add_mcp_extensions(
         agent: &Arc<Agent>,
         mcp_servers: Vec<McpServer>,
-        internal_session_id: &str,
+        session_id: &str,
     ) -> Result<(), agent_client_protocol::Error> {
         let mut configs = Vec::with_capacity(mcp_servers.len());
         for mcp_server in mcp_servers {
@@ -2590,7 +2643,7 @@ impl GooseAcpAgent {
         }
 
         let results = agent
-            .add_extensions_bulk(configs, internal_session_id)
+            .add_extensions_bulk(configs, session_id)
             .await
             .internal_err()?;
         for result in &results {
@@ -2612,64 +2665,41 @@ impl GooseAcpAgent {
     ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
 
-        // The ACP session_id IS the thread ID.
-        let thread_id = args.session_id.0.to_string();
-        let sid = sid_short(&thread_id);
+        let session_id = args.session_id.0.to_string();
+        let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
 
         let t0 = std::time::Instant::now();
-        let thread = self
-            .thread_manager
-            .get_thread(&thread_id)
-            .await
-            .map_err(|_| {
-                agent_client_protocol::Error::resource_not_found(Some(thread_id.clone()))
-                    .data(format!("Session not found: {}", thread_id))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: load_session get_thread");
-
-        // Reuse the thread's current internal session so the agent retains
-        // conversation context (compaction state, full message history, etc.).
-        // The internal session is the source of truth for provider/mode.
-        let internal_session_id = thread.current_session_id.clone().ok_or_else(|| {
-            agent_client_protocol::Error::internal_error()
-                .data(format!("Thread {} has no internal session", thread_id))
-        })?;
-        let t1 = std::time::Instant::now();
         let goose_session = self
             .session_manager
-            .get_session(&internal_session_id, false)
+            .get_session(&session_id, true)
             .await
-            .internal_err_ctx("Failed to load internal session")?;
-        debug!(target: "perf", sid = %sid, ms = t1.elapsed().as_millis() as u64, "perf: load_session get_session");
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {}", session_id))
+            })?;
+        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: load_session get_session");
         let loaded_mode = goose_session.goose_mode;
 
-        // ── REPLAY MESSAGES FIRST ──
-        // Stream the thread's human-visible message history back to the client
-        // immediately, before the slow agent/provider/extension setup. The
-        // replay only needs the thread_manager (SQLite reads) so the UI gets
-        // messages while the agent is still booting.
-        let t2 = std::time::Instant::now();
-        let thread_messages = self
-            .thread_manager
-            .list_messages(&thread_id)
-            .await
-            .internal_err_ctx("Failed to load thread messages")?;
+        // ── REPLAY MESSAGES ──
+        // Stream user-visible messages back to the client so the chat view
+        // populates immediately, before the slow agent/provider/extension setup.
+        let messages = goose_session
+            .conversation
+            .as_ref()
+            .map(|c| c.messages().to_vec())
+            .unwrap_or_default();
         debug!(
             target: "perf",
             sid = %sid,
-            ms = t2.elapsed().as_millis() as u64,
-            messages = thread_messages.len(),
-            "perf: load_session list_messages"
+            messages = messages.len(),
+            "perf: load_session messages loaded"
         );
 
-        // Lightweight tool_requests map for the replay loop — we only need it
-        // so that handle_tool_response can extract file locations from the
-        // matching request. No GooseAcpSession required.
         let mut replay_tool_requests =
             HashMap::<String, crate::conversation::message::ToolRequest>::new();
 
-        for message in &thread_messages {
+        for message in &messages {
             if !message.metadata.user_visible {
                 continue;
             }
@@ -2798,25 +2828,19 @@ impl GooseAcpAgent {
             }
         }
 
-        // ── Lightweight DB updates (fast) ──
+        // Update working directory.
         self.session_manager
-            .update(&internal_session_id)
+            .update(&session_id)
             .working_dir(args.cwd.clone())
             .apply()
             .await
             .internal_err_ctx("Failed to update session working directory")?;
 
-        self.thread_manager
-            .update_working_dir(&thread_id, &args.cwd.display().to_string())
-            .await
-            .internal_err_ctx("Failed to update thread working directory")?;
-
-        // ── Register the session immediately with a Loading handle ──
+        // Register the session with a Loading handle.
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
-        let session = GooseAcpSession {
+        let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
-            internal_session_id: internal_session_id.clone(),
             tool_requests: replay_tool_requests,
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
@@ -2827,7 +2851,7 @@ impl GooseAcpAgent {
         self.sessions
             .lock()
             .await
-            .insert(thread_id.clone(), session);
+            .insert(session_id.clone(), acp_session);
 
         let mode_state = build_mode_state(loaded_mode)?;
 
@@ -2871,6 +2895,10 @@ impl GooseAcpAgent {
                 SessionUpdate::UsageUpdate(usage_update),
             ))?;
         }
+
+        self.send_available_commands_update(cx, &args.session_id)
+            .await?;
+
         debug!(
             target: "perf",
             sid = %sid,
@@ -2886,42 +2914,42 @@ impl GooseAcpAgent {
         args: PromptRequest,
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
         // The ACP session_id IS the thread ID.
-        let thread_id = args.session_id.0.to_string();
-        let sid = sid_short(&thread_id);
+        let session_id = args.session_id.0.to_string();
+        let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
 
-        // Update persona_id on the thread if the client sent one in _meta.
-        let prompt_persona_id = args
-            .meta
-            .as_ref()
-            .and_then(|m| m.get("personaId"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        if let Some(ref pid) = prompt_persona_id {
-            let pid = pid.clone();
-            self.update_thread_metadata(&thread_id, move |meta| {
-                meta.persona_id = Some(pid);
-            })
-            .await?;
-        }
-
         let cancel_token = CancellationToken::new();
-        let internal_session_id = self.internal_session_id(&thread_id).await?;
-
         let agent = self
-            .get_session_agent(&thread_id, Some(cancel_token.clone()))
+            .get_session_agent(&session_id, Some(cancel_token.clone()))
             .await?;
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
-        // Persist user message (may contain assistant-only annotated blocks)
-        self.thread_manager
-            .append_message(&thread_id, Some(&internal_session_id), &user_message)
-            .await
-            .internal_err_ctx("Failed to persist message")?;
+        let message_text = user_message.as_concat_text();
+        if let Some(parsed) = crate::agents::execute_commands::parse_slash_command(&message_text) {
+            let full_command = format!("/{}", parsed.command);
+
+            if !Self::is_builtin_agent_command(parsed.command) {
+                if let Some(recipe_path) =
+                    crate::slash_commands::get_recipe_for_command(&full_command)
+                {
+                    if recipe_path.exists() {
+                        cx.send_notification(SessionNotification::new(
+                            args.session_id.clone(),
+                            SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                                ContentBlock::Text(TextContent::new(format!(
+                                    "Running recipe: {}",
+                                    full_command
+                                ))),
+                            )),
+                        ))?;
+                    }
+                }
+            }
+        }
 
         let session_config = SessionConfig {
-            id: internal_session_id.clone(),
+            id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
             retry_config: None,
@@ -2965,20 +2993,16 @@ impl GooseAcpAgent {
 
             match event {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
-                    let stored_message = self
-                        .thread_manager
-                        .append_message(&thread_id, Some(&internal_session_id), &message)
-                        .await
-                        .internal_err_ctx("Failed to persist message")?;
-                    let stored_message_id = stored_message.id.clone();
+                    // Agent persists messages via session_manager.add_message() internally.
+                    let stored_message_id = message.id.clone();
 
                     let mut sessions = self.sessions.lock().await;
-                    let session = sessions.get_mut(&thread_id).ok_or_else(|| {
+                    let session = sessions.get_mut(&session_id).ok_or_else(|| {
                         agent_client_protocol::Error::invalid_params()
-                            .data(format!("Session not found: {}", thread_id))
+                            .data(format!("Session not found: {}", session_id))
                     })?;
 
-                    for content_item in &stored_message.content {
+                    for content_item in &message.content {
                         match content_item {
                             MessageContent::ToolRequest(tr) => {
                                 if let Some(msg_id) = stored_message_id.as_deref() {
@@ -3009,7 +3033,7 @@ impl GooseAcpAgent {
                         self.handle_message_content(
                             content_item,
                             &args.session_id,
-                            &thread_id,
+                            &session_id,
                             stored_message_id.as_deref(),
                             &agent,
                             session,
@@ -3028,7 +3052,7 @@ impl GooseAcpAgent {
 
         {
             let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&thread_id) {
+            if let Some(session) = sessions.get_mut(&session_id) {
                 // Final safety net: in case the stream ended without any
                 // chain-breaking content, make sure a multi-tool buffer is
                 // registered. (Eager registration during the loop usually
@@ -3040,7 +3064,7 @@ impl GooseAcpAgent {
 
         let session = self
             .session_manager
-            .get_session(&internal_session_id, false)
+            .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
         let provider = agent
@@ -3081,16 +3105,16 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         debug!(?args, "cancel request");
 
-        let thread_id = args.session_id.0.to_string();
+        let session_id = args.session_id.0.to_string();
         let mut sessions = self.sessions.lock().await;
 
-        if let Some(session) = sessions.get_mut(&thread_id) {
+        if let Some(session) = sessions.get_mut(&session_id) {
             if let Some(ref token) = session.cancel_token {
-                info!(thread_id = %thread_id, "prompt cancelled");
+                info!(session_id = %session_id, "prompt cancelled");
                 token.cancel();
             }
         } else {
-            warn!(thread_id = %thread_id, "cancel request for unknown session");
+            warn!(session_id = %session_id, "cancel request for unknown session");
         }
 
         Ok(())
@@ -3098,19 +3122,18 @@ impl GooseAcpAgent {
 
     async fn on_set_model(
         &self,
-        thread_id: &str,
+        session_id: &str,
         model_id: &str,
     ) -> Result<SetSessionModelResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(thread_id).await?;
         let config = self.config()?;
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         let current_provider = agent
             .provider()
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = current_provider.get_name().to_string();
         let extensions =
-            EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let model_config = crate::model::ModelConfig::new(model_id)
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
@@ -3119,60 +3142,28 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
-            .update_provider(provider, &internal_id)
+            .update_provider(provider, session_id)
             .await
             .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
-            .update_goose_mode(mode, &internal_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to propagate mode")?;
-        let model_id_owned = model_id.to_string();
-        self.update_thread_metadata(thread_id, move |meta| {
-            meta.model_id = Some(model_id_owned);
-        })
-        .await?;
+        // model_config is already updated on the session by the agent's update_provider call.
         Ok(SetSessionModelResponse::new())
-    }
-
-    async fn internal_session_id(
-        &self,
-        thread_id: &str,
-    ) -> Result<String, agent_client_protocol::Error> {
-        self.sessions
-            .lock()
-            .await
-            .get(thread_id)
-            .map(|s| s.internal_session_id.clone())
-            .ok_or_else(|| {
-                agent_client_protocol::Error::resource_not_found(Some(thread_id.to_string()))
-                    .data(format!("Session not found: {}", thread_id))
-            })
-    }
-
-    async fn update_thread_metadata(
-        &self,
-        thread_id: &str,
-        f: impl FnOnce(&mut crate::session::ThreadMetadata),
-    ) -> Result<(), agent_client_protocol::Error> {
-        self.thread_manager
-            .update_metadata(thread_id, f)
-            .await
-            .internal_err()?;
-        Ok(())
     }
 
     async fn build_config_update(
         &self,
-        thread_id: &SessionId,
+        session_id: &SessionId,
     ) -> Result<(SessionNotification, Vec<SessionConfigOption>), agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&thread_id.0).await?;
         let session = self
             .session_manager
-            .get_session(&internal_id, false)
+            .get_session(&session_id.0, false)
             .await
             .internal_err()?;
-        let agent = self.get_session_agent_provider_ready(&thread_id.0).await?;
+        let agent = self.get_session_agent_provider_ready(&session_id.0).await?;
         let provider = agent
             .provider()
             .await
@@ -3199,7 +3190,7 @@ impl GooseAcpAgent {
             provider_options,
         );
         let notification = SessionNotification::new(
-            thread_id.clone(),
+            session_id.clone(),
             SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options.clone())),
         );
         Ok((notification, config_options))
@@ -3207,41 +3198,35 @@ impl GooseAcpAgent {
 
     async fn on_set_mode(
         &self,
-        thread_id: &str,
+        session_id: &str,
         mode_id: &str,
     ) -> Result<SetSessionModeResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(thread_id).await?;
         let mode = mode_id.parse::<GooseMode>().map_err(|_| {
             agent_client_protocol::Error::invalid_params()
                 .data(format!("Invalid mode: {}", mode_id))
         })?;
 
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         agent
-            .update_goose_mode(mode, &internal_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to update mode")?;
 
-        let mode_id = mode_id.to_string();
-        self.update_thread_metadata(thread_id, move |meta| {
-            meta.mode = Some(mode_id);
-        })
-        .await?;
+        // goose_mode is already updated on the session above.
 
         Ok(SetSessionModeResponse::new())
     }
 
     async fn update_provider(
         &self,
-        thread_id: &str,
+        session_id: &str,
         provider_name: &str,
         model_name: Option<&str>,
         context_limit: Option<usize>,
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> Result<(), agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(thread_id).await?;
         let config = self.config()?;
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         let current_provider = agent
             .provider()
             .await
@@ -3278,18 +3263,18 @@ impl GooseAcpAgent {
             .with_request_params(request_params);
 
         let extensions =
-            EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let new_provider = self
             .create_provider(&resolved_provider_name, model_config, extensions)
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
-            .update_provider(new_provider, &internal_id)
+            .update_provider(new_provider, session_id)
             .await
             .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
-            .update_goose_mode(mode, &internal_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to propagate mode")?;
         let provider = agent
@@ -3297,17 +3282,12 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to get provider")?;
 
-        let provider_name_owned = provider_name.to_string();
-        self.update_thread_metadata(thread_id, move |meta| {
-            meta.provider_id = Some(provider_name_owned);
-            meta.model_id = None;
-        })
-        .await?;
+        // provider_name is already updated on the session by the agent's update_provider call.
 
         if use_default_provider {
             let update = self
                 .session_manager
-                .update(&internal_id)
+                .update(session_id)
                 .provider_name(DEFAULT_PROVIDER_ID);
             if has_default_overrides {
                 update
@@ -3327,24 +3307,20 @@ impl GooseAcpAgent {
     }
 
     async fn on_list_sessions(&self) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
-        // Return threads (= ACP sessions), not internal goose sessions.
-        let threads = self
-            .thread_manager
-            .list_threads(false)
+        // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
+        let sessions = self
+            .session_manager
+            .list_sessions_by_types(&[SessionType::User, SessionType::Scheduled, SessionType::Acp])
             .await
             .internal_err()?;
-        let session_infos: Vec<SessionInfo> = threads
+        let session_infos: Vec<SessionInfo> = sessions
             .into_iter()
-            .map(|t| {
-                let cwd = t
-                    .working_dir
-                    .as_deref()
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_default();
-                let meta = thread_session_meta(&t);
-                SessionInfo::new(SessionId::new(t.id), cwd)
-                    .title(t.name)
-                    .updated_at(t.updated_at.to_rfc3339())
+            .filter(|s| s.message_count > 0)
+            .map(|s| {
+                let meta = session_meta(&s);
+                SessionInfo::new(SessionId::new(s.id), s.working_dir)
+                    .title(s.name)
+                    .updated_at(s.updated_at.to_rfc3339())
                     .meta(meta)
             })
             .collect();
@@ -3356,28 +3332,33 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         args: ForkSessionRequest,
     ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
-        let source_thread_id = &*args.session_id.0;
+        let source_session_id = &*args.session_id.0;
 
-        // Fork the thread (copies metadata + messages).
-        let new_thread = self
-            .thread_manager
-            .fork_thread(source_thread_id)
+        let new_session = self
+            .session_manager
+            .copy_session(source_session_id, "Fork".to_string())
             .await
             .internal_err()?;
-        let new_thread_id = new_thread.id.clone();
+        let new_session_id = new_session.id.clone();
 
-        // Create an internal session for the new thread.
+        // Update working dir for the fork.
+        self.session_manager
+            .update(&new_session_id)
+            .working_dir(args.cwd.clone())
+            .apply()
+            .await
+            .internal_err()?;
+
         let goose_session = self
-            .create_internal_session(&new_thread_id, args.cwd, None, None)
-            .await?;
-
-        let internal_session_id = goose_session.id.clone();
+            .session_manager
+            .get_session(&new_session_id, false)
+            .await
+            .internal_err()?;
 
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
-        let session = GooseAcpSession {
+        let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
-            internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
@@ -3388,7 +3369,7 @@ impl GooseAcpAgent {
         self.sessions
             .lock()
             .await
-            .insert(new_thread_id.clone(), session);
+            .insert(new_session_id.clone(), acp_session);
 
         let mode_state = build_mode_state(self.goose_mode)?;
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
@@ -3400,7 +3381,7 @@ impl GooseAcpAgent {
             cx,
             agent_tx,
             AgentSetupRequest {
-                session_id: SessionId::new(new_thread_id.clone()),
+                session_id: SessionId::new(new_session_id.clone()),
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: resolved.ok(),
@@ -3408,33 +3389,39 @@ impl GooseAcpAgent {
             },
         );
 
-        let meta = thread_session_meta(&new_thread);
+        let meta = session_meta(&new_session);
 
-        let mut response = ForkSessionResponse::new(SessionId::new(new_thread_id))
+        let acp_session_id = SessionId::new(new_session_id);
+
+        let mut response = ForkSessionResponse::new(acp_session_id.clone())
             .modes(mode_state)
             .meta(meta);
+
         if let Some(ms) = model_state {
             response = response.models(ms);
         }
         if let Some(co) = config_options {
             response = response.config_options(co);
         }
+
+        self.send_available_commands_update(cx, &acp_session_id)
+            .await?;
+
         Ok(response)
     }
 
     async fn on_close_session(
         &self,
-        thread_id: &str,
+        session_id: &str,
     ) -> Result<CloseSessionResponse, agent_client_protocol::Error> {
-        // Tear down the in-memory agent. The thread persists for later session/load.
         let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(thread_id) {
+        if let Some(session) = sessions.get(session_id) {
             if let Some(ref token) = session.cancel_token {
                 token.cancel();
             }
         }
-        sessions.remove(thread_id);
-        info!(thread_id = %thread_id, "ACP session closed (thread preserved)");
+        sessions.remove(session_id);
+        info!(session_id = %session_id, "ACP session closed");
         Ok(CloseSessionResponse::new())
     }
 }
@@ -3478,6 +3465,7 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
             goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
         },
     );
     let agent = server.create_agent().await?;
@@ -3774,7 +3762,6 @@ print(\"hello, world\")
             Arc::ptr_eq(chain_a, chain_b) && Arc::ptr_eq(chain_b, chain_c),
             "every id in the run must point at the same ToolChain Arc",
         );
-        assert_eq!(chain_a.message_id, "row_first");
         assert_eq!(
             chain_a.ids,
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
@@ -3799,7 +3786,6 @@ print(\"hello, world\")
         let chain = membership
             .get("toolu_bdrk_1")
             .expect("first tool registered");
-        assert_eq!(chain.message_id, "row_for_tool_1");
         assert_eq!(
             chain.ids,
             vec!["toolu_bdrk_1".to_string(), "toolu_bdrk_2".to_string()],
@@ -3827,7 +3813,6 @@ print(\"hello, world\")
         let chain_b = membership.get("b").expect("b present");
         let chain_c = membership.get("c").expect("c present");
         assert!(Arc::ptr_eq(chain_a, chain_b) && Arc::ptr_eq(chain_b, chain_c));
-        assert_eq!(chain_a.message_id, "row_1");
         assert_eq!(
             chain_a.ids,
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
@@ -4316,7 +4301,8 @@ print(\"hello, world\")
             provider_name: None,
             model_config: None,
             goose_mode: GooseMode::default(),
-            thread_id: None,
+            archived_at: None,
+            project_id: None,
         }
     }
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO="${GOOSE_GITHUB_REPO:-$(git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')}"
+REPO="${GOOSE_GITHUB_REPO:-aaif-goose/goose}"
 DEST="$HOME/Downloads"
 TMPDIR=$(mktemp -d)
 PLIST=$(mktemp /tmp/entitlements.XXXXXX)
@@ -16,12 +16,13 @@ fi
 
 PR=$(gh pr list --repo "$REPO" --search "$SEARCH in:title" --state all --limit 1 --json number,title)
 PR_NUMBER=$(echo "$PR" | jq -r '.[0].number // empty')
-VERSION=$(echo "$PR" | jq -r '.[0].title // empty' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 
 if [[ -z "$PR_NUMBER" ]]; then
-    echo "No matching release PR found."
+    echo "No matching release PR found in $REPO (search: \"$SEARCH\")."
     exit 1
 fi
+
+VERSION=$(echo "$PR" | jq -r '.[0].title // empty' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
 echo "Found PR #$PR_NUMBER - version $VERSION"
 
 # Grab the last nightly.link download URL from PR comments

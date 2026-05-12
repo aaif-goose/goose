@@ -5,6 +5,8 @@
     "description": "Description",
     "descriptionPlaceholder": "What it does and when to use it...",
     "editTitle": "Edit skill",
+    "global": "Global",
+    "globalHint": "Available to all sessions",
     "instructions": "Instructions",
     "instructionsPlaceholder": "Markdown instructions the agent will follow...",
     "name": "Name",
@@ -12,6 +14,8 @@
     "nameValidation": "Use 1–64 lowercase letters, numbers, or hyphens. Names cannot start or end with a hyphen.",
     "pathOnDisk": "Path on disk",
     "newTitle": "New skill",
+    "projectHint": "Stored in the project folder",
+    "saveLocation": "Save to",
     "saving": "Saving..."
   },
   "view": {
