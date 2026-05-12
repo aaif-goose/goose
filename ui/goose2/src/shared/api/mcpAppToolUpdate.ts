@@ -6,7 +6,6 @@ import type {
 } from "@aaif/goose-sdk";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import type { McpAppPayload } from "@/shared/types/messages";
-import { getGooseSessionId } from "./acpSessionTracker";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -29,7 +28,6 @@ export function buildMcpAppPayloadFromToolUpdate(
   toolCallId: string,
   toolCallTitle: string,
   update: SessionUpdate,
-  gooseSessionIdOverride?: string | null,
 ): McpAppPayload | null {
   const payload = extractMcpAppPayload(update);
   if (!payload) {
@@ -38,8 +36,6 @@ export function buildMcpAppPayloadFromToolUpdate(
 
   return {
     sessionId,
-    gooseSessionId:
-      gooseSessionIdOverride ?? getGooseSessionId(sessionId) ?? null,
     toolCallId,
     toolCallTitle,
     source: "toolCallUpdateMeta",

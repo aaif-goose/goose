@@ -559,21 +559,12 @@ export default function Onboarding({
     async (provider: ProviderInventoryEntryDto, values: Record<string, string>) => {
       setPhase("saving");
       try {
-        for (const [key, value] of Object.entries(values)) {
-          const configKey = provider.configKeys.find((k) => k.name === key);
-          if (configKey?.secret) {
-            await client.goose.GooseSecretUpsert({ key, value });
-          } else {
-            await client.goose.GooseConfigUpsert({ key, value });
-          }
-        }
-        await client.goose.GooseConfigUpsert({
-          key: "GOOSE_PROVIDER",
-          value: provider.providerId,
-        });
-        await client.goose.GooseConfigUpsert({
-          key: "GOOSE_MODEL",
-          value: provider.defaultModel,
+        await client.goose.GooseProvidersConfigSave({
+          providerId: provider.providerId,
+          fields: Object.entries(values).map(([key, value]) => ({
+            key,
+            value,
+          })),
         });
         setPhase("success");
         setTimeout(onComplete, 1000);

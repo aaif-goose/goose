@@ -11,16 +11,9 @@ use serde_json::Value;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace};
 
-use super::connection::{Connection, ConnectionRegistry};
+use super::connection::{Connection, ConnectionRegistry, ResponseRoute};
 use super::*;
 
-/// POST /acp
-///
-/// - `initialize`: creates a new connection, forwards the request, waits for
-///   the synchronous initialize response from the agent, and returns it as a
-///   200 OK JSON body with the `Acp-Connection-Id` header set.
-/// - All other messages: require `Acp-Connection-Id` (and `Acp-Session-Id`
-///   for session-scoped methods), forward to the agent, return 202 Accepted.
 pub(crate) async fn handle_post(
     State(registry): State<Arc<ConnectionRegistry>>,
     request: Request<Body>,
@@ -92,6 +85,19 @@ pub(crate) async fn handle_post(
         return (StatusCode::BAD_REQUEST, "Invalid JSON-RPC message").into_response();
     }
 
+    if let Some(sid) = session_id.as_deref() {
+        connection.ensure_session(sid).await;
+    }
+    if is_jsonrpc_request_with_id(&json_message) {
+        if let Some(id) = json_message.get("id") {
+            let route = match session_id.as_deref() {
+                Some(sid) => ResponseRoute::Session(sid.to_string()),
+                None => ResponseRoute::Connection,
+            };
+            connection.record_pending_route(id.clone(), route).await;
+        }
+    }
+
     let message_str = serde_json::to_string(&json_message).unwrap();
     trace!(connection_id = %connection_id, payload = %message_str, "POST → agent");
     if connection.to_agent_tx.send(message_str).await.is_err() {
@@ -130,7 +136,6 @@ async fn handle_initialize(registry: Arc<ConnectionRegistry>, json_message: Valu
             .into_response();
     }
 
-    // Read exactly one message from the agent: the initialize response.
     let init_response = {
         let mut guard = connection.init_receiver.lock().await;
         let Some(rx) = guard.as_mut() else {
@@ -158,7 +163,7 @@ async fn handle_initialize(registry: Arc<ConnectionRegistry>, json_message: Valu
         }
     };
 
-    connection.start_fanout().await;
+    connection.start_router().await;
 
     let mut response = (
         StatusCode::OK,
@@ -173,11 +178,6 @@ async fn handle_initialize(registry: Arc<ConnectionRegistry>, json_message: Valu
     response
 }
 
-/// GET /acp (no Upgrade)
-///
-/// Opens the single long-lived SSE stream for a connection. All server→client
-/// messages (responses + notifications + server-initiated requests) are
-/// delivered here, correlated by their JSON-RPC body fields.
 pub(crate) async fn handle_get(
     registry: Arc<ConnectionRegistry>,
     request: Request<Body>,
@@ -202,12 +202,29 @@ pub(crate) async fn handle_get(
         return (StatusCode::NOT_FOUND, "Unknown Acp-Connection-Id").into_response();
     };
 
-    let (replay, receiver) = connection.subscribe_with_replay().await;
+    let session_id = header_value(&request, HEADER_SESSION_ID);
+
+    let (replay, receiver) = match session_id.as_deref() {
+        Some(sid) => {
+            connection.ensure_session(sid).await;
+            connection
+                .subscribe_session_stream(sid)
+                .await
+                .expect("session stream exists after ensure_session")
+        }
+        None => connection.subscribe_connection_stream().await,
+    };
+
     let sse = build_sse_stream(connection.clone(), replay, receiver);
 
     let mut response = sse.into_response();
     if let Ok(v) = HeaderValue::from_str(&connection_id) {
         response.headers_mut().insert(HEADER_CONNECTION_ID, v);
+    }
+    if let Some(sid) = session_id {
+        if let Ok(v) = HeaderValue::from_str(&sid) {
+            response.headers_mut().insert(HEADER_SESSION_ID, v);
+        }
     }
     response
 }
@@ -244,7 +261,6 @@ fn build_sse_stream(
     )
 }
 
-/// DELETE /acp
 pub(crate) async fn handle_delete(
     State(registry): State<Arc<ConnectionRegistry>>,
     request: Request<Body>,

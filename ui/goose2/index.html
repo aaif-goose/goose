@@ -62,11 +62,6 @@
             getDefaultAccent(resolvedTheme);
           const foreground = getContrastColor(accent);
           const density = localStorage.getItem("goose-density") || "comfortable";
-          const spacingScale = {
-            compact: "0.75",
-            comfortable: "1",
-            spacious: "1.25",
-          };
 
           root.classList.add(resolvedTheme === "dark" ? "dark" : "light");
           root.style.colorScheme = resolvedTheme === "dark" ? "dark" : "light";
@@ -75,10 +70,9 @@
           root.style.setProperty("--color-brand", accent);
           root.style.setProperty("--color-brand-foreground", foreground);
           root.style.accentColor = accent;
-          root.style.setProperty(
-            "--density-spacing",
-            spacingScale[density] || spacingScale.comfortable,
-          );
+          if (density === "compact" || density === "spacious") {
+            root.dataset.density = density;
+          }
         } catch {
           // ThemeProvider applies the canonical theme state after React mounts.
         }

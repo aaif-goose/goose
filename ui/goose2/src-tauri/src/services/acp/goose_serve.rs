@@ -1,7 +1,11 @@
+use tauri::{Manager, Runtime};
 use tauri_plugin_shell::ShellExt;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+use crate::services::distro_bundle::DistroBundleState;
 
 use tokio::process::{Child, Command};
 use tokio::sync::OnceCell;
@@ -9,6 +13,8 @@ use tokio::sync::OnceCell;
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
+const ADDITIONAL_AGENT_SOURCE_ROOTS_ENV: &str = "ADDITIONAL_AGENT_SOURCE_ROOTS";
+const BUNDLED_AGENT_ROOT_DIR: &str = "builtin-sources/agents";
 // ---------------------------------------------------------------------------
 // GooseServeProcess — singleton that owns the long-lived `goose serve` child
 // ---------------------------------------------------------------------------
@@ -20,6 +26,7 @@ const LOCALHOST: &str = "127.0.0.1";
 /// concurrent sessions.
 pub struct GooseServeProcess {
     port: u16,
+    secret_key: String,
     _child: Child,
 }
 
@@ -32,6 +39,16 @@ impl GooseServeProcess {
         format!("ws://{LOCALHOST}:{}/acp", self.port)
     }
 
+    /// Return the HTTP base URL for authenticated Goose server routes.
+    pub fn http_base_url(&self) -> String {
+        format!("http://{LOCALHOST}:{}", self.port)
+    }
+
+    /// Return the secret key used to authenticate local HTTP requests.
+    pub fn secret_key(&self) -> &str {
+        &self.secret_key
+    }
+
     /// Get a reference to the running process, or an error if it was never
     /// started (should not happen in normal operation).
     pub async fn get(app_handle: tauri::AppHandle) -> Result<&'static GooseServeProcess, String> {
@@ -42,6 +59,7 @@ impl GooseServeProcess {
 
     async fn spawn(app_handle: tauri::AppHandle) -> Result<GooseServeProcess, String> {
         let port = reserve_free_port()?;
+        let secret_key = format!("goose2-{}", uuid::Uuid::new_v4().simple());
 
         // Use a stable working directory for the long-lived server process.
         // Individual sessions will set their own cwd via the ACP protocol.
@@ -56,13 +74,28 @@ impl GooseServeProcess {
         let mut command: Command = get_goose_command(&app_handle)?;
         let binary_display = command.as_std().get_program().to_string_lossy().to_string();
 
+        if let Some(distro_state) = app_handle.try_state::<DistroBundleState>() {
+            if let Some(bundle) = distro_state.bundle() {
+                if let Some(bin_dir) = &bundle.bin_dir {
+                    prepend_path_env(&mut command, bin_dir);
+                }
+                if let Some(config_path) = &bundle.config_path {
+                    append_additional_config_env(&mut command, config_path);
+                }
+                command.env("GOOSE_DISTRO_DIR", &bundle.root_dir);
+            }
+        }
+
+        command.arg("serve");
+        add_bundled_agent_root_env(&app_handle, &mut command);
+
         command
-            .arg("serve")
             .arg("--host")
             .arg(LOCALHOST)
             .arg("--port")
             .arg(port.to_string())
             .current_dir(&working_dir)
+            .env("GOOSE_SERVER__SECRET_KEY", &secret_key)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -86,8 +119,49 @@ impl GooseServeProcess {
 
         Ok(GooseServeProcess {
             port,
+            secret_key,
             _child: child,
         })
+    }
+}
+
+fn add_bundled_agent_root_env<R: Runtime>(manager: &impl Manager<R>, command: &mut Command) {
+    let resource_dir = match manager.path().resource_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            log::warn!("Failed to resolve Tauri resource dir for bundled sources: {error}");
+            return;
+        }
+    };
+
+    let root = resource_dir.join(BUNDLED_AGENT_ROOT_DIR);
+    if !root.is_dir() {
+        log::debug!(
+            "No bundled source root found at {}; skipping",
+            root.display()
+        );
+        return;
+    }
+
+    append_additional_agent_roots_env(command, &root);
+}
+
+fn append_additional_agent_roots_env(command: &mut Command, root: &std::path::Path) {
+    let existing = std::env::var_os(ADDITIONAL_AGENT_SOURCE_ROOTS_ENV);
+    let mut roots: Vec<PathBuf> = existing
+        .as_ref()
+        .map(std::env::split_paths)
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    roots.push(root.to_path_buf());
+
+    match std::env::join_paths(&roots) {
+        Ok(joined) => {
+            command.env(ADDITIONAL_AGENT_SOURCE_ROOTS_ENV, joined);
+        }
+        Err(error) => {
+            eprintln!("Failed to set {ADDITIONAL_AGENT_SOURCE_ROOTS_ENV}: {error}");
+        }
     }
 }
 
@@ -132,10 +206,55 @@ async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), Strin
 }
 
 fn default_serve_working_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".goose")
-        .join("artifacts")
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
+}
+
+fn prepend_path_env(command: &mut Command, extra_dir: &std::path::Path) {
+    let mut paths = vec![extra_dir.to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+
+    set_path_list_env(command, "PATH", paths, Some(extra_dir.as_os_str()));
+}
+
+fn append_additional_config_env(command: &mut Command, config_path: &std::path::Path) {
+    let existing = std::env::var_os("GOOSE_ADDITIONAL_CONFIG_FILES");
+    let mut paths: Vec<PathBuf> = existing
+        .as_ref()
+        .map(std::env::split_paths)
+        .map(Iterator::collect)
+        .unwrap_or_default();
+    paths.push(config_path.to_path_buf());
+
+    if let Ok(joined) = std::env::join_paths(&paths) {
+        command.env("GOOSE_ADDITIONAL_CONFIG_FILES", joined);
+    } else {
+        let mut fallback = existing.unwrap_or_default();
+        if !fallback.is_empty() {
+            fallback.push(if cfg!(windows) { ";" } else { ":" });
+        }
+        fallback.push(config_path.as_os_str());
+        command.env("GOOSE_ADDITIONAL_CONFIG_FILES", fallback);
+    }
+}
+
+fn set_path_list_env(
+    command: &mut Command,
+    key: &str,
+    paths: Vec<PathBuf>,
+    fallback_prefix: Option<&std::ffi::OsStr>,
+) {
+    if let Ok(joined) = std::env::join_paths(&paths) {
+        command.env(key, joined);
+    } else if let Some(prefix) = fallback_prefix {
+        let mut fallback = OsString::from(prefix);
+        for path in paths.iter().skip(1) {
+            fallback.push(if cfg!(windows) { ";" } else { ":" });
+            fallback.push(path.as_os_str());
+        }
+        command.env(key, fallback);
+    }
 }
 
 fn reserve_free_port() -> Result<u16, String> {

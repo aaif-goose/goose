@@ -95,7 +95,9 @@ export default function ExtensionList({
         <div>
           <h2 className="text-lg font-medium text-text-secondary mb-4 flex items-center gap-2">
             <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-            {intl.formatMessage(i18n.availableExtensions, { count: sortedDisabledExtensions.length })}
+            {intl.formatMessage(i18n.availableExtensions, {
+              count: sortedDisabledExtensions.length,
+            })}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
             {sortedDisabledExtensions.map((extension) => (
@@ -112,7 +114,9 @@ export default function ExtensionList({
       )}
 
       {extensions.length === 0 && (
-        <div className="text-center text-text-secondary py-8">{intl.formatMessage(i18n.noExtensions)}</div>
+        <div className="text-center text-text-secondary py-8">
+          {intl.formatMessage(i18n.noExtensions)}
+        </div>
       )}
     </div>
   );

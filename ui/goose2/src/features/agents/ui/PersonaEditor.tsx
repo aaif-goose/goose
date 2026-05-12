@@ -72,8 +72,9 @@ export function PersonaEditor({
   const readOnlyBySource = persona ? isPersonaReadOnly(persona) : false;
   const isReadOnly = detailsMode || readOnlyBySource;
   const personaSource = persona ? getPersonaSource(persona) : "custom";
-  const canEditPersona = personaSource === "custom";
-  const canDeletePersona = personaSource !== "builtin";
+  const canEditPersona = !readOnlyBySource;
+  const canDeletePersona =
+    personaSource !== "builtin" && persona?.writable !== false;
   const acpProviders = useAgentStore((s) => s.providers);
   const setProviders = useAgentStore((s) => s.setProviders);
   const mergeInventoryEntries = useProviderInventoryStore(
@@ -187,9 +188,6 @@ export function PersonaEditor({
 
   const initials = displayName.charAt(0).toUpperCase() || "?";
 
-  // For new personas, use a temporary ID for the avatar upload
-  const avatarPersonaId = persona?.id ?? "new-persona";
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col gap-0 p-0">
@@ -236,7 +234,6 @@ export function PersonaEditor({
                 </AvatarRoot>
               ) : (
                 <AvatarDropZone
-                  personaId={avatarPersonaId}
                   avatar={avatar}
                   onChange={setAvatar}
                   disabled={isReadOnly}

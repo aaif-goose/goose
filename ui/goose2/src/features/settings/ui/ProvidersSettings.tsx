@@ -15,10 +15,12 @@ import { Separator } from "@/shared/ui/separator";
 import { Spinner } from "@/shared/ui/spinner";
 import { IconChevronDown, IconPlus } from "@tabler/icons-react";
 import {
-  getAgentProviders,
-  getModelProviders,
+  getAgentProvidersFromEntries,
+  getModelProvidersFromEntries,
 } from "@/features/providers/providerCatalog";
 import { useCredentials } from "@/features/providers/hooks/useCredentials";
+import { useDistroStore } from "@/features/settings/stores/distroStore";
+import { filterModelProvidersForDistro } from "@/features/providers/distroProviderConstraints";
 import { useCustomProviders } from "@/features/providers/hooks/useCustomProviders";
 import {
   CustomProviderChoice,
@@ -33,6 +35,7 @@ import type {
   ProviderTemplate,
 } from "@/features/providers/ui/CustomProviderForm";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import { AgentProviderCard } from "./AgentProviderCard";
 import { ModelProviderRow } from "./ModelProviderRow";
 import { SettingsPage } from "@/shared/ui/SettingsPage";
@@ -100,6 +103,7 @@ interface PendingCustomProviderDelete {
 
 export function ProvidersSettings() {
   const { t } = useTranslation(["settings", "common"]);
+  const distro = useDistroStore((state) => state.manifest);
   const [showAllModels, setShowAllModels] = useState(false);
   const [modelOrder, setModelOrder] = useState<string[] | null>(null);
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
@@ -117,6 +121,11 @@ export function ProvidersSettings() {
   const [pendingCustomProviderDelete, setPendingCustomProviderDelete] =
     useState<PendingCustomProviderDelete | null>(null);
   const inventoryEntries = useProviderInventoryStore((state) => state.entries);
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
+  const catalogLoading = useProviderCatalogStore((state) => state.loading);
+  const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
+  const catalogError = useProviderCatalogStore((state) => state.error);
+  const loadCatalog = useProviderCatalogStore((state) => state.load);
 
   const {
     configuredIds,
@@ -132,13 +141,24 @@ export function ProvidersSettings() {
   const customProvidersApi = useCustomProviders();
 
   const agents = useMemo(
-    () => toDisplayInfo(getAgentProviders(), configuredIds),
-    [configuredIds],
+    () =>
+      toDisplayInfo(
+        getAgentProvidersFromEntries(catalogEntries),
+        configuredIds,
+      ),
+    [configuredIds, catalogEntries],
   );
 
   const allModels = useMemo(
-    () => toDisplayInfo(getModelProviders(), configuredIds),
-    [configuredIds],
+    () =>
+      toDisplayInfo(
+        filterModelProvidersForDistro(
+          getModelProvidersFromEntries(catalogEntries),
+          distro,
+        ),
+        configuredIds,
+      ),
+    [configuredIds, distro, catalogEntries],
   );
 
   const sortedModels = useMemo(() => {
@@ -152,10 +172,10 @@ export function ProvidersSettings() {
   }, [allModels]);
 
   useEffect(() => {
-    if (!loading && modelOrder === null) {
+    if (!loading && catalogLoaded && modelOrder === null) {
       setModelOrder(sortedModels.map((model) => model.id));
     }
-  }, [loading, modelOrder, sortedModels]);
+  }, [loading, catalogLoaded, modelOrder, sortedModels]);
 
   const orderedModels = useMemo(() => {
     if (!modelOrder) {
@@ -183,11 +203,11 @@ export function ProvidersSettings() {
     });
   }, [allModels, modelOrder, sortedModels]);
 
-  const promotedModels = orderedModels.filter(
-    (m) => m.tier === "promoted" || m.tier === "standard",
+  const defaultModels = orderedModels.filter((m) => m.group === "default");
+  const additionalModels = orderedModels.filter(
+    (m) => m.group === "additional",
   );
-  const advancedModels = orderedModels.filter((m) => m.tier === "advanced");
-  const visibleModels = showAllModels ? orderedModels : promotedModels;
+  const visibleModels = showAllModels ? orderedModels : defaultModels;
 
   const customProviders = useMemo(
     () =>
@@ -322,6 +342,35 @@ export function ProvidersSettings() {
         </Button>
       }
     >
+      {catalogError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-md border border-danger/30 bg-danger/10 p-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-danger">{catalogError}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void loadCatalog()}
+            >
+              {t("common:actions.retry")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {catalogLoading && (
+        <div
+          role="status"
+          className="mb-4 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          <Spinner className="size-3.5" />
+          {t("providers.catalog.loading")}
+        </div>
+      )}
+
       <section>
         <div className="mb-3">
           <h4 className="text-sm font-semibold">
@@ -410,7 +459,7 @@ export function ProvidersSettings() {
           ))}
         </div>
 
-        {!showAllModels && advancedModels.length > 0 && (
+        {!showAllModels && additionalModels.length > 0 && (
           <Button
             type="button"
             variant="ghost"
@@ -418,12 +467,12 @@ export function ProvidersSettings() {
             onClick={() => setShowAllModels(true)}
             className="mt-2 w-full text-muted-foreground"
           >
-            {t("providers.showMore", { count: advancedModels.length })}
+            {t("providers.showMore", { count: additionalModels.length })}
             <IconChevronDown className="size-3" />
           </Button>
         )}
 
-        {showAllModels && advancedModels.length > 0 && (
+        {showAllModels && additionalModels.length > 0 && (
           <Button
             type="button"
             variant="ghost"

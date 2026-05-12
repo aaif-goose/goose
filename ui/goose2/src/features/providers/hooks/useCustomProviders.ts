@@ -25,7 +25,7 @@ import type {
   CustomProviderReadResponse,
   CustomProviderUpdateResponse,
   CustomProviderUpsertRequest,
-  ProviderCatalogEntryDto,
+  ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "../lib/customProviderTypes";
 import { useProviderInventoryStore } from "../stores/providerInventoryStore";
@@ -35,7 +35,7 @@ interface SaveDraftOptions extends CustomProviderValidationOptions {
 }
 
 interface UseCustomProvidersReturn {
-  catalog: ProviderCatalogEntryDto[];
+  catalog: ProviderTemplateCatalogEntryDto[];
   catalogLoading: boolean;
   saving: boolean;
   savingProviderIds: Set<string>;
@@ -46,7 +46,7 @@ interface UseCustomProvidersReturn {
   configuredIds: Set<string>;
   loadCatalog: (
     format?: CustomProviderFormat,
-  ) => Promise<ProviderCatalogEntryDto[]>;
+  ) => Promise<ProviderTemplateCatalogEntryDto[]>;
   getTemplate: (providerId: string) => Promise<ProviderTemplateDto>;
   read: (providerId: string) => Promise<CustomProviderReadResponse>;
   create: (
@@ -113,7 +113,7 @@ export function useCustomProviders(): UseCustomProvidersReturn {
   const catalogRequestIdRef = useRef(0);
   const operationIdRef = useRef(0);
   const deletedProviderIdsRef = useRef(new Set<string>());
-  const [catalog, setCatalog] = useState<ProviderCatalogEntryDto[]>([]);
+  const [catalog, setCatalog] = useState<ProviderTemplateCatalogEntryDto[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [savingProviderIds, setProviderSaving] = useSetMembershipState();
   const [deletingProviderIds, setProviderDeleting] = useSetMembershipState();

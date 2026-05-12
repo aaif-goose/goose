@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/tauri-mock";
 
 test.describe("Smoke tests", () => {
-  test("app loads and shows home screen", async ({ page }) => {
+  test("app loads and shows home screen", async ({ tauriMocked: page }) => {
     await page.goto("/");
 
     // Wait for the app to render — greeting should appear
@@ -10,14 +10,16 @@ test.describe("Smoke tests", () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 
-  test("home screen shows clock", async ({ page }) => {
+  test("home screen shows clock", async ({ tauriMocked: page }) => {
     await page.goto("/");
 
     // Should show AM or PM once the clock renders
     await expect(page.getByText(/[AP]M/)).toBeVisible({ timeout: 10_000 });
   });
 
-  test("home screen shows chat input placeholder", async ({ page }) => {
+  test("home screen shows chat input placeholder", async ({
+    tauriMocked: page,
+  }) => {
     await page.goto("/");
 
     await expect(

@@ -82,17 +82,19 @@
   },
   "extensions": {
     "title": "Extensiones",
+    "description": "Conecta Goose con apps, servicios y capacidades integradas.",
     "search": "Buscar extensiones...",
-    "enabled": "Habilitadas",
-    "enabledCount": "Habilitadas ({{count}})",
-    "available": "Disponibles",
-    "availableCount": "Disponibles ({{count}})",
     "empty": "No hay extensiones configuradas.",
     "noResults": "Ninguna extensión coincide con tu búsqueda.",
     "addExtension": "Agregar extensión",
     "editExtension": "Editar extensión",
     "deleteExtension": "Eliminar extensión",
-    "toggle": "Activar/desactivar {{name}}",
+    "deleteConfirmation": {
+      "title": "¿Eliminar \"{{name}}\" de forma permanente?",
+      "description": "Esto eliminará de forma permanente esta extensión y toda su configuración.",
+      "confirm": "Eliminar extensión",
+      "deleting": "Eliminando..."
+    },
     "configure": "Configurar {{name}}",
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -120,8 +122,20 @@
       "streamable_http": "HTTP",
       "builtin": "Integrada"
     },
+    "filters": {
+      "all": "Todas"
+    },
+    "categories": {
+      "appsServices": "Apps y servicios",
+      "gooseCapabilities": "Capacidades de Goose"
+    },
+    "sections": {
+      "extensions": "Extensiones",
+      "gooseCapabilities": "Capacidades integradas de Goose"
+    },
+    "showGooseCapabilities": "Mostrar {{count}} capacidades integradas de Goose",
+    "hideGooseCapabilities": "Ocultar capacidades integradas de Goose",
     "errors": {
-      "toggleFailed": "Error al cambiar la extensión. Inténtalo de nuevo.",
       "saveFailed": "Error al guardar la extensión. Inténtalo de nuevo.",
       "deleteFailed": "Error al eliminar la extensión. Inténtalo de nuevo.",
       "nameConflict": "Ya existe una extensión llamada \"{{name}}\"."
@@ -147,6 +161,12 @@
       "spanish": "Español",
       "system": "Predeterminado del sistema ({{language}})"
     },
+    "onboarding": {
+      "description": "Muestra la configuración otra vez la próxima vez que se abra Goose.",
+      "label": "Onboarding",
+      "reset": "Restablecer onboarding",
+      "resetDescription": "El onboarding aparecerá la próxima vez que se abra Goose."
+    },
     "title": "General",
     "voiceInput": {
       "label": "Entrada de voz",
@@ -162,6 +182,9 @@
       "addApiKey": "Agregar clave API",
       "updateApiKey": "Actualizar clave API",
       "removeApiKey": "Eliminar clave API",
+      "providerConfigLabel": "Credenciales del proveedor",
+      "providerConfigDescription": "Este proveedor de transcripción usa las credenciales de la configuración de su proveedor de modelos.",
+      "openProviders": "Abrir proveedores",
       "localModelLabel": "Modelo Whisper local",
       "localModelDescription": "Descarga un modelo Whisper para transcribir localmente. Seleccionar un modelo lo establece como tu modelo de transcripción local activo.",
       "noLocalModels": "No hay modelos Whisper locales disponibles.",
@@ -198,7 +221,6 @@
     "doctor": "Diagnóstico",
     "general": "General",
     "projects": "Proyectos",
-    "extensions": "Extensiones",
     "providers": "Proveedores",
     "voice": "Voz"
   },
@@ -315,6 +337,9 @@
         "useTemplate": "Usar una plantilla",
         "useTemplateDescription": "Comienza con valores predeterminados de endpoint y modelos para un proveedor conocido."
       }
+    },
+    "catalog": {
+      "loading": "Cargando catálogo de proveedores..."
     },
     "disconnect": "Desconectar",
     "models": {

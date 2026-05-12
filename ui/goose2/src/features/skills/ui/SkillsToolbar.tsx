@@ -3,8 +3,6 @@ import { cn } from "@/shared/lib/cn";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button } from "@/shared/ui/button";
 import { FilterRow } from "@/shared/ui/page-shell";
-import { SkillCategoryFilter } from "./SkillCategoryFilter";
-import type { SkillCategory } from "../lib/skillCategories";
 import type { SkillsFilter } from "../lib/skillsHelpers";
 
 interface SkillsToolbarProps {
@@ -12,10 +10,8 @@ interface SkillsToolbarProps {
   onSearchChange: (value: string) => void;
   activeFilter: SkillsFilter;
   onActiveFilterChange: (filter: SkillsFilter) => void;
+  hasBuiltinSkills: boolean;
   projectFilters: { id: string; name: string }[];
-  categoryFilters: SkillCategory[];
-  selectedCategories: SkillCategory[];
-  onSelectedCategoriesChange: (categories: SkillCategory[]) => void;
   dropHandlers?: React.HTMLAttributes<HTMLDivElement>;
   isDragOver?: boolean;
 }
@@ -46,10 +42,8 @@ export function SkillsToolbar({
   onSearchChange,
   activeFilter,
   onActiveFilterChange,
+  hasBuiltinSkills,
   projectFilters,
-  categoryFilters,
-  selectedCategories,
-  onSelectedCategoriesChange,
   dropHandlers,
   isDragOver,
 }: SkillsToolbarProps) {
@@ -82,6 +76,14 @@ export function SkillsToolbar({
         >
           {t("view.filtersGlobal")}
         </FilterButton>
+        {hasBuiltinSkills ? (
+          <FilterButton
+            active={activeFilter === "builtin"}
+            onClick={() => onActiveFilterChange("builtin")}
+          >
+            {t("view.filtersBuiltin")}
+          </FilterButton>
+        ) : null}
         {projectFilters.map((project) => {
           const filterValue = `project:${project.id}` as const;
           return (
@@ -94,13 +96,6 @@ export function SkillsToolbar({
             </FilterButton>
           );
         })}
-        {categoryFilters.length > 0 ? (
-          <SkillCategoryFilter
-            categories={categoryFilters}
-            selectedCategories={selectedCategories}
-            onSelectedCategoriesChange={onSelectedCategoriesChange}
-          />
-        ) : null}
       </FilterRow>
     </div>
   );

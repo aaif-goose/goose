@@ -9,7 +9,6 @@ const mockAcpCancelSession = vi.fn();
 const mockAcpLoadSession = vi.fn();
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
-const mockGetGooseSessionId = vi.fn();
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
@@ -17,10 +16,6 @@ vi.mock("@/shared/api/acp", () => ({
   acpLoadSession: (...args: unknown[]) => mockAcpLoadSession(...args),
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
-}));
-
-vi.mock("@/shared/api/acpSessionTracker", () => ({
-  getGooseSessionId: (...args: unknown[]) => mockGetGooseSessionId(...args),
 }));
 
 import { useChat } from "../useChat";
@@ -32,9 +27,7 @@ describe("useChat skill chips", () => {
     mockAcpLoadSession.mockReset();
     mockAcpPrepareSession.mockReset();
     mockAcpSetModel.mockReset();
-    mockGetGooseSessionId.mockReset();
     mockAcpSendMessage.mockResolvedValue(undefined);
-    mockGetGooseSessionId.mockReturnValue(null);
     useChatStore.setState({
       messagesBySession: {},
       sessionStateById: {},

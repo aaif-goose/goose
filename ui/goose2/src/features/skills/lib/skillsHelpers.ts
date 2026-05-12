@@ -1,12 +1,11 @@
 import type { SkillInfo } from "../api/skills";
-import type { SkillCategory, SkillViewInfo } from "./skillCategories";
 
-export type SkillsFilter = "all" | "global" | `project:${string}`;
+export type SkillsFilter = "all" | "global" | "builtin" | `project:${string}`;
 
 export interface SkillsSection {
   id: string;
   title: string;
-  skills: SkillViewInfo[];
+  skills: SkillInfo[];
 }
 
 // Mirrors crates/goose/src/skills/mod.rs::validate_skill_name.
@@ -59,53 +58,60 @@ export function compareSkillsByName(a: SkillInfo, b: SkillInfo) {
 }
 
 export function filterSkills(
-  skills: SkillViewInfo[],
+  skills: SkillInfo[],
   filters: {
     search: string;
     activeFilter: SkillsFilter;
-    selectedCategories: SkillCategory[];
   },
-  getCategoryLabel: (category: SkillCategory) => string,
-): SkillViewInfo[] {
+): SkillInfo[] {
   const searchTerm = filters.search.trim().toLowerCase();
   return skills.filter((skill) => {
     const matchesSearch =
       searchTerm.length === 0 ||
       skill.name.toLowerCase().includes(searchTerm) ||
       skill.description.toLowerCase().includes(searchTerm) ||
-      skill.sourceLabel.toLowerCase().includes(searchTerm) ||
-      getCategoryLabel(skill.inferredCategory)
-        .toLowerCase()
-        .includes(searchTerm);
+      skill.sourceLabel.toLowerCase().includes(searchTerm);
 
     const matchesFilter =
       filters.activeFilter === "all"
         ? true
         : filters.activeFilter === "global"
           ? skill.sourceKind === "global"
-          : skill.projectLinks.some(
-              (project) => `project:${project.id}` === filters.activeFilter,
-            );
+          : filters.activeFilter === "builtin"
+            ? skill.sourceKind === "builtin"
+            : skill.projectLinks.some(
+                (project) => `project:${project.id}` === filters.activeFilter,
+              );
 
-    const matchesCategory =
-      filters.selectedCategories.length === 0 ||
-      filters.selectedCategories.includes(skill.inferredCategory);
-
-    return matchesSearch && matchesFilter && matchesCategory;
+    return matchesSearch && matchesFilter;
   });
 }
 
 export function groupSkills(
-  filteredSkills: SkillViewInfo[],
+  filteredSkills: SkillInfo[],
   activeFilter: SkillsFilter,
   projectFilters: { id: string; name: string }[],
-  labels: { personalTitle: string; projectsFallback: string },
+  labels: {
+    personalTitle: string;
+    builtinTitle: string;
+    projectsFallback: string;
+  },
 ): SkillsSection[] {
   if (activeFilter === "global") {
     return [
       {
         id: "personal",
         title: labels.personalTitle,
+        skills: [...filteredSkills].sort(compareSkillsByName),
+      },
+    ];
+  }
+
+  if (activeFilter === "builtin") {
+    return [
+      {
+        id: "builtin",
+        title: labels.builtinTitle,
         skills: [...filteredSkills].sort(compareSkillsByName),
       },
     ];
@@ -130,6 +136,10 @@ export function groupSkills(
     .filter((skill) => skill.sourceKind === "global")
     .sort(compareSkillsByName);
 
+  const builtinSkills = filteredSkills
+    .filter((skill) => skill.sourceKind === "builtin")
+    .sort(compareSkillsByName);
+
   const projectSections = projectFilters
     .map((project) => ({
       id: `project:${project.id}`,
@@ -149,6 +159,15 @@ export function groupSkills(
             id: "personal",
             title: labels.personalTitle,
             skills: personalSkills,
+          },
+        ]
+      : []),
+    ...(builtinSkills.length > 0
+      ? [
+          {
+            id: "builtin",
+            title: labels.builtinTitle,
+            skills: builtinSkills,
           },
         ]
       : []),

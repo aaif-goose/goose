@@ -1,6 +1,6 @@
-use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// Security threat patterns for command injection detection
 /// These patterns detect dangerous shell commands and injection attempts
@@ -315,17 +315,15 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
 ];
 
-lazy_static! {
-    static ref COMPILED_PATTERNS: HashMap<&'static str, Regex> = {
-        let mut patterns = HashMap::new();
-        for threat in THREAT_PATTERNS {
-            if let Ok(regex) = Regex::new(&format!("(?i){}", threat.pattern)) {
-                patterns.insert(threat.name, regex);
-            }
+static COMPILED_PATTERNS: LazyLock<HashMap<&'static str, Regex>> = LazyLock::new(|| {
+    let mut patterns = HashMap::new();
+    for threat in THREAT_PATTERNS {
+        if let Ok(regex) = Regex::new(&format!("(?i){}", threat.pattern)) {
+            patterns.insert(threat.name, regex);
         }
-        patterns
-    };
-}
+    }
+    patterns
+});
 
 /// Pattern matcher for detecting security threats
 pub struct PatternMatcher {

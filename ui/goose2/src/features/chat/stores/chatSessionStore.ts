@@ -12,19 +12,17 @@ import {
 import {
   archiveSession as acpArchiveSession,
   unarchiveSession as acpUnarchiveSession,
-  renameSession as acpRenameSession,
-  updateSessionProject,
 } from "@/shared/api/acpApi";
 
 export interface ChatSession {
   id: string;
-  acpSessionId?: string;
   title: string;
   projectId?: string | null;
   providerId?: string;
-  personaId?: string;
+  agentId?: string;
   modelId?: string;
   modelName?: string;
+  workingDir?: string | null;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -68,7 +66,7 @@ interface CreateSessionOpts {
   title?: string;
   projectId?: string;
   providerId?: string;
-  personaId?: string;
+  agentId?: string;
   workingDir?: string;
   modelId?: string;
   modelName?: string;
@@ -77,7 +75,7 @@ interface CreateSessionOpts {
 interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
   loadSessions: () => Promise<void>;
-  updateSession: (id: string, patch: Partial<ChatSession>) => void;
+  patchSession: (id: string, patch: Partial<ChatSession>) => void;
   addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
@@ -99,12 +97,11 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
   const now = new Date().toISOString();
   return {
     id: session.sessionId,
-    acpSessionId: session.sessionId,
     title: normalizeAcpTitle(session.title) ?? "Untitled",
     projectId: session.projectId ?? undefined,
     providerId: session.providerId ?? undefined,
-    personaId: session.personaId ?? undefined,
     modelId: session.modelId ?? undefined,
+    workingDir: session.workingDir ?? undefined,
     createdAt: session.createdAt ?? session.updatedAt ?? now,
     updatedAt: session.updatedAt ?? now,
     archivedAt: session.archivedAt ?? undefined,
@@ -122,13 +119,12 @@ function sortByUpdatedAtDesc(sessions: ChatSession[]): ChatSession[] {
 export function sessionToChatSession(session: Session): ChatSession {
   return {
     id: session.id,
-    acpSessionId: session.id,
     title: session.title,
     projectId: session.projectId,
     providerId: session.providerId,
-    personaId: session.personaId,
     modelId: session.modelId,
     modelName: session.modelName,
+    workingDir: session.workingDir,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     archivedAt: session.archivedAt,
@@ -152,19 +148,18 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const now = new Date().toISOString();
     const providerId = opts.providerId ?? "goose";
     const { sessionId } = await acpCreateSession(providerId, opts.workingDir, {
-      personaId: opts.personaId,
       modelId: opts.modelId,
       projectId: opts.projectId,
     });
     const chatSession: ChatSession = {
       id: sessionId,
-      acpSessionId: sessionId,
       title: opts.title ?? DEFAULT_CHAT_TITLE,
       projectId: opts.projectId,
       providerId,
-      personaId: opts.personaId,
+      agentId: opts.agentId,
       modelId: opts.modelId,
       modelName: opts.modelName,
+      workingDir: opts.workingDir,
       createdAt: now,
       updatedAt: now,
       messageCount: 0,
@@ -195,7 +190,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }
   },
 
-  updateSession: (id, patch) => {
+  patchSession: (id, patch) => {
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id
@@ -207,47 +202,19 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
           : session,
       ),
     }));
-
-    const updatedSession = get().sessions.find((session) => session.id === id);
-    const acpSessionId = updatedSession?.acpSessionId;
-
-    // Persist title rename to backend
-    if (
-      "title" in patch &&
-      "userSetName" in patch &&
-      patch.userSetName &&
-      acpSessionId &&
-      patch.title
-    ) {
-      acpRenameSession(acpSessionId, patch.title).catch((err: unknown) =>
-        console.error("Failed to rename session in backend:", err),
-      );
-    }
-
-    // Persist projectId change to backend
-    if ("projectId" in patch && acpSessionId) {
-      updateSessionProject(acpSessionId, patch.projectId ?? null).catch(
-        (err: unknown) =>
-          console.error("Failed to update session project in backend:", err),
-      );
-    }
   },
 
   addSession: (session) => {
-    const normalizedSession = {
-      ...session,
-      acpSessionId: session.acpSessionId ?? session.id,
-    };
     set((state) => {
       const existing = state.sessions.findIndex(
-        (candidate) => candidate.id === normalizedSession.id,
+        (candidate) => candidate.id === session.id,
       );
       if (existing >= 0) {
         const updated = [...state.sessions];
-        updated[existing] = { ...updated[existing], ...normalizedSession };
+        updated[existing] = { ...updated[existing], ...session };
         return { sessions: updated };
       }
-      return { sessions: [normalizedSession, ...state.sessions] };
+      return { sessions: [session, ...state.sessions] };
     });
   },
 
@@ -262,8 +229,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         state.activeSessionId === id ? null : state.activeSessionId,
     }));
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session?.acpSessionId) {
-      acpArchiveSession(session.acpSessionId).catch((err: unknown) =>
+    if (session) {
+      acpArchiveSession(session.id).catch((err: unknown) =>
         console.error("Failed to archive session in backend:", err),
       );
     }
@@ -276,8 +243,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       ),
     }));
     const session = get().sessions.find((candidate) => candidate.id === id);
-    if (session?.acpSessionId) {
-      acpUnarchiveSession(session.acpSessionId).catch((err: unknown) =>
+    if (session) {
+      acpUnarchiveSession(session.id).catch((err: unknown) =>
         console.error("Failed to unarchive session in backend:", err),
       );
     }

@@ -139,7 +139,7 @@ export function ConnectedFieldsPanel({
                     field.secret &&
                     resolveFieldValue(field, fieldValueMap).isSet
                       ? getDisplayValue(field, fieldValueMap, t)
-                      : field.placeholder
+                      : (field.placeholder ?? undefined)
                   }
                   onChange={(event) =>
                     onDraftChange(field.key, event.target.value)
@@ -273,7 +273,7 @@ export function SetupFieldsPanel({
               placeholder={
                 field.secret && fieldValue.isSet
                   ? getDisplayValue(field, fieldValueMap, t)
-                  : field.placeholder
+                  : (field.placeholder ?? undefined)
               }
               onChange={(event) => onDraftChange(field.key, event.target.value)}
               disabled={saving}

@@ -1054,16 +1054,17 @@ async fn read_resource(
     request_body = CallToolRequest,
     responses(
         (status = 200, description = "Resource read successfully", body = CallToolResponse),
+        (status = 403, description = "Forbidden - tool is not app-visible", body = ErrorResponse),
         (status = 401, description = "Unauthorized - invalid secret key"),
-        (status = 424, description = "Agent not initialized"),
-        (status = 404, description = "Resource not found"),
-        (status = 500, description = "Internal server error")
+        (status = 424, description = "Frontend tool execution requires the frontend host", body = ErrorResponse),
+        (status = 404, description = "Resource not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 async fn call_tool(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CallToolRequest>,
-) -> Result<Json<CallToolResponse>, StatusCode> {
+) -> Result<Json<CallToolResponse>, ErrorResponse> {
     ensure_extensions_loaded(&state, &payload.session_id).await;
 
     let agent = state
@@ -1078,8 +1079,21 @@ async fn call_tool(
                 tool = %payload.name,
                 "Rejected app call to model-only tool"
             );
-            return Err(StatusCode::FORBIDDEN);
+            return Err(ErrorResponse {
+                message: format!("Tool '{}' cannot be called by the app", payload.name),
+                status: StatusCode::FORBIDDEN,
+            });
         }
+    }
+
+    if agent.is_frontend_tool(&payload.name).await {
+        return Err(ErrorResponse {
+            message: format!(
+                "Tool '{}' is provided by the frontend and must be executed by the frontend host",
+                payload.name
+            ),
+            status: StatusCode::FAILED_DEPENDENCY,
+        });
     }
 
     let arguments = match payload.arguments {
@@ -1100,19 +1114,19 @@ async fn call_tool(
         .extension_manager
         .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ErrorResponse::from)?;
 
-    let result = tool_result
-        .result
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = tool_result.result.await.map_err(|err| ErrorResponse {
+        message: err.to_string(),
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
 
     let content = result
         .content
         .into_iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(ErrorResponse::from)?;
 
     Ok(Json(CallToolResponse {
         content,
@@ -1339,4 +1353,88 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/agent/set_container", post(set_container))
         .route("/agent/stop", post(stop_agent))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use goose::config::GooseMode;
+    use goose::session::session_manager::SessionType;
+    use rmcp::model::Tool;
+    use rmcp::object;
+
+    fn frontend_extension() -> ExtensionConfig {
+        ExtensionConfig::Frontend {
+            name: "frontend-e2e".to_string(),
+            description: "Frontend test extension".to_string(),
+            tools: vec![Tool::new(
+                "frontend__echo".to_string(),
+                "Echo a string from the frontend".to_string(),
+                object!({
+                    "type": "object",
+                    "properties": {
+                        "message": { "type": "string" }
+                    },
+                    "required": ["message"]
+                }),
+            )],
+            instructions: Some("Use the frontend echo tool.".to_string()),
+            bundled: None,
+            available_tools: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn frontend_extensions_are_listed_and_rejected_cleanly_by_call_tool() {
+        let state = AppState::new(true).await.unwrap();
+        let session = state
+            .session_manager()
+            .create_session(
+                std::env::current_dir().unwrap(),
+                "frontend-route-test".to_string(),
+                SessionType::Hidden,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        agent_add_extension(
+            State(state.clone()),
+            Json(AddExtensionRequest {
+                session_id: session.id.clone(),
+                config: frontend_extension(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let Json(tools) = get_tools(
+            State(state.clone()),
+            Query(GetToolsQuery {
+                extension_name: None,
+                session_id: session.id.clone(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert!(tools.iter().any(|tool| tool.name == "frontend__echo"));
+
+        let error = match call_tool(
+            State(state),
+            Json(CallToolRequest {
+                session_id: session.id,
+                name: "frontend__echo".to_string(),
+                arguments: Value::Object(serde_json::Map::new()),
+            }),
+        )
+        .await
+        {
+            Ok(_) => panic!("frontend tools should not be callable through /agent/call_tool"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.status, StatusCode::FAILED_DEPENDENCY);
+        assert!(error.message.contains("frontend host"));
+    }
 }

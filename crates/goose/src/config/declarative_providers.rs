@@ -86,6 +86,12 @@ pub struct DeclarativeProviderConfig {
     pub base_path: Option<String>,
     #[serde(default)]
     pub env_vars: Option<Vec<EnvVarConfig>>,
+    /// Controls whether `fetch_supported_models` calls the provider's `/v1/models`
+    /// endpoint or returns the static `models` list directly.
+    ///
+    /// - `Some(false)` + non-empty `models`: return the static list; no API call.
+    ///   Construction fails if `models` is empty.
+    /// - `Some(true)` or `None`: try the API; fall back to `models` on 404.
     #[serde(default)]
     pub dynamic_models: Option<bool>,
     #[serde(default)]
@@ -686,6 +692,23 @@ mod tests {
         assert_eq!(config.models.len(), 1);
         assert_eq!(config.models[0].name, "z-ai/glm-4.7");
         assert_eq!(config.models[0].context_limit, 131072);
+    }
+
+    #[test]
+    fn test_vercel_ai_gateway_json_deserializes() {
+        let json = include_str!("../providers/declarative/vercel_ai_gateway.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("vercel_ai_gateway.json should parse");
+        assert_eq!(config.name, "vercel_ai_gateway");
+        assert_eq!(config.display_name, "Vercel AI Gateway");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "AI_GATEWAY_API_KEY");
+        assert_eq!(
+            config.base_url,
+            "https://ai-gateway.vercel.sh/v1/chat/completions"
+        );
+        assert_eq!(config.supports_streaming, Some(true));
+        assert!(!config.models.is_empty());
     }
 
     #[test]

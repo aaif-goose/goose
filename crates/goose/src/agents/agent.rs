@@ -28,6 +28,7 @@ use crate::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::types::{FrontendTool, SessionConfig, SharedProvider, ToolResultReceiver};
+use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{get_enabled_extensions, Config, GooseMode};
 use crate::context_mgmt::{
@@ -50,7 +51,7 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager};
+use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -66,6 +67,8 @@ use tracing::{debug, error, info, instrument, warn};
 
 const DEFAULT_MAX_TURNS: u32 = 1000;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
+const DEFAULT_FRONTEND_INSTRUCTIONS: &str =
+    "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
 
 /// Context needed for the reply function
 pub struct ReplyContext {
@@ -116,6 +119,7 @@ pub struct AgentConfig {
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
     pub mcp_host_info: Option<GooseMcpHostInfo>,
+    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
 }
 
 impl AgentConfig {
@@ -135,11 +139,20 @@ impl AgentConfig {
             disable_session_naming,
             goose_platform,
             mcp_host_info: None,
+            session_name_update_tx: None,
         }
     }
 
     pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
         self.mcp_host_info = mcp_host_info;
+        self
+    }
+
+    pub fn with_session_name_update_tx(
+        mut self,
+        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
+    ) -> Self {
+        self.session_name_update_tx = tx;
         self
     }
 }
@@ -152,6 +165,7 @@ pub struct Agent {
 
     pub extension_manager: Arc<ExtensionManager>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
+    pub(super) frontend_extensions: Mutex<HashMap<String, ExtensionConfig>>,
     pub(super) frontend_tools: Mutex<HashMap<String, FrontendTool>>,
     pub(super) frontend_instructions: Mutex<Option<String>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
@@ -161,6 +175,7 @@ pub struct Agent {
 
     pub(super) retry_manager: RetryManager,
     pub(super) tool_inspection_manager: ToolInspectionManager,
+    pub(super) hook_manager: crate::hooks::HookManager,
     container: Mutex<Option<Container>>,
 }
 
@@ -261,6 +276,7 @@ impl Agent {
                 capabilities,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
+            frontend_extensions: Mutex::new(HashMap::new()),
             frontend_tools: Mutex::new(HashMap::new()),
             frontend_instructions: Mutex::new(None),
             prompt_manager: Mutex::new(PromptManager::new()),
@@ -272,7 +288,60 @@ impl Agent {
                 permission_manager,
                 provider.clone(),
             ),
+            hook_manager: crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref()),
             container: Mutex::new(None),
+        }
+    }
+
+    /// Emit a lifecycle hook event with no extra context. Useful for events
+    /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
+    pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
+        if !self.hook_manager.has_hooks(event) {
+            return;
+        }
+        self.hook_manager
+            .emit(event, crate::hooks::HookContext::new(event, session_id))
+            .await;
+    }
+
+    fn with_post_tool_hook(
+        &self,
+        result: ToolCallResult,
+        tool_call: &CallToolRequestParams,
+        session: &Session,
+    ) -> ToolCallResult {
+        let hook_manager = self.hook_manager.clone();
+        let session_id = session.id.clone();
+        let working_dir = session.working_dir.to_string_lossy().to_string();
+        let tool_name = tool_call.name.to_string();
+        let tool_input = tool_call
+            .arguments
+            .as_ref()
+            .map(|a| serde_json::Value::Object(a.clone()));
+
+        let fut = async move {
+            let processed_result =
+                super::large_response_handler::process_tool_response(result.result.await);
+            let event = match &processed_result {
+                Ok(call_result) if call_result.is_error != Some(true) => {
+                    crate::hooks::HookEvent::PostToolUse
+                }
+                _ => crate::hooks::HookEvent::PostToolUseFailure,
+            };
+
+            if hook_manager.has_hooks(event) {
+                let ctx = crate::hooks::HookContext::new(event, &session_id)
+                    .with_tool(tool_name, tool_input)
+                    .with_working_dir(working_dir);
+                hook_manager.emit(event, ctx).await;
+            }
+
+            processed_result
+        };
+
+        ToolCallResult {
+            notification_stream: result.notification_stream,
+            result: Box::new(fut.boxed()),
         }
     }
 
@@ -354,6 +423,20 @@ impl Agent {
             messages.push(elicitation_message);
         }
         messages
+    }
+
+    async fn load_project_instructions(&self, session: &Session) -> Option<String> {
+        let project_id = session.project_id.as_deref()?;
+        let entry = crate::sources::read_project(project_id).ok()?;
+        let mut parts = Vec::new();
+        parts.push(format!("# Project: {}", entry.name));
+        if !entry.description.is_empty() {
+            parts.push(entry.description.clone());
+        }
+        if !entry.content.is_empty() {
+            parts.push(entry.content.clone());
+        }
+        Some(parts.join("\n\n"))
     }
 
     async fn prepare_reply_context(
@@ -548,6 +631,111 @@ impl Agent {
         self.frontend_tools.lock().await.get(name).cloned()
     }
 
+    async fn frontend_extension_configs(&self) -> Vec<ExtensionConfig> {
+        let mut configs = self
+            .frontend_extensions
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        configs.sort_by_key(|config| config.key());
+        configs
+    }
+
+    async fn frontend_tools_for_extension(&self, extension_name: Option<&str>) -> Vec<Tool> {
+        let requested_extension = extension_name.map(name_to_key);
+
+        self.frontend_extension_configs()
+            .await
+            .into_iter()
+            .filter_map(|config| {
+                let include = requested_extension
+                    .as_ref()
+                    .is_none_or(|name| *name == config.key());
+
+                match config {
+                    ExtensionConfig::Frontend { tools, .. } if include => Some(tools),
+                    _ => None,
+                }
+            })
+            .flatten()
+            .collect()
+    }
+
+    async fn rebuild_frontend_derived_state(&self, extensions: &HashMap<String, ExtensionConfig>) {
+        let multiple = extensions.len() > 1;
+        let mut tools = HashMap::new();
+        let mut instructions = Vec::new();
+
+        for config in extensions.values() {
+            if let ExtensionConfig::Frontend {
+                name,
+                tools: ext_tools,
+                instructions: ext_instructions,
+                ..
+            } = config
+            {
+                for tool in ext_tools {
+                    let tool_name = tool.name.to_string();
+                    tools.insert(
+                        tool_name.clone(),
+                        FrontendTool {
+                            name: tool_name,
+                            tool: tool.clone(),
+                        },
+                    );
+                }
+
+                let text = ext_instructions
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_FRONTEND_INSTRUCTIONS.to_string());
+                instructions.push(if multiple {
+                    format!("{name}: {text}")
+                } else {
+                    text
+                });
+            }
+        }
+
+        *self.frontend_tools.lock().await = tools;
+        *self.frontend_instructions.lock().await = if instructions.is_empty() {
+            None
+        } else {
+            Some(instructions.join("\n\n"))
+        };
+    }
+
+    async fn insert_frontend_extension(&self, extension: ExtensionConfig) {
+        let mut extensions = self.frontend_extensions.lock().await;
+        extensions.insert(extension.key(), extension);
+        self.rebuild_frontend_derived_state(&extensions).await;
+    }
+
+    async fn remove_frontend_extension(&self, name: &str) {
+        let mut extensions = self.frontend_extensions.lock().await;
+        extensions.remove(&name_to_key(name));
+        self.rebuild_frontend_derived_state(&extensions).await;
+    }
+
+    async fn extension_configs_for_persistence(&self) -> Vec<ExtensionConfig> {
+        let mut extension_configs = self.extension_manager.get_extension_configs().await;
+        extension_configs.extend(self.frontend_extension_configs().await);
+        extension_configs
+    }
+
+    pub(crate) async fn total_extension_and_tool_counts(&self, session_id: &str) -> (usize, usize) {
+        let (extension_count, tool_count) = self
+            .extension_manager
+            .get_extension_and_tool_counts(session_id)
+            .await;
+
+        (
+            extension_count + self.frontend_extensions.lock().await.len(),
+            tool_count + self.frontend_tools.lock().await.len(),
+        )
+    }
+
     pub async fn add_final_output_tool(&self, response: Response) {
         let mut final_output_tool = self.final_output_tool.lock().await;
         let created_final_output_tool = FinalOutputTool::new(response);
@@ -589,22 +777,52 @@ impl Agent {
             .await
             .record_tool_arguments(&tool_call.arguments, &session.working_dir);
 
+        if self
+            .hook_manager
+            .has_hooks(crate::hooks::HookEvent::PreToolUse)
+        {
+            let ctx =
+                crate::hooks::HookContext::new(crate::hooks::HookEvent::PreToolUse, &session.id)
+                    .with_tool(
+                        tool_call.name.to_string(),
+                        tool_call
+                            .arguments
+                            .as_ref()
+                            .map(|a| serde_json::Value::Object(a.clone())),
+                    )
+                    .with_working_dir(session.working_dir.to_string_lossy().to_string());
+            self.hook_manager
+                .emit(crate::hooks::HookEvent::PreToolUse, ctx)
+                .await;
+        }
+
         if tool_call.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME {
             let arguments = tool_call
                 .arguments
+                .clone()
                 .map(Value::Object)
                 .unwrap_or(Value::Object(serde_json::Map::new()));
             let result = self
                 .handle_schedule_management(arguments, request_id.clone())
                 .await;
             let wrapped_result = result.map(CallToolResult::success);
-            return (request_id, Ok(ToolCallResult::from(wrapped_result)));
+            return (
+                request_id,
+                Ok(self.with_post_tool_hook(
+                    ToolCallResult::from(wrapped_result),
+                    &tool_call,
+                    session,
+                )),
+            );
         }
 
         if tool_call.name == FINAL_OUTPUT_TOOL_NAME {
             return if let Some(final_output_tool) = self.final_output_tool.lock().await.as_mut() {
                 let result = final_output_tool.execute_tool_call(tool_call.clone()).await;
-                (request_id, Ok(result))
+                (
+                    request_id,
+                    Ok(self.with_post_tool_hook(result, &tool_call, session)),
+                )
             } else {
                 (
                     request_id,
@@ -656,23 +874,15 @@ impl Agent {
 
         (
             request_id,
-            Ok(ToolCallResult {
-                notification_stream: result.notification_stream,
-                result: Box::new(
-                    result
-                        .result
-                        .map(super::large_response_handler::process_tool_response),
-                ),
-            }),
+            Ok(self.with_post_tool_hook(result, &tool_call, session)),
         )
     }
 
     /// Save current extension state to session metadata
     /// Should be called after any extension add/remove operation
     pub async fn save_extension_state(&self, session: &SessionConfig) -> Result<()> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
-
-        let extensions_state = EnabledExtensionsState::new(extension_configs);
+        let extensions_state =
+            EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
 
         let session_manager = self.config.session_manager.clone();
         let mut session_data = session_manager.get_session(&session.id, false).await?;
@@ -693,8 +903,8 @@ impl Agent {
 
     /// Save current extension state to session by session_id
     pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
-        let extensions_state = EnabledExtensionsState::new(extension_configs);
+        let extensions_state =
+            EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
 
         let session_manager = self.config.session_manager.clone();
         let session = session_manager.get_session(session_id, false).await?;
@@ -898,30 +1108,8 @@ impl Agent {
         let working_dir = Some(session.working_dir);
 
         match &extension {
-            ExtensionConfig::Frontend {
-                tools,
-                instructions,
-                ..
-            } => {
-                // For frontend tools, just store them in the frontend_tools map
-                let mut frontend_tools = self.frontend_tools.lock().await;
-                for tool in tools {
-                    let frontend_tool = FrontendTool {
-                        name: tool.name.to_string(),
-                        tool: tool.clone(),
-                    };
-                    frontend_tools.insert(tool.name.to_string(), frontend_tool);
-                }
-                // Store instructions if provided, using "frontend" as the key
-                let mut frontend_instructions = self.frontend_instructions.lock().await;
-                if let Some(instructions) = instructions {
-                    *frontend_instructions = Some(instructions.clone());
-                } else {
-                    // Default frontend instructions if none provided
-                    *frontend_instructions = Some(
-                        "The following tools are provided directly by the frontend and will be executed by the frontend when called.".to_string(),
-                    );
-                }
+            ExtensionConfig::Frontend { .. } => {
+                self.insert_frontend_extension(extension.clone()).await;
             }
             _ => {
                 let container = self.container.lock().await;
@@ -946,6 +1134,11 @@ impl Agent {
             .await
             .unwrap_or_default();
 
+        prefixed_tools.extend(
+            self.frontend_tools_for_extension(extension_name.as_deref())
+                .await,
+        );
+
         if (extension_name.is_none() || extension_name.as_deref() == Some("platform"))
             && self.config.scheduler_service.is_some()
         {
@@ -963,6 +1156,7 @@ impl Agent {
 
     pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
         self.extension_manager.remove_extension(name).await?;
+        self.remove_frontend_extension(name).await;
 
         // Persist extension state after successful removal
         self.persist_extension_state(session_id)
@@ -976,14 +1170,22 @@ impl Agent {
     }
 
     pub async fn list_extensions(&self) -> Vec<String> {
-        self.extension_manager
+        let mut extensions = self
+            .extension_manager
             .list_extensions()
             .await
-            .expect("Failed to list extensions")
+            .expect("Failed to list extensions");
+        extensions.extend(
+            self.frontend_extension_configs()
+                .await
+                .into_iter()
+                .map(|config| config.name()),
+        );
+        extensions
     }
 
     pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
-        self.extension_manager.get_extension_configs().await
+        self.extension_configs_for_persistence().await
     }
 
     /// Handle a confirmation response for a tool request
@@ -1039,18 +1241,19 @@ impl Agent {
                 if let ActionRequiredData::ElicitationResponse { id, user_data } =
                     &action_required.data
                 {
-                    if let Err(e) = ActionRequiredManager::global()
+                    // Surface stale/cancelled/timed-out elicitations as a hard
+                    // error so callers (e.g. the HTTP handler) can propagate
+                    // failure to the client instead of silently reporting
+                    // success while the blocked tool call stays unblocked.
+                    // The success path returns an empty stream; an Err here
+                    // makes the contract: Ok(empty) on accept, Err on reject.
+                    ActionRequiredManager::global()
                         .submit_response(id.clone(), user_data.clone())
                         .await
-                    {
-                        let error_text = format!("Failed to submit elicitation response: {}", e);
-                        error!(error_text);
-                        return Ok(Box::pin(stream::once(async {
-                            Ok(AgentEvent::Message(
-                                Message::assistant().with_text(error_text),
-                            ))
-                        })));
-                    }
+                        .map_err(|e| {
+                            error!("Failed to submit elicitation response: {}", e);
+                            anyhow!("Failed to submit elicitation response: {}", e)
+                        })?;
                     session_manager
                         .add_message(&session_config.id, &user_message)
                         .await?;
@@ -1060,6 +1263,20 @@ impl Agent {
         }
 
         let message_text = user_message.as_concat_text();
+
+        if self
+            .hook_manager
+            .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
+        {
+            let ctx = crate::hooks::HookContext::new(
+                crate::hooks::HookEvent::UserPromptSubmit,
+                &session_config.id,
+            )
+            .with_message(message_text.clone());
+            self.hook_manager
+                .emit(crate::hooks::HookEvent::UserPromptSubmit, ctx)
+                .await;
+        }
 
         // Track custom slash command usage (don't track command name for privacy)
         if message_text.trim().starts_with('/') {
@@ -1247,6 +1464,11 @@ impl Agent {
             goose_mode,
             initial_messages,
         } = context;
+
+        if let Some(project_addendum) = self.load_project_instructions(&session).await {
+            system_prompt = format!("{system_prompt}\n\n{project_addendum}");
+        }
+
         self.reset_retry_attempts().await;
 
         let provider = self.provider().await?;
@@ -1254,12 +1476,21 @@ impl Agent {
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
             let manager_for_spawn = session_manager.clone();
+            let session_name_update_tx = self.config.session_name_update_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = manager_for_spawn
+                match manager_for_spawn
                     .maybe_update_name(&session_id, provider)
                     .await
                 {
-                    warn!("Failed to generate session description: {}", e);
+                    Ok(Some(update)) => {
+                        if let Some(tx) = session_name_update_tx {
+                            if tx.send(update).is_err() {
+                                warn!("Failed to publish generated session name");
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => warn!("Failed to generate session description: {}", e),
                 }
             });
         }
@@ -1284,6 +1515,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut tool_pair_summarization_done = false;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1330,13 +1562,17 @@ impl Agent {
                     .count()
                     .saturating_sub(pre_turn_tool_count);
 
-                let tool_pair_summarization_task = crate::context_mgmt::maybe_summarize_tool_pairs(
-                    self.provider().await?,
-                    session_config.id.clone(),
-                    conversation.clone(),
-                    tool_call_cut_off,
-                    current_turn_tool_count,
-                );
+                let tool_pair_summarization_task = if tool_pair_summarization_done {
+                    None
+                } else {
+                    crate::context_mgmt::maybe_summarize_tool_pairs(
+                        self.provider().await?,
+                        session_config.id.clone(),
+                        conversation.clone(),
+                        tool_call_cut_off,
+                        current_turn_tool_count,
+                    )
+                };
 
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
@@ -1806,39 +2042,40 @@ impl Agent {
                 }
 
                 if is_token_cancelled(&cancel_token) {
-                    tool_pair_summarization_task.abort();
+                    if let Some(ref task) = tool_pair_summarization_task {
+                        task.abort();
+                    }
                 }
 
-                if let Ok(summaries) = tool_pair_summarization_task.await {
-                    let mut updated_messages = conversation.messages().clone();
-
-                    for (summary_msg, tool_id) in summaries {
-                        let matching: Vec<&mut Message> = updated_messages
-                            .iter_mut()
-                            .filter(|msg| {
-                                msg.id.is_some() && msg.content.iter().any(|c| match c {
-                                    MessageContent::ToolRequest(req) => req.id == tool_id,
-                                    MessageContent::ToolResponse(resp) => resp.id == tool_id,
-                                    _ => false,
+                if let Some(task) = tool_pair_summarization_task {
+                    tool_pair_summarization_done = true;
+                    if let Ok(summaries) = task.await {
+                        for (summary_msg, tool_id) in summaries {
+                            let matching_ids: Vec<String> = conversation.messages()
+                                .iter()
+                                .filter(|msg| {
+                                    msg.id.is_some() && msg.content.iter().any(|c| match c {
+                                        MessageContent::ToolRequest(req) => req.id == tool_id,
+                                        MessageContent::ToolResponse(resp) => resp.id == tool_id,
+                                        _ => false,
+                                    })
                                 })
-                            })
-                            .collect();
+                                .filter_map(|msg| msg.id.clone())
+                                .collect();
 
-                        if matching.len() == 2 {
-                            for msg in matching {
-                                let id = msg.id.as_ref().unwrap();
-                                msg.metadata = msg.metadata.with_agent_invisible();
-                                SessionManager::update_message_metadata(&session_config.id, id, |metadata| {
-                                    metadata.with_agent_invisible()
-                                }).await?;
+                            if matching_ids.len() == 2 {
+                                for id in &matching_ids {
+                                    SessionManager::update_message_metadata(&session_config.id, id, |metadata| {
+                                        metadata.with_agent_invisible()
+                                    }).await?;
+                                }
+                                session_manager.add_message(&session_config.id, &summary_msg).await?;
+                            } else {
+                                warn!("Expected a tool request/reply pair, but found {} matching messages",
+                                    matching_ids.len());
                             }
-                            messages_to_add.push(summary_msg);
-                        } else {
-                            warn!("Expected a tool request/reply pair, but found {} matching messages",
-                                matching.len());
                         }
                     }
-                    conversation = Conversation::new_unvalidated(updated_messages);
                 }
 
                 for msg in &messages_to_add {
@@ -2107,10 +2344,7 @@ impl Agent {
             .get_extensions_info(&session.working_dir)
             .await;
         tracing::debug!("Retrieved {} extensions info", extensions_info.len());
-        let (extension_count, tool_count) = self
-            .extension_manager
-            .get_extension_and_tool_counts(session_id)
-            .await;
+        let (extension_count, tool_count) = self.total_extension_and_tool_counts(session_id).await;
 
         // Get model name from provider
         let provider = self.provider().await.map_err(|e| {

@@ -49,6 +49,16 @@ export function extractToolResultText(update: {
   return "";
 }
 
+export function extractToolStructuredContent(update: {
+  rawOutput?: unknown;
+}): unknown | undefined {
+  if (Object.hasOwn(update, "rawOutput")) {
+    return update.rawOutput;
+  }
+
+  return undefined;
+}
+
 export function attachMcpAppPayload(
   sessionId: string,
   toolCallId: string,
@@ -56,7 +66,6 @@ export function attachMcpAppPayload(
   update: SessionUpdate,
   isReplay: boolean,
   options?: {
-    gooseSessionId?: string | null;
     replayMessageId?: string | null;
   },
 ): void {
@@ -65,7 +74,6 @@ export function attachMcpAppPayload(
     toolCallId,
     toolCallTitle,
     update,
-    options?.gooseSessionId,
   );
   if (!payload) {
     return;

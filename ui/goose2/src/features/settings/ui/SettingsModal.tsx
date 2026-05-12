@@ -13,11 +13,10 @@ import {
   Stethoscope,
   X,
 } from "lucide-react";
-import { IconPlug, IconPuzzle } from "@tabler/icons-react";
+import { IconPlug } from "@tabler/icons-react";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { DoctorSettings } from "./DoctorSettings";
 import { ProvidersSettings } from "./ProvidersSettings";
-import { ExtensionsSettings } from "@/features/extensions/ui/ExtensionsSettings";
 import { VoiceInputSettings } from "./VoiceInputSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { CompactionSettings } from "./CompactionSettings";
@@ -29,7 +28,6 @@ const NAV_ITEMS = [
   { id: "appearance", labelKey: "nav.appearance", icon: Palette },
   { id: "providers", labelKey: "nav.providers", icon: IconPlug },
   { id: "compaction", labelKey: "nav.compaction", icon: Minimize2 },
-  { id: "extensions", labelKey: "nav.extensions", icon: IconPuzzle },
   { id: "voice", labelKey: "nav.voice", icon: Mic },
   { id: "general", labelKey: "nav.general", icon: Settings2 },
   { id: "projects", labelKey: "nav.projects", icon: FolderKanban },
@@ -59,6 +57,10 @@ export function SettingsModal({
     const timer = setTimeout(() => setIsLoaded(true), 50);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -100,7 +102,7 @@ export function SettingsModal({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: click handler only prevents backdrop dismiss propagation */}
       <div
         className={cn(
-          "flex h-[min(600px,calc(100vh-4rem))] w-[calc(100vw-2rem)] max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-opacity duration-300 ease-out",
+          "flex h-[min(600px,calc(100vh-4rem))] w-[calc(100vw-2rem)] max-w-3xl overflow-hidden rounded-xl border bg-background shadow-modal transition-opacity duration-300 ease-out max-[640px]:h-[calc(100vh-1rem)] max-[640px]:w-[calc(100vw-1rem)] max-[640px]:flex-col",
           isLoaded ? "opacity-100" : "opacity-0",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -108,13 +110,13 @@ export function SettingsModal({
         {/* Sidebar */}
         <div
           className={cn(
-            "flex min-h-0 w-44 flex-shrink-0 flex-col border-r bg-muted/50 transition-all duration-700 ease-out",
+            "flex min-h-0 w-44 flex-shrink-0 flex-col border-r bg-muted/50 transition-all duration-700 ease-out max-[640px]:max-h-32 max-[640px]:w-full max-[640px]:border-b max-[640px]:border-r-0",
             isLoaded ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2",
           )}
         >
           <div
             className={cn(
-              "px-4 py-4 transition-all duration-500 ease-out",
+              "px-4 py-4 transition-all duration-500 ease-out max-[640px]:px-3 max-[640px]:py-3",
               isLoaded
                 ? "opacity-100 translate-x-0"
                 : "opacity-0 -translate-x-2",
@@ -122,8 +124,8 @@ export function SettingsModal({
           >
             <h2 className="text-sm font-semibold">{t("title")}</h2>
           </div>
-          <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            <div className="flex flex-col gap-1">
+          <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 max-[640px]:overflow-x-auto max-[640px]:overflow-y-hidden max-[640px]:pb-2">
+            <div className="flex flex-col gap-1 max-[640px]:min-w-max max-[640px]:flex-row">
               {navItems.map((item, index) => (
                 <Button
                   type="button"
@@ -132,9 +134,9 @@ export function SettingsModal({
                   key={item.id}
                   onClick={() => setActiveSection(item.id)}
                   className={cn(
-                    "w-full justify-start rounded-lg px-3 py-2 transition-all duration-600 ease-out",
+                    "w-full justify-start rounded-lg px-3 py-2 transition-all duration-600 ease-out max-[640px]:w-auto max-[640px]:shrink-0 max-[640px]:px-2.5",
                     activeSection === item.id
-                      ? "bg-background text-foreground shadow-sm hover:bg-background"
+                      ? "bg-background text-foreground shadow-none hover:bg-background"
                       : "text-muted-foreground hover:bg-accent/50 hover:text-foreground duration-300",
                     isLoaded
                       ? "opacity-100 translate-x-0"
@@ -160,17 +162,16 @@ export function SettingsModal({
             size="icon-xs"
             onClick={onClose}
             aria-label={t("common:actions.close")}
-            className="absolute right-4 top-4 z-30 rounded-md text-muted-foreground hover:text-foreground"
+            className="absolute right-4 top-4 z-30 rounded-md text-muted-foreground hover:text-foreground max-[640px]:right-3 max-[640px]:top-3"
           >
             <X className="size-4" />
           </Button>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="px-6 pb-4">
+            <div className="px-6 pb-4 max-[640px]:px-4 max-[640px]:pt-1">
               {activeSection === "appearance" && <AppearanceSettings />}
               {activeSection === "providers" && <ProvidersSettings />}
               {activeSection === "compaction" && <CompactionSettings />}
-              {activeSection === "extensions" && <ExtensionsSettings />}
               {activeSection === "voice" && <VoiceInputSettings />}
               {activeSection === "doctor" && <DoctorSettings />}
               {activeSection === "general" && <GeneralSettings />}

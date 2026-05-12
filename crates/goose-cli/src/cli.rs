@@ -7,6 +7,7 @@ use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
 use goose::recipe::Recipe;
+use goose::source_roots::SourceRoot;
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
@@ -14,6 +15,7 @@ use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, Tu
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
+use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
 use crate::commands::project::{handle_project_default, handle_projects_interactive};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
 use crate::commands::term::{
@@ -35,6 +37,17 @@ use goose::session::SessionManager;
 use std::io::Read;
 use std::path::PathBuf;
 use tracing::warn;
+
+const GOOSE_SERVER_SECRET_KEY_ENV: &str = "GOOSE_SERVER__SECRET_KEY";
+
+fn generate_serve_secret_key() -> String {
+    use rand::distributions::{Alphanumeric, DistString};
+
+    format!(
+        "goose-acp-{}",
+        Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
+    )
+}
 
 #[derive(Parser)]
 #[command(name = "goose", author, version, display_name = "", about, long_about = None)]
@@ -633,6 +646,29 @@ enum GatewayCommand {
 }
 
 #[derive(Subcommand)]
+enum PluginCommand {
+    /// Install a plugin from a git repository URL
+    #[command(about = "Install a plugin from a git repository URL")]
+    Install {
+        #[arg(
+            long,
+            help = "Automatically update this plugin before plugin skills are loaded"
+        )]
+        auto_update: bool,
+
+        #[arg(help = "URL to a git repository containing a supported plugin")]
+        url: String,
+    },
+
+    /// Update an installed git-backed plugin
+    #[command(about = "Update an installed git-backed plugin")]
+    Update {
+        #[arg(help = "Name of the installed plugin to update")]
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum RecipeCommand {
     /// Validate a recipe file
     #[command(about = "Validate a recipe")]
@@ -843,6 +879,13 @@ enum Command {
         command: RecipeCommand,
     },
 
+    /// Manage plugins
+    #[command(about = "Manage plugins")]
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+
     /// Manage scheduled jobs
     #[command(about = "Manage scheduled jobs", visible_alias = "sched")]
     Schedule {
@@ -1045,6 +1088,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Schedule { .. }) => "schedule",
         Some(Command::Update { .. }) => "update",
         Some(Command::Recipe { .. }) => "recipe",
+        Some(Command::Plugin { .. }) => "plugin",
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
@@ -1080,19 +1124,41 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         builtins
     };
 
+    let additional_source_roots = Config::global()
+        .get_param::<String>("ADDITIONAL_AGENT_SOURCE_ROOTS")
+        .ok()
+        .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| {
+            let path = path.canonicalize().unwrap_or(path);
+            SourceRoot::read_only(path)
+        })
+        .collect();
+
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         goose_platform: GoosePlatform::GooseCli,
+        additional_source_roots,
     }));
-    let router = create_router(server);
+    let secret_key = std::env::var(GOOSE_SERVER_SECRET_KEY_ENV)
+        .ok()
+        .map(|secret| secret.trim().to_string())
+        .filter(|secret| !secret.is_empty())
+        .unwrap_or_else(generate_serve_secret_key);
+    let router = create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, router).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -1509,6 +1575,13 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
     }
 }
 
+fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
+    match command {
+        PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
+        PluginCommand::Update { name } => handle_plugin_update(&name),
+    }
+}
+
 fn handle_recipe_subcommand(command: RecipeCommand) -> Result<()> {
     match command {
         RecipeCommand::Validate { recipe_name } => handle_validate(&recipe_name),
@@ -1837,6 +1910,7 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
+        Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
