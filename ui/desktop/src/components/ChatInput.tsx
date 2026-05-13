@@ -823,12 +823,32 @@ export default function ChatInput({
         const links = doc.querySelectorAll('a[href]');
         if (links.length > 0) {
           evt.preventDefault();
+          const NON_CONTENT_TAGS = new Set([
+            'STYLE',
+            'SCRIPT',
+            'NOSCRIPT',
+            'HEAD',
+            'META',
+            'LINK',
+            'TITLE',
+            'TEMPLATE',
+            'SVG',
+            'MATH',
+            'IFRAME',
+            'OBJECT',
+            'EMBED',
+            'APPLET',
+            'COMMENT',
+          ]);
           const convertNodeToMarkdown = (node: Node): string => {
             if (node.nodeType === Node.TEXT_NODE) {
               return node.textContent || '';
             }
             if (node.nodeType === Node.ELEMENT_NODE) {
               const el = node as HTMLElement;
+              if (NON_CONTENT_TAGS.has(el.tagName)) {
+                return '';
+              }
               if (el.tagName === 'A' && el.getAttribute('href')) {
                 const href = el.getAttribute('href')!;
                 const text = el.textContent || href;
