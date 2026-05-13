@@ -1,4 +1,5 @@
 {
+  "navigationLabel": "Navegación de configuración",
   "about": {
     "buildModes": {
       "development": "Desarrollo",

@@ -6,6 +6,7 @@ import {
   IconLayoutSidebar,
   IconLayoutSidebarFilled,
   IconApps,
+  IconArrowLeft,
   IconRobotFace,
   IconSearch,
   IconSettings,
@@ -37,6 +38,11 @@ import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSearchResults } from "./SidebarSearchResults";
+import {
+  DEFAULT_SETTINGS_SECTION,
+  SETTINGS_SECTIONS,
+  type SectionId,
+} from "@/features/settings/ui/settingsSections";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -44,6 +50,8 @@ interface SidebarProps {
   isResizing?: boolean;
   onCollapse: () => void;
   onSettingsClick?: () => void;
+  onSettingsBack?: () => void;
+  onSettingsSectionChange?: (section: SectionId) => void;
   onNewChatInProject?: (projectId: string) => void;
   onNewChat?: () => void;
   onCreateProject?: () => void;
@@ -61,6 +69,7 @@ interface SidebarProps {
     query?: string,
   ) => void;
   activeView?: AppView;
+  activeSettingsSection?: SectionId;
   activeSessionId?: string | null;
   className?: string;
   projects: ProjectInfo[];
@@ -100,6 +109,8 @@ export function Sidebar({
   isResizing = false,
   onCollapse,
   onSettingsClick,
+  onSettingsBack,
+  onSettingsSectionChange,
   onNewChatInProject,
   onNewChat,
   onCreateProject,
@@ -113,6 +124,7 @@ export function Sidebar({
   onSelectSession,
   onSelectSearchResult,
   activeView,
+  activeSettingsSection = DEFAULT_SETTINGS_SECTION,
   activeSessionId,
   className,
   projects,
@@ -162,6 +174,7 @@ export function Sidebar({
 
   const labelTransition = "transition-[opacity,width] duration-300 ease-out";
   const labelVisible = expanded && !collapsed;
+  const isSettingsSurface = activeView === "settings";
   const defaultTitle = t("common:session.defaultTitle");
   const navItems: readonly {
     id: AppView;
@@ -352,84 +365,278 @@ export function Sidebar({
         </div>
 
         <div className="relative flex-1 min-h-0 overflow-hidden">
-          <nav
+          <div
             className={cn(
-              "relative h-full overflow-y-auto overflow-x-hidden px-1.5 py-1 pt-1 scrollbar-none",
-              collapsed ? "pb-16" : "pb-[72px]",
+              "absolute inset-0 flex flex-col transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none",
+              isSettingsSurface
+                ? "pointer-events-none -translate-x-full opacity-0"
+                : "translate-x-0 opacity-100",
             )}
+            inert={isSettingsSurface ? true : undefined}
+            aria-hidden={isSettingsSurface}
           >
-            <div className="relative z-10 space-y-0.5">
-              {collapsed && (
-                <button
-                  type="button"
-                  onClick={onCollapse}
-                  title={t("actions.expand")}
-                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                  aria-label={t("actions.expand")}
-                >
-                  <IconLayoutSidebar className="size-4 flex-shrink-0" />
-                  <span className="sr-only">{t("actions.expand")}</span>
-                </button>
+            <nav
+              className={cn(
+                "relative h-full overflow-y-auto overflow-x-hidden px-1.5 py-1 pt-1 scrollbar-none",
+                collapsed ? "pb-16" : "pb-[72px]",
               )}
-
-              <div
-                className={cn(
-                  "mb-3 flex items-center w-full rounded-md transition-all duration-300 ease-out",
-                  collapsed
-                    ? "justify-center p-3 text-foreground"
-                    : "gap-2 border border-border px-2.5 py-1.5 text-xs text-foreground hover:text-foreground hover:bg-transparent",
+              aria-label={t("navigation.main")}
+            >
+              <div className="relative z-10 space-y-0.5">
+                {collapsed && (
+                  <button
+                    type="button"
+                    onClick={onCollapse}
+                    title={t("actions.expand")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                    aria-label={t("actions.expand")}
+                  >
+                    <IconLayoutSidebar className="size-4 flex-shrink-0" />
+                    <span className="sr-only">{t("actions.expand")}</span>
+                  </button>
                 )}
-              >
-                <IconSearch className="size-3.5 flex-shrink-0 text-placeholder" />
-                {!collapsed && (
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    enterKeyHint="search"
-                    value={sidebarSearch.query}
-                    onChange={(e) => sidebarSearch.setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void sidebarSearch.search();
+
+                <div
+                  className={cn(
+                    "mb-3 flex items-center w-full rounded-md transition-all duration-300 ease-out",
+                    collapsed
+                      ? "justify-center p-3 text-foreground"
+                      : "gap-2 border border-border px-2.5 py-1.5 text-xs text-foreground hover:text-foreground hover:bg-transparent",
+                  )}
+                >
+                  <IconSearch className="size-3.5 flex-shrink-0 text-placeholder" />
+                  {!collapsed && (
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      enterKeyHint="search"
+                      value={sidebarSearch.query}
+                      onChange={(e) => sidebarSearch.setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void sidebarSearch.search();
+                        }
+                      }}
+                      placeholder={t("search.placeholder")}
+                      className={cn(
+                        "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-placeholder outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+                        labelTransition,
+                        labelVisible
+                          ? "opacity-100 w-auto"
+                          : "opacity-0 w-0 overflow-hidden",
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+                </div>
+
+                <SidebarNavItem
+                  testId="nav-home"
+                  icon={IconHome}
+                  label={t("navigation.home")}
+                  collapsed={collapsed}
+                  labelTransition={labelTransition}
+                  labelVisible={labelVisible}
+                  isActive={activeView === "home"}
+                  onClick={() => onNavigate?.("home")}
+                />
+
+                {navItems.map((item, index) => {
+                  const isActive = activeView === item.id;
+                  return (
+                    <SidebarNavItem
+                      key={item.id}
+                      icon={item.icon}
+                      label={item.label}
+                      collapsed={collapsed}
+                      labelTransition={labelTransition}
+                      labelVisible={labelVisible}
+                      isActive={isActive}
+                      onClick={() => onNavigate?.(item.id)}
+                      itemTransitionDelay={
+                        !collapsed && expanded ? `${index * 30}ms` : "0ms"
                       }
-                    }}
-                    placeholder={t("search.placeholder")}
+                      labelTransitionDelay={
+                        labelVisible ? `${index * 30 + 60}ms` : "0ms"
+                      }
+                    />
+                  );
+                })}
+              </div>
+
+              {!collapsed &&
+                (sidebarSearch.submittedQuery ? (
+                  <div className="relative z-10 space-y-2">
+                    {sidebarSearch.error && (
+                      <p className="px-1 text-xs text-danger">
+                        {t("search.error")}
+                      </p>
+                    )}
+
+                    {sidebarSearch.isSearching &&
+                      sidebarSearch.results.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+                          {t("search.searching")}
+                        </div>
+                      )}
+
+                    {(!sidebarSearch.isSearching ||
+                      sidebarSearch.results.length > 0) && (
+                      <SidebarSearchResults
+                        results={sidebarSearch.results}
+                        activeSessionId={activeSessionId}
+                        onSelectResult={(sessionId, messageId) => {
+                          if (messageId) {
+                            onSelectSearchResult?.(
+                              sessionId,
+                              messageId,
+                              sidebarSearch.submittedQuery,
+                            );
+                            return;
+                          }
+                          onSelectSession?.(sessionId);
+                        }}
+                        getPersonaName={sidebarResolvers.getPersonaName}
+                        getProjectName={sidebarResolvers.getProjectName}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <SidebarProjectsSection
+                    projects={projects}
+                    projectSessions={projectSessions}
+                    expandedProjects={expandedProjects}
+                    toggleProject={toggleProject}
+                    collapsed={collapsed}
+                    labelTransition={labelTransition}
+                    labelVisible={labelVisible}
+                    activeSessionId={activeSessionId}
+                    onNavigate={onNavigate}
+                    onSelectSession={onSelectSession}
+                    onNewChatInProject={onNewChatInProject}
+                    onNewChat={onNewChat}
+                    onCreateProject={onCreateProject}
+                    onEditProject={onEditProject}
+                    onArchiveProject={onArchiveProject}
+                    onArchiveChat={onArchiveChat}
+                    onRenameChat={onRenameChat}
+                    onMoveToProject={onMoveToProject}
+                    onReorderProject={onReorderProject}
+                    projectsSectionOpen={sectionVisibility.projects}
+                    recentsSectionOpen={sectionVisibility.recents}
+                    onToggleProjectsSection={() => toggleSection("projects")}
+                    onToggleRecentsSection={() => toggleSection("recents")}
+                  />
+                ))}
+            </nav>
+
+            <div
+              className={cn(
+                "absolute inset-x-0 bottom-0 z-20 bg-background",
+                "px-1.5 py-1.5",
+              )}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size={collapsed ? "icon-sm" : "default"}
+                onClick={onSettingsClick}
+                className={cn(
+                  "h-10 w-full rounded-md bg-transparent text-muted-foreground/85 hover:bg-transparent hover:text-foreground active:bg-transparent",
+                  collapsed
+                    ? "justify-center p-3"
+                    : "justify-start gap-2.5 px-3 py-2.5",
+                )}
+                title={t("settings:title")}
+                aria-label={t("settings:title")}
+              >
+                <IconSettings className="size-4 flex-shrink-0" />
+                {!collapsed && (
+                  <span
                     className={cn(
-                      "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-placeholder outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+                      "whitespace-nowrap text-sm",
                       labelTransition,
                       labelVisible
                         ? "opacity-100 w-auto"
                         : "opacity-0 w-0 overflow-hidden",
                     )}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  >
+                    {t("settings:title")}
+                  </span>
                 )}
-              </div>
+              </Button>
+            </div>
+          </div>
 
-              <SidebarNavItem
-                testId="nav-home"
-                icon={IconHome}
-                label={t("navigation.home")}
-                collapsed={collapsed}
-                labelTransition={labelTransition}
-                labelVisible={labelVisible}
-                isActive={activeView === "home"}
-                onClick={() => onNavigate?.("home")}
-              />
+          <div
+            className={cn(
+              "absolute inset-0 flex flex-col transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none",
+              isSettingsSurface
+                ? "translate-x-0 opacity-100"
+                : "pointer-events-none translate-x-full opacity-0",
+            )}
+            inert={!isSettingsSurface ? true : undefined}
+            aria-hidden={!isSettingsSurface}
+          >
+            <nav
+              className="h-full overflow-y-auto overflow-x-hidden px-1.5 py-1 scrollbar-none"
+              aria-label={t("settings:navigationLabel")}
+            >
+              <div className="space-y-0.5">
+                {collapsed && (
+                  <button
+                    type="button"
+                    onClick={onCollapse}
+                    title={t("actions.expand")}
+                    className="flex w-full items-center justify-center rounded-md px-3 py-1.5 text-sm text-foreground transition-colors duration-200 hover:text-foreground"
+                    aria-label={t("actions.expand")}
+                  >
+                    <IconLayoutSidebar className="size-4 flex-shrink-0" />
+                    <span className="sr-only">{t("actions.expand")}</span>
+                  </button>
+                )}
 
-              {navItems.map((item, index) => {
-                const isActive = activeView === item.id;
-                return (
+                <button
+                  type="button"
+                  onClick={onSettingsBack}
+                  title={
+                    collapsed ? t("actions.backToMainNavigation") : undefined
+                  }
+                  aria-label={t("actions.backToMainNavigation")}
+                  className={cn(
+                    "mb-3 flex w-full items-center rounded-md text-sm text-foreground transition-colors duration-200 hover:bg-background-alt hover:text-foreground",
+                    collapsed
+                      ? "justify-center px-3 py-1.5"
+                      : "gap-2.5 px-3 py-1.5",
+                  )}
+                >
+                  <IconArrowLeft className="size-4 flex-shrink-0" />
+                  {!collapsed && (
+                    <span
+                      className={cn(
+                        "whitespace-nowrap",
+                        labelTransition,
+                        labelVisible
+                          ? "opacity-100 w-auto"
+                          : "opacity-0 w-0 overflow-hidden",
+                      )}
+                    >
+                      {t("actions.backToMainNavigation")}
+                    </span>
+                  )}
+                </button>
+
+                {SETTINGS_SECTIONS.map((item, index) => (
                   <SidebarNavItem
                     key={item.id}
                     icon={item.icon}
-                    label={item.label}
+                    label={t(`settings:${item.labelKey}`)}
                     collapsed={collapsed}
                     labelTransition={labelTransition}
                     labelVisible={labelVisible}
-                    isActive={isActive}
-                    onClick={() => onNavigate?.(item.id)}
+                    isActive={activeSettingsSection === item.id}
+                    onClick={() => onSettingsSectionChange?.(item.id)}
                     itemTransitionDelay={
                       !collapsed && expanded ? `${index * 30}ms` : "0ms"
                     }
@@ -437,111 +644,9 @@ export function Sidebar({
                       labelVisible ? `${index * 30 + 60}ms` : "0ms"
                     }
                   />
-                );
-              })}
-            </div>
-
-            {!collapsed &&
-              (sidebarSearch.submittedQuery ? (
-                <div className="relative z-10 space-y-2">
-                  {sidebarSearch.error && (
-                    <p className="px-1 text-xs text-danger">
-                      {t("search.error")}
-                    </p>
-                  )}
-
-                  {sidebarSearch.isSearching &&
-                    sidebarSearch.results.length === 0 && (
-                      <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-                        {t("search.searching")}
-                      </div>
-                    )}
-
-                  {(!sidebarSearch.isSearching ||
-                    sidebarSearch.results.length > 0) && (
-                    <SidebarSearchResults
-                      results={sidebarSearch.results}
-                      activeSessionId={activeSessionId}
-                      onSelectResult={(sessionId, messageId) => {
-                        if (messageId) {
-                          onSelectSearchResult?.(
-                            sessionId,
-                            messageId,
-                            sidebarSearch.submittedQuery,
-                          );
-                          return;
-                        }
-                        onSelectSession?.(sessionId);
-                      }}
-                      getPersonaName={sidebarResolvers.getPersonaName}
-                      getProjectName={sidebarResolvers.getProjectName}
-                    />
-                  )}
-                </div>
-              ) : (
-                <SidebarProjectsSection
-                  projects={projects}
-                  projectSessions={projectSessions}
-                  expandedProjects={expandedProjects}
-                  toggleProject={toggleProject}
-                  collapsed={collapsed}
-                  labelTransition={labelTransition}
-                  labelVisible={labelVisible}
-                  activeSessionId={activeSessionId}
-                  onNavigate={onNavigate}
-                  onSelectSession={onSelectSession}
-                  onNewChatInProject={onNewChatInProject}
-                  onNewChat={onNewChat}
-                  onCreateProject={onCreateProject}
-                  onEditProject={onEditProject}
-                  onArchiveProject={onArchiveProject}
-                  onArchiveChat={onArchiveChat}
-                  onRenameChat={onRenameChat}
-                  onMoveToProject={onMoveToProject}
-                  onReorderProject={onReorderProject}
-                  projectsSectionOpen={sectionVisibility.projects}
-                  recentsSectionOpen={sectionVisibility.recents}
-                  onToggleProjectsSection={() => toggleSection("projects")}
-                  onToggleRecentsSection={() => toggleSection("recents")}
-                />
-              ))}
-          </nav>
-
-          <div
-            className={cn(
-              "absolute inset-x-0 bottom-0 z-20 bg-background",
-              "px-1.5 py-1.5",
-            )}
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size={collapsed ? "icon-sm" : "default"}
-              onClick={onSettingsClick}
-              className={cn(
-                "h-10 w-full rounded-md bg-transparent text-muted-foreground/85 hover:bg-transparent hover:text-foreground active:bg-transparent",
-                collapsed
-                  ? "justify-center p-3"
-                  : "justify-start gap-2.5 px-3 py-2.5",
-              )}
-              title={t("settings:title")}
-              aria-label={t("settings:title")}
-            >
-              <IconSettings className="size-4 flex-shrink-0" />
-              {!collapsed && (
-                <span
-                  className={cn(
-                    "whitespace-nowrap text-sm",
-                    labelTransition,
-                    labelVisible
-                      ? "opacity-100 w-auto"
-                      : "opacity-0 w-0 overflow-hidden",
-                  )}
-                >
-                  {t("settings:title")}
-                </span>
-              )}
-            </Button>
+                ))}
+              </div>
+            </nav>
           </div>
         </div>
       </div>

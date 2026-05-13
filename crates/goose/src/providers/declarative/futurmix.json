@@ -1,0 +1,36 @@
+{
+  "name": "futurmix",
+  "engine": "openai",
+  "display_name": "FuturMix",
+  "description": "Unified AI gateway with OpenAI-compatible API supporting models from Anthropic, Google, and OpenAI",
+  "api_key_env": "FUTURMIX_API_KEY",
+  "base_url": "https://futurmix.ai/v1/chat/completions",
+  "models": [
+    {
+      "name": "claude-sonnet-4-20250514",
+      "context_limit": 200000,
+      "max_tokens": 16384
+    },
+    {
+      "name": "gpt-4o",
+      "context_limit": 128000,
+      "max_tokens": 16384
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "context_limit": 1048576,
+      "max_tokens": 65536
+    },
+    {
+      "name": "deepseek-chat",
+      "context_limit": 131072,
+      "max_tokens": 8192
+    },
+    {
+      "name": "claude-haiku-4-20250514",
+      "context_limit": 200000,
+      "max_tokens": 16384
+    }
+  ],
+  "supports_streaming": true
+}
