@@ -95,7 +95,7 @@ tiktoken-rs = "0.11.0"
 chrono = { workspace = true }
 clap = { workspace = true }
 indoc = { workspace = true }
-nanoid = "0.4"
+nanoid = "0.5"
 sha2 = { workspace = true }
 base64 = { workspace = true }
 url = { workspace = true }
