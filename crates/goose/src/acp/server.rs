@@ -12,14 +12,7 @@ use crate::config::extensions::get_enabled_extensions_with_config;
 use crate::config::paths::Paths;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
-#[cfg(feature = "local-inference")]
-use crate::dictation::providers::transcribe_local;
-use crate::dictation::providers::{
-    all_providers, is_configured, transcribe_with_provider, DictationProvider,
-};
-#[cfg(feature = "local-inference")]
-use crate::dictation::whisper;
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -30,41 +23,43 @@ use crate::providers::inventory::{
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
+use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
+use agent_client_protocol::schema::{
+    AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
+    AuthenticateResponse, AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
+    BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
+    ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
+    EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest, ForkSessionResponse,
+    ImageContent, InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer, Meta, ModelId, ModelInfo,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption, SessionId,
+    SessionInfo, SessionInfoUpdate, SessionListCapabilities, SessionMode, SessionModeId,
+    SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
+    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
+    Usage, UsageUpdate,
+};
+use agent_client_protocol::util::MatchDispatchFrom;
+use agent_client_protocol::{
+    Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
+    Responder,
+};
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, Either};
 use futures::stream::{self, StreamExt};
 use futures::FutureExt;
-use goose_acp_macros::custom_methods;
 use rmcp::model::{
     AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
 };
-use sacp::schema::{
-    AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
-    AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
-    CloseSessionResponse, ConfigOptionUpdate, Content, ContentBlock, ContentChunk,
-    CurrentModeUpdate, EmbeddedResource, EmbeddedResourceResource, FileSystemCapabilities,
-    ForkSessionRequest, ForkSessionResponse, ImageContent, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    McpCapabilities, McpServer, Meta, ModelId, ModelInfo, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
-    SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionId, SessionInfo, SessionListCapabilities, SessionMode,
-    SessionModeId, SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
-    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
-};
-use sacp::util::MatchDispatchFrom;
-use sacp::{
-    Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
-    Responder,
-};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
@@ -73,6 +68,18 @@ use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt 
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use url::Url;
+
+mod config;
+mod custom_dispatch;
+mod dictation;
+mod dispatch;
+mod extensions;
+mod onboarding;
+mod providers;
+mod resources;
+mod sessions;
+mod sources;
+mod tools;
 
 pub type AcpProviderFactory = Arc<
     dyn Fn(
@@ -84,42 +91,40 @@ pub type AcpProviderFactory = Arc<
         + Sync,
 >;
 
-/// Convenience conversions from any `Display` error into an `sacp::Error`.
+/// Convenience conversions from any `Display` error into an `agent_client_protocol::Error`.
 ///
 /// Replaces the repetitive `.internal_err()`
 /// pattern. Use `.internal_err()?` for server-side failures and `.invalid_params_err()?`
 /// for bad client input. For custom messages use `.internal_err_ctx("context")?`.
 #[allow(dead_code)]
 trait ResultExt<T> {
-    fn internal_err(self) -> Result<T, sacp::Error>;
-    fn invalid_params_err(self) -> Result<T, sacp::Error>;
-    fn internal_err_ctx(self, context: &str) -> Result<T, sacp::Error>;
-    fn invalid_params_err_ctx(self, context: &str) -> Result<T, sacp::Error>;
+    fn internal_err(self) -> Result<T, agent_client_protocol::Error>;
+    fn invalid_params_err(self) -> Result<T, agent_client_protocol::Error>;
+    fn internal_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error>;
+    fn invalid_params_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error>;
 }
 
 impl<T, E: std::fmt::Display> ResultExt<T> for Result<T, E> {
-    fn internal_err(self) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::internal_error().data(e.to_string()))
+    fn internal_err(self) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))
     }
-    fn invalid_params_err(self) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::invalid_params().data(e.to_string()))
+    fn invalid_params_err(self) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| agent_client_protocol::Error::invalid_params().data(e.to_string()))
     }
-    fn internal_err_ctx(self, context: &str) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::internal_error().data(format!("{context}: {e}")))
+    fn internal_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| {
+            agent_client_protocol::Error::internal_error().data(format!("{context}: {e}"))
+        })
     }
-    fn invalid_params_err_ctx(self, context: &str) -> Result<T, sacp::Error> {
-        self.map_err(|e| sacp::Error::invalid_params().data(format!("{context}: {e}")))
+    fn invalid_params_err_ctx(self, context: &str) -> Result<T, agent_client_protocol::Error> {
+        self.map_err(|e| {
+            agent_client_protocol::Error::invalid_params().data(format!("{context}: {e}"))
+        })
     }
 }
 
 const DEFAULT_PROVIDER_ID: &str = "goose";
 const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
-const OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "OPENAI_TRANSCRIPTION_MODEL";
-const GROQ_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "GROQ_TRANSCRIPTION_MODEL";
-const ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY: &str = "ELEVENLABS_TRANSCRIPTION_MODEL";
-const OPENAI_TRANSCRIPTION_MODEL: &str = "whisper-1";
-const GROQ_TRANSCRIPTION_MODEL: &str = "whisper-large-v3-turbo";
-const ELEVENLABS_TRANSCRIPTION_MODEL: &str = "scribe_v1";
 const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 
 async fn ensure_refresh_identity_current(
@@ -145,23 +150,39 @@ async fn ensure_refresh_identity_current(
 /// called "Session" (the `sessions` DB table) which represents the agent's working
 /// state: the message list the LLM sees, compaction state, provider binding, etc.
 ///
-/// To bridge these two worlds without rewriting the existing Session model:
-/// - **Thread** (`threads` table) = the ACP session. The `sessionId` that ACP clients
-///   see is actually a thread ID. Threads own the human-visible message log.
-/// - **Session** (`sessions` table) = an internal execution context. A thread may have
-///   many sessions over its lifetime (e.g. when the provider or persona changes).
-///   Clients never see or manage these directly.
-///
-/// The `sessions` HashMap below is keyed by **thread ID** (= ACP session ID).
-/// The `internal_session_id` field tracks which goose Session is currently active.
+/// The ACP session ID maps directly to a `sessions` row. The `sessions` HashMap
+/// below is keyed by session ID.
 struct GooseAcpSession {
     agent: AgentHandle,
-    internal_session_id: String,
     tool_requests: HashMap<String, crate::conversation::message::ToolRequest>,
+    /// For each tool_call_id that belongs to a multi-tool chain (run of
+    /// consecutive ToolRequest blocks within one assistant message), the chain
+    /// it belongs to. Populated when the assistant message is processed.
+    /// Used by `handle_tool_response` to detect when a chain has fully
+    /// completed and fire a single LLM summary covering the run.
+    chain_membership: HashMap<String, Arc<ToolChain>>,
+    /// Set of tool_call_ids whose ToolResponse has already been processed.
+    /// Drives the "all responses present" check for chain completion.
+    responded_tool_ids: HashSet<String>,
+    /// Tool_call_ids of chains that have already had a summary task fired.
+    /// Idempotence guard so we summarize each chain at most once.
+    summarized_chains: HashSet<String>,
     cancel_token: Option<CancellationToken>,
     /// Working directory set while the agent was still loading.
     /// Applied once the agent becomes ready.
     pending_working_dir: Option<std::path::PathBuf>,
+}
+
+/// A run of consecutive ToolRequest blocks within one assistant message,
+/// tracked by [`GooseAcpSession::chain_membership`]. Used to drive a single
+/// LLM summary for the whole run once every step has a recorded ToolResponse.
+#[derive(Debug, Clone)]
+struct ToolChain {
+    /// Tool call ids in document order. Always `len() >= 2`.
+    ids: Vec<String>,
+    /// The message_id of the assistant message containing these tool calls.
+    /// Used to persist chain summaries back to the messages table.
+    message_id: String,
 }
 
 /// Progress stages signalled by the background agent setup task via the watch
@@ -197,6 +218,17 @@ struct AgentSetupRequest {
     prebuilt_provider: Option<Arc<dyn Provider>>,
 }
 
+pub struct GooseAcpAgentOptions {
+    pub provider_factory: AcpProviderFactory,
+    pub builtins: Vec<String>,
+    pub data_dir: std::path::PathBuf,
+    pub config_dir: std::path::PathBuf,
+    pub goose_mode: GooseMode,
+    pub disable_session_naming: bool,
+    pub goose_platform: GoosePlatform,
+    pub additional_source_roots: Vec<SourceRoot>,
+}
+
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
     provider_factory: AcpProviderFactory,
@@ -206,12 +238,12 @@ pub struct GooseAcpAgent {
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
-    thread_manager: Arc<crate::session::ThreadManager>,
     permission_manager: Arc<PermissionManager>,
     goose_mode: GooseMode,
     disable_session_naming: bool,
     provider_inventory: ProviderInventoryService,
     goose_platform: GoosePlatform,
+    additional_source_roots: Vec<SourceRoot>,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -221,19 +253,17 @@ fn sid_short(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
-fn thread_session_meta(
-    thread: &crate::session::Thread,
-) -> serde_json::Map<String, serde_json::Value> {
+fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value> {
     let mut meta = serde_json::Map::new();
     meta.insert(
         "messageCount".to_string(),
-        serde_json::Value::Number(thread.message_count.into()),
+        serde_json::Value::Number(session.message_count.into()),
     );
     meta.insert(
         "createdAt".to_string(),
-        serde_json::Value::String(thread.created_at.to_rfc3339()),
+        serde_json::Value::String(session.created_at.to_rfc3339()),
     );
-    if let Some(ref archived_at) = thread.archived_at {
+    if let Some(ref archived_at) = session.archived_at {
         meta.insert(
             "archivedAt".to_string(),
             serde_json::Value::String(archived_at.to_rfc3339()),
@@ -241,33 +271,64 @@ fn thread_session_meta(
     }
     meta.insert(
         "userSetName".to_string(),
-        serde_json::Value::Bool(thread.user_set_name),
+        serde_json::Value::Bool(session.user_set_name),
     );
-    if let Some(ref pid) = thread.metadata.project_id {
+
+    if let Some(ref pid) = session.project_id {
         meta.insert(
             "projectId".to_string(),
             serde_json::Value::String(pid.clone()),
         );
     }
-    if let Some(ref provider_id) = thread.metadata.provider_id {
+    if let Some(ref provider) = session.provider_name {
         meta.insert(
             "providerId".to_string(),
-            serde_json::Value::String(provider_id.clone()),
+            serde_json::Value::String(provider.clone()),
         );
     }
-    if let Some(ref model_id) = thread.metadata.model_id {
+    if let Some(ref mc) = session.model_config {
         meta.insert(
             "modelId".to_string(),
-            serde_json::Value::String(model_id.clone()),
-        );
-    }
-    if let Some(ref persona_id) = thread.metadata.persona_id {
-        meta.insert(
-            "personaId".to_string(),
-            serde_json::Value::String(persona_id.clone()),
+            serde_json::Value::String(mc.model_name.clone()),
         );
     }
     meta
+}
+
+fn spawn_session_name_update_notifier(
+    cx: ConnectionTo<Client>,
+) -> tokio::sync::mpsc::UnboundedSender<crate::session::SessionNameUpdate> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
+    tokio::spawn(async move {
+        while let Some(update) = rx.recv().await {
+            let mut meta = serde_json::Map::new();
+            meta.insert(
+                "messageCount".to_string(),
+                serde_json::Value::Number(update.message_count.into()),
+            );
+            meta.insert(
+                "userSetName".to_string(),
+                serde_json::Value::Bool(update.user_set_name),
+            );
+            let notification = SessionNotification::new(
+                SessionId::new(update.session_id.clone()),
+                SessionUpdate::SessionInfoUpdate(
+                    SessionInfoUpdate::new()
+                        .title(update.name)
+                        .updated_at(update.updated_at.to_rfc3339())
+                        .meta(meta),
+                ),
+            );
+            if let Err(error) = cx.send_notification(notification) {
+                warn!(
+                    session_id = %update.session_id,
+                    error = %error,
+                    "Failed to send generated session name update"
+                );
+            }
+        }
+    });
+    tx
 }
 
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
@@ -369,14 +430,6 @@ fn get_requested_line(arguments: Option<&rmcp::model::JsonObject>) -> Option<u32
         .map(|l| l as u32)
 }
 
-fn create_tool_location(path: &str, line: Option<u32>) -> ToolCallLocation {
-    let mut loc = ToolCallLocation::new(path);
-    if let Some(l) = line {
-        loc = loc.line(l);
-    }
-    loc
-}
-
 fn is_developer_file_tool(tool_name: &str) -> bool {
     matches!(tool_name, "read" | "write" | "edit")
 }
@@ -393,7 +446,7 @@ fn extract_locations_from_meta(
         .filter_map(|entry| {
             let path = entry.get("path")?.as_str()?;
             let line = entry.get("line").and_then(|v| v.as_u64()).map(|l| l as u32);
-            Some(create_tool_location(path, line))
+            Some(ToolCallLocation::new(path).line(line))
         })
         .collect::<Vec<_>>();
     if locations.is_empty() {
@@ -424,12 +477,12 @@ fn extract_tool_locations(
         if let Some(path_str) = path_str {
             if matches!(tool_name, "read") {
                 let line = get_requested_line(tool_call.arguments.as_ref());
-                locations.push(create_tool_location(path_str, line));
+                locations.push(ToolCallLocation::new(path_str).line(line));
                 return locations;
             }
 
             if matches!(tool_name, "write" | "edit") {
-                locations.push(create_tool_location(path_str, Some(1)));
+                locations.push(ToolCallLocation::new(path_str).line(1));
                 return locations;
             }
 
@@ -449,19 +502,19 @@ fn extract_tool_locations(
                                 let line = extract_view_line_range(text)
                                     .map(|range| range.0 as u32)
                                     .or(Some(1));
-                                locations.push(create_tool_location(path_str, line));
+                                locations.push(ToolCallLocation::new(path_str).line(line));
                             }
                             Some("str_replace") | Some("insert") => {
                                 let line = extract_first_line_number(text)
                                     .map(|l| l as u32)
                                     .or(Some(1));
-                                locations.push(create_tool_location(path_str, line));
+                                locations.push(ToolCallLocation::new(path_str).line(line));
                             }
                             Some("write") => {
-                                locations.push(create_tool_location(path_str, Some(1)));
+                                locations.push(ToolCallLocation::new(path_str).line(1));
                             }
                             _ => {
-                                locations.push(create_tool_location(path_str, Some(1)));
+                                locations.push(ToolCallLocation::new(path_str).line(1));
                             }
                         }
                         break;
@@ -470,7 +523,7 @@ fn extract_tool_locations(
             }
 
             if locations.is_empty() {
-                locations.push(create_tool_location(path_str, Some(1)));
+                locations.push(ToolCallLocation::new(path_str).line(1));
             }
         }
     }
@@ -562,6 +615,193 @@ fn summarize_tool_call(tool_name: &str, arguments: Option<&serde_json::Value>) -
     }
 }
 
+fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
+    let tool_call = tool_request.tool_call.as_ref().ok()?;
+    let tool_name = tool_call.name.to_string();
+    let extension_name = tool_request
+        .tool_meta
+        .as_ref()
+        .and_then(|meta| meta.get("goose_extension"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string)
+        .or_else(|| {
+            tool_name
+                .split_once("__")
+                .map(|(extension_name, _)| extension_name.to_string())
+        });
+
+    let mut tool_call_meta = serde_json::Map::new();
+    tool_call_meta.insert("toolName".to_string(), serde_json::Value::String(tool_name));
+    if let Some(extension_name) = extension_name {
+        tool_call_meta.insert(
+            "extensionName".to_string(),
+            serde_json::Value::String(extension_name),
+        );
+    }
+
+    let mut goose_meta = serde_json::Map::new();
+    goose_meta.insert(
+        "toolCall".to_string(),
+        serde_json::Value::Object(tool_call_meta),
+    );
+
+    let mut meta = serde_json::Map::new();
+    meta.insert("goose".to_string(), serde_json::Value::Object(goose_meta));
+    Some(meta)
+}
+
+/// Add `goose.toolChainSummary = { summary, count }` to a `Meta` blob,
+/// preserving any existing `goose.*` keys (e.g. `goose.toolCall` set by
+/// [`tool_call_identity_meta`]).
+fn with_tool_chain_summary_meta(base: Option<Meta>, summary: &str, count: usize) -> Option<Meta> {
+    let mut meta = base.unwrap_or_default();
+    let goose_entry = meta
+        .entry("goose".to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let goose_obj = match goose_entry {
+        serde_json::Value::Object(obj) => obj,
+        other => {
+            *other = serde_json::Value::Object(serde_json::Map::new());
+            match other {
+                serde_json::Value::Object(obj) => obj,
+                _ => unreachable!(),
+            }
+        }
+    };
+    let mut chain = serde_json::Map::new();
+    chain.insert(
+        "summary".to_string(),
+        serde_json::Value::String(summary.to_string()),
+    );
+    chain.insert(
+        "count".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(count)),
+    );
+    goose_obj.insert(
+        "toolChainSummary".to_string(),
+        serde_json::Value::Object(chain),
+    );
+    Some(meta)
+}
+
+struct PendingToolCall {
+    tool_call: ToolCall,
+    identity_meta: Option<Meta>,
+    fallback_title: String,
+}
+
+/// Extract chains (runs of consecutive `MessageContent::ToolRequest` blocks)
+/// from a single message's content. Mirrors the frontend's chain detection in
+/// `MessageBubble.groupContentSections`: any non-tool block (text, thinking,
+/// image, etc.) breaks the run.
+///
+/// Returns one inner Vec per detected chain, holding the tool_call_ids in
+/// document order. Single-tool runs are included; callers (chain
+/// summarization) gate on `chain.len() >= 2`.
+///
+/// Note: this is the per-message view, kept around for tests and potential
+/// replay use. The live runtime path uses a streaming buffer fed by
+/// [`register_chain_buffer`] so chains that span multiple `AgentEvent::Message`
+/// events (e.g. Bedrock-style streaming, where one LLM message is split across
+/// rows — see `f087fa63c`) are still detected.
+#[allow(dead_code)]
+fn extract_tool_chains(
+    content: &[crate::conversation::message::MessageContent],
+) -> Vec<Vec<String>> {
+    use crate::conversation::message::MessageContent;
+    let mut chains: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+
+    for block in content {
+        match block {
+            MessageContent::ToolRequest(tr) => current.push(tr.id.clone()),
+            MessageContent::ToolResponse(_) => {
+                // Server-side, assistant messages don't carry responses;
+                // responses arrive in subsequent messages. Treat as
+                // chain-neutral so a stray response doesn't split a chain
+                // if the data shape ever changes.
+            }
+            _ => {
+                if !current.is_empty() {
+                    chains.push(std::mem::take(&mut current));
+                }
+            }
+        }
+    }
+    if !current.is_empty() {
+        chains.push(current);
+    }
+    chains
+}
+
+/// If `buffer` holds a multi-tool run (≥ 2 tool requests), (re)register a
+/// [`ToolChain`] in `chain_membership` anchored on the **first** tool's
+/// message_id (the row [`SessionManager::update_tool_request_meta`] will patch
+/// when persisting the LLM-generated summary). Does **not** clear the buffer
+/// — chains can grow as more tools arrive (sequential tool use), so callers
+/// keep accumulating and re-registering with the larger set of ids.
+///
+/// The buffer contains `(tool_call_id, message_id)` pairs in arrival order,
+/// fed by the prompt stream loop. Sequential tool use (Bedrock/Anthropic)
+/// interleaves request → response → request → response across separate
+/// `AgentEvent::Message` events, so per-event `extract_tool_chains` only
+/// sees length-1 chains and would miss the run. Tool responses are
+/// chain-neutral (they don't split the run); only non-tool content (text,
+/// thinking, image, etc.) does, matching the frontend's
+/// `groupContentSections` behavior.
+fn extend_chain_membership(
+    buffer: &[(String, String)],
+    chain_membership: &mut HashMap<String, Arc<ToolChain>>,
+) {
+    if buffer.len() >= 2 {
+        let ids: Vec<String> = buffer.iter().map(|(id, _)| id.clone()).collect();
+        let message_id = buffer[0].1.clone();
+        let chain = Arc::new(ToolChain {
+            ids: ids.clone(),
+            message_id,
+        });
+        for id in ids {
+            chain_membership.insert(id, chain.clone());
+        }
+    }
+}
+
+fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall {
+    let tool_name = match &tool_request.tool_call {
+        Ok(tool_call) => tool_call.name.to_string(),
+        Err(_) => "error".to_string(),
+    };
+    let args_value = tool_request
+        .tool_call
+        .as_ref()
+        .ok()
+        .and_then(|tc| tc.arguments.as_ref())
+        .map(|a| serde_json::Value::Object(a.clone()));
+    let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
+    let identity_meta = tool_call_identity_meta(tool_request);
+
+    // Prefer the persisted LLM-generated title when available so replay (and
+    // any subsequent live initial ToolCall after the title task has already
+    // resolved) emits the nice title up front, with no flash of the
+    // deterministic fallback.
+    let initial_title = tool_request
+        .persisted_title()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| fallback_title.clone());
+
+    let mut tool_call = ToolCall::new(ToolCallId::new(tool_request.id.clone()), initial_title)
+        .status(ToolCallStatus::Pending);
+    if let Some(args) = args_value {
+        tool_call = tool_call.raw_input(args);
+    }
+
+    PendingToolCall {
+        tool_call,
+        identity_meta,
+        fallback_title,
+    }
+}
+
 fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     if let Some(def) = PLATFORM_EXTENSIONS.get(name) {
         ExtensionConfig::Platform {
@@ -580,145 +820,6 @@ fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
             description: name.into(),
             available_tools: vec![],
         }
-    }
-}
-
-fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
-    let stale = ProviderInventoryService::is_stale(&entry);
-    ProviderInventoryEntryDto {
-        provider_id: entry.provider_id,
-        provider_name: entry.provider_name,
-        description: entry.description,
-        default_model: entry.default_model,
-        configured: entry.configured,
-        provider_type: format!("{:?}", entry.provider_type),
-        config_keys: entry
-            .config_keys
-            .into_iter()
-            .map(provider_config_key_to_dto)
-            .collect(),
-        setup_steps: entry.setup_steps,
-        supports_refresh: entry.supports_refresh,
-        refreshing: entry.refreshing,
-        models: entry
-            .models
-            .into_iter()
-            .map(|m| ProviderInventoryModelDto {
-                id: m.id,
-                name: m.name,
-                family: m.family,
-                context_limit: m.context_limit,
-                reasoning: m.reasoning,
-                recommended: m.recommended,
-            })
-            .collect(),
-        last_updated_at: entry.last_updated_at.map(|t| t.to_rfc3339()),
-        last_refresh_attempt_at: entry.last_refresh_attempt_at.map(|t| t.to_rfc3339()),
-        last_refresh_error: entry.last_refresh_error,
-        stale,
-        model_selection_hint: entry.model_selection_hint,
-    }
-}
-
-fn provider_config_key_to_dto(key: crate::providers::base::ConfigKey) -> ProviderConfigKey {
-    ProviderConfigKey {
-        name: key.name,
-        required: key.required,
-        secret: key.secret,
-        default: key.default,
-        oauth_flow: key.oauth_flow,
-        device_code_flow: key.device_code_flow,
-        primary: key.primary,
-    }
-}
-
-const SECRET_MASK_PREFIX_LEN: usize = 4;
-const SECRET_MASK_SUFFIX_LEN: usize = 3;
-const SECRET_MASK_FALLBACK: &str = "***";
-
-fn mask_secret_value(value: &str) -> String {
-    let prefix: String = value.chars().take(SECRET_MASK_PREFIX_LEN).collect();
-    let suffix_chars: Vec<char> = value.chars().rev().take(SECRET_MASK_SUFFIX_LEN).collect();
-    let suffix: String = suffix_chars.into_iter().rev().collect();
-
-    if prefix.is_empty()
-        || suffix.is_empty()
-        || value.chars().count() <= SECRET_MASK_PREFIX_LEN + SECRET_MASK_SUFFIX_LEN
-    {
-        return SECRET_MASK_FALLBACK.to_string();
-    }
-
-    format!("{prefix}...{suffix}")
-}
-
-fn config_value_to_string(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::Null => None,
-        serde_json::Value::String(value) if value.is_empty() => None,
-        serde_json::Value::String(value) => Some(value.clone()),
-        other => serde_json::to_string(other).ok(),
-    }
-}
-
-fn provider_config_field_value(
-    config: &Config,
-    key: &crate::providers::base::ConfigKey,
-    secrets: Option<&HashMap<String, serde_json::Value>>,
-) -> ProviderConfigFieldValueDto {
-    let value = if key.secret {
-        std::env::var(key.name.to_uppercase()).ok().or_else(|| {
-            secrets
-                .and_then(|values| values.get(&key.name))
-                .and_then(config_value_to_string)
-        })
-    } else {
-        config
-            .get_param::<serde_json::Value>(&key.name)
-            .ok()
-            .and_then(|value| config_value_to_string(&value))
-    };
-
-    ProviderConfigFieldValueDto {
-        key: key.name.clone(),
-        value: value.as_deref().map(|value| {
-            if key.secret {
-                mask_secret_value(value)
-            } else {
-                value.to_string()
-            }
-        }),
-        is_set: value.is_some(),
-        is_secret: key.secret,
-        required: key.required,
-    }
-}
-
-fn refresh_skip_reason_to_dto(reason: RefreshSkipReason) -> RefreshProviderInventorySkipReasonDto {
-    match reason {
-        RefreshSkipReason::UnknownProvider => {
-            RefreshProviderInventorySkipReasonDto::UnknownProvider
-        }
-        RefreshSkipReason::NotConfigured => RefreshProviderInventorySkipReasonDto::NotConfigured,
-        RefreshSkipReason::DoesNotSupportRefresh => {
-            RefreshProviderInventorySkipReasonDto::DoesNotSupportRefresh
-        }
-        RefreshSkipReason::AlreadyRefreshing => {
-            RefreshProviderInventorySkipReasonDto::AlreadyRefreshing
-        }
-    }
-}
-
-fn refresh_plan_to_response(refresh_plan: RefreshPlan) -> RefreshProviderInventoryResponse {
-    RefreshProviderInventoryResponse {
-        started: refresh_plan.started,
-        skipped: refresh_plan
-            .skipped
-            .into_iter()
-            .map(|entry| RefreshProviderInventorySkipDto {
-                provider_id: entry.provider_id,
-                reason: refresh_skip_reason_to_dto(entry.reason),
-            })
-            .collect(),
     }
 }
 
@@ -844,11 +945,13 @@ async fn resolve_provider_and_model(
     resolve_provider_and_model_from_config(&config, goose_session).await
 }
 
-fn build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
+fn build_mode_state(
+    current_mode: GooseMode,
+) -> Result<SessionModeState, agent_client_protocol::Error> {
     let mut available = Vec::with_capacity(GooseMode::VARIANTS.len());
     for &name in GooseMode::VARIANTS {
         let goose_mode: GooseMode = name.parse().map_err(|_| {
-            sacp::Error::internal_error() // impossible but satisfy linters
+            agent_client_protocol::Error::internal_error() // impossible but satisfy linters
                 .data(format!("Failed to parse GooseMode variant: {}", name))
         })?;
         let mut mode = SessionMode::new(SessionModeId::new(name), name);
@@ -947,16 +1050,8 @@ impl GooseAcpAgent {
     }
 
     // TODO: goose reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
-    pub async fn new(
-        provider_factory: AcpProviderFactory,
-        builtins: Vec<String>,
-        data_dir: std::path::PathBuf,
-        config_dir: std::path::PathBuf,
-        goose_mode: GooseMode,
-        disable_session_naming: bool,
-        goose_platform: GoosePlatform,
-    ) -> Result<Self> {
-        let session_manager = Arc::new(SessionManager::new(data_dir));
+    pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
+        let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
         let storage_clone = session_manager.storage().clone();
@@ -964,27 +1059,24 @@ impl GooseAcpAgent {
             let _ = storage_clone.pool().await;
         });
 
-        let thread_manager = Arc::new(crate::session::ThreadManager::new(
-            session_manager.storage().clone(),
-        ));
-        let permission_manager = Arc::new(PermissionManager::new(config_dir.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
 
         Ok(Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            provider_factory,
-            builtins,
+            provider_factory: options.provider_factory,
+            builtins: options.builtins,
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
-            config_dir,
+            config_dir: options.config_dir,
             session_manager,
-            thread_manager,
             permission_manager,
-            goose_mode,
-            disable_session_naming,
+            goose_mode: options.goose_mode,
+            disable_session_naming: options.disable_session_naming,
             provider_inventory,
-            goose_platform,
+            goose_platform: options.goose_platform,
+            additional_source_roots: options.additional_source_roots,
         })
     }
 
@@ -992,7 +1084,7 @@ impl GooseAcpAgent {
         Config::new(self.config_dir.join(CONFIG_YAML_NAME), "goose").map_err(Into::into)
     }
 
-    fn config(&self) -> Result<Config, sacp::Error> {
+    fn config(&self) -> Result<Config, agent_client_protocol::Error> {
         self.load_config().internal_err_ctx("Failed to read config")
     }
 
@@ -1190,8 +1282,8 @@ impl GooseAcpAgent {
         } = req;
 
         let goose_mode = goose_session.goose_mode;
-        let internal_session_id = goose_session.id.clone();
-        let agent_session_id = SessionId::new(internal_session_id.clone());
+        let setup_session_id = goose_session.id.clone();
+        let agent_session_id = SessionId::new(setup_session_id.clone());
         let sid = sid_short(session_id.0.as_ref());
 
         let cx = cx.clone();
@@ -1225,6 +1317,9 @@ impl GooseAcpAgent {
                 }
             };
 
+            let session_name_update_tx =
+                (!disable_session_naming).then(|| spawn_session_name_update_notifier(cx.clone()));
+
             // ── Phase 1: create agent + init provider (fast, ~55ms) ──────
             let phase1: Result<Arc<Agent>, String> = async {
                 let agent = Arc::new(Agent::with_config(
@@ -1236,7 +1331,8 @@ impl GooseAcpAgent {
                         disable_session_naming,
                         goose_platform,
                     )
-                    .with_mcp_host_info(client_mcp_host_info),
+                    .with_mcp_host_info(client_mcp_host_info)
+                    .with_session_name_update_tx(session_name_update_tx),
                 ));
 
                 // Init provider — reuse the pre-resolved name + model when
@@ -1262,7 +1358,7 @@ impl GooseAcpAgent {
                     .map_err(|e| e.to_string())?;
 
                 agent
-                    .update_goose_mode(goose_mode, &internal_session_id)
+                    .update_goose_mode(goose_mode, &setup_session_id)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -1370,7 +1466,7 @@ impl GooseAcpAgent {
                         .await;
                 }
 
-                GooseAcpAgent::add_mcp_extensions(&agent, mcp_servers, &internal_session_id)
+                GooseAcpAgent::add_mcp_extensions(&agent, mcp_servers, &setup_session_id)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -1428,8 +1524,12 @@ impl GooseAcpAgent {
                                 roles
                                     .iter()
                                     .filter_map(|r| match r {
-                                        sacp::schema::Role::Assistant => Some(Role::Assistant),
-                                        sacp::schema::Role::User => Some(Role::User),
+                                        agent_client_protocol::schema::Role::Assistant => {
+                                            Some(Role::Assistant)
+                                        }
+                                        agent_client_protocol::schema::Role::User => {
+                                            Some(Role::User)
+                                        }
                                         _ => None,
                                     })
                                     .collect()
@@ -1478,14 +1578,17 @@ impl GooseAcpAgent {
         message
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_message_content(
         &self,
         content_item: &MessageContent,
         session_id: &SessionId,
+        session_id_str: &str,
+        message_id: Option<&str>,
         agent: &Arc<Agent>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         match content_item {
             MessageContent::Text(text) => {
                 cx.send_notification(SessionNotification::new(
@@ -1496,12 +1599,26 @@ impl GooseAcpAgent {
                 ))?;
             }
             MessageContent::ToolRequest(tool_request) => {
-                self.handle_tool_request(tool_request, session_id, session, cx)
-                    .await?;
+                self.handle_tool_request(
+                    tool_request,
+                    session_id,
+                    session_id_str,
+                    message_id,
+                    session,
+                    cx,
+                )
+                .await?;
             }
             MessageContent::ToolResponse(tool_response) => {
-                self.handle_tool_response(tool_response, session_id, session, cx)
-                    .await?;
+                self.handle_tool_response(
+                    tool_response,
+                    session_id,
+                    session_id_str,
+                    message_id,
+                    session,
+                    cx,
+                )
+                .await?;
             }
             MessageContent::Thinking(thinking) => {
                 cx.send_notification(SessionNotification::new(
@@ -1539,38 +1656,30 @@ impl GooseAcpAgent {
         &self,
         tool_request: &crate::conversation::message::ToolRequest,
         session_id: &SessionId,
+        session_id_for_persist: &str,
+        message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         session
             .tool_requests
             .insert(tool_request.id.clone(), tool_request.clone());
 
-        let tool_name = match &tool_request.tool_call {
-            Ok(tool_call) => tool_call.name.to_string(),
-            Err(_) => "error".to_string(),
-        };
-
-        let args_value = tool_request
+        let pending_tool_call = pending_tool_call_from_request(tool_request);
+        let initial_tool_call = pending_tool_call
             .tool_call
-            .as_ref()
-            .ok()
-            .and_then(|tc| tc.arguments.as_ref())
-            .map(|a| serde_json::Value::Object(a.clone()));
-        let fallback_title = summarize_tool_call(&tool_name, args_value.as_ref());
-
-        let mut initial_tool_call = ToolCall::new(
-            ToolCallId::new(tool_request.id.clone()),
-            fallback_title.clone(),
-        )
-        .status(ToolCallStatus::Pending);
-        if let Some(args) = args_value.clone() {
-            initial_tool_call = initial_tool_call.raw_input(args);
-        }
+            .meta(pending_tool_call.identity_meta.clone());
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ToolCall(initial_tool_call),
         ))?;
+
+        if Config::global()
+            .get_goose_disable_tool_call_summary()
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
 
         if let Ok(tool_call) = &tool_request.tool_call {
             let agent = match &session.agent {
@@ -1581,6 +1690,11 @@ impl GooseAcpAgent {
             let request_id = tool_request.id.clone();
             let cx = cx.clone();
             let name = tool_call.name.to_string();
+            let identity_meta = pending_tool_call.identity_meta.clone();
+            let fallback_title = pending_tool_call.fallback_title.clone();
+            let session_id_for_persist = session_id_for_persist.to_string();
+            let message_id_for_persist = message_id.map(|s| s.to_string());
+            let session_manager = self.session_manager.clone();
             let args_json = tool_call
                 .arguments
                 .as_ref()
@@ -1595,69 +1709,113 @@ impl GooseAcpAgent {
                 .unwrap_or_default();
 
             tokio::spawn(async move {
-                let provider: Arc<dyn Provider> = match agent.provider().await {
-                    Ok(p) => p,
+                let (title, from_llm) = match agent.provider().await {
+                    Ok(provider) => {
+                        if provider.manages_own_context() {
+                            return;
+                        }
+
+                        let system =
+                            "Summarize this tool call in a short lowercase phrase (3-8 words). \
+                             No punctuation. No quotes. Examples: reading project configuration, \
+                             checking network connectivity, listing files in src directory";
+                        let user_text = format!("Tool: {name}\nArguments: {args_json}");
+                        let message = Message::user().with_text(&user_text);
+                        // The fast model occasionally returns an empty response
+                        // under load (rate limiting, transient network). One
+                        // retry with a short backoff is enough to recover the
+                        // common cases without paying for the regular model.
+                        let mut llm_outcome: Option<String> = None;
+                        for attempt in 0..2 {
+                            match provider
+                                .complete_fast(&sid.0, system, std::slice::from_ref(&message), &[])
+                                .await
+                            {
+                                Ok((response, _)) => {
+                                    let summary: String = response
+                                        .content
+                                        .iter()
+                                        .filter_map(|c: &MessageContent| c.as_text())
+                                        .collect::<String>()
+                                        .trim()
+                                        .to_string();
+                                    if !summary.is_empty() {
+                                        llm_outcome = Some(summary);
+                                        break;
+                                    }
+                                    if attempt == 0 {
+                                        warn!(
+                                            "tool call summary: fast_complete returned empty for {request_id} ({name}), retrying once",
+                                        );
+                                        tokio::time::sleep(std::time::Duration::from_millis(150))
+                                            .await;
+                                    }
+                                }
+                                Err(e) => {
+                                    if attempt == 0 {
+                                        warn!(
+                                            "tool call summary: fast_complete errored for {request_id} ({name}): {e}, retrying once",
+                                        );
+                                        tokio::time::sleep(std::time::Duration::from_millis(150))
+                                            .await;
+                                    } else {
+                                        warn!(
+                                            "tool call summary: fast_complete errored for {request_id} ({name}) after retry: {e}",
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        match llm_outcome {
+                            Some(summary) => (summary, true),
+                            None => {
+                                warn!(
+                                    "tool call summary: falling back to deterministic title for {request_id} ({name}) — replay will not show an LLM summary for this call",
+                                );
+                                (fallback_title.clone(), false)
+                            }
+                        }
+                    }
                     Err(e) => {
                         warn!("tool call summary: failed to get provider: {e}");
-                        let fields = ToolCallUpdateFields::new().title(fallback_title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
-                        ));
-                        return;
+                        (fallback_title.clone(), false)
                     }
                 };
 
-                // in these case, the title summarization request would
-                // be added to the conversation which we don't want
-                if provider.manages_own_context() {
-                    return;
-                }
+                let fields = ToolCallUpdateFields::new().title(title.clone());
+                let _ = cx.send_notification(SessionNotification::new(
+                    sid,
+                    SessionUpdate::ToolCallUpdate(
+                        ToolCallUpdate::new(ToolCallId::new(request_id.clone()), fields)
+                            .meta(identity_meta),
+                    ),
+                ));
 
-                let system = "Summarize this tool call in a short lowercase phrase (3-8 words). \
-                              No punctuation. No quotes. Examples: reading project configuration, \
-                              checking network connectivity, listing files in src directory";
-                let user_text = format!("Tool: {name}\nArguments: {args_json}");
-                let message = Message::user().with_text(&user_text);
-                match provider
-                    .complete_fast(&sid.0, system, &[message], &[])
-                    .await
-                {
-                    Ok((response, _)) => {
-                        let summary: String = response
-                            .content
-                            .iter()
-                            .filter_map(|c: &MessageContent| c.as_text())
-                            .collect::<String>()
-                            .trim()
-                            .to_string();
-                        let title = if summary.is_empty() {
-                            fallback_title
-                        } else {
-                            summary
-                        };
-                        let fields = ToolCallUpdateFields::new().title(title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
-                        ));
-                    }
-                    Err(e) => {
-                        warn!("tool call summary: fast_complete failed: {e}");
-                        let fields = ToolCallUpdateFields::new().title(fallback_title);
-                        let _ = cx.send_notification(SessionNotification::new(
-                            sid,
-                            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                                ToolCallId::new(request_id),
-                                fields,
-                            )),
-                        ));
+                // Best-effort persistence: only persist the LLM-generated title
+                // (not the deterministic fallback) so reload uses fallback_title
+                // for older or failed cases just like today.
+                if from_llm {
+                    if let Some(msg_id) = message_id_for_persist {
+                        let patch = serde_json::json!({
+                            crate::conversation::message::TOOL_META_TITLE_KEY: title,
+                        });
+                        if let Err(e) = session_manager
+                            .update_tool_request_meta(
+                                &session_id_for_persist,
+                                &msg_id,
+                                &request_id,
+                                patch,
+                            )
+                            .await
+                        {
+                            warn!(
+                                "tool call summary: persist failed for {request_id} in {msg_id}: {e}",
+                            );
+                        }
+                    } else {
+                        warn!(
+                            "tool call summary: missing message_id for {request_id} — title will not survive reload",
+                        );
                     }
                 }
             });
@@ -1670,9 +1828,11 @@ impl GooseAcpAgent {
         &self,
         tool_response: &crate::conversation::message::ToolResponse,
         session_id: &SessionId,
+        session_id_str: &str,
+        message_id: Option<&str>,
         session: &mut GooseAcpSession,
         cx: &ConnectionTo<Client>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let status = match &tool_response.tool_result {
             Ok(result) if result.is_error == Some(true) => ToolCallStatus::Failed,
             Ok(_) => ToolCallStatus::Completed,
@@ -1680,6 +1840,9 @@ impl GooseAcpAgent {
         };
 
         let mut fields = ToolCallUpdateFields::new().status(status);
+        if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
+            fields = fields.raw_output(raw_output);
+        }
         if !tool_response
             .tool_result
             .as_ref()
@@ -1707,7 +1870,216 @@ impl GooseAcpAgent {
             SessionUpdate::ToolCallUpdate(update),
         ))?;
 
+        // Chain summarization: when this response completes a multi-tool
+        // chain, fire one LLM summary covering the run.
+        session.responded_tool_ids.insert(tool_response.id.clone());
+        self.maybe_summarize_chain(&tool_response.id, session_id, session_id_str, session, cx);
+        let _ = message_id;
+
         Ok(())
+    }
+
+    /// If `tool_call_id` belongs to a multi-tool chain and every step in that
+    /// chain has now had its response processed, spawn a single LLM
+    /// summarization task that persists the chain summary on the first tool
+    /// request and notifies the client. Idempotent — fires at most once per
+    /// chain.
+    fn maybe_summarize_chain(
+        &self,
+        tool_call_id: &str,
+        session_id: &SessionId,
+        _session_id_str: &str,
+        session: &mut GooseAcpSession,
+        cx: &ConnectionTo<Client>,
+    ) {
+        let Some(chain) = session.chain_membership.get(tool_call_id).cloned() else {
+            warn!(
+                "tool chain summary: skipped — no chain registered for tool_call_id {tool_call_id}",
+            );
+            return;
+        };
+        if !chain
+            .ids
+            .iter()
+            .all(|id| session.responded_tool_ids.contains(id))
+        {
+            let total = chain.ids.len();
+            let responded = chain
+                .ids
+                .iter()
+                .filter(|id| session.responded_tool_ids.contains(*id))
+                .count();
+            let missing: Vec<&String> = chain
+                .ids
+                .iter()
+                .filter(|id| !session.responded_tool_ids.contains(*id))
+                .collect();
+            warn!(
+                "tool chain summary: waiting on {pending}/{total} responses for chain anchored at {anchor:?} (missing: {missing:?})",
+                pending = total - responded,
+                anchor = chain.ids.first(),
+            );
+            return;
+        }
+        let Some(first_id) = chain.ids.first() else {
+            warn!("tool chain summary: skipped — empty chain.ids for tool_call_id {tool_call_id}");
+            return;
+        };
+        if !session.summarized_chains.insert(first_id.clone()) {
+            debug!("tool chain summary: chain anchored at {first_id} already summarized; skipping");
+            return;
+        }
+
+        let agent = match &session.agent {
+            AgentHandle::Ready(a) => a.clone(),
+            AgentHandle::Loading(_) => {
+                warn!(
+                    "tool chain summary: agent still loading; skipping chain anchored at {first_id}",
+                );
+                return;
+            }
+        };
+
+        // Snapshot (name, args_json) for each step in document order.
+        let steps: Vec<(String, String)> = chain
+            .ids
+            .iter()
+            .filter_map(|id| {
+                let req = session.tool_requests.get(id)?;
+                let tool_call = req.tool_call.as_ref().ok()?;
+                let name = tool_call.name.to_string();
+                let args = tool_call
+                    .arguments
+                    .as_ref()
+                    .map(|a| serde_json::to_string(a).unwrap_or_default())
+                    .unwrap_or_default();
+                let args = if args.len() > 200 {
+                    format!("{}…", crate::utils::safe_truncate(&args, 200))
+                } else {
+                    args
+                };
+                Some((name, args))
+            })
+            .collect();
+        if steps.len() < 2 {
+            return;
+        }
+
+        let identity_meta = session
+            .tool_requests
+            .get(first_id)
+            .and_then(tool_call_identity_meta);
+
+        let sid = session_id.clone();
+        let chain_for_task = chain.clone();
+        let cx = cx.clone();
+        let session_manager = self.session_manager.clone();
+
+        let first_id = first_id.clone();
+        tokio::spawn(async move {
+            let provider = match agent.provider().await {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!(
+                        "tool chain summary: failed to get provider for chain anchored at {first_id}: {e}",
+                    );
+                    return;
+                }
+            };
+            if provider.manages_own_context() {
+                warn!(
+                    "tool chain summary: provider manages own context; skipping chain anchored at {first_id}",
+                );
+                return;
+            }
+
+            let system = "Summarize this sequence of tool calls in a short lowercase phrase \
+                 (3-8 words). No punctuation. No quotes. \
+                 Examples: applied dark mode polish, scanned for security issues, \
+                 refactored config loading";
+
+            let mut user_text = String::from("Tool call sequence:\n");
+            for (i, (name, args)) in steps.iter().enumerate() {
+                user_text.push_str(&format!("Step {}: {} {}\n", i + 1, name, args));
+            }
+            let message = Message::user().with_text(&user_text);
+
+            // Match the per-tool retry policy: one retry on empty/error keeps
+            // the chain header reliable when the fast model is rate-limited or
+            // momentarily flaky, without escalating to the regular model.
+            let mut summary: Option<String> = None;
+            for attempt in 0..2 {
+                match provider
+                    .complete_fast(&sid.0, system, std::slice::from_ref(&message), &[])
+                    .await
+                {
+                    Ok((response, _)) => {
+                        let s = response
+                            .content
+                            .iter()
+                            .filter_map(|c: &MessageContent| c.as_text())
+                            .collect::<String>()
+                            .trim()
+                            .to_string();
+                        if !s.is_empty() {
+                            summary = Some(s);
+                            break;
+                        }
+                        if attempt == 0 {
+                            warn!(
+                                "tool chain summary: fast_complete returned empty for chain anchored at {first_id} ({} steps), retrying once",
+                                steps.len(),
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        }
+                    }
+                    Err(e) => {
+                        if attempt == 0 {
+                            warn!(
+                                "tool chain summary: fast_complete errored for chain anchored at {first_id}: {e}, retrying once",
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        } else {
+                            warn!(
+                                "tool chain summary: fast_complete errored for chain anchored at {first_id} after retry: {e}",
+                            );
+                        }
+                    }
+                }
+            }
+            let Some(summary) = summary else {
+                warn!(
+                    "tool chain summary: no LLM summary produced for chain anchored at {first_id} — replay will fall back to the deterministic phrase",
+                );
+                return;
+            };
+
+            let count = chain_for_task.ids.len();
+            let patch = serde_json::json!({
+                crate::conversation::message::TOOL_META_CHAIN_SUMMARY_KEY: {
+                    "summary": &summary,
+                    "count": count,
+                },
+            });
+            if let Err(e) = session_manager
+                .update_tool_request_meta(&sid.0, &chain_for_task.message_id, &first_id, patch)
+                .await
+            {
+                warn!(
+                    "tool chain summary: persist failed for chain anchored at {first_id} in {}: {e}",
+                    chain_for_task.message_id,
+                );
+            }
+
+            let meta = with_tool_chain_summary_meta(identity_meta, &summary, count);
+            let fields = ToolCallUpdateFields::new();
+            let _ = cx.send_notification(SessionNotification::new(
+                sid,
+                SessionUpdate::ToolCallUpdate(
+                    ToolCallUpdate::new(ToolCallId::new(first_id), fields).meta(meta),
+                ),
+            ));
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1720,7 +2092,7 @@ impl GooseAcpAgent {
         tool_name: String,
         arguments: serde_json::Map<String, serde_json::Value>,
         prompt: Option<String>,
-    ) -> Result<(), sacp::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let cx = cx.clone();
         let agent = agent.clone();
         let session_id = session_id.clone();
@@ -1787,6 +2159,104 @@ impl GooseAcpAgent {
 
         Ok(())
     }
+
+    fn input_hint_for_recipe(
+        params: Option<&Vec<crate::recipe::RecipeParameter>>,
+    ) -> Option<String> {
+        let params = params?;
+
+        params
+            .iter()
+            .find(|p| p.key == "args")
+            .or_else(|| params.iter().find(|p| p.default.is_none()))
+            .or_else(|| params.first())
+            .map(|p| p.description.clone())
+    }
+
+    async fn build_available_commands_from_slash_commands() -> Vec<AvailableCommand> {
+        let mut commands = Vec::new();
+
+        for mapping in crate::slash_commands::list_commands() {
+            if Self::is_builtin_agent_command(&mapping.command) {
+                continue;
+            }
+
+            let recipe_path = std::path::PathBuf::from(&mapping.recipe_path);
+
+            if !recipe_path.exists() {
+                continue;
+            }
+
+            let Ok(recipe_content) = tokio::fs::read_to_string(&recipe_path).await else {
+                continue;
+            };
+
+            let Some(recipe_dir) = recipe_path.parent() else {
+                continue;
+            };
+
+            let recipe_dir_str = recipe_dir.display().to_string();
+
+            let Ok(validation_result) =
+                crate::recipe::validate_recipe::validate_recipe_template_from_content(
+                    &recipe_content,
+                    Some(recipe_dir_str),
+                )
+            else {
+                continue;
+            };
+
+            let required_param_count = validation_result
+                .parameters
+                .as_ref()
+                .map(|params| params.iter().filter(|p| p.default.is_none()).count())
+                .unwrap_or(0);
+
+            if required_param_count > 1 {
+                continue;
+            }
+
+            let mut command =
+                AvailableCommand::new(mapping.command, validation_result.description.clone());
+
+            if let Some(hint) = Self::input_hint_for_recipe(validation_result.parameters.as_ref()) {
+                command = command.input(AvailableCommandInput::Unstructured(
+                    UnstructuredCommandInput::new(hint),
+                ));
+            }
+
+            commands.push(command);
+        }
+
+        commands
+    }
+
+    async fn send_available_commands_update(
+        &self,
+        cx: &ConnectionTo<Client>,
+        session_id: &SessionId,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let commands = Self::build_available_commands_from_slash_commands().await;
+
+        cx.send_notification(SessionNotification::new(
+            session_id.clone(),
+            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands)),
+        ))?;
+
+        Ok(())
+    }
+
+    fn is_builtin_agent_command(command: &str) -> bool {
+        let normalized = command.trim_start_matches('/');
+
+        crate::agents::execute_commands::list_commands()
+            .iter()
+            .any(|cmd| cmd.name == normalized)
+            || crate::agents::execute_commands::COMPACT_TRIGGERS
+                .iter()
+                .filter_map(|trigger| trigger.strip_prefix('/'))
+                .any(|trigger| trigger == normalized)
+    }
 }
 
 fn outcome_to_confirmation(outcome: &RequestPermissionOutcome) -> PermissionConfirmation {
@@ -1809,6 +2279,42 @@ fn extract_tool_call_update_meta(
     let mut meta_map = serde_json::Map::new();
     meta_map.insert("goose".to_string(), goose_meta);
     Some(meta_map)
+}
+
+fn replay_message_meta(message: &Message) -> Meta {
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "goose".to_string(),
+        serde_json::Value::Object(replay_message_goose_meta(message)),
+    );
+    meta
+}
+
+fn replay_message_goose_meta(message: &Message) -> serde_json::Map<String, serde_json::Value> {
+    let mut goose = serde_json::Map::new();
+    goose.insert("created".to_string(), serde_json::json!(message.created));
+    if let Some(id) = &message.id {
+        goose.insert("messageId".to_string(), serde_json::json!(id));
+    }
+    goose
+}
+
+fn merge_replay_message_meta(meta: Option<Meta>, message: &Message) -> Meta {
+    let replay_goose = replay_message_goose_meta(message);
+    let mut meta = meta.unwrap_or_default();
+    let goose_value = meta
+        .entry("goose".to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+
+    if let serde_json::Value::Object(goose) = goose_value {
+        for (key, value) in replay_goose {
+            goose.insert(key, value);
+        }
+    } else {
+        *goose_value = serde_json::Value::Object(replay_goose);
+    }
+
+    meta
 }
 
 fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<ToolCallContent> {
@@ -1855,11 +2361,18 @@ fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<Tool
     }
 }
 
+fn extract_tool_raw_output(tool_result: &ToolResult<CallToolResult>) -> Option<serde_json::Value> {
+    tool_result
+        .as_ref()
+        .ok()
+        .and_then(|result| result.structured_content.clone())
+}
+
 impl GooseAcpAgent {
     async fn on_initialize(
         &self,
         args: InitializeRequest,
-    ) -> Result<InitializeResponse, sacp::Error> {
+    ) -> Result<InitializeResponse, agent_client_protocol::Error> {
         debug!(?args, "initialize request");
 
         let _ = self
@@ -1896,7 +2409,7 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: NewSessionRequest,
-    ) -> Result<NewSessionResponse, sacp::Error> {
+    ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "new session request");
         let t_start = std::time::Instant::now();
 
@@ -1914,73 +2427,77 @@ impl GooseAcpAgent {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let persona_id = args
+        // When _meta.client is set, the session is created by a known client
+        // (e.g. "goose" for the desktop app) and treated as a User session.
+        // Without it, sessions default to Acp for programmatic ACP clients.
+        let session_type = match args
             .meta
             .as_ref()
-            .and_then(|m| m.get("personaId"))
+            .and_then(|m| m.get("client"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        // Create the Thread — this IS the ACP session from the client's perspective.
-        let thread_metadata = crate::session::ThreadMetadata {
-            provider_id: requested_provider.clone(),
-            project_id,
-            persona_id,
-            mode: Some(self.goose_mode.to_string()),
-            ..Default::default()
+        {
+            Some(_) => SessionType::User,
+            None => SessionType::Acp,
         };
+
         let t0 = std::time::Instant::now();
-        let thread = self
-            .thread_manager
-            .create_thread(
-                None,
-                Some(thread_metadata),
-                Some(args.cwd.display().to_string()),
+        let goose_session = self
+            .session_manager
+            .create_session(
+                args.cwd.clone(),
+                "New Chat".to_string(),
+                session_type,
+                self.goose_mode,
             )
             .await
-            .internal_err_ctx("Failed to create thread")?;
-        let thread_id = thread.id.clone();
-        let sid = sid_short(&thread_id);
-        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: new_session create_thread");
+            .internal_err_ctx("Failed to create session")?;
 
-        // Create the first internal Session linked to this thread.
-        let t1 = std::time::Instant::now();
+        let mut builder = self.session_manager.update(&goose_session.id);
+        if let Some(ref provider) = requested_provider {
+            builder = builder.provider_name(provider);
+        }
+        if let Some(pid) = project_id {
+            builder = builder.project_id(Some(pid));
+        }
+        builder
+            .apply()
+            .await
+            .internal_err_ctx("Failed to update session")?;
+
         let goose_session = self
-            .create_internal_session(
-                &thread_id,
-                args.cwd.clone(),
-                requested_provider.as_deref(),
-                None,
-            )
-            .await?;
-        debug!(target: "perf", sid = %sid, ms = t1.elapsed().as_millis() as u64, "perf: new_session create_internal_session");
+            .session_manager
+            .get_session(&goose_session.id, false)
+            .await
+            .internal_err_ctx("Failed to reload session")?;
 
-        let internal_session_id = goose_session.id.clone();
+        let session_id_str = goose_session.id.clone();
+        let sid = sid_short(&session_id_str);
+        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: new_session create_session");
 
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
-        let session = GooseAcpSession {
+        let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
-            internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
+            chain_membership: HashMap::new(),
+            responded_tool_ids: HashSet::new(),
+            summarized_chains: HashSet::new(),
             cancel_token: None,
             pending_working_dir: None,
         };
         self.sessions
             .lock()
             .await
-            .insert(thread_id.clone(), session);
+            .insert(session_id_str.clone(), acp_session);
 
         let mode_state = build_mode_state(self.goose_mode)?;
 
-        // Resolve provider + model from config so we can include the current
-        // model in the response without waiting for the full agent setup.
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
         let initial_usage_update = resolved
             .as_ref()
             .ok()
             .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()));
-        let session_id = SessionId::new(thread_id.clone());
+        let acp_session_id = SessionId::new(session_id_str);
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
             .await;
@@ -1989,7 +2506,7 @@ impl GooseAcpAgent {
             cx,
             agent_tx,
             AgentSetupRequest {
-                session_id: session_id.clone(),
+                session_id: acp_session_id.clone(),
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: resolved.as_ref().ok().cloned(),
@@ -1997,7 +2514,7 @@ impl GooseAcpAgent {
             },
         );
 
-        let mut response = NewSessionResponse::new(session_id.clone()).modes(mode_state);
+        let mut response = NewSessionResponse::new(acp_session_id.clone()).modes(mode_state);
         if let Some(ms) = model_state {
             response = response.models(ms);
         }
@@ -2006,10 +2523,14 @@ impl GooseAcpAgent {
         }
         if let Some(usage_update) = initial_usage_update {
             cx.send_notification(SessionNotification::new(
-                session_id,
+                acp_session_id.clone(),
                 SessionUpdate::UsageUpdate(usage_update),
             ))?;
         }
+
+        self.send_available_commands_update(cx, &acp_session_id)
+            .await?;
+
         debug!(
             target: "perf",
             sid = %sid,
@@ -2019,60 +2540,21 @@ impl GooseAcpAgent {
         Ok(response)
     }
 
-    /// Create a new internal goose Session linked to a thread.
-    /// This is the agent's working state — invisible to ACP clients.
-    async fn create_internal_session(
-        &self,
-        thread_id: &str,
-        cwd: std::path::PathBuf,
-        provider_name: Option<&str>,
-        model_name: Option<&str>,
-    ) -> Result<Session, sacp::Error> {
-        let goose_session = self
-            .session_manager
-            .create_session(
-                cwd,
-                "ACP Session".to_string(),
-                SessionType::Acp,
-                self.goose_mode,
-            )
-            .await
-            .internal_err_ctx("Failed to create session")?;
-
-        let mut builder = self.session_manager.update(&goose_session.id);
-        builder = builder.thread_id(Some(thread_id.to_string()));
-        if let Some(provider) = provider_name {
-            builder = builder.provider_name(provider);
-        }
-        if let Some(model) = model_name {
-            if let Ok(mc) = crate::model::ModelConfig::new(model) {
-                builder = builder.model_config(mc);
-            }
-        }
-        builder
-            .apply()
-            .await
-            .internal_err_ctx("Failed to link session to thread")?;
-
-        self.session_manager
-            .get_session(&goose_session.id, false)
-            .await
-            .internal_err_ctx("Failed to reload session")
-    }
-
     /// Look up the session and return the agent if already ready, or the watch
     /// receiver if still loading.  Optionally sets a cancellation token on the
     /// session (needed by `on_prompt`).
     async fn get_agent_or_receiver(
         &self,
-        thread_id: &str,
+        session_id: &str,
         cancel_token: Option<CancellationToken>,
-    ) -> Result<Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>, sacp::Error>
-    {
+    ) -> Result<
+        Either<Arc<Agent>, tokio::sync::watch::Receiver<AgentSetupSignal>>,
+        agent_client_protocol::Error,
+    > {
         let mut sessions = self.sessions.lock().await;
-        let session = sessions.get_mut(thread_id).ok_or_else(|| {
-            sacp::Error::resource_not_found(Some(thread_id.to_string()))
-                .data(format!("Session not found: {}", thread_id))
+        let session = sessions.get_mut(session_id).ok_or_else(|| {
+            agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                .data(format!("Session not found: {}", session_id))
         })?;
         if let Some(token) = cancel_token {
             session.cancel_token = Some(token);
@@ -2087,10 +2569,10 @@ impl GooseAcpAgent {
     /// Most callers (e.g. `on_prompt`, `on_get_tools`) should use this.
     async fn get_session_agent(
         &self,
-        thread_id: &str,
+        session_id: &str,
         cancel_token: Option<CancellationToken>,
-    ) -> Result<Arc<Agent>, sacp::Error> {
-        let mut rx = match self.get_agent_or_receiver(thread_id, cancel_token).await? {
+    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
+        let mut rx = match self.get_agent_or_receiver(session_id, cancel_token).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
@@ -2104,11 +2586,12 @@ impl GooseAcpAgent {
             })
             .await
             .map_err(|_| {
-                sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
+                agent_client_protocol::Error::internal_error()
+                    .data("Agent setup task was dropped".to_string())
             })?;
         match guard.as_ref().unwrap() {
             Ok(AgentSetupProgress::FullyReady(agent)) => Ok(agent.clone()),
-            Err(e) => Err(sacp::Error::internal_error().data(e.clone())),
+            Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.clone())),
             // wait_for predicate excludes ProviderReady
             _ => unreachable!(),
         }
@@ -2119,36 +2602,37 @@ impl GooseAcpAgent {
     /// the provider (e.g. `update_provider`, `set_model`, `build_config_update`).
     async fn get_session_agent_provider_ready(
         &self,
-        thread_id: &str,
-    ) -> Result<Arc<Agent>, sacp::Error> {
-        let mut rx = match self.get_agent_or_receiver(thread_id, None).await? {
+        session_id: &str,
+    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
+        let mut rx = match self.get_agent_or_receiver(session_id, None).await? {
             Either::Left(agent) => return Ok(agent),
             Either::Right(rx) => rx,
         };
         // Any signal (ProviderReady, FullyReady, or Err) unblocks us.
         let guard = rx.wait_for(|v| v.is_some()).await.map_err(|_| {
-            sacp::Error::internal_error().data("Agent setup task was dropped".to_string())
+            agent_client_protocol::Error::internal_error()
+                .data("Agent setup task was dropped".to_string())
         })?;
         match guard.as_ref().unwrap() {
             Ok(progress) => match progress {
                 AgentSetupProgress::ProviderReady(agent)
                 | AgentSetupProgress::FullyReady(agent) => Ok(agent.clone()),
             },
-            Err(e) => Err(sacp::Error::internal_error().data(e.clone())),
+            Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.clone())),
         }
     }
 
     async fn add_mcp_extensions(
         agent: &Arc<Agent>,
         mcp_servers: Vec<McpServer>,
-        internal_session_id: &str,
-    ) -> Result<(), sacp::Error> {
+        session_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
         let mut configs = Vec::with_capacity(mcp_servers.len());
         for mcp_server in mcp_servers {
             let config = match mcp_server_to_extension_config(mcp_server) {
                 Ok(c) => c,
                 Err(msg) => {
-                    return Err(sacp::Error::invalid_params().data(msg));
+                    return Err(agent_client_protocol::Error::invalid_params().data(msg));
                 }
             };
             configs.push(config);
@@ -2159,13 +2643,13 @@ impl GooseAcpAgent {
         }
 
         let results = agent
-            .add_extensions_bulk(configs, internal_session_id)
+            .add_extensions_bulk(configs, session_id)
             .await
             .internal_err()?;
         for result in &results {
             if !result.success {
                 let error_msg = result.error.as_deref().unwrap_or("unknown error");
-                return Err(sacp::Error::internal_error().data(format!(
+                return Err(agent_client_protocol::Error::internal_error().data(format!(
                     "Failed to add MCP server '{}': {}",
                     result.name, error_msg
                 )));
@@ -2178,67 +2662,44 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: LoadSessionRequest,
-    ) -> Result<LoadSessionResponse, sacp::Error> {
+    ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
 
-        // The ACP session_id IS the thread ID.
-        let thread_id = args.session_id.0.to_string();
-        let sid = sid_short(&thread_id);
+        let session_id = args.session_id.0.to_string();
+        let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
 
         let t0 = std::time::Instant::now();
-        let thread = self
-            .thread_manager
-            .get_thread(&thread_id)
-            .await
-            .map_err(|_| {
-                sacp::Error::resource_not_found(Some(thread_id.clone()))
-                    .data(format!("Session not found: {}", thread_id))
-            })?;
-        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: load_session get_thread");
-
-        // Reuse the thread's current internal session so the agent retains
-        // conversation context (compaction state, full message history, etc.).
-        // The internal session is the source of truth for provider/mode.
-        let internal_session_id = thread.current_session_id.clone().ok_or_else(|| {
-            sacp::Error::internal_error()
-                .data(format!("Thread {} has no internal session", thread_id))
-        })?;
-        let t1 = std::time::Instant::now();
         let goose_session = self
             .session_manager
-            .get_session(&internal_session_id, false)
+            .get_session(&session_id, true)
             .await
-            .internal_err_ctx("Failed to load internal session")?;
-        debug!(target: "perf", sid = %sid, ms = t1.elapsed().as_millis() as u64, "perf: load_session get_session");
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {}", session_id))
+            })?;
+        debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: load_session get_session");
         let loaded_mode = goose_session.goose_mode;
 
-        // ── REPLAY MESSAGES FIRST ──
-        // Stream the thread's human-visible message history back to the client
-        // immediately, before the slow agent/provider/extension setup. The
-        // replay only needs the thread_manager (SQLite reads) so the UI gets
-        // messages while the agent is still booting.
-        let t2 = std::time::Instant::now();
-        let thread_messages = self
-            .thread_manager
-            .list_messages(&thread_id)
-            .await
-            .internal_err_ctx("Failed to load thread messages")?;
+        // ── REPLAY MESSAGES ──
+        // Stream user-visible messages back to the client so the chat view
+        // populates immediately, before the slow agent/provider/extension setup.
+        let messages = goose_session
+            .conversation
+            .as_ref()
+            .map(|c| c.messages().to_vec())
+            .unwrap_or_default();
         debug!(
             target: "perf",
             sid = %sid,
-            ms = t2.elapsed().as_millis() as u64,
-            messages = thread_messages.len(),
-            "perf: load_session list_messages"
+            messages = messages.len(),
+            "perf: load_session messages loaded"
         );
 
-        // Lightweight tool_requests map for the replay loop — we only need it
-        // so that handle_tool_response can extract file locations from the
-        // matching request. No GooseAcpSession required.
         let mut replay_tool_requests =
             HashMap::<String, crate::conversation::message::ToolRequest>::new();
 
-        for message in &thread_messages {
+        for message in &messages {
             if !message.metadata.user_visible {
                 continue;
             }
@@ -2253,14 +2714,17 @@ impl GooseAcpAgent {
                                     audience
                                         .iter()
                                         .map(|r| match r {
-                                            Role::Assistant => sacp::schema::Role::Assistant,
-                                            Role::User => sacp::schema::Role::User,
+                                            Role::Assistant => {
+                                                agent_client_protocol::schema::Role::Assistant
+                                            }
+                                            Role::User => agent_client_protocol::schema::Role::User,
                                         })
                                         .collect::<Vec<_>>(),
                                 ),
                             );
                         }
-                        let chunk = ContentChunk::new(ContentBlock::Text(tc));
+                        let chunk = ContentChunk::new(ContentBlock::Text(tc))
+                            .meta(replay_message_meta(message));
                         let update = match message.role {
                             Role::User => SessionUpdate::UserMessageChunk(chunk),
                             Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
@@ -2276,20 +2740,26 @@ impl GooseAcpAgent {
                         // don't require a full GooseAcpSession.
                         replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
 
-                        let tool_name = match &tool_request.tool_call {
-                            Ok(tool_call) => tool_call.name.to_string(),
-                            Err(_) => "error".to_string(),
-                        };
+                        let pending_tool_call = pending_tool_call_from_request(tool_request);
+                        let mut meta = pending_tool_call.identity_meta;
+                        // If this tool request is the first of a chain whose
+                        // summary was persisted at completion time, attach the
+                        // chain summary to the initial ToolCall so the chain
+                        // header is correct on first paint after reload.
+                        if let Some(chain_summary) = tool_request.persisted_chain_summary() {
+                            meta = with_tool_chain_summary_meta(
+                                meta,
+                                &chain_summary.summary,
+                                chain_summary.count,
+                            );
+                        }
+                        let tool_call = pending_tool_call
+                            .tool_call
+                            .meta(merge_replay_message_meta(meta, message));
 
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::ToolCall(
-                                ToolCall::new(
-                                    ToolCallId::new(tool_request.id.clone()),
-                                    format_tool_name(&tool_name),
-                                )
-                                .status(ToolCallStatus::Pending),
-                            ),
+                            SessionUpdate::ToolCall(tool_call),
                         ))?;
                     }
                     MessageContent::ToolResponse(tool_response) => {
@@ -2303,6 +2773,11 @@ impl GooseAcpAgent {
                         };
 
                         let mut fields = ToolCallUpdateFields::new().status(status);
+                        if let Some(raw_output) =
+                            extract_tool_raw_output(&tool_response.tool_result)
+                        {
+                            fields = fields.raw_output(raw_output);
+                        }
                         if !tool_response
                             .tool_result
                             .as_ref()
@@ -2328,7 +2803,10 @@ impl GooseAcpAgent {
 
                         let update =
                             ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
-                                .meta(extract_tool_call_update_meta(tool_response));
+                                .meta(merge_replay_message_meta(
+                                    extract_tool_call_update_meta(tool_response),
+                                    message,
+                                ));
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
                             SessionUpdate::ToolCallUpdate(update),
@@ -2337,9 +2815,12 @@ impl GooseAcpAgent {
                     MessageContent::Thinking(thinking) => {
                         cx.send_notification(SessionNotification::new(
                             args.session_id.clone(),
-                            SessionUpdate::AgentThoughtChunk(ContentChunk::new(
-                                ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
-                            )),
+                            SessionUpdate::AgentThoughtChunk(
+                                ContentChunk::new(ContentBlock::Text(TextContent::new(
+                                    thinking.thinking.clone(),
+                                )))
+                                .meta(replay_message_meta(message)),
+                            ),
                         ))?;
                     }
                     _ => {}
@@ -2347,33 +2828,30 @@ impl GooseAcpAgent {
             }
         }
 
-        // ── Lightweight DB updates (fast) ──
+        // Update working directory.
         self.session_manager
-            .update(&internal_session_id)
+            .update(&session_id)
             .working_dir(args.cwd.clone())
             .apply()
             .await
             .internal_err_ctx("Failed to update session working directory")?;
 
-        self.thread_manager
-            .update_working_dir(&thread_id, &args.cwd.display().to_string())
-            .await
-            .internal_err_ctx("Failed to update thread working directory")?;
-
-        // ── Register the session immediately with a Loading handle ──
+        // Register the session with a Loading handle.
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
-        let session = GooseAcpSession {
+        let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
-            internal_session_id: internal_session_id.clone(),
             tool_requests: replay_tool_requests,
+            chain_membership: HashMap::new(),
+            responded_tool_ids: HashSet::new(),
+            summarized_chains: HashSet::new(),
             cancel_token: None,
             pending_working_dir: None,
         };
         self.sessions
             .lock()
             .await
-            .insert(thread_id.clone(), session);
+            .insert(session_id.clone(), acp_session);
 
         let mode_state = build_mode_state(loaded_mode)?;
 
@@ -2417,6 +2895,10 @@ impl GooseAcpAgent {
                 SessionUpdate::UsageUpdate(usage_update),
             ))?;
         }
+
+        self.send_available_commands_update(cx, &args.session_id)
+            .await?;
+
         debug!(
             target: "perf",
             sid = %sid,
@@ -2430,44 +2912,44 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: PromptRequest,
-    ) -> Result<PromptResponse, sacp::Error> {
+    ) -> Result<PromptResponse, agent_client_protocol::Error> {
         // The ACP session_id IS the thread ID.
-        let thread_id = args.session_id.0.to_string();
-        let sid = sid_short(&thread_id);
+        let session_id = args.session_id.0.to_string();
+        let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
 
-        // Update persona_id on the thread if the client sent one in _meta.
-        let prompt_persona_id = args
-            .meta
-            .as_ref()
-            .and_then(|m| m.get("personaId"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        if let Some(ref pid) = prompt_persona_id {
-            let pid = pid.clone();
-            self.update_thread_metadata(&thread_id, move |meta| {
-                meta.persona_id = Some(pid);
-            })
-            .await?;
-        }
-
         let cancel_token = CancellationToken::new();
-        let internal_session_id = self.internal_session_id(&thread_id).await?;
-
         let agent = self
-            .get_session_agent(&thread_id, Some(cancel_token.clone()))
+            .get_session_agent(&session_id, Some(cancel_token.clone()))
             .await?;
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
-        // Persist user message (may contain assistant-only annotated blocks)
-        self.thread_manager
-            .append_message(&thread_id, Some(&internal_session_id), &user_message)
-            .await
-            .internal_err_ctx("Failed to persist message")?;
+        let message_text = user_message.as_concat_text();
+        if let Some(parsed) = crate::agents::execute_commands::parse_slash_command(&message_text) {
+            let full_command = format!("/{}", parsed.command);
+
+            if !Self::is_builtin_agent_command(parsed.command) {
+                if let Some(recipe_path) =
+                    crate::slash_commands::get_recipe_for_command(&full_command)
+                {
+                    if recipe_path.exists() {
+                        cx.send_notification(SessionNotification::new(
+                            args.session_id.clone(),
+                            SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                                ContentBlock::Text(TextContent::new(format!(
+                                    "Running recipe: {}",
+                                    full_command
+                                ))),
+                            )),
+                        ))?;
+                    }
+                }
+            }
+        }
 
         let session_config = SessionConfig {
-            id: internal_session_id.clone(),
+            id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
             retry_config: None,
@@ -2481,6 +2963,17 @@ impl GooseAcpAgent {
         let mut was_cancelled = false;
         let mut first_event_logged = false;
         let mut event_count: u32 = 0;
+        // Streaming chain buffer: tracks consecutive tool requests across
+        // `AgentEvent::Message` events so chains that span multiple rows are
+        // still registered. Sequential tool use (Bedrock/Anthropic) yields
+        // request → response → request → response across separate
+        // assistant/user messages, so tool responses are chain-neutral; only
+        // non-tool content (text, thinking, image, etc.) breaks the run.
+        // Holds `(tool_call_id, message_id_of_owning_row)` in arrival order;
+        // re-registered eagerly each time a request arrives so
+        // `handle_tool_response` finds the chain when subsequent responses
+        // are processed.
+        let mut chain_buffer: Vec<(String, String)> = Vec::new();
 
         while let Some(event) = stream.next().await {
             if cancel_token.is_cancelled() {
@@ -2500,21 +2993,48 @@ impl GooseAcpAgent {
 
             match event {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
-                    self.thread_manager
-                        .append_message(&thread_id, Some(&internal_session_id), &message)
-                        .await
-                        .internal_err_ctx("Failed to persist message")?;
+                    // Agent persists messages via session_manager.add_message() internally.
+                    let stored_message_id = message.id.clone();
 
                     let mut sessions = self.sessions.lock().await;
-                    let session = sessions.get_mut(&thread_id).ok_or_else(|| {
-                        sacp::Error::invalid_params()
-                            .data(format!("Session not found: {}", thread_id))
+                    let session = sessions.get_mut(&session_id).ok_or_else(|| {
+                        agent_client_protocol::Error::invalid_params()
+                            .data(format!("Session not found: {}", session_id))
                     })?;
 
                     for content_item in &message.content {
+                        match content_item {
+                            MessageContent::ToolRequest(tr) => {
+                                if let Some(msg_id) = stored_message_id.as_deref() {
+                                    chain_buffer.push((tr.id.clone(), msg_id.to_string()));
+                                    // Re-register eagerly so the chain is in
+                                    // place by the time the matching
+                                    // `tool_response` triggers
+                                    // `maybe_summarize_chain` (sequential
+                                    // tool use interleaves request/response
+                                    // events).
+                                    extend_chain_membership(
+                                        &chain_buffer,
+                                        &mut session.chain_membership,
+                                    );
+                                }
+                            }
+                            MessageContent::ToolResponse(_) => {
+                                // Chain-neutral: a response between two
+                                // requests doesn't break the run, matching
+                                // the frontend's `groupContentSections`.
+                            }
+                            _ => {
+                                // Text, thinking, image, etc. end the run.
+                                chain_buffer.clear();
+                            }
+                        }
+
                         self.handle_message_content(
                             content_item,
                             &args.session_id,
+                            &session_id,
+                            stored_message_id.as_deref(),
                             &agent,
                             session,
                             cx,
@@ -2524,7 +3044,7 @@ impl GooseAcpAgent {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    return Err(sacp::Error::internal_error()
+                    return Err(agent_client_protocol::Error::internal_error()
                         .data(format!("Error in agent response stream: {}", e)));
                 }
             }
@@ -2532,14 +3052,19 @@ impl GooseAcpAgent {
 
         {
             let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&thread_id) {
+            if let Some(session) = sessions.get_mut(&session_id) {
+                // Final safety net: in case the stream ended without any
+                // chain-breaking content, make sure a multi-tool buffer is
+                // registered. (Eager registration during the loop usually
+                // covers this.)
+                extend_chain_membership(&chain_buffer, &mut session.chain_membership);
                 session.cancel_token = None;
             }
         }
 
         let session = self
             .session_manager
-            .get_session(&internal_session_id, false)
+            .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
         let provider = agent
@@ -2574,19 +3099,22 @@ impl GooseAcpAgent {
         Ok(response)
     }
 
-    async fn on_cancel(&self, args: CancelNotification) -> Result<(), sacp::Error> {
+    async fn on_cancel(
+        &self,
+        args: CancelNotification,
+    ) -> Result<(), agent_client_protocol::Error> {
         debug!(?args, "cancel request");
 
-        let thread_id = args.session_id.0.to_string();
+        let session_id = args.session_id.0.to_string();
         let mut sessions = self.sessions.lock().await;
 
-        if let Some(session) = sessions.get_mut(&thread_id) {
+        if let Some(session) = sessions.get_mut(&session_id) {
             if let Some(ref token) = session.cancel_token {
-                info!(thread_id = %thread_id, "prompt cancelled");
+                info!(session_id = %session_id, "prompt cancelled");
                 token.cancel();
             }
         } else {
-            warn!(thread_id = %thread_id, "cancel request for unknown session");
+            warn!(session_id = %session_id, "cancel request for unknown session");
         }
 
         Ok(())
@@ -2594,19 +3122,18 @@ impl GooseAcpAgent {
 
     async fn on_set_model(
         &self,
-        thread_id: &str,
+        session_id: &str,
         model_id: &str,
-    ) -> Result<SetSessionModelResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(thread_id).await?;
+    ) -> Result<SetSessionModelResponse, agent_client_protocol::Error> {
         let config = self.config()?;
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         let current_provider = agent
             .provider()
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = current_provider.get_name().to_string();
         let extensions =
-            EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let model_config = crate::model::ModelConfig::new(model_id)
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
@@ -2615,57 +3142,28 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
-            .update_provider(provider, &internal_id)
+            .update_provider(provider, session_id)
             .await
             .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
-            .update_goose_mode(mode, &internal_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to propagate mode")?;
-        let model_id_owned = model_id.to_string();
-        self.update_thread_metadata(thread_id, move |meta| {
-            meta.model_id = Some(model_id_owned);
-        })
-        .await?;
+        // model_config is already updated on the session by the agent's update_provider call.
         Ok(SetSessionModelResponse::new())
-    }
-
-    async fn internal_session_id(&self, thread_id: &str) -> Result<String, sacp::Error> {
-        self.sessions
-            .lock()
-            .await
-            .get(thread_id)
-            .map(|s| s.internal_session_id.clone())
-            .ok_or_else(|| {
-                sacp::Error::resource_not_found(Some(thread_id.to_string()))
-                    .data(format!("Session not found: {}", thread_id))
-            })
-    }
-
-    async fn update_thread_metadata(
-        &self,
-        thread_id: &str,
-        f: impl FnOnce(&mut crate::session::ThreadMetadata),
-    ) -> Result<(), sacp::Error> {
-        self.thread_manager
-            .update_metadata(thread_id, f)
-            .await
-            .internal_err()?;
-        Ok(())
     }
 
     async fn build_config_update(
         &self,
-        thread_id: &SessionId,
-    ) -> Result<(SessionNotification, Vec<SessionConfigOption>), sacp::Error> {
-        let internal_id = self.internal_session_id(&thread_id.0).await?;
+        session_id: &SessionId,
+    ) -> Result<(SessionNotification, Vec<SessionConfigOption>), agent_client_protocol::Error> {
         let session = self
             .session_manager
-            .get_session(&internal_id, false)
+            .get_session(&session_id.0, false)
             .await
             .internal_err()?;
-        let agent = self.get_session_agent_provider_ready(&thread_id.0).await?;
+        let agent = self.get_session_agent_provider_ready(&session_id.0).await?;
         let provider = agent
             .provider()
             .await
@@ -2679,7 +3177,7 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
         let Some(inventory) = inventory else {
-            return Err(sacp::Error::internal_error()
+            return Err(agent_client_protocol::Error::internal_error()
                 .data(format!("Unknown provider inventory: {}", provider_name)));
         };
         let model_state = build_model_state(current_model.as_str(), &inventory);
@@ -2692,7 +3190,7 @@ impl GooseAcpAgent {
             provider_options,
         );
         let notification = SessionNotification::new(
-            thread_id.clone(),
+            session_id.clone(),
             SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options.clone())),
         );
         Ok((notification, config_options))
@@ -2700,40 +3198,35 @@ impl GooseAcpAgent {
 
     async fn on_set_mode(
         &self,
-        thread_id: &str,
+        session_id: &str,
         mode_id: &str,
-    ) -> Result<SetSessionModeResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(thread_id).await?;
+    ) -> Result<SetSessionModeResponse, agent_client_protocol::Error> {
         let mode = mode_id.parse::<GooseMode>().map_err(|_| {
-            sacp::Error::invalid_params().data(format!("Invalid mode: {}", mode_id))
+            agent_client_protocol::Error::invalid_params()
+                .data(format!("Invalid mode: {}", mode_id))
         })?;
 
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         agent
-            .update_goose_mode(mode, &internal_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to update mode")?;
 
-        let mode_id = mode_id.to_string();
-        self.update_thread_metadata(thread_id, move |meta| {
-            meta.mode = Some(mode_id);
-        })
-        .await?;
+        // goose_mode is already updated on the session above.
 
         Ok(SetSessionModeResponse::new())
     }
 
     async fn update_provider(
         &self,
-        thread_id: &str,
+        session_id: &str,
         provider_name: &str,
         model_name: Option<&str>,
         context_limit: Option<usize>,
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
-    ) -> Result<(), sacp::Error> {
-        let internal_id = self.internal_session_id(thread_id).await?;
+    ) -> Result<(), agent_client_protocol::Error> {
         let config = self.config()?;
-        let agent = self.get_session_agent_provider_ready(thread_id).await?;
+        let agent = self.get_session_agent_provider_ready(session_id).await?;
         let current_provider = agent
             .provider()
             .await
@@ -2770,18 +3263,18 @@ impl GooseAcpAgent {
             .with_request_params(request_params);
 
         let extensions =
-            EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
+            EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
         let new_provider = self
             .create_provider(&resolved_provider_name, model_config, extensions)
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
-            .update_provider(new_provider, &internal_id)
+            .update_provider(new_provider, session_id)
             .await
             .internal_err_ctx("Failed to update provider")?;
         let mode = agent.goose_mode().await;
         agent
-            .update_goose_mode(mode, &internal_id)
+            .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to propagate mode")?;
         let provider = agent
@@ -2789,17 +3282,12 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to get provider")?;
 
-        let provider_name_owned = provider_name.to_string();
-        self.update_thread_metadata(thread_id, move |meta| {
-            meta.provider_id = Some(provider_name_owned);
-            meta.model_id = None;
-        })
-        .await?;
+        // provider_name is already updated on the session by the agent's update_provider call.
 
         if use_default_provider {
             let update = self
                 .session_manager
-                .update(&internal_id)
+                .update(session_id)
                 .provider_name(DEFAULT_PROVIDER_ID);
             if has_default_overrides {
                 update
@@ -2818,25 +3306,21 @@ impl GooseAcpAgent {
         Ok(())
     }
 
-    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, sacp::Error> {
-        // Return threads (= ACP sessions), not internal goose sessions.
-        let threads = self
-            .thread_manager
-            .list_threads(false)
+    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
+        // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
+        let sessions = self
+            .session_manager
+            .list_sessions_by_types(&[SessionType::User, SessionType::Scheduled, SessionType::Acp])
             .await
             .internal_err()?;
-        let session_infos: Vec<SessionInfo> = threads
+        let session_infos: Vec<SessionInfo> = sessions
             .into_iter()
-            .map(|t| {
-                let cwd = t
-                    .working_dir
-                    .as_deref()
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_default();
-                let meta = thread_session_meta(&t);
-                SessionInfo::new(SessionId::new(t.id), cwd)
-                    .title(t.name)
-                    .updated_at(t.updated_at.to_rfc3339())
+            .filter(|s| s.message_count > 0)
+            .map(|s| {
+                let meta = session_meta(&s);
+                SessionInfo::new(SessionId::new(s.id), s.working_dir)
+                    .title(s.name)
+                    .updated_at(s.updated_at.to_rfc3339())
                     .meta(meta)
             })
             .collect();
@@ -2847,37 +3331,45 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         args: ForkSessionRequest,
-    ) -> Result<ForkSessionResponse, sacp::Error> {
-        let source_thread_id = &*args.session_id.0;
+    ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
+        let source_session_id = &*args.session_id.0;
 
-        // Fork the thread (copies metadata + messages).
-        let new_thread = self
-            .thread_manager
-            .fork_thread(source_thread_id)
+        let new_session = self
+            .session_manager
+            .copy_session(source_session_id, "Fork".to_string())
             .await
             .internal_err()?;
-        let new_thread_id = new_thread.id.clone();
+        let new_session_id = new_session.id.clone();
 
-        // Create an internal session for the new thread.
+        // Update working dir for the fork.
+        self.session_manager
+            .update(&new_session_id)
+            .working_dir(args.cwd.clone())
+            .apply()
+            .await
+            .internal_err()?;
+
         let goose_session = self
-            .create_internal_session(&new_thread_id, args.cwd, None, None)
-            .await?;
-
-        let internal_session_id = goose_session.id.clone();
+            .session_manager
+            .get_session(&new_session_id, false)
+            .await
+            .internal_err()?;
 
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
 
-        let session = GooseAcpSession {
+        let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
-            internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
+            chain_membership: HashMap::new(),
+            responded_tool_ids: HashSet::new(),
+            summarized_chains: HashSet::new(),
             cancel_token: None,
             pending_working_dir: None,
         };
         self.sessions
             .lock()
             .await
-            .insert(new_thread_id.clone(), session);
+            .insert(new_session_id.clone(), acp_session);
 
         let mode_state = build_mode_state(self.goose_mode)?;
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
@@ -2889,7 +3381,7 @@ impl GooseAcpAgent {
             cx,
             agent_tx,
             AgentSetupRequest {
-                session_id: SessionId::new(new_thread_id.clone()),
+                session_id: SessionId::new(new_session_id.clone()),
                 goose_session,
                 mcp_servers: args.mcp_servers,
                 resolved_provider: resolved.ok(),
@@ -2897,1603 +3389,45 @@ impl GooseAcpAgent {
             },
         );
 
-        let meta = thread_session_meta(&new_thread);
+        let meta = session_meta(&new_session);
 
-        let mut response = ForkSessionResponse::new(SessionId::new(new_thread_id))
+        let acp_session_id = SessionId::new(new_session_id);
+
+        let mut response = ForkSessionResponse::new(acp_session_id.clone())
             .modes(mode_state)
             .meta(meta);
+
         if let Some(ms) = model_state {
             response = response.models(ms);
         }
         if let Some(co) = config_options {
             response = response.config_options(co);
         }
+
+        self.send_available_commands_update(cx, &acp_session_id)
+            .await?;
+
         Ok(response)
     }
 
-    async fn on_close_session(&self, thread_id: &str) -> Result<CloseSessionResponse, sacp::Error> {
-        // Tear down the in-memory agent. The thread persists for later session/load.
+    async fn on_close_session(
+        &self,
+        session_id: &str,
+    ) -> Result<CloseSessionResponse, agent_client_protocol::Error> {
         let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(thread_id) {
+        if let Some(session) = sessions.get(session_id) {
             if let Some(ref token) = session.cancel_token {
                 token.cancel();
             }
         }
-        sessions.remove(thread_id);
-        info!(thread_id = %thread_id, "ACP session closed (thread preserved)");
+        sessions.remove(session_id);
+        info!(session_id = %session_id, "ACP session closed");
         Ok(CloseSessionResponse::new())
-    }
-}
-
-#[custom_methods]
-impl GooseAcpAgent {
-    #[custom_method(AddExtensionRequest)]
-    async fn on_add_extension(
-        &self,
-        req: AddExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
-        let config: ExtensionConfig = serde_json::from_value(req.config)
-            .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
-        let agent = self.get_session_agent(&req.session_id, None).await?;
-        agent
-            .add_extension(config, &internal_id)
-            .await
-            .internal_err()?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(RemoveExtensionRequest)]
-    async fn on_remove_extension(
-        &self,
-        req: RemoveExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
-        let agent = self.get_session_agent(&req.session_id, None).await?;
-        agent
-            .remove_extension(&req.name, &internal_id)
-            .await
-            .internal_err()?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(GetToolsRequest)]
-    async fn on_get_tools(&self, req: GetToolsRequest) -> Result<GetToolsResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
-        let agent = self.get_session_agent(&req.session_id, None).await?;
-        let tools = agent.list_tools(&internal_id, None).await;
-        let tools_json = tools
-            .into_iter()
-            .map(|t| serde_json::to_value(&t))
-            .collect::<Result<Vec<_>, _>>()
-            .internal_err()?;
-        Ok(GetToolsResponse { tools: tools_json })
-    }
-
-    #[custom_method(ReadResourceRequest)]
-    async fn on_read_resource(
-        &self,
-        req: ReadResourceRequest,
-    ) -> Result<ReadResourceResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
-        let agent = self.get_session_agent(&req.session_id, None).await?;
-        let cancel_token = CancellationToken::new();
-        let result = agent
-            .extension_manager
-            .read_resource(&internal_id, &req.uri, &req.extension_name, cancel_token)
-            .await
-            .internal_err()?;
-        let result_json = serde_json::to_value(&result).internal_err()?;
-        Ok(ReadResourceResponse {
-            result: result_json,
-        })
-    }
-
-    #[custom_method(UpdateWorkingDirRequest)]
-    async fn on_update_working_dir(
-        &self,
-        req: UpdateWorkingDirRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let working_dir = req.working_dir.trim().to_string();
-        if working_dir.is_empty() {
-            return Err(sacp::Error::invalid_params().data("working directory cannot be empty"));
-        }
-        let path = std::path::PathBuf::from(&working_dir);
-        if !path.exists() || !path.is_dir() {
-            return Err(sacp::Error::invalid_params().data("invalid directory path"));
-        }
-        let internal_id = self.internal_session_id(&req.session_id).await?;
-        self.session_manager
-            .update(&internal_id)
-            .working_dir(path.clone())
-            .apply()
-            .await
-            .internal_err()?;
-
-        self.thread_manager
-            .update_working_dir(&req.session_id, &working_dir)
-            .await
-            .internal_err()?;
-
-        if let Some(session) = self.sessions.lock().await.get_mut(&req.session_id) {
-            match &session.agent {
-                AgentHandle::Ready(agent) => {
-                    agent.extension_manager.update_working_dir(&path).await;
-                }
-                AgentHandle::Loading(_) => {
-                    session.pending_working_dir = Some(path);
-                }
-            }
-        }
-
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(DeleteSessionRequest)]
-    async fn on_delete_session(
-        &self,
-        req: DeleteSessionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        // Delete the thread and all its internal sessions + messages.
-        self.thread_manager
-            .delete_thread(&req.session_id)
-            .await
-            .internal_err()?;
-        self.sessions.lock().await.remove(&req.session_id);
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(GetExtensionsRequest)]
-    async fn on_get_extensions(&self) -> Result<GetExtensionsResponse, sacp::Error> {
-        let extensions = crate::config::extensions::get_all_extensions();
-        let warnings = crate::config::extensions::get_warnings();
-        let extensions_json = extensions
-            .into_iter()
-            .map(|e| {
-                let config_key = e.config.key();
-                let mut value = serde_json::to_value(&e)?;
-                if let Some(obj) = value.as_object_mut() {
-                    obj.insert(
-                        "config_key".to_string(),
-                        serde_json::Value::String(config_key),
-                    );
-                }
-                Ok::<_, serde_json::Error>(value)
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .internal_err()?;
-        Ok(GetExtensionsResponse {
-            extensions: extensions_json,
-            warnings,
-        })
-    }
-
-    #[custom_method(AddConfigExtensionRequest)]
-    async fn on_add_config_extension(
-        &self,
-        req: AddConfigExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let mut obj = match req.extension_config {
-            serde_json::Value::Object(obj) => obj,
-            _ => {
-                return Err(
-                    sacp::Error::invalid_params().data("extensionConfig must be a JSON object")
-                );
-            }
-        };
-        obj.insert(
-            "name".to_string(),
-            serde_json::Value::String(req.name.clone()),
-        );
-
-        let config: crate::agents::ExtensionConfig =
-            serde_json::from_value(serde_json::Value::Object(obj))
-                .map_err(|e| sacp::Error::invalid_params().data(format!("bad config: {e}")))?;
-
-        crate::config::extensions::set_extension(crate::config::extensions::ExtensionEntry {
-            enabled: req.enabled,
-            config,
-        });
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(RemoveConfigExtensionRequest)]
-    async fn on_remove_config_extension(
-        &self,
-        req: RemoveConfigExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let keys = crate::config::extensions::get_all_extension_names();
-        if !keys.iter().any(|k| k == &req.config_key) {
-            return Err(sacp::Error::invalid_params()
-                .data(format!("Extension '{}' not found", req.config_key)));
-        }
-        crate::config::extensions::remove_extension(&req.config_key);
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(ToggleConfigExtensionRequest)]
-    async fn on_toggle_config_extension(
-        &self,
-        req: ToggleConfigExtensionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let keys = crate::config::extensions::get_all_extension_names();
-        if !keys.iter().any(|k| k == &req.config_key) {
-            return Err(sacp::Error::invalid_params()
-                .data(format!("Extension '{}' not found", req.config_key)));
-        }
-        crate::config::extensions::set_extension_enabled(&req.config_key, req.enabled);
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(GetSessionExtensionsRequest)]
-    async fn on_get_session_extensions(
-        &self,
-        req: GetSessionExtensionsRequest,
-    ) -> Result<GetSessionExtensionsResponse, sacp::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
-        let session = self
-            .session_manager
-            .get_session(&internal_id, false)
-            .await
-            .internal_err()?;
-
-        let extensions = EnabledExtensionsState::extensions_or_default(
-            Some(&session.extension_data),
-            crate::config::Config::global(),
-        );
-
-        let extensions_json = extensions
-            .into_iter()
-            .map(|e| serde_json::to_value(&e))
-            .collect::<Result<Vec<_>, _>>()
-            .internal_err()?;
-
-        Ok(GetSessionExtensionsResponse {
-            extensions: extensions_json,
-        })
-    }
-
-    #[custom_method(ListProvidersRequest)]
-    async fn on_list_providers(
-        &self,
-        req: ListProvidersRequest,
-    ) -> Result<ListProvidersResponse, sacp::Error> {
-        let entries = self
-            .provider_inventory
-            .entries(&req.provider_ids)
-            .await
-            .internal_err()?;
-        Ok(ListProvidersResponse {
-            entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
-        })
-    }
-
-    async fn provider_config_status(provider_id: String) -> ProviderConfigStatusDto {
-        let is_configured = match crate::providers::get_from_registry(&provider_id).await {
-            Ok(entry) => {
-                match tokio::task::spawn_blocking(move || entry.inventory_configured()).await {
-                    Ok(is_configured) => is_configured,
-                    Err(error) => {
-                        warn!(
-                            provider = %provider_id,
-                            error = %error,
-                            "provider config status check failed"
-                        );
-                        false
-                    }
-                }
-            }
-            Err(_) => false,
-        };
-
-        ProviderConfigStatusDto {
-            provider_id,
-            is_configured,
-        }
-    }
-
-    async fn provider_config_statuses(provider_ids: &[String]) -> Vec<ProviderConfigStatusDto> {
-        let mut ids = if provider_ids.is_empty() {
-            crate::providers::providers()
-                .await
-                .into_iter()
-                .map(|(metadata, _)| metadata.name)
-                .collect::<Vec<_>>()
-        } else {
-            provider_ids.to_vec()
-        };
-        ids.sort();
-        ids.dedup();
-
-        let mut statuses = stream::iter(ids)
-            .map(Self::provider_config_status)
-            .buffer_unordered(PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY)
-            .collect::<Vec<_>>()
-            .await;
-        statuses.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
-        statuses
-    }
-
-    fn spawn_provider_inventory_refresh_jobs(&self, refresh_plan: &RefreshJobPlan) {
-        for refresh_job in refresh_plan.started.iter().cloned() {
-            let provider_inventory = self.provider_inventory.clone();
-            let provider_factory = Arc::clone(&self.provider_factory);
-            let provider_id = refresh_job.provider_id.clone();
-            let identity = refresh_job.identity.clone();
-            tokio::spawn(async move {
-                let mut refresh_guard = provider_inventory.refresh_guard(&identity);
-                let provider_result = AssertUnwindSafe(async {
-                    let metadata = crate::providers::get_from_registry(&provider_id).await?;
-                    let model_config =
-                        crate::model::ModelConfig::new(&metadata.metadata().default_model)?
-                            .with_canonical_limits(&provider_id);
-                    provider_factory(provider_id.clone(), model_config, Vec::new()).await
-                })
-                .catch_unwind()
-                .await;
-
-                let fetch_result: Result<Vec<String>> = match provider_result {
-                    Ok(Ok(provider)) => {
-                        match ensure_refresh_identity_current(&provider_id, &identity).await {
-                            Ok(()) => match AssertUnwindSafe(provider.fetch_recommended_models())
-                                .catch_unwind()
-                                .await
-                            {
-                                Ok(Ok(models)) => Ok(models),
-                                Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
-                                Err(_) => {
-                                    Err(anyhow::anyhow!("provider inventory refresh task panicked"))
-                                }
-                            },
-                            Err(error) => Err(error),
-                        }
-                    }
-                    Ok(Err(error)) => Err(error),
-                    Err(_) => Err(anyhow::anyhow!("provider inventory refresh task panicked")),
-                };
-
-                match fetch_result {
-                    Ok(models) => match provider_inventory
-                        .store_refreshed_models_for_identity(&identity, &models)
-                        .await
-                    {
-                        Ok(()) => refresh_guard.complete(),
-                        Err(error) => warn!(
-                            provider = %provider_id,
-                            error = %error,
-                            "failed to store refreshed provider inventory"
-                        ),
-                    },
-                    Err(error) => {
-                        let error_message = error.to_string();
-                        match provider_inventory
-                            .store_refresh_error_for_identity(&identity, error_message.clone())
-                            .await
-                        {
-                            Ok(()) => refresh_guard.complete(),
-                            Err(store_error) => warn!(
-                                provider = %provider_id,
-                                error = %store_error,
-                                refresh_error = %error_message,
-                                "failed to store provider inventory refresh error"
-                            ),
-                        }
-                        warn!(provider = %provider_id, error = %error_message, "provider inventory refresh failed");
-                    }
-                }
-            });
-        }
-    }
-
-    async fn start_provider_inventory_refresh(
-        &self,
-        provider_ids: &[String],
-    ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
-        let refresh_job_plan = self
-            .provider_inventory
-            .plan_refresh_jobs(provider_ids)
-            .await
-            .internal_err()?;
-        self.spawn_provider_inventory_refresh_jobs(&refresh_job_plan);
-        Ok(refresh_plan_to_response(
-            refresh_job_plan.into_public_plan(),
-        ))
-    }
-
-    #[custom_method(RefreshProviderInventoryRequest)]
-    async fn on_refresh_provider_inventory(
-        &self,
-        req: RefreshProviderInventoryRequest,
-    ) -> Result<RefreshProviderInventoryResponse, sacp::Error> {
-        Config::global().invalidate_secrets_cache();
-        self.start_provider_inventory_refresh(&req.provider_ids)
-            .await
-    }
-
-    #[custom_method(ProviderConfigReadRequest)]
-    async fn on_read_provider_config(
-        &self,
-        req: ProviderConfigReadRequest,
-    ) -> Result<ProviderConfigReadResponse, sacp::Error> {
-        let entry = crate::providers::get_from_registry(&req.provider_id)
-            .await
-            .invalid_params_err_ctx("Unknown provider")?;
-        let config = Config::global();
-        let config_keys = &entry.metadata().config_keys;
-        let secrets = if config_keys.iter().any(|key| key.secret) {
-            Some(config.all_secrets().internal_err()?)
-        } else {
-            None
-        };
-
-        Ok(ProviderConfigReadResponse {
-            fields: config_keys
-                .iter()
-                .map(|key| provider_config_field_value(config, key, secrets.as_ref()))
-                .collect(),
-        })
-    }
-
-    #[custom_method(ProviderConfigStatusRequest)]
-    async fn on_provider_config_status(
-        &self,
-        req: ProviderConfigStatusRequest,
-    ) -> Result<ProviderConfigStatusResponse, sacp::Error> {
-        Ok(ProviderConfigStatusResponse {
-            statuses: Self::provider_config_statuses(&req.provider_ids).await,
-        })
-    }
-
-    #[custom_method(ProviderConfigSaveRequest)]
-    async fn on_save_provider_config(
-        &self,
-        req: ProviderConfigSaveRequest,
-    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
-        let entry = crate::providers::get_from_registry(&req.provider_id)
-            .await
-            .invalid_params_err_ctx("Unknown provider")?;
-        let metadata = entry.metadata().clone();
-        let config = Config::global();
-        let mut config_updates = Vec::new();
-        let mut secret_updates = Vec::new();
-
-        for field in &req.fields {
-            let Some(config_key) = metadata
-                .config_keys
-                .iter()
-                .find(|config_key| config_key.name == field.key)
-            else {
-                return Err(sacp::Error::invalid_params()
-                    .data(format!("Unsupported provider config field: {}", field.key)));
-            };
-
-            let value = field.value.trim();
-            if value.is_empty() {
-                return Err(sacp::Error::invalid_params().data(format!(
-                    "Provider config field cannot be empty: {}",
-                    field.key
-                )));
-            }
-
-            if config_key.secret {
-                secret_updates.push((
-                    config_key.name.clone(),
-                    serde_json::Value::String(value.to_string()),
-                ));
-            } else {
-                config_updates.push((config_key.name.clone(), value.to_string()));
-            }
-        }
-
-        for (key, value) in config_updates {
-            config
-                .set_param(&key, &value)
-                .internal_err_ctx("Failed to save provider config field")?;
-        }
-        config
-            .set_secret_values(&secret_updates)
-            .internal_err_ctx("Failed to save provider secret fields")?;
-
-        let provider_ids = [req.provider_id.clone()];
-        let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
-    }
-
-    #[custom_method(ProviderConfigDeleteRequest)]
-    async fn on_delete_provider_config(
-        &self,
-        req: ProviderConfigDeleteRequest,
-    ) -> Result<ProviderConfigChangeResponse, sacp::Error> {
-        let entry = crate::providers::get_from_registry(&req.provider_id)
-            .await
-            .invalid_params_err_ctx("Unknown provider")?;
-        let metadata = entry.metadata().clone();
-        let config = Config::global();
-        let mut secret_keys = Vec::new();
-
-        for config_key in &metadata.config_keys {
-            if config_key.secret {
-                secret_keys.push(config_key.name.clone());
-            } else {
-                config
-                    .delete(&config_key.name)
-                    .internal_err_ctx("Failed to delete provider config field")?;
-            }
-        }
-
-        config
-            .delete_secret_values(&secret_keys)
-            .internal_err_ctx("Failed to delete provider secret fields")?;
-        crate::providers::cleanup_provider(&req.provider_id)
-            .await
-            .internal_err_ctx("Failed to clean up provider state")?;
-
-        let provider_ids = [req.provider_id.clone()];
-        let status = Self::provider_config_status(req.provider_id.clone()).await;
-        let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
-        Ok(ProviderConfigChangeResponse { status, refresh })
-    }
-
-    #[custom_method(ReadConfigRequest)]
-    async fn on_read_config(
-        &self,
-        req: ReadConfigRequest,
-    ) -> Result<ReadConfigResponse, sacp::Error> {
-        let config = self.config()?;
-        let response = match config.get_param::<serde_json::Value>(&req.key) {
-            Ok(value) => ReadConfigResponse { value },
-            Err(crate::config::ConfigError::NotFound(_)) => ReadConfigResponse {
-                value: serde_json::Value::Null,
-            },
-            Err(e) => return Err(sacp::Error::internal_error().data(e.to_string())),
-        };
-        Ok(response)
-    }
-
-    #[custom_method(UpsertConfigRequest)]
-    async fn on_upsert_config(
-        &self,
-        req: UpsertConfigRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
-        config.set_param(&req.key, &req.value).internal_err()?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(RemoveConfigRequest)]
-    async fn on_remove_config(
-        &self,
-        req: RemoveConfigRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
-        config.delete(&req.key).internal_err()?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(CheckSecretRequest)]
-    async fn on_check_secret(
-        &self,
-        req: CheckSecretRequest,
-    ) -> Result<CheckSecretResponse, sacp::Error> {
-        let config = self.config()?;
-        let exists = config.get_secret::<serde_json::Value>(&req.key).is_ok();
-        Ok(CheckSecretResponse { exists })
-    }
-
-    #[custom_method(UpsertSecretRequest)]
-    async fn on_upsert_secret(
-        &self,
-        req: UpsertSecretRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
-        config.set_secret(&req.key, &req.value).internal_err()?;
-        Config::global().invalidate_secrets_cache();
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(RemoveSecretRequest)]
-    async fn on_remove_secret(
-        &self,
-        req: RemoveSecretRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let config = self.config()?;
-        config.delete_secret(&req.key).internal_err()?;
-        Config::global().invalidate_secrets_cache();
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(ExportSessionRequest)]
-    async fn on_export_session(
-        &self,
-        req: ExportSessionRequest,
-    ) -> Result<ExportSessionResponse, sacp::Error> {
-        let thread = self
-            .thread_manager
-            .get_thread(&req.session_id)
-            .await
-            .internal_err()?;
-        let internal_id = thread
-            .current_session_id
-            .ok_or_else(|| sacp::Error::internal_error().data("Thread has no internal session"))?;
-        let data = self
-            .session_manager
-            .export_session(&internal_id)
-            .await
-            .internal_err()?;
-        Ok(ExportSessionResponse { data })
-    }
-
-    #[custom_method(ImportSessionRequest)]
-    async fn on_import_session(
-        &self,
-        req: ImportSessionRequest,
-    ) -> Result<ImportSessionResponse, sacp::Error> {
-        let session = self
-            .session_manager
-            .import_session(&req.data, Some(SessionType::Acp))
-            .await
-            .internal_err()?;
-
-        // Create a thread for the imported session.
-        let thread = self
-            .thread_manager
-            .create_thread(
-                Some(session.name.clone()),
-                None,
-                Some(session.working_dir.display().to_string()),
-            )
-            .await
-            .internal_err()?;
-
-        // Link the internal session to the thread.
-        self.session_manager
-            .update(&session.id)
-            .thread_id(Some(thread.id.clone()))
-            .apply()
-            .await
-            .internal_err()?;
-
-        // Copy conversation messages into thread_messages so they appear in the thread.
-        if let Some(ref conversation) = session.conversation {
-            for msg in conversation.messages() {
-                self.thread_manager
-                    .append_message(&thread.id, Some(&session.id), msg)
-                    .await
-                    .internal_err()?;
-            }
-        }
-
-        // Re-fetch thread to get accurate message_count.
-        let thread = self
-            .thread_manager
-            .get_thread(&thread.id)
-            .await
-            .internal_err()?;
-
-        Ok(ImportSessionResponse {
-            session_id: thread.id,
-            title: Some(thread.name),
-            updated_at: Some(thread.updated_at.to_rfc3339()),
-            message_count: thread.message_count as u64,
-        })
-    }
-
-    #[custom_method(UpdateSessionProjectRequest)]
-    async fn on_update_session_project(
-        &self,
-        req: UpdateSessionProjectRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        let project_id = req.project_id;
-        self.update_thread_metadata(&req.session_id, move |meta| {
-            meta.project_id = project_id;
-        })
-        .await?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(RenameSessionRequest)]
-    async fn on_rename_session(
-        &self,
-        req: RenameSessionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        self.thread_manager
-            .update_thread(&req.session_id, Some(req.title), Some(true), None)
-            .await
-            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(ArchiveSessionRequest)]
-    async fn on_archive_session(
-        &self,
-        req: ArchiveSessionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        self.thread_manager
-            .archive_thread(&req.session_id)
-            .await
-            .internal_err()?;
-        self.sessions.lock().await.remove(&req.session_id);
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(UnarchiveSessionRequest)]
-    async fn on_unarchive_session(
-        &self,
-        req: UnarchiveSessionRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        self.thread_manager
-            .unarchive_thread(&req.session_id)
-            .await
-            .internal_err()?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(CreateSourceRequest)]
-    async fn on_create_source(
-        &self,
-        req: CreateSourceRequest,
-    ) -> Result<CreateSourceResponse, sacp::Error> {
-        let source = crate::sources::create_source(
-            req.source_type,
-            &req.name,
-            &req.description,
-            &req.content,
-            req.global,
-            req.project_dir.as_deref(),
-        )?;
-        Ok(CreateSourceResponse { source })
-    }
-
-    #[custom_method(ListSourcesRequest)]
-    async fn on_list_sources(
-        &self,
-        req: ListSourcesRequest,
-    ) -> Result<ListSourcesResponse, sacp::Error> {
-        let sources = crate::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
-        Ok(ListSourcesResponse { sources })
-    }
-
-    #[custom_method(UpdateSourceRequest)]
-    async fn on_update_source(
-        &self,
-        req: UpdateSourceRequest,
-    ) -> Result<UpdateSourceResponse, sacp::Error> {
-        let source = crate::sources::update_source(
-            req.source_type,
-            &req.path,
-            &req.name,
-            &req.description,
-            &req.content,
-        )?;
-        Ok(UpdateSourceResponse { source })
-    }
-
-    #[custom_method(DeleteSourceRequest)]
-    async fn on_delete_source(
-        &self,
-        req: DeleteSourceRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        crate::sources::delete_source(req.source_type, &req.path)?;
-        Ok(EmptyResponse {})
-    }
-
-    #[custom_method(ExportSourceRequest)]
-    async fn on_export_source(
-        &self,
-        req: ExportSourceRequest,
-    ) -> Result<ExportSourceResponse, sacp::Error> {
-        let (json, filename) = crate::sources::export_source(req.source_type, &req.path)?;
-        Ok(ExportSourceResponse { json, filename })
-    }
-
-    #[custom_method(ImportSourcesRequest)]
-    async fn on_import_sources(
-        &self,
-        req: ImportSourcesRequest,
-    ) -> Result<ImportSourcesResponse, sacp::Error> {
-        let sources =
-            crate::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
-        Ok(ImportSourcesResponse { sources })
-    }
-
-    #[custom_method(DictationTranscribeRequest)]
-    async fn on_dictation_transcribe(
-        &self,
-        req: DictationTranscribeRequest,
-    ) -> Result<DictationTranscribeResponse, sacp::Error> {
-        use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-        let config = crate::config::Config::global();
-
-        #[cfg(not(feature = "local-inference"))]
-        if req.provider == "local" {
-            return Err(sacp::Error::invalid_params()
-                .data("Local inference is not available in this build"));
-        }
-
-        let provider: DictationProvider = serde_json::from_value(serde_json::Value::String(
-            req.provider.clone(),
-        ))
-        .map_err(|_| {
-            sacp::Error::invalid_params().data(format!("Unknown provider: {}", req.provider))
-        })?;
-
-        let audio_bytes = BASE64
-            .decode(&req.audio)
-            .map_err(|_| sacp::Error::invalid_params().data("Invalid base64 audio data"))?;
-
-        if audio_bytes.len() > 50 * 1024 * 1024 {
-            return Err(sacp::Error::invalid_params().data("Audio too large (max 50MB)"));
-        }
-
-        let extension = match req.mime_type.as_str() {
-            "audio/webm" | "audio/webm;codecs=opus" => "webm",
-            "audio/mp4" => "mp4",
-            "audio/mpeg" | "audio/mpga" => "mp3",
-            "audio/m4a" => "m4a",
-            "audio/wav" | "audio/x-wav" => "wav",
-            other => {
-                return Err(
-                    sacp::Error::invalid_params().data(format!("Unsupported format: {other}"))
-                );
-            }
-        };
-
-        let text = match provider {
-            #[cfg(feature = "local-inference")]
-            DictationProvider::Local => transcribe_local(audio_bytes).await,
-            remote => {
-                let (model_param, default_model) = dictation_transcribe_params(remote);
-                let model = dictation_selected_model(config, remote)
-                    .unwrap_or_else(|| default_model.to_string());
-                transcribe_with_provider(
-                    remote,
-                    model_param.to_string(),
-                    model,
-                    audio_bytes,
-                    extension,
-                    &req.mime_type,
-                )
-                .await
-            }
-        }
-        .internal_err()?;
-
-        Ok(DictationTranscribeResponse { text })
-    }
-
-    #[custom_method(DictationConfigRequest)]
-    async fn on_dictation_config(
-        &self,
-        _req: DictationConfigRequest,
-    ) -> Result<DictationConfigResponse, sacp::Error> {
-        let config = crate::config::Config::global();
-        let mut providers = std::collections::HashMap::new();
-
-        for def in all_providers() {
-            let provider = def.provider;
-            let host = if let Some(host_key) = def.host_key {
-                config
-                    .get(host_key, false)
-                    .ok()
-                    .and_then(|v| v.as_str().map(|s| s.to_string()))
-            } else {
-                None
-            };
-
-            let provider_key = serde_json::to_value(provider)
-                .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| format!("{:?}", provider).to_lowercase());
-            providers.insert(
-                provider_key,
-                DictationProviderStatusEntry {
-                    configured: is_configured(provider),
-                    host,
-                    description: def.description.to_string(),
-                    uses_provider_config: def.uses_provider_config,
-                    settings_path: def.settings_path.map(|s| s.to_string()),
-                    config_key: if !def.uses_provider_config {
-                        Some(def.config_key.to_string())
-                    } else {
-                        None
-                    },
-                    model_config_key: dictation_model_config_key(provider),
-                    default_model: dictation_default_model(provider),
-                    selected_model: dictation_selected_model(config, provider),
-                    available_models: dictation_available_models(provider),
-                },
-            );
-        }
-
-        Ok(DictationConfigResponse { providers })
-    }
-
-    #[custom_method(DictationModelsListRequest)]
-    async fn on_dictation_models_list(
-        &self,
-        _req: DictationModelsListRequest,
-    ) -> Result<DictationModelsListResponse, sacp::Error> {
-        #[cfg(feature = "local-inference")]
-        {
-            use crate::download_manager::{get_download_manager, DownloadStatus};
-
-            let manager = get_download_manager();
-            let models = whisper::available_models()
-                .iter()
-                .map(|model| DictationLocalModelStatus {
-                    id: model.id.to_string(),
-                    label: model.id.to_string(),
-                    description: model.description.to_string(),
-                    size_mb: model.size_mb,
-                    downloaded: model.is_downloaded(),
-                    download_in_progress: manager
-                        .get_progress(model.id)
-                        .map(|progress| progress.status == DownloadStatus::Downloading)
-                        .unwrap_or(false),
-                })
-                .collect();
-
-            Ok(DictationModelsListResponse { models })
-        }
-
-        #[cfg(not(feature = "local-inference"))]
-        Ok(DictationModelsListResponse::default())
-    }
-
-    #[custom_method(DictationModelDownloadRequest)]
-    async fn on_dictation_model_download(
-        &self,
-        _req: DictationModelDownloadRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        #[cfg(feature = "local-inference")]
-        {
-            use crate::download_manager::get_download_manager;
-
-            let model = whisper::get_model(&_req.model_id)
-                .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
-            let manager = get_download_manager();
-            let model_id_for_config = model.id.to_string();
-
-            manager
-                .download_model(
-                    model.id.to_string(),
-                    model.url.to_string(),
-                    model.local_path(),
-                    Some(Box::new(move || {
-                        let config = crate::config::Config::global();
-                        // Only auto-select this model if the user has no model
-                        // currently selected. This prevents silently switching
-                        // the active model mid-session when a user downloads an
-                        // additional model while one is already in use.
-                        let already_selected = config
-                            .get(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
-                            .ok()
-                            .and_then(|value| value.as_str().map(str::to_owned))
-                            .filter(|model_id| {
-                                // Treat a deleted model file as no active selection
-                                // so a fresh download can auto-select cleanly.
-                                whisper::get_model(model_id)
-                                    .is_some_and(|model| model.is_downloaded())
-                            });
-                        if already_selected.is_none() {
-                            if let Err(e) = config.set_param(
-                                whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY,
-                                model_id_for_config.clone(),
-                            ) {
-                                error!("Failed to save LOCAL_WHISPER_MODEL after download: {}", e);
-                            }
-                        }
-                    })),
-                )
-                .await
-                .internal_err()?;
-
-            Ok(EmptyResponse {})
-        }
-
-        #[cfg(not(feature = "local-inference"))]
-        Err(sacp::Error::invalid_params().data("Local inference not enabled"))
-    }
-
-    #[custom_method(DictationModelDownloadProgressRequest)]
-    async fn on_dictation_model_download_progress(
-        &self,
-        _req: DictationModelDownloadProgressRequest,
-    ) -> Result<DictationModelDownloadProgressResponse, sacp::Error> {
-        #[cfg(feature = "local-inference")]
-        {
-            use crate::download_manager::get_download_manager;
-
-            let manager = get_download_manager();
-            let progress =
-                manager
-                    .get_progress(&_req.model_id)
-                    .map(|progress| DictationDownloadProgress {
-                        bytes_downloaded: progress.bytes_downloaded,
-                        total_bytes: progress.total_bytes,
-                        progress_percent: progress.progress_percent,
-                        status: serde_json::to_value(&progress.status)
-                            .ok()
-                            .and_then(|value| value.as_str().map(ToOwned::to_owned))
-                            .unwrap_or_else(|| "unknown".to_string()),
-                        error: progress.error,
-                    });
-
-            Ok(DictationModelDownloadProgressResponse { progress })
-        }
-
-        #[cfg(not(feature = "local-inference"))]
-        Ok(DictationModelDownloadProgressResponse { progress: None })
-    }
-
-    #[custom_method(DictationModelCancelRequest)]
-    async fn on_dictation_model_cancel(
-        &self,
-        _req: DictationModelCancelRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        #[cfg(feature = "local-inference")]
-        {
-            use crate::download_manager::get_download_manager;
-
-            let manager = get_download_manager();
-            manager.cancel_download(&_req.model_id).internal_err()?;
-
-            Ok(EmptyResponse {})
-        }
-
-        #[cfg(not(feature = "local-inference"))]
-        Err(sacp::Error::invalid_params().data("Local inference not enabled"))
-    }
-
-    #[custom_method(DictationModelDeleteRequest)]
-    async fn on_dictation_model_delete(
-        &self,
-        _req: DictationModelDeleteRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        #[cfg(feature = "local-inference")]
-        {
-            let model = whisper::get_model(&_req.model_id)
-                .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
-            let path = model.local_path();
-
-            if !path.exists() {
-                return Err(sacp::Error::invalid_params().data("Model not downloaded"));
-            }
-
-            std::fs::remove_file(path).internal_err()?;
-
-            Ok(EmptyResponse {})
-        }
-
-        #[cfg(not(feature = "local-inference"))]
-        Err(sacp::Error::invalid_params().data("Local inference not enabled"))
-    }
-
-    #[custom_method(DictationModelSelectRequest)]
-    async fn on_dictation_model_select(
-        &self,
-        req: DictationModelSelectRequest,
-    ) -> Result<EmptyResponse, sacp::Error> {
-        #[cfg(not(feature = "local-inference"))]
-        if req.provider == "local" {
-            return Err(sacp::Error::invalid_params().data("Local inference not enabled"));
-        }
-
-        let provider: DictationProvider = serde_json::from_value(serde_json::Value::String(
-            req.provider.clone(),
-        ))
-        .map_err(|_| {
-            sacp::Error::invalid_params().data(format!("Unknown provider: {}", req.provider))
-        })?;
-
-        let key = match provider {
-            DictationProvider::OpenAI => OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY,
-            DictationProvider::Groq => GROQ_TRANSCRIPTION_MODEL_CONFIG_KEY,
-            DictationProvider::ElevenLabs => ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY,
-            #[cfg(feature = "local-inference")]
-            DictationProvider::Local => {
-                let model = whisper::get_model(&req.model_id)
-                    .ok_or_else(|| sacp::Error::invalid_params().data("Unknown model id"))?;
-                if !model.is_downloaded() {
-                    return Err(
-                        sacp::Error::invalid_params().data("Local Whisper model is not downloaded")
-                    );
-                }
-                whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY
-            }
-        };
-
-        crate::config::Config::global()
-            .set_param(key, req.model_id)
-            .internal_err()?;
-
-        Ok(EmptyResponse {})
-    }
-}
-
-fn dictation_model_config_key(provider: DictationProvider) -> Option<String> {
-    match provider {
-        DictationProvider::OpenAI => Some(OPENAI_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string()),
-        DictationProvider::Groq => Some(GROQ_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string()),
-        DictationProvider::ElevenLabs => {
-            Some(ELEVENLABS_TRANSCRIPTION_MODEL_CONFIG_KEY.to_string())
-        }
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => Some(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY.to_string()),
-    }
-}
-
-/// Returns the (param_name, default_model) pair used by `transcribe_with_provider`
-/// for remote dictation providers. Local inference is handled separately.
-fn dictation_transcribe_params(provider: DictationProvider) -> (&'static str, &'static str) {
-    match provider {
-        DictationProvider::OpenAI => ("model", OPENAI_TRANSCRIPTION_MODEL),
-        DictationProvider::Groq => ("model", GROQ_TRANSCRIPTION_MODEL),
-        DictationProvider::ElevenLabs => ("model_id", ELEVENLABS_TRANSCRIPTION_MODEL),
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => ("", ""),
-    }
-}
-
-fn dictation_default_model(provider: DictationProvider) -> Option<String> {
-    match provider {
-        DictationProvider::OpenAI => Some(OPENAI_TRANSCRIPTION_MODEL.to_string()),
-        DictationProvider::Groq => Some(GROQ_TRANSCRIPTION_MODEL.to_string()),
-        DictationProvider::ElevenLabs => Some(ELEVENLABS_TRANSCRIPTION_MODEL.to_string()),
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => Some(whisper::recommend_model().to_string()),
-    }
-}
-
-fn dictation_selected_model(config: &Config, provider: DictationProvider) -> Option<String> {
-    #[cfg(feature = "local-inference")]
-    if provider == DictationProvider::Local {
-        return config
-            .get(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .filter(|model_id| whisper::get_model(model_id).is_some())
-            .or_else(|| dictation_default_model(provider));
-    }
-
-    dictation_model_config_key(provider)
-        .and_then(|key| {
-            config
-                .get(&key, false)
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_owned))
-        })
-        .or_else(|| dictation_default_model(provider))
-}
-
-fn dictation_available_models(provider: DictationProvider) -> Vec<DictationModelOption> {
-    match provider {
-        DictationProvider::OpenAI => vec![DictationModelOption {
-            id: OPENAI_TRANSCRIPTION_MODEL.to_string(),
-            label: "Whisper-1".to_string(),
-            description: "OpenAI's hosted Whisper transcription model.".to_string(),
-        }],
-        DictationProvider::Groq => vec![DictationModelOption {
-            id: GROQ_TRANSCRIPTION_MODEL.to_string(),
-            label: "Whisper Large V3 Turbo".to_string(),
-            description: "Groq's fast hosted Whisper transcription model.".to_string(),
-        }],
-        DictationProvider::ElevenLabs => vec![DictationModelOption {
-            id: ELEVENLABS_TRANSCRIPTION_MODEL.to_string(),
-            label: "Scribe v1".to_string(),
-            description: "ElevenLabs' hosted speech-to-text model.".to_string(),
-        }],
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => whisper::available_models()
-            .iter()
-            .map(|model| DictationModelOption {
-                id: model.id.to_string(),
-                label: model.id.to_string(),
-                description: model.description.to_string(),
-            })
-            .collect(),
     }
 }
 
 pub struct GooseAcpHandler {
     pub agent: Arc<GooseAcpAgent>,
-}
-
-impl HandleDispatchFrom<Client> for GooseAcpHandler {
-    fn describe_chain(&self) -> impl std::fmt::Debug {
-        "goose-acp"
-    }
-
-    fn handle_dispatch_from(
-        &mut self,
-        message: Dispatch,
-        cx: ConnectionTo<Client>,
-    ) -> impl std::future::Future<Output = Result<Handled<Dispatch>, sacp::Error>> + Send {
-        let agent = self.agent.clone();
-
-        // The MatchDispatchFrom chain produces an ~85KB async state machine.
-        // Box::pin moves it to the heap so it doesn't overflow the tokio worker stack.
-        Box::pin(async move {
-            // InitializeRequest runs inline: it sets connection-scoped state
-            // (client fs/terminal capabilities) that later handlers read with
-            // defaults, so a pipelined NewSessionRequest must not race ahead of it.
-            MatchDispatchFrom::new(message, &cx)
-                .if_request(
-                    |req: InitializeRequest, responder: Responder<InitializeResponse>| async {
-                        responder.respond_with_result(agent.on_initialize(req).await)
-                    },
-                )
-                .await
-                .if_request(
-                    |_req: AuthenticateRequest, responder: Responder<AuthenticateResponse>| async {
-                        responder.respond(AuthenticateResponse::new())
-                    },
-                )
-                .await
-                .if_request(
-                    |req: NewSessionRequest, responder: Responder<NewSessionResponse>| async {
-                        let agent = agent.clone();
-                        let cx_clone = cx.clone();
-                        cx.spawn(async move {
-                            responder.respond_with_result(agent.on_new_session(&cx_clone, req).await)?;
-                            Ok(())
-                        })?;
-                        Ok(())
-                    },
-                )
-                .await
-                .if_request(
-                    |req: LoadSessionRequest, responder: Responder<LoadSessionResponse>| async {
-                        let agent = agent.clone();
-                        let cx_clone = cx.clone();
-                        cx.spawn(async move {
-                            match agent.on_load_session(&cx_clone, req).await {
-                                Ok(response) => {
-                                    responder.respond(response)?;
-                                }
-                                Err(e) => {
-                                    responder.respond_with_error(e)?;
-                                }
-                            }
-                            Ok(())
-                        })?;
-                        Ok(())
-                    },
-                )
-                .await
-                .if_request(
-                    |req: PromptRequest, responder: Responder<PromptResponse>| async {
-                        let agent = agent.clone();
-                        let cx_clone = cx.clone();
-                        cx.spawn(async move {
-                            match agent.on_prompt(&cx_clone, req).await {
-                                Ok(response) => {
-                                    responder.respond(response)?;
-                                }
-                                Err(e) => {
-                                    responder.respond_with_error(e)?;
-                                }
-                            }
-                            Ok(())
-                        })?;
-                        Ok(())
-                    },
-                )
-                .await
-                .if_notification(|notif: CancelNotification| async {
-                    let agent = agent.clone();
-                    agent.on_cancel(notif).await?;
-                    Ok(())
-                })
-                .await
-                // set_config_option (SACP 11) and legacy set_mode/set_model; custom _goose/* in otherwise.
-                .if_request({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |req: SetSessionConfigOptionRequest, responder: Responder<SetSessionConfigOptionResponse>| async move {
-                        let cx_spawn = cx.clone();
-                        cx.spawn(async move {
-                            let cx = cx_spawn;
-                            let value_id = req.value.as_value_id()
-                                .ok_or_else(|| sacp::Error::invalid_params().data("Expected a value ID"))?
-                                .clone();
-                            let session_id = req.session_id.clone();
-                            let sid = sid_short(session_id.0.as_ref());
-                            let config_id = req.config_id.0.to_string();
-                            let t_handler = std::time::Instant::now();
-                            match config_id.as_ref() {
-                                "provider" => {
-                                    Config::global().invalidate_secrets_cache();
-                                    match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
-                                        Ok(_) => {}
-                                        Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
-                                    }
-                                }
-                                "mode" => {
-                                    match agent.on_set_mode(&session_id.0, &value_id.0).await {
-                                        Ok(_) => {}
-                                        Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
-                                    }
-                                }
-                                "model" => {
-                                    match agent.on_set_model(&session_id.0, &value_id.0).await {
-                                        Ok(_) => {}
-                                        Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
-                                    }
-                                }
-                                other => {
-                                    responder.respond_with_error(
-                                        sacp::Error::invalid_params().data(format!("Unsupported config option: {}", other))
-                                    )?;
-                                    return Ok(());
-                                }
-                            }
-                            // Respond immediately using the current provider inventory snapshot.
-                            let (notification, config_options) = agent.build_config_update(&session_id).await?;
-                            cx.send_notification(notification)?;
-                            responder.respond(SetSessionConfigOptionResponse::new(config_options))?;
-
-                            let maybe_refresh = if config_id == "provider" {
-                                let provider_id = value_id.0.to_string();
-                                agent
-                                    .provider_inventory
-                                    .plan_refresh_jobs(std::slice::from_ref(&provider_id))
-                                    .await
-                                    .ok()
-                                    .and_then(|plan| {
-                                        plan.started
-                                            .into_iter()
-                                            .find(|job| job.provider_id == provider_id)
-                                    })
-                            } else {
-                                None
-                            };
-                            if let Some(refresh_job) = maybe_refresh {
-                                let agent_bg = agent.clone();
-                                let cx_bg = cx.clone();
-                                let session_id_bg = session_id.clone();
-                                tokio::spawn(async move {
-                                    let refresh_identity = refresh_job.identity;
-                                    let refresh_provider_id = refresh_job.provider_id;
-                                    let mut refresh_guard =
-                                        agent_bg.provider_inventory.refresh_guard(&refresh_identity);
-                                    let provider_result: Result<Arc<dyn Provider>> =
-                                        AssertUnwindSafe(async {
-                                            let session_agent =
-                                                agent_bg.get_session_agent(&session_id_bg.0, None).await?;
-                                            let provider = session_agent
-                                                .provider()
-                                                .await
-                                                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                                            let provider_name = provider.get_name().to_string();
-                                            if provider_name != refresh_provider_id {
-                                                return Err(anyhow::anyhow!(
-                                                    "provider changed before inventory refresh completed"
-                                                ));
-                                            }
-                                            Ok(provider)
-                                        })
-                                        .catch_unwind()
-                                .await
-                                .map_err(|_| {
-                                    anyhow::anyhow!("provider inventory refresh task panicked")
-                                })
-                                .and_then(|result| result);
-
-                                let fetch_result = match provider_result {
-                                    Ok(provider) => {
-                                        match ensure_refresh_identity_current(
-                                            &refresh_provider_id,
-                                            &refresh_identity,
-                                        )
-                                        .await
-                                        {
-                                            Ok(()) => match AssertUnwindSafe(
-                                                provider.fetch_recommended_models(),
-                                            )
-                                            .catch_unwind()
-                                            .await
-                                            {
-                                                Ok(Ok(models)) => Ok(models),
-                                                Ok(Err(error)) => {
-                                                    Err(anyhow::anyhow!(error.to_string()))
-                                                }
-                                                Err(_) => Err(anyhow::anyhow!(
-                                                    "provider inventory refresh task panicked"
-                                                )),
-                                            },
-                                            Err(error) => Err(error),
-                                        }
-                                    }
-                                    Err(error) => Err(error),
-                                };
-
-                                match fetch_result {
-                                    Ok(models) => match agent_bg
-                                        .provider_inventory
-                                        .store_refreshed_models_for_identity(
-                                            &refresh_identity,
-                                            &models,
-                                        )
-                                        .await
-                                    {
-                                        Ok(()) => {
-                                            refresh_guard.complete();
-                                            match agent_bg.build_config_update(&session_id_bg).await
-                                            {
-                                                Ok((fresh_notification, _)) => {
-                                                    let _ = cx_bg
-                                                        .send_notification(fresh_notification);
-                                                }
-                                                Err(error) => warn!(
-                                                    provider = %refresh_provider_id,
-                                                    error = %error,
-                                                    "failed to build config update after provider inventory refresh"
-                                                ),
-                                            }
-                                        }
-                                        Err(error) => warn!(
-                                            provider = %refresh_provider_id,
-                                            error = %error,
-                                            "failed to store refreshed provider inventory after config change"
-                                        ),
-                                    },
-                                    Err(error) => {
-                                        let error_message = error.to_string();
-                                        match agent_bg
-                                            .provider_inventory
-                                            .store_refresh_error_for_identity(
-                                                &refresh_identity,
-                                                error_message.clone(),
-                                            )
-                                            .await
-                                        {
-                                            Ok(()) => refresh_guard.complete(),
-                                            Err(store_error) => warn!(
-                                                provider = %refresh_provider_id,
-                                                error = %store_error,
-                                                refresh_error = %error_message,
-                                                "failed to store provider inventory refresh error after config change"
-                                            ),
-                                        }
-                                        warn!(
-                                            provider = %refresh_provider_id,
-                                            error = %error_message,
-                                            "provider inventory refresh failed after config change"
-                                        );
-                                    }
-                                }
-                                });
-                            }
-
-                            debug!(target: "perf", sid = %sid, ms = t_handler.elapsed().as_millis() as u64, config_id = %config_id, "perf: set_config_option done");
-                            Ok(())
-                        })?;
-                        Ok(())
-                    }
-                })
-                .await
-                .if_request({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |req: SetSessionModeRequest, responder: Responder<SetSessionModeResponse>| async move {
-                        let cx_spawn = cx.clone();
-                        cx.spawn(async move {
-                            let cx = cx_spawn;
-                            let session_id = req.session_id.clone();
-                            let mode_id = req.mode_id.clone();
-                            match agent.on_set_mode(&session_id.0, &mode_id.0).await {
-                                Ok(resp) => {
-                                    // Notify before responding so clients see the mode update before block_task unblocks.
-                                    cx.send_notification(SessionNotification::new(
-                                        session_id,
-                                        SessionUpdate::CurrentModeUpdate(
-                                            CurrentModeUpdate::new(mode_id),
-                                        ),
-                                    ))?;
-                                    responder.respond(resp)?;
-                                }
-                                Err(e) => {
-                                    responder.respond_with_error(e)?;
-                                }
-                            }
-                            Ok(())
-                        })?;
-                        Ok(())
-                    }
-                })
-                .await
-                .if_request({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |req: SetSessionModelRequest, responder: Responder<SetSessionModelResponse>| async move {
-                        let cx_spawn = cx.clone();
-                        cx.spawn(async move {
-                            let cx = cx_spawn;
-                            let session_id = req.session_id.clone();
-                            match agent.on_set_model(&session_id.0, &req.model_id.0).await {
-                                Ok(resp) => {
-                                    let (notification, _) = agent.build_config_update(&session_id).await?;
-                                    cx.send_notification(notification)?;
-                                    responder.respond(resp)?;
-                                }
-                                Err(e) => responder.respond_with_error(e)?,
-                            }
-                            Ok(())
-                        })?;
-                        Ok(())
-                    }
-                })
-                .await
-                .if_request({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |_req: ListSessionsRequest, responder: Responder<ListSessionsResponse>| async move {
-                        cx.spawn(async move {
-                            responder.respond(agent.on_list_sessions().await?)?;
-                            Ok(())
-                        })?;
-                        Ok(())
-                    }
-                })
-                .await
-                .if_request({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |req: CloseSessionRequest, responder: Responder<CloseSessionResponse>| async move {
-                        cx.spawn(async move {
-                            responder.respond(agent.on_close_session(&req.session_id.0).await?)?;
-                            Ok(())
-                        })?;
-                        Ok(())
-                    }
-                })
-                .await
-                .if_request({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |req: ForkSessionRequest, responder: Responder<ForkSessionResponse>| async move {
-                        let cx_spawn = cx.clone();
-                        cx.spawn(async move {
-                            responder.respond_with_result(agent.on_fork_session(&cx_spawn, req).await)?;
-                            Ok(())
-                        })?;
-                        Ok(())
-                    }
-                })
-                .await
-                .otherwise({
-                    let agent = agent.clone();
-                    let cx = cx.clone();
-                    |message: Dispatch| async move {
-                        match message {
-                            Dispatch::Request(req, responder) => {
-                                cx.spawn(async move {
-                                    match agent.handle_custom_request(&req.method, req.params).await {
-                                        Ok(json) => responder.respond(json)?,
-                                        Err(e) => responder.respond_with_error(e)?,
-                                    }
-                                    Ok(())
-                                })?;
-                                Ok(())
-                            }
-                            Dispatch::Response(result, router) => {
-                                debug!(method = %router.method(), id = %router.id(), ok = result.is_ok(), "routing response");
-                                router.respond_with_result(result)?;
-                                Ok(())
-                            }
-                            Dispatch::Notification(notif) => {
-                                debug!(method = %notif.method, "unhandled notification");
-                                Ok(())
-                            }
-                        }
-                    }
-                })
-                .await
-                .map(|()| Handled::Yes)
-        })
-    }
 }
 
 pub fn serve<R, W>(
@@ -4531,6 +3465,7 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
             goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
         },
     );
     let agent = server.create_agent().await?;
@@ -4541,12 +3476,12 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::conversation::message::{ToolRequest, ToolResponse};
-    use rmcp::model::{CallToolRequestParams, Content as RmcpContent};
-    use sacp::schema::{
+    use agent_client_protocol::schema::{
         EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
         PermissionOptionId, ResourceLink, SelectedPermissionOutcome, SessionConfigSelectOption,
         SessionMode, SessionModeId, SessionModeState,
     };
+    use rmcp::model::{CallToolRequestParams, Content as RmcpContent};
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
@@ -4685,6 +3620,296 @@ print(\"hello, world\")
     }
 
     #[test]
+    fn test_tool_call_identity_meta_uses_goose_extension_metadata() {
+        let request = ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("context7__query-docs")),
+            metadata: None,
+            tool_meta: Some(serde_json::json!({"goose_extension": "context7"})),
+        };
+
+        let meta = tool_call_identity_meta(&request).expect("expected metadata");
+
+        assert_eq!(
+            meta.get("goose"),
+            Some(&serde_json::json!({
+                "toolCall": {
+                    "toolName": "context7__query-docs",
+                    "extensionName": "context7",
+                },
+            })),
+        );
+    }
+
+    fn tool_request_block(id: &str) -> crate::conversation::message::MessageContent {
+        crate::conversation::message::MessageContent::ToolRequest(ToolRequest {
+            id: id.to_string(),
+            tool_call: Ok(CallToolRequestParams::new("dummy")),
+            metadata: None,
+            tool_meta: None,
+        })
+    }
+
+    fn text_block(text: &str) -> crate::conversation::message::MessageContent {
+        crate::conversation::message::MessageContent::text(text)
+    }
+
+    #[test]
+    fn extract_tool_chains_returns_empty_for_no_tool_blocks() {
+        let content = vec![text_block("hello"), text_block("world")];
+        assert!(extract_tool_chains(&content).is_empty());
+    }
+
+    #[test]
+    fn extract_tool_chains_returns_single_chain_when_only_tools() {
+        let content = vec![
+            tool_request_block("a"),
+            tool_request_block("b"),
+            tool_request_block("c"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(
+            chains,
+            vec![vec!["a".to_string(), "b".to_string(), "c".to_string()]]
+        );
+    }
+
+    #[test]
+    fn extract_tool_chains_breaks_on_text_block() {
+        let content = vec![
+            tool_request_block("a"),
+            tool_request_block("b"),
+            text_block("interlude"),
+            tool_request_block("c"),
+            tool_request_block("d"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(
+            chains,
+            vec![
+                vec!["a".to_string(), "b".to_string()],
+                vec!["c".to_string(), "d".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_tool_chains_includes_singletons() {
+        let content = vec![
+            tool_request_block("a"),
+            text_block("split"),
+            tool_request_block("b"),
+            text_block("split"),
+            tool_request_block("c"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(
+            chains,
+            vec![
+                vec!["a".to_string()],
+                vec!["b".to_string()],
+                vec!["c".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_tool_chains_keeps_run_when_text_leads_or_trails() {
+        let content = vec![
+            text_block("intro"),
+            tool_request_block("a"),
+            tool_request_block("b"),
+            text_block("outro"),
+        ];
+        let chains = extract_tool_chains(&content);
+        assert_eq!(chains, vec![vec!["a".to_string(), "b".to_string()]]);
+    }
+
+    fn buf_entry(tool_id: &str, msg_id: &str) -> (String, String) {
+        (tool_id.to_string(), msg_id.to_string())
+    }
+
+    #[test]
+    fn extend_chain_membership_skips_singleton_and_leaves_buffer() {
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let buffer = vec![buf_entry("a", "row_1")];
+
+        extend_chain_membership(&buffer, &mut membership);
+
+        assert_eq!(buffer.len(), 1, "buffer is left intact for caller");
+        assert!(
+            membership.is_empty(),
+            "single-tool runs should not register a chain",
+        );
+    }
+
+    #[test]
+    fn extend_chain_membership_registers_each_id_against_shared_chain() {
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let buffer = vec![
+            buf_entry("a", "row_first"),
+            buf_entry("b", "row_second"),
+            buf_entry("c", "row_third"),
+        ];
+
+        extend_chain_membership(&buffer, &mut membership);
+
+        assert_eq!(membership.len(), 3);
+        let chain_a = membership.get("a").expect("a registered");
+        let chain_b = membership.get("b").expect("b registered");
+        let chain_c = membership.get("c").expect("c registered");
+        assert!(
+            Arc::ptr_eq(chain_a, chain_b) && Arc::ptr_eq(chain_b, chain_c),
+            "every id in the run must point at the same ToolChain Arc",
+        );
+        assert_eq!(
+            chain_a.ids,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        );
+    }
+
+    #[test]
+    fn extend_chain_membership_anchors_on_first_row_for_split_messages() {
+        // Sequential tool use (Bedrock/Anthropic) emits each tool request as
+        // its own assistant message, with the tool response interleaved in
+        // between. The chain should still form, anchored on the *first*
+        // tool's row id so `update_tool_request_meta` can find that
+        // ToolRequest when persisting the summary.
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let buffer = vec![
+            buf_entry("toolu_bdrk_1", "row_for_tool_1"),
+            buf_entry("toolu_bdrk_2", "row_for_tool_2"),
+        ];
+
+        extend_chain_membership(&buffer, &mut membership);
+
+        let chain = membership
+            .get("toolu_bdrk_1")
+            .expect("first tool registered");
+        assert_eq!(
+            chain.ids,
+            vec!["toolu_bdrk_1".to_string(), "toolu_bdrk_2".to_string()],
+        );
+        let chain_via_second = membership
+            .get("toolu_bdrk_2")
+            .expect("second tool registered");
+        assert!(Arc::ptr_eq(chain, chain_via_second));
+    }
+
+    #[test]
+    fn extend_chain_membership_grows_chain_as_more_requests_arrive() {
+        // The streaming loop re-registers eagerly each time a new request
+        // arrives, so a chain that started at length 2 must grow to include
+        // a third tool whose response is yet to come. Both the original
+        // members and the new member must point at the new (extended) chain.
+        let mut membership: HashMap<String, Arc<ToolChain>> = HashMap::new();
+        let mut buffer = vec![buf_entry("a", "row_1"), buf_entry("b", "row_2")];
+        extend_chain_membership(&buffer, &mut membership);
+
+        buffer.push(buf_entry("c", "row_3"));
+        extend_chain_membership(&buffer, &mut membership);
+
+        let chain_a = membership.get("a").expect("a present");
+        let chain_b = membership.get("b").expect("b present");
+        let chain_c = membership.get("c").expect("c present");
+        assert!(Arc::ptr_eq(chain_a, chain_b) && Arc::ptr_eq(chain_b, chain_c));
+        assert_eq!(
+            chain_a.ids,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        );
+    }
+
+    #[test]
+    fn with_tool_chain_summary_meta_creates_fresh_when_none() {
+        let meta = with_tool_chain_summary_meta(None, "applied dark mode", 4)
+            .expect("meta should be created");
+        assert_eq!(
+            meta.get("goose"),
+            Some(&serde_json::json!({
+                "toolChainSummary": { "summary": "applied dark mode", "count": 4 },
+            })),
+        );
+    }
+
+    #[test]
+    fn with_tool_chain_summary_meta_preserves_existing_tool_call_identity() {
+        let existing = tool_call_identity_meta(&ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: None,
+        });
+        let meta = with_tool_chain_summary_meta(existing, "ran two commands", 2)
+            .expect("meta should be created");
+        let goose = meta.get("goose").expect("goose key");
+        assert_eq!(
+            goose.get("toolCall"),
+            Some(
+                &serde_json::json!({ "toolName": "developer__shell", "extensionName": "developer" })
+            )
+        );
+        assert_eq!(
+            goose.get("toolChainSummary"),
+            Some(&serde_json::json!({ "summary": "ran two commands", "count": 2 }))
+        );
+    }
+
+    #[test]
+    fn replay_attaches_chain_summary_meta_for_first_tool_request_with_persisted_summary() {
+        let tool_request = ToolRequest {
+            id: "req_first".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: Some(serde_json::json!({
+                crate::conversation::message::TOOL_META_CHAIN_SUMMARY_KEY: {
+                    "summary": "applied dark mode polish",
+                    "count": 3,
+                },
+            })),
+        };
+
+        let pending_tool_call = pending_tool_call_from_request(&tool_request);
+        let mut meta = pending_tool_call.identity_meta;
+        let chain_summary = tool_request
+            .persisted_chain_summary()
+            .expect("chain summary should be present");
+        meta = with_tool_chain_summary_meta(meta, &chain_summary.summary, chain_summary.count);
+
+        let goose = meta
+            .as_ref()
+            .and_then(|m| m.get("goose"))
+            .expect("replay meta must include a goose namespace");
+        assert_eq!(
+            goose.get("toolCall"),
+            Some(
+                &serde_json::json!({ "toolName": "developer__shell", "extensionName": "developer" })
+            ),
+            "replay must preserve identity meta alongside the chain summary",
+        );
+        assert_eq!(
+            goose.get("toolChainSummary"),
+            Some(&serde_json::json!({ "summary": "applied dark mode polish", "count": 3 })),
+            "replay must attach toolChainSummary so the chain header renders on first paint",
+        );
+    }
+
+    #[test]
+    fn replay_does_not_attach_chain_summary_for_tool_requests_without_persisted_summary() {
+        let tool_request = ToolRequest {
+            id: "req_second".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let chain_summary = tool_request.persisted_chain_summary();
+        assert!(
+            chain_summary.is_none(),
+            "non-first tool requests must not carry chain summaries",
+        );
+    }
+
+    #[test]
     fn test_summarize_tool_call_long_value_truncated() {
         let long_path = "a".repeat(80);
         let args = serde_json::json!({"path": long_path});
@@ -4756,6 +3981,7 @@ print(\"hello, world\")
             default_model: "unused".to_string(),
             configured: true,
             provider_type: crate::providers::base::ProviderType::Builtin,
+            category: crate::providers::catalog::ProviderSetupCategory::Model,
             config_keys: vec![],
             setup_steps: vec![],
             supports_refresh: true,
@@ -4960,6 +4186,90 @@ print(\"hello, world\")
         );
     }
 
+    #[test]
+    fn test_merge_replay_message_meta_preserves_existing_goose_meta() {
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![]).with_id("msg_1");
+        let existing = serde_json::from_value(serde_json::json!({
+            "goose": {
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            },
+        }))
+        .unwrap();
+
+        let merged = merge_replay_message_meta(Some(existing), &message);
+
+        assert_eq!(
+            merged.get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_1",
+                "mcpApp": {
+                    "resourceUri": "ui://trusted/app",
+                    "extensionName": "weather",
+                    "toolName": "weather__render",
+                },
+            })),
+        );
+    }
+
+    #[test]
+    fn test_merge_replay_message_meta_creates_fresh_when_none() {
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![]).with_id("msg_2");
+
+        let merged = merge_replay_message_meta(None, &message);
+
+        assert_eq!(
+            merged.get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_2",
+            })),
+        );
+    }
+
+    #[test]
+    fn test_merge_replay_message_meta_omits_message_id_when_none() {
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![]);
+
+        let merged = merge_replay_message_meta(None, &message);
+
+        assert_eq!(
+            merged.get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+            })),
+        );
+    }
+
+    #[test]
+    fn test_extract_tool_raw_output_preserves_structured_content() {
+        let mut result = CallToolResult::success(vec![RmcpContent::text("fallback")]);
+        result.structured_content = Some(serde_json::json!({
+            "restaurants": [
+                {
+                    "name": "Coffee Shop",
+                    "unitToken": "unit-1",
+                },
+            ],
+        }));
+
+        assert_eq!(
+            extract_tool_raw_output(&Ok(result)),
+            Some(serde_json::json!({
+                "restaurants": [
+                    {
+                        "name": "Coffee Shop",
+                        "unitToken": "unit-1",
+                    },
+                ],
+            })),
+        );
+    }
+
     fn make_session_with_usage(
         total_tokens: Option<i32>,
         input_tokens: Option<i32>,
@@ -4991,7 +4301,8 @@ print(\"hello, world\")
             provider_name: None,
             model_config: None,
             goose_mode: GooseMode::default(),
-            thread_id: None,
+            archived_at: None,
+            project_id: None,
         }
     }
 
@@ -5068,7 +4379,9 @@ print(\"hello, world\")
         ))
         ; "approve mode"
     )]
-    fn test_build_mode_state(current_mode: GooseMode) -> Result<SessionModeState, sacp::Error> {
+    fn test_build_mode_state(
+        current_mode: GooseMode,
+    ) -> Result<SessionModeState, agent_client_protocol::Error> {
         build_mode_state(current_mode)
     }
 

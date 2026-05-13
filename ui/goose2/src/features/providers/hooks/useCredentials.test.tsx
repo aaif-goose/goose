@@ -79,6 +79,12 @@ describe("useCredentials", () => {
   });
 
   it("saves secret fields through the credential API and syncs inventory without requiring restart", async () => {
+    const voiceConfigListener = vi.fn();
+    window.addEventListener(
+      "goose:voice-dictation-config",
+      voiceConfigListener,
+    );
+
     const { result } = renderHook(() => useCredentials());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -110,8 +116,14 @@ describe("useCredentials", () => {
         initialRefresh: saveResponse.refresh,
       }),
     );
+    expect(voiceConfigListener).toHaveBeenCalledTimes(1);
     expect(result.current).not.toHaveProperty("needsRestart");
     expect(result.current).not.toHaveProperty("restart");
+
+    window.removeEventListener(
+      "goose:voice-dictation-config",
+      voiceConfigListener,
+    );
   });
 
   it("records refresh failure as a provider warning without rejecting the save", async () => {
@@ -140,6 +152,12 @@ describe("useCredentials", () => {
   });
 
   it("suppresses stale refresh errors after deleting provider config", async () => {
+    const voiceConfigListener = vi.fn();
+    window.addEventListener(
+      "goose:voice-dictation-config",
+      voiceConfigListener,
+    );
+
     mocks.syncProviderInventory.mockResolvedValueOnce({
       entries: [
         {
@@ -162,7 +180,13 @@ describe("useCredentials", () => {
     await waitFor(() =>
       expect(result.current.syncingProviderIds.has("anthropic")).toBe(false),
     );
+    expect(voiceConfigListener).toHaveBeenCalledTimes(1);
     expect(result.current.inventoryWarnings.has("anthropic")).toBe(false);
+
+    window.removeEventListener(
+      "goose:voice-dictation-config",
+      voiceConfigListener,
+    );
   });
 
   it("invalidates native OAuth secrets before refreshing provider status", async () => {
@@ -199,6 +223,42 @@ describe("useCredentials", () => {
     expect(
       mocks.refreshProviderInventory.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.checkAllProviderStatus.mock.invocationCallOrder[1]);
+    expect(mocks.syncProviderInventory).toHaveBeenCalledWith(
+      ["chatgpt_codex"],
+      expect.objectContaining({
+        initialRefresh: refreshResponse,
+      }),
+    );
+    expect(result.current.configuredIds.has("chatgpt_codex")).toBe(true);
+  });
+
+  it("uses native OAuth ACP result without an extra status refresh", async () => {
+    const refreshResponse = {
+      started: ["chatgpt_codex"],
+      skipped: [],
+    };
+    mocks.checkAllProviderStatus.mockResolvedValueOnce([
+      {
+        providerId: "chatgpt_codex",
+        isConfigured: false,
+      },
+    ]);
+
+    const { result } = renderHook(() => useCredentials());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.completeNativeSetup("chatgpt_codex", {
+        status: {
+          providerId: "chatgpt_codex",
+          isConfigured: true,
+        },
+        refresh: refreshResponse,
+      });
+    });
+
+    expect(mocks.refreshProviderInventory).not.toHaveBeenCalled();
+    expect(mocks.checkAllProviderStatus).toHaveBeenCalledTimes(1);
     expect(mocks.syncProviderInventory).toHaveBeenCalledWith(
       ["chatgpt_codex"],
       expect.objectContaining({

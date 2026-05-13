@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { useState, type ComponentType } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getModelProviders } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
 import { ModelProviderRow } from "../ModelProviderRow";
 
 const Row = ModelProviderRow as unknown as ComponentType<
@@ -20,6 +22,76 @@ function modelProvider(id: string, status: "connected" | "not_configured") {
   };
 }
 
+const providerCatalog: ProviderCatalogEntry[] = [
+  {
+    id: "databricks",
+    displayName: "Databricks",
+    category: "model",
+    description: "Databricks Foundation Models",
+    setupMethod: "host_with_oauth_fallback",
+    fields: [
+      {
+        key: "DATABRICKS_HOST",
+        label: "Host URL",
+        secret: false,
+        required: true,
+        placeholder: "https://dbc-...cloud.databricks.com",
+      },
+      {
+        key: "DATABRICKS_TOKEN",
+        label: "Access Token",
+        secret: true,
+        required: false,
+        placeholder: "Paste your access token",
+      },
+    ],
+    group: "default",
+  },
+  {
+    id: "ollama",
+    displayName: "Ollama",
+    category: "model",
+    description: "Run local or self-hosted models",
+    setupMethod: "config_fields",
+    fields: [
+      {
+        key: "OLLAMA_HOST",
+        label: "Host",
+        secret: false,
+        required: true,
+        placeholder: "localhost or http://localhost:11434",
+        defaultValue: "http://localhost:11434",
+      },
+    ],
+    group: "default",
+  },
+  {
+    id: "anthropic",
+    displayName: "Anthropic",
+    category: "model",
+    description: "Claude models",
+    setupMethod: "single_api_key",
+    group: "default",
+  },
+  {
+    id: "google",
+    displayName: "Google Gemini",
+    category: "model",
+    description: "Gemini models",
+    setupMethod: "single_api_key",
+    fields: [
+      {
+        key: "GOOGLE_API_KEY",
+        label: "API Key",
+        secret: true,
+        required: true,
+        placeholder: "Paste your API key",
+      },
+    ],
+    group: "default",
+  },
+];
+
 describe("ModelProviderRow", () => {
   const onGetConfig = vi.fn();
   const onSaveFields = vi.fn();
@@ -28,6 +100,7 @@ describe("ModelProviderRow", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useProviderCatalogStore.getState().setEntries(providerCatalog);
     onGetConfig.mockResolvedValue([]);
     onSaveFields.mockResolvedValue(undefined);
     onRemoveConfig.mockResolvedValue(undefined);

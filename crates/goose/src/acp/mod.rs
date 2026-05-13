@@ -1,6 +1,7 @@
 mod adapters;
 mod common;
 pub(crate) mod fs;
+mod mcp_app_proxy;
 mod provider;
 pub mod server;
 pub mod server_factory;

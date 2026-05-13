@@ -13,6 +13,9 @@
     "openPanel": "Abrir panel de contexto",
     "ringAria": "Contexto: {{percent}}% usado"
   },
+  "errors": {
+    "sessionPreparationSuperseded": "La configuración de la sesión cambió durante la preparación. Intenta enviar de nuevo."
+  },
   "contextPanel": {
     "actions": {
       "chooseCreateAction": "Elegir acción de creación",
@@ -45,9 +48,7 @@
     "empty": {
       "folderNotSet": "Carpeta no configurada",
       "noChanges": "No hay cambios sin confirmar",
-      "noProjectAssigned": "No hay proyecto asignado",
-      "noExtensions": "No hay extensiones habilitadas",
-      "noMatchingExtensions": "No hay extensiones que coincidan"
+      "noProjectAssigned": "No hay proyecto asignado"
     },
     "errors": {
       "gitRead": "No se pudo leer el estado de git."
@@ -91,8 +92,6 @@
       "artifacts": "Artefactos",
       "changes": "Cambios",
       "changesOnBranch": "en",
-      "extensions": "Extensiones",
-      "searchExtensions": "Buscar extensiones...",
       "workspace": "Espacio de trabajo"
     }
   },
@@ -123,12 +122,16 @@
     "filesTitle": "Archivos"
   },
   "notifications": {
-    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio."
+    "compactionComplete": "Conversacion compactada. El contexto anterior se resumio.",
+    "moveError": "No se pudo mover el chat",
+    "renameError": "No se pudo cambiar el nombre del chat"
   },
   "message": {
     "copied": "Copiado",
     "defaultImageAlt": "Adjunto",
-    "mcpAppUnderConstruction": "🚧 La renderización de MCP App está en construcción",
+    "mcpApp": "MCP App",
+    "mcpAppLoading": "Cargando MCP App…",
+    "mcpAppRenderError": "No se pudo renderizar MCP App en línea.",
     "redactedThinking": "(pensamiento redactado)"
   },
   "persona": {
@@ -193,11 +196,46 @@
     "voiceInputAutoSubmitHint": "Di \"enviar\" para enviar"
   },
   "tools": {
+    "content": "Contenido",
     "fileNotFound": "Archivo no encontrado: {{path}}",
+    "inputSummary": {
+      "command": "Comando",
+      "line": "Línea",
+      "path": "Ruta",
+      "query": "Búsqueda",
+      "resource": "Recurso",
+      "tool": "Herramienta",
+      "workingDirectory": "Directorio de trabajo"
+    },
     "moreOutputs": "Más salidas ({{count}})",
     "openFile": "Abrir archivo",
     "openFolder": "Abrir carpeta",
+    "openNamed": "Abrir {{name}}",
     "openPath": "Abrir ruta",
-    "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos."
+    "pathOutsideRoots": "La ruta está fuera de las raíces permitidas de proyecto/artefactos.",
+    "structuredContent": "Contenido estructurado",
+    "structuredOutput": "Salida estructurada",
+    "structuredOutputLines": "{{count}} líneas"
+  },
+  "tool_chain": {
+    "summary": {
+      "active": "trabajando",
+      "reviewing_files": "revisando archivos",
+      "running_commands": "ejecutando comandos",
+      "checking_resources": "consultando recursos",
+      "updating_files": "actualizando archivos",
+      "steps_one": "{{count}} paso",
+      "steps_other": "{{count}} pasos"
+    },
+    "internalSteps": {
+      "show": "Mostrar pasos internos ({{count}})",
+      "hide": "Ocultar pasos internos ({{count}})"
+    },
+    "title": {
+      "active": "trabajando en {{count}} paso",
+      "active_other": "trabajando en {{count}} pasos",
+      "labeled": "{{label}} ({{count}} paso)",
+      "labeled_other": "{{label}} ({{count}} pasos)"
+    }
   }
 }

@@ -5,11 +5,12 @@ import {
   IconHome,
   IconLayoutSidebar,
   IconLayoutSidebarFilled,
+  IconApps,
   IconRobotFace,
   IconSearch,
   IconSettings,
-  IconStack,
 } from "@tabler/icons-react";
+import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
 import { GooseIcon } from "@/shared/ui/icons/GooseIcon";
 import { cn } from "@/shared/lib/cn";
@@ -17,12 +18,19 @@ import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import {
+  selectMessagesBySession,
+  selectSessionStateById,
+} from "@/features/chat/stores/chatSelectors";
+import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
+import {
   getVisibleSessions,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
+import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
 import { isSessionRunning } from "@/features/chat/lib/sessionActivity";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { Button } from "@/shared/ui/button";
 import { useSessionSearch } from "@/features/sessions/hooks/useSessionSearch";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
@@ -100,12 +108,12 @@ export function Sidebar({
     }
   });
 
-  const chatStore = useChatStore();
-  const { sessions } = useChatSessionStore();
-  const visibleSessions = getVisibleSessions(
-    sessions,
-    chatStore.messagesBySession,
-  );
+  const messagesBySession = useChatStore(selectMessagesBySession);
+  const sessionStateById = useChatStore(selectSessionStateById);
+  const sessions = useChatSessionStore(selectSessions);
+  const getPersonaById = useAgentStore((s) => s.getPersonaById);
+  const projectStoreProjects = useProjectStore(selectProjects);
+  const visibleSessions = getVisibleSessions(sessions, messagesBySession);
   const activeSessions = visibleSessions.filter(
     (session) => !session.archivedAt,
   );
@@ -131,7 +139,12 @@ export function Sidebar({
     icon: typeof IconRobotFace;
   }[] = [
     { id: "agents", label: t("navigation.agents"), icon: IconRobotFace },
-    { id: "skills", label: t("navigation.skills"), icon: IconStack },
+    { id: "skills", label: t("navigation.skills"), icon: SkillIcon },
+    {
+      id: "extensions",
+      label: t("navigation.extensions"),
+      icon: IconApps,
+    },
     {
       id: "session-history",
       label: t("navigation.sessionHistory"),
@@ -156,7 +169,8 @@ export function Sidebar({
     const standalone: SessionItem[] = [];
     for (const session of visibleSessions) {
       if (session.archivedAt) continue;
-      const runtime = chatStore.getSessionRuntime(session.id);
+      const runtime =
+        sessionStateById[session.id] ?? INITIAL_SESSION_CHAT_RUNTIME;
       const item: SessionItem = {
         id: session.id,
         title: session.title,
@@ -188,15 +202,11 @@ export function Sidebar({
     return { byProject, standalone: limitedStandalone };
   })();
 
-  const agentStoreState = useAgentStore();
-  const projectStoreState = useProjectStore();
-
   const sidebarResolvers = {
     getPersonaName: (personaId: string) =>
-      agentStoreState.getPersonaById(personaId)?.displayName,
+      getPersonaById(personaId)?.displayName,
     getProjectName: (projectId: string) =>
-      projectStoreState.projects.find((p: { id: string }) => p.id === projectId)
-        ?.name,
+      projectStoreProjects.find((p) => p.id === projectId)?.name,
   };
   const sidebarSearch = useSessionSearch({
     sessions: activeSessions,
@@ -461,7 +471,7 @@ export function Sidebar({
               size={collapsed ? "icon-sm" : "default"}
               onClick={onSettingsClick}
               className={cn(
-                "h-10 w-full rounded-md bg-transparent text-foreground hover:bg-transparent hover:text-foreground active:bg-transparent",
+                "h-10 w-full rounded-md bg-transparent text-muted-foreground/85 hover:bg-transparent hover:text-foreground active:bg-transparent",
                 collapsed
                   ? "justify-center p-3"
                   : "justify-start gap-2.5 px-3 py-2.5",

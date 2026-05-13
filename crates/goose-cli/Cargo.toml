@@ -39,7 +39,7 @@ strum = { workspace = true }
 tempfile = { workspace = true }
 etcetera = { workspace = true }
 rand = { workspace = true }
-rustyline = "15.0.0"
+rustyline = "18.0.0"
 tracing = { workspace = true }
 chrono = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time"] }
@@ -74,6 +74,7 @@ code-mode = ["goose/code-mode"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]
+vulkan = ["goose/vulkan", "local-inference"]
 telemetry = ["goose/telemetry"]
 otel = ["goose/otel"]
 # disables the update command
