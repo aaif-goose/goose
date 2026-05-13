@@ -215,13 +215,13 @@ pub async fn remove_config(
     if query.is_secret {
         config.delete_secret(&query.key)?;
     } else if query.key == "GOOSE_PROVIDER" || query.key == "active_provider" {
-        let _ = config.delete("active_provider");
-        let _ = config.delete("GOOSE_PROVIDER");
+        config.delete("active_provider")?;
+        config.delete("GOOSE_PROVIDER")?;
     } else if query.key == "GOOSE_MODEL" {
         if let Ok(provider) = config.get_goose_provider() {
             goose::config::set_active_provider(config, &provider, "")?;
         }
-        let _ = config.delete("GOOSE_MODEL");
+        config.delete("GOOSE_MODEL")?;
     } else {
         config.delete(&query.key)?;
     }
