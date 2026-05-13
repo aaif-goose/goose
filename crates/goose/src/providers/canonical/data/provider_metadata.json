@@ -99,17 +99,6 @@
     "model_count": 6
   },
   {
-    "id": "claudinio",
-    "display_name": "Claudinio",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.claudin.io/v1",
-    "doc": "https://claudin.io",
-    "env": [
-      "CLAUDINIO_API_KEY"
-    ],
-    "model_count": 1
-  },
-  {
     "id": "deepseek",
     "display_name": "DeepSeek",
     "npm": "@ai-sdk/openai-compatible",
@@ -176,18 +165,6 @@
     "model_count": 14
   },
   {
-    "id": "databricks",
-    "display_name": "Databricks",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://${DATABRICKS_HOST}/ai-gateway/mlflow/v1",
-    "doc": "https://docs.databricks.com/aws/en/machine-learning/foundation-models/",
-    "env": [
-      "DATABRICKS_HOST",
-      "DATABRICKS_TOKEN"
-    ],
-    "model_count": 25
-  },
-  {
     "id": "io-net",
     "display_name": "IO.NET",
     "npm": "@ai-sdk/openai-compatible",
@@ -208,17 +185,6 @@
       "DASHSCOPE_API_KEY"
     ],
     "model_count": 80
-  },
-  {
-    "id": "firepass",
-    "display_name": "Fireworks (Firepass)",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.fireworks.ai/inference/v1/",
-    "doc": "https://docs.fireworks.ai/firepass",
-    "env": [
-      "FIREPASS_API_KEY"
-    ],
-    "model_count": 1
   },
   {
     "id": "minimax-cn-coding-plan",
@@ -317,7 +283,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 5
   },
   {
     "id": "wandb",
@@ -339,7 +305,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 39
+    "model_count": 70
   },
   {
     "id": "dinference",
@@ -383,18 +349,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 357
-  },
-  {
-    "id": "auriko",
-    "display_name": "Auriko",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.auriko.ai/v1",
-    "doc": "https://docs.auriko.ai",
-    "env": [
-      "AURIKO_API_KEY"
-    ],
-    "model_count": 15
+    "model_count": 355
   },
   {
     "id": "morph",
@@ -438,7 +393,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 5
   },
   {
     "id": "zai",
@@ -460,7 +415,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 60
+    "model_count": 58
   },
   {
     "id": "stepfun",
@@ -482,7 +437,7 @@
     "env": [
       "NEBIUS_API_KEY"
     ],
-    "model_count": 31
+    "model_count": 49
   },
   {
     "id": "poe",
@@ -493,7 +448,7 @@
     "env": [
       "POE_API_KEY"
     ],
-    "model_count": 135
+    "model_count": 132
   },
   {
     "id": "helicone",
@@ -636,7 +591,7 @@
     "env": [
       "WAFER_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 3
   },
   {
     "id": "cloudferro-sherlock",
@@ -702,7 +657,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 92
+    "model_count": 82
   },
   {
     "id": "inference",
@@ -746,7 +701,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 76
+    "model_count": 63
   },
   {
     "id": "vultr",
@@ -834,7 +789,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 196
+    "model_count": 190
   },
   {
     "id": "cloudflare-workers-ai",
@@ -949,17 +904,6 @@
     "model_count": 14
   },
   {
-    "id": "sarvam",
-    "display_name": "Sarvam AI",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.sarvam.ai/v1",
-    "doc": "https://docs.sarvam.ai/api-reference-docs/getting-started/models",
-    "env": [
-      "SARVAM_API_KEY"
-    ],
-    "model_count": 2
-  },
-  {
     "id": "qihang-ai",
     "display_name": "QiHang",
     "npm": "@ai-sdk/openai-compatible",
@@ -1056,7 +1000,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 5
   },
   {
     "id": "zhipuai",
