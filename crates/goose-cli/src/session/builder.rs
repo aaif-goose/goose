@@ -245,7 +245,6 @@ fn resolve_provider_and_model(
         .clone()
         .or(saved_provider)
         .or_else(|| recipe_settings.and_then(|s| s.goose_provider.clone()))
-        .or_else(|| goose::config::get_active_provider(config))
         .or_else(|| config.get_goose_provider().ok())
         .unwrap_or_else(|| {
             output::render_error("No provider configured. Run 'goose configure' first.");
@@ -257,7 +256,6 @@ fn resolve_provider_and_model(
         .clone()
         .or_else(|| saved_model_config.as_ref().map(|mc| mc.model_name.clone()))
         .or_else(|| recipe_settings.and_then(|s| s.goose_model.clone()))
-        .or_else(|| goose::config::get_active_model(config))
         .or_else(|| config.get_goose_model().ok())
         .unwrap_or_else(|| {
             output::render_error("No model configured. Run 'goose configure' first.");

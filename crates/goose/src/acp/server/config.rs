@@ -63,8 +63,8 @@ impl GooseAcpAgent {
     ) -> Result<DefaultsReadResponse, agent_client_protocol::Error> {
         let config = self.config()?;
         Ok(DefaultsReadResponse {
-            provider_id: optional_config_string(&config, "GOOSE_PROVIDER")?,
-            model_id: optional_config_string(&config, "GOOSE_MODEL")?,
+            provider_id: config.get_goose_provider().ok(),
+            model_id: config.get_goose_model().ok(),
         })
     }
 
@@ -113,21 +113,9 @@ impl GooseAcpAgent {
         }
 
         let config = self.config()?;
-        config
-            .set_param_values(&[(
-                "GOOSE_PROVIDER".to_string(),
-                serde_json::Value::String(provider_id.clone()),
-            )])
+        let model = model_id.clone().unwrap_or_default();
+        crate::config::set_active_provider(&config, &provider_id, &model)
             .internal_err_ctx("Failed to save default provider")?;
-        if let Some(model_id) = model_id.as_deref() {
-            config
-                .set_param("GOOSE_MODEL", model_id)
-                .internal_err_ctx("Failed to save default model")?;
-        } else {
-            config
-                .delete("GOOSE_MODEL")
-                .internal_err_ctx("Failed to clear default model")?;
-        }
 
         Ok(DefaultsReadResponse {
             provider_id: Some(provider_id),
@@ -243,16 +231,5 @@ fn is_supported_voice_dictation_provider(value: &str) -> bool {
         {
             false
         }
-    }
-}
-
-fn optional_config_string(
-    config: &Config,
-    key: &str,
-) -> Result<Option<String>, agent_client_protocol::Error> {
-    match config.get_param::<String>(key) {
-        Ok(value) => Ok(Some(value)),
-        Err(crate::config::ConfigError::NotFound(_)) => Ok(None),
-        Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.to_string())),
     }
 }

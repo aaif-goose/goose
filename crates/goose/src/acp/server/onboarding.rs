@@ -325,17 +325,9 @@ fn apply_goose_config_candidate(
     let provider = yaml_string(&source, "GOOSE_PROVIDER");
     let model = yaml_string(&source, "GOOSE_MODEL");
     if provider.is_some() || model.is_some() {
-        let mut updates = Vec::new();
-        if let Some(provider) = provider.clone() {
-            updates.push((
-                "GOOSE_PROVIDER".to_string(),
-                serde_json::Value::String(provider),
-            ));
-        }
-        if let Some(model) = model.clone() {
-            updates.push(("GOOSE_MODEL".to_string(), serde_json::Value::String(model)));
-        }
-        target_config.set_param_values(&updates)?;
+        let p = provider.clone().unwrap_or_default();
+        let m = model.clone().unwrap_or_default();
+        crate::config::set_active_provider(target_config, &p, &m)?;
         result.provider_defaults = DefaultsReadResponse {
             provider_id: provider,
             model_id: model,
@@ -669,10 +661,7 @@ extensions:
         assert_eq!(result.imported.providers, 1);
         assert_eq!(result.imported.extensions, 1);
         assert_eq!(result.imported.skills, 1);
-        assert_eq!(
-            target_config.get_param::<String>("GOOSE_PROVIDER").unwrap(),
-            "openai"
-        );
+        assert_eq!(target_config.get_goose_provider().unwrap(), "openai");
         assert!(target.path().join("skills").join("reviewer").exists());
     }
 
