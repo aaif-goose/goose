@@ -325,7 +325,11 @@ fn apply_goose_config_candidate(
     let provider = yaml_string(&source, "GOOSE_PROVIDER");
     let model = yaml_string(&source, "GOOSE_MODEL");
     if let Some(ref p) = provider {
-        let m = model.clone().unwrap_or_default();
+        let m = model.clone().unwrap_or_else(|| {
+            crate::config::get_provider_entry(target_config, p)
+                .map(|e| e.model)
+                .unwrap_or_default()
+        });
         crate::config::set_active_provider(target_config, p, &m)?;
         result.provider_defaults = DefaultsReadResponse {
             provider_id: provider.clone(),
