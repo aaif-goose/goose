@@ -1,29 +1,24 @@
 use anyhow::Result;
-use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use futures::{StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::pin;
-use tokio_util::codec::{FramedRead, LinesCodec};
-use tokio_util::io::StreamReader;
 
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::embedding::EmbeddingCapable;
 use super::errors::ProviderError;
 use super::formats::databricks::create_request;
-use super::formats::openai_responses::{
-    create_responses_request, responses_api_to_streaming_message,
-};
+use super::formats::openai_responses::create_responses_request;
 use super::oauth;
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status_openai_compat, map_http_error_to_provider_error,
-    stream_openai_compat,
+    handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
+    stream_openai_compat, stream_responses_compat,
 };
 use super::retry::ProviderRetry;
 use super::utils::{ImageFormat, RequestLog};
@@ -41,7 +36,6 @@ use serde_json::json;
 const DEFAULT_CLIENT_ID: &str = "databricks-cli";
 const DEFAULT_REDIRECT_URL: &str = "http://localhost";
 const DEFAULT_SCOPES: &[&str] = &["all-apis", "offline_access"];
-const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
 const DATABRICKS_PROVIDER_NAME: &str = "databricks";
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
@@ -177,8 +171,11 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client =
-            ApiClient::with_timeout(host, auth_method, Duration::from_secs(DEFAULT_TIMEOUT_SECS))?;
+        let api_client = ApiClient::with_timeout(
+            host,
+            auth_method,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )?;
 
         let mut provider = Self {
             api_client,
@@ -242,7 +239,11 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client = ApiClient::with_timeout(host, auth_method, Duration::from_secs(600))?;
+        let api_client = ApiClient::with_timeout(
+            host,
+            auth_method,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )?;
 
         Ok(Self {
             api_client,
@@ -269,17 +270,19 @@ impl DatabricksProvider {
     }
 
     fn is_responses_model(model_name: &str) -> bool {
-        let normalized = model_name.to_ascii_lowercase();
-        normalized.contains("codex")
+        super::utils::is_openai_responses_model(model_name)
     }
 
     fn get_endpoint_path(&self, model_name: &str, is_embedding: bool) -> String {
         if is_embedding {
             "serving-endpoints/text-embedding-3-small/invocations".to_string()
-        } else if Self::is_responses_model(model_name) {
-            "serving-endpoints/responses".to_string()
         } else {
-            format!("serving-endpoints/{}/invocations", model_name)
+            let (clean_name, _) = super::utils::extract_reasoning_effort(model_name);
+            if Self::is_responses_model(&clean_name) {
+                "serving-endpoints/responses".to_string()
+            } else {
+                format!("serving-endpoints/{}/invocations", clean_name)
+            }
         }
     }
 
@@ -340,6 +343,10 @@ impl ProviderDef for DatabricksProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(model))
     }
+
+    fn supports_inventory_refresh() -> bool {
+        true
+    }
 }
 
 #[async_trait]
@@ -390,27 +397,14 @@ impl Provider for DatabricksProvider {
                         .api_client
                         .response_post(Some(session_id), &path, &payload_clone)
                         .await?;
-                    handle_status_openai_compat(resp).await
+                    handle_status(resp).await
                 })
                 .await
                 .inspect_err(|e| {
                     let _ = log.error(e);
                 })?;
 
-            let stream = response.bytes_stream().map_err(io::Error::other);
-
-            Ok(Box::pin(try_stream! {
-                let stream_reader = StreamReader::new(stream);
-                let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
-
-                let message_stream = responses_api_to_streaming_message(framed);
-                pin!(message_stream);
-                while let Some(message) = message_stream.next().await {
-                    let (message, usage) = message.map_err(|e| ProviderError::RequestFailed(format!("Stream decode error: {}", e)))?;
-                    log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
-                    yield (message, usage);
-                }
-            }))
+            stream_responses_compat(response, log)
         } else {
             let mut payload =
                 create_request(model_config, system, messages, tools, &self.image_format)?;
@@ -588,5 +582,50 @@ impl EmbeddingCapable for DatabricksProvider {
             .collect::<Result<Vec<Vec<f32>>>>()?;
 
         Ok(embeddings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_provider() -> DatabricksProvider {
+        DatabricksProvider {
+            api_client: super::super::api_client::ApiClient::new(
+                "https://example.com".to_string(),
+                super::super::api_client::AuthMethod::NoAuth,
+            )
+            .unwrap(),
+            auth: DatabricksAuth::Token("fake".into()),
+            model: ModelConfig::new_or_fail("databricks-gpt-5.4"),
+            image_format: ImageFormat::OpenAi,
+            retry_config: RetryConfig::default(),
+            fast_retry_config: RetryConfig::new(0, 0, 1.0, 0),
+            name: "databricks".into(),
+            token_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            instance_id: None,
+        }
+    }
+
+    #[test]
+    fn responses_models_route_to_responses_endpoint() {
+        let provider = test_provider();
+
+        for (model_name, expected_path) in [
+            ("gpt-5.4", "serving-endpoints/responses"),
+            ("databricks-gpt-5.4-high", "serving-endpoints/responses"),
+            ("databricks-gpt-5-4-xhigh", "serving-endpoints/responses"),
+            ("o3-mini", "serving-endpoints/responses"),
+            (
+                "databricks-claude-sonnet-4",
+                "serving-endpoints/databricks-claude-sonnet-4/invocations",
+            ),
+        ] {
+            assert_eq!(
+                provider.get_endpoint_path(model_name, false),
+                expected_path,
+                "unexpected endpoint for {model_name}"
+            );
+        }
     }
 }

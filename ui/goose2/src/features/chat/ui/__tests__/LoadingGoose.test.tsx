@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { LoadingGoose } from "../LoadingGoose";
 import chat from "@/shared/i18n/locales/en/chat.json";
 
-const { thinking, responding } = chat.loading;
+const { thinking, responding, compacting } = chat.loading;
 
 describe("LoadingGoose", () => {
   it("renders thinking copy for the thinking state", () => {
@@ -23,10 +23,13 @@ describe("LoadingGoose", () => {
     expect(
       screen.getByRole("status", { name: responding }),
     ).toBeInTheDocument();
+  });
 
-    rerender(<LoadingGoose chatState="compacting" />);
+  it("renders compacting copy for the compacting state", () => {
+    render(<LoadingGoose chatState="compacting" />);
+
     expect(
-      screen.getByRole("status", { name: responding }),
+      screen.getByRole("status", { name: compacting }),
     ).toBeInTheDocument();
   });
 

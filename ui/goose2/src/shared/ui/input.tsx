@@ -14,11 +14,19 @@ const variantStyles = {
 
 interface InputProps extends React.ComponentProps<"input"> {
   variant?: keyof typeof variantStyles;
+  inputRef?: React.Ref<HTMLInputElement>;
 }
 
-function Input({ className, type, variant = "default", ...props }: InputProps) {
+function Input({
+  className,
+  type,
+  variant = "default",
+  inputRef,
+  ...props
+}: InputProps) {
   return (
     <input
+      ref={inputRef}
       type={type}
       data-slot="input"
       className={cn(...variantStyles[variant], className)}

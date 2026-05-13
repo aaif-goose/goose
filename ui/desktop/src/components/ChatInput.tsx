@@ -52,11 +52,31 @@ interface PastedImage {
   error?: string;
 }
 
+const moveQueuedMessageToFront = (
+  messages: QueuedMessage[],
+  messageId: string
+): QueuedMessage[] => {
+  const selectedMessage = messages.find((msg) => msg.id === messageId);
+  if (!selectedMessage) return messages;
+  return [selectedMessage, ...messages.filter((msg) => msg.id !== messageId)];
+};
+
+const removeQueuedMessage = (messages: QueuedMessage[], messageId: string): QueuedMessage[] =>
+  messages.filter((msg) => msg.id !== messageId);
+
 const MAX_IMAGES_PER_MESSAGE = 10;
 
 // Constants for token and tool alerts
 const TOKEN_LIMIT_DEFAULT = 128000; // fallback for custom models that the backend doesn't know about
 const TOOLS_MAX_SUGGESTED = 60; // max number of tools before we show a warning
+
+const getContextAlertType = (totalTokens: number, tokenLimit: number): AlertType => {
+  const percentage = tokenLimit ? (totalTokens / tokenLimit) * 100 : 0;
+
+  if (percentage > 90) return AlertType.Error;
+  if (percentage > 75) return AlertType.Warning;
+  return AlertType.Info;
+};
 
 // Manual compact trigger message - must match backend constant
 const MANUAL_COMPACT_TRIGGER = '/compact';
@@ -84,7 +104,8 @@ const i18n = defineMessages({
   },
   tooManyTools: {
     id: 'chatInput.tooManyTools',
-    defaultMessage: 'Too many tools can degrade performance.\nTool count: {toolCount} (recommend: {recommended})',
+    defaultMessage:
+      'Too many tools can degrade performance.\nTool count: {toolCount} (recommend: {recommended})',
   },
   viewExtensions: {
     id: 'chatInput.viewExtensions',
@@ -211,7 +232,24 @@ export default function ChatInput({
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const queuePausedRef = useRef(false);
   const editingMessageIdRef = useRef<string | null>(null);
+  const sendAfterStopMessageIdRef = useRef<string | null>(null);
   const [lastInterruption, setLastInterruption] = useState<string | null>(null);
+
+  const pauseRemainingQueue = useCallback(() => {
+    queuePausedRef.current = true;
+  }, []);
+
+  const clearPendingSendAfterStop = useCallback((messageId?: string) => {
+    if (!messageId || sendAfterStopMessageIdRef.current === messageId) {
+      sendAfterStopMessageIdRef.current = null;
+    }
+  }, []);
+
+  const clearQueueState = useCallback(() => {
+    queuePausedRef.current = false;
+    sendAfterStopMessageIdRef.current = null;
+    setLastInterruption(null);
+  }, []);
 
   const { alerts, addAlert, clearAlerts } = useAlerts();
   const dropdownRef: React.RefObject<HTMLDivElement> = useRef<HTMLDivElement>(
@@ -306,20 +344,40 @@ export default function ChatInput({
   // Queue processing
   useEffect(() => {
     if (wasLoadingRef.current && !isLoading && queuedMessages.length > 0) {
-      // After an interruption, we should process the interruption message immediately
-      // The queue is only truly paused if there was an interruption AND we want to keep it paused
-      const shouldProcessQueue = !queuePausedRef.current || lastInterruption;
+      const pendingSendAfterStopId = sendAfterStopMessageIdRef.current;
+      const messageToSend = pendingSendAfterStopId
+        ? queuedMessages.find((message) => message.id === pendingSendAfterStopId)
+        : queuedMessages[0];
+
+      if (pendingSendAfterStopId && !messageToSend) {
+        clearPendingSendAfterStop(pendingSendAfterStopId);
+        wasLoadingRef.current = isLoading;
+        return;
+      }
+
+      if (!messageToSend) {
+        wasLoadingRef.current = isLoading;
+        return;
+      }
+
+      const shouldSendAfterStop = pendingSendAfterStopId === messageToSend.id;
+      const shouldProcessQueue = !queuePausedRef.current || lastInterruption || shouldSendAfterStop;
 
       if (shouldProcessQueue) {
-        const nextMessage = queuedMessages[0];
-        LocalMessageStorage.addMessage(nextMessage.content);
-        handleSubmit({ msg: nextMessage.content, images: nextMessage.images });
+        LocalMessageStorage.addMessage(messageToSend.content);
+        handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+        if (shouldSendAfterStop) {
+          clearPendingSendAfterStop(messageToSend.id);
+        }
         setQueuedMessages((prev) => {
-          const newQueue = prev.slice(1);
+          const newQueue = shouldSendAfterStop
+            ? removeQueuedMessage(prev, messageToSend.id)
+            : prev.slice(1);
           // If queue becomes empty after processing, clear the paused state
           if (newQueue.length === 0) {
-            queuePausedRef.current = false;
-            setLastInterruption(null);
+            clearQueueState();
+          } else if (shouldSendAfterStop) {
+            pauseRemainingQueue();
           }
           return newQueue;
         });
@@ -329,12 +387,20 @@ export default function ChatInput({
           setLastInterruption(null);
           // Keep the queue paused after sending the interruption message
           // User can manually resume if they want to continue with queued messages
-          queuePausedRef.current = true;
+          pauseRemainingQueue();
         }
       }
     }
     wasLoadingRef.current = isLoading;
-  }, [isLoading, queuedMessages, handleSubmit, lastInterruption]);
+  }, [
+    isLoading,
+    queuedMessages,
+    handleSubmit,
+    lastInterruption,
+    clearPendingSendAfterStop,
+    clearQueueState,
+    pauseRemainingQueue,
+  ]);
   const [mentionPopover, setMentionPopover] = useState<{
     isOpen: boolean;
     position: { x: number; y: number };
@@ -544,7 +610,7 @@ export default function ChatInput({
     // Show alert when either there is registered token usage, or we know the limit
     if ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit)) {
       addAlert({
-        type: AlertType.Info,
+        type: getContextAlertType(totalTokens || 0, tokenLimit),
         message: intl.formatMessage(i18n.contextWindow),
         progress: {
           current: totalTokens || 0,
@@ -564,7 +630,10 @@ export default function ChatInput({
     if (toolCount !== null && toolCount > TOOLS_MAX_SUGGESTED) {
       addAlert({
         type: AlertType.Warning,
-        message: intl.formatMessage(i18n.tooManyTools, { toolCount, recommended: TOOLS_MAX_SUGGESTED }),
+        message: intl.formatMessage(i18n.tooManyTools, {
+          toolCount,
+          recommended: TOOLS_MAX_SUGGESTED,
+        }),
         action: {
           text: intl.formatMessage(i18n.viewExtensions),
           onClick: () => setView('extensions'),
@@ -922,7 +991,7 @@ export default function ChatInput({
     if (interruptionMatch && interruptionMatch.shouldInterrupt) {
       setLastInterruption(interruptionMatch.matchedText);
       if (onStop) onStop();
-      queuePausedRef.current = true;
+      pauseRemainingQueue();
 
       // For interruptions, we need to queue the message to be sent after the stop completes
       // rather than trying to send it immediately while the system is still loading
@@ -1215,13 +1284,13 @@ export default function ChatInput({
 
   // Queue management functions - no storage persistence, only in-memory
   const handleRemoveQueuedMessage = (messageId: string) => {
+    clearPendingSendAfterStop(messageId);
     setQueuedMessages((prev) => prev.filter((msg) => msg.id !== messageId));
   };
 
   const handleClearQueue = () => {
     setQueuedMessages([]);
-    queuePausedRef.current = false;
-    setLastInterruption(null);
+    clearQueueState();
   };
 
   const handleReorderMessages = (reorderedMessages: QueuedMessage[]) => {
@@ -1238,20 +1307,17 @@ export default function ChatInput({
     const messageToSend = queuedMessages.find((msg) => msg.id === messageId);
     if (!messageToSend) return;
 
-    // Stop current processing and temporarily pause queue to prevent double-send
+    if (!isLoading) {
+      setQueuedMessages((prev) => removeQueuedMessage(prev, messageId));
+      LocalMessageStorage.addMessage(messageToSend.content);
+      handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+      return;
+    }
+
+    sendAfterStopMessageIdRef.current = messageId;
+    pauseRemainingQueue();
+    setQueuedMessages((prev) => moveQueuedMessageToFront(prev, messageId));
     if (onStop) onStop();
-    const wasPaused = queuePausedRef.current;
-    queuePausedRef.current = true;
-
-    // Remove the message from queue and send it immediately
-    setQueuedMessages((prev) => prev.filter((msg) => msg.id !== messageId));
-    LocalMessageStorage.addMessage(messageToSend.content);
-    handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
-
-    // Restore previous pause state after a brief delay to prevent race condition
-    setTimeout(() => {
-      queuePausedRef.current = wasPaused;
-    }, 100);
   };
 
   const handleResumeQueue = () => {
@@ -1315,7 +1381,7 @@ export default function ChatInput({
             data-testid="chat-input"
             autoFocus
             id="dynamic-textarea"
-            placeholder={isRecording ? '' : getNavigationShortcutText()}
+            placeholder={isRecording ? '' : getNavigationShortcutText(intl)}
             value={displayValue}
             onChange={handleChange}
             onCompositionStart={handleCompositionStart}
@@ -1448,7 +1514,7 @@ export default function ChatInput({
                       }`}
                     >
                       <Send className="w-4 h-4" />
-                      <span className="text-sm">Send</span>
+                      <span className="text-sm">{intl.formatMessage(i18n.send)}</span>
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -1559,7 +1625,9 @@ export default function ChatInput({
                     <p className="text-sm text-text-primary truncate" title={file.name}>
                       {file.name}
                     </p>
-                    <p className="text-xs text-text-secondary">{file.type || intl.formatMessage(i18n.unknownType)}</p>
+                    <p className="text-xs text-text-secondary">
+                      {file.type || intl.formatMessage(i18n.unknownType)}
+                    </p>
                   </div>
                 </div>
               )}
@@ -1675,7 +1743,9 @@ export default function ChatInput({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {recipe ? intl.formatMessage(i18n.viewEditRecipe) : intl.formatMessage(i18n.createRecipeFromSession)}
+                    {recipe
+                      ? intl.formatMessage(i18n.viewEditRecipe)
+                      : intl.formatMessage(i18n.createRecipeFromSession)}
                   </TooltipContent>
                 </Tooltip>
               </div>

@@ -80,7 +80,7 @@ export type CheckProviderRequest = {
     provider: string;
 };
 
-export type CommandType = 'Builtin' | 'Recipe' | 'Skill';
+export type CommandType = 'Builtin' | 'Recipe' | 'Skill' | 'Agent';
 
 /**
  * Configuration key metadata for provider setup
@@ -213,6 +213,14 @@ export type DeclarativeProviderConfig = {
     catalog_provider_id?: string | null;
     description?: string | null;
     display_name: string;
+    /**
+     * Controls whether `fetch_supported_models` calls the provider's `/v1/models`
+     * endpoint or returns the static `models` list directly.
+     *
+     * - `Some(false)` + non-empty `models`: return the static list; no API call.
+     * Construction fails if `models` is empty.
+     * - `Some(true)` or `None`: try the API; fall back to `models` on 404.
+     */
     dynamic_models?: boolean | null;
     engine: ProviderEngine;
     env_vars?: Array<EnvVarConfig> | null;
@@ -220,9 +228,11 @@ export type DeclarativeProviderConfig = {
     headers?: {
         [key: string]: string;
     } | null;
+    model_doc_link?: string | null;
     models: Array<ModelInfo>;
     name: string;
     requires_auth?: boolean;
+    setup_steps?: Array<string>;
     skip_canonical_filtering?: boolean;
     supports_streaming?: boolean | null;
     timeout_seconds?: number | null;
@@ -581,6 +591,10 @@ export type ImportAppRequest = {
 export type ImportAppResponse = {
     message: string;
     name: string;
+};
+
+export type ImportSessionNostrRequest = {
+    deeplink: string;
 };
 
 export type ImportSessionRequest = {
@@ -971,6 +985,10 @@ export type ProviderMetadata = {
      */
     model_doc_link: string;
     /**
+     * Hint shown in the model picker when this provider manages its own model selection.
+     */
+    model_selection_hint?: string | null;
+    /**
      * The unique identifier for this provider
      */
     name: string;
@@ -1241,8 +1259,15 @@ export type ScheduledJob = {
     currently_running?: boolean;
     id: string;
     last_run?: string | null;
+    parameters?: Array<Array<string>>;
     paused?: boolean;
     process_start_time?: string | null;
+    /**
+     * Original directory of the recipe file before it was copied to scheduled_recipes/.
+     * Preserved so that relative paths (sub-recipes, template includes) resolve correctly
+     * against the source tree rather than the scheduler's internal storage directory.
+     */
+    recipe_base_dir?: string | null;
     source: string;
 };
 
@@ -1250,6 +1275,7 @@ export type Session = {
     accumulated_input_tokens?: number | null;
     accumulated_output_tokens?: number | null;
     accumulated_total_tokens?: number | null;
+    archived_at?: string | null;
     conversation?: Conversation | null;
     created_at: string;
     extension_data: ExtensionData;
@@ -1260,11 +1286,11 @@ export type Session = {
     model_config?: ModelConfig | null;
     name: string;
     output_tokens?: number | null;
+    project_id?: string | null;
     provider_name?: string | null;
     recipe?: Recipe | null;
     schedule_id?: string | null;
     session_type?: SessionType;
-    thread_id?: string | null;
     total_tokens?: number | null;
     updated_at: string;
     user_recipe_values?: {
@@ -1344,6 +1370,17 @@ export type Settings = {
 export type SetupResponse = {
     message: string;
     success: boolean;
+};
+
+export type ShareSessionNostrRequest = {
+    relays?: Array<string>;
+};
+
+export type ShareSessionNostrResponse = {
+    deeplink: string;
+    eventId: string;
+    nevent: string;
+    relays: Array<string>;
 };
 
 export type SlashCommand = {
@@ -1749,18 +1786,24 @@ export type CallToolErrors = {
      */
     401: unknown;
     /**
+     * Forbidden - tool is not app-visible
+     */
+    403: ErrorResponse;
+    /**
      * Resource not found
      */
-    404: unknown;
+    404: ErrorResponse;
     /**
-     * Agent not initialized
+     * Frontend tool execution requires the frontend host
      */
-    424: unknown;
+    424: ErrorResponse;
     /**
      * Internal server error
      */
-    500: unknown;
+    500: ErrorResponse;
 };
+
+export type CallToolError = CallToolErrors[keyof CallToolErrors];
 
 export type CallToolResponses = {
     /**
@@ -2229,29 +2272,6 @@ export type ReadAllConfigResponses = {
 
 export type ReadAllConfigResponse = ReadAllConfigResponses[keyof ReadAllConfigResponses];
 
-export type BackupConfigData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/config/backup';
-};
-
-export type BackupConfigErrors = {
-    /**
-     * Internal server error
-     */
-    500: unknown;
-};
-
-export type BackupConfigResponses = {
-    /**
-     * Config file backed up
-     */
-    200: string;
-};
-
-export type BackupConfigResponse = BackupConfigResponses[keyof BackupConfigResponses];
-
 export type GetCanonicalModelInfoData = {
     body: ModelInfoQuery;
     path?: never;
@@ -2471,29 +2491,6 @@ export type RemoveExtensionResponses = {
 };
 
 export type RemoveExtensionResponse = RemoveExtensionResponses[keyof RemoveExtensionResponses];
-
-export type InitConfigData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/config/init';
-};
-
-export type InitConfigErrors = {
-    /**
-     * Internal server error
-     */
-    500: unknown;
-};
-
-export type InitConfigResponses = {
-    /**
-     * Config initialization check completed
-     */
-    200: string;
-};
-
-export type InitConfigResponse = InitConfigResponses[keyof InitConfigResponses];
 
 export type UpsertPermissionsData = {
     body: UpsertPermissionsQuery;
@@ -2808,29 +2805,6 @@ export type ReadConfigResponses = {
      */
     200: unknown;
 };
-
-export type RecoverConfigData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/config/recover';
-};
-
-export type RecoverConfigErrors = {
-    /**
-     * Internal server error
-     */
-    500: unknown;
-};
-
-export type RecoverConfigResponses = {
-    /**
-     * Config recovery attempted
-     */
-    200: string;
-};
-
-export type RecoverConfigResponse = RecoverConfigResponses[keyof RecoverConfigResponses];
 
 export type RemoveConfigData = {
     body: ConfigKeyQuery;
@@ -3830,7 +3804,7 @@ export type DeleteScheduleErrors = {
 
 export type DeleteScheduleResponses = {
     /**
-     * Scheduled job deleted successfully
+     * Scheduled job removed successfully
      */
     204: void;
 };
@@ -4131,6 +4105,37 @@ export type ImportSessionResponses = {
 };
 
 export type ImportSessionResponse = ImportSessionResponses[keyof ImportSessionResponses];
+
+export type ImportSessionNostrData = {
+    body: ImportSessionNostrRequest;
+    path?: never;
+    query?: never;
+    url: '/sessions/import/nostr';
+};
+
+export type ImportSessionNostrErrors = {
+    /**
+     * Bad request - Invalid Nostr share link
+     */
+    400: unknown;
+    /**
+     * Unauthorized - Invalid or missing API key
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type ImportSessionNostrResponses = {
+    /**
+     * Nostr shared session imported successfully
+     */
+    200: Session;
+};
+
+export type ImportSessionNostrResponse = ImportSessionNostrResponses[keyof ImportSessionNostrResponses];
 
 export type GetSessionInsightsData = {
     body?: never;
@@ -4513,6 +4518,42 @@ export type UpdateSessionNameResponses = {
      */
     200: unknown;
 };
+
+export type ShareSessionNostrData = {
+    body: ShareSessionNostrRequest;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/share/nostr';
+};
+
+export type ShareSessionNostrErrors = {
+    /**
+     * Unauthorized - Invalid or missing API key
+     */
+    401: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type ShareSessionNostrResponses = {
+    /**
+     * Session shared to Nostr successfully
+     */
+    200: ShareSessionNostrResponse;
+};
+
+export type ShareSessionNostrResponse2 = ShareSessionNostrResponses[keyof ShareSessionNostrResponses];
 
 export type UpdateSessionUserRecipeValuesData = {
     body: UpdateSessionUserRecipeValuesRequest;

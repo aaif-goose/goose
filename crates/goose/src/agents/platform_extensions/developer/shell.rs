@@ -3,13 +3,20 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::LazyLock;
+#[cfg(not(windows))]
+use std::sync::Arc;
+#[cfg(not(windows))]
+use std::sync::Mutex;
 use std::time::Duration;
 
 use rmcp::model::{CallToolResult, Content};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
+#[cfg(not(windows))]
+use tokio::sync::OnceCell;
+#[cfg(not(windows))]
+use tokio::task::JoinHandle;
 use tokio_stream::{wrappers::SplitStream, StreamExt};
 
 use crate::subprocess::SubprocessExt;
@@ -40,50 +47,103 @@ fn flatpak_spawn_process() -> std::process::Command {
     command
 }
 
-/// Resolve the preferred Unix shell, respecting GOOSE_SHELL.
-///
-/// Returns `(shell_path, is_user_configured)` — the boolean is true when
-/// `GOOSE_SHELL` was explicitly set, which matters in Flatpak mode: an
-/// explicit path is passed through as-is (the user likely intends a host
-/// path), whereas auto-detected defaults are reduced to their basename so
-/// the host's PATH resolves the correct binary.
-///
-/// In Flatpak mode without an explicit GOOSE_SHELL, we skip sandbox
-/// filesystem checks (e.g. `/bin/bash` existing inside the sandbox tells
-/// us nothing about the host) and default to `"bash"` directly.
 #[cfg(not(windows))]
-fn unix_shell() -> (String, bool) {
-    match std::env::var("GOOSE_SHELL") {
-        Ok(shell) => (shell, true),
-        Err(_) => {
-            let shell = if is_flatpak() {
-                // Don't inspect sandbox paths — they don't reflect the host.
-                // Default to "bash" (ubiquitous on Flatpak-capable Linux hosts).
-                "bash".to_string()
-            } else if PathBuf::from("/bin/bash").is_file() {
-                "/bin/bash".to_string()
-            } else {
-                std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string())
-            };
-            (shell, false)
-        }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnixShellFlavor {
+    Posix,
+    Nushell,
+}
+
+#[cfg(not(windows))]
+fn unix_shell_flavor(shell: &str) -> UnixShellFlavor {
+    let name = std::path::Path::new(shell)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(shell)
+        .to_ascii_lowercase();
+
+    match name.as_str() {
+        "nu" | "nushell" => UnixShellFlavor::Nushell,
+        _ => UnixShellFlavor::Posix,
     }
 }
 
-/// Return the shell reference to pass to `flatpak-spawn --host`.
-///
-/// If the user explicitly configured GOOSE_SHELL, honour the full path
-/// (it likely refers to a host binary, e.g. a Nix-profile shell).
-/// Otherwise strip to basename so the host's default PATH resolves it.
 #[cfg(not(windows))]
-fn flatpak_shell_arg(shell: &str, is_user_configured: bool) -> &str {
-    if is_user_configured {
-        shell
+fn unix_login_shell_command_args(shell: &str) -> [&'static str; 4] {
+    let probe = match unix_shell_flavor(shell) {
+        UnixShellFlavor::Nushell => "print ($env.PATH | str join (char esep))",
+        UnixShellFlavor::Posix => "echo $PATH",
+    };
+
+    ["-l", "-i", "-c", probe]
+}
+
+#[cfg(not(windows))]
+fn unix_shell_command_args(command_line: &str) -> [&str; 2] {
+    ["-c", command_line]
+}
+
+/// Resolve the preferred Unix shell for command execution, respecting GOOSE_SHELL.
+///
+/// Auto-detected shells are returned as basenames (e.g. `"bash"`) so that
+/// `Command::new` resolves them on `PATH` at spawn time — this also keeps
+/// Flatpak happy, where absolute paths from inside the sandbox don't match
+/// the host filesystem. `GOOSE_SHELL` is passed through as-is.
+///
+#[cfg(windows)]
+fn windows_shell() -> String {
+    std::env::var("GOOSE_SHELL").unwrap_or_else(|_| "cmd".to_string())
+}
+
+/// Short, human-readable name of a shell path (the file stem), used both to
+/// pick the right argument style on Windows and to tell the LLM which
+/// dialect to write in the tool description.
+#[cfg(windows)]
+fn shell_basename(shell: &str) -> String {
+    Path::new(shell)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("cmd")
+        .to_lowercase()
+}
+
+#[cfg(not(windows))]
+fn shell_basename(shell: &str) -> String {
+    std::path::Path::new(shell)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(shell)
+        .to_string()
+}
+
+/// Basename of the shell the `shell` tool will invoke, for use in the tool
+/// description so the LLM knows which dialect to write.
+#[cfg(windows)]
+pub fn shell_display_name() -> String {
+    shell_basename(&windows_shell())
+}
+
+#[cfg(not(windows))]
+pub fn shell_display_name() -> String {
+    shell_basename(&unix_shell())
+}
+
+/// The shell tool runs commands with `-c "..."`, and LLMs routinely emit
+/// POSIX-style patterns such as heredocs (`cat <<EOF > file`), `$VAR`
+/// expansion, and `2>&1` redirection. Non-POSIX shells (fish, csh, tcsh,
+/// nu, ...) reject or mis-interpret these, so we don't auto-select based
+/// on `$SHELL`: we check whether `bash` is on PATH and otherwise fall back
+/// to `sh`. Users who really want their login shell can opt in via
+/// `GOOSE_SHELL`.
+#[cfg(not(windows))]
+fn unix_shell() -> String {
+    if let Ok(shell) = std::env::var("GOOSE_SHELL") {
+        return shell;
+    }
+    if which::which("bash").is_ok() {
+        "bash".to_string()
     } else {
-        std::path::Path::new(shell)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("bash")
+        "sh".to_string()
     }
 }
 
@@ -142,33 +202,35 @@ pub struct ShellOutput {
 /// source the user's profile and recover the full PATH.
 #[cfg(not(windows))]
 fn resolve_login_shell_path() -> Option<String> {
-    let (shell, is_user_configured) = unix_shell();
+    use process_wrap::std::{CommandWrap, ProcessSession};
 
-    let mut child = if is_flatpak() {
-        flatpak_spawn_process()
-            .args([
-                flatpak_shell_arg(&shell, is_user_configured),
-                "-l",
-                "-i",
-                "-c",
-                "echo $PATH",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?
+    let shell = unix_shell();
+    let login_args = unix_login_shell_command_args(&shell);
+
+    // Build the command, varying only the flatpak vs direct invocation.
+    let mut cmd = if is_flatpak() {
+        let mut c = flatpak_spawn_process();
+        c.arg(&shell).args(login_args);
+        CommandWrap::from(c)
     } else {
-        std::process::Command::new(&shell)
-            .args(["-l", "-i", "-c", "echo $PATH"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?
+        let mut c = std::process::Command::new(&shell);
+        c.args(login_args);
+        CommandWrap::from(c)
     };
 
-    let mut stdout = child.stdout.take()?;
+    cmd.command_mut()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    // Spawn in a new session so that bash's interactive job-control setup
+    // (TIOCSPGRP) cannot steal the terminal foreground from goose, which
+    // would cause goose to receive SIGTTIN and be suspended on startup.
+    cmd.wrap(ProcessSession);
+
+    let mut child = cmd.spawn().ok()?;
+
+    let mut stdout = child.stdout().take()?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
@@ -179,7 +241,11 @@ fn resolve_login_shell_path() -> Option<String> {
     });
 
     match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(buf) if child.wait().is_ok_and(|s| s.success()) => {
+        Ok(buf)
+            if child
+                .wait()
+                .is_ok_and(|s: std::process::ExitStatus| s.success()) =>
+        {
             // Take the last non-empty line — interactive shells may emit
             // extra output from profile scripts before our echo.
             String::from_utf8_lossy(&buf)
@@ -191,20 +257,66 @@ fn resolve_login_shell_path() -> Option<String> {
         }
         _ => {
             let _ = child.kill();
-            let _ = child.wait();
             None
         }
     }
 }
 
+/// Resolves the user's login-shell PATH in the background.
+///
+/// Spawned at `ShellTool` construction so the ~hundreds-of-ms cost of sourcing
+/// the user's shell profile overlaps with the rest of agent setup and the
+/// first LLM turn. The first `shell` invocation awaits the result; subsequent
+/// invocations read from the cached cell.
 #[cfg(not(windows))]
-static LOGIN_PATH: LazyLock<Option<String>> = LazyLock::new(resolve_login_shell_path);
+struct LoginPath {
+    cell: OnceCell<Option<Arc<str>>>,
+    handle: Mutex<Option<JoinHandle<Option<String>>>>,
+}
+
+#[cfg(not(windows))]
+impl LoginPath {
+    fn spawn() -> Self {
+        let handle = tokio::task::spawn_blocking(resolve_login_shell_path);
+        Self {
+            cell: OnceCell::new(),
+            handle: Mutex::new(Some(handle)),
+        }
+    }
+
+    #[cfg(test)]
+    fn resolved(value: Option<String>) -> Self {
+        let cell = OnceCell::new();
+        let _ = cell.set(value.map(Arc::from));
+        Self {
+            cell,
+            handle: Mutex::new(None),
+        }
+    }
+
+    async fn get(&self) -> Option<Arc<str>> {
+        self.cell
+            .get_or_init(|| async {
+                let handle = self
+                    .handle
+                    .lock()
+                    .expect("login_path mutex poisoned")
+                    .take();
+                match handle {
+                    Some(h) => h.await.ok().flatten().map(Arc::from),
+                    None => None,
+                }
+            })
+            .await
+            .clone()
+    }
+}
 
 pub struct ShellTool {
     output_dir: tempfile::TempDir,
     call_index: AtomicUsize,
     #[cfg(not(windows))]
-    login_path: Option<String>,
+    login_path: LoginPath,
 }
 
 impl ShellTool {
@@ -213,7 +325,7 @@ impl ShellTool {
             output_dir: tempfile::tempdir()?,
             call_index: AtomicUsize::new(0),
             #[cfg(not(windows))]
-            login_path: LOGIN_PATH.clone(),
+            login_path: LoginPath::spawn(),
         })
     }
 
@@ -223,7 +335,7 @@ impl ShellTool {
             output_dir: tempfile::tempdir()?,
             call_index: AtomicUsize::new(0),
             #[cfg(not(windows))]
-            login_path: None,
+            login_path: LoginPath::resolved(None),
         })
     }
 
@@ -241,15 +353,17 @@ impl ShellTool {
         }
 
         #[cfg(not(windows))]
-        let login_path = self.login_path.as_deref();
+        let login_path = self.login_path.get().await;
+        #[cfg(not(windows))]
+        let login_path_ref = login_path.as_deref();
         #[cfg(windows)]
-        let login_path: Option<&str> = None;
+        let login_path_ref: Option<&str> = None;
 
         let execution = match run_command(
             &params.command,
             params.timeout_secs,
             working_dir,
-            login_path,
+            login_path_ref,
         )
         .await
         {
@@ -484,12 +598,8 @@ fn build_shell_command(
 ) -> tokio::process::Command {
     #[cfg(windows)]
     let mut command = {
-        let shell = std::env::var("GOOSE_SHELL").unwrap_or_else(|_| "cmd".to_string());
-        let shell_stem = Path::new(&shell)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("cmd")
-            .to_lowercase();
+        let shell = windows_shell();
+        let shell_stem = shell_basename(&shell);
         let mut command = tokio::process::Command::new(&shell);
         match shell_stem.as_str() {
             "pwsh" | "powershell" => {
@@ -514,7 +624,7 @@ fn build_shell_command(
 
     #[cfg(not(windows))]
     let mut command = {
-        let (shell, is_user_configured) = unix_shell();
+        let shell = unix_shell();
 
         if is_flatpak() {
             let mut command = flatpak_spawn_command();
@@ -524,16 +634,13 @@ fn build_shell_command(
             if let Some(path) = login_path {
                 command.arg(format!("--env=PATH={}", path));
             }
-            // If GOOSE_SHELL was explicitly set, honour the full path (likely a host
-            // binary). Otherwise use basename so the host's PATH resolves it.
             command
-                .arg(flatpak_shell_arg(&shell, is_user_configured))
-                .arg("-c")
-                .arg(command_line);
+                .arg(&shell)
+                .args(unix_shell_command_args(command_line));
             command
         } else {
             let mut command = tokio::process::Command::new(shell);
-            command.arg("-c").arg(command_line);
+            command.args(unix_shell_command_args(command_line));
             if let Some(path) = working_dir {
                 command.current_dir(path);
             }
@@ -742,6 +849,37 @@ mod tests {
         let observed = std::fs::canonicalize(extract_text(&result)).unwrap();
         let expected = std::fs::canonicalize(dir.path()).unwrap();
         assert_eq!(observed, expected);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_shell_flavor_detects_nushell_names() {
+        assert_eq!(unix_shell_flavor("nu"), UnixShellFlavor::Nushell);
+        assert_eq!(unix_shell_flavor("nushell"), UnixShellFlavor::Nushell);
+        assert_eq!(
+            unix_shell_flavor("/etc/profiles/per-user/can/bin/nu"),
+            UnixShellFlavor::Nushell
+        );
+        assert_eq!(unix_shell_flavor("/bin/bash"), UnixShellFlavor::Posix);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_login_shell_command_args_use_nushell_probe() {
+        assert_eq!(
+            unix_login_shell_command_args("nu"),
+            ["-l", "-i", "-c", "print ($env.PATH | str join (char esep))"]
+        );
+        assert_eq!(
+            unix_login_shell_command_args("/bin/bash"),
+            ["-l", "-i", "-c", "echo $PATH"]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_shell_command_args_wrap_commands_for_execution() {
+        assert_eq!(unix_shell_command_args("ls -la"), ["-c", "ls -la"]);
     }
 
     #[test]

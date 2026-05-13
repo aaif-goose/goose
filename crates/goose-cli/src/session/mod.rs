@@ -65,6 +65,10 @@ struct JsonOutput {
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonMetadata {
     total_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<i32>,
     status: String,
 }
 
@@ -84,6 +88,10 @@ enum StreamEvent {
     },
     Complete {
         total_tokens: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input_tokens: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output_tokens: Option<i32>,
     },
 }
 
@@ -500,6 +508,28 @@ impl CliSession {
 
     /// Start an interactive session, optionally with an initial message
     pub async fn interactive(&mut self, prompt: Option<String>) -> Result<()> {
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionStart, &self.session_id)
+            .await;
+
+        let result = self.run_interactive(prompt).await;
+
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
+            .await;
+
+        if result.is_ok() {
+            println!(
+                "\n  {} {}",
+                console::style("●").red(),
+                console::style(format!("session closed · {}", &self.session_id)).dim()
+            );
+        }
+
+        result
+    }
+
+    async fn run_interactive(&mut self, prompt: Option<String>) -> Result<()> {
         if let Some(prompt) = prompt {
             let msg = Message::user().with_text(&prompt);
             self.process_message(msg, CancellationToken::default(), true)
@@ -535,12 +565,6 @@ impl CliSession {
             self.handle_input(input, &history_manager, &mut editor, &conversation_strings)
                 .await?;
         }
-
-        println!(
-            "\n  {} {}",
-            console::style("●").red(),
-            console::style(format!("session closed · {}", &self.session_id)).dim()
-        );
 
         Ok(())
     }
@@ -665,6 +689,14 @@ impl CliSession {
                         );
                     }
                 }
+            }
+            InputResult::LoadSkills(names) => {
+                history.save(editor);
+                self.handle_load_skills(&names).await?;
+            }
+            InputResult::ListSkills => {
+                history.save(editor);
+                self.handle_list_skills().await?;
             }
         }
         Ok(())
@@ -875,6 +907,55 @@ impl CliSession {
         }
     }
 
+    async fn handle_load_skills(&mut self, names: &[String]) -> Result<()> {
+        // NOTE: We don't validate the skill names here because the load_skill tool will
+        // handle that and provide feedback to the user if any skill names are invalid.
+        let message = format!(
+            "Use the load_skill tool to load the following skills: {}.",
+            names
+                .iter()
+                .map(|n| format!("\"{}\"", n))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        self.push_message(Message::user().with_text(&message));
+        output::show_thinking();
+        let result = self
+            .process_agent_response(true, CancellationToken::default())
+            .await;
+        output::hide_thinking();
+        result?;
+
+        Ok(())
+    }
+
+    async fn handle_list_skills(&mut self) -> Result<()> {
+        use comfy_table::{presets, Cell, ContentArrangement, Table};
+        use goose::skills::list_installed_skills;
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let skills = list_installed_skills(Some(&cwd));
+
+        if skills.is_empty() {
+            println!("{}", console::style("No skills available.").yellow());
+            return Ok(());
+        }
+
+        let mut table = Table::new();
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+        table.load_preset(presets::ASCII_FULL);
+        table.set_header(vec!["Skill", "Description"]);
+
+        let mut sorted_skills = skills;
+        sorted_skills.sort_by(|a, b| a.name.cmp(&b.name));
+
+        for skill in &sorted_skills {
+            table.add_row(vec![Cell::new(&skill.name), Cell::new(&skill.description)]);
+        }
+
+        println!("{table}");
+        Ok(())
+    }
+
     async fn handle_compact(&mut self) -> Result<()> {
         let prompt = "Are you sure you want to compact this conversation? This will condense the message history.";
         let should_summarize = match cliclack::confirm(prompt).initial_value(true).interact() {
@@ -987,9 +1068,17 @@ impl CliSession {
 
     /// Process a single message and exit
     pub async fn headless(&mut self, prompt: String) -> Result<()> {
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionStart, &self.session_id)
+            .await;
         let message = Message::user().with_text(&prompt);
-        self.process_message(message, CancellationToken::default(), false)
-            .await?;
+        let result = self
+            .process_message(message, CancellationToken::default(), false)
+            .await;
+        self.agent
+            .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
+            .await;
+        result?;
         Ok(())
     }
 
@@ -1208,11 +1297,15 @@ impl CliSession {
                 .await
             {
                 Ok(session) => JsonMetadata {
-                    total_tokens: session.total_tokens,
+                    total_tokens: session.accumulated_total_tokens.or(session.total_tokens),
+                    input_tokens: session.accumulated_input_tokens.or(session.input_tokens),
+                    output_tokens: session.accumulated_output_tokens.or(session.output_tokens),
                     status: "completed".to_string(),
                 },
                 Err(_) => JsonMetadata {
                     total_tokens: None,
+                    input_tokens: None,
+                    output_tokens: None,
                     status: "completed".to_string(),
                 },
             };
@@ -1222,15 +1315,26 @@ impl CliSession {
             };
             println!("{}", serde_json::to_string_pretty(&json_output)?);
         } else if is_stream_json_mode {
-            let total_tokens = self
+            let session = self
                 .agent
                 .config
                 .session_manager
                 .get_session(&self.session_id, false)
                 .await
-                .ok()
-                .and_then(|s| s.total_tokens);
-            emit_stream_event(&StreamEvent::Complete { total_tokens });
+                .ok();
+            let (total_tokens, input_tokens, output_tokens) = match session {
+                Some(s) => (
+                    s.accumulated_total_tokens.or(s.total_tokens),
+                    s.accumulated_input_tokens.or(s.input_tokens),
+                    s.accumulated_output_tokens.or(s.output_tokens),
+                ),
+                None => (None, None, None),
+            };
+            emit_stream_event(&StreamEvent::Complete {
+                total_tokens,
+                input_tokens,
+                output_tokens,
+            });
         } else {
             println!();
         }

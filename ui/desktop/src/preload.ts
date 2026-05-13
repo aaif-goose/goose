@@ -147,6 +147,7 @@ type ElectronAPI = {
   setSpellcheck: (enable: boolean) => Promise<boolean>;
   getSpellcheckState: () => Promise<boolean>;
   openNotificationsSettings: () => Promise<boolean>;
+  isAnyWindowFocused: () => Promise<boolean>;
   onMouseBackButtonClicked: (callback: () => void) => void;
   offMouseBackButtonClicked: (callback: () => void) => void;
   on: (
@@ -183,6 +184,8 @@ type ElectronAPI = {
   refreshApp: (app: GooseApp) => Promise<void>;
   closeApp: (appName: string) => Promise<void>;
   addRecentDir: (dir: string) => Promise<boolean>;
+  listRecentDirs: () => Promise<string[]>;
+  listGitWorktreeDirs: (dir: string) => Promise<string[]>;
 };
 
 type AppConfigAPI = {
@@ -267,6 +270,7 @@ const electronAPI: ElectronAPI = {
   setSpellcheck: (enable: boolean) => ipcRenderer.invoke('set-spellcheck', enable),
   getSpellcheckState: () => ipcRenderer.invoke('get-spellcheck-state'),
   openNotificationsSettings: () => ipcRenderer.invoke('open-notifications-settings'),
+  isAnyWindowFocused: () => ipcRenderer.invoke('is-any-window-focused'),
   onMouseBackButtonClicked: (callback: () => void) => {
     // Wrapper that ignores the event parameter.
     const wrappedCallback = (_event: Electron.IpcRendererEvent) => callback();
@@ -336,6 +340,8 @@ const electronAPI: ElectronAPI = {
   refreshApp: (app: GooseApp) => ipcRenderer.invoke('refresh-app', app),
   closeApp: (appName: string) => ipcRenderer.invoke('close-app', appName),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
+  listRecentDirs: () => ipcRenderer.invoke('list-recent-dirs'),
+  listGitWorktreeDirs: (dir: string) => ipcRenderer.invoke('list-git-worktree-dirs', dir),
 };
 
 const appConfigAPI: AppConfigAPI = {

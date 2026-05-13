@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChatInput } from "../ChatInput";
+import { ChatInput } from "./chatInputTestUtils";
 
 vi.mock("@/features/providers/hooks/useAgentProviderStatus", () => ({
   useAgentProviderStatus: () => ({
@@ -44,6 +44,10 @@ vi.mock("@/shared/api/system", () => ({
   inspectAttachmentPaths: (paths: string[]) =>
     mockInspectAttachmentPaths(paths),
   readImageAttachment: (path: string) => mockReadImageAttachment(path),
+}));
+
+vi.mock("@/features/skills/api/skills", () => ({
+  listSkills: vi.fn().mockResolvedValue([]),
 }));
 
 const mockOpenDialog = vi.fn();

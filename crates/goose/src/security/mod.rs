@@ -13,6 +13,29 @@ use scanner::PromptInjectionScanner;
 use std::sync::OnceLock;
 use uuid::Uuid;
 
+fn set_default_if_not_exist(config: &Config, key: &str, default_env: &str) {
+    if config.get_param::<bool>(key).is_ok() {
+        return;
+    }
+    if let Ok(parsed) = config.get_param::<bool>(default_env) {
+        let _ = config.set_param(key, parsed);
+    }
+}
+
+pub fn set_security_defaults() {
+    let config = Config::global();
+    set_default_if_not_exist(
+        config,
+        "SECURITY_PROMPT_ENABLED",
+        "DEFAULT_SECURITY_PROMPT_ENABLED",
+    );
+    set_default_if_not_exist(
+        config,
+        "SECURITY_COMMAND_CLASSIFIER_ENABLED",
+        "DEFAULT_SECURITY_COMMAND_CLASSIFIER_ENABLED",
+    );
+}
+
 pub struct SecurityManager {
     scanner: OnceLock<PromptInjectionScanner>,
 }
@@ -29,6 +52,7 @@ pub struct SecurityResult {
 
 impl SecurityManager {
     pub fn new() -> Self {
+        set_security_defaults();
         Self {
             scanner: OnceLock::new(),
         }

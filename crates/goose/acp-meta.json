@@ -1,0 +1,279 @@
+{
+  "methods": [
+    {
+      "method": "_goose/extensions/add",
+      "requestType": "AddExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/extensions/remove",
+      "requestType": "RemoveExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/tools",
+      "requestType": "GetToolsRequest",
+      "responseType": "GetToolsResponse"
+    },
+    {
+      "method": "_goose/tool/call",
+      "requestType": "GooseToolCallRequest",
+      "responseType": "GooseToolCallResponse"
+    },
+    {
+      "method": "_goose/resource/read",
+      "requestType": "ReadResourceRequest",
+      "responseType": "ReadResourceResponse"
+    },
+    {
+      "method": "_goose/working_dir/update",
+      "requestType": "UpdateWorkingDirRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "session/delete",
+      "requestType": "DeleteSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions",
+      "requestType": "GetExtensionsRequest",
+      "responseType": "GetExtensionsResponse"
+    },
+    {
+      "method": "_goose/config/extensions/add",
+      "requestType": "AddConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions/remove",
+      "requestType": "RemoveConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/config/extensions/toggle",
+      "requestType": "ToggleConfigExtensionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/session/extensions",
+      "requestType": "GetSessionExtensionsRequest",
+      "responseType": "GetSessionExtensionsResponse"
+    },
+    {
+      "method": "_goose/providers/list",
+      "requestType": "ListProvidersRequest",
+      "responseType": "ListProvidersResponse"
+    },
+    {
+      "method": "_goose/providers/catalog/list",
+      "requestType": "ProviderCatalogListRequest",
+      "responseType": "ProviderCatalogListResponse"
+    },
+    {
+      "method": "_goose/providers/setup/catalog/list",
+      "requestType": "ProviderSetupCatalogListRequest",
+      "responseType": "ProviderSetupCatalogListResponse"
+    },
+    {
+      "method": "_goose/providers/catalog/template",
+      "requestType": "ProviderCatalogTemplateRequest",
+      "responseType": "ProviderCatalogTemplateResponse"
+    },
+    {
+      "method": "_goose/providers/custom/create",
+      "requestType": "CustomProviderCreateRequest",
+      "responseType": "CustomProviderCreateResponse"
+    },
+    {
+      "method": "_goose/providers/custom/read",
+      "requestType": "CustomProviderReadRequest",
+      "responseType": "CustomProviderReadResponse"
+    },
+    {
+      "method": "_goose/providers/custom/update",
+      "requestType": "CustomProviderUpdateRequest",
+      "responseType": "CustomProviderUpdateResponse"
+    },
+    {
+      "method": "_goose/providers/custom/delete",
+      "requestType": "CustomProviderDeleteRequest",
+      "responseType": "CustomProviderDeleteResponse"
+    },
+    {
+      "method": "_goose/providers/inventory/refresh",
+      "requestType": "RefreshProviderInventoryRequest",
+      "responseType": "RefreshProviderInventoryResponse"
+    },
+    {
+      "method": "_goose/providers/config/read",
+      "requestType": "ProviderConfigReadRequest",
+      "responseType": "ProviderConfigReadResponse"
+    },
+    {
+      "method": "_goose/providers/config/status",
+      "requestType": "ProviderConfigStatusRequest",
+      "responseType": "ProviderConfigStatusResponse"
+    },
+    {
+      "method": "_goose/providers/config/save",
+      "requestType": "ProviderConfigSaveRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
+      "method": "_goose/providers/config/delete",
+      "requestType": "ProviderConfigDeleteRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
+      "method": "_goose/providers/config/authenticate",
+      "requestType": "ProviderConfigAuthenticateRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
+      "method": "_goose/preferences/read",
+      "requestType": "PreferencesReadRequest",
+      "responseType": "PreferencesReadResponse"
+    },
+    {
+      "method": "_goose/preferences/save",
+      "requestType": "PreferencesSaveRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/preferences/remove",
+      "requestType": "PreferencesRemoveRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/defaults/read",
+      "requestType": "DefaultsReadRequest",
+      "responseType": "DefaultsReadResponse"
+    },
+    {
+      "method": "_goose/defaults/save",
+      "requestType": "DefaultsSaveRequest",
+      "responseType": "DefaultsReadResponse"
+    },
+    {
+      "method": "_goose/onboarding/import/scan",
+      "requestType": "OnboardingImportScanRequest",
+      "responseType": "OnboardingImportScanResponse"
+    },
+    {
+      "method": "_goose/onboarding/import/apply",
+      "requestType": "OnboardingImportApplyRequest",
+      "responseType": "OnboardingImportApplyResponse"
+    },
+    {
+      "method": "_goose/session/export",
+      "requestType": "ExportSessionRequest",
+      "responseType": "ExportSessionResponse"
+    },
+    {
+      "method": "_goose/session/import",
+      "requestType": "ImportSessionRequest",
+      "responseType": "ImportSessionResponse"
+    },
+    {
+      "method": "_goose/session/update_project",
+      "requestType": "UpdateSessionProjectRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/session/rename",
+      "requestType": "RenameSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/session/archive",
+      "requestType": "ArchiveSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/session/unarchive",
+      "requestType": "UnarchiveSessionRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/sources/create",
+      "requestType": "CreateSourceRequest",
+      "responseType": "CreateSourceResponse"
+    },
+    {
+      "method": "_goose/sources/list",
+      "requestType": "ListSourcesRequest",
+      "responseType": "ListSourcesResponse"
+    },
+    {
+      "method": "_goose/sources/update",
+      "requestType": "UpdateSourceRequest",
+      "responseType": "UpdateSourceResponse"
+    },
+    {
+      "method": "_goose/sources/delete",
+      "requestType": "DeleteSourceRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/sources/export",
+      "requestType": "ExportSourceRequest",
+      "responseType": "ExportSourceResponse"
+    },
+    {
+      "method": "_goose/sources/import",
+      "requestType": "ImportSourcesRequest",
+      "responseType": "ImportSourcesResponse"
+    },
+    {
+      "method": "_goose/dictation/transcribe",
+      "requestType": "DictationTranscribeRequest",
+      "responseType": "DictationTranscribeResponse"
+    },
+    {
+      "method": "_goose/dictation/config",
+      "requestType": "DictationConfigRequest",
+      "responseType": "DictationConfigResponse"
+    },
+    {
+      "method": "_goose/dictation/secret/save",
+      "requestType": "DictationSecretSaveRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/secret/delete",
+      "requestType": "DictationSecretDeleteRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/models/list",
+      "requestType": "DictationModelsListRequest",
+      "responseType": "DictationModelsListResponse"
+    },
+    {
+      "method": "_goose/dictation/models/download",
+      "requestType": "DictationModelDownloadRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/models/download/progress",
+      "requestType": "DictationModelDownloadProgressRequest",
+      "responseType": "DictationModelDownloadProgressResponse"
+    },
+    {
+      "method": "_goose/dictation/models/cancel",
+      "requestType": "DictationModelCancelRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/models/delete",
+      "requestType": "DictationModelDeleteRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/dictation/model/select",
+      "requestType": "DictationModelSelectRequest",
+      "responseType": "EmptyResponse"
+    }
+  ]
+}

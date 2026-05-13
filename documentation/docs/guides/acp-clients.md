@@ -177,7 +177,7 @@ npm install
 
 **Option 1: Auto-launch server (recommended)**
 
-The TUI will automatically start the goose-acp-server if you have it installed:
+The TUI will automatically start the goose acp server if you have it installed:
 
 ```bash
 npm start
@@ -191,7 +191,7 @@ For servers that support the draft standard ACP over Streamable HTTP https://git
 npm start -- --server http://HOST:PORT
 
 # example server
-cargo run -p goose-acp --bin goose-acp-server
+cargo run -p goose-cli --bin goose -- serve
 ```
 
 ### Single Prompt Mode

@@ -28,8 +28,8 @@ vi.mock("@/shared/hooks/useChangedFiles", () => ({
   }),
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: vi.fn(),
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: () => Promise.resolve(() => {}),
 }));
 
 vi.mock("@/shared/api/system", () => ({
@@ -74,6 +74,7 @@ describe("ContextPanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockRefetch.mockResolvedValue(undefined);
     mockRefetchFiles.mockResolvedValue(undefined);
     mockListDirectoryEntries.mockResolvedValue([]);
@@ -141,6 +142,24 @@ describe("ContextPanel", () => {
     await user.click(screen.getByRole("tab", { name: /files/i }));
 
     expect(screen.getByText("goose2")).toBeInTheDocument();
+  });
+
+  it("collapses and expands context panel sections", async () => {
+    const user = userEvent.setup();
+
+    renderContextPanel({
+      sessionId: "test-session-collapse",
+      projectName: "Desktop UX",
+      projectColor: "#22c55e",
+    });
+
+    await user.click(screen.getByRole("button", { name: /workspace/i }));
+
+    expect(screen.queryByText("Desktop UX")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /workspace/i }));
+
+    expect(screen.getByText("Desktop UX")).toBeInTheDocument();
   });
 
   it("shows path and init button for non-git directory", async () => {

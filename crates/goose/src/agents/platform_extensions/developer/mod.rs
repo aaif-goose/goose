@@ -15,7 +15,7 @@ use rmcp::model::{
 };
 use schemars::{schema_for, JsonSchema};
 use serde_json::Value;
-use shell::{ShellOutput, ShellParams, ShellTool};
+use shell::{shell_display_name, ShellOutput, ShellParams, ShellTool};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tree::{TreeParams, TreeTool};
@@ -57,6 +57,8 @@ fn developer_instructions() -> &'static str {
             and file sizes. When you need to search, prefer rg which correctly respects gitignored
             content. Then use cat or sed to gather the context you need, always reading before editing.
             Use write and edit to efficiently make changes. Test and verify as appropriate.
+
+            When running Python scripts or commands, always use `python3` instead of `python`.
         "}
     }
 }
@@ -120,7 +122,14 @@ impl DeveloperClient {
             )),
             Tool::new(
                 "shell".to_string(),
-                "Execute a shell command in the user's default shell in the current dir. Returns an object with stdout and stderr as separate fields. The output of each stream is limited to up to 2000 lines, and longer outputs will be saved to a temporary file.".to_string(),
+                format!(
+                    "Execute a shell command in the current dir. Commands run under `{shell}` \
+                     (set GOOSE_SHELL to override) - write command strings in that shell's \
+                     syntax. Returns an object with stdout and stderr as separate fields. The \
+                     output of each stream is limited to up to 2000 lines, and longer outputs \
+                     will be saved to a temporary file.",
+                    shell = shell_display_name(),
+                ),
                 Self::schema::<ShellParams>(),
             )
             .with_output_schema::<ShellOutput>()

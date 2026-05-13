@@ -43,6 +43,34 @@ static COMMANDS: &[CommandDef] = &[
     },
 ];
 
+pub struct ParsedSlashCommand<'a> {
+    pub command: &'a str,
+    pub params_str: &'a str,
+}
+
+pub fn parse_slash_command(message_text: &str) -> Option<ParsedSlashCommand<'_>> {
+    let mut trimmed = message_text.trim();
+
+    if COMPACT_TRIGGERS.contains(&trimmed) {
+        trimmed = COMPACT_TRIGGERS[0];
+    }
+
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+
+    let command_str = trimmed.strip_prefix('/').unwrap_or(trimmed);
+    let (command, params_str) = command_str
+        .split_once(' ')
+        .map(|(cmd, p)| (cmd, p.trim()))
+        .unwrap_or((command_str, ""));
+
+    Some(ParsedSlashCommand {
+        command,
+        params_str,
+    })
+}
+
 pub fn list_commands() -> &'static [CommandDef] {
     COMMANDS
 }
@@ -53,21 +81,12 @@ impl Agent {
         message_text: &str,
         session_id: &str,
     ) -> Result<Option<Message>> {
-        let mut trimmed = message_text.trim().to_string();
-
-        if COMPACT_TRIGGERS.contains(&trimmed.as_str()) {
-            trimmed = COMPACT_TRIGGERS[0].to_string();
-        }
-
-        if !trimmed.starts_with('/') {
+        let Some(parsed) = parse_slash_command(message_text) else {
             return Ok(None);
-        }
+        };
 
-        let command_str = trimmed.strip_prefix('/').unwrap_or(&trimmed);
-        let (command, params_str) = command_str
-            .split_once(' ')
-            .map(|(cmd, p)| (cmd, p.trim()))
-            .unwrap_or((command_str, ""));
+        let command = parsed.command;
+        let params_str = parsed.params_str;
 
         let params: Vec<&str> = if params_str.is_empty() {
             vec![]
@@ -140,8 +159,8 @@ impl Agent {
     }
 
     async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
-        use super::platform_extensions::skills::list_installed_skills;
-        use super::platform_extensions::SourceKind;
+        use crate::skills::list_installed_skills;
+        use goose_sdk::custom_requests::SourceType;
 
         let working_dir = self
             .config
@@ -153,7 +172,7 @@ impl Agent {
         let sources = list_installed_skills(working_dir.as_deref());
         let skills: Vec<_> = sources
             .iter()
-            .filter(|s| matches!(s.kind, SourceKind::Skill | SourceKind::BuiltinSkill))
+            .filter(|s| matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill))
             .collect();
 
         let mut output = String::new();
@@ -161,11 +180,12 @@ impl Agent {
             output.push_str("No skills installed.\n\n");
             output.push_str("Skills are loaded from SKILL.md files in:\n");
             output.push_str("  - ~/.agents/skills/ (global)\n");
+            output.push_str("  - ~/.agents/plugins/*/skills/ (installed plugins)\n");
             output.push_str("  - .agents/skills/ (in current project)\n");
         } else {
             output.push_str(&format!("**Installed skills ({}):**\n\n", skills.len()));
             for skill in &skills {
-                let kind_label = if skill.kind == SourceKind::BuiltinSkill {
+                let kind_label = if skill.source_type == SourceType::BuiltinSkill {
                     " *(builtin)*"
                 } else {
                     ""
@@ -439,5 +459,29 @@ impl Agent {
             .join("\n\n");
 
         Ok(Some(Message::user().with_text(prompt)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_slash_command_splits_on_literal_space() {
+        let parsed = parse_slash_command("/speckit.plan hello world").unwrap();
+
+        assert_eq!(parsed.command, "speckit.plan");
+        assert_eq!(parsed.params_str, "hello world");
+    }
+
+    #[test]
+    fn parse_slash_command_does_not_split_on_tab_or_newline() {
+        let parsed = parse_slash_command("/speckit.plan\thello").unwrap();
+        assert_eq!(parsed.command, "speckit.plan\thello");
+        assert_eq!(parsed.params_str, "");
+
+        let parsed = parse_slash_command("/speckit.plan\nhello").unwrap();
+        assert_eq!(parsed.command, "speckit.plan\nhello");
+        assert_eq!(parsed.params_str, "");
     }
 }

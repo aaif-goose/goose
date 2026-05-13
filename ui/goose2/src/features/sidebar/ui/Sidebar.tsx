@@ -1,31 +1,49 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  IconHistory,
+  IconHome,
   IconLayoutSidebar,
   IconLayoutSidebarFilled,
+  IconApps,
+  IconRobotFace,
+  IconSearch,
+  IconSettings,
 } from "@tabler/icons-react";
-import { BookOpen, Bot, History, Home, Search } from "lucide-react";
+import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
 import { GooseIcon } from "@/shared/ui/icons/GooseIcon";
 import { cn } from "@/shared/lib/cn";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
-import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
+import {
+  selectMessagesBySession,
+  selectSessionStateById,
+} from "@/features/chat/stores/chatSelectors";
+import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
+import {
+  getVisibleSessions,
+  useChatSessionStore,
+} from "@/features/chat/stores/chatSessionStore";
+import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
 import { isSessionRunning } from "@/features/chat/lib/sessionActivity";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { Button } from "@/shared/ui/button";
 import { useSessionSearch } from "@/features/sessions/hooks/useSessionSearch";
+import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
+import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSearchResults } from "./SidebarSearchResults";
-import { useSidebarHighlight } from "./useSidebarHighlight";
 
 interface SidebarProps {
   collapsed: boolean;
   width?: number;
   isResizing?: boolean;
   onCollapse: () => void;
+  onSettingsClick?: () => void;
   onNewChatInProject?: (projectId: string) => void;
   onNewChat?: () => void;
   onCreateProject?: () => void;
@@ -49,12 +67,39 @@ interface SidebarProps {
 }
 
 const EXPANDED_PROJECTS_STORAGE_KEY = "goose:sidebar:expanded-projects";
+const SECTION_VISIBILITY_STORAGE_KEY = "goose:sidebar:section-visibility";
+type SidebarSectionVisibility = {
+  projects: boolean;
+  recents: boolean;
+};
+
+function getStoredSectionVisibility(): SidebarSectionVisibility {
+  const defaults = { projects: true, recents: true };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const stored = window.localStorage.getItem(SECTION_VISIBILITY_STORAGE_KEY);
+    if (!stored) return defaults;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return defaults;
+    return {
+      projects:
+        typeof parsed.projects === "boolean"
+          ? parsed.projects
+          : defaults.projects,
+      recents:
+        typeof parsed.recents === "boolean" ? parsed.recents : defaults.recents,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 export function Sidebar({
   collapsed,
-  width = 240,
+  width = SIDE_PANEL_DEFAULT_WIDTH,
   isResizing = false,
   onCollapse,
+  onSettingsClick,
   onNewChatInProject,
   onNewChat,
   onCreateProject,
@@ -72,7 +117,7 @@ export function Sidebar({
   className,
   projects,
 }: SidebarProps) {
-  const { t, i18n } = useTranslation(["sidebar", "common"]);
+  const { t, i18n } = useTranslation(["sidebar", "common", "settings"]);
   const [expanded, setExpanded] = useState(!collapsed);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const prevCollapsed = useRef(collapsed);
@@ -89,11 +134,18 @@ export function Sidebar({
       return {};
     }
   });
+  const [sectionVisibility, setSectionVisibility] = useState(
+    getStoredSectionVisibility,
+  );
 
-  const chatStore = useChatStore();
-  const { sessions } = useChatSessionStore();
-  const activeSessions = sessions.filter(
-    (session) => !session.draft && !session.archivedAt,
+  const messagesBySession = useChatStore(selectMessagesBySession);
+  const sessionStateById = useChatStore(selectSessionStateById);
+  const sessions = useChatSessionStore(selectSessions);
+  const getPersonaById = useAgentStore((s) => s.getPersonaById);
+  const projectStoreProjects = useProjectStore(selectProjects);
+  const visibleSessions = getVisibleSessions(sessions, messagesBySession);
+  const activeSessions = visibleSessions.filter(
+    (session) => !session.archivedAt,
   );
 
   useEffect(() => {
@@ -111,16 +163,24 @@ export function Sidebar({
   const labelTransition = "transition-[opacity,width] duration-300 ease-out";
   const labelVisible = expanded && !collapsed;
   const defaultTitle = t("common:session.defaultTitle");
-  const navItems: readonly { id: AppView; label: string; icon: typeof Bot }[] =
-    [
-      { id: "agents", label: t("navigation.agents"), icon: Bot },
-      { id: "skills", label: t("navigation.skills"), icon: BookOpen },
-      {
-        id: "session-history",
-        label: t("navigation.sessionHistory"),
-        icon: History,
-      },
-    ];
+  const navItems: readonly {
+    id: AppView;
+    label: string;
+    icon: typeof IconRobotFace;
+  }[] = [
+    { id: "agents", label: t("navigation.agents"), icon: IconRobotFace },
+    { id: "skills", label: t("navigation.skills"), icon: SkillIcon },
+    {
+      id: "extensions",
+      label: t("navigation.extensions"),
+      icon: IconApps,
+    },
+    {
+      id: "session-history",
+      label: t("navigation.sessionHistory"),
+      icon: IconHistory,
+    },
+  ];
 
   const MAX_RECENTS = 20;
   const validProjectIds = new Set(projects.map((project) => project.id));
@@ -137,9 +197,10 @@ export function Sidebar({
     };
     const byProject: Record<string, SessionItem[]> = {};
     const standalone: SessionItem[] = [];
-    for (const session of sessions) {
-      if (session.draft || session.archivedAt) continue;
-      const runtime = chatStore.getSessionRuntime(session.id);
+    for (const session of visibleSessions) {
+      if (session.archivedAt) continue;
+      const runtime =
+        sessionStateById[session.id] ?? INITIAL_SESSION_CHAT_RUNTIME;
       const item: SessionItem = {
         id: session.id,
         title: session.title,
@@ -171,15 +232,11 @@ export function Sidebar({
     return { byProject, standalone: limitedStandalone };
   })();
 
-  const agentStoreState = useAgentStore();
-  const projectStoreState = useProjectStore();
-
   const sidebarResolvers = {
     getPersonaName: (personaId: string) =>
-      agentStoreState.getPersonaById(personaId)?.displayName,
+      getPersonaById(personaId)?.displayName,
     getProjectName: (projectId: string) =>
-      projectStoreState.projects.find((p: { id: string }) => p.id === projectId)
-        ?.name,
+      projectStoreProjects.find((p) => p.id === projectId)?.name,
   };
   const sidebarSearch = useSessionSearch({
     sessions: activeSessions,
@@ -191,7 +248,7 @@ export function Sidebar({
 
   useEffect(() => {
     if (!activeSessionId) return;
-    const activeSession = sessions.find((s) => s.id === activeSessionId);
+    const activeSession = visibleSessions.find((s) => s.id === activeSessionId);
     const projectId = activeSession?.projectId;
     if (projectId) {
       setExpandedProjects((prev) => {
@@ -199,7 +256,7 @@ export function Sidebar({
         return { ...prev, [projectId]: true };
       });
     }
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId, visibleSessions]);
 
   useEffect(() => {
     try {
@@ -211,6 +268,17 @@ export function Sidebar({
       // localStorage may be unavailable
     }
   }, [expandedProjects]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SECTION_VISIBILITY_STORAGE_KEY,
+        JSON.stringify(sectionVisibility),
+      );
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, [sectionVisibility]);
 
   useEffect(() => {
     if (projects.length === 0) return;
@@ -240,58 +308,9 @@ export function Sidebar({
 
   const toggleProject = (projectId: string) =>
     setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
-
-  const navRef = useRef<HTMLElement>(null);
-  const homeRef = useRef<HTMLButtonElement>(null);
-  const navItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-
-  const {
-    currentRect,
-    isHovering,
-    isResizing: isHighlightResizing,
-    onItemMouseEnter,
-    onNavMouseLeave,
-    updateActiveRect,
-  } = useSidebarHighlight(navRef);
-
-  const activeDraft = activeSessionId
-    ? sessions.find((s) => s.id === activeSessionId && s.draft)
-    : undefined;
-  const activeProjectId = activeDraft?.projectId ?? null;
-
-  useEffect(() => {
-    if (activeDraft) {
-      if (!activeProjectId) updateActiveRect(null);
-      return;
-    }
-    if (activeSessionId) return;
-    if (activeView === "home") {
-      updateActiveRect(homeRef.current);
-    } else if (activeView && navItemRefs.current[activeView]) {
-      updateActiveRect(navItemRefs.current[activeView]);
-    } else {
-      updateActiveRect(null);
-    }
-  }, [
-    activeSessionId,
-    activeDraft,
-    activeProjectId,
-    activeView,
-    updateActiveRect,
-  ]);
-
-  const activeSessionRefCallback = useCallback(
-    (el: HTMLElement | null) => {
-      if (activeSessionId && el) updateActiveRect(el);
-    },
-    [activeSessionId, updateActiveRect],
-  );
-  const activeProjectRefCallback = useCallback(
-    (el: HTMLElement | null) => {
-      if (activeProjectId && el) updateActiveRect(el);
-    },
-    [activeProjectId, updateActiveRect],
-  );
+  const toggleSection = (section: keyof SidebarSectionVisibility) => {
+    setSectionVisibility((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
 
   return (
     <div
@@ -302,7 +321,7 @@ export function Sidebar({
       )}
       style={{ width: collapsed ? 54 : width }}
     >
-      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background [--muted-foreground:var(--text-subtle)]">
+      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background">
         <div
           className={cn(
             "flex-shrink-0 pt-3",
@@ -322,7 +341,7 @@ export function Sidebar({
                 variant="ghost"
                 size="icon-sm"
                 onClick={onCollapse}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground transition-opacity duration-150 hover:text-foreground"
                 aria-label={t("actions.collapse")}
                 title={t("actions.collapse")}
               >
@@ -332,217 +351,199 @@ export function Sidebar({
           </div>
         </div>
 
-        <nav
-          ref={navRef}
-          className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1.5 py-1 pt-1.5 scrollbar-none"
-          onMouseLeave={onNavMouseLeave}
-        >
-          {currentRect && !collapsed && (
-            <div
-              className="absolute left-1.5 right-1.5 rounded-lg bg-accent/50 pointer-events-none z-0"
-              style={{
-                top: currentRect.top,
-                height: currentRect.height,
-                transition:
-                  isHovering || isHighlightResizing
-                    ? "top 0ms, height 0ms"
-                    : "top 200ms ease, height 200ms ease, opacity 200ms ease",
-              }}
-            />
-          )}
-
-          <div className="relative z-10 space-y-0.5">
-            {collapsed && (
-              <button
-                type="button"
-                onClick={onCollapse}
-                title={t("actions.expand")}
-                className="flex w-full items-center gap-2.5 rounded-md p-3 text-[13px] text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                aria-label={t("actions.expand")}
-              >
-                <IconLayoutSidebar className="size-4 flex-shrink-0" />
-                <span className="sr-only">{t("actions.expand")}</span>
-              </button>
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+          <nav
+            className={cn(
+              "relative h-full overflow-y-auto overflow-x-hidden px-1.5 py-1 pt-1 scrollbar-none",
+              collapsed ? "pb-16" : "pb-[72px]",
             )}
+          >
+            <div className="relative z-10 space-y-0.5">
+              {collapsed && (
+                <button
+                  type="button"
+                  onClick={onCollapse}
+                  title={t("actions.expand")}
+                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                  aria-label={t("actions.expand")}
+                >
+                  <IconLayoutSidebar className="size-4 flex-shrink-0" />
+                  <span className="sr-only">{t("actions.expand")}</span>
+                </button>
+              )}
 
-            <div
-              className={cn(
-                "mb-4 flex items-center w-full rounded-md transition-all duration-300 ease-out",
-                collapsed
-                  ? "justify-center p-3 text-muted-foreground"
-                  : "gap-2 border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent",
-              )}
-            >
-              <Search className="size-3.5 flex-shrink-0 text-placeholder" />
-              {!collapsed && (
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  enterKeyHint="search"
-                  value={sidebarSearch.query}
-                  onChange={(e) => sidebarSearch.setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void sidebarSearch.search();
-                    }
-                  }}
-                  placeholder={t("search.placeholder")}
-                  className={cn(
-                    "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-placeholder outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
-                    labelTransition,
-                    labelVisible
-                      ? "opacity-100 w-auto"
-                      : "opacity-0 w-0 overflow-hidden",
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              )}
-            </div>
-
-            <button
-              ref={homeRef}
-              type="button"
-              data-testid="nav-home"
-              onClick={() => onNavigate?.("home")}
-              onMouseEnter={onItemMouseEnter}
-              title={collapsed ? t("navigation.home") : undefined}
-              aria-label={t("navigation.home")}
-              className={cn(
-                "flex items-center w-full text-[13px] transition-colors duration-200 rounded-md",
-                "gap-2.5 p-3",
-                activeView === "home"
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Home className="size-4 flex-shrink-0" />
-              <span
+              <div
                 className={cn(
-                  "whitespace-nowrap",
-                  labelTransition,
-                  labelVisible
-                    ? "opacity-100 w-auto"
-                    : "opacity-0 w-0 overflow-hidden",
+                  "mb-3 flex items-center w-full rounded-md transition-all duration-300 ease-out",
+                  collapsed
+                    ? "justify-center p-3 text-foreground"
+                    : "gap-2 border border-border px-2.5 py-1.5 text-xs text-foreground hover:text-foreground hover:bg-transparent",
                 )}
               >
-                {t("navigation.home")}
-              </span>
-            </button>
-
-            {navItems.map((item, index) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  ref={(el) => {
-                    navItemRefs.current[item.id] = el;
-                  }}
-                  type="button"
-                  onClick={() => onNavigate?.(item.id)}
-                  onMouseEnter={onItemMouseEnter}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "flex items-center w-full text-[13px] transition-colors duration-200 rounded-md",
-                    "gap-2.5 p-3",
-                    isActive
-                      ? "font-medium text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                  aria-current={isActive ? "page" : undefined}
-                  style={{
-                    transitionDelay:
-                      !collapsed && expanded ? `${index * 30}ms` : "0ms",
-                  }}
-                >
-                  <Icon className="size-4 flex-shrink-0" />
-                  <span
+                <IconSearch className="size-3.5 flex-shrink-0 text-placeholder" />
+                {!collapsed && (
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    enterKeyHint="search"
+                    value={sidebarSearch.query}
+                    onChange={(e) => sidebarSearch.setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void sidebarSearch.search();
+                      }
+                    }}
+                    placeholder={t("search.placeholder")}
                     className={cn(
-                      "whitespace-nowrap",
+                      "focus-override appearance-none bg-transparent border-none text-xs flex-1 min-w-0 placeholder:text-placeholder outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
                       labelTransition,
                       labelVisible
                         ? "opacity-100 w-auto"
                         : "opacity-0 w-0 overflow-hidden",
                     )}
-                    style={{
-                      transitionDelay: labelVisible
-                        ? `${index * 30 + 60}ms`
-                        : "0ms",
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {!collapsed &&
-            (sidebarSearch.submittedQuery ? (
-              <div className="relative z-10 space-y-2">
-                {sidebarSearch.error && (
-                  <p className="px-1 text-xs text-danger">
-                    {t("search.error")}
-                  </p>
-                )}
-
-                {sidebarSearch.isSearching &&
-                  sidebarSearch.results.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-                      {t("search.searching")}
-                    </div>
-                  )}
-
-                {(!sidebarSearch.isSearching ||
-                  sidebarSearch.results.length > 0) && (
-                  <SidebarSearchResults
-                    results={sidebarSearch.results}
-                    activeSessionId={activeSessionId}
-                    onSelectResult={(sessionId, messageId) => {
-                      if (messageId) {
-                        onSelectSearchResult?.(
-                          sessionId,
-                          messageId,
-                          sidebarSearch.submittedQuery,
-                        );
-                        return;
-                      }
-                      onSelectSession?.(sessionId);
-                    }}
-                    getPersonaName={sidebarResolvers.getPersonaName}
-                    getProjectName={sidebarResolvers.getProjectName}
+                    onClick={(e) => e.stopPropagation()}
                   />
                 )}
               </div>
-            ) : (
-              <SidebarProjectsSection
-                projects={projects}
-                projectSessions={projectSessions}
-                expandedProjects={expandedProjects}
-                toggleProject={toggleProject}
+
+              <SidebarNavItem
+                testId="nav-home"
+                icon={IconHome}
+                label={t("navigation.home")}
                 collapsed={collapsed}
                 labelTransition={labelTransition}
                 labelVisible={labelVisible}
-                activeSessionId={activeSessionId}
-                activeProjectId={activeProjectId}
-                onNavigate={onNavigate}
-                onSelectSession={onSelectSession}
-                onNewChatInProject={onNewChatInProject}
-                onNewChat={onNewChat}
-                onCreateProject={onCreateProject}
-                onEditProject={onEditProject}
-                onArchiveProject={onArchiveProject}
-                onArchiveChat={onArchiveChat}
-                onRenameChat={onRenameChat}
-                onMoveToProject={onMoveToProject}
-                onReorderProject={onReorderProject}
-                onItemMouseEnter={onItemMouseEnter}
-                activeSessionRefCallback={activeSessionRefCallback}
-                activeProjectRefCallback={activeProjectRefCallback}
+                isActive={activeView === "home"}
+                onClick={() => onNavigate?.("home")}
               />
-            ))}
-        </nav>
+
+              {navItems.map((item, index) => {
+                const isActive = activeView === item.id;
+                return (
+                  <SidebarNavItem
+                    key={item.id}
+                    icon={item.icon}
+                    label={item.label}
+                    collapsed={collapsed}
+                    labelTransition={labelTransition}
+                    labelVisible={labelVisible}
+                    isActive={isActive}
+                    onClick={() => onNavigate?.(item.id)}
+                    itemTransitionDelay={
+                      !collapsed && expanded ? `${index * 30}ms` : "0ms"
+                    }
+                    labelTransitionDelay={
+                      labelVisible ? `${index * 30 + 60}ms` : "0ms"
+                    }
+                  />
+                );
+              })}
+            </div>
+
+            {!collapsed &&
+              (sidebarSearch.submittedQuery ? (
+                <div className="relative z-10 space-y-2">
+                  {sidebarSearch.error && (
+                    <p className="px-1 text-xs text-danger">
+                      {t("search.error")}
+                    </p>
+                  )}
+
+                  {sidebarSearch.isSearching &&
+                    sidebarSearch.results.length === 0 && (
+                      <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+                        {t("search.searching")}
+                      </div>
+                    )}
+
+                  {(!sidebarSearch.isSearching ||
+                    sidebarSearch.results.length > 0) && (
+                    <SidebarSearchResults
+                      results={sidebarSearch.results}
+                      activeSessionId={activeSessionId}
+                      onSelectResult={(sessionId, messageId) => {
+                        if (messageId) {
+                          onSelectSearchResult?.(
+                            sessionId,
+                            messageId,
+                            sidebarSearch.submittedQuery,
+                          );
+                          return;
+                        }
+                        onSelectSession?.(sessionId);
+                      }}
+                      getPersonaName={sidebarResolvers.getPersonaName}
+                      getProjectName={sidebarResolvers.getProjectName}
+                    />
+                  )}
+                </div>
+              ) : (
+                <SidebarProjectsSection
+                  projects={projects}
+                  projectSessions={projectSessions}
+                  expandedProjects={expandedProjects}
+                  toggleProject={toggleProject}
+                  collapsed={collapsed}
+                  labelTransition={labelTransition}
+                  labelVisible={labelVisible}
+                  activeSessionId={activeSessionId}
+                  onNavigate={onNavigate}
+                  onSelectSession={onSelectSession}
+                  onNewChatInProject={onNewChatInProject}
+                  onNewChat={onNewChat}
+                  onCreateProject={onCreateProject}
+                  onEditProject={onEditProject}
+                  onArchiveProject={onArchiveProject}
+                  onArchiveChat={onArchiveChat}
+                  onRenameChat={onRenameChat}
+                  onMoveToProject={onMoveToProject}
+                  onReorderProject={onReorderProject}
+                  projectsSectionOpen={sectionVisibility.projects}
+                  recentsSectionOpen={sectionVisibility.recents}
+                  onToggleProjectsSection={() => toggleSection("projects")}
+                  onToggleRecentsSection={() => toggleSection("recents")}
+                />
+              ))}
+          </nav>
+
+          <div
+            className={cn(
+              "absolute inset-x-0 bottom-0 z-20 bg-background",
+              "px-1.5 py-1.5",
+            )}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size={collapsed ? "icon-sm" : "default"}
+              onClick={onSettingsClick}
+              className={cn(
+                "h-10 w-full rounded-md bg-transparent text-muted-foreground/85 hover:bg-transparent hover:text-foreground active:bg-transparent",
+                collapsed
+                  ? "justify-center p-3"
+                  : "justify-start gap-2.5 px-3 py-2.5",
+              )}
+              title={t("settings:title")}
+              aria-label={t("settings:title")}
+            >
+              <IconSettings className="size-4 flex-shrink-0" />
+              {!collapsed && (
+                <span
+                  className={cn(
+                    "whitespace-nowrap text-sm",
+                    labelTransition,
+                    labelVisible
+                      ? "opacity-100 w-auto"
+                      : "opacity-0 w-0 overflow-hidden",
+                  )}
+                >
+                  {t("settings:title")}
+                </span>
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

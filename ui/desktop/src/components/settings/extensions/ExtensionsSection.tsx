@@ -228,9 +228,7 @@ export default function ExtensionsSection({
             <Button
               className="flex items-center gap-2 justify-center"
               variant="secondary"
-              onClick={() =>
-                window.open('https://goose-docs.ai/v1/extensions/', '_blank')
-              }
+              onClick={() => window.open('https://goose-docs.ai/v1/extensions/', '_blank')}
             >
               <GPSIcon size={12} />
               {intl.formatMessage(i18n.browseExtensions)}

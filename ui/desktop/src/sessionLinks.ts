@@ -1,6 +1,18 @@
 import { fetchSharedSessionDetails, SharedSessionDetails } from './sharedSessions';
 import { View, ViewOptions } from './utils/navigationUtils';
 import { errorMessage } from './utils/conversionUtils';
+import { importSessionNostr } from './api';
+
+/**
+ * Imports a session from an encrypted Nostr deep link.
+ * Separated from shared-session handling so callers can route independently.
+ */
+export async function importNostrSessionFromDeepLink(url: string): Promise<void> {
+  await importSessionNostr({
+    body: { deeplink: url },
+    throwOnError: true,
+  });
+}
 
 /**
  * Handles opening a shared session from a deep link

@@ -56,6 +56,7 @@ interface AgentStoreState {
   // UI state
   personaEditorOpen: boolean;
   editingPersona: Persona | null;
+  personaEditorMode: "create" | "edit" | "details";
 }
 
 interface AgentStoreActions {
@@ -74,7 +75,7 @@ interface AgentStoreActions {
   setAgentsLoading: (loading: boolean) => void;
 
   // Provider management
-  setProviders: (providers: AcpProvider[]) => void;
+  setProviders: (providers: AcpProvider[], validated?: boolean) => void;
   setProvidersLoading: (loading: boolean) => void;
   setSelectedProvider: (providerId: string, persist?: boolean) => void;
 
@@ -83,7 +84,10 @@ interface AgentStoreActions {
   getActiveAgent: () => Agent | null;
 
   // Persona editor
-  openPersonaEditor: (persona?: Persona) => void;
+  openPersonaEditor: (
+    persona?: Persona,
+    mode?: "create" | "edit" | "details",
+  ) => void;
   closePersonaEditor: () => void;
 
   // Loading
@@ -112,6 +116,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   isLoading: false,
   personaEditorOpen: false,
   editingPersona: null,
+  personaEditorMode: "create",
 
   // Persona CRUD
   setPersonas: (personas) => set({ personas }),
@@ -158,10 +163,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setAgentsLoading: (agentsLoading) => set({ agentsLoading }),
 
   // Provider management
-  setProviders: (providers) => {
+  setProviders: (providers, validated = true) => {
     const { selectedProvider } = get();
     const isValid = providers.some((p) => p.id === selectedProvider);
-    if (!isValid && providers.length > 0) {
+    if (!isValid && providers.length > 0 && validated) {
       const fallback = providers[0].id;
       persistProvider(fallback);
       set({ providers, selectedProvider: fallback });
@@ -187,16 +192,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   },
 
   // Persona editor
-  openPersonaEditor: (persona) =>
+  openPersonaEditor: (persona, mode) =>
     set({
       personaEditorOpen: true,
       editingPersona: persona ?? null,
+      personaEditorMode: mode ?? (persona ? "edit" : "create"),
     }),
 
   closePersonaEditor: () =>
     set({
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     }),
 
   // Loading
@@ -212,5 +219,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   getBuiltinPersonas: () => get().personas.filter((p) => p.isBuiltin),
 
-  getCustomPersonas: () => get().personas.filter((p) => !p.isBuiltin),
+  getCustomPersonas: () =>
+    get().personas.filter((p) => !p.isBuiltin && p.writable !== false),
 }));

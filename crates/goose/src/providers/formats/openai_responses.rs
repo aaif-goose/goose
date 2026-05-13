@@ -2,7 +2,7 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::providers::base::{ProviderUsage, Usage};
-use crate::providers::utils::extract_reasoning_effort;
+use crate::providers::utils::{extract_reasoning_effort, is_openai_responses_model};
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
 use chrono;
@@ -78,6 +78,9 @@ pub enum ResponseContentBlock {
         text: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         annotations: Option<Vec<Value>>,
+    },
+    Refusal {
+        refusal: String,
     },
     ToolCall {
         id: String,
@@ -187,6 +190,22 @@ pub enum ResponsesStreamEvent {
         output_index: i32,
         arguments: String,
     },
+    #[serde(rename = "response.refusal.delta")]
+    RefusalDelta {
+        sequence_number: i32,
+        item_id: String,
+        output_index: i32,
+        content_index: i32,
+        delta: String,
+    },
+    #[serde(rename = "response.refusal.done")]
+    RefusalDone {
+        sequence_number: i32,
+        item_id: String,
+        output_index: i32,
+        content_index: i32,
+        refusal: String,
+    },
     #[serde(rename = "error")]
     Error { error: Value },
     #[serde(rename = "keepalive")]
@@ -211,6 +230,8 @@ fn is_known_responses_stream_event_type(event_type: &str) -> bool {
             | "response.failed"
             | "response.function_call_arguments.delta"
             | "response.function_call_arguments.done"
+            | "response.refusal.delta"
+            | "response.refusal.done"
             | "error"
             | "keepalive"
     )
@@ -293,6 +314,9 @@ pub enum ContentPart {
         #[serde(skip_serializing_if = "Option::is_none")]
         logprobs: Option<Vec<Value>>,
     },
+    Refusal {
+        refusal: String,
+    },
     ToolCall {
         id: String,
         name: String,
@@ -331,27 +355,42 @@ fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message]) {
                         text_items = Vec::new();
                     }
 
-                    if let Ok(tool_call) = &request.tool_call {
-                        let arguments_str = tool_call
-                            .arguments
-                            .as_ref()
-                            .map(|args| {
-                                serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string())
-                            })
-                            .unwrap_or_else(|| "{}".to_string());
+                    match &request.tool_call {
+                        Ok(tool_call) => {
+                            let arguments_str = tool_call
+                                .arguments
+                                .as_ref()
+                                .map(|args| {
+                                    serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string())
+                                })
+                                .unwrap_or_else(|| "{}".to_string());
 
-                        tracing::debug!(
-                            "Replaying function_call with call_id: {}, name: {}",
-                            request.id,
-                            tool_call.name
-                        );
-                        input_items.push(json!({
-                            "type": "function_call",
-                            "call_id": request.id,
-                            "name": tool_call.name,
-                            "arguments": arguments_str
-                        }));
+                            tracing::debug!(
+                                "Replaying function_call with call_id: {}, name: {}",
+                                request.id,
+                                tool_call.name
+                            );
+                            input_items.push(json!({
+                                "type": "function_call",
+                                "call_id": request.id,
+                                "name": tool_call.name,
+                                "arguments": arguments_str
+                            }));
+                        }
+                        Err(e) => {
+                            input_items.push(json!({
+                                "type": "function_call_output",
+                                "call_id": request.id,
+                                "output": format!("Error: {}", e.message)
+                            }));
+                        }
                     }
+                }
+                MessageContent::Image(image) => {
+                    text_items.push(json!({
+                        "type": "input_image",
+                        "image_url": format!("data:{};base64,{}", image.mime_type, image.data)
+                    }));
                 }
                 MessageContent::ToolResponse(response) => {
                     if !text_items.is_empty() {
@@ -434,6 +473,41 @@ fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message]) {
                         }
                     }
                 }
+                MessageContent::FrontendToolRequest(request) => {
+                    if !text_items.is_empty() {
+                        input_items.push(json!({
+                            "role": role,
+                            "content": text_items
+                        }));
+                        text_items = Vec::new();
+                    }
+
+                    match &request.tool_call {
+                        Ok(tool_call) => {
+                            let arguments_str = tool_call
+                                .arguments
+                                .as_ref()
+                                .map(|args| {
+                                    serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string())
+                                })
+                                .unwrap_or_else(|| "{}".to_string());
+
+                            input_items.push(json!({
+                                "type": "function_call",
+                                "call_id": request.id,
+                                "name": tool_call.name,
+                                "arguments": arguments_str
+                            }));
+                        }
+                        Err(e) => {
+                            input_items.push(json!({
+                                "type": "function_call_output",
+                                "call_id": request.id,
+                                "output": format!("Error: {}", e.message)
+                            }));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -468,7 +542,10 @@ pub fn create_responses_request(
     add_message_items(&mut input_items, messages);
 
     let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
-    let is_reasoning_model = reasoning_effort.is_some();
+    // All models routed here are responses-capable; temperature is rejected
+    // by the API for reasoning models regardless of whether an explicit
+    // effort suffix was provided.
+    let is_reasoning_model = is_openai_responses_model(&model_name);
 
     let mut payload = json!({
         "model": model_name,
@@ -495,6 +572,7 @@ pub fn create_responses_request(
                     "name": tool.name,
                     "description": tool.description,
                     "parameters": tool.input_schema,
+                    "strict": false,
                 })
             })
             .collect();
@@ -539,6 +617,11 @@ pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Resu
                         ResponseContentBlock::OutputText { text, .. } => {
                             if !text.is_empty() {
                                 content.push(MessageContent::text(text));
+                            }
+                        }
+                        ResponseContentBlock::Refusal { refusal } => {
+                            if !refusal.is_empty() {
+                                content.push(MessageContent::text(refusal));
                             }
                         }
                         ResponseContentBlock::ToolCall { id, name, input } => {
@@ -608,6 +691,11 @@ fn process_streaming_output_items(
                         ContentPart::OutputText { text, .. } => {
                             if !text.is_empty() && !is_text_response {
                                 content.push(MessageContent::text(&text));
+                            }
+                        }
+                        ContentPart::Refusal { refusal } => {
+                            if !refusal.is_empty() && !is_text_response {
+                                content.push(MessageContent::text(&refusal));
                             }
                         }
                         ContentPart::ToolCall {
@@ -771,6 +859,29 @@ where
 
                 ResponsesStreamEvent::FunctionCallArgumentsDone { .. } => {
                     // Arguments are complete, will be in the OutputItemDone event
+                }
+
+                ResponsesStreamEvent::RefusalDelta { delta, .. } => {
+                    is_text_response = true;
+                    if !delta.is_empty() {
+                        accumulated_text.push_str(&delta);
+
+                        let mut msg = Message::new(
+                            Role::Assistant,
+                            chrono::Utc::now().timestamp(),
+                            vec![MessageContent::text(&delta)],
+                        );
+
+                        if let Some(id) = &response_id {
+                            msg = msg.with_id(id.clone());
+                        }
+
+                        yield (Some(msg), None);
+                    }
+                }
+
+                ResponsesStreamEvent::RefusalDone { .. } => {
+                    // Refusal text already streamed via deltas
                 }
 
                 ResponsesStreamEvent::ResponseFailed { error, .. } => {
@@ -1082,5 +1193,643 @@ mod tests {
         let info: ResponseReasoningInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.effort.as_deref(), Some("high"));
         assert_eq!(info.summary.as_deref(), Some("Thought deeply"));
+    }
+
+    #[test]
+    fn test_responses_tools_include_strict_false() {
+        let model_config = ModelConfig {
+            model_name: "gpt-5.4".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let tool = Tool::new(
+            "shell",
+            "Execute a shell command",
+            object!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The command to run"
+                    }
+                },
+                "required": ["command"]
+            }),
+        );
+
+        let result =
+            create_responses_request(&model_config, "You are helpful.", &[], &[tool]).unwrap();
+        let tools = result["tools"]
+            .as_array()
+            .expect("tools should be an array");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["strict"], json!(false),
+            "Responses API defaults strict to true, but MCP tool schemas are not strict-compatible; must explicitly set strict: false");
+    }
+
+    #[test]
+    fn test_responses_request_with_explicit_effort_suffix() {
+        for (model_name, expected_model, expected_effort) in [
+            ("gpt-5.4-xhigh", "gpt-5.4", "xhigh"),
+            ("databricks-gpt-5.4-high", "databricks-gpt-5.4", "high"),
+            ("databricks-o3-none", "databricks-o3", "none"),
+        ] {
+            let model_config = ModelConfig {
+                model_name: model_name.to_string(),
+                context_limit: None,
+                temperature: None,
+                max_tokens: None,
+                toolshim: false,
+                toolshim_model: None,
+                fast_model_config: None,
+                request_params: None,
+                reasoning: None,
+            };
+
+            let result =
+                create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
+
+            assert_eq!(
+                result["model"], expected_model,
+                "unexpected model for {model_name}"
+            );
+            assert_eq!(
+                result["reasoning"]["effort"], expected_effort,
+                "unexpected effort for {model_name}"
+            );
+            assert_eq!(result["reasoning"]["summary"], "auto");
+        }
+    }
+
+    #[test]
+    fn test_responses_request_without_effort_suffix_omits_reasoning() {
+        for model_name in ["gpt-5.4", "o3", "gpt-5-nano"] {
+            let model_config = ModelConfig {
+                model_name: model_name.to_string(),
+                context_limit: None,
+                temperature: None,
+                max_tokens: None,
+                toolshim: false,
+                toolshim_model: None,
+                fast_model_config: None,
+                request_params: None,
+                reasoning: None,
+            };
+
+            let result =
+                create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
+
+            assert_eq!(result["model"], model_name, "model should be unchanged");
+            assert!(
+                result.get("reasoning").is_none(),
+                "reasoning should be omitted for {model_name} without explicit effort suffix"
+            );
+        }
+    }
+
+    #[test]
+    fn test_user_image_serialized_in_responses_request() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::user()
+            .with_text("describe this image")
+            .with_image("aW1hZ2VkYXRh", "image/png")];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result =
+            create_responses_request(&model_config, "You are helpful.", &messages, &[]).unwrap();
+
+        let input = result["input"].as_array().unwrap();
+        assert_eq!(input.len(), 2);
+
+        assert_eq!(input[0]["role"], "system");
+
+        assert_eq!(input[1]["role"], "user");
+        let content = input[1]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2);
+
+        assert_eq!(content[0]["type"], "input_text");
+        assert_eq!(content[0]["text"], "describe this image");
+
+        assert_eq!(content[1]["type"], "input_image");
+        assert_eq!(
+            content[1]["image_url"],
+            "data:image/png;base64,aW1hZ2VkYXRh"
+        );
+    }
+
+    #[test]
+    fn test_tool_response_with_image_serializes_as_typed_array() {
+        use crate::conversation::message::Message;
+        use rmcp::model::{CallToolResult, Content};
+
+        let messages = vec![Message::user().with_content(MessageContent::tool_response(
+            "call_1",
+            Ok(CallToolResult::success(vec![
+                Content::text("caption"),
+                Content::image("a+/=".to_string(), "image/png".to_string()),
+            ])),
+        ))];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["type"], "function_call_output");
+        assert_eq!(input[0]["call_id"], "call_1");
+
+        let output = input[0]["output"].as_array().unwrap();
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], json!({"type": "input_text", "text": "caption"}));
+        assert_eq!(
+            output[1],
+            json!({"type": "input_image", "image_url": "data:image/png;base64,a+/="})
+        );
+    }
+
+    #[test]
+    fn test_tool_request_serializes_function_call_with_arguments() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::assistant().with_tool_request(
+            "call_1",
+            Ok(CallToolRequestParams::new("search")
+                .with_arguments(object!({"q": "rust", "limit": 2}))),
+        )];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["type"], "function_call");
+        assert_eq!(input[0]["call_id"], "call_1");
+        assert_eq!(input[0]["name"], "search");
+
+        let args: serde_json::Value =
+            serde_json::from_str(input[0]["arguments"].as_str().unwrap()).unwrap();
+        assert_eq!(args["q"], "rust");
+        assert_eq!(args["limit"], 2);
+    }
+
+    #[test]
+    fn test_tool_request_none_arguments_serializes_empty_object() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::assistant()
+            .with_tool_request("call_1", Ok(CallToolRequestParams::new("noop")))];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["type"], "function_call");
+        assert_eq!(input[0]["name"], "noop");
+        assert_eq!(input[0]["arguments"], "{}");
+    }
+
+    #[test]
+    fn test_text_flushed_before_tool_request() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::assistant()
+            .with_text("planning")
+            .with_tool_request(
+                "call_1",
+                Ok(CallToolRequestParams::new("shell").with_arguments(object!({"command": "ls"}))),
+            )];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["role"], "assistant");
+        assert_eq!(input[0]["content"][0]["type"], "output_text");
+        assert_eq!(input[0]["content"][0]["text"], "planning");
+        assert_eq!(input[1]["type"], "function_call");
+    }
+
+    #[test]
+    fn test_text_flushed_before_tool_response() {
+        use crate::conversation::message::Message;
+        use rmcp::model::{CallToolResult, Content};
+
+        let messages =
+            vec![Message::user()
+                .with_text("context")
+                .with_content(MessageContent::tool_response(
+                    "call_1",
+                    Ok(CallToolResult::success(vec![Content::text("done")])),
+                ))];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["role"], "user");
+        assert_eq!(input[0]["content"][0]["type"], "input_text");
+        assert_eq!(input[0]["content"][0]["text"], "context");
+        assert_eq!(input[1]["type"], "function_call_output");
+        assert_eq!(input[1]["output"], "done");
+    }
+
+    #[test]
+    fn test_tool_response_error_serializes_with_error_prefix() {
+        use crate::conversation::message::Message;
+        use rmcp::model::{ErrorCode, ErrorData};
+
+        let messages = vec![Message::user().with_content(MessageContent::tool_response(
+            "call_err",
+            Err(ErrorData {
+                code: ErrorCode::INTERNAL_ERROR,
+                message: "file not found".into(),
+                data: None,
+            }),
+        ))];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["type"], "function_call_output");
+        assert_eq!(input[0]["call_id"], "call_err");
+        assert_eq!(input[0]["output"], "Error: file not found");
+    }
+
+    #[test]
+    fn test_image_only_message_serializes() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::user().with_image("aW1n", "image/png")];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["role"], "user");
+        let content = input[0]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "input_image");
+        assert_eq!(content[0]["image_url"], "data:image/png;base64,aW1n");
+    }
+
+    #[test]
+    fn test_multiple_images_preserved_in_order() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::user()
+            .with_text("compare")
+            .with_image("img1", "image/png")
+            .with_image("img2", "image/jpeg")];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["role"], "user");
+        let content = input[0]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 3);
+        assert_eq!(content[0]["type"], "input_text");
+        assert_eq!(content[0]["text"], "compare");
+        assert_eq!(content[1]["type"], "input_image");
+        assert_eq!(content[1]["image_url"], "data:image/png;base64,img1");
+        assert_eq!(content[2]["type"], "input_image");
+        assert_eq!(content[2]["image_url"], "data:image/jpeg;base64,img2");
+    }
+
+    #[test]
+    fn test_assistant_text_uses_output_text_type() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![Message::assistant().with_text("hello")];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["role"], "assistant");
+        assert_eq!(input[0]["content"][0]["type"], "output_text");
+        assert_eq!(input[0]["content"][0]["text"], "hello");
+    }
+
+    #[test]
+    fn test_refusal_content_block_deserializes_in_non_streaming_response() {
+        let json = r#"{
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 0,
+            "status": "completed",
+            "model": "gpt-5.5",
+            "output": [{
+                "type": "message",
+                "id": "msg_1",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "refusal", "refusal": "I cannot help with that request."}]
+            }]
+        }"#;
+
+        let response: ResponsesApiResponse = serde_json::from_str(json).unwrap();
+        let message = responses_api_to_message(&response).unwrap();
+        assert_eq!(message.content.len(), 1);
+        if let MessageContent::Text(t) = &message.content[0] {
+            assert_eq!(t.text, "I cannot help with that request.");
+        } else {
+            panic!("expected text content from refusal");
+        }
+    }
+
+    #[test]
+    fn test_refusal_content_part_deserializes_in_streaming_output() {
+        let json = r#"{
+            "type": "message",
+            "id": "msg_1",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{"type": "refusal", "refusal": "I'm unable to assist."}]
+        }"#;
+
+        let item: ResponseOutputItemInfo = serde_json::from_str(json).unwrap();
+        let content = process_streaming_output_items(vec![item], false);
+        assert_eq!(content.len(), 1);
+        if let MessageContent::Text(t) = &content[0] {
+            assert_eq!(t.text, "I'm unable to assist.");
+        } else {
+            panic!("expected text content from refusal");
+        }
+    }
+
+    #[test]
+    fn test_refusal_delta_stream_event_deserializes() {
+        let json = r#"{"type":"response.refusal.delta","sequence_number":5,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"I cannot"}"#;
+
+        let event: ResponsesStreamEvent = serde_json::from_str(json).unwrap();
+        match event {
+            ResponsesStreamEvent::RefusalDelta { delta, .. } => {
+                assert_eq!(delta, "I cannot");
+            }
+            _ => panic!("expected RefusalDelta event"),
+        }
+    }
+
+    #[test]
+    fn test_streamed_refusal_not_duplicated_in_output_items() {
+        let output_items = vec![ResponseOutputItemInfo::Message {
+            id: "msg_1".to_string(),
+            status: "completed".to_string(),
+            role: "assistant".to_string(),
+            content: vec![ContentPart::Refusal {
+                refusal: "I cannot help with that.".to_string(),
+            }],
+        }];
+
+        let content = process_streaming_output_items(output_items.clone(), true);
+        assert!(
+            content.is_empty(),
+            "refusal should be suppressed when already streamed"
+        );
+
+        let content = process_streaming_output_items(output_items, false);
+        assert_eq!(
+            content.len(),
+            1,
+            "refusal should appear in non-streaming path"
+        );
+    }
+
+    #[test]
+    fn test_frontend_tool_request_serialized_in_responses_request() {
+        use crate::conversation::message::Message;
+        use rmcp::model::{CallToolResult, Content};
+
+        let messages = vec![
+            Message::assistant().with_frontend_tool_request(
+                "call_ft1",
+                Ok(CallToolRequestParams::new("browser_click")
+                    .with_arguments(object!({"selector": "#btn"}))),
+            ),
+            Message::user().with_content(MessageContent::tool_response(
+                "call_ft1",
+                Ok(CallToolResult::success(vec![Content::text("clicked")])),
+            )),
+        ];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input[0]["type"], "function_call");
+        assert_eq!(input[0]["call_id"], "call_ft1");
+        assert_eq!(input[0]["name"], "browser_click");
+
+        assert_eq!(input[1]["type"], "function_call_output");
+        assert_eq!(input[1]["call_id"], "call_ft1");
+        assert_eq!(input[1]["output"], "clicked");
+    }
+
+    #[test]
+    fn test_tool_request_error_emits_function_call_output() {
+        use crate::conversation::message::Message;
+        use rmcp::model::{ErrorCode, ErrorData};
+
+        let messages = vec![Message::assistant().with_tool_request(
+            "call_err1",
+            Err(ErrorData {
+                code: ErrorCode::INTERNAL_ERROR,
+                message: "invalid arguments".into(),
+                data: None,
+            }),
+        )];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["type"], "function_call_output");
+        assert_eq!(input[0]["call_id"], "call_err1");
+        assert!(input[0]["output"]
+            .as_str()
+            .unwrap()
+            .contains("invalid arguments"));
+    }
+
+    #[test]
+    fn test_frontend_tool_request_error_emits_function_call_output() {
+        use crate::conversation::message::Message;
+        use rmcp::model::{ErrorCode, ErrorData};
+
+        let messages = vec![Message::assistant().with_frontend_tool_request(
+            "call_ft_err",
+            Err(ErrorData {
+                code: ErrorCode::INTERNAL_ERROR,
+                message: "malformed arguments".into(),
+                data: None,
+            }),
+        )];
+
+        let model_config = ModelConfig {
+            model_name: "gpt-5.5".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "", &messages, &[]).unwrap();
+        let input = result["input"].as_array().unwrap();
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["type"], "function_call_output");
+        assert_eq!(input[0]["call_id"], "call_ft_err");
+        assert!(input[0]["output"]
+            .as_str()
+            .unwrap()
+            .contains("malformed arguments"));
     }
 }

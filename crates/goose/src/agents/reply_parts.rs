@@ -138,14 +138,7 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> Result<(Vec<Tool>, Vec<Tool>, String)> {
-        // Get tools from extension manager
         let mut tools = self.list_tools(session_id, None).await;
-
-        // Add frontend tools
-        let frontend_tools = self.frontend_tools.lock().await;
-        for frontend_tool in frontend_tools.values() {
-            tools.push(frontend_tool.tool.clone());
-        }
 
         #[cfg(feature = "code-mode")]
         let code_execution_active = self
@@ -214,10 +207,7 @@ impl Agent {
             .extension_manager
             .get_extensions_info(working_dir)
             .await;
-        let (extension_count, tool_count) = self
-            .extension_manager
-            .get_extension_and_tool_counts(session_id)
-            .await;
+        let (extension_count, tool_count) = self.total_extension_and_tool_counts(session_id).await;
 
         // Get model name from provider
         let provider = self.provider().await?;

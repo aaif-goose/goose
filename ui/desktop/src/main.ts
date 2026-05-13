@@ -23,7 +23,7 @@ import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
 import path from 'node:path';
 import os from 'node:os';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, execFile } from 'child_process';
 import 'dotenv/config';
 import { checkServerStatus } from './goosed';
 import { startGoosed } from './goosed';
@@ -59,8 +59,121 @@ function shouldSetupUpdater(): boolean {
   return UPDATES_ENABLED || process.env.ENABLE_DEV_UPDATES === 'true';
 }
 
+// =======================================================================
+// Native menu localization
+// -----------------------------------------------------------------------
+// Electron's main process can't use react-intl (which runs in the renderer),
+// so the native menu bar is translated here with a small hand-maintained
+// dictionary. Only Simplified Chinese is filled in right now; other locales
+// fall through to the original English labels. Keep the keys in sync with
+// the raw label strings used below.
+// =======================================================================
+
+const MENU_TRANSLATIONS_ZH_CN: Record<string, string> = {
+  // Top-level
+  File: '文件',
+  Edit: '编辑',
+  View: '视图',
+  Window: '窗口',
+  Help: '帮助',
+  // Context menu
+  'Add to dictionary': '添加到词典',
+  Cut: '剪切',
+  Copy: '复制',
+  Paste: '粘贴',
+  // Goose-added items
+  'New Window': '新建窗口',
+  Settings: '设置',
+  'Find…': '查找…',
+  'Find Next': '查找下一个',
+  'Find Previous': '查找上一个',
+  'Use Selection for Find': '用所选内容查找',
+  Find: '查找',
+  'New Chat': '新建聊天',
+  'New Chat Window': '新建聊天窗口',
+  'Open Directory...': '打开目录…',
+  'Recent Directories': '最近的目录',
+  'Focus Goose Window': '聚焦 Goose 窗口',
+  'Quick Launcher': '快速启动器',
+  'Always on Top': '窗口置顶',
+  'Toggle Navigation': '切换导航',
+  'About Goose': '关于 Goose',
+  // Electron's default role-based labels we want to translate as well.
+  // (The menu role itself still provides the correct behaviour; only the
+  // display string is overridden.)
+  Undo: '撤销',
+  Redo: '重做',
+  'Select All': '全选',
+  Delete: '删除',
+  Speech: '语音',
+  Reload: '重新加载',
+  'Force Reload': '强制重新加载',
+  'Toggle Developer Tools': '切换开发者工具',
+  'Actual Size': '实际大小',
+  'Reset Zoom': '重置缩放',
+  'Zoom In': '放大',
+  'Zoom Out': '缩小',
+  'Toggle Full Screen': '切换全屏',
+  'Toggle Fullscreen': '切换全屏',
+  Minimize: '最小化',
+  Close: '关闭',
+  'Close Window': '关闭窗口',
+  Quit: '退出',
+  Exit: '退出',
+  'Bring All to Front': '全部置于最前',
+  'Emoji & Symbols': '表情符号',
+  'Start Dictation…': '开始听写…',
+  'Hide Goose': '隐藏 Goose',
+  'Hide Others': '隐藏其他',
+  'Show All': '全部显示',
+  Services: '服务',
+};
+
+function detectMenuLocale(): string {
+  const explicit = process.env.GOOSE_LOCALE;
+  if (explicit) return explicit;
+  try {
+    return app.getSystemLocale() || 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+function menuT(label: string): string {
+  // Normalize underscores to hyphens so POSIX-style tags like "zh_CN" work.
+  const lower = detectMenuLocale().replace(/_/g, '-').toLowerCase();
+  const isTraditional = /^zh-(hant|tw|hk|mo)\b/.test(lower);
+  const isSimplifiedChinese = !isTraditional && (lower === 'zh' || lower.startsWith('zh-'));
+  if (isSimplifiedChinese) {
+    return MENU_TRANSLATIONS_ZH_CN[label] ?? label;
+  }
+  return label;
+}
+
+/**
+ * Recursively translate `label` on every item in the given menu, including nested submenus.
+ * Electron's default application menu comes with English labels that are not otherwise
+ * configurable, so we post-process them here before calling `Menu.setApplicationMenu`.
+ */
+function translateMenuLabels(items: MenuItem[]): void {
+  for (const item of items) {
+    if (item.label) {
+      const translated = menuT(item.label);
+      if (translated !== item.label) {
+        // MenuItem.label is a writable property on the main-process side, even though
+        // the TS type sometimes claims otherwise. Cast through unknown for safety.
+        (item as unknown as { label: string }).label = translated;
+      }
+    }
+    if (item.submenu && item.submenu.items) {
+      translateMenuLabels(item.submenu.items);
+    }
+  }
+}
+
 // Settings management
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
 
 function getSettings(): Settings {
   if (fsSync.existsSync(SETTINGS_FILE)) {
@@ -96,6 +209,36 @@ function updateSettings(modifier: (settings: Settings) => void): void {
   const settings = getSettings();
   modifier(settings);
   fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+function listGitWorktreeDirs(dir: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    if (!dir?.trim()) {
+      resolve([]);
+      return;
+    }
+
+    execFile(
+      'git',
+      ['-C', dir, 'worktree', 'list', '--porcelain'],
+      { timeout: 3000 },
+      (error, stdout) => {
+        if (error) {
+          resolve([]);
+          return;
+        }
+
+        const dirs = stdout
+          .split('\n')
+          .filter((line) => line.startsWith('worktree '))
+          .map((line) => line.slice('worktree '.length).trim())
+          .filter(Boolean)
+          .filter((worktreeDir, index, allDirs) => allDirs.indexOf(worktreeDir) === index);
+
+        resolve(dirs);
+      }
+    );
+  });
 }
 
 async function configureProxy() {
@@ -168,6 +311,22 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
     pinnedCertFingerprint = normalizeFingerprint(certificate.fingerprint);
     event.preventDefault();
     callback(true);
+  }
+});
+
+// Fill in GOOSE_LOCALE from the OS region locale once Electron is ready.
+// Kept separate from the initial appConfig assignment above because
+// app.getSystemLocale() is only available after the app.ready event fires.
+app.whenReady().then(() => {
+  if (!appConfig.GOOSE_LOCALE) {
+    try {
+      const sysLocale = app.getSystemLocale();
+      if (sysLocale) {
+        appConfig.GOOSE_LOCALE = sysLocale;
+      }
+    } catch {
+      // Locale detection is best-effort; renderer will fall back to navigator.language.
+    }
   }
 });
 
@@ -352,7 +511,7 @@ app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
     const parsedUrl = new URL(url);
 
-    log.info('[Main] Received open-url event:', url);
+    log.info('[Main] Received open-url event:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
 
     await app.whenReady();
 
@@ -381,7 +540,7 @@ app.on('open-url', async (_event, url) => {
 
     // For extension/session URLs, store the deep link for processing after React is ready
     pendingDeepLink = url;
-    log.info('[Main] Stored pending deep link for processing after React ready:', url);
+    log.info('[Main] Stored pending deep link for processing after React ready:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
 
     const existingWindows = BrowserWindow.getAllWindows();
     if (existingWindows.length > 0) {
@@ -549,6 +708,8 @@ let appConfig = {
   GOOSE_API_HOST: 'https://localhost',
   GOOSE_PATH_ROOT: resolveGoosePathRoot(),
   GOOSE_WORKING_DIR: '',
+  // Start with the env-var override; the OS region locale is filled in after app.ready
+  // (see updateLocaleFromSystem below) since getSystemLocale() cannot be called earlier.
   GOOSE_LOCALE: process.env.GOOSE_LOCALE || undefined,
   // If GOOSE_ALLOWLIST_WARNING env var is not set, defaults to false (strict blocking mode)
   GOOSE_ALLOWLIST_WARNING: process.env.GOOSE_ALLOWLIST_WARNING === 'true',
@@ -617,6 +778,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     isPackaged: app.isPackaged,
     resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
     logger: log,
+    diagnosticsDir: STARTUP_LOGS_DIR,
   });
 
   // For locally-spawned goosed, pin using the fingerprint from stdout.
@@ -637,6 +799,9 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     process: goosedProcess,
     errorLog,
     stopErrorLogCollection,
+    startupDiagnosticsPath,
+    getStartupDiagnostics,
+    recordStartupEvent,
   } = goosedResult;
 
   const mainWindowState = windowStateKeeper({
@@ -705,9 +870,27 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   );
   goosedClients.set(mainWindow.id, goosedClient);
 
-  const serverReady = await checkServerStatus(goosedClient, errorLog);
+  const serverReady = await checkServerStatus(goosedClient, errorLog, {
+    onEvent: recordStartupEvent,
+  });
   if (!serverReady) {
     const isUsingExternalBackend = settings.externalGoosed?.enabled;
+    const diagnostics = getStartupDiagnostics();
+    const stderrTail = diagnostics?.stderrTail ?? [];
+    const failureDetailParts = [
+      diagnostics?.childExitCode !== null || diagnostics?.childExitSignal
+        ? `Child exit: code=${diagnostics?.childExitCode ?? 'null'} signal=${diagnostics?.childExitSignal ?? 'null'}`
+        : 'Child exit: unavailable',
+      diagnostics?.certFingerprintSeen
+        ? 'TLS fingerprint observed: yes'
+        : 'TLS fingerprint observed: no',
+      diagnostics?.healthCheckSucceeded
+        ? 'Health check observed: yes'
+        : 'Health check observed: no',
+      startupDiagnosticsPath ? `Startup diagnostics: ${startupDiagnosticsPath}` : '',
+      errorLog.length > 0 ? `Startup errors:\n${errorLog.join('\n')}` : '',
+      stderrTail.length > 0 ? `Captured startup stderr:\n${stderrTail.join('\n')}` : '',
+    ].filter(Boolean);
 
     if (isUsingExternalBackend) {
       const response = dialog.showMessageBoxSync({
@@ -734,7 +917,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
         type: 'error',
         title: 'Goose Failed to Start',
         message: 'The backend server failed to start.',
-        detail: errorLog.join('\n'),
+        detail: failureDetailParts.join('\n\n'),
         buttons: ['OK'],
       });
     }
@@ -749,11 +932,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   // Nudge the user if mesh is their provider but isn't running.
   // Delay to let the renderer mount before sending the IPC event.
   setTimeout(() => {
-    mesh.checkProviderRunning(goosedClient).then((ok) => {
-      if (!ok && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mesh-not-running');
-      }
-    }).catch(() => {});
+    mesh
+      .checkProviderRunning(goosedClient)
+      .then((ok) => {
+        if (!ok && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mesh-not-running');
+        }
+      })
+      .catch(() => {});
   }, 5000);
 
   // Let windowStateKeeper manage the window
@@ -777,7 +963,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
       if (params.misspelledWord) {
         menu.append(
           new MenuItem({
-            label: 'Add to dictionary',
+            label: menuT('Add to dictionary'),
             click: () =>
               mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
           })
@@ -791,14 +977,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     if (params.selectionText) {
       menu.append(
         new MenuItem({
-          label: 'Cut',
+          label: menuT('Cut'),
           accelerator: 'CmdOrCtrl+X',
           role: 'cut',
         })
       );
       menu.append(
         new MenuItem({
-          label: 'Copy',
+          label: menuT('Copy'),
           accelerator: 'CmdOrCtrl+C',
           role: 'copy',
         })
@@ -809,7 +995,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     if (params.isEditable) {
       menu.append(
         new MenuItem({
-          label: 'Paste',
+          label: menuT('Paste'),
           accelerator: 'CmdOrCtrl+V',
           role: 'paste',
         })
@@ -1349,6 +1535,14 @@ ipcMain.handle('add-recent-dir', (_event, dir: string) => {
   }
 });
 
+ipcMain.handle('list-recent-dirs', () => {
+  return loadRecentDirs();
+});
+
+ipcMain.handle('list-git-worktree-dirs', async (_event, dir: string) => {
+  return await listGitWorktreeDirs(dir);
+});
+
 ipcMain.handle('get-setting', (_event, key: SettingKey) => {
   const settings = getSettings();
   return settings[key];
@@ -1359,6 +1553,7 @@ const validSettingKeys: Set<string> = new Set([
   'showMenuBarIcon',
   'showDockIcon',
   'enableWakelock',
+  'enableNotifications',
   'spellcheckEnabled',
   'externalGoosed',
   'globalShortcut',
@@ -1570,6 +1765,10 @@ ipcMain.handle('get-spellcheck-state', () => {
     console.error('Error getting spellcheck state:', error);
     return true;
   }
+});
+
+ipcMain.handle('is-any-window-focused', () => {
+  return BrowserWindow.getFocusedWindow() !== null;
 });
 
 // Add file/directory selection handler
@@ -1887,7 +2086,7 @@ async function appMain() {
   if (process.platform === 'darwin') {
     const dockMenu = Menu.buildFromTemplate([
       {
-        label: 'New Window',
+        label: menuT('New Window'),
         click: () => {
           createNewWindow(app);
         },
@@ -1907,7 +2106,7 @@ async function appMain() {
       appMenu.submenu.insert(
         1,
         new MenuItem({
-          label: 'Settings',
+          label: menuT('Settings'),
           accelerator: shortcuts.settings,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1925,7 +2124,7 @@ async function appMain() {
 
     const findSubmenu = Menu.buildFromTemplate([
       {
-        label: 'Find…',
+        label: menuT('Find…'),
         accelerator: shortcuts.find || undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1933,7 +2132,7 @@ async function appMain() {
         },
       },
       {
-        label: 'Find Next',
+        label: menuT('Find Next'),
         accelerator: shortcuts.findNext || undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1941,7 +2140,7 @@ async function appMain() {
         },
       },
       {
-        label: 'Find Previous',
+        label: menuT('Find Previous'),
         accelerator: shortcuts.findPrevious || undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1949,7 +2148,7 @@ async function appMain() {
         },
       },
       {
-        label: 'Use Selection for Find',
+        label: menuT('Use Selection for Find'),
         accelerator: process.platform === 'darwin' ? 'Command+E' : undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1962,7 +2161,7 @@ async function appMain() {
     editMenu.submenu.insert(
       selectAllIndex + 1,
       new MenuItem({
-        label: 'Find',
+        label: menuT('Find'),
         submenu: findSubmenu,
       })
     );
@@ -1978,7 +2177,7 @@ async function appMain() {
       fileMenu.submenu.insert(
         menuIndex++,
         new MenuItem({
-          label: 'New Chat',
+          label: menuT('New Chat'),
           accelerator: shortcuts.newChat,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1992,7 +2191,7 @@ async function appMain() {
       fileMenu.submenu.insert(
         menuIndex++,
         new MenuItem({
-          label: 'New Chat Window',
+          label: menuT('New Chat Window'),
           accelerator: shortcuts.newChatWindow,
           click() {
             ipcMain.emit('create-chat-window');
@@ -2005,7 +2204,7 @@ async function appMain() {
       fileMenu.submenu.insert(
         menuIndex++,
         new MenuItem({
-          label: 'Open Directory...',
+          label: menuT('Open Directory...'),
           accelerator: shortcuts.openDirectory,
           click: () => openDirectoryDialog(),
         })
@@ -2017,7 +2216,7 @@ async function appMain() {
       fileMenu.submenu.insert(
         menuIndex++,
         new MenuItem({
-          label: 'Recent Directories',
+          label: menuT('Recent Directories'),
           submenu: recentFilesSubmenu,
         })
       );
@@ -2028,7 +2227,7 @@ async function appMain() {
     if (shortcuts.focusWindow) {
       fileMenu.submenu.append(
         new MenuItem({
-          label: 'Focus Goose Window',
+          label: menuT('Focus Goose Window'),
           accelerator: shortcuts.focusWindow,
           click() {
             focusWindow();
@@ -2040,7 +2239,7 @@ async function appMain() {
     if (shortcuts.quickLauncher) {
       fileMenu.submenu.append(
         new MenuItem({
-          label: 'Quick Launcher',
+          label: menuT('Quick Launcher'),
           accelerator: shortcuts.quickLauncher,
           click() {
             createLauncher();
@@ -2055,7 +2254,7 @@ async function appMain() {
 
     if (!windowMenu) {
       windowMenu = new MenuItem({
-        label: 'Window',
+        label: menuT('Window'),
         submenu: Menu.buildFromTemplate([]),
       });
 
@@ -2071,7 +2270,7 @@ async function appMain() {
       if (shortcuts.alwaysOnTop) {
         windowMenu.submenu.append(
           new MenuItem({
-            label: 'Always on Top',
+            label: menuT('Always on Top'),
             type: 'checkbox',
             accelerator: shortcuts.alwaysOnTop,
             click(menuItem) {
@@ -2100,7 +2299,7 @@ async function appMain() {
       viewMenu.submenu.append(new MenuItem({ type: 'separator' }));
       viewMenu.submenu.append(
         new MenuItem({
-          label: 'Toggle Navigation',
+          label: menuT('Toggle Navigation'),
           accelerator: shortcuts.toggleNavigation,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -2120,7 +2319,7 @@ async function appMain() {
     // If Help menu doesn't exist, create it and add it to the menu
     if (!helpMenu) {
       helpMenu = new MenuItem({
-        label: 'Help',
+        label: menuT('Help'),
         submenu: Menu.buildFromTemplate([]), // Start with an empty submenu
       });
       // Find a reasonable place to insert the Help menu, usually near the end
@@ -2137,7 +2336,7 @@ async function appMain() {
 
       // Create the About Goose menu item with a submenu
       const aboutGooseMenuItem = new MenuItem({
-        label: 'About Goose',
+        label: menuT('About Goose'),
         submenu: Menu.buildFromTemplate([]), // Start with an empty submenu for About
       });
 
@@ -2156,6 +2355,11 @@ async function appMain() {
   }
 
   if (menu) {
+    // Translate labels (including Electron's default top-level entries
+    // File/Edit/View/Window/Help and submenu items populated by roles) before
+    // installing the menu. Called last so the lookups above that match on the
+    // English labels still succeed.
+    translateMenuLabels(menu.items);
     Menu.setApplicationMenu(menu);
   }
 

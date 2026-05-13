@@ -14,36 +14,8 @@ import {
   INITIAL_SESSION_CHAT_RUNTIME,
   INITIAL_TOKEN_STATE,
 } from "@/shared/types/chat";
-
-const DRAFTS_STORAGE_KEY = "goose:chat-drafts";
-
-function loadCachedDrafts(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    const stored = window.localStorage.getItem(DRAFTS_STORAGE_KEY);
-    if (!stored) return {};
-    const parsed = JSON.parse(stored);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistDrafts(drafts: Record<string, string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    const nonEmpty = Object.fromEntries(
-      Object.entries(drafts).filter(([, v]) => v.length > 0),
-    );
-    if (Object.keys(nonEmpty).length === 0) {
-      window.localStorage.removeItem(DRAFTS_STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(nonEmpty));
-    }
-  } catch {
-    // localStorage may be unavailable
-  }
-}
+import type { ChatSendOptions, ChatSkillDraft } from "../types";
+import { loadCachedDrafts, persistDrafts } from "./draftPersistence";
 
 function createInitialSessionRuntime(): SessionChatRuntime {
   return {
@@ -56,6 +28,7 @@ export interface QueuedMessage {
   text: string;
   personaId?: string;
   attachments?: ChatAttachmentDraft[];
+  sendOptions?: ChatSendOptions;
 }
 
 export interface ScrollTargetMessage {
@@ -68,6 +41,7 @@ interface ChatStoreState {
   sessionStateById: Record<string, SessionChatRuntime>;
   queuedMessageBySession: Record<string, QueuedMessage>;
   draftsBySession: Record<string, string>;
+  skillDraftsBySession: Record<string, ChatSkillDraft[]>;
   activeSessionId: string | null;
   isConnected: boolean;
   loadingSessionIds: Set<string>;
@@ -103,11 +77,18 @@ interface ChatStoreActions {
   markSessionRead: (sessionId: string) => void;
   markSessionUnread: (sessionId: string) => void;
   updateTokenState: (sessionId: string, state: Partial<TokenState>) => void;
+  replaceTokenState: (
+    sessionId: string,
+    tokenState: TokenState,
+    hasUsageSnapshot?: boolean,
+  ) => void;
   resetTokenState: (sessionId: string) => void;
   enqueueMessage: (sessionId: string, message: QueuedMessage) => void;
   dismissQueuedMessage: (sessionId: string) => void;
   setDraft: (sessionId: string, text: string) => void;
   clearDraft: (sessionId: string) => void;
+  setSkillDrafts: (sessionId: string, skills: ChatSkillDraft[]) => void;
+  clearSkillDrafts: (sessionId: string) => void;
   setSessionLoading: (sessionId: string, loading: boolean) => void;
   setScrollTargetMessage: (
     sessionId: string,
@@ -126,6 +107,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sessionStateById: {},
   queuedMessageBySession: {},
   draftsBySession: loadCachedDrafts(),
+  skillDraftsBySession: {},
   activeSessionId: null,
   isConnected: false,
   loadingSessionIds: new Set<string>(),
@@ -382,10 +364,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               accumulatedTotal,
               contextLimit: partial.contextLimit ?? current.contextLimit,
             },
+            hasUsageSnapshot: true,
           },
         },
       };
     }),
+
+  replaceTokenState: (sessionId, tokenState, hasUsageSnapshot = true) =>
+    set((state) => ({
+      sessionStateById: {
+        ...state.sessionStateById,
+        [sessionId]: {
+          ...(state.sessionStateById[sessionId] ??
+            createInitialSessionRuntime()),
+          tokenState: { ...tokenState },
+          hasUsageSnapshot,
+        },
+      },
+    })),
 
   resetTokenState: (sessionId) =>
     set((state) => ({
@@ -395,6 +391,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ...(state.sessionStateById[sessionId] ??
             createInitialSessionRuntime()),
           tokenState: { ...INITIAL_TOKEN_STATE },
+          hasUsageSnapshot: false,
         },
       },
     })),
@@ -429,6 +426,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
     persistDrafts(get().draftsBySession);
   },
+
+  setSkillDrafts: (sessionId, skills) =>
+    set((state) => {
+      if (skills.length === 0) {
+        const { [sessionId]: _, ...rest } = state.skillDraftsBySession;
+        return { skillDraftsBySession: rest };
+      }
+
+      return {
+        skillDraftsBySession: {
+          ...state.skillDraftsBySession,
+          [sessionId]: skills,
+        },
+      };
+    }),
+
+  clearSkillDrafts: (sessionId) =>
+    set((state) => {
+      const { [sessionId]: _, ...rest } = state.skillDraftsBySession;
+      return { skillDraftsBySession: rest };
+    }),
 
   // Session loading (replay)
   setSessionLoading: (sessionId, loading) =>
@@ -475,13 +493,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const { [sessionId]: ___, ...remainingQueued } =
         state.queuedMessageBySession;
       const { [sessionId]: ____, ...remainingDrafts } = state.draftsBySession;
-      const { [sessionId]: _____, ...remainingTargets } =
+      const { [sessionId]: removedSkillDrafts, ...remainingSkillDrafts } =
+        state.skillDraftsBySession;
+      void removedSkillDrafts;
+      const { [sessionId]: removedTarget, ...remainingTargets } =
         state.scrollTargetMessageBySession;
+      void removedTarget;
       return {
         messagesBySession: rest,
         sessionStateById: remainingSessionState,
         queuedMessageBySession: remainingQueued,
         draftsBySession: remainingDrafts,
+        skillDraftsBySession: remainingSkillDrafts,
         scrollTargetMessageBySession: remainingTargets,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
