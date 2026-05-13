@@ -383,7 +383,7 @@ app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
     const parsedUrl = new URL(url);
 
-    log.info('[Main] Received open-url event:', url);
+    log.info('[Main] Received open-url event:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
 
     await app.whenReady();
 
@@ -412,7 +412,7 @@ app.on('open-url', async (_event, url) => {
 
     // For extension/session URLs, store the deep link for processing after React is ready
     pendingDeepLink = url;
-    log.info('[Main] Stored pending deep link for processing after React ready:', url);
+    log.info('[Main] Stored pending deep link for processing after React ready:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
 
     const existingWindows = BrowserWindow.getAllWindows();
     if (existingWindows.length > 0) {

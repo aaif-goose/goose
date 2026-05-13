@@ -52,6 +52,7 @@ import {
   ExtensionConfig,
   ExtensionData,
 } from '../../api';
+import { getTunnelStatus } from '../../api/sdk.gen';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { shouldShowNewChatTitle } from '../../sessions';
@@ -295,6 +296,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     const [shareLink, setShareLink] = useState('');
     const [showShareLinkModal, setShowShareLinkModal] = useState(false);
     const [sharingSessionId, setSharingSessionId] = useState<string | null>(null);
+    const [nostrEnabled, setNostrEnabled] = useState(true);
 
     // Search state for debouncing
     const [searchTerm, setSearchTerm] = useState('');
@@ -368,6 +370,17 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     useEffect(() => {
       loadSessions();
     }, [loadSessions]);
+
+    // Hide Nostr sharing when tunnel is disabled (restricted/enterprise bundles)
+    useEffect(() => {
+      getTunnelStatus()
+        .then(({ data }) => {
+          if (data?.state === 'disabled') {
+            setNostrEnabled(false);
+          }
+        })
+        .catch(() => {});
+    }, []);
 
     // Timing logic to prevent flicker between skeleton and content on initial load
     useEffect(() => {
@@ -830,18 +843,20 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
             >
               <Download className="w-3 h-3 text-text-secondary hover:text-text-primary" />
             </button>
-            <button
-              onClick={handleShareClick}
-              disabled={isSharing}
-              className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer disabled:cursor-wait disabled:opacity-60"
-              title={intl.formatMessage(i18n.shareNostrSession)}
-            >
-              {isSharing ? (
-                <LoaderCircle className="w-3 h-3 text-text-secondary animate-spin" />
-              ) : (
-                <Share2 className="w-3 h-3 text-text-secondary hover:text-text-primary" />
-              )}
-            </button>
+            {nostrEnabled && (
+              <button
+                onClick={handleShareClick}
+                disabled={isSharing}
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer disabled:cursor-wait disabled:opacity-60"
+                title={intl.formatMessage(i18n.shareNostrSession)}
+              >
+                {isSharing ? (
+                  <LoaderCircle className="w-3 h-3 text-text-secondary animate-spin" />
+                ) : (
+                  <Share2 className="w-3 h-3 text-text-secondary hover:text-text-primary" />
+                )}
+              </button>
+            )}
           </div>
         </Card>
       );
@@ -964,15 +979,17 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
                 <div className="flex justify-between items-center mb-1">
                   <h1 className="text-4xl font-light">{intl.formatMessage(i18n.chatHistory)}</h1>
                   <div className="flex items-center gap-2">
-                    <Button
-                      onClick={() => setShowImportLinkModal(true)}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <Share2 className="w-4 h-4" />
-                      {intl.formatMessage(i18n.importNostrSession)}
-                    </Button>
+                    {nostrEnabled && (
+                      <Button
+                        onClick={() => setShowImportLinkModal(true)}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        {intl.formatMessage(i18n.importNostrSession)}
+                      </Button>
+                    )}
                     <Button
                       onClick={handleImportClick}
                       variant="outline"
