@@ -116,14 +116,45 @@
           "401": {
             "description": "Unauthorized - invalid secret key"
           },
+          "403": {
+            "description": "Forbidden - tool is not app-visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
-            "description": "Resource not found"
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "424": {
-            "description": "Agent not initialized"
+            "description": "Frontend tool execution requires the frontend host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
-            "description": "Internal server error"
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4650,6 +4681,7 @@
           },
           "dynamic_models": {
             "type": "boolean",
+            "description": "Controls whether `fetch_supported_models` calls the provider's `/v1/models`\nendpoint or returns the static `models` list directly.\n\n- `Some(false)` + non-empty `models`: return the static list; no API call.\nConstruction fails if `models` is empty.\n- `Some(true)` or `None`: try the API; fall back to `models` on 404.",
             "nullable": true
           },
           "engine": {
@@ -7790,12 +7822,33 @@
             "format": "date-time",
             "nullable": true
           },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
           "paused": {
             "type": "boolean"
           },
           "process_start_time": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "recipe_base_dir": {
+            "type": "string",
+            "description": "Original directory of the recipe file before it was copied to scheduled_recipes/.\nPreserved so that relative paths (sub-recipes, template includes) resolve correctly\nagainst the source tree rather than the scheduler's internal storage directory.",
             "nullable": true
           },
           "source": {

@@ -28,6 +28,7 @@ use crate::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::types::{FrontendTool, SessionConfig, SharedProvider, ToolResultReceiver};
+use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{get_enabled_extensions, Config, GooseMode};
 use crate::context_mgmt::{
@@ -66,6 +67,8 @@ use tracing::{debug, error, info, instrument, warn};
 
 const DEFAULT_MAX_TURNS: u32 = 1000;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
+const DEFAULT_FRONTEND_INSTRUCTIONS: &str =
+    "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
 
 /// Context needed for the reply function
 pub struct ReplyContext {
@@ -162,6 +165,7 @@ pub struct Agent {
 
     pub extension_manager: Arc<ExtensionManager>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
+    pub(super) frontend_extensions: Mutex<HashMap<String, ExtensionConfig>>,
     pub(super) frontend_tools: Mutex<HashMap<String, FrontendTool>>,
     pub(super) frontend_instructions: Mutex<Option<String>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
@@ -272,6 +276,7 @@ impl Agent {
                 capabilities,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
+            frontend_extensions: Mutex::new(HashMap::new()),
             frontend_tools: Mutex::new(HashMap::new()),
             frontend_instructions: Mutex::new(None),
             prompt_manager: Mutex::new(PromptManager::new()),
@@ -626,6 +631,111 @@ impl Agent {
         self.frontend_tools.lock().await.get(name).cloned()
     }
 
+    async fn frontend_extension_configs(&self) -> Vec<ExtensionConfig> {
+        let mut configs = self
+            .frontend_extensions
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        configs.sort_by_key(|config| config.key());
+        configs
+    }
+
+    async fn frontend_tools_for_extension(&self, extension_name: Option<&str>) -> Vec<Tool> {
+        let requested_extension = extension_name.map(name_to_key);
+
+        self.frontend_extension_configs()
+            .await
+            .into_iter()
+            .filter_map(|config| {
+                let include = requested_extension
+                    .as_ref()
+                    .is_none_or(|name| *name == config.key());
+
+                match config {
+                    ExtensionConfig::Frontend { tools, .. } if include => Some(tools),
+                    _ => None,
+                }
+            })
+            .flatten()
+            .collect()
+    }
+
+    async fn rebuild_frontend_derived_state(&self, extensions: &HashMap<String, ExtensionConfig>) {
+        let multiple = extensions.len() > 1;
+        let mut tools = HashMap::new();
+        let mut instructions = Vec::new();
+
+        for config in extensions.values() {
+            if let ExtensionConfig::Frontend {
+                name,
+                tools: ext_tools,
+                instructions: ext_instructions,
+                ..
+            } = config
+            {
+                for tool in ext_tools {
+                    let tool_name = tool.name.to_string();
+                    tools.insert(
+                        tool_name.clone(),
+                        FrontendTool {
+                            name: tool_name,
+                            tool: tool.clone(),
+                        },
+                    );
+                }
+
+                let text = ext_instructions
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_FRONTEND_INSTRUCTIONS.to_string());
+                instructions.push(if multiple {
+                    format!("{name}: {text}")
+                } else {
+                    text
+                });
+            }
+        }
+
+        *self.frontend_tools.lock().await = tools;
+        *self.frontend_instructions.lock().await = if instructions.is_empty() {
+            None
+        } else {
+            Some(instructions.join("\n\n"))
+        };
+    }
+
+    async fn insert_frontend_extension(&self, extension: ExtensionConfig) {
+        let mut extensions = self.frontend_extensions.lock().await;
+        extensions.insert(extension.key(), extension);
+        self.rebuild_frontend_derived_state(&extensions).await;
+    }
+
+    async fn remove_frontend_extension(&self, name: &str) {
+        let mut extensions = self.frontend_extensions.lock().await;
+        extensions.remove(&name_to_key(name));
+        self.rebuild_frontend_derived_state(&extensions).await;
+    }
+
+    async fn extension_configs_for_persistence(&self) -> Vec<ExtensionConfig> {
+        let mut extension_configs = self.extension_manager.get_extension_configs().await;
+        extension_configs.extend(self.frontend_extension_configs().await);
+        extension_configs
+    }
+
+    pub(crate) async fn total_extension_and_tool_counts(&self, session_id: &str) -> (usize, usize) {
+        let (extension_count, tool_count) = self
+            .extension_manager
+            .get_extension_and_tool_counts(session_id)
+            .await;
+
+        (
+            extension_count + self.frontend_extensions.lock().await.len(),
+            tool_count + self.frontend_tools.lock().await.len(),
+        )
+    }
+
     pub async fn add_final_output_tool(&self, response: Response) {
         let mut final_output_tool = self.final_output_tool.lock().await;
         let created_final_output_tool = FinalOutputTool::new(response);
@@ -771,9 +881,8 @@ impl Agent {
     /// Save current extension state to session metadata
     /// Should be called after any extension add/remove operation
     pub async fn save_extension_state(&self, session: &SessionConfig) -> Result<()> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
-
-        let extensions_state = EnabledExtensionsState::new(extension_configs);
+        let extensions_state =
+            EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
 
         let session_manager = self.config.session_manager.clone();
         let mut session_data = session_manager.get_session(&session.id, false).await?;
@@ -794,8 +903,8 @@ impl Agent {
 
     /// Save current extension state to session by session_id
     pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
-        let extensions_state = EnabledExtensionsState::new(extension_configs);
+        let extensions_state =
+            EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
 
         let session_manager = self.config.session_manager.clone();
         let session = session_manager.get_session(session_id, false).await?;
@@ -999,30 +1108,8 @@ impl Agent {
         let working_dir = Some(session.working_dir);
 
         match &extension {
-            ExtensionConfig::Frontend {
-                tools,
-                instructions,
-                ..
-            } => {
-                // For frontend tools, just store them in the frontend_tools map
-                let mut frontend_tools = self.frontend_tools.lock().await;
-                for tool in tools {
-                    let frontend_tool = FrontendTool {
-                        name: tool.name.to_string(),
-                        tool: tool.clone(),
-                    };
-                    frontend_tools.insert(tool.name.to_string(), frontend_tool);
-                }
-                // Store instructions if provided, using "frontend" as the key
-                let mut frontend_instructions = self.frontend_instructions.lock().await;
-                if let Some(instructions) = instructions {
-                    *frontend_instructions = Some(instructions.clone());
-                } else {
-                    // Default frontend instructions if none provided
-                    *frontend_instructions = Some(
-                        "The following tools are provided directly by the frontend and will be executed by the frontend when called.".to_string(),
-                    );
-                }
+            ExtensionConfig::Frontend { .. } => {
+                self.insert_frontend_extension(extension.clone()).await;
             }
             _ => {
                 let container = self.container.lock().await;
@@ -1047,6 +1134,11 @@ impl Agent {
             .await
             .unwrap_or_default();
 
+        prefixed_tools.extend(
+            self.frontend_tools_for_extension(extension_name.as_deref())
+                .await,
+        );
+
         if (extension_name.is_none() || extension_name.as_deref() == Some("platform"))
             && self.config.scheduler_service.is_some()
         {
@@ -1064,6 +1156,7 @@ impl Agent {
 
     pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
         self.extension_manager.remove_extension(name).await?;
+        self.remove_frontend_extension(name).await;
 
         // Persist extension state after successful removal
         self.persist_extension_state(session_id)
@@ -1077,14 +1170,22 @@ impl Agent {
     }
 
     pub async fn list_extensions(&self) -> Vec<String> {
-        self.extension_manager
+        let mut extensions = self
+            .extension_manager
             .list_extensions()
             .await
-            .expect("Failed to list extensions")
+            .expect("Failed to list extensions");
+        extensions.extend(
+            self.frontend_extension_configs()
+                .await
+                .into_iter()
+                .map(|config| config.name()),
+        );
+        extensions
     }
 
     pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
-        self.extension_manager.get_extension_configs().await
+        self.extension_configs_for_persistence().await
     }
 
     /// Handle a confirmation response for a tool request
@@ -2243,10 +2344,7 @@ impl Agent {
             .get_extensions_info(&session.working_dir)
             .await;
         tracing::debug!("Retrieved {} extensions info", extensions_info.len());
-        let (extension_count, tool_count) = self
-            .extension_manager
-            .get_extension_and_tool_counts(session_id)
-            .await;
+        let (extension_count, tool_count) = self.total_extension_and_tool_counts(session_id).await;
 
         // Get model name from provider
         let provider = self.provider().await.map_err(|e| {

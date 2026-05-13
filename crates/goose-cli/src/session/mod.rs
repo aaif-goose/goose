@@ -65,6 +65,10 @@ struct JsonOutput {
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonMetadata {
     total_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<i32>,
     status: String,
 }
 
@@ -84,6 +88,10 @@ enum StreamEvent {
     },
     Complete {
         total_tokens: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input_tokens: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output_tokens: Option<i32>,
     },
 }
 
@@ -1289,11 +1297,15 @@ impl CliSession {
                 .await
             {
                 Ok(session) => JsonMetadata {
-                    total_tokens: session.total_tokens,
+                    total_tokens: session.accumulated_total_tokens.or(session.total_tokens),
+                    input_tokens: session.accumulated_input_tokens.or(session.input_tokens),
+                    output_tokens: session.accumulated_output_tokens.or(session.output_tokens),
                     status: "completed".to_string(),
                 },
                 Err(_) => JsonMetadata {
                     total_tokens: None,
+                    input_tokens: None,
+                    output_tokens: None,
                     status: "completed".to_string(),
                 },
             };
@@ -1303,15 +1315,26 @@ impl CliSession {
             };
             println!("{}", serde_json::to_string_pretty(&json_output)?);
         } else if is_stream_json_mode {
-            let total_tokens = self
+            let session = self
                 .agent
                 .config
                 .session_manager
                 .get_session(&self.session_id, false)
                 .await
-                .ok()
-                .and_then(|s| s.total_tokens);
-            emit_stream_event(&StreamEvent::Complete { total_tokens });
+                .ok();
+            let (total_tokens, input_tokens, output_tokens) = match session {
+                Some(s) => (
+                    s.accumulated_total_tokens.or(s.total_tokens),
+                    s.accumulated_input_tokens.or(s.input_tokens),
+                    s.accumulated_output_tokens.or(s.output_tokens),
+                ),
+                None => (None, None, None),
+            };
+            emit_stream_event(&StreamEvent::Complete {
+                total_tokens,
+                input_tokens,
+                output_tokens,
+            });
         } else {
             println!();
         }

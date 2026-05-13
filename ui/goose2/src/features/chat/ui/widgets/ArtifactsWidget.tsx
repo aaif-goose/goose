@@ -59,7 +59,15 @@ function getArtifactIcon(artifact: SessionArtifact) {
   return IconFile;
 }
 
-export function ArtifactsWidget() {
+interface ArtifactsWidgetProps {
+  isOpen: boolean;
+  onToggleOpen: () => void;
+}
+
+export function ArtifactsWidget({
+  isOpen,
+  onToggleOpen,
+}: ArtifactsWidgetProps) {
   const { t } = useTranslation("chat");
   const { getAllSessionArtifacts, openResolvedPath } =
     useArtifactPolicyContext();
@@ -77,6 +85,8 @@ export function ArtifactsWidget() {
     <Widget
       title={t("contextPanel.widgets.artifacts")}
       icon={<IconFileDescription className="size-3.5" />}
+      isOpen={isOpen}
+      onToggleOpen={onToggleOpen}
       action={
         <span className="text-xxs text-foreground-subtle">
           {artifacts.length}
@@ -93,11 +103,11 @@ export function ArtifactsWidget() {
           >
             <button
               type="button"
-              className="flex w-full select-none items-center gap-2 px-3 py-1.5 text-left transition-colors duration-100 hover:bg-muted/80"
+              className="relative flex w-full select-none items-center gap-2 px-4 py-1.5 text-left transition-colors duration-100 before:pointer-events-none before:absolute before:inset-x-4 before:top-0 before:h-px before:bg-border/70 before:content-[''] hover:bg-muted/80"
               onClick={() => void openResolvedPath(artifact.resolvedPath)}
             >
-              <Icon className="size-3.5 shrink-0 text-foreground-subtle" />
-              <span className="truncate text-xs text-foreground">
+              <Icon className="size-4 shrink-0 text-foreground-subtle" />
+              <span className="truncate text-sm text-foreground">
                 {artifact.filename}
               </span>
             </button>

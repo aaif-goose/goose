@@ -5,6 +5,7 @@ import { defineMessages, useIntl } from '../../i18n';
 import { cn } from '../../utils';
 import { DropdownMenu, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { ChatSessionsDropdown, SessionsList } from './navigation';
+import { ChatHistorySearch } from '../conversation/ChatHistorySearch';
 import type { NavigationRendererProps } from './navigation/types';
 
 const i18n = defineMessages({
@@ -74,6 +75,20 @@ export const CondensedRenderer: React.FC<NavigationRendererProps> = ({
       {/* Left spacer (horizontal top position only) */}
       {!isVertical && isTopPosition && (
         <div className="bg-background-primary rounded-lg self-stretch w-[160px] flex-shrink-0" />
+      )}
+
+      {/* Search bar — skip mount entirely in icon-only mode so the
+          document-level Cmd/Ctrl+K handler inside ChatHistorySearch
+          does not intercept the shortcut when no UI is visible. */}
+      {!isCondensedIconOnly && (
+        <div className={cn(isVertical ? 'w-full px-2 pb-1' : 'py-1.5 px-3')}>
+          <ChatHistorySearch
+            onSessionClick={onSessionClick}
+            getSessionStatus={getSessionStatus}
+            clearUnread={clearUnread}
+            activeSessionId={activeSessionId}
+          />
+        </div>
       )}
 
       {/* Navigation items */}

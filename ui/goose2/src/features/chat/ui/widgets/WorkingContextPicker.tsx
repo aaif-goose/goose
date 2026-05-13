@@ -204,17 +204,17 @@ export function WorkingContextPicker({
             type="button"
             className={cn(
               "flex w-full items-center gap-2 rounded-md border border-border px-2.5 py-2",
-              "text-xs text-foreground transition-colors",
+              "text-sm text-foreground transition-colors",
               "hover:bg-background-alt focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
             aria-label={t("contextPanel.picker.selectContext")}
           >
-            <IconFolder className="size-3.5 shrink-0 text-muted-foreground" />
+            <IconFolder className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 text-left">
-              <span className="block truncate font-medium text-foreground">
+              <span className="block truncate font-normal text-foreground">
                 {activeWorktreeLabel ?? t("contextPanel.empty.folderNotSet")}
               </span>
-              <span className="block truncate text-xxs text-foreground-subtle">
+              <span className="block truncate text-xs text-foreground-subtle">
                 {t("contextPanel.picker.checkedOutBranch", {
                   branch: activeBranchLabel,
                 })}
@@ -239,18 +239,18 @@ export function WorkingContextPicker({
                   key={wt.path}
                   type="button"
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
                     "hover:bg-muted focus-visible:outline-none focus-visible:bg-muted",
                     isWorktreeSelected(wt.path) && "bg-muted",
                   )}
                   onClick={() => handleWorktreeSelect(wt.path, wt.branch)}
                 >
-                  <IconFolder className="size-3.5 shrink-0 text-muted-foreground" />
+                  <IconFolder className="size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-foreground">
+                    <span className="block truncate font-normal text-foreground">
                       {worktreeName(wt.path)}
                     </span>
-                    <span className="block truncate text-xxs text-foreground-subtle">
+                    <span className="block truncate text-xs text-foreground-subtle">
                       {t("contextPanel.picker.checkedOutBranch", {
                         branch: wt.branch ?? t("contextPanel.states.detached"),
                       })}
@@ -283,19 +283,19 @@ export function WorkingContextPicker({
                     type="button"
                     disabled={switching || isCurrentBranch}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
                       "hover:bg-muted focus-visible:outline-none focus-visible:bg-muted",
                       "disabled:opacity-50",
                     )}
                     onClick={() => handleBranchSelect(branch)}
                   >
-                    <IconGitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+                    <IconGitBranch className="size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-foreground">
+                      <span className="block truncate font-normal text-foreground">
                         {branch}
                       </span>
                       {branchMeta ? (
-                        <span className="block truncate text-xxs text-muted-foreground">
+                        <span className="block truncate text-xs text-muted-foreground">
                           {branchMeta}
                         </span>
                       ) : null}

@@ -446,7 +446,10 @@ instructions: Child instructions"#;
         let result = resolve_sub_recipe_path("./sub-recipes/child.yaml", parent_dir);
         assert!(result.is_ok());
 
-        let expected_path = parent_dir.join("./sub-recipes/child.yaml");
+        let expected_path = parent_dir
+            .join("sub-recipes/child.yaml")
+            .canonicalize()
+            .unwrap();
         assert_eq!(result.unwrap(), expected_path.to_str().unwrap());
     }
 
@@ -466,7 +469,8 @@ instructions: Absolute instructions"#;
 
         let result = resolve_sub_recipe_path(absolute_path_str, parent_dir);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), absolute_path_str);
+        let expected = absolute_path.canonicalize().unwrap();
+        assert_eq!(result.unwrap(), expected.to_str().unwrap());
     }
 
     #[test]
@@ -534,7 +538,10 @@ instructions: Child instructions
         assert_eq!(sub_recipes.len(), 1);
         assert_eq!(sub_recipes[0].name, "child");
 
-        let expected_absolute_path = temp_path.join("./sub-recipes/child.yaml");
+        let expected_absolute_path = temp_path
+            .join("sub-recipes/child.yaml")
+            .canonicalize()
+            .unwrap();
         assert_eq!(
             sub_recipes[0].path,
             expected_absolute_path.to_str().unwrap()

@@ -3,13 +3,15 @@ import {
   IconLayoutSidebarRightFilled,
 } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
+import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 import { ContextPanel } from "./ContextPanel";
 
 const CP_PAD = 12;
-const CP_TOTAL_W = 340 + CP_PAD * 2;
+const CP_PANEL_W = SIDE_PANEL_DEFAULT_WIDTH;
+const CP_TOTAL_W = CP_PANEL_W + CP_PAD * 2;
 const CP_TOGGLE_RIGHT = CP_PAD + 12;
 const CP_TOGGLE_TOP = CP_PAD + 10;
 const CP_FADE_S = 0.15;
@@ -73,12 +75,14 @@ export function ChatContextPanel({
               className={cn(
                 "flex",
                 isCompactViewport
-                  ? "absolute bottom-3 right-3 top-12 z-10 w-[min(340px,calc(100%-1.5rem))]"
+                  ? "absolute bottom-3 right-3 top-12 z-10 w-[min(var(--context-panel-width),calc(100%-1.5rem))]"
                   : "h-full",
               )}
               style={
                 isCompactViewport
-                  ? undefined
+                  ? ({
+                      "--context-panel-width": `${CP_PANEL_W}px`,
+                    } as CSSProperties)
                   : {
                       width: CP_TOTAL_W,
                       padding: CP_PAD,

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "../Sidebar";
 
 const mockSessions: Array<{
@@ -44,6 +44,11 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
 }));
 
 describe("Sidebar", () => {
+  beforeEach(() => {
+    mockSessions.splice(0, mockSessions.length);
+    window.localStorage.clear();
+  });
+
   it("shows sessions in recents when their project is not loaded", () => {
     mockSessions.splice(0, mockSessions.length, {
       id: "session-1",
@@ -131,5 +136,36 @@ describe("Sidebar", () => {
     );
 
     expect(screen.getByRole("button", { name: /home/i })).toBeInTheDocument();
+  });
+
+  it("collapses and expands the recents section", async () => {
+    const user = userEvent.setup();
+    mockSessions.splice(0, mockSessions.length, {
+      id: "session-1",
+      title: "Recovered Session",
+      updatedAt: "2026-04-09T12:00:00.000Z",
+      messageCount: 3,
+    });
+
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectSession={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    const recentsHeader = screen.getByRole("button", { name: /chats/i });
+    expect(screen.getByText("Recovered Session")).toBeInTheDocument();
+
+    await user.click(recentsHeader);
+    expect(screen.queryByText("Recovered Session")).not.toBeInTheDocument();
+
+    await user.click(recentsHeader);
+    expect(screen.getByText("Recovered Session")).toBeInTheDocument();
+
+    mockSessions.splice(0, mockSessions.length);
   });
 });

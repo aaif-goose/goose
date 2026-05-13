@@ -69,6 +69,7 @@ pub async fn handle_schedule_add(
     schedule_id: String,
     cron: String,
     recipe_source_arg: String, // This is expected to be a file path by the Scheduler
+    params: Vec<(String, String)>,
 ) -> Result<()> {
     println!(
         "[CLI Debug] Scheduling job ID: {}, Cron: {}, Recipe Source Path: {}",
@@ -88,6 +89,8 @@ pub async fn handle_schedule_add(
         paused: false,
         current_session_id: None,
         process_start_time: None,
+        parameters: params,
+        recipe_base_dir: None,
     };
 
     let scheduler_storage_path =

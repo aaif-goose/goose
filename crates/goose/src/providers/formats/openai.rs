@@ -710,6 +710,7 @@ fn ensure_valid_json_schema(schema: &mut Value) {
             if let Some(properties) = params_obj.get_mut("properties") {
                 if let Some(properties_obj) = properties.as_object_mut() {
                     for (_key, prop) in properties_obj.iter_mut() {
+                        normalize_nullable(prop);
                         if prop.is_object()
                             && prop.get("type").and_then(|t| t.as_str()) == Some("object")
                         {
@@ -719,6 +720,61 @@ fn ensure_valid_json_schema(schema: &mut Value) {
                 }
             }
         }
+    }
+}
+
+/// Normalizes nullable type representations that some providers (e.g. Vertex Gemini via Bifrost)
+/// don't support:
+/// - `"type": ["integer", "null"]` → `"type": "integer"` (drops the null variant)
+/// - `"anyOf": [T, {"type": "null"}]` → T (unwraps to the non-null schema)
+///
+/// Optional-ness is already conveyed by the field being absent from `required`.
+fn normalize_nullable(schema: &mut Value) {
+    let Some(obj) = schema.as_object_mut() else {
+        return;
+    };
+
+    // Handle type: ["T", "null"] array form (schemars 1.x style for nullable primitives)
+    if let Some(type_val) = obj.get("type").cloned() {
+        if let Some(types) = type_val.as_array() {
+            let non_null: Vec<&Value> = types
+                .iter()
+                .filter(|t| t.as_str() != Some("null"))
+                .collect();
+            if non_null.len() == 1 {
+                let scalar = non_null[0].clone();
+                obj.insert("type".to_string(), scalar);
+                return;
+            }
+        }
+    }
+
+    // Handle anyOf: [T, {type: "null"}] form — merge the non-null variant's fields
+    // into the current object (preserving sibling keys like "description" or "default")
+    // rather than replacing the whole schema.
+    if let Some(any_of) = obj.remove("anyOf") {
+        if let Some(variants) = any_of.as_array() {
+            if variants.len() == 2 {
+                let is_null = |v: &Value| v.get("type").and_then(|t| t.as_str()) == Some("null");
+                let non_null = if is_null(&variants[0]) {
+                    Some(&variants[1])
+                } else if is_null(&variants[1]) {
+                    Some(&variants[0])
+                } else {
+                    None
+                };
+                if let Some(replacement) = non_null {
+                    if let Some(replacement_obj) = replacement.as_object() {
+                        for (k, v) in replacement_obj {
+                            obj.entry(k.clone()).or_insert(v.clone());
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+        // Put it back if we couldn't simplify
+        obj.insert("anyOf".to_string(), any_of);
     }
 }
 
@@ -1036,15 +1092,22 @@ pub fn create_request(
         }
     }
 
-    let key = if is_reasoning_model {
-        "max_completion_tokens"
-    } else {
-        "max_tokens"
-    };
-    payload
-        .as_object_mut()
-        .unwrap()
-        .insert(key.to_string(), json!(model_config.max_output_tokens()));
+    // Only emit max_tokens / max_completion_tokens when the user (via
+    // GOOSE_MAX_TOKENS) or a canonical model record has supplied a value.
+    // For unknown models on OpenAI-compatible endpoints (e.g. llama_swap,
+    // lmstudio) sending the historic 4096 default truncates non-trivial
+    // responses; omitting the field lets the server use its own max.
+    if let Some(max_tokens) = model_config.max_tokens {
+        let key = if is_reasoning_model {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert(key.to_string(), json!(max_tokens));
+    }
 
     if for_streaming {
         payload["stream"] = json!(true);
@@ -1139,6 +1202,85 @@ mod tests {
         let mut tools = vec![original_schema.clone()];
         validate_tool_schemas(&mut tools);
         assert_eq!(tools[0], original_schema);
+
+        // Test case 4: anyOf nullable is unwrapped, preserving sibling metadata
+        let mut tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "shell",
+                "description": "run shell",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string" },
+                        "timeout_secs": {
+                            "description": "timeout in seconds",
+                            "anyOf": [
+                                { "type": "integer", "format": "uint64", "minimum": 0 },
+                                { "type": "null" }
+                            ]
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        })];
+        validate_tool_schemas(&mut tools);
+        let timeout_schema = &tools[0]["function"]["parameters"]["properties"]["timeout_secs"];
+        assert_eq!(timeout_schema["type"], "integer");
+        assert_eq!(timeout_schema["format"], "uint64");
+        assert_eq!(timeout_schema["description"], "timeout in seconds");
+        assert!(timeout_schema.get("anyOf").is_none());
+
+        // Test case 4b: type array form (schemars 1.x style for nullable primitives)
+        let mut tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "shell",
+                "description": "run shell",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string" },
+                        "timeout_secs": {
+                            "type": ["integer", "null"],
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        })];
+        validate_tool_schemas(&mut tools);
+        let timeout_schema = &tools[0]["function"]["parameters"]["properties"]["timeout_secs"];
+        assert_eq!(timeout_schema["type"], "integer");
+        assert!(!timeout_schema["type"].is_array());
+
+        // Test case 5: Verify the actual ShellParams schema is compatible (no anyOf for timeout_secs)
+        use crate::agents::platform_extensions::developer::shell::ShellParams;
+        use schemars::schema_for;
+        let schema_value = serde_json::to_value(schema_for!(ShellParams)).unwrap();
+        let schema_obj = schema_value.as_object().unwrap().clone();
+        let tool = rmcp::model::Tool::new("shell", "run shell", schema_obj);
+        let mut tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            }
+        })];
+        validate_tool_schemas(&mut tools);
+        let timeout = &tools[0]["function"]["parameters"]["properties"]["timeout_secs"];
+        assert!(
+            timeout.get("anyOf").is_none(),
+            "timeout_secs should not have anyOf after validation, got: {timeout}"
+        );
+        assert_eq!(
+            timeout["type"], "integer",
+            "timeout_secs should have type=integer"
+        );
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
@@ -1729,6 +1871,43 @@ mod tests {
             assert_eq!(obj.get(key).unwrap(), value);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_omits_max_tokens_when_unset() -> anyhow::Result<()> {
+        // Unknown models on OpenAI-compatible local providers (llama_swap,
+        // lmstudio) have no canonical record and no GOOSE_MAX_TOKENS, so the
+        // request must not pin the legacy 4096 default — the server should
+        // pick its own ceiling. See issue #9007.
+        let model_config = ModelConfig {
+            model_name: "some-unknown-local-model".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+        assert!(
+            !obj.contains_key("max_tokens"),
+            "max_tokens should be omitted when model_config.max_tokens is None"
+        );
+        assert!(
+            !obj.contains_key("max_completion_tokens"),
+            "max_completion_tokens should be omitted when model_config.max_tokens is None"
+        );
         Ok(())
     }
 

@@ -356,6 +356,13 @@ impl AcpProvider {
     }
 }
 
+fn fresh_text_run() -> (String, i64) {
+    (
+        uuid::Uuid::new_v4().to_string(),
+        chrono::Utc::now().timestamp(),
+    )
+}
+
 #[async_trait::async_trait]
 impl Provider for AcpProvider {
     fn get_name(&self) -> &str {
@@ -451,22 +458,36 @@ impl Provider for AcpProvider {
         Ok(Box::pin(try_stream! {
             let mut suppress_text = false;
             let mut rejected_tool_calls: HashSet<String> = HashSet::new();
+            // Stable id+timestamp per contiguous run so Desktop coalesces chunks into one bubble.
+            let mut text_run: Option<(String, i64)> = None;
+            let mut thought_run: Option<(String, i64)> = None;
 
             while let Some(update) = rx.recv().await {
                 match update {
                     AcpUpdate::Text(text) => {
                         if !suppress_text {
-                            let message = Message::assistant().with_text(text);
+                            let (id, ts) = text_run
+                                .get_or_insert_with(fresh_text_run)
+                                .clone();
+                            let message = Message::new(Role::Assistant, ts, vec![])
+                                .with_text(text)
+                                .with_id(id);
                             yield (Some(message), None);
                         }
                     }
                     AcpUpdate::Thought(text) => {
-                        let message = Message::assistant()
+                        let (id, ts) = thought_run
+                            .get_or_insert_with(fresh_text_run)
+                            .clone();
+                        let message = Message::new(Role::Assistant, ts, vec![])
                             .with_thinking(text, "")
-                            .with_visibility(true, false);
+                            .with_visibility(true, false)
+                            .with_id(id);
                         yield (Some(message), None);
                     }
                     AcpUpdate::ToolCallStart { id, name, kind, raw_input } => {
+                        text_run = None;
+                        thought_run = None;
                         if reject_all_tools {
                             suppress_text = true;
                             rejected_tool_calls.insert(id);
@@ -498,6 +519,8 @@ impl Provider for AcpProvider {
                         content,
                         is_error,
                     } => {
+                        text_run = None;
+                        thought_run = None;
                         if rejected_tool_calls.remove(&id) {
                             // In chat mode no tool_request was emitted (suppressed at
                             // ToolCallStart), so surface a plain text message. In other
@@ -527,6 +550,8 @@ impl Provider for AcpProvider {
                         }
                     }
                     AcpUpdate::PermissionRequest { request, response_tx } => {
+                        text_run = None;
+                        thought_run = None;
                         if let Some(decision) = permission_decision_from_mode(goose_mode) {
                             if decision.should_record_rejection() {
                                 rejected_tool_calls.insert(request.tool_call.tool_call_id.0.to_string());

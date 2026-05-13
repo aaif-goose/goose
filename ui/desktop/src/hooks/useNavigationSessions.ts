@@ -256,6 +256,9 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
 }
 
 export function getSessionDisplayName(session: Session): string {
+  if (session.user_set_name) {
+    return session.name;
+  }
   if (session.recipe?.title) {
     return session.recipe.title;
   }

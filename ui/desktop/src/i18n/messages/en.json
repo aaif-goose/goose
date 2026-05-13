@@ -119,6 +119,24 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose finished the task."
   },
+  "chatHistorySearch.keyboardHintMac": {
+    "defaultMessage": "⌘K"
+  },
+  "chatHistorySearch.keyboardHintOther": {
+    "defaultMessage": "Ctrl+K"
+  },
+  "chatHistorySearch.messageCount": {
+    "defaultMessage": "{count,plural,one{# message} other{# messages}}"
+  },
+  "chatHistorySearch.noResults": {
+    "defaultMessage": "No chats found"
+  },
+  "chatHistorySearch.searchError": {
+    "defaultMessage": "Search failed"
+  },
+  "chatHistorySearch.searchPlaceholder": {
+    "defaultMessage": "Search chats…"
+  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
   },
@@ -917,8 +935,26 @@
   "dictationSettings.voiceDictationProvider": {
     "defaultMessage": "Voice Dictation Provider"
   },
+  "dirSwitcher.chooseDirectory": {
+    "defaultMessage": "Choose directory…"
+  },
+  "dirSwitcher.currentDirectory": {
+    "defaultMessage": "Current directory"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
+  },
+  "dirSwitcher.gitWorktrees": {
+    "defaultMessage": "Git worktrees"
+  },
+  "dirSwitcher.noWorktreesFound": {
+    "defaultMessage": "No worktrees found"
+  },
+  "dirSwitcher.openInFinder": {
+    "defaultMessage": "Open in file manager"
+  },
+  "dirSwitcher.recentDirectories": {
+    "defaultMessage": "Recent directories"
   },
   "elicitationRequest.accept": {
     "defaultMessage": "Accept"

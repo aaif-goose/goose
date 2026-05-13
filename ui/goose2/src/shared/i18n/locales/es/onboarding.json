@@ -57,7 +57,7 @@
       "defaultFallback": "Listo en Inicio",
       "defaultDescription": "Esto es lo que Goose usará cuando empieces un chat nuevo.",
       "extensionsTitle": "Extensiones",
-      "extensionsDescription": "Las herramientas conectadas están disponibles en Configuración. Las herramientas importadas de Claude Desktop quedan desactivadas hasta que las habilites.",
+      "extensionsDescription": "Goose puede usar herramientas conectadas en los chats cuando las necesite. Administra las herramientas importadas desde Extensiones.",
       "skillsTitle": "Habilidades",
       "skillsDescription": "Habilidades personales que Goose puede ver ahora. Las habilidades de proyecto aparecen cuando abres un proyecto."
     },
