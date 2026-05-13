@@ -1281,13 +1281,13 @@ impl SummonClient {
         Ok(task_config)
     }
 
-    async fn resolve_provider(
+    fn resolve_provider_name(
         &self,
         params: &DelegateParams,
         recipe: &Recipe,
         session: &crate::session::Session,
-    ) -> Result<Arc<dyn crate::providers::base::Provider>, anyhow::Error> {
-        let provider_name = params
+    ) -> Result<String, anyhow::Error> {
+        params
             .provider
             .clone()
             .or_else(|| {
@@ -1302,24 +1302,40 @@ impl SummonClient {
                     .ok()
             })
             .or_else(|| session.provider_name.clone())
-            .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
+            .ok_or_else(|| anyhow::anyhow!("No provider configured"))
+    }
 
-        let mut model_config = session.model_config.clone().map(Ok).unwrap_or_else(|| {
+    fn resolve_model_config(
+        &self,
+        params: &DelegateParams,
+        recipe: &Recipe,
+        session: &crate::session::Session,
+        provider_name: &str,
+    ) -> Result<crate::model::ModelConfig, anyhow::Error> {
+        let parent_model_config = session.model_config.clone().map(Ok).unwrap_or_else(|| {
             crate::model::ModelConfig::new("default")
-                .map(|c| c.with_canonical_limits(&provider_name))
+                .map(|c| c.with_canonical_limits(provider_name))
         })?;
 
-        if let Some(model) = &params.model {
-            model_config.model_name = model.clone();
-        } else if let Some(model) = recipe
-            .settings
-            .as_ref()
-            .and_then(|s| s.goose_model.as_ref())
-        {
-            model_config.model_name = model.clone();
-        } else if let Ok(model) = Config::global().get_param::<String>("GOOSE_SUBAGENT_MODEL") {
-            model_config.model_name = model;
-        }
+        let override_model = params
+            .model
+            .clone()
+            .or_else(|| recipe.settings.as_ref().and_then(|s| s.goose_model.clone()))
+            .or_else(|| {
+                Config::global()
+                    .get_param::<String>("GOOSE_SUBAGENT_MODEL")
+                    .ok()
+            });
+
+        let mut model_config = if let Some(model) = override_model {
+            let mut cfg = crate::model::ModelConfig::new(&model)?;
+            cfg.toolshim = parent_model_config.toolshim;
+            cfg.toolshim_model = parent_model_config.toolshim_model.clone();
+            cfg.fast_model_config = parent_model_config.fast_model_config.clone();
+            cfg.with_canonical_limits(provider_name)
+        } else {
+            parent_model_config
+        };
 
         if let Some(temp) = params.temperature {
             model_config = model_config.with_temperature(Some(temp));
@@ -1327,6 +1343,17 @@ impl SummonClient {
             model_config = model_config.with_temperature(Some(temp));
         }
 
+        Ok(model_config)
+    }
+
+    async fn resolve_provider(
+        &self,
+        params: &DelegateParams,
+        recipe: &Recipe,
+        session: &crate::session::Session,
+    ) -> Result<Arc<dyn crate::providers::base::Provider>, anyhow::Error> {
+        let provider_name = self.resolve_provider_name(params, recipe, session)?;
+        let model_config = self.resolve_model_config(params, recipe, session, &provider_name)?;
         providers::create(&provider_name, model_config, Vec::new()).await
     }
 
@@ -2039,6 +2066,121 @@ You review code."#;
             crate::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS,
             "should fall back to DEFAULT_SUBAGENT_MAX_TURNS"
         );
+    }
+
+    fn empty_recipe() -> crate::recipe::Recipe {
+        crate::recipe::Recipe {
+            version: "1.0.0".to_string(),
+            title: String::new(),
+            description: String::new(),
+            instructions: None,
+            prompt: None,
+            extensions: None,
+            settings: None,
+            activities: None,
+            author: None,
+            parameters: None,
+            response: None,
+            sub_recipes: None,
+            retry: None,
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_applies_canonical_limits_to_overridden_model() {
+        // Regression test: when the delegate overrides the model name, the new
+        // model's canonical limits/reasoning flag must be applied — not the
+        // parent's. Previously model_name was swapped on the parent's cloned
+        // ModelConfig without re-running with_canonical_limits, so the subagent
+        // ran with the parent model's context_limit/max_tokens/reasoning.
+        let _env_guard = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+        ]);
+
+        let context = create_test_context();
+        let client = SummonClient::new(context).unwrap();
+
+        let parent_config = crate::model::ModelConfig::new("claude-3-5-sonnet-20241022")
+            .unwrap()
+            .with_canonical_limits("anthropic");
+
+        // Sanity-check that the parent's canonical values differ from the
+        // overridden model's, so the test is meaningful.
+        let overridden_config = crate::model::ModelConfig::new("claude-opus-4-6")
+            .unwrap()
+            .with_canonical_limits("anthropic");
+        assert_ne!(parent_config.context_limit, overridden_config.context_limit);
+        assert_ne!(parent_config.reasoning, overridden_config.reasoning);
+
+        let session = crate::session::Session {
+            provider_name: Some("anthropic".to_string()),
+            model_config: Some(parent_config),
+            ..Default::default()
+        };
+
+        let params = DelegateParams {
+            model: Some("claude-opus-4-6".to_string()),
+            ..Default::default()
+        };
+        let recipe = empty_recipe();
+
+        let resolved = client
+            .resolve_model_config(&params, &recipe, &session, "anthropic")
+            .expect("resolve_model_config");
+
+        assert_eq!(resolved.model_name, "claude-opus-4-6");
+        assert_eq!(
+            resolved.context_limit, overridden_config.context_limit,
+            "canonical context_limit for the overridden model must be applied"
+        );
+        assert_eq!(
+            resolved.max_tokens, overridden_config.max_tokens,
+            "canonical max_tokens for the overridden model must be applied"
+        );
+        assert_eq!(
+            resolved.reasoning, overridden_config.reasoning,
+            "canonical reasoning flag for the overridden model must be applied"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_keeps_parent_when_no_override() {
+        let _env_guard = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+        ]);
+
+        let context = create_test_context();
+        let client = SummonClient::new(context).unwrap();
+
+        let parent_config = crate::model::ModelConfig::new("claude-3-5-sonnet-20241022")
+            .unwrap()
+            .with_canonical_limits("anthropic");
+
+        let session = crate::session::Session {
+            provider_name: Some("anthropic".to_string()),
+            model_config: Some(parent_config.clone()),
+            ..Default::default()
+        };
+
+        let resolved = client
+            .resolve_model_config(
+                &DelegateParams::default(),
+                &empty_recipe(),
+                &session,
+                "anthropic",
+            )
+            .expect("resolve_model_config");
+
+        assert_eq!(resolved.model_name, parent_config.model_name);
+        assert_eq!(resolved.context_limit, parent_config.context_limit);
+        assert_eq!(resolved.max_tokens, parent_config.max_tokens);
+        assert_eq!(resolved.reasoning, parent_config.reasoning);
     }
 
     fn extract_text(content: &Content) -> &str {
