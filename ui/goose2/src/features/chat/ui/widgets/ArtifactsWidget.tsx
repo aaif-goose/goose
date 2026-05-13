@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   IconFile,
@@ -59,51 +59,25 @@ function getArtifactIcon(artifact: SessionArtifact) {
   return IconFile;
 }
 
-export function ArtifactsWidget() {
+interface ArtifactsWidgetProps {
+  isOpen: boolean;
+  onToggleOpen: () => void;
+}
+
+export function ArtifactsWidget({
+  isOpen,
+  onToggleOpen,
+}: ArtifactsWidgetProps) {
   const { t } = useTranslation("chat");
-  const { getAllSessionArtifacts, openResolvedPath, pathExists } =
+  const { getAllSessionArtifacts, openResolvedPath } =
     useArtifactPolicyContext();
-  const [existingPaths, setExistingPaths] = useState<Set<string> | null>(null);
 
   const artifacts = useMemo(
     () => getAllSessionArtifacts(),
     [getAllSessionArtifacts],
   );
 
-  useEffect(() => {
-    if (artifacts.length === 0) {
-      setExistingPaths((current) => {
-        if (current?.size === 0) return current;
-        return new Set<string>();
-      });
-      return;
-    }
-
-    let cancelled = false;
-    const paths = artifacts.map((a) => a.resolvedPath);
-
-    Promise.all(paths.map((p) => pathExists(p).catch(() => false))).then(
-      (results) => {
-        if (cancelled) return;
-        const existing = new Set<string>();
-        for (let i = 0; i < paths.length; i++) {
-          if (results[i]) existing.add(paths[i]);
-        }
-        setExistingPaths(existing);
-      },
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [artifacts, pathExists]);
-
-  const verifiedArtifacts =
-    existingPaths === null
-      ? artifacts
-      : artifacts.filter((a) => existingPaths.has(a.resolvedPath));
-
-  if (verifiedArtifacts.length === 0) {
+  if (artifacts.length === 0) {
     return null;
   }
 
@@ -111,14 +85,16 @@ export function ArtifactsWidget() {
     <Widget
       title={t("contextPanel.widgets.artifacts")}
       icon={<IconFileDescription className="size-3.5" />}
+      isOpen={isOpen}
+      onToggleOpen={onToggleOpen}
       action={
         <span className="text-xxs text-foreground-subtle">
-          {verifiedArtifacts.length}
+          {artifacts.length}
         </span>
       }
       flush
     >
-      {verifiedArtifacts.map((artifact) => {
+      {artifacts.map((artifact) => {
         const Icon = getArtifactIcon(artifact);
         return (
           <FileContextMenu
@@ -127,11 +103,11 @@ export function ArtifactsWidget() {
           >
             <button
               type="button"
-              className="flex w-full select-none items-center gap-2 px-3 py-1.5 text-left transition-colors duration-100 hover:bg-muted/80"
+              className="relative flex w-full select-none items-center gap-2 px-4 py-1.5 text-left transition-colors duration-100 before:pointer-events-none before:absolute before:inset-x-4 before:top-0 before:h-px before:bg-border/70 before:content-[''] hover:bg-muted/80"
               onClick={() => void openResolvedPath(artifact.resolvedPath)}
             >
-              <Icon className="size-3.5 shrink-0 text-foreground-subtle" />
-              <span className="truncate text-xs text-foreground">
+              <Icon className="size-4 shrink-0 text-foreground-subtle" />
+              <span className="truncate text-sm text-foreground">
                 {artifact.filename}
               </span>
             </button>

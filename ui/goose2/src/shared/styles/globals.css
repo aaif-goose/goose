@@ -85,9 +85,11 @@
   --radius: 20px;
 
   /* theming accents */
-  --background-accent: var(--color-gray-900);
-  --border-accent: var(--color-gray-900);
-  --text-accent: var(--color-gray-900);
+  --brand: var(--color-gray-900);
+  --brand-foreground: #ffffff;
+  --background-accent: var(--brand);
+  --border-accent: var(--brand);
+  --text-accent: var(--brand);
 
   /* Semantic backgrounds */
   --background-default: var(--color-white);
@@ -130,7 +132,7 @@
   --text-info: var(--color-blue-200);
   --text-placeholder: var(--color-gray-400);
 
-  --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
+  --ring: color-mix(in oklab, var(--brand) 42%, transparent);
 
   /* Alpha variants */
   --dark-10: rgba(26, 26, 26, 0.1);
@@ -168,13 +170,13 @@
   --card-foreground: var(--text-default);
   --popover: var(--background-default);
   --popover-foreground: var(--text-default);
-  --primary: var(--background-accent);
-  --primary-foreground: var(--text-inverse);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
   --secondary: var(--background-muted);
   --secondary-foreground: var(--text-default);
   --muted: var(--background-muted);
   --muted-foreground: var(--text-muted);
-  --accent: var(--background-muted);
+  --accent: color-mix(in oklab, var(--brand) 12%, var(--background-muted));
   --accent-foreground: var(--text-default);
   --destructive: var(--background-danger);
   --destructive-foreground: #ffffff;
@@ -184,9 +186,9 @@
   /* Sidebar */
   --sidebar: var(--background-default);
   --sidebar-foreground: var(--text-default);
-  --sidebar-primary: var(--background-accent);
-  --sidebar-primary-foreground: var(--text-inverse);
-  --sidebar-accent: var(--background-muted);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--text-default);
   --sidebar-border: var(--border-default);
   --sidebar-ring: var(--border-default);
@@ -247,16 +249,28 @@
   --duration-slow: 0.4s;
 
   /* goose2 custom — brand accent + density */
-  --color-brand: #3b82f6;
-  --color-brand-foreground: #ffffff;
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --density-spacing: 1;
+}
+
+[data-density="compact"] {
+  --density-spacing: 0.75;
+  --spacing: 0.1875rem;
+}
+
+[data-density="spacious"] {
+  --density-spacing: 1.25;
+  --spacing: 0.3125rem;
 }
 
 .dark {
   /* theming accents */
-  --background-accent: var(--color-white);
-  --border-accent: var(--color-white);
-  --text-accent: var(--color-white);
+  --brand: var(--color-white);
+  --brand-foreground: #000000;
+  --background-accent: var(--brand);
+  --border-accent: var(--brand);
+  --text-accent: var(--brand);
 
   /* shadcn/ui standard tokens — same aliases, dark values cascade via custom vars */
   --background: var(--background-default);
@@ -265,13 +279,13 @@
   --card-foreground: var(--text-default);
   --popover: var(--background-default);
   --popover-foreground: var(--text-default);
-  --primary: var(--background-accent);
-  --primary-foreground: var(--text-inverse);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
   --secondary: var(--background-muted);
   --secondary-foreground: var(--text-default);
   --muted: var(--background-muted);
   --muted-foreground: var(--text-muted);
-  --accent: var(--background-muted);
+  --accent: color-mix(in oklab, var(--brand) 18%, var(--background-muted));
   --accent-foreground: var(--text-default);
   --destructive: var(--background-danger);
   --destructive-foreground: #ffffff;
@@ -319,7 +333,7 @@
   --text-info: var(--color-blue-100);
   --text-placeholder: var(--color-gray-600);
 
-  --ring: color-mix(in srgb, var(--border-strong) 20%, transparent);
+  --ring: color-mix(in oklab, var(--brand) 52%, transparent);
 
   /* Alpha variants (dark mode) */
   --dark-10: rgba(242, 242, 242, 0.1);
@@ -347,9 +361,9 @@
   /* Sidebar */
   --sidebar: var(--background-default);
   --sidebar-foreground: var(--text-default);
-  --sidebar-primary: var(--background-accent);
-  --sidebar-primary-foreground: var(--text-inverse);
-  --sidebar-accent: var(--background-muted);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--text-default);
   --sidebar-border: var(--border-default);
   --sidebar-ring: var(--border-default);
@@ -379,8 +393,8 @@
   --color-input: var(--input);
 
   /* brand accent */
-  --color-brand: var(--color-brand);
-  --color-brand-foreground: var(--color-brand-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
 
   /* danger (alias for destructive) */
   --color-danger: var(--destructive);
@@ -717,6 +731,8 @@ body,
     @apply border-border;
   }
   html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
     font-variation-settings: normal;
   }
@@ -729,8 +745,8 @@ body,
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--color-brand) 60%, transparent);
-    color: #ffffff;
+    background: color-mix(in oklab, var(--brand) 60%, transparent);
+    color: var(--brand-foreground);
   }
 
   ::-webkit-scrollbar {
@@ -822,6 +838,19 @@ body,
 
 [data-streamdown="code-block"] > :last-child {
   grid-column: 1 / -1;
+}
+
+code[data-streamdown="inline-code"],
+[data-streamdown] :not(pre) > code {
+  border: 0;
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--background-muted) 82%, transparent);
+  padding: 0.05rem calc(0.22rem + 1px);
+  color: var(--foreground);
+  font-size: calc(1em - 1px);
+  font-weight: 400;
+  line-height: inherit;
+  vertical-align: baseline;
 }
 
 /* ═══════════════════════════════════════════════════════════

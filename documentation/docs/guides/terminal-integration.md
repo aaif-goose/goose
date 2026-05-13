@@ -32,6 +32,16 @@ goose term init fish | source
 ```
 
 </TabItem>
+<TabItem value="nu" label="Nushell">
+
+Add to `~/.config/nushell/config.nu`:
+```nu
+let goose_term_init = ($nu.cache-dir | path join "goose-term-init.nu")
+^goose term init nu | save --force $goose_term_init
+source $goose_term_init
+```
+
+</TabItem>
 <TabItem value="powershell" label="PowerShell">
 
 Add to `$PROFILE`:
@@ -88,6 +98,15 @@ goose term init fish --name my-project | source
 ```
 
 </TabItem>
+<TabItem value="nu" label="Nushell">
+
+```nu
+let goose_term_init = ($nu.cache-dir | path join "goose-term-init.nu")
+^goose term init nu --name my-project | save --force $goose_term_init
+source $goose_term_init
+```
+
+</TabItem>
 <TabItem value="powershell" label="PowerShell">
 
 ```powershell
@@ -109,6 +128,36 @@ eval "$(goose term init zsh --name auth-bug)"
 @goose "what was the solution we discussed?"
 # Continues the same conversation with context
 ```
+
+## Default Handler
+
+Use `--default` if you want goose to answer commands your shell cannot resolve.
+
+<Tabs groupId="default-shells">
+<TabItem value="zsh" label="zsh" default>
+
+```bash
+eval "$(goose term init zsh --default)"
+```
+
+</TabItem>
+<TabItem value="bash" label="bash">
+
+```bash
+eval "$(goose term init bash --default)"
+```
+
+</TabItem>
+<TabItem value="nu" label="Nushell">
+
+```nu
+let goose_term_init = ($nu.cache-dir | path join "goose-term-init.nu")
+^goose term init nu --default | save --force $goose_term_init
+source $goose_term_init
+```
+
+</TabItem>
+</Tabs>
 
 ## Show Context Status in Your Prompt
 
@@ -136,6 +185,13 @@ function fish_prompt
     goose term info
     echo -n ' '(prompt_pwd)' $ '
 end
+```
+
+</TabItem>
+<TabItem value="nu" label="Nushell">
+
+```nu
+$env.PROMPT_COMMAND = {|| $"(goose term info) (pwd)> " }
 ```
 
 </TabItem>
@@ -170,6 +226,11 @@ You can also check the id of the goose session in your current terminal:
 echo $AGENT_SESSION_ID
 # Should show something like: 20251209_151730
 ```
+```nu
+# Nushell
+$env.AGENT_SESSION_ID
+# Should show something like: 20251209_151730
+```
 To share context across terminal windows, use a [named session](#named-sessions) instead.
 
 **Session getting too full** (prompt shows `●●●●●`):
@@ -177,4 +238,10 @@ If goose's responses are getting slow or hitting context limits, start a fresh g
 ```bash
 # Start a new goose session in the same shell
 eval "$(goose term init zsh)"
+```
+```nu
+# Nushell
+let goose_term_init = ($nu.cache-dir | path join "goose-term-init.nu")
+^goose term init nu | save --force $goose_term_init
+source $goose_term_init
 ```

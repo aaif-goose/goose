@@ -3,8 +3,8 @@ import type { ToolPart } from "@/shared/ui/ai-elements/tool";
 
 export const toolStatusMap: Record<ToolCallStatus, ToolPart["state"]> = {
   pending: "input-streaming",
-  executing: "input-available",
+  in_progress: "input-available",
   completed: "output-available",
-  error: "output-error",
+  failed: "output-error",
   stopped: "output-denied",
 };

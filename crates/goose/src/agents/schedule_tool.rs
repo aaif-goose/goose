@@ -159,6 +159,8 @@ impl Agent {
             paused: false,
             current_session_id: None,
             process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
         };
 
         match scheduler.add_scheduled_job(job, true).await {
@@ -281,14 +283,14 @@ impl Agent {
                 )
             })?;
 
-        match scheduler.remove_scheduled_job(job_id, true).await {
+        match scheduler.remove_scheduled_job(job_id, false).await {
             Ok(()) => Ok(vec![Content::text(format!(
-                "Successfully deleted job '{}'",
+                "Successfully removed schedule for job '{}'",
                 job_id
             ))]),
             Err(e) => Err(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
-                format!("Failed to delete job: {}", e),
+                format!("Failed to remove schedule: {}", e),
                 None,
             )),
         }

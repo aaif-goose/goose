@@ -1,31 +1,26 @@
 use super::api_client::{ApiClient, AuthMethod};
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::embedding::{EmbeddingCapable, EmbeddingRequest, EmbeddingResponse};
 use super::errors::ProviderError;
 use super::formats::openai::{create_request, get_usage, response_to_message};
 use super::formats::openai_responses::{
-    create_responses_request, get_responses_usage, responses_api_to_message,
-    responses_api_to_streaming_message, ResponsesApiResponse,
+    create_responses_request, get_responses_usage, responses_api_to_message, ResponsesApiResponse,
 };
 use super::inventory::{config_secret_value, InventoryIdentityInput};
 use super::openai_compatible::{
-    handle_response_openai_compat, handle_status, stream_openai_compat,
+    handle_response_openai_compat, handle_status, stream_openai_compat, stream_responses_compat,
 };
 use super::retry::ProviderRetry;
 use super::utils::ImageFormat;
 use crate::config::declarative_providers::DeclarativeProviderConfig;
 use crate::conversation::message::Message;
 use anyhow::Result;
-use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use futures::{StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use std::collections::HashMap;
-use std::io;
-use tokio::pin;
-use tokio_util::codec::{FramedRead, LinesCodec};
-use tokio_util::io::StreamReader;
 
 use crate::model::ModelConfig;
 use crate::providers::base::MessageStream;
@@ -123,6 +118,7 @@ pub struct OpenAiProvider {
     supports_streaming: bool,
     name: String,
     custom_models: Option<Vec<String>>,
+    dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
 }
 
@@ -229,7 +225,9 @@ impl OpenAiProvider {
 
         let organization: Option<String> = config.get_param("OPENAI_ORGANIZATION").ok();
         let project: Option<String> = config.get_param("OPENAI_PROJECT").ok();
-        let timeout_secs: u64 = config.get_param("OPENAI_TIMEOUT").unwrap_or(600);
+        let timeout_secs: u64 = config
+            .get_param("OPENAI_TIMEOUT")
+            .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
 
         let auth = match api_key {
             Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),
@@ -273,6 +271,7 @@ impl OpenAiProvider {
             supports_streaming: true,
             name: OPEN_AI_PROVIDER_NAME.to_string(),
             custom_models: None,
+            dynamic_models: None,
             skip_canonical_filtering: false,
         })
     }
@@ -289,6 +288,7 @@ impl OpenAiProvider {
             supports_streaming: true,
             name: OPEN_AI_PROVIDER_NAME.to_string(),
             custom_models: None,
+            dynamic_models: None,
             skip_canonical_filtering: false,
         }
     }
@@ -297,6 +297,26 @@ impl OpenAiProvider {
         model: ModelConfig,
         config: DeclarativeProviderConfig,
     ) -> Result<Self> {
+        let custom_models = if !config.models.is_empty() {
+            Some(
+                config
+                    .models
+                    .iter()
+                    .map(|m| m.name.clone())
+                    .collect::<Vec<String>>(),
+            )
+        } else {
+            None
+        };
+
+        if config.dynamic_models == Some(false) && custom_models.is_none() {
+            return Err(anyhow::anyhow!(
+                "Provider '{}' has dynamic_models: false but no static models listed; \
+                 at least one entry in `models` is required.",
+                config.name
+            ));
+        }
+
         let global_config = crate::config::Config::global();
 
         let api_key: Option<String> = if config.requires_auth && !config.api_key_env.is_empty() {
@@ -334,7 +354,9 @@ impl OpenAiProvider {
             Self::derive_base_path(url.path())
         };
 
-        let timeout_secs = config.timeout_seconds.unwrap_or(600);
+        let timeout_secs = config
+            .timeout_seconds
+            .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
 
         let auth = match api_key {
             Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),
@@ -354,12 +376,6 @@ impl OpenAiProvider {
             api_client = api_client.with_headers(header_map)?;
         }
 
-        let custom_models = if !config.models.is_empty() {
-            Some(config.models.iter().map(|m| m.name.clone()).collect())
-        } else {
-            None
-        };
-
         let model = if let Some(ref fast_model_name) = config.fast_model {
             model.with_fast(fast_model_name, &config.name)?
         } else {
@@ -376,6 +392,7 @@ impl OpenAiProvider {
             supports_streaming: config.supports_streaming.unwrap_or(true),
             name: config.name.clone(),
             custom_models,
+            dynamic_models: config.dynamic_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
         })
     }
@@ -651,6 +668,9 @@ impl Provider for OpenAiProvider {
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
         if let Some(custom_models) = &self.custom_models {
+            if self.dynamic_models == Some(false) {
+                return Ok(custom_models.clone());
+            }
             match self.fetch_models_from_api().await {
                 Ok(models) => return Ok(models),
                 Err(e) if e.is_endpoint_not_found() => {
@@ -719,20 +739,7 @@ impl Provider for OpenAiProvider {
                 })?;
 
             if self.supports_streaming {
-                let stream = response.bytes_stream().map_err(io::Error::other);
-
-                Ok(Box::pin(try_stream! {
-                    let stream_reader = StreamReader::new(stream);
-                    let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
-
-                    let message_stream = responses_api_to_streaming_message(framed);
-                    pin!(message_stream);
-                    while let Some(message) = message_stream.next().await {
-                        let (message, usage) = message.map_err(|e| ProviderError::RequestFailed(format!("Stream decode error: {}", e)))?;
-                        log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
-                        yield (message, usage);
-                    }
-                }))
+                stream_responses_compat(response, log)
             } else {
                 let json: serde_json::Value = response.json().await.map_err(|e| {
                     ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
@@ -898,6 +905,7 @@ mod tests {
             supports_streaming: true,
             name: name.to_string(),
             custom_models: None,
+            dynamic_models: None,
             skip_canonical_filtering: false,
         }
     }
@@ -1117,5 +1125,92 @@ mod tests {
             "gpt-5-codex",
             "chat/completions"
         ));
+    }
+
+    // ── dynamic_models behavior ─────────────────────────────────────────────
+
+    use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn make_provider_with_server(
+        server_uri: &str,
+        custom_models: Option<Vec<String>>,
+        dynamic_models: Option<bool>,
+    ) -> OpenAiProvider {
+        OpenAiProvider {
+            api_client: ApiClient::new(server_uri.to_string(), AuthMethod::NoAuth).unwrap(),
+            base_path: "v1/chat/completions".to_string(),
+            organization: None,
+            project: None,
+            model: ModelConfig::new_or_fail("test-model"),
+            custom_headers: None,
+            supports_streaming: true,
+            name: "custom_test".to_string(),
+            custom_models,
+            dynamic_models,
+            skip_canonical_filtering: false,
+        }
+    }
+
+    fn base_declarative_config(
+        models: Vec<ModelInfo>,
+        dynamic_models: Option<bool>,
+    ) -> DeclarativeProviderConfig {
+        DeclarativeProviderConfig {
+            name: "custom_test".to_string(),
+            engine: ProviderEngine::OpenAI,
+            display_name: "Custom Test".to_string(),
+            description: None,
+            api_key_env: String::new(),
+            base_url: "http://localhost:1".to_string(),
+            models,
+            headers: None,
+            timeout_seconds: None,
+            supports_streaming: Some(true),
+            requires_auth: false,
+            catalog_provider_id: None,
+            base_path: None,
+            env_vars: None,
+            dynamic_models,
+            skip_canonical_filtering: false,
+            model_doc_link: None,
+            setup_steps: vec![],
+            fast_model: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_static_only_skips_api() {
+        // Any request to the mock returns 500 — if the fix calls the API, the test fails.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let provider = make_provider_with_server(
+            &server.uri(),
+            Some(vec!["m1".to_string(), "m2".to_string()]),
+            Some(false),
+        );
+
+        let models = provider.fetch_supported_models().await.unwrap();
+        assert_eq!(models, vec!["m1".to_string(), "m2".to_string()]);
+    }
+
+    #[test]
+    fn from_custom_config_rejects_static_only_without_models() {
+        let config = base_declarative_config(vec![], Some(false));
+        let err =
+            OpenAiProvider::from_custom_config(ModelConfig::new_or_fail("test-model"), config)
+                .expect_err(
+                    "expected construction error for dynamic_models: false with empty models",
+                );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("dynamic_models: false"),
+            "error message should mention dynamic_models: false; got: {msg}"
+        );
     }
 }

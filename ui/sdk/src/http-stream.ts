@@ -3,8 +3,6 @@ import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
 const ACP_CONNECTION_HEADER = "Acp-Connection-Id";
 const ACP_SESSION_HEADER = "Acp-Session-Id";
 
-// Enable via `globalThis.ACP_DEBUG = true`, `localStorage.ACP_DEBUG = "1"`,
-// or `ACP_DEBUG=1` in the environment.
 function acpDebug(label: string, payload: unknown): void {
   const g = globalThis as {
     ACP_DEBUG?: unknown;
@@ -21,7 +19,6 @@ function acpDebug(label: string, payload: unknown): void {
   console.debug(`[acp] ${label}`, payload);
 }
 
-// Methods that are scoped to a session and require an Acp-Session-Id header.
 const SESSION_SCOPED_METHODS = new Set<string>([
   "session/prompt",
   "session/cancel",
@@ -39,6 +36,10 @@ function messageParams(msg: AnyMessage): unknown {
   return (msg as { params?: unknown }).params;
 }
 
+function messageResult(msg: AnyMessage): unknown {
+  return (msg as { result?: unknown }).result;
+}
+
 function isRequest(msg: AnyMessage): boolean {
   const m = msg as { method?: unknown; id?: unknown };
   return typeof m.method === "string" && m.id !== undefined && m.id !== null;
@@ -47,6 +48,16 @@ function isRequest(msg: AnyMessage): boolean {
 function isNotification(msg: AnyMessage): boolean {
   const m = msg as { method?: unknown; id?: unknown };
   return typeof m.method === "string" && (m.id === undefined || m.id === null);
+}
+
+function isResponse(msg: AnyMessage): boolean {
+  const m = msg as { method?: unknown; id?: unknown; result?: unknown; error?: unknown };
+  return (
+    m.method === undefined &&
+    m.id !== undefined &&
+    m.id !== null &&
+    (m.result !== undefined || m.error !== undefined)
+  );
 }
 
 function extractSessionId(value: unknown): string | null {
@@ -58,28 +69,19 @@ function extractSessionId(value: unknown): string | null {
 }
 
 /**
- * Create a Stream that speaks the Streamable HTTP ACP transport.
- *
- * Protocol summary:
- * - The first outbound message must be an `initialize` request, sent as a
- *   regular POST. The server responds synchronously with 200 OK, a JSON body
- *   containing the initialize response, and an `Acp-Connection-Id` header.
- * - After initialize, we open a single long-lived GET SSE stream carrying
- *   all server → client messages (responses, notifications, server-initiated
- *   requests) for every session on the connection.
- * - All subsequent POSTs carry `Acp-Connection-Id` and return 202 Accepted.
- *   Session-scoped methods must also carry `Acp-Session-Id`.
- * - On close we send DELETE /acp with the connection header.
+ * Stream that speaks the ACP Streamable HTTP transport: a connection-scoped
+ * GET SSE stream plus a session-scoped stream per active `sessionId`.
  */
 export function createHttpStream(serverUrl: string): Stream {
   const base = serverUrl.replace(/\/+$/, "");
   const endpoint = `${base}/acp`;
 
   let connectionId: string | null = null;
-  let getStreamAbort: AbortController | null = null;
+  let connectionStreamAbort: AbortController | null = null;
+  const sessionStreamAborts = new Map<string, AbortController>();
+  const openSessionStreams = new Set<string>();
   let closed = false;
 
-  // Readable-stream plumbing: enqueue-with-buffer until the consumer pulls.
   const inbox: AnyMessage[] = [];
   let pullResolve: (() => void) | null = null;
 
@@ -99,9 +101,9 @@ export function createHttpStream(serverUrl: string): Stream {
     });
   }
 
-  async function openGetStream() {
+  async function openConnectionGetStream() {
     if (!connectionId) return;
-    getStreamAbort = new AbortController();
+    connectionStreamAbort = new AbortController();
 
     const response = await fetch(endpoint, {
       method: "GET",
@@ -109,23 +111,75 @@ export function createHttpStream(serverUrl: string): Stream {
         Accept: "text/event-stream",
         [ACP_CONNECTION_HEADER]: connectionId,
       },
-      signal: getStreamAbort.signal,
+      signal: connectionStreamAbort.signal,
     });
 
     if (!response.ok || !response.body) {
       throw new Error(
-        `Failed to open ACP GET stream: ${response.status} ${response.statusText}`,
+        `Failed to open ACP connection-scoped GET stream: ${response.status} ${response.statusText}`,
       );
     }
 
-    void consumeSSE(response.body).catch((err) => {
+    void consumeSSE(response.body, "connection").catch((err) => {
       if (closed) return;
       // eslint-disable-next-line no-console
-      console.error("ACP GET stream error:", err);
+      console.error("ACP connection-scoped GET stream error:", err);
     });
   }
 
-  async function consumeSSE(body: ReadableStream<Uint8Array>) {
+  async function ensureSessionGetStream(sessionId: string): Promise<void> {
+    if (!connectionId) return;
+    if (openSessionStreams.has(sessionId)) return;
+    openSessionStreams.add(sessionId);
+
+    const abort = new AbortController();
+    sessionStreamAborts.set(sessionId, abort);
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
+          [ACP_CONNECTION_HEADER]: connectionId,
+          [ACP_SESSION_HEADER]: sessionId,
+        },
+        signal: abort.signal,
+      });
+    } catch (e) {
+      openSessionStreams.delete(sessionId);
+      sessionStreamAborts.delete(sessionId);
+      throw e;
+    }
+
+    if (!response.ok || !response.body) {
+      openSessionStreams.delete(sessionId);
+      sessionStreamAborts.delete(sessionId);
+      throw new Error(
+        `Failed to open ACP session-scoped GET stream for ${sessionId}: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    acpDebug("session GET stream open", { sessionId });
+    void consumeSSE(response.body, `session:${sessionId}`)
+      .catch((err) => {
+        if (closed) return;
+        // eslint-disable-next-line no-console
+        console.error(
+          `ACP session-scoped GET stream error (${sessionId}):`,
+          err,
+        );
+      })
+      .finally(() => {
+        if (sessionStreamAborts.get(sessionId) === abort) {
+          sessionStreamAborts.delete(sessionId);
+          openSessionStreams.delete(sessionId);
+          acpDebug("session GET stream closed", { sessionId });
+        }
+      });
+  }
+
+  async function consumeSSE(body: ReadableStream<Uint8Array>, label: string) {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -140,17 +194,17 @@ export function createHttpStream(serverUrl: string): Stream {
         while ((idx = buffer.indexOf("\n\n")) >= 0) {
           const event = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 2);
-          handleSseEvent(event);
+          handleSseEvent(event, label);
         }
       }
-      if (buffer.length > 0) handleSseEvent(buffer);
+      if (buffer.length > 0) handleSseEvent(buffer, label);
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       throw e;
     }
   }
 
-  function handleSseEvent(event: string) {
+  function handleSseEvent(event: string, label: string) {
     const dataLines: string[] = [];
     for (const line of event.split("\n")) {
       if (line.startsWith("data:")) {
@@ -166,7 +220,22 @@ export function createHttpStream(serverUrl: string): Stream {
       return;
     }
 
-    acpDebug("SSE → client", msg);
+    acpDebug(`SSE → client (${label})`, msg);
+    handleInbound(msg);
+  }
+
+  function handleInbound(msg: AnyMessage) {
+    if (isResponse(msg)) {
+      const sid = extractSessionId(messageResult(msg));
+      if (sid && !openSessionStreams.has(sid)) {
+        ensureSessionGetStream(sid).catch((err) => {
+          if (closed) return;
+          // eslint-disable-next-line no-console
+          console.error("Failed to open session GET stream:", err);
+        });
+      }
+    }
+
     deliver(msg);
   }
 
@@ -197,9 +266,9 @@ export function createHttpStream(serverUrl: string): Stream {
 
     const body = (await response.json()) as AnyMessage;
     acpDebug("initialize response", body);
-    await openGetStream();
-    // Deliver the initialize response to the SDK *after* the GET stream is
-    // up, so any immediate server-initiated messages won't be missed.
+    // Open the connection-scoped GET stream before delivering the initialize
+    // response so we don't miss any immediate server-initiated messages.
+    await openConnectionGetStream();
     deliver(body);
   }
 
@@ -214,15 +283,25 @@ export function createHttpStream(serverUrl: string): Stream {
       [ACP_CONNECTION_HEADER]: connectionId,
     };
 
+    let outboundSessionId: string | null = null;
     if (isRequest(msg) || isNotification(msg)) {
-      const sid = extractSessionId(messageParams(msg));
-      if (sid) {
-        headers[ACP_SESSION_HEADER] = sid;
+      outboundSessionId = extractSessionId(messageParams(msg));
+      if (outboundSessionId) {
+        headers[ACP_SESSION_HEADER] = outboundSessionId;
       } else if (isRequest(msg)) {
         const method = messageMethod(msg);
         if (method && SESSION_SCOPED_METHODS.has(method)) {
           throw new Error(`ACP method ${method} requires sessionId in params`);
         }
+      }
+    }
+
+    if (outboundSessionId && messageMethod(msg) !== "session/load") {
+      try {
+        await ensureSessionGetStream(outboundSessionId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to ensure session GET stream:", err);
       }
     }
 
@@ -238,7 +317,6 @@ export function createHttpStream(serverUrl: string): Stream {
         `ACP POST failed: ${response.status} ${response.statusText}`,
       );
     }
-    // Drain the body so the connection can be reused.
     await response.arrayBuffer().catch(() => undefined);
   }
 
@@ -254,6 +332,16 @@ export function createHttpStream(serverUrl: string): Stream {
     }
   }
 
+  function abortAllStreams() {
+    connectionStreamAbort?.abort();
+    connectionStreamAbort = null;
+    for (const a of sessionStreamAborts.values()) {
+      a.abort();
+    }
+    sessionStreamAborts.clear();
+    openSessionStreams.clear();
+  }
+
   const readable = new ReadableStream<AnyMessage>({
     async pull(controller) {
       await waitForInbox();
@@ -267,7 +355,7 @@ export function createHttpStream(serverUrl: string): Stream {
     async cancel() {
       closed = true;
       await sendDelete();
-      getStreamAbort?.abort();
+      abortAllStreams();
       if (pullResolve) {
         const r = pullResolve;
         pullResolve = null;
@@ -296,8 +384,7 @@ export function createHttpStream(serverUrl: string): Stream {
     async close() {
       closed = true;
       await sendDelete();
-      getStreamAbort?.abort();
-      // Unblock any pending pull so the readable can close.
+      abortAllStreams();
       if (pullResolve) {
         const r = pullResolve;
         pullResolve = null;
@@ -307,7 +394,7 @@ export function createHttpStream(serverUrl: string): Stream {
     async abort() {
       closed = true;
       await sendDelete();
-      getStreamAbort?.abort();
+      abortAllStreams();
       if (pullResolve) {
         const r = pullResolve;
         pullResolve = null;

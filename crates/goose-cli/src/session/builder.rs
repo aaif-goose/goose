@@ -5,7 +5,7 @@ use super::CliSession;
 use console::style;
 use goose::agents::{Agent, Container, ExtensionError};
 use goose::config::resolve_extensions_for_new_session;
-use goose::config::{get_all_extensions, Config, ExtensionConfig, GooseMode};
+use goose::config::{Config, ExtensionConfig, GooseMode};
 use goose::providers::create;
 use goose::recipe::Recipe;
 use goose::session::session_manager::SessionType;
@@ -147,119 +147,9 @@ impl Default for SessionBuilderConfig {
     }
 }
 
-/// Offers to help debug an extension failure by creating a minimal debugging session
-async fn offer_extension_debugging_help(
-    extension_name: &str,
-    error_message: &str,
-    provider: Arc<dyn goose::providers::base::Provider>,
-    interactive: bool,
-) -> Result<(), anyhow::Error> {
-    // Only offer debugging help in interactive mode
-    if !interactive {
-        return Ok(());
-    }
-
-    let help_prompt = format!(
-        "Would you like me to help debug the '{}' extension failure?",
-        extension_name
-    );
-
-    let should_help = match cliclack::confirm(help_prompt)
-        .initial_value(false)
-        .interact()
-    {
-        Ok(choice) => choice,
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::Interrupted {
-                return Ok(());
-            } else {
-                return Err(e.into());
-            }
-        }
-    };
-
-    if !should_help {
-        return Ok(());
-    }
-
-    println!("{}", style("🔧 Starting debugging session...").cyan());
-
-    // Create a debugging prompt with context about the extension failure
-    let debug_prompt = format!(
-        "I'm having trouble starting an extension called '{}'. Here's the error I encountered:\n\n{}\n\nCan you help me diagnose what might be wrong and suggest how to fix it? Please consider common issues like:\n- Missing dependencies or tools\n- Configuration problems\n- Network connectivity (for remote extensions)\n- Permission issues\n- Path or environment variable problems",
-        extension_name, error_message
-    );
-
-    // Create a minimal agent for debugging
-    let debug_agent = Agent::new();
-
-    let session = debug_agent
-        .config
-        .session_manager
-        .create_session(
-            std::env::current_dir()?,
-            "CLI Session".to_string(),
-            SessionType::Hidden,
-            debug_agent.config.goose_mode,
-        )
-        .await?;
-
-    debug_agent.update_provider(provider, &session.id).await?;
-
-    // Add the developer extension if available to help with debugging
-    let extensions = get_all_extensions();
-    for ext_wrapper in extensions {
-        if ext_wrapper.enabled && ext_wrapper.config.name() == "developer" {
-            if let Err(e) = debug_agent
-                .add_extension(ext_wrapper.config, &session.id)
-                .await
-            {
-                // If we can't add developer extension, continue without it
-                eprintln!(
-                    "Note: Could not load developer extension for debugging: {}",
-                    e
-                );
-            }
-            break;
-        }
-    }
-
-    let mut debug_session = CliSession::new(
-        debug_agent,
-        session.id,
-        false,
-        None,
-        None,
-        None,
-        None,
-        "text".to_string(),
-    )
-    .await;
-
-    // Process the debugging request
-    println!("{}", style("Analyzing the extension failure...").yellow());
-    match debug_session.headless(debug_prompt).await {
-        Ok(_) => {
-            println!(
-                "{}",
-                style("✅ Debugging session completed. Check the suggestions above.").green()
-            );
-        }
-        Err(e) => {
-            eprintln!(
-                "{}",
-                style(format!("❌ Debugging session failed: {}", e)).red()
-            );
-        }
-    }
-    Ok(())
-}
-
 async fn load_extensions(
     agent: Agent,
     extensions_to_load: Vec<(String, ExtensionConfig)>,
-    provider_for_debug: Arc<dyn goose::providers::base::Provider>,
-    interactive: bool,
     session_id: &str,
 ) -> Arc<Agent> {
     let mut set = JoinSet::new();
@@ -293,21 +183,21 @@ async fn load_extensions(
     let spinner = cliclack::spinner();
     spinner.start(get_message(&waiting_ids));
 
-    let mut offer_debug: Vec<(usize, anyhow::Error)> = Vec::new();
+    let mut failed: Vec<(usize, anyhow::Error)> = Vec::new();
     while let Some(result) = set.join_next().await {
         match result {
             Ok((id, Ok(_))) => {
                 waiting_ids.remove(&id);
                 spinner.set_message(get_message(&waiting_ids));
             }
-            Ok((id, Err(e))) => offer_debug.push((id, e.into())),
+            Ok((id, Err(e))) => failed.push((id, e.into())),
             Err(e) => tracing::error!("failed to add extension: {}", e),
         }
     }
 
     spinner.clear();
 
-    for (id, err) in offer_debug {
+    for (id, err) in failed {
         let label = extensions_to_load
             .get(id)
             .map(|e| e.0.clone())
@@ -320,17 +210,14 @@ async fn load_extensions(
             ))
             .yellow()
         );
-
-        if let Err(debug_err) = offer_extension_debugging_help(
-            &label,
-            &err.to_string(),
-            Arc::clone(&provider_for_debug),
-            interactive,
-        )
-        .await
-        {
-            eprintln!("Note: Could not start debugging session: {}", debug_err);
-        }
+        eprintln!(
+            "{}",
+            style(format!(
+                "  Hint: once the session starts, ask goose to help debug the '{}' extension",
+                label
+            ))
+            .dim()
+        );
     }
 
     agent_ptr
@@ -548,8 +435,6 @@ async fn collect_extension_configs(
 async fn resolve_and_load_extensions(
     agent: Agent,
     extensions: Vec<ExtensionConfig>,
-    provider_for_debug: Arc<dyn goose::providers::base::Provider>,
-    interactive: bool,
     session_id: &str,
 ) -> Arc<Agent> {
     for warning in goose::config::get_warnings() {
@@ -561,14 +446,7 @@ async fn resolve_and_load_extensions(
         .map(|cfg| (cfg.name(), cfg))
         .collect();
 
-    load_extensions(
-        agent,
-        extensions_to_load,
-        provider_for_debug,
-        interactive,
-        session_id,
-    )
-    .await
+    load_extensions(agent, extensions_to_load, session_id).await
 }
 
 async fn configure_session_prompts(
@@ -671,7 +549,6 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             process::exit(1);
         }
     };
-    let provider_for_debug = Arc::clone(&new_provider);
     tracing::info!("🤖 Using model: {}", resolved.model_name);
 
     agent
@@ -702,14 +579,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     }
 
     // Extensions are loaded after session creation because we may change directory when resuming
-    let agent_ptr = resolve_and_load_extensions(
-        agent,
-        extensions_for_provider,
-        Arc::clone(&provider_for_debug),
-        session_config.interactive,
-        &session_id,
-    )
-    .await;
+    let agent_ptr = resolve_and_load_extensions(agent, extensions_for_provider, &session_id).await;
 
     let edit_mode = config
         .get_param::<String>("EDIT_MODE")
@@ -813,21 +683,6 @@ mod tests {
         assert!(!config.interactive);
         assert!(!config.quiet);
         assert!(!config.fork);
-    }
-
-    #[tokio::test]
-    async fn test_offer_extension_debugging_help_function_exists() {
-        // This test just verifies the function compiles and can be called
-        // We can't easily test the interactive parts without mocking
-
-        // We can't actually test the full function without a real provider and user interaction
-        // But we can at least verify it compiles and the function signature is correct
-        let extension_name = "test-extension";
-        let error_message = "test error";
-
-        // This test mainly serves as a compilation check
-        assert_eq!(extension_name, "test-extension");
-        assert_eq!(error_message, "test error");
     }
 
     #[test]

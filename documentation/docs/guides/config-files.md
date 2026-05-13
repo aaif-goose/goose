@@ -149,7 +149,7 @@ These paths are prepended to the system PATH when running extension commands, en
 
 ## Observability Configuration
 
-Configure goose to export telemetry to [OpenTelemetry](https://opentelemetry.io/docs/) compatible platforms. Environment variables override these settings and support additional options like per-signal configuration. See the [environment variables guide](/docs/guides/environment-variables#opentelemetry-protocol-otlp) for details.
+Configure goose to export telemetry to [OpenTelemetry](https://opentelemetry.io/docs/) compatible platforms. Environment variables override these settings and support additional options like per-signal configuration. See the [environment variables guide](/docs/guides/environment-variables#observability-configuration) for details.
 
 | Setting | Purpose | Values | Default |
 |---------|---------|--------|---------|
@@ -194,7 +194,7 @@ Settings are applied in the following order of precedence:
 
 ## Updating Configuration
 
-Changes to config files require restarting goose to take effect. You can verify your current configuration using:
+Direct edits to config files usually require restarting goose to take effect for existing sessions. Goose2 provider credential/config saves made through Settings use ACP/core to update storage and refresh provider inventory without restarting the app, but currently active chat sessions continue using the provider instance they started with. You can verify your current configuration using:
 
 ```bash
 goose info -v

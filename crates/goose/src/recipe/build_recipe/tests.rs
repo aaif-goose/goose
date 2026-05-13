@@ -446,7 +446,10 @@ instructions: Child instructions"#;
         let result = resolve_sub_recipe_path("./sub-recipes/child.yaml", parent_dir);
         assert!(result.is_ok());
 
-        let expected_path = parent_dir.join("./sub-recipes/child.yaml");
+        let expected_path = parent_dir
+            .join("sub-recipes/child.yaml")
+            .canonicalize()
+            .unwrap();
         assert_eq!(result.unwrap(), expected_path.to_str().unwrap());
     }
 
@@ -466,7 +469,8 @@ instructions: Absolute instructions"#;
 
         let result = resolve_sub_recipe_path(absolute_path_str, parent_dir);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), absolute_path_str);
+        let expected = absolute_path.canonicalize().unwrap();
+        assert_eq!(result.unwrap(), expected.to_str().unwrap());
     }
 
     #[test]
@@ -534,7 +538,10 @@ instructions: Child instructions
         assert_eq!(sub_recipes.len(), 1);
         assert_eq!(sub_recipes[0].name, "child");
 
-        let expected_absolute_path = temp_path.join("./sub-recipes/child.yaml");
+        let expected_absolute_path = temp_path
+            .join("sub-recipes/child.yaml")
+            .canonicalize()
+            .unwrap();
         assert_eq!(
             sub_recipes[0].path,
             expected_absolute_path.to_str().unwrap()
@@ -576,6 +583,40 @@ parameters:
         let instructions = recipe.instructions.as_ref().unwrap();
         assert!(instructions.contains("Hello from file!"));
         assert!(instructions.contains("Test file content:"));
+    }
+
+    #[test]
+    fn test_build_recipe_user_prompt_file_parameter_reads_file_content() {
+        let instructions_and_parameters = r#"instructions: "Test file content: {{ FILE_PARAM }}"
+parameters:
+  - key: FILE_PARAM
+    input_type: file
+    requirement: user_prompt
+    description: A file parameter"#;
+
+        let (temp_dir, recipe_file) = setup_yaml_recipe_file(instructions_and_parameters);
+
+        let test_content = "Hello from prompted file!\nThis is line 2";
+        let test_file_path = setup_test_file(&temp_dir, "prompted_file.txt", test_content);
+        let user_prompt = |key: &str, description: &str| -> Result<String, anyhow::Error> {
+            assert_eq!(key, "FILE_PARAM");
+            assert_eq!(description, "A file parameter");
+            Ok(test_file_path.to_string_lossy().to_string())
+        };
+
+        let result = build_recipe_from_template(
+            recipe_file.content,
+            &recipe_file.parent_dir,
+            Vec::new(),
+            Some(user_prompt),
+        );
+
+        assert!(result.is_ok());
+        let recipe = result.unwrap();
+
+        let instructions = recipe.instructions.as_ref().unwrap();
+        assert!(instructions.contains("Hello from prompted file!"));
+        assert!(!instructions.contains("prompted_file.txt"));
     }
 
     #[test]

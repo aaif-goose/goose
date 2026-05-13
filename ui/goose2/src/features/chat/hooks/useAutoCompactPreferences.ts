@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getClient } from "@/shared/api/acpConnection";
 import {
   AUTO_COMPACT_PREFERENCES_EVENT,
-  AUTO_COMPACT_THRESHOLD_CONFIG_KEY,
   DEFAULT_AUTO_COMPACT_THRESHOLD,
   normalizeAutoCompactThreshold,
 } from "../lib/autoCompact";
 
-const AUTO_COMPACT_RETRY_DELAY_MS = 1000;
+const AUTO_COMPACT_INITIAL_RETRY_DELAY_MS = 1000;
+const AUTO_COMPACT_MAX_RETRY_DELAY_MS = 30000;
+const AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY = "autoCompactThreshold";
 
 type ConfigReadResult =
   | {
@@ -18,22 +19,29 @@ type ConfigReadResult =
       ok: false;
     };
 
-async function readConfigValue(key: string): Promise<ConfigReadResult> {
+async function readAutoCompactThreshold(): Promise<ConfigReadResult> {
   try {
     const client = await getClient();
-    const response = await client.goose.GooseConfigRead({ key });
+    const response = await client.goose.GoosePreferencesRead({
+      keys: [AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY],
+    });
+    const preference = response.values.find(
+      (value) => value.key === AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY,
+    );
     return {
       ok: true,
-      value: response.value ?? null,
+      value: preference?.value ?? null,
     };
   } catch {
     return { ok: false };
   }
 }
 
-async function writeConfigValue(key: string, value: number): Promise<void> {
+async function writeAutoCompactThreshold(value: number): Promise<void> {
   const client = await getClient();
-  await client.goose.GooseConfigUpsert({ key, value });
+  await client.goose.GoosePreferencesSave({
+    values: [{ key: AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY, value }],
+  });
 }
 
 export function useAutoCompactPreferences() {
@@ -41,31 +49,10 @@ export function useAutoCompactPreferences() {
     DEFAULT_AUTO_COMPACT_THRESHOLD,
   );
   const [isHydrated, setIsHydrated] = useState(false);
-  const [syncVersion, setSyncVersion] = useState(0);
+  const retryDelayMsRef = useRef(AUTO_COMPACT_INITIAL_RETRY_DELAY_MS);
 
-  const requestSyncFromConfig = useCallback(() => {
-    setSyncVersion((current) => current + 1);
-  }, []);
-
-  useEffect(() => {
-    const handler = () => {
-      requestSyncFromConfig();
-    };
-    window.addEventListener(
-      AUTO_COMPACT_PREFERENCES_EVENT,
-      handler as EventListener,
-    );
-    return () => {
-      window.removeEventListener(
-        AUTO_COMPACT_PREFERENCES_EVENT,
-        handler as EventListener,
-      );
-    };
-  }, [requestSyncFromConfig]);
-
-  const syncFromConfig = useCallback(async (_syncVersion: number) => {
-    void _syncVersion;
-    const result = await readConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY);
+  const syncFromConfig = useCallback(async () => {
+    const result = await readAutoCompactThreshold();
     return result;
   }, []);
 
@@ -73,8 +60,16 @@ export function useAutoCompactPreferences() {
     let cancelled = false;
     let retryTimer: number | null = null;
 
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
     const applyConfig = async () => {
-      const result = await syncFromConfig(syncVersion);
+      clearRetryTimer();
+      const result = await syncFromConfig();
       if (cancelled) {
         return;
       }
@@ -83,24 +78,40 @@ export function useAutoCompactPreferences() {
         setAutoCompactThresholdState(
           normalizeAutoCompactThreshold(result.value),
         );
+        setIsHydrated(true);
+        retryDelayMsRef.current = AUTO_COMPACT_INITIAL_RETRY_DELAY_MS;
       } else {
-        retryTimer = window.setTimeout(
-          requestSyncFromConfig,
-          AUTO_COMPACT_RETRY_DELAY_MS,
+        const delayMs = retryDelayMsRef.current;
+        retryDelayMsRef.current = Math.min(
+          delayMs * 2,
+          AUTO_COMPACT_MAX_RETRY_DELAY_MS,
         );
+        retryTimer = window.setTimeout(() => {
+          void applyConfig();
+        }, delayMs);
       }
-      setIsHydrated(true);
     };
 
+    const handler = () => {
+      retryDelayMsRef.current = AUTO_COMPACT_INITIAL_RETRY_DELAY_MS;
+      void applyConfig();
+    };
+
+    window.addEventListener(
+      AUTO_COMPACT_PREFERENCES_EVENT,
+      handler as EventListener,
+    );
     void applyConfig();
 
     return () => {
       cancelled = true;
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-      }
+      clearRetryTimer();
+      window.removeEventListener(
+        AUTO_COMPACT_PREFERENCES_EVENT,
+        handler as EventListener,
+      );
     };
-  }, [requestSyncFromConfig, syncFromConfig, syncVersion]);
+  }, [syncFromConfig]);
 
   const dispatchPreferencesEvent = useCallback(() => {
     window.dispatchEvent(new Event(AUTO_COMPACT_PREFERENCES_EVENT));
@@ -109,7 +120,7 @@ export function useAutoCompactPreferences() {
   const setAutoCompactThreshold = useCallback(
     async (value: number) => {
       const normalized = normalizeAutoCompactThreshold(value);
-      await writeConfigValue(AUTO_COMPACT_THRESHOLD_CONFIG_KEY, normalized);
+      await writeAutoCompactThreshold(normalized);
       setAutoCompactThresholdState(normalized);
       setIsHydrated(true);
       dispatchPreferencesEvent();

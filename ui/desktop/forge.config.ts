@@ -92,6 +92,7 @@ module.exports = {
         categories: ['Development'],
         desktopTemplate: './forge.deb.desktop',
         options: {
+          depends: ['libvulkan1'],
           icon: 'src/images/icon.png',
           prefix: '/opt',
         },
@@ -107,6 +108,7 @@ module.exports = {
         categories: ['Development'],
         desktopTemplate: './forge.rpm.desktop',
         options: {
+          requires: ['vulkan-loader'],
           icon: 'src/images/icon.png',
           prefix: '/opt',
           fpm: ['--rpm-rpmbuild-define', '_build_id_links none'],

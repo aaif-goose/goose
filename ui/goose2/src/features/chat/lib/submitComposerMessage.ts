@@ -1,7 +1,7 @@
 import type { SkillCommandMatch } from "@/features/skills/lib/skillChatPrompt";
 import { isPromiseLike } from "@/shared/lib/isPromiseLike";
 import type { ChatAttachmentDraft } from "@/shared/types/messages";
-import type { ChatInputProps, ChatSkillDraft } from "../types";
+import type { ChatInputSendHandler, ChatSkillDraft } from "../types";
 import { buildSkillSendPayload } from "./skillSendPayload";
 
 interface SubmitComposerMessageOptions {
@@ -9,7 +9,7 @@ interface SubmitComposerMessageOptions {
   attachments: ChatAttachmentDraft[];
   skills: ChatSkillDraft[];
   selectedPersonaId?: string | null;
-  onSend: ChatInputProps["onSend"];
+  onSend: ChatInputSendHandler;
   resolveSkillSlashCommand: (
     message: string,
   ) => SkillCommandMatch<ChatSkillDraft> | null;

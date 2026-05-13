@@ -119,6 +119,24 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose finished the task."
   },
+  "chatHistorySearch.keyboardHintMac": {
+    "defaultMessage": "⌘K"
+  },
+  "chatHistorySearch.keyboardHintOther": {
+    "defaultMessage": "Ctrl+K"
+  },
+  "chatHistorySearch.messageCount": {
+    "defaultMessage": "{count,plural,one{# message} other{# messages}}"
+  },
+  "chatHistorySearch.noResults": {
+    "defaultMessage": "No chats found"
+  },
+  "chatHistorySearch.searchError": {
+    "defaultMessage": "Search failed"
+  },
+  "chatHistorySearch.searchPlaceholder": {
+    "defaultMessage": "Search chats…"
+  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
   },
@@ -130,6 +148,9 @@
   },
   "chatInput.failedToReadImage": {
     "defaultMessage": "Failed to read image file"
+  },
+  "chatInput.navigationShortcut": {
+    "defaultMessage": "{prefix}↑/{prefix}↓ to navigate messages"
   },
   "chatInput.processingDroppedFiles": {
     "defaultMessage": "Processing dropped files..."
@@ -518,11 +539,20 @@
   "cronPicker.august": {
     "defaultMessage": "August"
   },
+  "cronPicker.cronExpression": {
+    "defaultMessage": "Cron expression"
+  },
+  "cronPicker.custom": {
+    "defaultMessage": "Custom cron"
+  },
   "cronPicker.day": {
     "defaultMessage": "Day"
   },
   "cronPicker.december": {
     "defaultMessage": "December"
+  },
+  "cronPicker.emptyCronError": {
+    "defaultMessage": "Cron expression cannot be empty"
   },
   "cronPicker.every": {
     "defaultMessage": "Every"
@@ -538,6 +568,9 @@
   },
   "cronPicker.inMonth": {
     "defaultMessage": "in"
+  },
+  "cronPicker.invalidDayOfMonth": {
+    "defaultMessage": "Day must be between 1 and {max}"
   },
   "cronPicker.january": {
     "defaultMessage": "January"
@@ -557,6 +590,9 @@
   "cronPicker.minute": {
     "defaultMessage": "Minute"
   },
+  "cronPicker.mode": {
+    "defaultMessage": "Mode"
+  },
   "cronPicker.monday": {
     "defaultMessage": "Monday"
   },
@@ -575,11 +611,17 @@
   "cronPicker.onDay": {
     "defaultMessage": "on day"
   },
+  "cronPicker.quarter": {
+    "defaultMessage": "Quarter"
+  },
   "cronPicker.saturday": {
     "defaultMessage": "Saturday"
   },
   "cronPicker.september": {
     "defaultMessage": "September"
+  },
+  "cronPicker.startingMonth": {
+    "defaultMessage": "starting month"
   },
   "cronPicker.sunday": {
     "defaultMessage": "Sunday"
@@ -896,8 +938,29 @@
   "dictationSettings.voiceDictationProvider": {
     "defaultMessage": "Voice Dictation Provider"
   },
+  "dirSwitcher.chooseDirectory": {
+    "defaultMessage": "Choose directory…"
+  },
+  "dirSwitcher.currentDirectory": {
+    "defaultMessage": "Current directory"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Failed to update working directory"
+  },
+  "dirSwitcher.gitWorktrees": {
+    "defaultMessage": "Git worktrees"
+  },
+  "dirSwitcher.noWorktreesFound": {
+    "defaultMessage": "No worktrees found"
+  },
+  "dirSwitcher.openInFinder": {
+    "defaultMessage": "Open in file manager"
+  },
+  "dirSwitcher.recentDirectories": {
+    "defaultMessage": "Recent directories"
+  },
+  "elicitationRequest.accept": {
+    "defaultMessage": "Accept"
   },
   "elicitationRequest.cancelled": {
     "defaultMessage": "Information request was cancelled."
@@ -2366,6 +2429,9 @@
   "navigationCustomization.itemSettings": {
     "defaultMessage": "Settings"
   },
+  "navigationCustomization.itemSkills": {
+    "defaultMessage": "Skills"
+  },
   "navigationCustomization.resetToDefaults": {
     "defaultMessage": "Reset to defaults"
   },
@@ -3537,7 +3603,7 @@
     "defaultMessage": "YAML"
   },
   "schedulesView.confirmDelete": {
-    "defaultMessage": "Are you sure you want to delete schedule \"{id}\"?"
+    "defaultMessage": "Remove schedule \"{id}\"? The recipe will be kept."
   },
   "schedulesView.createSchedule": {
     "defaultMessage": "Create Schedule"
@@ -3842,6 +3908,9 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Open in new window"
   },
+  "sessions.action.shareNostr": {
+    "defaultMessage": "Share encrypted Nostr link"
+  },
   "sessions.cancel": {
     "defaultMessage": "Cancel"
   },
@@ -3850,6 +3919,9 @@
   },
   "sessions.chatHistoryDesc": {
     "defaultMessage": "View and search your past conversations with Goose. {shortcut} to search."
+  },
+  "sessions.close": {
+    "defaultMessage": "Close"
   },
   "sessions.delete.message": {
     "defaultMessage": "Are you sure you want to delete the session \"{name}\"? This action cannot be undone."
@@ -3881,6 +3953,21 @@
   "sessions.import": {
     "defaultMessage": "Import Session"
   },
+  "sessions.importNostr": {
+    "defaultMessage": "Import Link"
+  },
+  "sessions.importNostr.description": {
+    "defaultMessage": "Paste a Goose Nostr share link to fetch, decrypt, and import the session."
+  },
+  "sessions.importNostr.placeholder": {
+    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
+  },
+  "sessions.importNostr.title": {
+    "defaultMessage": "Import Nostr Session"
+  },
+  "sessions.importing": {
+    "defaultMessage": "Importing..."
+  },
   "sessions.loadingMore": {
     "defaultMessage": "Loading more sessions..."
   },
@@ -3898,6 +3985,15 @@
   },
   "sessions.searchPlaceholder": {
     "defaultMessage": "Search history..."
+  },
+  "sessions.shareNostr.description": {
+    "defaultMessage": "Anyone with this link can fetch and decrypt the session. Treat it like a secret."
+  },
+  "sessions.shareNostr.title": {
+    "defaultMessage": "Encrypted Nostr Share Link"
+  },
+  "sessions.toast.copied": {
+    "defaultMessage": "Copied to clipboard"
   },
   "sessions.toast.deleteFailed": {
     "defaultMessage": "Failed to delete session \"{name}\": {error}"
@@ -3919,6 +4015,12 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Session imported successfully"
+  },
+  "sessions.toast.shareNostr": {
+    "defaultMessage": "Encrypted Nostr share link created"
+  },
+  "sessions.toast.shareNostrFailed": {
+    "defaultMessage": "Failed to create Nostr share link: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Failed to update session description: {error}"
