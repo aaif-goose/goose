@@ -1,3 +1,4 @@
+pub mod bench;
 pub mod configure;
 pub mod doctor;
 pub mod gateway;

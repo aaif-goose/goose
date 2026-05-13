@@ -269,6 +269,26 @@ pub fn split_quoted(input: &str) -> Result<Vec<String>> {
     Ok(parts)
 }
 
+fn stdio_extension_name(cmd: &str) -> String {
+    let file_name = std::path::Path::new(cmd)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("unnamed")
+        .to_string();
+
+    if cfg!(windows) {
+        let file_name_lower = file_name.to_ascii_lowercase();
+        for suffix in [".exe", ".cmd", ".bat", ".ps1"] {
+            if file_name_lower.ends_with(suffix) {
+                return file_name[..file_name.len() - suffix.len()].to_string();
+            }
+        }
+        file_name
+    } else {
+        file_name
+    }
+}
+
 impl CliSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
@@ -328,11 +348,7 @@ impl CliSession {
         }
 
         let cmd = parts.remove(0);
-        let name = std::path::Path::new(&cmd)
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("unnamed")
-            .to_string();
+        let name = stdio_extension_name(&cmd);
 
         Ok(ExtensionConfig::Stdio {
             name,
@@ -2260,6 +2276,20 @@ mod tests {
             split_quoted(r#""C:\Program Files\server\mcp.exe" --arg"#).unwrap(),
             vec![r"C:\Program Files\server\mcp.exe", "--arg"]
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_stdio_extension_strips_windows_script_suffix_from_name() {
+        let config =
+            CliSession::parse_stdio_extension(r#""C:\Program Files\goose\developer.cmd""#).unwrap();
+        match config {
+            ExtensionConfig::Stdio { name, cmd, .. } => {
+                assert_eq!(name, "developer");
+                assert_eq!(cmd, r"C:\Program Files\goose\developer.cmd");
+            }
+            _ => panic!("expected stdio extension"),
+        }
     }
 
     #[test]

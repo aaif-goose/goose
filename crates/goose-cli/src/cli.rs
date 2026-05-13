@@ -12,6 +12,10 @@ use goose::source_roots::SourceRoot;
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
+use crate::commands::bench::{
+    handle_terminal_bench_run, handle_tool_server, BenchToolProfile, BenchToolTarget,
+    TerminalBenchRunOptions,
+};
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
@@ -766,6 +770,125 @@ enum RecipeCommand {
 }
 
 #[derive(Subcommand)]
+enum BenchCommand {
+    #[command(about = "Run a benchmark")]
+    Run {
+        #[command(subcommand)]
+        command: BenchRunCommand,
+    },
+
+    #[command(
+        name = "tool-server",
+        about = "Run a benchmark tool MCP server",
+        hide = true
+    )]
+    ToolServer {
+        #[arg(long, value_enum, default_value_t = BenchToolProfile::Developer)]
+        profile: BenchToolProfile,
+
+        #[arg(long, value_enum, default_value_t = BenchToolTarget::Docker)]
+        target: BenchToolTarget,
+
+        #[arg(long, help = "Docker container ID or name for the benchmark task")]
+        container: String,
+
+        #[arg(
+            long,
+            default_value = "/app",
+            help = "Working directory inside the target"
+        )]
+        workdir: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum BenchRunCommand {
+    #[command(name = "terminal-bench", about = "Run Terminal Bench through Harbor")]
+    TerminalBench(TerminalBenchRunArgs),
+}
+
+#[derive(Args)]
+struct TerminalBenchRunArgs {
+    #[arg(
+        long,
+        help = "Model in Goose provider/model form, for example databricks/my-model"
+    )]
+    model: String,
+
+    #[arg(long, default_value = "terminal-bench@2.0", help = "Harbor dataset")]
+    dataset: String,
+
+    #[arg(
+        long = "task",
+        help = "Task name to run. May be specified multiple times"
+    )]
+    tasks: Vec<String>,
+
+    #[arg(long, default_value_t = 1, help = "Attempts per task")]
+    trials: u32,
+
+    #[arg(long, default_value_t = 1, help = "Number of concurrent Harbor trials")]
+    concurrency: u32,
+
+    #[arg(long, help = "Maximum Goose turns per task")]
+    max_turns: Option<u32>,
+
+    #[arg(
+        long,
+        help = "Container workdir for relative developer tool paths. Defaults to the task container's configured working directory"
+    )]
+    workdir: Option<String>,
+
+    #[arg(
+        long,
+        help = "Python package index URL to expose to task and verifier commands"
+    )]
+    python_index_url: Option<String>,
+
+    #[arg(long, help = "Directory where Harbor writes job output")]
+    jobs_dir: Option<PathBuf>,
+
+    #[arg(long, help = "Directory where generated Harbor configs are written")]
+    config_dir: Option<PathBuf>,
+
+    #[arg(long, help = "Harbor job name")]
+    job_name: Option<String>,
+
+    #[arg(long, help = "Ask Harbor to rebuild task Docker environments")]
+    force_build: bool,
+
+    #[arg(long, help = "Write the Harbor config without running Harbor")]
+    dry_run: bool,
+
+    #[arg(
+        long,
+        help = "Host Goose binary path. Defaults to the current Goose executable"
+    )]
+    goose_binary: Option<PathBuf>,
+}
+
+impl From<TerminalBenchRunArgs> for TerminalBenchRunOptions {
+    fn from(args: TerminalBenchRunArgs) -> Self {
+        Self {
+            model: args.model,
+            dataset: args.dataset,
+            tasks: args.tasks,
+            trials: args.trials,
+            concurrency: args.concurrency,
+            max_turns: args.max_turns,
+            workdir: args.workdir,
+            python_index_url: args.python_index_url,
+            jobs_dir: args.jobs_dir,
+            config_dir: args.config_dir,
+            job_name: args.job_name,
+            force_build: args.force_build,
+            dry_run: args.dry_run,
+            goose_binary: args.goose_binary,
+        }
+    }
+}
+
+#[derive(Subcommand)]
 enum Command {
     /// Configure goose settings
     #[command(about = "Configure goose settings")]
@@ -908,6 +1031,13 @@ enum Command {
     Recipe {
         #[command(subcommand)]
         command: RecipeCommand,
+    },
+
+    /// Run benchmarks
+    #[command(about = "Run benchmarks")]
+    Bench {
+        #[command(subcommand)]
+        command: BenchCommand,
     },
 
     /// Manage plugins
@@ -1152,6 +1282,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Schedule { .. }) => "schedule",
         Some(Command::Update { .. }) => "update",
         Some(Command::Recipe { .. }) => "recipe",
+        Some(Command::Bench { .. }) => "bench",
         Some(Command::Plugin { .. }) => "plugin",
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "local-inference")]
@@ -1676,6 +1807,20 @@ fn handle_recipe_subcommand(command: RecipeCommand) -> Result<()> {
     }
 }
 
+async fn handle_bench_subcommand(command: BenchCommand) -> Result<()> {
+    match command {
+        BenchCommand::Run { command } => match command {
+            BenchRunCommand::TerminalBench(args) => handle_terminal_bench_run(args.into()).await,
+        },
+        BenchCommand::ToolServer {
+            profile,
+            target,
+            container,
+            workdir,
+        } => handle_tool_server(profile, target, container, workdir).await,
+    }
+}
+
 async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
     match command {
         TermCommand::Init {
@@ -1986,6 +2131,7 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
+        Some(Command::Bench { command }) => handle_bench_subcommand(command).await,
         Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
