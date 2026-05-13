@@ -41,6 +41,31 @@ pub struct Check {
     pub body: String,
 }
 
+/// Find the `---` line that closes the YAML frontmatter, tolerating CRLF
+/// line endings produced by editors on Windows. Returns `(frontmatter, body)`.
+//
+// All index arithmetic here is on ASCII bytes (`-`, `\n`, `\r`), which
+// always land on UTF-8 character boundaries, so direct byte slicing is
+// safe even when the body contains multi-byte characters.
+#[allow(clippy::string_slice)]
+fn split_frontmatter(after_open: &str) -> Option<(&str, &str)> {
+    let mut search_from = 0;
+    while let Some(rel) = after_open[search_from..].find("---") {
+        let pos = search_from + rel;
+        let preceded_by_lf = pos > 0 && after_open.as_bytes()[pos - 1] == b'\n';
+        let preceded_by_crlf = pos >= 2
+            && after_open.as_bytes()[pos - 2] == b'\r'
+            && after_open.as_bytes()[pos - 1] == b'\n';
+        if preceded_by_lf || preceded_by_crlf {
+            let frontmatter_end = if preceded_by_crlf { pos - 2 } else { pos - 1 };
+            let body_start = pos + 3;
+            return Some((&after_open[..frontmatter_end], &after_open[body_start..]));
+        }
+        search_from = pos + 3;
+    }
+    None
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct CheckFrontmatter {
     name: Option<String>,
@@ -74,7 +99,7 @@ impl Check {
             })?
             .trim_start_matches(['\r', '\n']);
 
-        let (frontmatter_raw, body_raw) = after_open.split_once("\n---").ok_or_else(|| {
+        let (frontmatter_raw, body_raw) = split_frontmatter(after_open).ok_or_else(|| {
             anyhow!(
                 "check {}: missing closing --- in frontmatter",
                 path.display()
@@ -260,6 +285,15 @@ tools: [Bash, Read, Grep]
     fn rejects_unclosed_frontmatter() {
         let err = Check::parse("---\nname: x\nno close", &p("/r/.agents/checks/x.md")).unwrap_err();
         assert!(err.to_string().contains("missing closing"));
+    }
+
+    #[test]
+    fn parses_crlf_frontmatter() {
+        let content = "---\r\nname: perf\r\ndescription: ok\r\n---\r\nbody line\r\n";
+        let check = Check::parse(content, &p("/r/.agents/checks/perf.md")).unwrap();
+        assert_eq!(check.name, "perf");
+        assert_eq!(check.description.as_deref(), Some("ok"));
+        assert_eq!(check.body, "body line");
     }
 
     #[test]

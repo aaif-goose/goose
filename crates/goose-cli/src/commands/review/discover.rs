@@ -89,35 +89,38 @@ fn discover_with_globals(
 ) -> Result<DiscoveredReview> {
     let scope_dirs = candidate_scope_dirs(touched_files);
 
-    // Collect raw checks keyed by (scope_dir, name) so we can dedupe by name
-    // with closest-scope-wins precedence.
-    let mut by_name: BTreeMap<String, Check> = BTreeMap::new();
-    let mut record = |check: Check| {
+    // Collect raw checks keyed by name with explicit per-source priority so
+    // closer/more-specific sources shadow broader ones. Globals get priority
+    // 0 so a repo-root check (priority 1) of the same name always wins.
+    let mut by_name: BTreeMap<String, (usize, Check)> = BTreeMap::new();
+    let mut record = |check: Check, priority: usize| {
         by_name
             .entry(check.name.clone())
-            .and_modify(|existing| {
-                if scope_priority(&check.scope_dir) > scope_priority(&existing.scope_dir) {
+            .and_modify(|(existing_priority, existing)| {
+                if priority > *existing_priority {
                     *existing = check.clone();
+                    *existing_priority = priority;
                 }
             })
-            .or_insert(check);
+            .or_insert((priority, check));
     };
 
     for dir in global_dirs {
         for check in read_checks_dir(dir, "", LoadMode::Lenient)? {
-            record(check);
+            record(check, 0);
         }
     }
 
     let root_dir = repo_root.join(".agents").join("checks");
     for check in read_checks_dir(&root_dir, "", LoadMode::Strict)? {
-        record(check);
+        record(check, scope_priority(""));
     }
 
     for scope in &scope_dirs {
         let dir = repo_root.join(scope).join(".agents").join("checks");
         for check in read_checks_dir(&dir, scope, LoadMode::Strict)? {
-            record(check);
+            let p = scope_priority(scope);
+            record(check, p);
         }
     }
 
@@ -126,7 +129,7 @@ fn discover_with_globals(
         let body = fs::read_to_string(&root_review)
             .with_context(|| format!("read REVIEW.md {}", root_review.display()))?;
         let check = synthesize_review_md_check("", &root_review, &body);
-        by_name.insert(check.name.clone(), check);
+        record(check, scope_priority(""));
     }
     for scope in &scope_dirs {
         let path = repo_root.join(scope).join(".agents").join("REVIEW.md");
@@ -134,11 +137,12 @@ fn discover_with_globals(
             let body = fs::read_to_string(&path)
                 .with_context(|| format!("read REVIEW.md {}", path.display()))?;
             let check = synthesize_review_md_check(scope, &path, &body);
-            by_name.insert(check.name.clone(), check);
+            let p = scope_priority(scope);
+            record(check, p);
         }
     }
 
-    let mut checks: Vec<Check> = by_name.into_values().collect();
+    let mut checks: Vec<Check> = by_name.into_values().map(|(_, c)| c).collect();
     checks.sort_by(|a, b| a.name.cmp(&b.name));
 
     Ok(DiscoveredReview { checks })
@@ -317,6 +321,45 @@ mod tests {
             .unwrap();
         assert!(scoped.body.contains("files under `api/v2/`"));
         assert!(scoped.body.contains("v2 rules"));
+    }
+
+    #[test]
+    fn repo_root_check_overrides_same_named_global_check() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let global = tempdir().unwrap();
+        write(
+            &global.path().join("perf.md"),
+            "---\nname: perf\ndescription: global\n---\nglobal body",
+        );
+        write(
+            &root.join(".agents/checks/perf.md"),
+            "---\nname: perf\ndescription: repo\n---\nrepo body",
+        );
+
+        let result = discover_with_globals(root, &[], &[global.path().to_path_buf()]).unwrap();
+        assert_eq!(result.checks.len(), 1);
+        assert_eq!(result.checks[0].body, "repo body");
+        assert_eq!(result.checks[0].description.as_deref(), Some("repo"));
+    }
+
+    #[test]
+    fn user_check_named_repo_rules_is_not_overwritten_by_root_review_md() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join(".agents/checks/repo-rules.md"),
+            "---\nname: repo-rules\ndescription: user\n---\nuser body",
+        );
+        write(&root.join(".agents/REVIEW.md"), "review rules");
+
+        let result = discover_with_globals(root, &[], &[]).unwrap();
+        let repo_rules = result
+            .checks
+            .iter()
+            .find(|c| c.name == "repo-rules")
+            .expect("repo-rules check should exist");
+        assert_eq!(repo_rules.body, "user body");
     }
 
     #[test]

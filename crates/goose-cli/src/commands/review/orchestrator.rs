@@ -104,6 +104,7 @@ pub async fn run_checks_in_parallel(
         let diff = diff.to_string();
         let provider = opts.provider.clone();
         let model = resolve_check_model(&check, opts);
+        let max_turns = check.resolved_turn_limit(opts.default_turn_limit);
         let quiet = opts.quiet;
         let instructions = opts.instructions.clone();
 
@@ -117,6 +118,7 @@ pub async fn run_checks_in_parallel(
                 provider.as_deref(),
                 model.as_deref(),
                 instructions.as_deref(),
+                Some(max_turns),
             )
             .await;
             (idx, check, result, quiet)
@@ -162,19 +164,20 @@ pub async fn run_checks_in_parallel(
 ///
 /// Precedence (most specific wins):
 /// 1. `--override-model` always wins.
-/// 2. If the user picked an explicit `--provider`+`--model` combo on the
-///    CLI, prefer it over a per-check `model:` declaration. The per-check
-///    model is usually written for a different provider (e.g. a check
-///    pinned to `goose-claude-4-sonnet` on Databricks would 404 against
-///    Google's API). Honoring the CLI provider here keeps benchmarks and
-///    targeted reruns apples-to-apples.
+/// 2. If the user picked an explicit `--provider` on the CLI, drop the
+///    per-check `model:` declaration entirely. The per-check model is
+///    almost always pinned to a specific provider (e.g. a check that
+///    asks for `goose-claude-4-sonnet` would 404 against Google's API),
+///    so silently inheriting it across providers makes targeted reruns
+///    fail. Use `--model` if set, otherwise fall through to the
+///    selected provider's default.
 /// 3. Per-check `model:` from frontmatter.
 /// 4. `--model` (or the agent default).
 fn resolve_check_model(check: &Check, opts: &ReviewOptions) -> Option<String> {
     if let Some(o) = opts.override_model.as_deref() {
         return Some(o.to_string());
     }
-    if opts.provider.is_some() && opts.default_model.is_some() {
+    if opts.provider.is_some() {
         return opts.default_model.clone();
     }
     if let Some(m) = check.model.as_deref() {
@@ -191,11 +194,17 @@ async fn run_single_check_subprocess(
     provider: Option<&str>,
     model: Option<&str>,
     instructions: Option<&str>,
+    max_turns: Option<usize>,
 ) -> Result<Vec<Finding>> {
     let prompt = build_check_prompt(check, diff, instructions);
-    let raw =
-        run_subprocess_for_findings(&prompt, &format!("check '{}'", check.name), provider, model)
-            .await?;
+    let raw = run_subprocess_for_findings(
+        &prompt,
+        &format!("check '{}'", check.name),
+        provider,
+        model,
+        max_turns,
+    )
+    .await?;
     let default_sev = check.severity_default.as_deref().unwrap_or("medium");
     Ok(raw
         .into_iter()
@@ -220,6 +229,7 @@ async fn run_subprocess_for_findings(
     label: &str,
     provider: Option<&str>,
     model: Option<&str>,
+    max_turns: Option<usize>,
 ) -> Result<Vec<RawFinding>> {
     let goose_bin = std::env::current_exe().context("locate current goose binary")?;
 
@@ -232,13 +242,22 @@ async fn run_subprocess_for_findings(
         .arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // Drop-on-cancel safety: when the outer `timeout` fires it drops
+        // this future, which drops the Child handle. Without
+        // kill_on_drop, the Tokio runtime leaves the subprocess running
+        // (and racking up tokens) in the background — kill_on_drop sends
+        // SIGKILL on Drop instead.
+        .kill_on_drop(true);
 
     if let Some(p) = provider {
         cmd.arg("--provider").arg(p);
     }
     if let Some(m) = model {
         cmd.arg("--model").arg(m);
+    }
+    if let Some(t) = max_turns {
+        cmd.arg("--max-turns").arg(t.to_string());
     }
 
     let mut child = cmd
@@ -318,9 +337,14 @@ pub async fn run_main_pass_in_parallel(
             let prompt =
                 build_main_pass_prompt(&path, &file_diff, &base_prompt, instructions.as_deref());
             let label = format!("main:{path}");
-            let result =
-                run_subprocess_for_findings(&prompt, &label, provider.as_deref(), model.as_deref())
-                    .await;
+            let result = run_subprocess_for_findings(
+                &prompt,
+                &label,
+                provider.as_deref(),
+                model.as_deref(),
+                None,
+            )
+            .await;
             (idx, path, result, quiet)
         });
     }
@@ -408,19 +432,137 @@ pub fn split_diff_by_file(diff: &str) -> Vec<(String, String)> {
 /// Parse the `a/<path> b/<path>` portion of a `diff --git` header line.
 /// Returns the post-image path (`b/...`) when present; falls back to
 /// the pre-image path (`a/...`) for deletions.
+///
+/// Also handles git's quoted form for paths with non-ASCII bytes,
+/// spaces, or special chars (e.g. `"a/dir/\303\251.txt" "b/dir/\303\251.txt"`,
+/// emitted whenever `core.quotePath` is on or the path contains
+/// whitespace). Without quote handling, files under those paths are
+/// silently dropped from the per-file main pass.
 #[allow(clippy::string_slice)]
 fn parse_diff_header_path(rest: &str) -> Option<String> {
     let trimmed = rest.trim_end_matches('\n').trim();
-    // Standard form: `a/<path> b/<path>` (no spaces in either path
-    // for the common case). We split on " b/" first; if not present,
-    // fall back to "a/" only. ` b/` is ASCII-only, so slicing past
-    // its byte index always lands on a UTF-8 char boundary.
+
+    if trimmed.starts_with('"') {
+        let (a_quoted, after_a) = take_quoted(trimmed)?;
+        let after_a = after_a.trim_start();
+        let post = if after_a.starts_with('"') {
+            let (b_quoted, _) = take_quoted(after_a)?;
+            b_quoted
+        } else {
+            // Mixed form: quoted a/, unquoted b/.
+            after_a.to_string()
+        };
+        return Some(
+            strip_diff_prefix(&post)
+                .unwrap_or_else(|| strip_diff_prefix(&a_quoted).unwrap_or(post)),
+        );
+    }
+
     if let Some(idx) = trimmed.find(" b/") {
         let post = &trimmed[idx + 3..];
+        // The post-image path may itself be quoted in mixed-form
+        // headers like `a/foo.txt "b/with space.txt"`.
+        if post.starts_with('"') {
+            let (q, _) = take_quoted(post)?;
+            return Some(strip_diff_prefix(&q).unwrap_or(q));
+        }
         return Some(post.to_string());
     }
     if let Some(stripped) = trimmed.strip_prefix("a/") {
         return Some(stripped.to_string());
+    }
+    None
+}
+
+/// Strip the leading `a/` or `b/` prefix that git puts on diff header
+/// paths. Returns `None` if no such prefix exists.
+fn strip_diff_prefix(s: &str) -> Option<String> {
+    s.strip_prefix("a/")
+        .or_else(|| s.strip_prefix("b/"))
+        .map(str::to_string)
+}
+
+/// Pull a single C-style quoted token off the start of `s` and return
+/// `(decoded, remainder)`. Decodes the escape sequences git uses when
+/// `core.quotePath` is on: `\\`, `\"`, `\a`, `\b`, `\t`, `\n`, `\v`,
+/// `\f`, `\r`, and octal `\NNN` byte escapes (for non-ASCII paths).
+fn take_quoted(s: &str) -> Option<(String, &str)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'"') {
+        return None;
+    }
+    let mut decoded: Vec<u8> = Vec::with_capacity(s.len());
+    let mut i = 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                let rest = std::str::from_utf8(&bytes[i + 1..]).ok()?;
+                let s = String::from_utf8(decoded).ok()?;
+                return Some((s, rest));
+            }
+            b'\\' => {
+                if i + 1 >= bytes.len() {
+                    return None;
+                }
+                match bytes[i + 1] {
+                    b'\\' => {
+                        decoded.push(b'\\');
+                        i += 2;
+                    }
+                    b'"' => {
+                        decoded.push(b'"');
+                        i += 2;
+                    }
+                    b'a' => {
+                        decoded.push(0x07);
+                        i += 2;
+                    }
+                    b'b' => {
+                        decoded.push(0x08);
+                        i += 2;
+                    }
+                    b't' => {
+                        decoded.push(b'\t');
+                        i += 2;
+                    }
+                    b'n' => {
+                        decoded.push(b'\n');
+                        i += 2;
+                    }
+                    b'v' => {
+                        decoded.push(0x0b);
+                        i += 2;
+                    }
+                    b'f' => {
+                        decoded.push(0x0c);
+                        i += 2;
+                    }
+                    b'r' => {
+                        decoded.push(b'\r');
+                        i += 2;
+                    }
+                    c if (b'0'..=b'7').contains(&c) => {
+                        if i + 3 >= bytes.len() {
+                            return None;
+                        }
+                        let octal = &bytes[i + 1..i + 4];
+                        if !octal.iter().all(|b| (b'0'..=b'7').contains(b)) {
+                            return None;
+                        }
+                        let val = ((octal[0] - b'0') as u16) * 64
+                            + ((octal[1] - b'0') as u16) * 8
+                            + (octal[2] - b'0') as u16;
+                        decoded.push(val as u8);
+                        i += 4;
+                    }
+                    _ => return None,
+                }
+            }
+            b => {
+                decoded.push(b);
+                i += 1;
+            }
+        }
     }
     None
 }
@@ -826,6 +968,20 @@ mod tests {
     }
 
     #[test]
+    fn resolve_check_model_cli_provider_alone_drops_per_check_model() {
+        // `--provider google` without `--model`: a per-check model pinned
+        // to a Claude/Databricks model would 404 against Google. Drop it.
+        let mut c = ck("perf");
+        c.model = Some("goose-claude-4-sonnet".into());
+        let opts = ReviewOptions {
+            provider: Some("google".into()),
+            default_model: None,
+            ..ReviewOptions::default()
+        };
+        assert_eq!(resolve_check_model(&c, &opts), None);
+    }
+
+    #[test]
     fn split_diff_by_file_separates_files_in_source_order() {
         let diff = "\
 diff --git a/foo.rs b/foo.rs
@@ -875,6 +1031,41 @@ index aaa..bbb 100644
     fn split_diff_by_file_returns_empty_for_empty_input() {
         assert!(split_diff_by_file("").is_empty());
         assert!(split_diff_by_file("\n").is_empty());
+    }
+
+    #[test]
+    fn split_diff_by_file_handles_quoted_headers_with_octal_escapes() {
+        // git emits `"a/dir/\303\251.txt" "b/dir/\303\251.txt"` for paths
+        // containing non-ASCII bytes when core.quotePath is on. Without
+        // quote handling the chunk gets dropped from the per-file pass.
+        let diff = "\
+diff --git \"a/dir/\\303\\251.txt\" \"b/dir/\\303\\251.txt\"
+index 1111..2222 100644
+--- \"a/dir/\\303\\251.txt\"
++++ \"b/dir/\\303\\251.txt\"
+@@ -1 +1 @@
+-old
++new
+";
+        let chunks = split_diff_by_file(diff);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].0, "dir/\u{e9}.txt");
+    }
+
+    #[test]
+    fn split_diff_by_file_handles_quoted_header_with_space() {
+        let diff = "\
+diff --git \"a/with space.txt\" \"b/with space.txt\"
+index aaa..bbb 100644
+--- \"a/with space.txt\"
++++ \"b/with space.txt\"
+@@ -1 +1 @@
+-old
++new
+";
+        let chunks = split_diff_by_file(diff);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].0, "with space.txt");
     }
 
     #[test]

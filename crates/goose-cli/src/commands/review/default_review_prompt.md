@@ -83,9 +83,16 @@ delegate(
   async        = true,                  # IMPORTANT: parallelize
   model        = <check model>,
   max_turns    = <check turn_limit>,
-  extensions   = <check tools or omit>,
 )
 ```
+
+Do NOT pass the check's `tools` value to `extensions`. The `extensions`
+parameter filters by **extension name** (e.g. `developer`, `summon`),
+not tool name (e.g. `Read`, `Grep`), so passing a tool list there
+silently disables every extension and the subagent ends up with no
+tools at all. Treat the per-check `tools` column in the request as
+informational guidance for the subagent's prompt, not as an
+extensions filter.
 
 This returns a `taskId` immediately. After dispatching every check, call
 `load(taskId)` once per check to wait for the results. **Do not** issue
