@@ -165,8 +165,18 @@ fn cleanup_legacy_provider_keys(config: &mut Mapping) -> bool {
 fn migrate_provider_config(config: &mut Mapping) -> bool {
     let providers_key = serde_yaml::Value::String(PROVIDERS_CONFIG_KEY.to_string());
 
-    // If providers block already exists, just clean up any leftover flat keys.
+    // If providers block already exists, backfill active_provider from the
+    // legacy flat key when missing, then clean up leftover flat keys.
     if config.contains_key(&providers_key) {
+        let ap_key = serde_yaml::Value::String(ACTIVE_PROVIDER_KEY.to_string());
+        if !config.contains_key(&ap_key) {
+            if let Some(legacy) = config
+                .get(serde_yaml::Value::String("GOOSE_PROVIDER".to_string()))
+                .and_then(|v| v.as_str())
+            {
+                config.insert(ap_key, serde_yaml::Value::String(legacy.to_string()));
+            }
+        }
         return cleanup_legacy_provider_keys(config);
     }
 
@@ -517,5 +527,13 @@ mod tests {
 
         // Providers block should be untouched
         assert!(config.contains_key(serde_yaml::Value::String("providers".to_string())));
+
+        // active_provider should be backfilled from legacy GOOSE_PROVIDER
+        assert_eq!(
+            config
+                .get(serde_yaml::Value::String("active_provider".to_string()))
+                .and_then(|v| v.as_str()),
+            Some("lmstudio")
+        );
     }
 }
