@@ -52,6 +52,22 @@ const turndown = new TurndownService({
   codeBlockStyle: 'fenced',
 });
 
+turndown.addRule('complexLinks', {
+  filter: (node) => {
+    return (
+      node.nodeName === 'A' &&
+      !!node.getAttribute('href') &&
+      /\n/.test(node.textContent || '')
+    );
+  },
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const href = el.getAttribute('href')!;
+    const text = (el.textContent || '').trim().replace(/\n+/g, ' ');
+    return `[${text}](${href})`;
+  },
+});
+
 interface PastedImage {
   id: string;
   dataUrl: string;
