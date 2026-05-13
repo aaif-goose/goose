@@ -44,7 +44,13 @@ import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
 import { fetchCanonicalModelInfo } from '../utils/canonical';
 import { defineMessages, useIntl } from '../i18n';
-import { htmlToMarkdown } from '../utils/pasteMarkdown';
+import TurndownService from 'turndown';
+
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  bulletListMarker: '-',
+  codeBlockStyle: 'fenced',
+});
 
 interface PastedImage {
   id: string;
@@ -818,8 +824,10 @@ export default function ChatInput({
     if (imageFiles.length === 0) {
       const html = evt.clipboardData.getData('text/html');
       if (html) {
-        const markdown = htmlToMarkdown(html);
-        if (markdown !== null) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const hasLinks = doc.querySelectorAll('a[href]').length > 0;
+        if (hasLinks) {
+          const markdown = turndown.turndown(doc.body).trim();
           evt.preventDefault();
           const textarea = textAreaRef.current;
           if (textarea) {
