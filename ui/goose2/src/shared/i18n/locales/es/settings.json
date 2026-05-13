@@ -343,6 +343,14 @@
       "loading": "Cargando catálogo de proveedores..."
     },
     "disconnect": "Desconectar",
+    "errors": {
+      "fieldRequired": "Ingresa un valor para {{label}}",
+      "fieldsMissing": "Completa los campos: {{fields}}",
+      "loadFailed": "No se pudo cargar la configuración del proveedor",
+      "removeFailed": "Error al eliminar",
+      "saveFailed": "Error al guardar",
+      "signInFailed": "No se pudo completar el inicio de sesión"
+    },
     "models": {
       "description": "Necesitas al menos un proveedor de modelos para usar el agente Goose. Algunos agentes pueden traer sus propias conexiones de modelo.",
       "notSet": "No configurado",

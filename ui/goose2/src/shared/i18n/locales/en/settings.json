@@ -343,6 +343,14 @@
       "loading": "Loading provider catalog..."
     },
     "disconnect": "Disconnect",
+    "errors": {
+      "fieldRequired": "Enter a value for {{label}}",
+      "fieldsMissing": "Fill in {{fields}}",
+      "loadFailed": "Failed to load provider settings",
+      "removeFailed": "Failed to remove",
+      "saveFailed": "Failed to save",
+      "signInFailed": "Failed to complete sign-in"
+    },
     "models": {
       "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",
       "notSet": "Not set",
