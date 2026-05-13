@@ -56,13 +56,13 @@ webbrowser = { workspace = true }
 indicatif = "0.18.1"
 tokio-util = { workspace = true, features = ["compat", "rt"] }
 anstream = "1.0.0"
-open = "5.3.4"
+open = "5.3.5"
 url = { workspace = true }
 urlencoding = { workspace = true }
-clap_complete = "4.6.2"
+clap_complete = "4.6.5"
 comfy-table = "7.2.2"
 sha2 = { workspace = true }
-sigstore-verify = { version = "=0.6.5", default-features = false }
+sigstore-verify = { version = "=0.6.6", default-features = false }
 axum.workspace = true
 clap_complete_nushell = "4.6.0"
 
