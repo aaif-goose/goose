@@ -1316,6 +1316,7 @@ impl SummonClient {
                 cfg.toolshim = parent.toolshim;
                 cfg.toolshim_model = parent.toolshim_model;
                 cfg.fast_model_config = parent.fast_model_config;
+                cfg.temperature = cfg.temperature.or(parent.temperature);
                 if let Some(parent_params) = parent.request_params {
                     let merged = cfg.request_params.get_or_insert_with(Default::default);
                     for (k, v) in parent_params {
