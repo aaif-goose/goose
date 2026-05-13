@@ -593,6 +593,10 @@ export type ImportAppResponse = {
     name: string;
 };
 
+export type ImportSessionNostrRequest = {
+    deeplink: string;
+};
+
 export type ImportSessionRequest = {
     json: string;
 };
@@ -1255,8 +1259,15 @@ export type ScheduledJob = {
     currently_running?: boolean;
     id: string;
     last_run?: string | null;
+    parameters?: Array<Array<string>>;
     paused?: boolean;
     process_start_time?: string | null;
+    /**
+     * Original directory of the recipe file before it was copied to scheduled_recipes/.
+     * Preserved so that relative paths (sub-recipes, template includes) resolve correctly
+     * against the source tree rather than the scheduler's internal storage directory.
+     */
+    recipe_base_dir?: string | null;
     source: string;
 };
 
@@ -1359,6 +1370,17 @@ export type Settings = {
 export type SetupResponse = {
     message: string;
     success: boolean;
+};
+
+export type ShareSessionNostrRequest = {
+    relays?: Array<string>;
+};
+
+export type ShareSessionNostrResponse = {
+    deeplink: string;
+    eventId: string;
+    nevent: string;
+    relays: Array<string>;
 };
 
 export type SlashCommand = {
@@ -4084,6 +4106,37 @@ export type ImportSessionResponses = {
 
 export type ImportSessionResponse = ImportSessionResponses[keyof ImportSessionResponses];
 
+export type ImportSessionNostrData = {
+    body: ImportSessionNostrRequest;
+    path?: never;
+    query?: never;
+    url: '/sessions/import/nostr';
+};
+
+export type ImportSessionNostrErrors = {
+    /**
+     * Bad request - Invalid Nostr share link
+     */
+    400: unknown;
+    /**
+     * Unauthorized - Invalid or missing API key
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type ImportSessionNostrResponses = {
+    /**
+     * Nostr shared session imported successfully
+     */
+    200: Session;
+};
+
+export type ImportSessionNostrResponse = ImportSessionNostrResponses[keyof ImportSessionNostrResponses];
+
 export type GetSessionInsightsData = {
     body?: never;
     path?: never;
@@ -4465,6 +4518,42 @@ export type UpdateSessionNameResponses = {
      */
     200: unknown;
 };
+
+export type ShareSessionNostrData = {
+    body: ShareSessionNostrRequest;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/share/nostr';
+};
+
+export type ShareSessionNostrErrors = {
+    /**
+     * Unauthorized - Invalid or missing API key
+     */
+    401: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type ShareSessionNostrResponses = {
+    /**
+     * Session shared to Nostr successfully
+     */
+    200: ShareSessionNostrResponse;
+};
+
+export type ShareSessionNostrResponse2 = ShareSessionNostrResponses[keyof ShareSessionNostrResponses];
 
 export type UpdateSessionUserRecipeValuesData = {
     body: UpdateSessionUserRecipeValuesRequest;

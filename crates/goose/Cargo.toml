@@ -39,6 +39,7 @@ aws-providers = [
 cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "llama-cpp-2/cuda"]
 vulkan = ["local-inference", "llama-cpp-2/vulkan"]
 rustls-tls = [
+    "dep:rustls",
     "reqwest/rustls",
     "rmcp/reqwest",
     "sqlx/runtime-tokio-rustls",
@@ -58,6 +59,7 @@ native-tls = [
     "oauth2/reqwest",
     "oauth2/native-tls",
 ]
+
 
 [lints]
 workspace = true
@@ -194,6 +196,9 @@ goose-acp-macros = { path = "../goose-acp-macros" }
 tower-http = { workspace = true, features = ["cors"] }
 http-body-util = "0.1.3"
 process-wrap = { version = "9.1.0", features = ["std"] }
+nostr = { version = "0.44.2", features = ["nip44"] }
+nostr-sdk = { version = "0.44.1", features = ["nip44"] }
+rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
 
 
 [target.'cfg(target_os = "windows")'.dependencies]

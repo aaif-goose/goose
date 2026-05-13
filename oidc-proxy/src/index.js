@@ -190,15 +190,14 @@ async function verifyOidcToken(token, env) {
     const header = decodeJwtPart(headerB64);
     const payload = decodeJwtPart(payloadB64);
 
+    if (!payload.exp || payload.exp < Date.now() / 1000) {
+      return { valid: false, reason: "Token expired" };
+    }
     if (env.MAX_TOKEN_AGE_SECONDS && payload.iat) {
-      const age = Date.now() / 1000 - payload.iat;
+      const age = Math.floor(Date.now() / 1000) - payload.iat;
       if (age > parseInt(env.MAX_TOKEN_AGE_SECONDS, 10)) {
         return { valid: false, reason: "Token too old" };
       }
-    }
-
-    if (!payload.exp || payload.exp < Date.now() / 1000) {
-      return { valid: false, reason: "Token expired" };
     }
 
     const expectedIssuer = env.OIDC_ISSUER.replace(/\/$/, "");

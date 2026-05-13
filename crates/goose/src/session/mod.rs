@@ -2,6 +2,7 @@ mod chat_history_search;
 mod diagnostics;
 pub mod extension_data;
 mod legacy;
+pub mod nostr_share;
 pub mod session_manager;
 
 pub use diagnostics::{

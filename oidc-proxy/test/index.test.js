@@ -206,6 +206,62 @@ describe("rejects invalid requests", () => {
     expect(response.status).toBe(401);
     expect((await response.json()).error).toBe("Token too old");
   });
+
+  it("age cap fires independently of exp (iat past cap, exp still valid)", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await createSignedJwt(
+      validPayload({ iat: now - 1500, exp: now + 300 }),
+    );
+    const request = new Request("https://proxy.example.com/v1/messages", {
+      headers: { "x-api-key": token },
+    });
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, testEnv(), ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(401);
+    expect((await response.json()).error).toBe("Token too old");
+  });
+
+  it("rejects expired token even when MAX_TOKEN_AGE_SECONDS is set", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await createSignedJwt(
+      validPayload({ iat: now - 600, exp: now - 300 }),
+    );
+    const request = new Request("https://proxy.example.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": token, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, testEnv(), ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(401);
+    expect((await response.json()).error).toBe("Token expired");
+  });
+
+  it("rejects expired token when MAX_TOKEN_AGE_SECONDS is unset", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await createSignedJwt(
+      validPayload({ iat: now - 600, exp: now - 300 }),
+    );
+    const request = new Request("https://proxy.example.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": token, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(
+      request,
+      testEnv({ MAX_TOKEN_AGE_SECONDS: undefined }),
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(401);
+    expect((await response.json()).error).toBe("Token expired");
+  });
 });
 
 describe("proxies valid requests", () => {

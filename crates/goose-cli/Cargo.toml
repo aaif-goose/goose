@@ -39,7 +39,7 @@ strum = { workspace = true }
 tempfile = { workspace = true }
 etcetera = { workspace = true }
 rand = { workspace = true }
-rustyline = "15.0.0"
+rustyline = "18.0.0"
 tracing = { workspace = true }
 chrono = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time"] }
@@ -64,6 +64,7 @@ comfy-table = "7.2.2"
 sha2 = { workspace = true }
 sigstore-verify = { version = "=0.6.5", default-features = false }
 axum.workspace = true
+clap_complete_nushell = "4.6.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

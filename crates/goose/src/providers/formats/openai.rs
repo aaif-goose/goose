@@ -1092,15 +1092,22 @@ pub fn create_request(
         }
     }
 
-    let key = if is_reasoning_model {
-        "max_completion_tokens"
-    } else {
-        "max_tokens"
-    };
-    payload
-        .as_object_mut()
-        .unwrap()
-        .insert(key.to_string(), json!(model_config.max_output_tokens()));
+    // Only emit max_tokens / max_completion_tokens when the user (via
+    // GOOSE_MAX_TOKENS) or a canonical model record has supplied a value.
+    // For unknown models on OpenAI-compatible endpoints (e.g. llama_swap,
+    // lmstudio) sending the historic 4096 default truncates non-trivial
+    // responses; omitting the field lets the server use its own max.
+    if let Some(max_tokens) = model_config.max_tokens {
+        let key = if is_reasoning_model {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert(key.to_string(), json!(max_tokens));
+    }
 
     if for_streaming {
         payload["stream"] = json!(true);
@@ -1864,6 +1871,43 @@ mod tests {
             assert_eq!(obj.get(key).unwrap(), value);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_omits_max_tokens_when_unset() -> anyhow::Result<()> {
+        // Unknown models on OpenAI-compatible local providers (llama_swap,
+        // lmstudio) have no canonical record and no GOOSE_MAX_TOKENS, so the
+        // request must not pin the legacy 4096 default — the server should
+        // pick its own ceiling. See issue #9007.
+        let model_config = ModelConfig {
+            model_name: "some-unknown-local-model".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+        assert!(
+            !obj.contains_key("max_tokens"),
+            "max_tokens should be omitted when model_config.max_tokens is None"
+        );
+        assert!(
+            !obj.contains_key("max_completion_tokens"),
+            "max_completion_tokens should be omitted when model_config.max_tokens is None"
+        );
         Ok(())
     }
 

@@ -1674,6 +1674,13 @@ impl GooseAcpAgent {
             SessionUpdate::ToolCall(initial_tool_call),
         ))?;
 
+        if Config::global()
+            .get_goose_disable_tool_call_summary()
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+
         if let Ok(tool_call) = &tool_request.tool_call {
             let agent = match &session.agent {
                 AgentHandle::Ready(a) => a.clone(),

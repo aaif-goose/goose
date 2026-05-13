@@ -9,11 +9,13 @@ use crate::session::{build_session, SessionBuilderConfig};
 
 use clap::ValueEnum;
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[value(alias = "nushell")]
+    Nu,
     #[value(alias = "pwsh")]
     Powershell,
 }
@@ -29,6 +31,7 @@ impl Shell {
             Shell::Bash => &BASH_CONFIG,
             Shell::Zsh => &ZSH_CONFIG,
             Shell::Fish => &FISH_CONFIG,
+            Shell::Nu => &NU_CONFIG,
             Shell::Powershell => &POWERSHELL_CONFIG,
         }
     }
@@ -97,6 +100,42 @@ end"#,
     command_not_found: None,
 };
 
+static NU_CONFIG: ShellConfig = ShellConfig {
+    script_template: r#"$env.AGENT_SESSION_ID = "{session_id}"
+def --wrapped @goose [...args] { run-external "{goose_bin}" "term" "run" ...$args }
+def --wrapped @g [...args] { run-external "{goose_bin}" "term" "run" ...$args }
+
+if (($env | get -o GOOSE_NU_PREEXEC_INSTALLED | default false) != true) {
+    $env.GOOSE_NU_PREEXEC_INSTALLED = true
+    $env.config.hooks.pre_execution = (
+        $env.config.hooks.pre_execution
+        | append {||
+            let line = (commandline | str trim)
+            if ($line | is-empty) {
+                return
+            }
+            if ($line =~ '^goose term(\s|$)') {
+                return
+            }
+            if ($line =~ '^(@goose|@g)(\s|$)') {
+                return
+            }
+            job spawn { run-external "{goose_bin}" "term" "log" $line | complete | ignore } | ignore
+        }
+    )
+}
+{command_not_found_handler}"#,
+    command_not_found: Some(
+        r#"
+$env.config.hooks.command_not_found = {|command_name|
+    let prompt = (try { commandline | str trim } catch { $command_name })
+    print $"🪿 Command '($command_name)' not found. Asking goose..."
+    run-external "{goose_bin}" "term" "run" $prompt | complete | ignore
+    null
+}"#,
+    ),
+};
+
 static POWERSHELL_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env:AGENT_SESSION_ID = "{session_id}"
 function @goose {{ & '{goose_bin}' term run @args }}
@@ -113,12 +152,34 @@ Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
     command_not_found: None,
 };
 
+fn render_term_init_script(
+    shell: Shell,
+    session_id: &str,
+    goose_bin: &str,
+    with_command_not_found: bool,
+) -> String {
+    let config = shell.config();
+    let command_not_found_handler = if with_command_not_found {
+        config
+            .command_not_found
+            .map(|handler| handler.replace("{goose_bin}", goose_bin))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    config
+        .script_template
+        .replace("{session_id}", session_id)
+        .replace("{goose_bin}", goose_bin)
+        .replace("{command_not_found_handler}", &command_not_found_handler)
+}
+
 pub async fn handle_term_init(
     shell: Shell,
     name: Option<String>,
     with_command_not_found: bool,
 ) -> Result<()> {
-    let config = shell.config();
     let session_manager = SessionManager::instance();
 
     let working_dir = std::env::current_dir()?;
@@ -159,28 +220,18 @@ pub async fn handle_term_init(
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "goose".to_string());
 
-    let command_not_found_handler = if with_command_not_found {
-        config
-            .command_not_found
-            .map(|s| s.replace("{goose_bin}", &goose_bin))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let script = config
-        .script_template
-        .replace("{session_id}", &session.id)
-        .replace("{goose_bin}", &goose_bin)
-        .replace("{command_not_found_handler}", &command_not_found_handler);
-
-    println!("{}", script);
+    println!(
+        "{}",
+        render_term_init_script(shell, &session.id, &goose_bin, with_command_not_found)
+    );
     Ok(())
 }
 
 pub async fn handle_term_log(command: String) -> Result<()> {
     let session_id = std::env::var("AGENT_SESSION_ID").map_err(|_| {
-        anyhow!("AGENT_SESSION_ID not set. Run 'eval \"$(goose term init <shell>)\"' first.")
+        anyhow!(
+            "AGENT_SESSION_ID not set. Initialize terminal integration with `goose term init <shell>` and reload your shell first."
+        )
     })?;
 
     let message = Message::new(
@@ -202,9 +253,8 @@ pub async fn handle_term_run(prompt: Vec<String>) -> Result<()> {
     let session_id = std::env::var("AGENT_SESSION_ID").map_err(|_| {
         anyhow!(
             "AGENT_SESSION_ID not set.\n\n\
-             Add to your shell config (~/.zshrc or ~/.bashrc):\n    \
-             eval \"$(goose term init zsh)\"\n\n\
-             Then restart your terminal or run: source ~/.zshrc"
+             Initialize terminal integration with `goose term init <shell>` in your shell profile, \
+             then restart or reload that shell."
         )
     })?;
 
@@ -316,4 +366,38 @@ pub async fn handle_term_info() -> Result<()> {
     println!("{} {}", dots, model_name);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_term_init_script_includes_nushell_hooks() {
+        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", false);
+
+        assert!(script.contains("$env.AGENT_SESSION_ID = \"session-123\""));
+        assert!(script.contains("def --wrapped @goose [...args]"));
+        assert!(script.contains("def --wrapped @g [...args]"));
+        assert!(script.contains("GOOSE_NU_PREEXEC_INSTALLED"));
+        assert!(script.contains("$env.config.hooks.pre_execution"));
+        assert!(script.contains("job spawn { run-external \"/tmp/goose\" \"term\" \"log\" $line | complete | ignore } | ignore"));
+        assert!(!script.contains("command_not_found = {|command_name|"));
+    }
+
+    #[test]
+    fn render_term_init_script_includes_nushell_default_handler() {
+        let script = render_term_init_script(Shell::Nu, "session-123", "/tmp/goose", true);
+
+        assert!(script.contains("$env.config.hooks.command_not_found = {|command_name|"));
+        assert!(script
+            .contains("run-external \"/tmp/goose\" \"term\" \"run\" $prompt | complete | ignore"));
+    }
+
+    #[test]
+    fn render_term_init_script_skips_unsupported_default_handler() {
+        let script = render_term_init_script(Shell::Fish, "session-123", "/tmp/goose", true);
+
+        assert!(!script.contains("command_not_found"));
+    }
 }

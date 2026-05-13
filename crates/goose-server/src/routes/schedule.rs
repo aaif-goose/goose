@@ -143,6 +143,8 @@ async fn create_schedule(
         paused: false,
         current_session_id: None,
         process_start_time: None,
+        parameters: vec![],
+        recipe_base_dir: None,
     };
 
     let scheduler = state.scheduler();

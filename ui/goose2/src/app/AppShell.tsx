@@ -47,6 +47,7 @@ import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
 import { OnboardingFlow } from "@/features/onboarding/ui/OnboardingFlow";
 import { useOnboardingGate } from "@/features/onboarding/hooks/useOnboardingGate";
 import { Spinner } from "@/shared/ui/spinner";
+import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 
 export type AppView =
   | "home"
@@ -57,8 +58,10 @@ export type AppView =
   | "projects"
   | "session-history";
 
-const SIDEBAR_DEFAULT_WIDTH = 240;
-const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_OUTER_GUTTER_WIDTH = 12;
+const SIDEBAR_RESIZE_HANDLE_WIDTH = 12;
+const SIDEBAR_DEFAULT_WIDTH = SIDE_PANEL_DEFAULT_WIDTH;
+const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
@@ -818,8 +821,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           className="flex-shrink-0 h-full py-3 pl-3"
           style={{
             width: sidebarCollapsed
-              ? SIDEBAR_COLLAPSED_WIDTH + 12
-              : sidebarWidth + 12,
+              ? SIDEBAR_COLLAPSED_WIDTH + SIDEBAR_OUTER_GUTTER_WIDTH
+              : sidebarWidth + SIDEBAR_OUTER_GUTTER_WIDTH,
             transition: isResizing ? "none" : "width 200ms ease-out",
           }}
         >
@@ -855,7 +858,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         <div
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
-          className="flex-shrink-0 w-4 h-full cursor-col-resize group flex items-center justify-center"
+          className="flex-shrink-0 h-full cursor-col-resize group flex items-center justify-center"
+          style={{ width: SIDEBAR_RESIZE_HANDLE_WIDTH }}
         >
           <div className="w-px h-8 rounded-full bg-transparent group-hover:bg-border transition-colors" />
         </div>

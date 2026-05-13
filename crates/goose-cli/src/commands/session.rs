@@ -3,7 +3,8 @@ use anyhow::{Context, Result};
 
 use cliclack::{confirm, multiselect, select};
 use etcetera::home_dir;
-use goose::session::{generate_diagnostics, Session, SessionManager};
+use goose::config::Config;
+use goose::session::{generate_diagnostics, nostr_share, Session, SessionManager, SessionType};
 use goose::utils::safe_truncate;
 use regex::Regex;
 use std::fs;
@@ -216,6 +217,8 @@ pub async fn handle_session_export(
     session_id: String,
     output_path: Option<PathBuf>,
     format: String,
+    nostr: bool,
+    relays: Vec<String>,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
     let session = match session_manager.get_session(&session_id, true).await {
@@ -241,6 +244,29 @@ pub async fn handle_session_export(
         _ => return Err(anyhow::anyhow!("Unsupported format: {}", format)),
     };
 
+    if nostr {
+        if format != "json" {
+            return Err(anyhow::anyhow!(
+                "Nostr session sharing only supports --format json"
+            ));
+        }
+        if output_path.is_some() {
+            return Err(anyhow::anyhow!(
+                "Nostr session sharing cannot be combined with --output"
+            ));
+        }
+
+        let relays = nostr_share::resolve_relays(relays, Config::global());
+        let share = nostr_share::publish_session_json(&output, relays).await?;
+        println!("Session published to Nostr relays:");
+        for relay in &share.relays {
+            println!("- {}", relay);
+        }
+        println!("\nShare link:");
+        println!("{}", share.deeplink);
+        return Ok(());
+    }
+
     if let Some(output_path) = output_path {
         fs::write(&output_path, output).with_context(|| {
             format!("Failed to write to output file: {}", output_path.display())
@@ -249,6 +275,25 @@ pub async fn handle_session_export(
     } else {
         println!("{}", output);
     }
+
+    Ok(())
+}
+
+pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
+    let json = if nostr || input.starts_with("goose://sessions/nostr") {
+        nostr_share::import_session_json_from_deeplink(&input).await?
+    } else {
+        fs::read_to_string(&input)
+            .with_context(|| format!("Failed to read session import file: {input}"))?
+    };
+
+    let session_manager = SessionManager::instance();
+    let session = session_manager
+        .import_session(&json, Some(SessionType::User))
+        .await?;
+
+    println!("Session imported:");
+    println!("{} - {}", session.id, session.name);
 
     Ok(())
 }
