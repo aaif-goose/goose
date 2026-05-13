@@ -1489,7 +1489,6 @@ impl CliSession {
             .await
     }
 
-    // Get the session's total token usage
     pub async fn get_total_token_usage(&self) -> Result<Option<i32>> {
         let metadata = self.get_session().await?;
         Ok(metadata.accumulated_total_tokens)
