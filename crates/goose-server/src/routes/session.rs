@@ -11,6 +11,7 @@ use axum::{
 };
 use goose::agents::ExtensionConfig;
 use goose::recipe::Recipe;
+use goose::session::nostr_channel::{ChannelRole, NostrChannel};
 use goose::session::nostr_share;
 use goose::session::session_manager::{SessionInsights, SessionType};
 use goose::session::{EnabledExtensionsState, Session};
@@ -71,6 +72,31 @@ pub struct ShareSessionNostrResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ImportSessionNostrRequest {
     deeplink: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelSuggestRequest {
+    text: String,
+    sender_name: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfoResponse {
+    session_id: String,
+    event_id: String,
+    role: String,
+    relays: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestionResponse {
+    text: String,
+    sender_name: Option<String>,
+    event_id: String,
+    timestamp: u64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -421,6 +447,17 @@ async fn share_session_nostr(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let channel = NostrChannel {
+        session_id: session_id.clone(),
+        event_id: share.event_id.clone(),
+        nevent: share.nevent.clone(),
+        encryption_key: share.encryption_key.clone(),
+        relays: share.relays.clone(),
+        role: ChannelRole::Owner,
+        last_checked_at: None,
+    };
+    let _ = state.session_manager().save_nostr_channel(&channel).await;
+
     Ok(Json(ShareSessionNostrResponse {
         deeplink: share.deeplink,
         nevent: share.nevent,
@@ -448,6 +485,9 @@ async fn import_session_nostr(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ImportSessionNostrRequest>,
 ) -> Result<Json<Session>, StatusCode> {
+    let parsed =
+        nostr_share::parse_deeplink(&request.deeplink).map_err(|_| StatusCode::BAD_REQUEST)?;
+
     let json = nostr_share::import_session_json_from_deeplink(&request.deeplink)
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -457,7 +497,152 @@ async fn import_session_nostr(
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
+    // Extract relay info from the nevent to save channel metadata
+    if let Ok((event_id, relays)) = nostr_share::parse_nevent(&parsed.nevent) {
+        let channel = NostrChannel {
+            session_id: session.id.clone(),
+            event_id,
+            nevent: parsed.nevent,
+            encryption_key: parsed.decryption_key,
+            relays,
+            role: ChannelRole::Participant,
+            last_checked_at: None,
+        };
+        let _ = state.session_manager().save_nostr_channel(&channel).await;
+    }
+
     Ok(Json(session))
+}
+
+#[utoipa::path(
+    get,
+    path = "/sessions/{session_id}/channel",
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Channel info", body = ChannelInfoResponse),
+        (status = 404, description = "No channel for this session"),
+    ),
+    security(
+        ("api_key" = [])
+    ),
+    tag = "Session Management"
+)]
+async fn get_channel_info(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<ChannelInfoResponse>, StatusCode> {
+    let channel = state
+        .session_manager()
+        .get_nostr_channel(&session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(ChannelInfoResponse {
+        session_id: channel.session_id,
+        event_id: channel.event_id,
+        role: channel.role.to_string(),
+        relays: channel.relays,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/sessions/{session_id}/channel/suggest",
+    request_body = ChannelSuggestRequest,
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Suggestion sent"),
+        (status = 404, description = "No channel for this session"),
+        (status = 500, description = "Failed to publish suggestion"),
+    ),
+    security(
+        ("api_key" = [])
+    ),
+    tag = "Session Management"
+)]
+async fn send_suggestion(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(request): Json<ChannelSuggestRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let channel = state
+        .session_manager()
+        .get_nostr_channel(&session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    nostr_share::publish_suggestion(
+        &channel.encryption_key,
+        &channel.event_id,
+        &request.text,
+        request.sender_name.as_deref(),
+        channel.relays,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
+    path = "/sessions/{session_id}/channel/suggestions",
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Pending suggestions", body = Vec<SuggestionResponse>),
+        (status = 404, description = "No channel for this session"),
+        (status = 500, description = "Failed to fetch suggestions"),
+    ),
+    security(
+        ("api_key" = [])
+    ),
+    tag = "Session Management"
+)]
+async fn get_suggestions(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<Vec<SuggestionResponse>>, StatusCode> {
+    let channel = state
+        .session_manager()
+        .get_nostr_channel(&session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let suggestions = nostr_share::fetch_suggestions(
+        &channel.encryption_key,
+        &channel.event_id,
+        channel.relays,
+        channel.last_checked_at.map(|ts| ts as u64),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let now = chrono::Utc::now().timestamp();
+    let _ = state
+        .session_manager()
+        .update_nostr_channel_last_checked(&session_id, now)
+        .await;
+
+    Ok(Json(
+        suggestions
+            .into_iter()
+            .map(|s| SuggestionResponse {
+                text: s.text,
+                sender_name: s.sender_name,
+                event_id: s.event_id,
+                timestamp: s.timestamp,
+            })
+            .collect(),
+    ))
 }
 
 #[utoipa::path(
@@ -620,6 +805,15 @@ pub fn routes(state: Arc<AppState>) -> Router {
             put(update_session_user_recipe_values),
         )
         .route("/sessions/{session_id}/fork", post(fork_session))
+        .route("/sessions/{session_id}/channel", get(get_channel_info))
+        .route(
+            "/sessions/{session_id}/channel/suggest",
+            post(send_suggestion),
+        )
+        .route(
+            "/sessions/{session_id}/channel/suggestions",
+            get(get_suggestions),
+        )
         .route(
             "/sessions/{session_id}/extensions",
             get(get_session_extensions),

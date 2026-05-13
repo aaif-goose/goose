@@ -10,6 +10,7 @@ use nostr_sdk::Client;
 use crate::config::{Config, ConfigError};
 
 pub const EVENT_KIND: u16 = 30278;
+pub const SUGGESTION_EVENT_KIND: u16 = 30279;
 pub const CONFIG_RELAYS_KEY: &str = "GOOSE_NOSTR_RELAYS";
 
 const DEFAULT_RELAYS: &[&str] = &[
@@ -25,6 +26,7 @@ pub struct NostrShare {
     pub nevent: String,
     pub event_id: String,
     pub relays: Vec<String>,
+    pub encryption_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,6 +196,7 @@ where
         nevent,
         event_id: event.id.to_hex(),
         relays,
+        encryption_key: decryption_key,
     })
 }
 
@@ -244,6 +247,13 @@ pub fn build_deeplink(nevent: &str, decryption_key: &str) -> String {
     )
 }
 
+/// Extract event ID (hex) and relay URLs from a bech32 nevent string.
+pub fn parse_nevent(nevent: &str) -> Result<(String, Vec<String>)> {
+    let event_ref = Nip19Event::from_bech32(nevent)?;
+    let relays = event_ref.relays.iter().map(ToString::to_string).collect();
+    Ok((event_ref.event_id.to_hex(), relays))
+}
+
 pub fn parse_deeplink(deeplink: &str) -> Result<ParsedShareLink> {
     let parsed = url::Url::parse(deeplink).context("Invalid Goose session share link")?;
     if parsed.scheme() != "goose"
@@ -278,6 +288,273 @@ fn normalize_relays(relays: Vec<String>) -> Vec<String> {
         normalized.push(relay.to_string());
     }
     normalized
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Suggestion {
+    pub text: String,
+    pub sender_name: Option<String>,
+    pub event_id: String,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct SuggestionPayload {
+    text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender_name: Option<String>,
+}
+
+pub async fn publish_suggestion(
+    encryption_key_hex: &str,
+    original_event_id: &str,
+    text: &str,
+    sender_name: Option<&str>,
+    relays: Vec<String>,
+) -> Result<()> {
+    publish_suggestion_with(
+        encryption_key_hex,
+        original_event_id,
+        text,
+        sender_name,
+        relays,
+        &LiveNostrClient,
+    )
+    .await
+}
+
+pub async fn publish_suggestion_with<P>(
+    encryption_key_hex: &str,
+    original_event_id: &str,
+    text: &str,
+    sender_name: Option<&str>,
+    relays: Vec<String>,
+    publisher: &P,
+) -> Result<()>
+where
+    P: NostrPublisher + Sync,
+{
+    let relays = normalize_relays(relays);
+    if relays.is_empty() {
+        return Err(anyhow!("At least one Nostr relay is required"));
+    }
+
+    let payload = SuggestionPayload {
+        text: text.to_string(),
+        sender_name: sender_name.map(|s| s.to_string()),
+    };
+    let payload_json = serde_json::to_string(&payload)?;
+
+    let secret_key = SecretKey::parse(encryption_key_hex)?;
+    let encryption_keys = Keys::new(secret_key.clone());
+    let encrypted = nip44::encrypt(
+        &secret_key,
+        &encryption_keys.public_key(),
+        &payload_json,
+        nip44::Version::V2,
+    )?;
+
+    let signing_keys = Keys::generate();
+    let parent_id = EventId::parse(original_event_id)?;
+    let event = EventBuilder::new(Kind::Custom(SUGGESTION_EVENT_KIND), encrypted)
+        .tag(Tag::event(parent_id))
+        .tag(Tag::parse(["client", "goose"])?)
+        .tag(Tag::parse(["t", "suggestion"])?)
+        .sign_with_keys(&signing_keys)?;
+
+    publisher.publish(event, &relays).await
+}
+
+pub async fn fetch_suggestions(
+    encryption_key_hex: &str,
+    original_event_id: &str,
+    relays: Vec<String>,
+    since: Option<u64>,
+) -> Result<Vec<Suggestion>> {
+    fetch_suggestions_with(
+        encryption_key_hex,
+        original_event_id,
+        relays,
+        since,
+        &LiveNostrClient,
+    )
+    .await
+}
+
+pub async fn fetch_suggestions_with<F>(
+    encryption_key_hex: &str,
+    original_event_id: &str,
+    relays: Vec<String>,
+    since: Option<u64>,
+    fetcher: &F,
+) -> Result<Vec<Suggestion>>
+where
+    F: NostrSuggestionFetcher + Sync,
+{
+    let relays = normalize_relays(relays);
+    if relays.is_empty() {
+        return Err(anyhow!("At least one Nostr relay is required"));
+    }
+
+    let parent_id = EventId::parse(original_event_id)?;
+    let events = fetcher.fetch_suggestions(parent_id, &relays, since).await?;
+
+    let secret_key = SecretKey::parse(encryption_key_hex)?;
+    let encryption_keys = Keys::new(secret_key.clone());
+
+    let mut suggestions = Vec::new();
+    for event in events {
+        match nip44::decrypt(&secret_key, &encryption_keys.public_key(), &event.content) {
+            Ok(decrypted) => {
+                // Try JSON payload first, fall back to plain text for backwards compat
+                let (text, sender_name) =
+                    if let Ok(payload) = serde_json::from_str::<SuggestionPayload>(&decrypted) {
+                        (payload.text, payload.sender_name)
+                    } else {
+                        (decrypted, None)
+                    };
+                suggestions.push(Suggestion {
+                    text,
+                    sender_name,
+                    event_id: event.id.to_hex(),
+                    timestamp: event.created_at.as_secs(),
+                });
+            }
+            Err(_) => continue, // skip events we can't decrypt
+        }
+    }
+
+    suggestions.sort_by_key(|s| s.timestamp);
+    Ok(suggestions)
+}
+
+#[async_trait]
+pub trait NostrSuggestionFetcher {
+    async fn fetch_suggestions(
+        &self,
+        parent_event_id: EventId,
+        relays: &[String],
+        since: Option<u64>,
+    ) -> Result<Vec<Event>>;
+}
+
+#[async_trait]
+impl NostrSuggestionFetcher for LiveNostrClient {
+    async fn fetch_suggestions(
+        &self,
+        parent_event_id: EventId,
+        relays: &[String],
+        since: Option<u64>,
+    ) -> Result<Vec<Event>> {
+        install_rustls_crypto_provider();
+        let client = Client::default();
+        for relay in relays {
+            let _ = client.add_relay(relay).await;
+        }
+
+        client.try_connect(Duration::from_secs(3)).await;
+        let mut filter = Filter::new()
+            .kind(Kind::Custom(SUGGESTION_EVENT_KIND))
+            .event(parent_event_id);
+        if let Some(ts) = since {
+            filter = filter.since(Timestamp::from(ts));
+        }
+        let events = client
+            .fetch_events_from(
+                relays.iter().map(String::as_str),
+                filter,
+                Duration::from_secs(5),
+            )
+            .await
+            .context("Failed to fetch suggestions from Nostr relays")?;
+        let _ = client.shutdown().await;
+
+        Ok(events.into_iter().collect())
+    }
+}
+
+/// Subscribe to real-time suggestions via Nostr relay subscription.
+/// Returns a tokio mpsc receiver that yields suggestions as they arrive.
+/// The subscription runs until the receiver is dropped.
+pub async fn subscribe_suggestions(
+    encryption_key_hex: &str,
+    original_event_id: &str,
+    relays: Vec<String>,
+) -> Result<tokio::sync::mpsc::Receiver<Suggestion>> {
+    let relays = normalize_relays(relays);
+    if relays.is_empty() {
+        return Err(anyhow!("At least one Nostr relay is required"));
+    }
+
+    install_rustls_crypto_provider();
+    let client = Client::default();
+    for relay in &relays {
+        let _ = client.add_relay(relay).await;
+    }
+    client.try_connect(Duration::from_secs(5)).await;
+
+    let parent_id = EventId::parse(original_event_id)?;
+    let filter = Filter::new()
+        .kind(Kind::Custom(SUGGESTION_EVENT_KIND))
+        .event(parent_id)
+        .since(Timestamp::now());
+
+    client
+        .subscribe(filter, None)
+        .await
+        .map_err(|e| anyhow!("Failed to subscribe: {e}"))?;
+
+    let secret_key = SecretKey::parse(encryption_key_hex)?;
+    let encryption_keys = Keys::new(secret_key.clone());
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Suggestion>(32);
+
+    tokio::spawn(async move {
+        let _ = client
+            .handle_notifications(|notification| {
+                let tx = tx.clone();
+                let secret_key = secret_key.clone();
+                let encryption_keys = encryption_keys.clone();
+                async move {
+                    if tx.is_closed() {
+                        return Ok(true);
+                    }
+                    if let nostr_sdk::RelayPoolNotification::Event { event, .. } = notification {
+                        if event.kind == Kind::Custom(SUGGESTION_EVENT_KIND) {
+                            if let Ok(decrypted) = nip44::decrypt(
+                                &secret_key,
+                                &encryption_keys.public_key(),
+                                &event.content,
+                            ) {
+                                let (text, sender_name) = if let Ok(payload) =
+                                    serde_json::from_str::<SuggestionPayload>(&decrypted)
+                                {
+                                    (payload.text, payload.sender_name)
+                                } else {
+                                    (decrypted, None)
+                                };
+
+                                let suggestion = Suggestion {
+                                    text,
+                                    sender_name,
+                                    event_id: event.id.to_hex(),
+                                    timestamp: event.created_at.as_secs(),
+                                };
+                                if tx.send(suggestion).await.is_err() {
+                                    return Ok(true);
+                                }
+                            }
+                        }
+                    }
+                    Ok(false)
+                }
+            })
+            .await;
+        let _ = client.shutdown().await;
+    });
+
+    Ok(rx)
 }
 
 #[cfg(test)]

@@ -1180,6 +1180,8 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
         />
+
+
       </>
     );
   }

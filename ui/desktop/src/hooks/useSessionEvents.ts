@@ -14,9 +14,18 @@ export type SessionEvent = MessageEvent & {
 type EventHandler = (event: SessionEvent) => void;
 type ActiveRequestsHandler = (requestIds: string[]) => void;
 
+export interface SuggestionEvent {
+  text: string;
+  senderName?: string | null;
+  eventId: string;
+  timestamp: number;
+}
+type SuggestionHandler = (suggestion: SuggestionEvent) => void;
+
 export function useSessionEvents(sessionId: string) {
   const listenersRef = useRef(new Map<string, Set<EventHandler>>());
   const activeRequestsHandlerRef = useRef<ActiveRequestsHandler | null>(null);
+  const suggestionHandlerRef = useRef<SuggestionHandler | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -69,6 +78,23 @@ export function useSessionEvents(sessionId: string) {
             // request_id) still reach the correct handler.
             const sessionEvent = event as SessionEvent;
             const routingId = sessionEvent.chat_request_id ?? sessionEvent.request_id;
+
+            // Suggestion events from Nostr channel subscription
+            if (sessionEvent.type === 'Suggestion') {
+              const raw = sessionEvent as unknown as {
+                text: string;
+                sender_name?: string | null;
+                event_id: string;
+                timestamp: number;
+              };
+              suggestionHandlerRef.current?.({
+                text: raw.text,
+                senderName: raw.sender_name,
+                eventId: raw.event_id,
+                timestamp: raw.timestamp,
+              });
+              continue;
+            }
 
             // ActiveRequests events notify the client about in-flight requests
             // it can reattach to (e.g. after a remount).
@@ -192,5 +218,9 @@ export function useSessionEvents(sessionId: string) {
     activeRequestsHandlerRef.current = handler;
   }, []);
 
-  return { connected, addListener, setActiveRequestsHandler };
+  const setSuggestionHandler = useCallback((handler: SuggestionHandler | null) => {
+    suggestionHandlerRef.current = handler;
+  }, []);
+
+  return { connected, addListener, setActiveRequestsHandler, setSuggestionHandler };
 }

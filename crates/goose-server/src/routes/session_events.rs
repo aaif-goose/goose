@@ -171,6 +171,91 @@ pub async fn session_events(
     let stream = ReceiverStream::new(rx);
     let task_bus = bus.clone();
 
+    // Spawn Nostr suggestion subscription for owner channels
+    let nostr_tx = tx.clone();
+    let nostr_session_id = session_id.clone();
+    let nostr_state = state.clone();
+    tokio::spawn(async move {
+        use goose::session::nostr_share;
+
+        let channel = match nostr_state
+            .session_manager()
+            .get_nostr_channel(&nostr_session_id)
+            .await
+        {
+            Ok(Some(ch)) if ch.role == goose::session::nostr_channel::ChannelRole::Owner => {
+                tracing::info!(
+                    "Nostr suggestion subscription starting for session {}",
+                    nostr_session_id
+                );
+                ch
+            }
+            Ok(Some(_)) => {
+                tracing::debug!(
+                    "Session {} has channel but not owner role, skipping subscription",
+                    nostr_session_id
+                );
+                return;
+            }
+            Ok(None) => return,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to get channel for session {}: {}",
+                    nostr_session_id,
+                    e
+                );
+                return;
+            }
+        };
+
+        let mut rx = match nostr_share::subscribe_suggestions(
+            &channel.encryption_key,
+            &channel.event_id,
+            channel.relays,
+        )
+        .await
+        {
+            Ok(rx) => {
+                tracing::info!(
+                    "Nostr subscription active for session {}, event {}",
+                    nostr_session_id,
+                    channel.event_id
+                );
+                rx
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to subscribe to Nostr for session {}: {}",
+                    nostr_session_id,
+                    e
+                );
+                return;
+            }
+        };
+
+        while let Some(suggestion) = rx.recv().await {
+            tracing::info!(
+                "Received suggestion for session {} from {:?}",
+                nostr_session_id,
+                suggestion.sender_name
+            );
+            let event = MessageEvent::Suggestion {
+                text: suggestion.text,
+                sender_name: suggestion.sender_name,
+                event_id: suggestion.event_id,
+                timestamp: suggestion.timestamp,
+            };
+            let json_str = serde_json::to_string(&serde_json::to_value(&event).unwrap_or_default())
+                .unwrap_or_default();
+            let frame = format!("data: {}\n\n", json_str);
+            if nostr_tx.send(frame).await.is_err() {
+                tracing::debug!("SSE channel closed for session {}", nostr_session_id);
+                break;
+            }
+        }
+        tracing::debug!("Nostr subscription ended for session {}", nostr_session_id);
+    });
+
     tokio::spawn(async move {
         let bus = task_bus;
 

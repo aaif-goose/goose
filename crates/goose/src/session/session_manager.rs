@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -458,6 +458,27 @@ impl SessionManager {
             .update_tool_request_meta(session_id, message_id, tool_call_id, patch)
             .await
     }
+
+    pub async fn save_nostr_channel(
+        &self,
+        channel: &crate::session::nostr_channel::NostrChannel,
+    ) -> Result<()> {
+        let pool = self.storage.pool().await?;
+        crate::session::nostr_channel::save_channel(pool, channel).await
+    }
+
+    pub async fn get_nostr_channel(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<crate::session::nostr_channel::NostrChannel>> {
+        let pool = self.storage.pool().await?;
+        crate::session::nostr_channel::get_channel(pool, session_id).await
+    }
+
+    pub async fn update_nostr_channel_last_checked(&self, session_id: &str, ts: i64) -> Result<()> {
+        let pool = self.storage.pool().await?;
+        crate::session::nostr_channel::update_last_checked(pool, session_id, ts).await
+    }
 }
 
 pub struct SessionStorage {
@@ -714,6 +735,22 @@ impl SessionStorage {
             .execute(pool)
             .await?;
         crate::providers::inventory::create_tables(pool).await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS nostr_channels (
+                session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+                event_id TEXT NOT NULL,
+                nevent TEXT NOT NULL,
+                encryption_key TEXT NOT NULL,
+                relays_json TEXT NOT NULL,
+                role TEXT NOT NULL,
+                last_checked_at INTEGER
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
@@ -1086,6 +1123,23 @@ impl SessionStorage {
                         .execute(&mut **tx)
                         .await?;
                 }
+            }
+            13 => {
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS nostr_channels (
+                        session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+                        event_id TEXT NOT NULL,
+                        nevent TEXT NOT NULL,
+                        encryption_key TEXT NOT NULL,
+                        relays_json TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        last_checked_at INTEGER
+                    )
+                    "#,
+                )
+                .execute(&mut **tx)
+                .await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);

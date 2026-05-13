@@ -58,6 +58,7 @@ interface UseChatStreamReturn {
     newContent: string,
     editType?: 'fork' | 'edit'
   ) => Promise<void>;
+  setSuggestionHandler: (handler: ((suggestion: import('./useSessionEvents').SuggestionEvent) => void) | null) => void;
 }
 
 interface StreamState {
@@ -364,7 +365,7 @@ export function useChatStream({
   const [state, dispatch] = useReducer(streamReducer, initialState);
 
   // Long-lived SSE connection for this session
-  const { addListener, setActiveRequestsHandler } = useSessionEvents(sessionId);
+  const { addListener, setActiveRequestsHandler, setSuggestionHandler } = useSessionEvents(sessionId);
 
   // Track the active request for cancellation (includes the session that started it)
   const activeRequestIdRef = useRef<string | null>(null);
@@ -1107,5 +1108,6 @@ export function useChatStream({
     tokenState: state.tokenState,
     notifications: notificationsMap,
     onMessageUpdate,
+    setSuggestionHandler,
   };
 }

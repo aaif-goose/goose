@@ -63,6 +63,18 @@ export type CancelRequest = {
     request_id: string;
 };
 
+export type ChannelInfoResponse = {
+    eventId: string;
+    relays: Array<string>;
+    role: string;
+    sessionId: string;
+};
+
+export type ChannelSuggestRequest = {
+    senderName?: string | null;
+    text: string;
+};
+
 export type ChatRequest = {
     /**
      * Override the server's conversation history. Only use this when you need absolute control
@@ -740,6 +752,12 @@ export type MessageEvent = {
 } | {
     request_ids: Array<string>;
     type: 'ActiveRequests';
+} | {
+    event_id: string;
+    sender_name?: string | null;
+    text: string;
+    timestamp: number;
+    type: 'Suggestion';
 } | {
     type: 'Ping';
 };
@@ -1424,6 +1442,13 @@ export type SuccessCheck = {
      */
     command: string;
     type: 'Shell';
+};
+
+export type SuggestionResponse = {
+    eventId: string;
+    senderName?: string | null;
+    text: string;
+    timestamp: number;
 };
 
 export type SystemInfo = {
@@ -4368,6 +4393,96 @@ export type GetSessionResponses = {
 };
 
 export type GetSessionResponse = GetSessionResponses[keyof GetSessionResponses];
+
+export type GetChannelInfoData = {
+    body?: never;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/channel';
+};
+
+export type GetChannelInfoErrors = {
+    /**
+     * No channel for this session
+     */
+    404: unknown;
+};
+
+export type GetChannelInfoResponses = {
+    /**
+     * Channel info
+     */
+    200: ChannelInfoResponse;
+};
+
+export type GetChannelInfoResponse = GetChannelInfoResponses[keyof GetChannelInfoResponses];
+
+export type SendSuggestionData = {
+    body: ChannelSuggestRequest;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/channel/suggest';
+};
+
+export type SendSuggestionErrors = {
+    /**
+     * No channel for this session
+     */
+    404: unknown;
+    /**
+     * Failed to publish suggestion
+     */
+    500: unknown;
+};
+
+export type SendSuggestionResponses = {
+    /**
+     * Suggestion sent
+     */
+    200: unknown;
+};
+
+export type GetSuggestionsData = {
+    body?: never;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/channel/suggestions';
+};
+
+export type GetSuggestionsErrors = {
+    /**
+     * No channel for this session
+     */
+    404: unknown;
+    /**
+     * Failed to fetch suggestions
+     */
+    500: unknown;
+};
+
+export type GetSuggestionsResponses = {
+    /**
+     * Pending suggestions
+     */
+    200: Array<SuggestionResponse>;
+};
+
+export type GetSuggestionsResponse = GetSuggestionsResponses[keyof GetSuggestionsResponses];
 
 export type ExportSessionData = {
     body?: never;

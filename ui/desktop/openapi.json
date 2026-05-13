@@ -3501,6 +3501,135 @@
         ]
       }
     },
+    "/sessions/{session_id}/channel": {
+      "get": {
+        "tags": [
+          "Session Management"
+        ],
+        "operationId": "get_channel_info",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Unique identifier for the session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelInfoResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No channel for this session"
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/sessions/{session_id}/channel/suggest": {
+      "post": {
+        "tags": [
+          "Session Management"
+        ],
+        "operationId": "send_suggestion",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Unique identifier for the session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelSuggestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Suggestion sent"
+          },
+          "404": {
+            "description": "No channel for this session"
+          },
+          "500": {
+            "description": "Failed to publish suggestion"
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/sessions/{session_id}/channel/suggestions": {
+      "get": {
+        "tags": [
+          "Session Management"
+        ],
+        "operationId": "get_suggestions",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Unique identifier for the session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionResponse"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No channel for this session"
+          },
+          "500": {
+            "description": "Failed to fetch suggestions"
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/sessions/{session_id}/export": {
       "get": {
         "tags": [
@@ -4175,6 +4304,47 @@
         ],
         "properties": {
           "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelInfoResponse": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "eventId",
+          "role",
+          "relays"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "relays": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "role": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelSuggestRequest": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "senderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "text": {
             "type": "string"
           }
         }
@@ -6322,6 +6492,39 @@
           },
           {
             "type": "object",
+            "description": "A suggestion received from a collaborator via Nostr channel.",
+            "required": [
+              "text",
+              "event_id",
+              "timestamp",
+              "type"
+            ],
+            "properties": {
+              "event_id": {
+                "type": "string"
+              },
+              "sender_name": {
+                "type": "string",
+                "nullable": true
+              },
+              "text": {
+                "type": "string"
+              },
+              "timestamp": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Suggestion"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "required": [
               "type"
             ],
@@ -8385,6 +8588,31 @@
         "description": "A single success check to validate recipe completion",
         "discriminator": {
           "propertyName": "type"
+        }
+      },
+      "SuggestionResponse": {
+        "type": "object",
+        "required": [
+          "text",
+          "eventId",
+          "timestamp"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "senderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "text": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
         }
       },
       "SystemInfo": {

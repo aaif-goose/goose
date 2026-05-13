@@ -3923,6 +3923,45 @@
   "sessions.close": {
     "defaultMessage": "Close"
   },
+  "sessions.action.sendSuggestion": {
+    "defaultMessage": "Send suggestion to sharer"
+  },
+  "sessions.action.checkSuggestions": {
+    "defaultMessage": "Check for suggestions"
+  },
+  "sessions.toast.suggestionSent": {
+    "defaultMessage": "Suggestion sent"
+  },
+  "sessions.toast.suggestionFailed": {
+    "defaultMessage": "Failed to send suggestion: {error}"
+  },
+  "sessions.suggestion.title": {
+    "defaultMessage": "Send Suggestion"
+  },
+  "sessions.suggestion.description": {
+    "defaultMessage": "Send a message to the person who shared this session. They can accept it to run in their agent."
+  },
+  "sessions.suggestion.placeholder": {
+    "defaultMessage": "Type your suggestion..."
+  },
+  "sessions.suggestions.title": {
+    "defaultMessage": "Suggestions"
+  },
+  "sessions.suggestions.description": {
+    "defaultMessage": "People who imported this session have sent suggestions. Accept to run as a message in your session."
+  },
+  "sessions.suggestions.accept": {
+    "defaultMessage": "Accept"
+  },
+  "sessions.suggestions.dismiss": {
+    "defaultMessage": "Dismiss"
+  },
+  "sessions.suggestions.none": {
+    "defaultMessage": "No suggestions yet"
+  },
+  "sessions.toast.suggestionAccepted": {
+    "defaultMessage": "Suggestion accepted — opening session"
+  },
   "sessions.delete.message": {
     "defaultMessage": "Are you sure you want to delete the session \"{name}\"? This action cannot be undone."
   },

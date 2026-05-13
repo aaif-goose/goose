@@ -150,6 +150,13 @@ pub enum MessageEvent {
     ActiveRequests {
         request_ids: Vec<String>,
     },
+    /// A suggestion received from a collaborator via Nostr channel.
+    Suggestion {
+        text: String,
+        sender_name: Option<String>,
+        event_id: String,
+        timestamp: u64,
+    },
     Ping,
 }
 
