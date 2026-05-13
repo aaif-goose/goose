@@ -37,6 +37,8 @@ interface WorkspaceWidgetProps {
     baseBranch?: string,
   ) => Promise<CreatedWorktree>;
   onRefresh: () => void;
+  isOpen: boolean;
+  onToggleOpen: () => void;
 }
 
 export function WorkspaceWidget({
@@ -58,6 +60,8 @@ export function WorkspaceWidget({
   onCreateBranch,
   onCreateWorktree,
   onRefresh,
+  isOpen,
+  onToggleOpen,
 }: WorkspaceWidgetProps) {
   const { t } = useTranslation("chat");
   const primaryWorkspaceRoot =
@@ -70,6 +74,8 @@ export function WorkspaceWidget({
     <Widget
       title={t("contextPanel.widgets.workspace")}
       icon={<IconFolder className="size-3.5" />}
+      isOpen={isOpen}
+      onToggleOpen={onToggleOpen}
       action={
         <Button
           type="button"
@@ -110,7 +116,7 @@ export function WorkspaceWidget({
           <p className="truncate">{t("contextPanel.empty.folderNotSet")}</p>
         ) : isLoading && !gitState ? (
           <div className="flex items-center gap-2 text-foreground">
-            <Spinner className="size-3.5" />
+            <Spinner className="size-4" />
             <span>{t("contextPanel.states.gitLoading")}</span>
           </div>
         ) : error ? (
@@ -147,8 +153,9 @@ export function WorkspaceWidget({
               variant="ghost"
               size="xs"
               onClick={() => void onInitRepo(primaryWorkspaceRoot)}
+              className="text-sm"
             >
-              <IconGitBranch className="size-3" />
+              <IconGitBranch className="size-4" />
               {t("contextPanel.git.initRepo")}
             </Button>
           </div>

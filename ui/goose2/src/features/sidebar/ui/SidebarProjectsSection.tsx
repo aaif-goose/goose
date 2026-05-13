@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { IconChevronDown } from "@tabler/icons-react";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { cn } from "@/shared/lib/cn";
@@ -36,7 +37,14 @@ interface SidebarProjectsSectionProps {
   onRenameChat?: (sessionId: string, nextTitle: string) => void;
   onMoveToProject?: (sessionId: string, projectId: string | null) => void;
   onReorderProject?: (fromId: string, toId: string) => void;
+  projectsSectionOpen: boolean;
+  recentsSectionOpen: boolean;
+  onToggleProjectsSection: () => void;
+  onToggleRecentsSection: () => void;
 }
+
+const SECTION_HEADER_TEXT_CLASS =
+  "text-[11px] font-medium uppercase tracking-[0.08em] text-foreground-subtle";
 
 export function SidebarProjectsSection({
   projects,
@@ -58,8 +66,13 @@ export function SidebarProjectsSection({
   onRenameChat,
   onMoveToProject,
   onReorderProject,
+  projectsSectionOpen,
+  recentsSectionOpen,
+  onToggleProjectsSection,
+  onToggleRecentsSection,
 }: SidebarProjectsSectionProps) {
   const { t } = useTranslation(["sidebar", "common"]);
+  const showProjects = collapsed || projectsSectionOpen;
 
   return (
     <div
@@ -79,17 +92,30 @@ export function SidebarProjectsSection({
           collapsed ? "px-0 pt-0 pb-1 justify-center" : "pt-5 pb-1.5",
         )}
       >
-        <span
-          className={cn(
-            "text-[12px] font-normal text-muted-foreground/80 flex-1 pl-3",
-            labelTransition,
-            labelVisible
-              ? "opacity-100 w-auto"
-              : "opacity-0 w-0 overflow-hidden",
-          )}
-        >
-          {t("sections.projects")}
-        </span>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={onToggleProjectsSection}
+            aria-expanded={projectsSectionOpen}
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pl-3 text-left transition-colors hover:text-foreground",
+              labelTransition,
+              labelVisible
+                ? "opacity-100 w-auto"
+                : "opacity-0 w-0 overflow-hidden",
+            )}
+          >
+            <IconChevronDown
+              className={cn(
+                "size-3 shrink-0 text-foreground-subtle transition-transform duration-150",
+                !projectsSectionOpen && "-rotate-90",
+              )}
+            />
+            <span className={cn("truncate", SECTION_HEADER_TEXT_CLASS)}>
+              {t("sections.projects")}
+            </span>
+          </button>
+        )}
         {!collapsed && (
           <Button
             type="button"
@@ -107,23 +133,25 @@ export function SidebarProjectsSection({
         )}
       </div>
 
-      <SidebarProjectList
-        projects={projects}
-        projectSessionsByProject={projectSessions.byProject}
-        expandedProjects={expandedProjects}
-        toggleProject={toggleProject}
-        collapsed={collapsed}
-        activeSessionId={activeSessionId}
-        onNavigate={onNavigate}
-        onSelectSession={onSelectSession}
-        onNewChatInProject={onNewChatInProject}
-        onEditProject={onEditProject}
-        onArchiveProject={onArchiveProject}
-        onArchiveChat={onArchiveChat}
-        onRenameChat={onRenameChat}
-        onMoveToProject={onMoveToProject}
-        onReorderProject={onReorderProject}
-      />
+      {showProjects && (
+        <SidebarProjectList
+          projects={projects}
+          projectSessionsByProject={projectSessions.byProject}
+          expandedProjects={expandedProjects}
+          toggleProject={toggleProject}
+          collapsed={collapsed}
+          activeSessionId={activeSessionId}
+          onNavigate={onNavigate}
+          onSelectSession={onSelectSession}
+          onNewChatInProject={onNewChatInProject}
+          onEditProject={onEditProject}
+          onArchiveProject={onArchiveProject}
+          onArchiveChat={onArchiveChat}
+          onRenameChat={onRenameChat}
+          onMoveToProject={onMoveToProject}
+          onReorderProject={onReorderProject}
+        />
+      )}
 
       <SidebarRecentsSection
         sessions={projectSessions.standalone}
@@ -136,6 +164,9 @@ export function SidebarProjectsSection({
         onArchiveChat={onArchiveChat}
         onRenameChat={onRenameChat}
         onMoveToProject={onMoveToProject}
+        isOpen={recentsSectionOpen}
+        onToggleOpen={onToggleRecentsSection}
+        sectionHeaderTextClass={SECTION_HEADER_TEXT_CLASS}
       />
     </div>
   );

@@ -59,7 +59,7 @@ export async function listDictationLocalModels(): Promise<
 > {
   const client = await getClient();
   const response = await client.goose.GooseDictationModelsList({});
-  return response.models as unknown as WhisperModelStatus[];
+  return response.models;
 }
 
 export async function downloadDictationLocalModel(
@@ -76,7 +76,7 @@ export async function getDictationLocalModelDownloadProgress(
   const response = await client.goose.GooseDictationModelsDownloadProgress({
     modelId,
   });
-  return (response.progress ?? null) as DictationDownloadProgress | null;
+  return response.progress ?? null;
 }
 
 export async function cancelDictationLocalModelDownload(

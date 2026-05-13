@@ -1,10 +1,4 @@
-use agent_client_protocol_schema::Usage as AcpUsage;
-use agent_client_protocol_schema::AGENT_METHOD_NAMES;
-use anyhow::{Context, Result};
-use async_stream::try_stream;
-use futures::future::BoxFuture;
-use rmcp::model::{CallToolRequestParams, CallToolResult, Content as RmcpContent, Role, Tool};
-use sacp::schema::{
+use agent_client_protocol::schema::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, ContentChunk, EnvVariable, HttpHeader,
     ImageContent, InitializeRequest, InitializeResponse, McpCapabilities, McpServer, McpServerHttp,
     McpServerStdio, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse,
@@ -14,7 +8,13 @@ use sacp::schema::{
     SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
     TextContent, ToolCallContent, ToolCallStatus, ToolKind,
 };
-use sacp::{Agent, Client, ConnectionTo};
+use agent_client_protocol::{Agent, Client, ConnectionTo};
+use agent_client_protocol_schema::Usage as AcpUsage;
+use agent_client_protocol_schema::AGENT_METHOD_NAMES;
+use anyhow::{Context, Result};
+use async_stream::try_stream;
+use futures::future::BoxFuture;
+use rmcp::model::{CallToolRequestParams, CallToolResult, Content as RmcpContent, Role, Tool};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
@@ -24,6 +24,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
@@ -190,7 +191,7 @@ impl AcpProvider {
         model: ModelConfig,
         goose_mode: GooseMode,
         config: AcpProviderConfig,
-        transport: impl sacp::ConnectTo<Client> + 'static,
+        transport: impl agent_client_protocol::ConnectTo<Client> + 'static,
     ) -> Result<Self> {
         Self::start(
             name,
@@ -355,6 +356,13 @@ impl AcpProvider {
     }
 }
 
+fn fresh_text_run() -> (String, i64) {
+    (
+        uuid::Uuid::new_v4().to_string(),
+        chrono::Utc::now().timestamp(),
+    )
+}
+
 #[async_trait::async_trait]
 impl Provider for AcpProvider {
     fn get_name(&self) -> &str {
@@ -450,22 +458,36 @@ impl Provider for AcpProvider {
         Ok(Box::pin(try_stream! {
             let mut suppress_text = false;
             let mut rejected_tool_calls: HashSet<String> = HashSet::new();
+            // Stable id+timestamp per contiguous run so Desktop coalesces chunks into one bubble.
+            let mut text_run: Option<(String, i64)> = None;
+            let mut thought_run: Option<(String, i64)> = None;
 
             while let Some(update) = rx.recv().await {
                 match update {
                     AcpUpdate::Text(text) => {
                         if !suppress_text {
-                            let message = Message::assistant().with_text(text);
+                            let (id, ts) = text_run
+                                .get_or_insert_with(fresh_text_run)
+                                .clone();
+                            let message = Message::new(Role::Assistant, ts, vec![])
+                                .with_text(text)
+                                .with_id(id);
                             yield (Some(message), None);
                         }
                     }
                     AcpUpdate::Thought(text) => {
-                        let message = Message::assistant()
+                        let (id, ts) = thought_run
+                            .get_or_insert_with(fresh_text_run)
+                            .clone();
+                        let message = Message::new(Role::Assistant, ts, vec![])
                             .with_thinking(text, "")
-                            .with_visibility(true, false);
+                            .with_visibility(true, false)
+                            .with_id(id);
                         yield (Some(message), None);
                     }
                     AcpUpdate::ToolCallStart { id, name, kind, raw_input } => {
+                        text_run = None;
+                        thought_run = None;
                         if reject_all_tools {
                             suppress_text = true;
                             rejected_tool_calls.insert(id);
@@ -497,6 +519,8 @@ impl Provider for AcpProvider {
                         content,
                         is_error,
                     } => {
+                        text_run = None;
+                        thought_run = None;
                         if rejected_tool_calls.remove(&id) {
                             // In chat mode no tool_request was emitted (suppressed at
                             // ToolCallStart), so surface a plain text message. In other
@@ -526,6 +550,8 @@ impl Provider for AcpProvider {
                         }
                     }
                     AcpUpdate::PermissionRequest { request, response_tx } => {
+                        text_run = None;
+                        thought_run = None;
                         if let Some(decision) = permission_decision_from_mode(goose_mode) {
                             if decision.should_record_rejection() {
                                 rejected_tool_calls.insert(request.tool_call.tool_call_id.0.to_string());
@@ -647,13 +673,20 @@ impl AcpClientLoop {
     ) -> Result<()> {
         let stdin = child.stdin.take().context("no stdin")?;
         let stdout = child.stdout.take().context("no stdout")?;
-        let transport = sacp::ByteStreams::new(stdin.compat_write(), stdout.compat());
-        self.run(transport, rx, init_tx).await
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(forward_child_stderr(stderr));
+        }
+        let transport =
+            agent_client_protocol::ByteStreams::new(stdin.compat_write(), stdout.compat());
+        let result = self.run(transport, rx, init_tx).await;
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        result
     }
 
     async fn run(
         self,
-        transport: impl sacp::ConnectTo<Client> + 'static,
+        transport: impl agent_client_protocol::ConnectTo<Client> + 'static,
         rx: &mut mpsc::Receiver<ClientRequest>,
         init_tx: oneshot::Sender<Result<InitializeResponse>>,
     ) -> Result<()> {
@@ -830,7 +863,7 @@ impl AcpClientLoop {
                         Ok(())
                     }
                 },
-                sacp::on_receive_notification!(),
+                agent_client_protocol::on_receive_notification!(),
             )
             .on_receive_request(
                 {
@@ -843,17 +876,18 @@ impl AcpClientLoop {
                             .ok()
                             .as_ref()
                             .and_then(|g| g.as_ref().cloned());
-                        let tx = handler.ok_or_else(sacp::Error::internal_error)?;
+                        let tx =
+                            handler.ok_or_else(agent_client_protocol::Error::internal_error)?;
 
                         if tx.is_closed() {
-                            return Err(sacp::Error::internal_error());
+                            return Err(agent_client_protocol::Error::internal_error());
                         }
 
                         tx.try_send(AcpUpdate::PermissionRequest {
                             request: Box::new(request),
                             response_tx,
                         })
-                        .map_err(|_| sacp::Error::internal_error())?;
+                        .map_err(|_| agent_client_protocol::Error::internal_error())?;
 
                         let response = response_rx.await.unwrap_or_else(|_| {
                             RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled)
@@ -861,7 +895,7 @@ impl AcpClientLoop {
                         responder.respond(response)
                     }
                 },
-                sacp::on_receive_request!(),
+                agent_client_protocol::on_receive_request!(),
             )
             .connect_with(transport, async move |cx: ConnectionTo<Agent>| {
                 handle_requests(config, goose_mode, cx, rx, prompt_response_tx, init_tx).await
@@ -872,12 +906,56 @@ impl AcpClientLoop {
     }
 }
 
+/// Forwards an ACP child's stderr to tracing line by line.
+///
+/// Lines longer than `MAX_LINE_LEN` are flushed in chunks so a child that
+/// emits unbounded output without newlines (e.g. carriage-return progress
+/// bars or binary data) cannot cause unbounded memory growth.
+async fn forward_child_stderr(mut stderr: tokio::process::ChildStderr) {
+    const MAX_LINE_LEN: usize = 8192;
+    const READ_CHUNK: usize = 1024;
+
+    let mut line: Vec<u8> = Vec::with_capacity(256);
+    let mut chunk = [0u8; READ_CHUNK];
+    loop {
+        match stderr.read(&mut chunk).await {
+            Ok(0) => break,
+            Ok(n) => {
+                for &b in &chunk[..n] {
+                    if b == b'\n' {
+                        emit_stderr_line(&mut line);
+                    } else {
+                        line.push(b);
+                        if line.len() >= MAX_LINE_LEN {
+                            emit_stderr_line(&mut line);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(target: "acp::child::stderr", error = %e, "stderr read error");
+                break;
+            }
+        }
+    }
+    emit_stderr_line(&mut line);
+}
+
+fn emit_stderr_line(line: &mut Vec<u8>) {
+    if line.is_empty() {
+        return;
+    }
+    let trimmed = line.strip_suffix(b"\r").unwrap_or(line);
+    tracing::info!(target: "acp::child::stderr", "{}", String::from_utf8_lossy(trimmed));
+    line.clear();
+}
+
 async fn spawn_acp_process(config: &AcpProviderConfig) -> Result<Child> {
     let mut cmd = Command::new(&config.command);
     cmd.args(&config.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
 
     for key in &config.env_remove {
@@ -905,7 +983,7 @@ async fn handle_requests(
     rx: &mut mpsc::Receiver<ClientRequest>,
     prompt_response_tx: Arc<Mutex<Option<mpsc::Sender<AcpUpdate>>>>,
     init_tx: oneshot::Sender<Result<InitializeResponse>>,
-) -> Result<(), sacp::Error> {
+) -> Result<(), agent_client_protocol::Error> {
     let mut init_tx = Some(init_tx);
 
     let client_capabilities = ClientCapabilities::new();
@@ -921,7 +999,7 @@ async fn handle_requests(
             if let Some(tx) = init_tx.take() {
                 let _ = tx.send(Err(anyhow::anyhow!(message.clone())));
             }
-            sacp::Error::internal_error().data(message)
+            agent_client_protocol::Error::internal_error().data(message)
         })?;
 
     let supports_close = init_response
@@ -980,7 +1058,7 @@ async fn handle_requests(
                 value,
                 response_tx,
             } => {
-                let value_id = sacp::schema::SessionConfigValueId::new(value);
+                let value_id = agent_client_protocol::schema::SessionConfigValueId::new(value);
                 let req = SetSessionConfigOptionRequest::new(session_id, config_id, value_id);
                 let result: Result<()> = cx
                     .send_request(req)
@@ -1421,7 +1499,7 @@ fn permission_decision_from_mode(goose_mode: GooseMode) -> Option<PermissionDeci
 mod tests {
     use super::*;
     use crate::agents::extension::Envs;
-    use sacp::schema::SessionConfigSelectOption;
+    use agent_client_protocol::schema::SessionConfigSelectOption;
     use test_case::test_case;
 
     fn prompt_text(block: &ContentBlock) -> &str {
@@ -1761,12 +1839,12 @@ mod tests {
 
     #[test_case(
         NewSessionResponse::new("s1")
-            .models(sacp::schema::SessionModelState::new(
+            .models(agent_client_protocol::schema::SessionModelState::new(
                 "default",
                 vec![
-                    sacp::schema::ModelInfo::new("default", "Default (recommended)"),
-                    sacp::schema::ModelInfo::new("sonnet", "Sonnet"),
-                    sacp::schema::ModelInfo::new("haiku", "Haiku"),
+                    agent_client_protocol::schema::ModelInfo::new("default", "Default (recommended)"),
+                    agent_client_protocol::schema::ModelInfo::new("sonnet", "Sonnet"),
+                    agent_client_protocol::schema::ModelInfo::new("haiku", "Haiku"),
                 ],
             ))
             .config_options(vec![
@@ -1782,12 +1860,12 @@ mod tests {
     )]
     #[test_case(
         NewSessionResponse::new("s1")
-            .models(sacp::schema::SessionModelState::new(
+            .models(agent_client_protocol::schema::SessionModelState::new(
                 "auto-gemini-3",
                 vec![
-                    sacp::schema::ModelInfo::new("auto-gemini-3", "Auto (Gemini 3)"),
-                    sacp::schema::ModelInfo::new("auto-gemini-2.5", "Auto (Gemini 2.5)"),
-                    sacp::schema::ModelInfo::new("gemini-2.5-pro", "gemini-2.5-pro"),
+                    agent_client_protocol::schema::ModelInfo::new("auto-gemini-3", "Auto (Gemini 3)"),
+                    agent_client_protocol::schema::ModelInfo::new("auto-gemini-2.5", "Auto (Gemini 2.5)"),
+                    agent_client_protocol::schema::ModelInfo::new("gemini-2.5-pro", "gemini-2.5-pro"),
                 ],
             ))
         => Ok(("auto-gemini-3".to_string(), vec!["auto-gemini-3".to_string(), "auto-gemini-2.5".to_string(), "gemini-2.5-pro".to_string()]))
@@ -1850,16 +1928,16 @@ mod tests {
 
     #[test]
     fn acp_tool_call_content_handles_text_diff_terminal_and_image() {
-        use sacp::schema::{Diff, Terminal, TerminalId, TextContent};
+        use agent_client_protocol::schema::{Diff, Terminal, TerminalId, TextContent};
 
         let diff_block = ToolCallContent::Diff(
             Diff::new(std::path::PathBuf::from("/tmp/file.txt"), "new\n").old_text("old\n"),
         );
         let terminal_block = ToolCallContent::Terminal(Terminal::new(TerminalId::new("term-7")));
-        let text_block = ToolCallContent::Content(sacp::schema::Content::new(ContentBlock::Text(
-            TextContent::new("hello"),
-        )));
-        let image_block = ToolCallContent::Content(sacp::schema::Content::new(
+        let text_block = ToolCallContent::Content(agent_client_protocol::schema::Content::new(
+            ContentBlock::Text(TextContent::new("hello")),
+        ));
+        let image_block = ToolCallContent::Content(agent_client_protocol::schema::Content::new(
             ContentBlock::Image(ImageContent::new("base64data", "image/png")),
         ));
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 
 export function PickerItem({
@@ -7,13 +7,11 @@ export function PickerItem({
   selected = false,
   disabled = false,
   className,
+  ...rest
 }: {
   children: ReactNode;
-  onClick?: () => void;
   selected?: boolean;
-  disabled?: boolean;
-  className?: string;
-}) {
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type">) {
   return (
     <button
       type="button"
@@ -26,6 +24,7 @@ export function PickerItem({
         selected && "bg-muted/60",
         className,
       )}
+      {...rest}
     >
       {children}
     </button>

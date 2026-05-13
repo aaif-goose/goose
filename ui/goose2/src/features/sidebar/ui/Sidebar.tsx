@@ -18,14 +18,22 @@ import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import {
+  selectMessagesBySession,
+  selectSessionStateById,
+} from "@/features/chat/stores/chatSelectors";
+import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
+import {
   getVisibleSessions,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
+import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
 import { isSessionRunning } from "@/features/chat/lib/sessionActivity";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { Button } from "@/shared/ui/button";
 import { useSessionSearch } from "@/features/sessions/hooks/useSessionSearch";
+import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSearchResults } from "./SidebarSearchResults";
@@ -59,10 +67,36 @@ interface SidebarProps {
 }
 
 const EXPANDED_PROJECTS_STORAGE_KEY = "goose:sidebar:expanded-projects";
+const SECTION_VISIBILITY_STORAGE_KEY = "goose:sidebar:section-visibility";
+type SidebarSectionVisibility = {
+  projects: boolean;
+  recents: boolean;
+};
+
+function getStoredSectionVisibility(): SidebarSectionVisibility {
+  const defaults = { projects: true, recents: true };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const stored = window.localStorage.getItem(SECTION_VISIBILITY_STORAGE_KEY);
+    if (!stored) return defaults;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return defaults;
+    return {
+      projects:
+        typeof parsed.projects === "boolean"
+          ? parsed.projects
+          : defaults.projects,
+      recents:
+        typeof parsed.recents === "boolean" ? parsed.recents : defaults.recents,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 export function Sidebar({
   collapsed,
-  width = 240,
+  width = SIDE_PANEL_DEFAULT_WIDTH,
   isResizing = false,
   onCollapse,
   onSettingsClick,
@@ -100,13 +134,16 @@ export function Sidebar({
       return {};
     }
   });
-
-  const chatStore = useChatStore();
-  const { sessions } = useChatSessionStore();
-  const visibleSessions = getVisibleSessions(
-    sessions,
-    chatStore.messagesBySession,
+  const [sectionVisibility, setSectionVisibility] = useState(
+    getStoredSectionVisibility,
   );
+
+  const messagesBySession = useChatStore(selectMessagesBySession);
+  const sessionStateById = useChatStore(selectSessionStateById);
+  const sessions = useChatSessionStore(selectSessions);
+  const getPersonaById = useAgentStore((s) => s.getPersonaById);
+  const projectStoreProjects = useProjectStore(selectProjects);
+  const visibleSessions = getVisibleSessions(sessions, messagesBySession);
   const activeSessions = visibleSessions.filter(
     (session) => !session.archivedAt,
   );
@@ -162,7 +199,8 @@ export function Sidebar({
     const standalone: SessionItem[] = [];
     for (const session of visibleSessions) {
       if (session.archivedAt) continue;
-      const runtime = chatStore.getSessionRuntime(session.id);
+      const runtime =
+        sessionStateById[session.id] ?? INITIAL_SESSION_CHAT_RUNTIME;
       const item: SessionItem = {
         id: session.id,
         title: session.title,
@@ -194,15 +232,11 @@ export function Sidebar({
     return { byProject, standalone: limitedStandalone };
   })();
 
-  const agentStoreState = useAgentStore();
-  const projectStoreState = useProjectStore();
-
   const sidebarResolvers = {
     getPersonaName: (personaId: string) =>
-      agentStoreState.getPersonaById(personaId)?.displayName,
+      getPersonaById(personaId)?.displayName,
     getProjectName: (projectId: string) =>
-      projectStoreState.projects.find((p: { id: string }) => p.id === projectId)
-        ?.name,
+      projectStoreProjects.find((p) => p.id === projectId)?.name,
   };
   const sidebarSearch = useSessionSearch({
     sessions: activeSessions,
@@ -236,6 +270,17 @@ export function Sidebar({
   }, [expandedProjects]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SECTION_VISIBILITY_STORAGE_KEY,
+        JSON.stringify(sectionVisibility),
+      );
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, [sectionVisibility]);
+
+  useEffect(() => {
     if (projects.length === 0) return;
     const validProjectIds = new Set(projects.map((project) => project.id));
     setExpandedProjects((prev) => {
@@ -263,6 +308,9 @@ export function Sidebar({
 
   const toggleProject = (projectId: string) =>
     setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
+  const toggleSection = (section: keyof SidebarSectionVisibility) => {
+    setSectionVisibility((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
 
   return (
     <div
@@ -293,7 +341,7 @@ export function Sidebar({
                 variant="ghost"
                 size="icon-sm"
                 onClick={onCollapse}
-                className="text-foreground hover:text-foreground"
+                className="text-muted-foreground transition-opacity duration-150 hover:text-foreground"
                 aria-label={t("actions.collapse")}
                 title={t("actions.collapse")}
               >
@@ -316,7 +364,7 @@ export function Sidebar({
                   type="button"
                   onClick={onCollapse}
                   title={t("actions.expand")}
-                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-foreground transition-colors duration-200 hover:text-foreground"
+                  className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
                   aria-label={t("actions.expand")}
                 >
                   <IconLayoutSidebar className="size-4 flex-shrink-0" />
@@ -451,6 +499,10 @@ export function Sidebar({
                   onRenameChat={onRenameChat}
                   onMoveToProject={onMoveToProject}
                   onReorderProject={onReorderProject}
+                  projectsSectionOpen={sectionVisibility.projects}
+                  recentsSectionOpen={sectionVisibility.recents}
+                  onToggleProjectsSection={() => toggleSection("projects")}
+                  onToggleRecentsSection={() => toggleSection("recents")}
                 />
               ))}
           </nav>

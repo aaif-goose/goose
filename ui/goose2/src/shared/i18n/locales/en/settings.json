@@ -161,6 +161,12 @@
       "spanish": "Spanish",
       "system": "System default ({{language}})"
     },
+    "onboarding": {
+      "description": "Show setup again the next time Goose opens.",
+      "label": "Onboarding",
+      "reset": "Reset onboarding",
+      "resetDescription": "Onboarding will appear the next time Goose opens."
+    },
     "title": "General",
     "voiceInput": {
       "label": "Voice input",
@@ -331,6 +337,9 @@
         "useTemplate": "Use a template",
         "useTemplateDescription": "Start with endpoint and model defaults for a known provider."
       }
+    },
+    "catalog": {
+      "loading": "Loading provider catalog..."
     },
     "disconnect": "Disconnect",
     "models": {

@@ -71,6 +71,11 @@
       "responseType": "ProviderCatalogListResponse"
     },
     {
+      "method": "_goose/providers/setup/catalog/list",
+      "requestType": "ProviderSetupCatalogListRequest",
+      "responseType": "ProviderSetupCatalogListResponse"
+    },
+    {
       "method": "_goose/providers/catalog/template",
       "requestType": "ProviderCatalogTemplateRequest",
       "responseType": "ProviderCatalogTemplateResponse"
@@ -121,6 +126,11 @@
       "responseType": "ProviderConfigChangeResponse"
     },
     {
+      "method": "_goose/providers/config/authenticate",
+      "requestType": "ProviderConfigAuthenticateRequest",
+      "responseType": "ProviderConfigChangeResponse"
+    },
+    {
       "method": "_goose/preferences/read",
       "requestType": "PreferencesReadRequest",
       "responseType": "PreferencesReadResponse"
@@ -139,6 +149,21 @@
       "method": "_goose/defaults/read",
       "requestType": "DefaultsReadRequest",
       "responseType": "DefaultsReadResponse"
+    },
+    {
+      "method": "_goose/defaults/save",
+      "requestType": "DefaultsSaveRequest",
+      "responseType": "DefaultsReadResponse"
+    },
+    {
+      "method": "_goose/onboarding/import/scan",
+      "requestType": "OnboardingImportScanRequest",
+      "responseType": "OnboardingImportScanResponse"
+    },
+    {
+      "method": "_goose/onboarding/import/apply",
+      "requestType": "OnboardingImportApplyRequest",
+      "responseType": "OnboardingImportApplyResponse"
     },
     {
       "method": "_goose/session/export",

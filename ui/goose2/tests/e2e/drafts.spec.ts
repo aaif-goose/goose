@@ -8,11 +8,16 @@ async function clickNewChatInProject(
     name: projectName,
     exact: true,
   });
-  await projectButton.hover();
-  await projectButton
-    .locator("xpath=..")
-    .getByTitle("New chat in project")
-    .click();
+  // The "New chat" button uses group-hover:visible and is invisible by default.
+  // Headless Playwright on Linux doesn't reliably trigger CSS :hover,
+  // so we force the button visible via JS before clicking.
+  const row = projectButton.locator("xpath=..");
+  const newChatBtn = row.getByTitle("New chat in project");
+  await newChatBtn.evaluate((el) => {
+    el.style.visibility = "visible";
+    el.style.opacity = "1";
+  });
+  await newChatBtn.click();
 }
 
 test.describe("Draft persistence", () => {

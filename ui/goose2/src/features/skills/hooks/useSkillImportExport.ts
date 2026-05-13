@@ -8,6 +8,10 @@ export function useSkillImportExport(onAfterImport: () => Promise<void>) {
   const { t } = useTranslation(["skills"]);
 
   const handleExport = async (skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
+
     try {
       const result = await exportSkill(skill.path);
       downloadExport(result.json, result.filename);

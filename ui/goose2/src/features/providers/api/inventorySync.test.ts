@@ -17,6 +17,7 @@ function inventoryEntry(
     defaultModel: "default-model",
     configured: true,
     providerType: "remote",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: true,

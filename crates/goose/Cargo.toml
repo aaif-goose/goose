@@ -37,7 +37,9 @@ aws-providers = [
     "dep:aws-sdk-sagemakerruntime",
 ]
 cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "llama-cpp-2/cuda"]
+vulkan = ["local-inference", "llama-cpp-2/vulkan"]
 rustls-tls = [
+    "dep:rustls",
     "reqwest/rustls",
     "rmcp/reqwest",
     "sqlx/runtime-tokio-rustls",
@@ -57,6 +59,7 @@ native-tls = [
     "oauth2/reqwest",
     "oauth2/native-tls",
 ]
+
 
 [lints]
 workspace = true
@@ -98,7 +101,6 @@ base64 = { workspace = true }
 url = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 webbrowser = { workspace = true }
-lazy_static = "1.5.0"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-futures = { workspace = true }
@@ -147,7 +149,7 @@ dashmap = "6.1"
 ahash = "0.8"
 tokio-util = { workspace = true, features = ["compat"] }
 agent-client-protocol-schema = { workspace = true }
-sacp = { workspace = true, features = ["unstable"] }
+agent-client-protocol = { workspace = true, features = ["unstable"] }
 unicode-normalization = "0.1"
 
 # For local Whisper transcription (optional, behind "local-inference" feature)
@@ -194,6 +196,9 @@ goose-acp-macros = { path = "../goose-acp-macros" }
 tower-http = { workspace = true, features = ["cors"] }
 http-body-util = "0.1.3"
 process-wrap = { version = "9.1.0", features = ["std"] }
+nostr = { version = "0.44.2", features = ["nip44"] }
+nostr-sdk = { version = "0.44.1", features = ["nip44"] }
+rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -258,7 +263,7 @@ path = "src/bin/generate_acp_schema.rs"
 ignored = [
     # Used only on windows
     "winapi",
-    # Used to provide extras imports for sacp
+    # Used to provide extras imports for agent-client-protocol
     "agent-client-protocol-schema",
     # Used via http transport
     "http-body-util",

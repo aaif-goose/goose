@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
 import { type LocalePreference, useLocale } from "@/shared/i18n";
 import {
   Select,
@@ -8,6 +9,8 @@ import {
   SelectValue,
 } from "@/shared/ui/select";
 import { SettingsPage } from "@/shared/ui/SettingsPage";
+import { Button } from "@/shared/ui/button";
+import { resetOnboardingCompletion } from "@/features/onboarding/hooks/useOnboardingGate";
 
 function SettingRow({
   label,
@@ -34,6 +37,12 @@ function SettingRow({
 export function GeneralSettings() {
   const { t } = useTranslation("settings");
   const { preference, setLocalePreference, systemLocaleLabel } = useLocale();
+  const [onboardingReset, setOnboardingReset] = useState(false);
+
+  function resetOnboarding() {
+    resetOnboardingCompletion();
+    setOnboardingReset(true);
+  }
 
   return (
     <SettingsPage title={t("general.title")}>
@@ -60,6 +69,24 @@ export function GeneralSettings() {
             <SelectItem value="es">{t("general.language.spanish")}</SelectItem>
           </SelectContent>
         </Select>
+      </SettingRow>
+
+      <SettingRow
+        label={t("general.onboarding.label")}
+        description={t(
+          onboardingReset
+            ? "general.onboarding.resetDescription"
+            : "general.onboarding.description",
+        )}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={resetOnboarding}
+        >
+          {t("general.onboarding.reset")}
+        </Button>
       </SettingRow>
     </SettingsPage>
   );

@@ -1,5 +1,8 @@
 use super::api_client::{ApiClient, AuthMethod};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::errors::ProviderError;
 use super::inventory::InventoryIdentityInput;
 use super::openai_compatible::handle_status;
@@ -26,7 +29,7 @@ use url::Url;
 
 const OLLAMA_PROVIDER_NAME: &str = "ollama";
 pub const OLLAMA_HOST: &str = "localhost";
-pub const OLLAMA_TIMEOUT: u64 = 600;
+pub const OLLAMA_TIMEOUT: u64 = DEFAULT_PROVIDER_TIMEOUT_SECS;
 pub const OLLAMA_DEFAULT_PORT: u16 = 11434;
 pub const OLLAMA_DEFAULT_MODEL: &str = "qwen3";
 pub const OLLAMA_KNOWN_MODELS: &[&str] = &[

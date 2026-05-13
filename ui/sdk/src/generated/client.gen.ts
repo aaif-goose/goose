@@ -23,6 +23,7 @@ import type {
   CustomProviderUpdateResponse,
   DefaultsReadRequest,
   DefaultsReadResponse,
+  DefaultsSaveRequest,
   DeleteSessionRequest,
   DeleteSourceRequest,
   DictationConfigRequest,
@@ -59,6 +60,10 @@ import type {
   ListProvidersResponse,
   ListSourcesRequest,
   ListSourcesResponse,
+  OnboardingImportApplyRequest,
+  OnboardingImportApplyResponse,
+  OnboardingImportScanRequest,
+  OnboardingImportScanResponse,
   PreferencesReadRequest,
   PreferencesReadResponse,
   PreferencesRemoveRequest,
@@ -67,6 +72,7 @@ import type {
   ProviderCatalogListResponse,
   ProviderCatalogTemplateRequest,
   ProviderCatalogTemplateResponse,
+  ProviderConfigAuthenticateRequest,
   ProviderConfigChangeResponse,
   ProviderConfigDeleteRequest,
   ProviderConfigReadRequest,
@@ -74,6 +80,8 @@ import type {
   ProviderConfigSaveRequest,
   ProviderConfigStatusRequest,
   ProviderConfigStatusResponse,
+  ProviderSetupCatalogListRequest,
+  ProviderSetupCatalogListResponse,
   ReadResourceRequest,
   ReadResourceResponse,
   RefreshProviderInventoryRequest,
@@ -109,12 +117,15 @@ import {
   zImportSourcesResponse,
   zListProvidersResponse,
   zListSourcesResponse,
+  zOnboardingImportApplyResponse,
+  zOnboardingImportScanResponse,
   zPreferencesReadResponse,
   zProviderCatalogListResponse,
   zProviderCatalogTemplateResponse,
   zProviderConfigChangeResponse,
   zProviderConfigReadResponse,
   zProviderConfigStatusResponse,
+  zProviderSetupCatalogListResponse,
   zReadResourceResponse,
   zRefreshProviderInventoryResponse,
   zUpdateSourceResponse,
@@ -209,6 +220,18 @@ export class GooseExtClient {
     return zProviderCatalogListResponse.parse(
       raw,
     ) as ProviderCatalogListResponse;
+  }
+
+  async GooseProvidersSetupCatalogList(
+    params: ProviderSetupCatalogListRequest,
+  ): Promise<ProviderSetupCatalogListResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/setup/catalog/list",
+      params,
+    );
+    return zProviderSetupCatalogListResponse.parse(
+      raw,
+    ) as ProviderSetupCatalogListResponse;
   }
 
   async GooseProvidersCatalogTemplate(
@@ -327,6 +350,18 @@ export class GooseExtClient {
     ) as ProviderConfigChangeResponse;
   }
 
+  async GooseProvidersConfigAuthenticate(
+    params: ProviderConfigAuthenticateRequest,
+  ): Promise<ProviderConfigChangeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/providers/config/authenticate",
+      params,
+    );
+    return zProviderConfigChangeResponse.parse(
+      raw,
+    ) as ProviderConfigChangeResponse;
+  }
+
   async GoosePreferencesRead(
     params: PreferencesReadRequest,
   ): Promise<PreferencesReadResponse> {
@@ -349,6 +384,37 @@ export class GooseExtClient {
   ): Promise<DefaultsReadResponse> {
     const raw = await this.conn.extMethod("_goose/defaults/read", params);
     return zDefaultsReadResponse.parse(raw) as DefaultsReadResponse;
+  }
+
+  async GooseDefaultsSave(
+    params: DefaultsSaveRequest,
+  ): Promise<DefaultsReadResponse> {
+    const raw = await this.conn.extMethod("_goose/defaults/save", params);
+    return zDefaultsReadResponse.parse(raw) as DefaultsReadResponse;
+  }
+
+  async GooseOnboardingImportScan(
+    params: OnboardingImportScanRequest,
+  ): Promise<OnboardingImportScanResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/onboarding/import/scan",
+      params,
+    );
+    return zOnboardingImportScanResponse.parse(
+      raw,
+    ) as OnboardingImportScanResponse;
+  }
+
+  async GooseOnboardingImportApply(
+    params: OnboardingImportApplyRequest,
+  ): Promise<OnboardingImportApplyResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/onboarding/import/apply",
+      params,
+    );
+    return zOnboardingImportApplyResponse.parse(
+      raw,
+    ) as OnboardingImportApplyResponse;
   }
 
   async GooseSessionExport(

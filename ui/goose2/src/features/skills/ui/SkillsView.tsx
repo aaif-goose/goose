@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { Button } from "@/shared/ui/button";
 import { PageHeader, PageShell } from "@/shared/ui/page-shell";
 import { revealInFileManager } from "@/shared/lib/fileManager";
@@ -25,12 +26,6 @@ import {
   type EditingSkill,
   type SkillInfo,
 } from "../api/skills";
-import {
-  uniqueSkillCategories,
-  withInferredSkillCategories,
-  type SkillCategory,
-  type SkillViewInfo,
-} from "../lib/skillCategories";
 
 interface SkillsViewProps {
   onStartChatWithSkill?: (skill: SkillInfo, projectId?: string | null) => void;
@@ -38,24 +33,21 @@ interface SkillsViewProps {
 
 export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   const { t } = useTranslation(["skills", "common"]);
-  const projects = useProjectStore((state) => state.projects);
+  const projects = useProjectStore(selectProjects);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<SkillsFilter>("all");
-  const [selectedCategories, setSelectedCategories] = useState<SkillCategory[]>(
-    [],
-  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<EditingSkill | undefined>(
     undefined,
   );
-  const [skills, setSkills] = useState<SkillViewInfo[]>([]);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingSkill, setDeletingSkill] = useState<SkillInfo | null>(null);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
   const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const loadRequestIdRef = useRef(0);
 
-  const loadSkills = useCallback(async (): Promise<SkillViewInfo[]> => {
+  const loadSkills = useCallback(async (): Promise<SkillInfo[]> => {
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
     setLoading(true);
@@ -66,9 +58,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
       if (loadRequestIdRef.current !== requestId) {
         return [];
       }
-      const nextSkills = withInferredSkillCategories(
-        hydrateProjectNames(result, projects),
-      );
+      const nextSkills = hydrateProjectNames(result, projects);
       setSkills(nextSkills);
       return nextSkills;
     } catch {
@@ -89,8 +79,8 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   }, [loadSkills]);
 
   const projectFilters = useMemo(() => uniqueProjectFilters(skills), [skills]);
-  const categoryFilters = useMemo(
-    () => uniqueSkillCategories(skills),
+  const hasBuiltinSkills = useMemo(
+    () => skills.some((skill) => skill.sourceKind === "builtin"),
     [skills],
   );
 
@@ -106,25 +96,21 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   }, [activeFilter, projectFilters]);
 
   useEffect(() => {
-    setSelectedCategories((current) =>
-      current.filter((category) => categoryFilters.includes(category)),
-    );
-  }, [categoryFilters]);
+    if (activeFilter === "builtin" && !hasBuiltinSkills) {
+      setActiveFilter("all");
+    }
+  }, [activeFilter, hasBuiltinSkills]);
 
   const filteredSkills = useMemo(
-    () =>
-      filterSkills(
-        skills,
-        { search, activeFilter, selectedCategories },
-        (category) => t(`view.categories.options.${category}`),
-      ),
-    [skills, search, activeFilter, selectedCategories, t],
+    () => filterSkills(skills, { search, activeFilter }),
+    [skills, search, activeFilter],
   );
 
   const groupedSkills = useMemo(
     () =>
       groupSkills(filteredSkills, activeFilter, projectFilters, {
         personalTitle: t("view.filtersGlobal"),
+        builtinTitle: t("view.filtersBuiltin"),
         projectsFallback: t("view.projects"),
       }),
     [filteredSkills, activeFilter, projectFilters, t],
@@ -143,11 +129,18 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     skills.find((skill) => skill.id === activeSkillId) ?? null;
 
   const handleDelete = (skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
     setDeletingSkill(skill);
   };
 
   const handleConfirmDeleteSkill = async () => {
     if (!deletingSkill) return;
+    if (deletingSkill.sourceKind === "builtin") {
+      setDeletingSkill(null);
+      return;
+    }
     try {
       await deleteSkill(deletingSkill.path);
       await loadSkills();
@@ -162,6 +155,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   };
 
   const handleEdit = (skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
     setEditingSkill({
       name: skill.name,
       description: skill.description,
@@ -173,6 +169,9 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
   };
 
   const handleReveal = useCallback((skill: SkillInfo) => {
+    if (skill.sourceKind === "builtin") {
+      return;
+    }
     void revealInFileManager(skill.path);
   }, []);
 
@@ -219,7 +218,17 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
     handleExport,
   } = useSkillImportExport(refreshSkills);
 
-  const handleSelectSkill = (skill: SkillViewInfo) => {
+  const handleShare = useCallback(
+    (skill: SkillInfo) => {
+      if (skill.sourceKind === "builtin") {
+        return;
+      }
+      void handleExport(skill);
+    },
+    [handleExport],
+  );
+
+  const handleSelectSkill = (skill: SkillInfo) => {
     setActiveSkillId(skill.id);
   };
 
@@ -243,7 +252,7 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
           onBack={() => setActiveSkillId(null)}
           onEdit={handleEdit}
           onReveal={handleReveal}
-          onShare={handleExport}
+          onShare={handleShare}
           onStartChat={onStartChatWithSkill ? handleStartChat : undefined}
           onDelete={handleDelete}
         />
@@ -287,10 +296,8 @@ export function SkillsView({ onStartChatWithSkill }: SkillsViewProps) {
         onSearchChange={setSearch}
         activeFilter={activeFilter}
         onActiveFilterChange={setActiveFilter}
+        hasBuiltinSkills={hasBuiltinSkills}
         projectFilters={projectFilters}
-        categoryFilters={categoryFilters}
-        selectedCategories={selectedCategories}
-        onSelectedCategoriesChange={setSelectedCategories}
         dropHandlers={dropHandlers}
         isDragOver={isDragOver}
       />

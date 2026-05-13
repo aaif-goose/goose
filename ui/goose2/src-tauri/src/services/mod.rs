@@ -1,2 +1,2 @@
 pub mod acp;
-pub mod personas;
+pub mod distro_bundle;

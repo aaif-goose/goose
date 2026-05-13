@@ -173,10 +173,6 @@ const config: Config = {
             to: "/docs/guides/managing-tools/adjust-tool-output",
           },
           {
-            from: "/docs/guides/benchmarking",
-            to: "/docs/tutorials/benchmarking",
-          },
-          {
             from: "/docs/guides/goose-in-docker",
             to: "/docs/tutorials/goose-in-docker",
           },

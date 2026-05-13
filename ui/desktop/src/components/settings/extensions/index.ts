@@ -1,6 +1,10 @@
 export { DEFAULT_EXTENSION_TIMEOUT, nameToKey } from './utils';
 
-export { activateExtensionDefault, deleteExtension } from './extension-manager';
+export {
+  activateExtensionDefault,
+  toggleExtensionDefault,
+  deleteExtension,
+} from './extension-manager';
 
 export { pruneDeprecatedBundledExtensions, syncBundledExtensions } from './bundled-extensions';
 

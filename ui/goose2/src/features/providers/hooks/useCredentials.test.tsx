@@ -232,6 +232,42 @@ describe("useCredentials", () => {
     expect(result.current.configuredIds.has("chatgpt_codex")).toBe(true);
   });
 
+  it("uses native OAuth ACP result without an extra status refresh", async () => {
+    const refreshResponse = {
+      started: ["chatgpt_codex"],
+      skipped: [],
+    };
+    mocks.checkAllProviderStatus.mockResolvedValueOnce([
+      {
+        providerId: "chatgpt_codex",
+        isConfigured: false,
+      },
+    ]);
+
+    const { result } = renderHook(() => useCredentials());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.completeNativeSetup("chatgpt_codex", {
+        status: {
+          providerId: "chatgpt_codex",
+          isConfigured: true,
+        },
+        refresh: refreshResponse,
+      });
+    });
+
+    expect(mocks.refreshProviderInventory).not.toHaveBeenCalled();
+    expect(mocks.checkAllProviderStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.syncProviderInventory).toHaveBeenCalledWith(
+      ["chatgpt_codex"],
+      expect.objectContaining({
+        initialRefresh: refreshResponse,
+      }),
+    );
+    expect(result.current.configuredIds.has("chatgpt_codex")).toBe(true);
+  });
+
   it("refreshes native OAuth status when initial inventory refresh fails", async () => {
     mocks.checkAllProviderStatus
       .mockResolvedValueOnce([

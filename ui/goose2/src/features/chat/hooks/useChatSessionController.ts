@@ -3,31 +3,29 @@ import type { ChatAttachmentDraft } from "@/shared/types/messages";
 import type { ChatSendOptions, ChatSkillDraft, ModelOption } from "../types";
 import { INITIAL_TOKEN_STATE } from "@/shared/types/chat";
 import { useChat } from "./useChat";
-import { useAutoCompactPreferences } from "./useAutoCompactPreferences";
 import { useMessageQueue } from "./useMessageQueue";
 import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { selectPersonas } from "@/features/agents/stores/agentSelectors";
 import { useProviderSelection } from "@/features/agents/hooks/useProviderSelection";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
-import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
+import { resolveAgentProviderCatalogIdStrictFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
-  buildProjectSystemPrompt,
   composeSystemPrompt,
   resolveProjectDefaultArtifactRoot,
 } from "@/features/projects/lib/chatProjectContext";
 import { setStoredModelPreference } from "../lib/modelPreferences";
-import {
-  shouldAutoCompactContext,
-  supportsContextAutoCompaction,
-  supportsContextCompactionControls,
-} from "../lib/autoCompact";
+import { applyLatestSessionConfig } from "../lib/sessionConfigRequests";
+import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
-import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
 import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
 } from "./useResolvedAgentModelPicker";
+import { updateSessionProject } from "@/shared/api/acpApi";
 
 interface UseChatSessionControllerOptions {
   sessionId: string | null;
@@ -37,6 +35,15 @@ interface UseChatSessionControllerOptions {
 
 const PENDING_HOME_SESSION_ID = "__home_pending__";
 const EMPTY_SKILL_DRAFTS: ChatSkillDraft[] = [];
+
+function movePendingHomeQueuedMessage(sessionId: string) {
+  const chatState = useChatStore.getState();
+  const pendingQueue =
+    chatState.queuedMessageBySession[PENDING_HOME_SESSION_ID] ?? null;
+  if (pendingQueue && !chatState.queuedMessageBySession[sessionId]) {
+    chatState.enqueueMessage(sessionId, pendingQueue);
+  }
+}
 
 export function useChatSessionController({
   sessionId,
@@ -50,7 +57,7 @@ export function useChatSessionController({
     selectedProvider: globalSelectedProvider,
     setSelectedProvider: setGlobalSelectedProvider,
   } = useProviderSelection();
-  const personas = useAgentStore((s) => s.personas);
+  const personas = useAgentStore(selectPersonas);
   const session = useChatSessionStore((s) =>
     sessionId
       ? s.sessions.find((candidate) => candidate.id === sessionId)
@@ -62,8 +69,9 @@ export function useChatSessionController({
   const clearActiveWorkspace = useChatSessionStore(
     (s) => s.clearActiveWorkspace,
   );
-  const projects = useProjectStore((s) => s.projects);
+  const projects = useProjectStore(selectProjects);
   const projectsLoading = useProjectStore((s) => s.loading);
+  const catalogEntries = useProviderCatalogStore((s) => s.entries);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>();
   const [pendingProjectId, setPendingProjectId] = useState<string | null>();
   const [pendingProviderId, setPendingProviderId] = useState<string>();
@@ -89,8 +97,6 @@ export function useChatSessionController({
       : undefined,
   );
   const project = storedProject ?? null;
-  const { autoCompactThreshold, isHydrated: isAutoCompactThresholdHydrated } =
-    useAutoCompactPreferences();
   const hasContextUsageSnapshot = useChatStore(
     (s) => s.sessionStateById[stateSessionId]?.hasUsageSnapshot ?? false,
   );
@@ -102,7 +108,7 @@ export function useChatSessionController({
   const selectedPersonaId =
     pendingPersonaId !== undefined
       ? pendingPersonaId
-      : (session?.personaId ?? null);
+      : (session?.agentId ?? null);
   const selectedPersona = personas.find(
     (persona) => persona.id === selectedPersonaId,
   );
@@ -134,22 +140,14 @@ export function useChatSessionController({
         })),
     [projects],
   );
-  const projectSystemPrompt = useMemo(
-    () => buildProjectSystemPrompt(project),
-    [project],
-  );
   const workingContextPrompt = useMemo(() => {
     if (!activeWorkspace?.branch) return undefined;
     return `<active-working-context>\nActive branch: ${activeWorkspace.branch}\nWorking directory: ${activeWorkspace.path}\n</active-working-context>`;
   }, [activeWorkspace?.branch, activeWorkspace?.path]);
   const effectiveSystemPrompt = useMemo(
     () =>
-      composeSystemPrompt(
-        selectedPersona?.systemPrompt,
-        projectSystemPrompt,
-        workingContextPrompt,
-      ),
-    [projectSystemPrompt, selectedPersona?.systemPrompt, workingContextPrompt],
+      composeSystemPrompt(selectedPersona?.systemPrompt, workingContextPrompt),
+    [selectedPersona?.systemPrompt, workingContextPrompt],
   );
 
   const prepareCurrentSession = useCallback(
@@ -160,16 +158,21 @@ export function useChatSessionController({
       modelSelection?: PreferredModelSelection | null,
     ) => {
       if (!sessionId) {
-        return;
+        return false;
       }
       const workingDir = await resolveSessionCwd(
         nextProject,
         nextWorkspacePath,
       );
-      await acpPrepareSession(sessionId, providerId, workingDir);
-      useChatSessionStore.getState().updateSession(sessionId, { workingDir });
-      if (!modelSelection?.id) {
-        return;
+      const result = await applyLatestSessionConfig({
+        sessionId,
+        providerId,
+        workingDir,
+        modelId: modelSelection?.id,
+      });
+      useChatSessionStore.getState().patchSession(sessionId, { workingDir });
+      if (!result.applied || !modelSelection?.id) {
+        return result.applied;
       }
 
       const sessionStore = useChatSessionStore.getState();
@@ -179,14 +182,14 @@ export function useChatSessionController({
         liveSession?.modelName === modelSelection.name;
 
       if (modelAlreadyApplied) {
-        return;
+        return true;
       }
 
-      await acpSetModel(sessionId, modelSelection.id);
-      sessionStore.updateSession(sessionId, {
+      sessionStore.patchSession(sessionId, {
         modelId: modelSelection.id,
         modelName: modelSelection.name,
       });
+      return true;
     },
     [activeWorkspace?.path, project, sessionId],
   );
@@ -314,7 +317,10 @@ export function useChatSessionController({
               .projects.find((candidate) => candidate.id === projectId) ??
             null);
 
-      useChatSessionStore.getState().updateSession(sessionId, { projectId });
+      useChatSessionStore.getState().patchSession(sessionId, { projectId });
+
+      void updateSessionProject(sessionId, projectId).catch(console.error);
+
       if (!selectedProvider) {
         return;
       }
@@ -373,7 +379,7 @@ export function useChatSessionController({
       }
       useChatSessionStore
         .getState()
-        .updateSession(sessionId, { personaId: personaId ?? undefined });
+        .patchSession(sessionId, { agentId: personaId ?? undefined });
     },
     [
       handleProviderChange,
@@ -394,7 +400,7 @@ export function useChatSessionController({
       if (sessionId) {
         useChatSessionStore
           .getState()
-          .updateSession(sessionId, { personaId: undefined });
+          .patchSession(sessionId, { agentId: undefined });
       } else {
         setPendingPersonaId(undefined);
       }
@@ -425,95 +431,15 @@ export function useChatSessionController({
               selectedProvider,
               project,
               activeWorkspace?.path,
+              effectiveModelSelection,
             )
         : undefined,
     },
   );
   const resolvedTokenState = tokenState ?? INITIAL_TOKEN_STATE;
-  const supportsAutoCompactContext =
-    supportsContextAutoCompaction(selectedAgentId);
   const supportsCompactionControls =
     supportsContextCompactionControls(selectedAgentId);
   const isCompactingContext = chatState === "compacting";
-  const resolveAutoCompactAgentId = useCallback(
-    (overridePersona?: { id: string; name?: string }) => {
-      if (!overridePersona?.id) {
-        return selectedAgentId;
-      }
-
-      const targetPersona = personas.find(
-        (persona) => persona.id === overridePersona.id,
-      );
-      if (!targetPersona?.provider) {
-        return selectedAgentId;
-      }
-
-      return (
-        resolveAgentProviderCatalogIdStrict(targetPersona.provider) ?? "goose"
-      );
-    },
-    [personas, selectedAgentId],
-  );
-  const canAutoCompactBeforeSend = useCallback(
-    (overridePersona?: { id: string; name?: string }) => {
-      const targetAgentId = resolveAutoCompactAgentId(overridePersona);
-      if (
-        !sessionId ||
-        !supportsContextAutoCompaction(targetAgentId) ||
-        !isAutoCompactThresholdHydrated
-      ) {
-        return false;
-      }
-
-      const liveRuntime = useChatStore
-        .getState()
-        .getSessionRuntime(stateSessionId);
-      return shouldAutoCompactContext(
-        liveRuntime.tokenState.accumulatedTotal,
-        liveRuntime.tokenState.contextLimit,
-        autoCompactThreshold,
-      );
-    },
-    [
-      autoCompactThreshold,
-      isAutoCompactThresholdHydrated,
-      resolveAutoCompactAgentId,
-      sessionId,
-      stateSessionId,
-    ],
-  );
-  const sendWithAutoCompact = useCallback(
-    (
-      text: string,
-      overridePersona?: { id: string; name?: string },
-      attachments?: ChatAttachmentDraft[],
-      sendOptions?: ChatSendOptions,
-    ) => {
-      if (!canAutoCompactBeforeSend(overridePersona)) {
-        if (sendOptions) {
-          void sendMessage(text, overridePersona, attachments, sendOptions);
-        } else {
-          void sendMessage(text, overridePersona, attachments);
-        }
-        return true;
-      }
-
-      return (async () => {
-        const compactionResult = await compactConversation(overridePersona);
-        if (compactionResult !== "completed") {
-          return false;
-        }
-
-        if (sendOptions) {
-          void sendMessage(text, overridePersona, attachments, sendOptions);
-        } else {
-          void sendMessage(text, overridePersona, attachments);
-        }
-        return true;
-      })();
-    },
-    [canAutoCompactBeforeSend, compactConversation, sendMessage],
-  );
   const isLoadingHistory = useChatStore((s) =>
     sessionId
       ? s.loadingSessionIds.has(sessionId) &&
@@ -529,7 +455,9 @@ export function useChatSessionController({
   const queue = useMessageQueue(
     stateSessionId,
     sessionId ? chatState : "thinking",
-    sendWithAutoCompact,
+    (...args) => {
+      void sendMessage(...args);
+    },
   );
 
   const handleSend = useCallback(
@@ -558,7 +486,12 @@ export function useChatSessionController({
         return true;
       }
 
-      return sendWithAutoCompact(text, undefined, attachments, sendOptions);
+      if (sendOptions) {
+        void sendMessage(text, undefined, attachments, sendOptions);
+      } else {
+        void sendMessage(text, undefined, attachments);
+      }
+      return true;
     },
     [
       chatState,
@@ -566,7 +499,7 @@ export function useChatSessionController({
       queue,
       sessionId,
       selectedPersonaId,
-      sendWithAutoCompact,
+      sendMessage,
     ],
   );
 
@@ -574,24 +507,12 @@ export function useChatSessionController({
     if (deferredSend.current && selectedPersona) {
       const { text, attachments, sendOptions, resolve } = deferredSend.current;
       deferredSend.current = null;
-      const sendResult = sendWithAutoCompact(
-        text,
-        undefined,
-        attachments,
-        sendOptions,
-      );
-      if (sendResult instanceof Promise) {
-        void sendResult.then((accepted) => {
-          if (accepted === false) {
-            useChatStore.getState().setDraft(stateSessionId, text);
-          }
-          resolve?.(accepted !== false);
-        });
-        return;
-      }
-      resolve?.(true);
+      const sendResult = sendOptions
+        ? sendMessage(text, undefined, attachments, sendOptions)
+        : sendMessage(text, undefined, attachments);
+      void sendResult.then(() => resolve?.(true));
     }
-  }, [selectedPersona, sendWithAutoCompact, stateSessionId]);
+  }, [selectedPersona, sendMessage]);
 
   const handleCreatePersona = useCallback(() => {
     if (onCreatePersonaRequested) {
@@ -675,7 +596,7 @@ export function useChatSessionController({
         const nextPersonaId =
           pendingPersonaId !== undefined
             ? (pendingPersonaId ?? undefined)
-            : session?.personaId;
+            : session?.agentId;
         const nextProjectId =
           pendingProjectId !== undefined
             ? pendingProjectId
@@ -690,7 +611,7 @@ export function useChatSessionController({
 
         const patch: {
           providerId?: string;
-          personaId?: string | undefined;
+          agentId?: string | undefined;
           projectId?: string | null;
           modelId?: string | undefined;
           modelName?: string | undefined;
@@ -702,16 +623,19 @@ export function useChatSessionController({
           patch.modelName = undefined;
         }
         if (hasPendingPersona) {
-          patch.personaId = nextPersonaId;
+          patch.agentId = nextPersonaId;
         }
         if (hasPendingProject) {
           patch.projectId = nextProjectId ?? null;
+          void updateSessionProject(sessionId, nextProjectId ?? null).catch(
+            console.error,
+          );
         }
 
-        useChatSessionStore.getState().updateSession(sessionId, patch);
+        useChatSessionStore.getState().patchSession(sessionId, patch);
 
         try {
-          await prepareCurrentSession(
+          const applied = await prepareCurrentSession(
             nextProviderId,
             nextProject,
             activeWorkspace?.path,
@@ -720,9 +644,10 @@ export function useChatSessionController({
           if (cancelled) {
             return;
           }
-          if (pendingModelSelection?.source === "explicit") {
+          if (applied && pendingModelSelection?.source === "explicit") {
             const agentId =
-              resolveAgentProviderCatalogIdStrict(
+              resolveAgentProviderCatalogIdStrictFromEntries(
+                catalogEntries,
                 pendingModelSelection.providerId ?? nextProviderId,
               ) ?? "goose";
             setStoredModelPreference(agentId, {
@@ -742,16 +667,7 @@ export function useChatSessionController({
         setPendingModelSelection(undefined);
       }
 
-      const latestChatState = useChatStore.getState();
-      const latestPendingQueue =
-        latestChatState.queuedMessageBySession[PENDING_HOME_SESSION_ID] ?? null;
-      if (
-        latestPendingQueue &&
-        !latestChatState.queuedMessageBySession[sessionId]
-      ) {
-        latestChatState.enqueueMessage(sessionId, latestPendingQueue);
-      }
-
+      movePendingHomeQueuedMessage(sessionId);
       useChatStore.getState().clearDraft(PENDING_HOME_SESSION_ID);
       useChatStore.getState().clearSkillDrafts(PENDING_HOME_SESSION_ID);
       useChatStore.getState().dismissQueuedMessage(PENDING_HOME_SESSION_ID);
@@ -765,6 +681,7 @@ export function useChatSessionController({
     };
   }, [
     activeWorkspace?.path,
+    catalogEntries,
     pendingDraftValue,
     pendingSkillDrafts,
     pendingModelSelection,
@@ -774,7 +691,7 @@ export function useChatSessionController({
     pendingQueuedMessage,
     prepareCurrentSession,
     selectedProvider,
-    session?.personaId,
+    session?.agentId,
     session?.projectId,
     sessionId,
   ]);
@@ -792,7 +709,6 @@ export function useChatSessionController({
     canCompactContext:
       supportsCompactionControls && messages.length > 0 && chatState === "idle",
     isCompactingContext,
-    supportsAutoCompactContext,
     supportsCompactionControls,
     isContextUsageReady:
       hasContextUsageSnapshot && resolvedTokenState.contextLimit > 0,

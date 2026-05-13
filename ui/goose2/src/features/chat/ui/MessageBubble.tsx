@@ -7,7 +7,8 @@ import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { getCatalogEntry } from "@/features/providers/providerCatalog";
+import { getCatalogEntryFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
 import {
   getProviderIcon,
   formatProviderLabel,
@@ -218,10 +219,7 @@ function renderContentBlock(
     }
     case "image": {
       const ic = content as ImageContent;
-      const src =
-        ic.source.type === "base64"
-          ? `data:${ic.source.mediaType};base64,${ic.source.data}`
-          : ic.source.url;
+      const src = ic.uri ?? `data:${ic.mimeType};base64,${ic.data}`;
       return (
         <ClickableImage
           key={`image-${index}`}
@@ -329,6 +327,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
   const { isCopied: isCopyConfirmed, copyToClipboard } = useCopyToClipboard();
   const personaAvatarUrl = useAvatarSrc(persona?.avatar);
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
 
   // Skip empty user bubbles (all blocks filtered as assistant-only).
   if (role === "user" && content.length === 0) return null;
@@ -357,8 +356,8 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = role === "user";
   const assistantProviderId = message.metadata?.providerId;
   const assistantProviderName = assistantProviderId
-    ? (getCatalogEntry(assistantProviderId)?.displayName ??
-      formatProviderLabel(assistantProviderId))
+    ? (getCatalogEntryFromEntries(catalogEntries, assistantProviderId)
+        ?.displayName ?? formatProviderLabel(assistantProviderId))
     : undefined;
   const assistantDisplayName =
     message.metadata?.personaName ??

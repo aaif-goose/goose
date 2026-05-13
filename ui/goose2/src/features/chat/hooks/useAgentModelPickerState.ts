@@ -3,9 +3,11 @@ import type { AcpProvider } from "@/shared/api/acp";
 import { useProviderInventory } from "@/features/providers/hooks/useProviderInventory";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import {
-  getCatalogEntry,
-  resolveAgentProviderCatalogIdStrict,
+  getCatalogEntryFromEntries,
+  resolveAgentProviderCatalogIdStrictFromEntries,
 } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import { resolveSelectedAgentId } from "../lib/agentProviderResolution";
 import type { ModelOption } from "../types";
 
 interface UseAgentModelPickerStateOptions {
@@ -23,6 +25,8 @@ export function useAgentModelPickerState({
   onProviderSelected,
   onModelSelected,
 }: UseAgentModelPickerStateOptions) {
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
+  const catalogLoaded = useProviderCatalogStore((state) => state.loaded);
   const {
     entries: providerInventoryEntries,
     getEntry: getProviderInventoryEntry,
@@ -31,9 +35,21 @@ export function useAgentModelPickerState({
     loading: providerInventoryLoading,
   } = useProviderInventory();
 
-  const selectedAgentId = selectedProvider
-    ? (resolveAgentProviderCatalogIdStrict(selectedProvider) ?? "goose")
-    : "goose";
+  const selectedAgentId = useMemo(
+    () =>
+      resolveSelectedAgentId({
+        catalogEntries,
+        catalogLoaded,
+        selectedProvider,
+        getProviderInventoryEntry,
+      }),
+    [
+      catalogEntries,
+      catalogLoaded,
+      getProviderInventoryEntry,
+      selectedProvider,
+    ],
+  );
   const selectedProviderInventory = getProviderInventoryEntry(selectedAgentId);
 
   const pickerAgents = useMemo(() => {
@@ -41,11 +57,21 @@ export function useAgentModelPickerState({
 
     visible.set("goose", {
       id: "goose",
-      label: getCatalogEntry("goose")?.displayName ?? "Goose",
+      label:
+        getCatalogEntryFromEntries(catalogEntries, "goose")?.displayName ??
+        "Goose",
     });
 
     for (const provider of providers) {
-      const agentId = resolveAgentProviderCatalogIdStrict(provider.id);
+      const agentId =
+        resolveAgentProviderCatalogIdStrictFromEntries(
+          catalogEntries,
+          provider.id,
+        ) ??
+        (!catalogLoaded &&
+        providerInventoryEntries.get(provider.id)?.category === "agent"
+          ? provider.id
+          : null);
       if (!agentId || agentId === "goose") {
         continue;
       }
@@ -57,19 +83,29 @@ export function useAgentModelPickerState({
 
       visible.set(agentId, {
         id: agentId,
-        label: getCatalogEntry(agentId)?.displayName ?? provider.label,
+        label:
+          getCatalogEntryFromEntries(catalogEntries, agentId)?.displayName ??
+          provider.label,
       });
     }
 
     if (!visible.has(selectedAgentId)) {
       visible.set(selectedAgentId, {
         id: selectedAgentId,
-        label: getCatalogEntry(selectedAgentId)?.displayName ?? selectedAgentId,
+        label:
+          getCatalogEntryFromEntries(catalogEntries, selectedAgentId)
+            ?.displayName ?? selectedAgentId,
       });
     }
 
     return [...visible.values()];
-  }, [providerInventoryEntries, providers, selectedAgentId]);
+  }, [
+    catalogEntries,
+    catalogLoaded,
+    providerInventoryEntries,
+    providers,
+    selectedAgentId,
+  ]);
 
   const availableModels = useMemo(
     () => getModelsForAgent(selectedAgentId) ?? EMPTY_MODELS,

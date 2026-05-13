@@ -2,6 +2,11 @@ use super::{
     spawn_acp_server_in_process, Connection, DuplexTransport, OpenAiFixture, PermissionDecision,
     Session, SessionData, TestConnectionConfig, TestOutput,
 };
+use agent_client_protocol::schema::{
+    ListSessionsResponse, McpServer, ModelId, ModelInfo, SessionModelState, SessionUpdate,
+    ToolCallStatus,
+};
+use agent_client_protocol::{Channel, Client, ConnectTo, DynConnectTo};
 use async_trait::async_trait;
 use futures::StreamExt;
 use goose::acp::{AcpProvider, AcpProviderConfig};
@@ -12,11 +17,6 @@ use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
 use goose::providers::base::Provider;
 use goose_test_support::{ExpectedSessionId, IgnoreSessionId, TEST_MODEL};
-use sacp::schema::{
-    ListSessionsResponse, McpServer, ModelId, ModelInfo, SessionModelState, SessionUpdate,
-    ToolCallStatus,
-};
-use sacp::{Channel, Client, ConnectTo, DynConnectTo};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ pub struct AcpProviderConnection {
 #[allow(dead_code)]
 pub struct AcpProviderSession {
     provider: Arc<Mutex<Option<AcpProvider>>>,
-    session_id: sacp::schema::SessionId,
+    session_id: agent_client_protocol::schema::SessionId,
     notification_sink: NotificationSink,
     session_models: SessionModels,
     work_dir: std::path::PathBuf,
@@ -247,7 +247,7 @@ impl Connection for AcpProviderConnection {
 
         let session = AcpProviderSession {
             provider: Arc::clone(&self.provider),
-            session_id: sacp::schema::SessionId::new(goose_id),
+            session_id: agent_client_protocol::schema::SessionId::new(goose_id),
             notification_sink: self.notification_sink.clone(),
             session_models: self.session_models.clone(),
             work_dir: self.work_dir.clone(),
@@ -265,7 +265,7 @@ impl Connection for AcpProviderConnection {
         _session_id: &str,
         _mcp_servers: Vec<McpServer>,
     ) -> anyhow::Result<SessionData<AcpProviderSession>> {
-        Err(sacp::Error::internal_error()
+        Err(agent_client_protocol::Error::internal_error()
             .data("load_session not implemented for ACP provider")
             .into())
     }
@@ -317,7 +317,7 @@ impl Connection for AcpProviderConnection {
 
 #[async_trait]
 impl Session for AcpProviderSession {
-    fn session_id(&self) -> &sacp::schema::SessionId {
+    fn session_id(&self) -> &agent_client_protocol::schema::SessionId {
         &self.session_id
     }
 
@@ -382,22 +382,26 @@ fn strip_config_options(transport: DuplexTransport) -> Channel {
             while let Some(msg) = from_server.next().await {
                 let msg = match msg {
                     Ok(m) => match m {
-                        sacp::jsonrpcmsg::Message::Response(mut resp) => {
+                        agent_client_protocol::jsonrpcmsg::Message::Response(mut resp) => {
                             if let Some(ref mut result) = resp.result {
                                 if let Some(obj) = result.as_object_mut() {
                                     obj.remove("configOptions");
                                 }
                             }
-                            Ok(Some(sacp::jsonrpcmsg::Message::Response(resp)))
+                            Ok(Some(agent_client_protocol::jsonrpcmsg::Message::Response(
+                                resp,
+                            )))
                         }
-                        sacp::jsonrpcmsg::Message::Request(req)
+                        agent_client_protocol::jsonrpcmsg::Message::Request(req)
                             if req.id.is_none()
                                 && req.method == "session/update"
                                 && req
                                     .params
                                     .as_ref()
                                     .and_then(|params| match params {
-                                        sacp::jsonrpcmsg::Params::Object(obj) => Some(obj),
+                                        agent_client_protocol::jsonrpcmsg::Params::Object(obj) => {
+                                            Some(obj)
+                                        }
                                         _ => None,
                                     })
                                     .and_then(|obj| obj.get("update"))
@@ -409,7 +413,9 @@ fn strip_config_options(transport: DuplexTransport) -> Channel {
                                 .params
                                 .as_ref()
                                 .and_then(|params| match params {
-                                    sacp::jsonrpcmsg::Params::Object(obj) => Some(obj),
+                                    agent_client_protocol::jsonrpcmsg::Params::Object(obj) => {
+                                        Some(obj)
+                                    }
                                     _ => None,
                                 })
                                 .and_then(|obj| obj.get("sessionId"))
@@ -419,10 +425,14 @@ fn strip_config_options(transport: DuplexTransport) -> Channel {
                                 if stripped_initial_config.insert(session_id) {
                                     Ok(None)
                                 } else {
-                                    Ok(Some(sacp::jsonrpcmsg::Message::Request(req)))
+                                    Ok(Some(agent_client_protocol::jsonrpcmsg::Message::Request(
+                                        req,
+                                    )))
                                 }
                             } else {
-                                Ok(Some(sacp::jsonrpcmsg::Message::Request(req)))
+                                Ok(Some(agent_client_protocol::jsonrpcmsg::Message::Request(
+                                    req,
+                                )))
                             }
                         }
                         other => Ok(Some(other)),

@@ -840,6 +840,19 @@ body,
   grid-column: 1 / -1;
 }
 
+code[data-streamdown="inline-code"],
+[data-streamdown] :not(pre) > code {
+  border: 0;
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--background-muted) 82%, transparent);
+  padding: 0.05rem calc(0.22rem + 1px);
+  color: var(--foreground);
+  font-size: calc(1em - 1px);
+  font-weight: 400;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
 /* ═══════════════════════════════════════════════════════════
    goose2 custom utilities
    ═══════════════════════════════════════════════════════════ */

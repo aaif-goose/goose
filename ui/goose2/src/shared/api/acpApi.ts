@@ -5,6 +5,7 @@ import type {
   PromptResponse,
   SessionInfo,
 } from "@agentclientprotocol/sdk";
+import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { getClient } from "./acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
 
@@ -25,7 +26,6 @@ export interface AcpSessionInfo {
   projectId?: string | null;
   providerId: string | null;
   modelId: string | null;
-  personaId: string | null;
 }
 
 export const DEPRECATED_PROVIDER_IDS = new Set([
@@ -46,12 +46,15 @@ export const DEFAULT_PROVIDER: AcpProvider = {
  * already-fetched entries at startup).
  */
 export function buildProviderListFromEntries(
-  entries: Array<{ providerId: string; providerName: string }>,
+  entries: Array<
+    Pick<ProviderInventoryEntryDto, "providerId" | "providerName" | "category">
+  >,
 ): AcpProvider[] {
   return [
     DEFAULT_PROVIDER,
     ...entries
       .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+      .filter((entry) => entry.category === "agent")
       .map((entry) => ({ id: entry.providerId, label: entry.providerName })),
   ];
 }
@@ -79,7 +82,6 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     projectId: (info._meta?.projectId as string) ?? null,
     providerId: (info._meta?.providerId as string) ?? null,
     modelId: (info._meta?.modelId as string) ?? null,
-    personaId: (info._meta?.personaId as string) ?? null,
   }));
 }
 
@@ -114,7 +116,6 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
     projectId: (response._meta?.projectId as string) ?? null,
     providerId: (response._meta?.providerId as string) ?? null,
     modelId: (response._meta?.modelId as string) ?? null,
-    personaId: (response._meta?.personaId as string) ?? null,
   };
 }
 
@@ -203,7 +204,6 @@ export async function newSession(
   workingDir: string,
   providerId?: string,
   projectId?: string,
-  personaId?: string,
 ): Promise<NewSessionResponse> {
   const tClient = performance.now();
   const client = await getClient();
@@ -212,11 +212,10 @@ export async function newSession(
     mcpServers: [],
   };
 
-  const meta: Record<string, string> = {};
+  const meta: Record<string, string> = { client: "goose" };
   if (providerId) meta.provider = providerId;
   if (projectId) meta.projectId = projectId;
-  if (personaId) meta.personaId = personaId;
-  if (Object.keys(meta).length > 0) request._meta = meta;
+  request._meta = meta;
 
   const tCall = performance.now();
   const response = await client.newSession(request);

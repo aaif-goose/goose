@@ -11,6 +11,8 @@ import {
   Trash2,
   Download,
   Upload,
+  Share2,
+  LoaderCircle,
   ExternalLink,
   Copy,
   Puzzle,
@@ -29,17 +31,28 @@ import { toast } from 'react-toastify';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/Tooltip';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import {
   deleteSession,
   exportSession,
   forkSession,
   importSession,
+  importSessionNostr,
   listSessions,
   searchSessions,
+  shareSessionNostr,
   Session,
   updateSessionName,
   ExtensionConfig,
   ExtensionData,
 } from '../../api';
+import { getTunnelStatus } from '../../api/sdk.gen';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { shouldShowNewChatTitle } from '../../sessions';
@@ -55,6 +68,11 @@ const i18n = defineMessages({
   sessionUpdateFailed: { id: 'sessions.toast.updateFailed', defaultMessage: 'Failed to update session description: {error}' },
   chatHistory: { id: 'sessions.chatHistory', defaultMessage: 'Chat history' },
   importSession: { id: 'sessions.import', defaultMessage: 'Import Session' },
+  importNostrSession: { id: 'sessions.importNostr', defaultMessage: 'Import Link' },
+  importNostrTitle: { id: 'sessions.importNostr.title', defaultMessage: 'Import Nostr Session' },
+  importNostrDesc: { id: 'sessions.importNostr.description', defaultMessage: 'Paste a Goose Nostr share link to fetch, decrypt, and import the session.' },
+  importNostrPlaceholder: { id: 'sessions.importNostr.placeholder', defaultMessage: 'goose://sessions/nostr?nevent=...&key=...' },
+  importing: { id: 'sessions.importing', defaultMessage: 'Importing...' },
   chatHistoryDesc: { id: 'sessions.chatHistoryDesc', defaultMessage: 'View and search your past conversations with Goose. {shortcut} to search.' },
   searchPlaceholder: { id: 'sessions.searchPlaceholder', defaultMessage: 'Search history...' },
   errorLoading: { id: 'sessions.error.loading', defaultMessage: 'Error Loading Sessions' },
@@ -73,12 +91,19 @@ const i18n = defineMessages({
   importSuccess: { id: 'sessions.toast.imported', defaultMessage: 'Session imported successfully' },
   importFailed: { id: 'sessions.toast.importFailed', defaultMessage: 'Failed to import session: {error}' },
   exportSuccess: { id: 'sessions.toast.exported', defaultMessage: 'Session exported successfully' },
+  shareNostrSuccess: { id: 'sessions.toast.shareNostr', defaultMessage: 'Encrypted Nostr share link created' },
+  shareNostrFailed: { id: 'sessions.toast.shareNostrFailed', defaultMessage: 'Failed to create Nostr share link: {error}' },
+  copied: { id: 'sessions.toast.copied', defaultMessage: 'Copied to clipboard' },
   openInNewWindow: { id: 'sessions.action.openNewWindow', defaultMessage: 'Open in new window' },
   editSessionName: { id: 'sessions.action.editName', defaultMessage: 'Edit session name' },
   duplicateSession: { id: 'sessions.action.duplicate', defaultMessage: 'Duplicate session' },
   deleteSession: { id: 'sessions.action.delete', defaultMessage: 'Delete session' },
   exportSession: { id: 'sessions.action.export', defaultMessage: 'Export session' },
+  shareNostrSession: { id: 'sessions.action.shareNostr', defaultMessage: 'Share encrypted Nostr link' },
   extensions: { id: 'sessions.extensions', defaultMessage: 'Extensions:' },
+  shareNostrTitle: { id: 'sessions.shareNostr.title', defaultMessage: 'Encrypted Nostr Share Link' },
+  shareNostrDesc: { id: 'sessions.shareNostr.description', defaultMessage: 'Anyone with this link can fetch and decrypt the session. Treat it like a secret.' },
+  close: { id: 'sessions.close', defaultMessage: 'Close' },
 });
 
 function getSessionExtensionNames(extensionData: ExtensionData): string[] {
@@ -265,6 +290,14 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
 
+    const [showImportLinkModal, setShowImportLinkModal] = useState(false);
+    const [nostrImportLink, setNostrImportLink] = useState('');
+    const [isImportingNostr, setIsImportingNostr] = useState(false);
+    const [shareLink, setShareLink] = useState('');
+    const [showShareLinkModal, setShowShareLinkModal] = useState(false);
+    const [sharingSessionId, setSharingSessionId] = useState<string | null>(null);
+    const [nostrEnabled, setNostrEnabled] = useState(true);
+
     // Search state for debouncing
     const [searchTerm, setSearchTerm] = useState('');
     const [caseSensitive, setCaseSensitive] = useState(false);
@@ -337,6 +370,17 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     useEffect(() => {
       loadSessions();
     }, [loadSessions]);
+
+    // Hide Nostr sharing when tunnel is disabled (restricted/enterprise bundles)
+    useEffect(() => {
+      getTunnelStatus()
+        .then(({ data }) => {
+          if (data?.state === 'disabled') {
+            setNostrEnabled(false);
+          }
+        })
+        .catch(() => {});
+    }, []);
 
     // Timing logic to prevent flicker between skeleton and content on initial load
     useEffect(() => {
@@ -542,9 +586,61 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       toast.success(intl.formatMessage(i18n.exportSuccess));
     }, [intl]);
 
+    const handleShareSessionNostr = useCallback(
+      async (session: Session, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setSharingSessionId(session.id);
+        try {
+          const response = await shareSessionNostr({
+            path: { session_id: session.id },
+            body: {},
+            throwOnError: true,
+          });
+          setShareLink(response.data.deeplink);
+          setShowShareLinkModal(true);
+          toast.success(intl.formatMessage(i18n.shareNostrSuccess));
+        } catch (error) {
+          toast.error(intl.formatMessage(i18n.shareNostrFailed, { error: errorMessage(error, 'Unknown error') }));
+        } finally {
+          setSharingSessionId(null);
+        }
+      },
+      [intl]
+    );
+
     const handleImportClick = useCallback(() => {
       fileInputRef.current?.click();
     }, []);
+
+    const handleImportNostrLink = useCallback(async () => {
+      const deeplink = nostrImportLink.trim();
+      if (!deeplink) return;
+
+      setIsImportingNostr(true);
+      try {
+        await importSessionNostr({
+          body: { deeplink },
+          throwOnError: true,
+        });
+        setNostrImportLink('');
+        setShowImportLinkModal(false);
+        toast.success(intl.formatMessage(i18n.importSuccess));
+        await loadSessions();
+      } catch (error) {
+        toast.error(intl.formatMessage(i18n.importFailed, { error: errorMessage(error, 'Unknown error') }));
+      } finally {
+        setIsImportingNostr(false);
+      }
+    }, [intl, loadSessions, nostrImportLink]);
+
+    const handleCopyShareLink = useCallback(async () => {
+      try {
+        await navigator.clipboard.writeText(shareLink);
+        toast.success(intl.formatMessage(i18n.copied));
+      } catch (error) {
+        toast.error(`Failed to copy: ${errorMessage(error, 'Unknown error')}`);
+      }
+    }, [intl, shareLink]);
 
     const handleImportSession = useCallback(
       async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -586,14 +682,18 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       onDuplicateClick,
       onDeleteClick,
       onExportClick,
+      onShareClick,
       onOpenInNewWindow,
+      isSharing,
     }: {
       session: Session;
       onEditClick: (session: Session) => void;
       onDuplicateClick: (session: Session) => void;
       onDeleteClick: (session: Session) => void;
       onExportClick: (session: Session, e: React.MouseEvent) => void;
+      onShareClick: (session: Session, e: React.MouseEvent) => void;
       onOpenInNewWindow: (session: Session, e: React.MouseEvent) => void;
+      isSharing: boolean;
     }) {
       const handleEditClick = useCallback(
         (e: React.MouseEvent) => {
@@ -628,6 +728,13 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           onExportClick(session, e);
         },
         [onExportClick, session]
+      );
+
+      const handleShareClick = useCallback(
+        (e: React.MouseEvent) => {
+          onShareClick(session, e);
+        },
+        [onShareClick, session]
       );
 
       const handleOpenInNewWindowClick = useCallback(
@@ -736,6 +843,20 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
             >
               <Download className="w-3 h-3 text-text-secondary hover:text-text-primary" />
             </button>
+            {nostrEnabled && (
+              <button
+                onClick={handleShareClick}
+                disabled={isSharing}
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer disabled:cursor-wait disabled:opacity-60"
+                title={intl.formatMessage(i18n.shareNostrSession)}
+              >
+                {isSharing ? (
+                  <LoaderCircle className="w-3 h-3 text-text-secondary animate-spin" />
+                ) : (
+                  <Share2 className="w-3 h-3 text-text-secondary hover:text-text-primary" />
+                )}
+              </button>
+            )}
           </div>
         </Card>
       );
@@ -828,7 +949,9 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
                     onDuplicateClick={handleDuplicateSession}
                     onDeleteClick={handleDeleteSession}
                     onExportClick={handleExportSession}
+                    onShareClick={handleShareSessionNostr}
                     onOpenInNewWindow={handleOpenInNewWindow}
+                    isSharing={sharingSessionId === session.id}
                   />
                 ))}
               </div>
@@ -855,15 +978,28 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
               <div className="flex flex-col page-transition">
                 <div className="flex justify-between items-center mb-1">
                   <h1 className="text-4xl font-light">{intl.formatMessage(i18n.chatHistory)}</h1>
-                  <Button
-                    onClick={handleImportClick}
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {intl.formatMessage(i18n.importSession)}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {nostrEnabled && (
+                      <Button
+                        onClick={() => setShowImportLinkModal(true)}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        {intl.formatMessage(i18n.importNostrSession)}
+                      </Button>
+                    )}
+                    <Button
+                      onClick={handleImportClick}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {intl.formatMessage(i18n.importSession)}
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-sm text-text-secondary mb-4">
                   {intl.formatMessage(i18n.chatHistoryDesc, { shortcut: getSearchShortcutText() })}
@@ -956,6 +1092,83 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           onClose={handleModalClose}
           onSave={handleModalSave}
         />
+
+        <Dialog open={showImportLinkModal} onOpenChange={setShowImportLinkModal}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Share2 className="w-5 h-5" />
+                {intl.formatMessage(i18n.importNostrTitle)}
+              </DialogTitle>
+              <DialogDescription>{intl.formatMessage(i18n.importNostrDesc)}</DialogDescription>
+            </DialogHeader>
+
+            <textarea
+              value={nostrImportLink}
+              onChange={(event) => setNostrImportLink(event.target.value)}
+              placeholder={intl.formatMessage(i18n.importNostrPlaceholder)}
+              className="min-h-28 w-full resize-none rounded-lg border border-border-primary bg-background-primary p-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-border-active"
+              disabled={isImportingNostr}
+            />
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowImportLinkModal(false)}
+                disabled={isImportingNostr}
+              >
+                {intl.formatMessage(i18n.cancel)}
+              </Button>
+              <Button
+                onClick={handleImportNostrLink}
+                disabled={isImportingNostr || !nostrImportLink.trim()}
+              >
+                {isImportingNostr ? (
+                  <>
+                    <LoaderCircle className="w-4 h-4 animate-spin" />
+                    {intl.formatMessage(i18n.importing)}
+                  </>
+                ) : (
+                  intl.formatMessage(i18n.importSession)
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showShareLinkModal} onOpenChange={setShowShareLinkModal}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Share2 className="w-5 h-5" />
+                {intl.formatMessage(i18n.shareNostrTitle)}
+              </DialogTitle>
+              <DialogDescription>{intl.formatMessage(i18n.shareNostrDesc)}</DialogDescription>
+            </DialogHeader>
+
+            <div className="relative rounded-lg border border-border-primary bg-background-secondary p-3 pr-12">
+              <code className="block max-h-36 overflow-y-auto break-all text-sm text-text-primary">
+                {shareLink}
+              </code>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-2 top-2"
+                onClick={handleCopyShareLink}
+                disabled={!shareLink}
+              >
+                <Copy className="h-4 w-4" />
+                <span className="sr-only">{intl.formatMessage(i18n.copied)}</span>
+              </Button>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowShareLinkModal(false)}>
+                {intl.formatMessage(i18n.close)}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <ConfirmationModal
           isOpen={showDeleteConfirmation}

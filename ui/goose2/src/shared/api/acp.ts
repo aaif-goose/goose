@@ -21,14 +21,11 @@ export interface AcpProvider {
 export interface AcpSendMessageOptions {
   systemPrompt?: string;
   assistantPrompt?: string;
-  personaId?: string;
-  personaName?: string;
   /** Image attachments as [base64Data, mimeType] pairs. */
   images?: [string, string][];
 }
 
 export interface AcpCreateSessionOptions {
-  personaId?: string;
   projectId?: string;
   modelId?: string | null;
 }
@@ -44,7 +41,7 @@ export async function discoverAcpProviders(): Promise<AcpProvider[]> {
  * avoiding a duplicate `_goose/providers/list` RPC.
  */
 export function discoverAcpProvidersFromEntries(
-  entries: Array<{ providerId: string; providerName: string }>,
+  entries: Parameters<typeof directAcp.buildProviderListFromEntries>[0],
 ): AcpProvider[] {
   return resolveProvidersCatalog(
     directAcp.buildProviderListFromEntries(entries),
@@ -60,13 +57,14 @@ function resolveProvidersCatalog(providers: AcpProvider[]): AcpProvider[] {
         provider.id,
         provider.label,
       );
-      if (!catalogId || seen.has(catalogId)) {
+      const resolvedId = catalogId ?? provider.id;
+      if (seen.has(resolvedId)) {
         return null;
       }
-      seen.add(catalogId);
+      seen.add(resolvedId);
       return {
-        id: catalogId,
-        label: getCatalogEntry(catalogId)?.displayName ?? provider.label,
+        id: resolvedId,
+        label: getCatalogEntry(resolvedId)?.displayName ?? provider.label,
       };
     })
     .filter((provider): provider is AcpProvider => provider !== null);
@@ -78,7 +76,7 @@ export async function acpSendMessage(
   prompt: string,
   options: AcpSendMessageOptions = {},
 ): Promise<void> {
-  const { systemPrompt, assistantPrompt, personaId, images } = options;
+  const { systemPrompt, assistantPrompt, images } = options;
   const sid = sessionId.slice(0, 8);
   const tStart = performance.now();
 
@@ -115,14 +113,8 @@ export async function acpSendMessage(
     `[perf:send] ${sid} acpSendMessage → prompt(len=${prompt.length}, imgs=${images?.length ?? 0})`,
   );
   const tPrompt = performance.now();
-  const meta: Record<string, unknown> = {};
-  if (personaId) meta.personaId = personaId;
   try {
-    await directAcp.prompt(
-      sessionId,
-      content,
-      Object.keys(meta).length > 0 ? meta : undefined,
-    );
+    await directAcp.prompt(sessionId, content);
     const tDone = performance.now();
     perfLog(
       `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
@@ -158,7 +150,6 @@ export async function acpCreateSession(
     workingDir,
     providerId,
     options.projectId,
-    options.personaId,
   );
   const sessionId = response.sessionId;
   await directAcp.setProvider(sessionId, providerId);

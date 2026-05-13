@@ -1,4 +1,4 @@
-use sacp::{JsonRpcRequest, JsonRpcResponse};
+use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -237,6 +237,92 @@ pub struct DefaultsReadResponse {
     pub model_id: Option<String>,
 }
 
+/// Save Goose default provider and model configuration.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/defaults/save", response = DefaultsReadResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultsSaveRequest {
+    pub provider_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+}
+
+/// Sources that onboarding knows how to discover and import.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingImportSourceKind {
+    #[default]
+    GooseConfig,
+    ClaudeDesktop,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportCounts {
+    pub providers: u32,
+    pub extensions: u32,
+    pub sessions: u32,
+    pub skills: u32,
+    pub projects: u32,
+    pub preferences: u32,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportCandidate {
+    pub id: String,
+    pub source_kind: OnboardingImportSourceKind,
+    pub display_name: String,
+    pub path: String,
+    pub counts: OnboardingImportCounts,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+/// Scan for existing Goose and compatible app data that onboarding can import.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/onboarding/import/scan",
+    response = OnboardingImportScanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportScanRequest {
+    /// Empty means all supported import sources.
+    #[serde(default)]
+    pub sources: Vec<OnboardingImportSourceKind>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportScanResponse {
+    pub candidates: Vec<OnboardingImportCandidate>,
+}
+
+/// Import selected onboarding candidates.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/onboarding/import/apply",
+    response = OnboardingImportApplyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportApplyRequest {
+    #[serde(default)]
+    pub candidate_ids: Vec<String>,
+    #[serde(default)]
+    pub enable_imported_extensions: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportApplyResponse {
+    pub imported: OnboardingImportCounts,
+    pub skipped: OnboardingImportCounts,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_defaults: Option<DefaultsReadResponse>,
+}
+
 /// Set a dictation provider secret value.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/dictation/secret/save", response = EmptyResponse)]
@@ -418,6 +504,17 @@ pub struct ProviderConfigDeleteRequest {
     pub provider_id: String,
 }
 
+/// Run a provider-owned native authentication flow and start an inventory refresh when supported.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/config/authenticate",
+    response = ProviderConfigChangeResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigAuthenticateRequest {
+    pub provider_id: String,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigChangeResponse {
@@ -427,7 +524,7 @@ pub struct ProviderConfigChangeResponse {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderCatalogEntryDto {
+pub struct ProviderTemplateCatalogEntryDto {
     pub provider_id: String,
     pub name: String,
     pub format: String,
@@ -435,6 +532,73 @@ pub struct ProviderCatalogEntryDto {
     pub model_count: usize,
     pub doc_url: String,
     pub env_var: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSetupCategoryDto {
+    Agent,
+    #[default]
+    Model,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSetupMethodDto {
+    None,
+    SingleApiKey,
+    ConfigFields,
+    HostWithOauthFallback,
+    OauthBrowser,
+    OauthDeviceCode,
+    CloudCredentials,
+    Local,
+    CliAuth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSetupGroupDto {
+    Default,
+    Additional,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupFieldDto {
+    pub key: String,
+    pub label: String,
+    pub secret: bool,
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupCatalogEntryDto {
+    pub provider_id: String,
+    pub name: String,
+    pub category: ProviderSetupCategoryDto,
+    pub description: String,
+    pub setup_method: ProviderSetupMethodDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_connect_query: Option<String>,
+    #[serde(default)]
+    pub fields: Vec<ProviderSetupFieldDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_url: Option<String>,
+    pub group: ProviderSetupGroupDto,
+    pub show_only_when_installed: bool,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    pub supports_install: bool,
+    pub supports_auth: bool,
+    pub supports_auth_status: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -484,7 +648,22 @@ pub struct ProviderCatalogListRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderCatalogListResponse {
-    pub providers: Vec<ProviderCatalogEntryDto>,
+    pub providers: Vec<ProviderTemplateCatalogEntryDto>,
+}
+
+/// List provider setup catalog entries
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/providers/setup/catalog/list",
+    response = ProviderSetupCatalogListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupCatalogListRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupCatalogListResponse {
+    pub providers: Vec<ProviderSetupCatalogEntryDto>,
 }
 
 /// Return the editable template for one catalog provider.
@@ -638,6 +817,7 @@ pub enum SourceType {
     Recipe,
     Subrecipe,
     Agent,
+    Project,
 }
 
 impl std::fmt::Display for SourceType {
@@ -648,12 +828,14 @@ impl std::fmt::Display for SourceType {
             SourceType::Recipe => write!(f, "recipe"),
             SourceType::Subrecipe => write!(f, "subrecipe"),
             SourceType::Agent => write!(f, "agent"),
+            SourceType::Project => write!(f, "project"),
         }
     }
 }
 
-/// A source discovered by Goose and backed by an on-disk path. Sources may be
-/// either `global` (shared across all projects) or project-specific.
+/// A source discovered by Goose. Filesystem sources use an on-disk path;
+/// built-in sources use a stable synthetic path. Sources may be either
+/// `global` (shared across all projects) or project-specific.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceEntry {
@@ -662,16 +844,26 @@ pub struct SourceEntry {
     pub name: String,
     pub description: String,
     pub content: String,
-    /// Absolute path to the source on disk. A directory for skills, a file for
-    /// recipes and agents.
-    pub directory: String,
+    /// Stable on-disk path identifying this source. Pass it back to
+    /// update/delete/export to operate on this entry. Skills use the directory
+    /// containing `SKILL.md`; projects use the project file path; built-in
+    /// skills use `builtin://skills/<name>` synthetic paths.
+    pub path: String,
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.
     pub global: bool,
+    /// True when this source can be modified through source CRUD methods.
+    /// Client-provided bundled sources are returned as read-only.
+    #[serde(default)]
+    pub writable: bool,
     /// Paths (absolute) of additional files that live alongside the source.
     /// Only skills currently populate this; empty for other source types.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub supporting_files: Vec<String>,
+    /// Arbitrary key/value pairs for type-specific metadata (e.g. icon, color,
+    /// preferredProvider for projects). Stored in the frontmatter.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl SourceEntry {
@@ -700,6 +892,14 @@ pub struct CreateSourceRequest {
     /// Absolute path to the project root. Required when `global` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
+    /// Project source ID. When set with `global: false`, the backend resolves
+    /// the project's first working directory automatically. Takes precedence
+    /// over `project_dir`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// Arbitrary key/value metadata.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -710,9 +910,10 @@ pub struct CreateSourceResponse {
 
 /// List discovered sources.
 ///
-/// Today this endpoint only returns skills. If `type` is omitted, it defaults
-/// to listing skill sources. Both global and project-scoped skills are included
-/// when `project_dir` is set.
+/// If `type` is omitted or `skill`, this lists filesystem/plugin skills only.
+/// Both global and project-scoped skills are included when `project_dir` is
+/// set. If `type` is `builtinSkill`, this lists shipped read-only built-in
+/// skills.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/sources/list", response = ListSourcesResponse)]
 #[serde(rename_all = "camelCase")]
@@ -721,6 +922,10 @@ pub struct ListSourcesRequest {
     pub source_type: Option<SourceType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
+    /// When true, also scan the working directories of all known projects for
+    /// project-scoped sources (e.g. skills stored under `{workingDir}/.agents/skills/`).
+    #[serde(default)]
+    pub include_project_sources: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -740,6 +945,13 @@ pub struct UpdateSourceRequest {
     pub name: String,
     pub description: String,
     pub content: String,
+    /// When `Some`, replaces all stored properties on the source. When
+    /// `None` (or omitted), the source's existing properties are
+    /// preserved. Callers that don't model the full property bag (e.g.
+    /// the skills editor, which only edits name/description/content)
+    /// should omit this so per-skill metadata isn't silently erased.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub properties: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -949,6 +1161,8 @@ pub struct ProviderInventoryEntryDto {
     pub configured: bool,
     /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
     pub provider_type: String,
+    /// Whether this inventory entry represents an agent provider or a model provider.
+    pub category: ProviderSetupCategoryDto,
     /// Required configuration keys and setup metadata.
     pub config_keys: Vec<ProviderConfigKey>,
     /// Step-by-step setup instructions, when present.

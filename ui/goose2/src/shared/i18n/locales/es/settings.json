@@ -161,6 +161,12 @@
       "spanish": "Español",
       "system": "Predeterminado del sistema ({{language}})"
     },
+    "onboarding": {
+      "description": "Muestra la configuración otra vez la próxima vez que se abra Goose.",
+      "label": "Onboarding",
+      "reset": "Restablecer onboarding",
+      "resetDescription": "El onboarding aparecerá la próxima vez que se abra Goose."
+    },
     "title": "General",
     "voiceInput": {
       "label": "Entrada de voz",
@@ -331,6 +337,9 @@
         "useTemplate": "Usar una plantilla",
         "useTemplateDescription": "Comienza con valores predeterminados de endpoint y modelos para un proveedor conocido."
       }
+    },
+    "catalog": {
+      "loading": "Cargando catálogo de proveedores..."
     },
     "disconnect": "Desconectar",
     "models": {
