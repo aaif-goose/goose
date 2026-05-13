@@ -410,6 +410,16 @@ if (process.platform !== 'darwin') {
           return; // Skip the rest of the handler
         }
 
+        // Handle new-session URL by creating a fresh chat window
+        if (parsedUrl.hostname === 'new-session') {
+          app.whenReady().then(async () => {
+            const recentDirs = loadRecentDirs();
+            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+            await createChat(app, { dir: openDir || undefined });
+          });
+          return;
+        }
+
         // For non-bot URLs, continue with normal handling
         handleProtocolUrl(protocolUrl);
       }
@@ -448,7 +458,11 @@ async function handleProtocolUrl(url: string) {
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
 
-  if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
+  if (parsedUrl.hostname === 'new-session') {
+    await createChat(app, { dir: openDir || undefined });
+    pendingDeepLink = null;
+    return;
+  } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     // For bot/recipe URLs, get existing window or create new one
     const existingWindows = BrowserWindow.getAllWindows();
     const targetWindow =
@@ -517,6 +531,14 @@ app.on('open-url', async (_event, url) => {
 
     const recentDirs = loadRecentDirs();
     const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+
+    // Handle new-session URL by creating a fresh chat window
+    if (parsedUrl.hostname === 'new-session') {
+      log.info('[Main] Detected new-session URL, creating new chat window');
+      openUrlHandledLaunch = true;
+      await createChat(app, { dir: openDir || undefined });
+      return;
+    }
 
     // Handle bot/recipe URLs by directly creating a new window
     if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
