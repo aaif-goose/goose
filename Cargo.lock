@@ -1031,7 +1031,7 @@ dependencies = [
  "bincode",
  "bytesize",
  "clircle",
- "console 0.16.3",
+ "console",
  "content_inspector",
  "encoding_rs",
  "flate2",
@@ -2016,11 +2016,11 @@ dependencies = [
 
 [[package]]
 name = "cliclack"
-version = "0.3.8"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa510b739c618c679375ea9c5af44ce9f591289546e874ad5910e7ce7df79844"
+checksum = "4529f45438fc25ca048b242d5c48e2d3ce9a521e2a5a9123d9737d8520b030dd"
 dependencies = [
- "console 0.15.11",
+ "console",
  "indicatif",
  "once_cell",
  "strsim",
@@ -2188,19 +2188,6 @@ dependencies = [
  "toml 1.1.0+spec-1.1.0",
  "winnow 1.0.0",
  "yaml-rust2",
-]
-
-[[package]]
-name = "console"
-version = "0.15.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054ccb5b10f9f2cbf51eb355ca1d05c2d279ce1804688d0db74b4733a5aeafd8"
-dependencies = [
- "encode_unicode",
- "libc",
- "once_cell",
- "unicode-width 0.2.2",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4636,7 +4623,7 @@ dependencies = [
  "clap_mangen",
  "cliclack",
  "comfy-table",
- "console 0.16.3",
+ "console",
  "dotenvy",
  "etcetera 0.11.0",
  "futures",
@@ -5498,7 +5485,7 @@ version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25470f23803092da7d239834776d653104d551bc4d7eacaf31e6837854b8e9eb"
 dependencies = [
- "console 0.16.3",
+ "console",
  "portable-atomic",
  "unicode-width 0.2.2",
  "unit-prefix",
@@ -5530,7 +5517,7 @@ version = "1.47.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b4a6248eb93a4401ed2f37dfe8ea592d3cf05b7cf4f8efa867b6895af7e094e"
 dependencies = [
- "console 0.16.3",
+ "console",
  "once_cell",
  "similar",
  "tempfile",
