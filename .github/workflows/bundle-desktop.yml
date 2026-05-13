@@ -36,17 +36,14 @@ on:
 name: Reusable workflow to bundle desktop app
 
 jobs:
-  bundle-desktop:
+  build-desktop:
     runs-on: macos-latest
-    name: Bundle Desktop App on macOS
-    environment: ${{ inputs.environment || '' }}
+    name: Build Desktop App on macOS
     env:
       MACOSX_DEPLOYMENT_TARGET: "12.0"
     permissions:
       id-token: write
       contents: read
-    outputs:
-        artifact-url: ${{ steps.upload-app-bundle.outputs.artifact-url }}
     steps:
       # Debug information about the workflow and inputs
       - name: Debug workflow info
@@ -106,9 +103,9 @@ jobs:
           # Update version in Cargo.toml
           sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
           rm -f Cargo.toml.bak
-          
+
           source ./bin/activate-hermit
-          # Update version in package.json 
+          # Update version in package.json
           cd ui/desktop
           npm pkg set "version=${VERSION}"
 
@@ -152,22 +149,12 @@ jobs:
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
         working-directory: ui/desktop
 
-      - name: Import Apple signing certificate
-        if: ${{ inputs.signing }}
-        uses: ./.github/actions/apple-codesign
-        with:
-          certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
       # Check disk space before bundling
       - name: Check disk space before bundling
         run: df -h
 
-      - name: Build App
-        env:
-          APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
+      # Build without signing — signing env vars are intentionally omitted
+      - name: Build App (unsigned)
         run: |
           source ../../bin/activate-hermit
           attempt=0
@@ -184,13 +171,6 @@ jobs:
           fi
         working-directory: ui/desktop
 
-      - name: Clean up signing keychain
-        if: always()
-        run: |
-          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
-            security delete-keychain "$KEYCHAIN_PATH" || true
-          fi
-
       - name: Final cleanup before artifact upload
         run: |
           echo "Performing final cleanup..."
@@ -199,12 +179,12 @@ jobs:
           # Check disk space after cleanup
           df -h
 
-      - name: Upload Desktop artifact
+      - name: Upload unsigned Desktop artifact
         id: upload-app-bundle
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: Goose-darwin-arm64
-          path: ui/desktop/out/Goose-darwin-arm64/Goose.zip
+          name: Goose-darwin-arm64-unsigned
+          path: ui/desktop/out/Goose-darwin-arm64/
 
       - name: Quick launch test (macOS)
         if: ${{ inputs.quick_test }}
@@ -226,3 +206,133 @@ jobs:
           fi
           # Kill the app to clean up
           pkill -f "Goose.app/Contents/MacOS/Goose"
+
+  sign-desktop:
+    needs: build-desktop
+    if: ${{ inputs.signing }}
+    runs-on: macos-latest
+    name: Sign and Notarize Desktop App on macOS
+    environment: ${{ inputs.environment || '' }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      artifact-url: ${{ steps.upload-signed-bundle.outputs.artifact-url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+          sparse-checkout: |
+            .github/actions/apple-codesign
+            ui/desktop/entitlements.plist
+
+      - name: Download unsigned artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: Goose-darwin-arm64-unsigned
+          path: app-bundle/
+
+      - name: Import Apple signing certificate
+        uses: ./.github/actions/apple-codesign
+        with:
+          certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
+        with:
+          node-version: 22
+
+      - name: Install signing tools
+        run: npm install @electron/osx-sign @electron/notarize
+
+      - name: Sign app bundle
+        env:
+          KEYCHAIN_PATH: ${{ env.KEYCHAIN_PATH }}
+        run: |
+          node -e "
+          const { signAsync } = require('@electron/osx-sign');
+          signAsync({
+            app: 'app-bundle/Goose.app',
+            keychain: process.env.KEYCHAIN_PATH || undefined,
+            identity: 'Developer ID Application',
+            entitlements: 'ui/desktop/entitlements.plist',
+            entitlementsInherit: 'ui/desktop/entitlements.plist',
+          }).then(() => {
+            console.log('Code signing complete.');
+          }).catch((err) => {
+            console.error('Code signing failed:', err);
+            process.exit(1);
+          });
+          "
+
+      - name: Verify code signature
+        run: |
+          codesign --verify --deep --strict --verbose=2 app-bundle/Goose.app
+          echo "Signature verification passed."
+
+      - name: Notarize app bundle
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node -e "
+          const { notarize } = require('@electron/notarize');
+          notarize({
+            appPath: 'app-bundle/Goose.app',
+            appleId: process.env.APPLE_ID,
+            appleIdPassword: process.env.APPLE_ID_PASSWORD,
+            teamId: process.env.APPLE_TEAM_ID,
+          }).then(() => {
+            console.log('Notarization complete.');
+          }).catch((err) => {
+            console.error('Notarization failed:', err);
+            process.exit(1);
+          });
+          "
+
+      - name: Staple notarization ticket
+        run: xcrun stapler staple app-bundle/Goose.app
+
+      - name: Create zip for distribution
+        run: |
+          cd app-bundle
+          ditto -c -k --sequesterRsrc --keepParent Goose.app Goose.zip
+
+      - name: Upload signed Desktop artifact
+        id: upload-signed-bundle
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-darwin-arm64
+          path: app-bundle/Goose.zip
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+  # When signing is disabled, publish the unsigned build with the expected artifact name
+  package-desktop:
+    needs: build-desktop
+    if: ${{ !inputs.signing }}
+    runs-on: ubuntu-latest
+    name: Package Desktop App (unsigned)
+    outputs:
+      artifact-url: ${{ steps.upload-unsigned-bundle.outputs.artifact-url }}
+    steps:
+      - name: Download unsigned artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: Goose-darwin-arm64-unsigned
+          path: app-bundle/
+
+      - name: Upload Desktop artifact
+        id: upload-unsigned-bundle
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-darwin-arm64
+          path: app-bundle/Goose.zip

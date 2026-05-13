@@ -43,7 +43,6 @@ rustyline = "18.0.0"
 tracing = { workspace = true }
 chrono = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time"] }
-tracing-appender = { workspace = true }
 shlex = "1.3.0"
 async-trait = { workspace = true }
 base64 = { workspace = true }
@@ -51,18 +50,18 @@ regex = { workspace = true }
 tar = "0.4.45"
 reqwest = { workspace = true, features = ["blocking"], default-features = false }
 zip = { workspace = true }
-bzip2 = "0.5"
+bzip2 = "0.6"
 webbrowser = { workspace = true }
 indicatif = "0.18.1"
 tokio-util = { workspace = true, features = ["compat", "rt"] }
 anstream = "1.0.0"
-open = "5.3.4"
+open = "5.3.5"
 url = { workspace = true }
 urlencoding = { workspace = true }
-clap_complete = "4.6.2"
+clap_complete = "4.6.5"
 comfy-table = "7.2.2"
 sha2 = { workspace = true }
-sigstore-verify = { version = "=0.6.5", default-features = false }
+sigstore-verify = { version = "=0.6.6", default-features = false }
 axum.workspace = true
 clap_complete_nushell = "4.6.0"
 

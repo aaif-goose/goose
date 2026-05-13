@@ -51,7 +51,6 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 futures = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time"] }
-tracing-appender = { workspace = true }
 tokio-stream = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
