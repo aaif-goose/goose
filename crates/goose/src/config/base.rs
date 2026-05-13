@@ -687,10 +687,20 @@ impl Config {
         }
 
         let values = self.load()?;
-        values
+        let value = values
             .get(key)
-            .ok_or_else(|| ConfigError::NotFound(key.to_string()))
-            .and_then(|v| Ok(serde_yaml::from_value(v.clone())?))
+            .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+
+        match serde_yaml::from_value(value.clone()) {
+            Ok(value) => Ok(value),
+            Err(yaml_err) => {
+                let Some(string_value) = value.as_str() else {
+                    return Err(yaml_err.into());
+                };
+                let parsed = Self::parse_env_value(string_value)?;
+                serde_json::from_value(parsed).map_err(|_| yaml_err.into())
+            }
+        }
     }
 
     /// Set a configuration value in the config file (non-secret).
@@ -1090,6 +1100,54 @@ mod tests {
 
         let result: Result<String, ConfigError> = config.get_param("nonexistent_key");
         assert!(matches!(result, Err(ConfigError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_get_param_reads_numeric_yaml_as_u64() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([("XXX_TIMEOUT", None::<&str>)]);
+        let config = new_test_config();
+
+        config.set_param("XXX_TIMEOUT", 300_u64)?;
+
+        let value: u64 = config.get_param("XXX_TIMEOUT")?;
+        assert_eq!(value, 300);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_param_reads_quoted_numeric_yaml_as_u64() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([("XXX_TIMEOUT", None::<&str>)]);
+        let config = new_test_config();
+
+        config.set_param("XXX_TIMEOUT", "300")?;
+
+        let value: u64 = config.get_param("XXX_TIMEOUT")?;
+        assert_eq!(value, 300);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_param_reads_quoted_numeric_yaml_as_string() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([("XXX_TIMEOUT", None::<&str>)]);
+        let config = new_test_config();
+
+        config.set_param("XXX_TIMEOUT", "300")?;
+
+        let value: String = config.get_param("XXX_TIMEOUT")?;
+        assert_eq!(value, "300");
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_param_rejects_invalid_string_as_u64() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([("XXX_TIMEOUT", None::<&str>)]);
+        let config = new_test_config();
+
+        config.set_param("XXX_TIMEOUT", "invalid")?;
+
+        let result: Result<u64, ConfigError> = config.get_param("XXX_TIMEOUT");
+        assert!(matches!(result, Err(ConfigError::DeserializeError(_))));
+        Ok(())
     }
 
     #[test]

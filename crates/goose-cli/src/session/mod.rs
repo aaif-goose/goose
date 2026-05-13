@@ -931,6 +931,7 @@ impl CliSession {
 
     async fn handle_list_skills(&mut self) -> Result<()> {
         use comfy_table::{presets, Cell, ContentArrangement, Table};
+        use goose::custom_requests::SourceType;
         use goose::skills::list_installed_skills;
         let cwd = std::env::current_dir().unwrap_or_default();
         let skills = list_installed_skills(Some(&cwd));
@@ -943,13 +944,24 @@ impl CliSession {
         let mut table = Table::new();
         table.set_content_arrangement(ContentArrangement::Dynamic);
         table.load_preset(presets::ASCII_FULL);
-        table.set_header(vec!["Skill", "Description"]);
+        table.set_header(vec!["Skill", "Location", "Description"]);
 
         let mut sorted_skills = skills;
         sorted_skills.sort_by(|a, b| a.name.cmp(&b.name));
 
         for skill in &sorted_skills {
-            table.add_row(vec![Cell::new(&skill.name), Cell::new(&skill.description)]);
+            let location = if skill.source_type == SourceType::BuiltinSkill {
+                "built-in"
+            } else if skill.global {
+                "global"
+            } else {
+                "project"
+            };
+            table.add_row(vec![
+                Cell::new(&skill.name),
+                Cell::new(location),
+                Cell::new(&skill.description),
+            ]);
         }
 
         println!("{table}");

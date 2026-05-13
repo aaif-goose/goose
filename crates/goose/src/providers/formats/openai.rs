@@ -1204,6 +1204,14 @@ pub fn create_request(
         payload["stream_options"] = json!({"include_usage": true});
     }
 
+    if let Some(params) = &model_config.request_params {
+        if let Some(obj) = payload.as_object_mut() {
+            for (key, value) in params {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
     Ok(payload)
 }
 

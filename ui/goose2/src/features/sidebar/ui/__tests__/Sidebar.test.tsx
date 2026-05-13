@@ -168,4 +168,62 @@ describe("Sidebar", () => {
 
     mockSessions.splice(0, mockSessions.length);
   });
+
+  it("renders settings navigation as the active sidebar surface", async () => {
+    const user = userEvent.setup();
+    const onSettingsBack = vi.fn();
+    const onSettingsSectionChange = vi.fn();
+
+    render(
+      <Sidebar
+        collapsed={false}
+        activeView="settings"
+        activeSettingsSection="providers"
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSettingsBack={onSettingsBack}
+        onSettingsSectionChange={onSettingsSectionChange}
+        projects={[]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("navigation", { name: /settings navigation/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /providers/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      screen.queryByRole("button", { name: /^home$/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^back$/i }));
+    expect(onSettingsBack).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: /general/i }));
+    expect(onSettingsSectionChange).toHaveBeenCalledWith("general");
+  });
+
+  it("shows an expand control in collapsed settings navigation", async () => {
+    const user = userEvent.setup();
+    const onCollapse = vi.fn();
+
+    render(
+      <Sidebar
+        collapsed
+        activeView="settings"
+        activeSettingsSection="general"
+        onCollapse={onCollapse}
+        onNavigate={vi.fn()}
+        onSettingsBack={vi.fn()}
+        onSettingsSectionChange={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /expand sidebar/i }));
+
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
 });

@@ -6,6 +6,7 @@ interface ShellProps {
   children: ReactNode;
   className?: string;
   contentClassName?: string;
+  contentWidth?: "default" | "narrow";
 }
 
 interface PageHeaderProps {
@@ -27,13 +28,17 @@ export function PageShell({
   children,
   className,
   contentClassName,
+  contentWidth = "default",
 }: ShellProps) {
+  const widthClassName = contentWidth === "narrow" ? "max-w-3xl" : "max-w-5xl";
+
   return (
     <MainPanelLayout className={className}>
       <div className="min-h-0 flex-1 overflow-y-scroll [scrollbar-gutter:stable]">
         <div
           className={cn(
-            "mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8 page-transition",
+            "mx-auto flex w-full flex-col gap-8 px-6 py-8 page-transition",
+            widthClassName,
             contentClassName,
           )}
         >
@@ -48,13 +53,17 @@ export function DetailPageShell({
   children,
   className,
   contentClassName,
+  contentWidth = "default",
 }: ShellProps) {
+  const widthClassName = contentWidth === "narrow" ? "max-w-3xl" : "max-w-5xl";
+
   return (
     <MainPanelLayout className={className}>
       <div className="min-h-0 flex-1 overflow-y-scroll [scrollbar-gutter:stable]">
         <div
           className={cn(
-            "mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8 page-transition",
+            "mx-auto flex w-full flex-col gap-8 px-6 py-8 page-transition",
+            widthClassName,
             contentClassName,
           )}
         >
