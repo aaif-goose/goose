@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
@@ -88,6 +88,35 @@ describe("useOnboardingGate", () => {
 
     expect(result.current.shouldShowOnboarding).toBe(true);
     expect(result.current.readiness.reason).toBe("ready");
+  });
+
+  it("recomputes model readiness when the provider catalog loads after inventory", async () => {
+    useProviderCatalogStore.getState().reset();
+    writeCompletedOnboarding("anthropic", "claude-sonnet-4-5");
+    useProviderInventoryStore.getState().setEntries([providerEntry({})]);
+
+    const { result } = renderHook(() => useOnboardingGate(true));
+
+    expect(result.current.shouldShowOnboarding).toBe(true);
+    expect(result.current.readiness.reason).toBe("missing_provider");
+
+    act(() => {
+      useProviderCatalogStore.getState().setEntries([
+        {
+          id: "anthropic",
+          displayName: "Anthropic",
+          category: "model",
+          description: "",
+          setupMethod: "single_api_key",
+          group: "default",
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.shouldShowOnboarding).toBe(false);
+      expect(result.current.readiness.providerId).toBe("anthropic");
+    });
   });
 
   it("skips onboarding when completion and the selected Goose model are usable", () => {

@@ -1558,9 +1558,18 @@ impl ExtensionManager {
             }
         }
 
+        let available = tools
+            .iter()
+            .map(|t| t.name.as_ref())
+            .collect::<Vec<&str>>()
+            .join(", ");
+
         Err(ErrorData::new(
             ErrorCode::RESOURCE_NOT_FOUND,
-            format!("Tool '{}' not found", tool_name),
+            format!(
+                "Tool '{}' not found. Available tools: [{}]",
+                tool_name, available
+            ),
             None,
         ))
     }
@@ -2416,6 +2425,35 @@ mod tests {
 
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_error_includes_available_tools() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+
+        extension_manager
+            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
+            .await;
+
+        let result = extension_manager
+            .resolve_tool("test-session-id", "definitely_not_a_real_tool")
+            .await;
+        let err = match result {
+            Ok(_) => panic!("resolve_tool should fail for an unknown name"),
+            Err(e) => e,
+        };
+
+        let msg = err.message.to_string();
+        assert!(
+            msg.contains("definitely_not_a_real_tool"),
+            "error should echo the bad name; got: {msg}"
+        );
+        assert!(
+            msg.contains("ext_a__"),
+            "error should list at least one real tool name; got: {msg}"
+        );
     }
 
     #[test]

@@ -58,7 +58,7 @@ impl rustyline::ConditionalEventHandler for CtrlCHandler {
     fn handle(
         &self,
         _event: &rustyline::Event,
-        _n: usize,
+        _n: u16,
         _positive: bool,
         ctx: &rustyline::EventContext,
     ) -> Option<rustyline::Cmd> {
