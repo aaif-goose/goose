@@ -612,7 +612,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         );
       });
     },
-    [selectedProvider],
+    [selectedProvider, patchSession],
   );
 
   const handleRenameChat = useCallback(
