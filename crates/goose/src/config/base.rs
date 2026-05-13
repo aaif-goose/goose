@@ -716,6 +716,24 @@ impl Config {
         }
     }
 
+    /// Read-modify-write a configuration value atomically through the write path.
+    pub fn update_param<T, V, F>(&self, key: &str, f: F) -> Result<(), ConfigError>
+    where
+        T: for<'de> Deserialize<'de> + Default,
+        V: Serialize,
+        F: FnOnce(T) -> V,
+    {
+        let _guard = self.guard.lock().unwrap();
+        let mut values = self.load_write_config()?;
+        let current: T = values
+            .get(key)
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        let updated = f(current);
+        values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(updated)?);
+        self.save_values(&values)
+    }
+
     /// Set a configuration value in the config file (non-secret).
     ///
     /// This will immediately write the value to the config file. The value

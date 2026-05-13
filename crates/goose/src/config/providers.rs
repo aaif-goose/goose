@@ -27,11 +27,7 @@ pub struct ProviderEntry {
 // Read helpers
 // ---------------------------------------------------------------------------
 
-fn get_providers_map(config: &Config) -> IndexMap<String, ProviderEntry> {
-    let raw: Mapping = config
-        .get_param(PROVIDERS_CONFIG_KEY)
-        .unwrap_or_else(|_| Default::default());
-
+fn parse_providers_map(raw: Mapping) -> IndexMap<String, ProviderEntry> {
     let mut map = IndexMap::with_capacity(raw.len());
     for (k, v) in raw {
         match (k, serde_yaml::from_value::<ProviderEntry>(v)) {
@@ -50,6 +46,13 @@ fn get_providers_map(config: &Config) -> IndexMap<String, ProviderEntry> {
     map
 }
 
+fn get_providers_map(config: &Config) -> IndexMap<String, ProviderEntry> {
+    let raw: Mapping = config
+        .get_param(PROVIDERS_CONFIG_KEY)
+        .unwrap_or_else(|_| Default::default());
+    parse_providers_map(raw)
+}
+
 /// Retrieve the [`ProviderEntry`] for a named provider, if it exists.
 pub fn get_provider_entry(config: &Config, name: &str) -> Option<ProviderEntry> {
     get_providers_map(config).get(name).cloned()
@@ -65,9 +68,13 @@ pub fn set_provider_entry(
     name: &str,
     entry: &ProviderEntry,
 ) -> Result<(), ConfigError> {
-    let mut map = get_providers_map(config);
-    map.insert(name.to_string(), entry.clone());
-    config.set_param(PROVIDERS_CONFIG_KEY, &map)
+    let name = name.to_string();
+    let entry = entry.clone();
+    config.update_param::<Mapping, _, _>(PROVIDERS_CONFIG_KEY, |raw| {
+        let mut map = parse_providers_map(raw);
+        map.insert(name, entry);
+        map
+    })
 }
 
 // ---------------------------------------------------------------------------
