@@ -265,8 +265,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "log_manipulation",
-        // Removed `> /dev/null` — stderr suppression (2>/dev/null) is standard shell
-        // and generated many false positives. Kept actual log tampering patterns.
         pattern: r"(truncate.*log|rm\s+(-[rRfF]+\s+)*/var/log/|echo\s*>\s*/var/log)",
         description: "Log file manipulation or deletion",
         risk_level: RiskLevel::Medium,
