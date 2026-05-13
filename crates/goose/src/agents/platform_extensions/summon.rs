@@ -1281,30 +1281,6 @@ impl SummonClient {
         Ok(task_config)
     }
 
-    fn resolve_provider_name(
-        &self,
-        params: &DelegateParams,
-        recipe: &Recipe,
-        session: &crate::session::Session,
-    ) -> Result<String, anyhow::Error> {
-        params
-            .provider
-            .clone()
-            .or_else(|| {
-                recipe
-                    .settings
-                    .as_ref()
-                    .and_then(|s| s.goose_provider.clone())
-            })
-            .or_else(|| {
-                Config::global()
-                    .get_param::<String>("GOOSE_SUBAGENT_PROVIDER")
-                    .ok()
-            })
-            .or_else(|| session.provider_name.clone())
-            .ok_or_else(|| anyhow::anyhow!("No provider configured"))
-    }
-
     fn resolve_model_config(
         &self,
         params: &DelegateParams,
@@ -1312,7 +1288,7 @@ impl SummonClient {
         session: &crate::session::Session,
         provider_name: &str,
     ) -> Result<crate::model::ModelConfig, anyhow::Error> {
-        let parent_model_config = session.model_config.clone().map(Ok).unwrap_or_else(|| {
+        let mut model_config = session.model_config.clone().map(Ok).unwrap_or_else(|| {
             crate::model::ModelConfig::new("default")
                 .map(|c| c.with_canonical_limits(provider_name))
         })?;
@@ -1327,15 +1303,18 @@ impl SummonClient {
                     .ok()
             });
 
-        let mut model_config = if let Some(model) = override_model {
-            let mut cfg = crate::model::ModelConfig::new(&model)?;
-            cfg.toolshim = parent_model_config.toolshim;
-            cfg.toolshim_model = parent_model_config.toolshim_model.clone();
-            cfg.fast_model_config = parent_model_config.fast_model_config.clone();
-            cfg.with_canonical_limits(provider_name)
-        } else {
-            parent_model_config
-        };
+        if let Some(model) = override_model {
+            if model != model_config.model_name {
+                model_config.model_name = model;
+                // Canonical fields are model-specific; reset and re-derive for
+                // the new model. Other fields (request_params, toolshim,
+                // fast_model_config, …) are preserved from the parent session.
+                model_config.context_limit = None;
+                model_config.max_tokens = None;
+                model_config.reasoning = None;
+                model_config = model_config.with_canonical_limits(provider_name);
+            }
+        }
 
         if let Some(temp) = params.temperature {
             model_config = model_config.with_temperature(Some(temp));
@@ -1352,7 +1331,23 @@ impl SummonClient {
         recipe: &Recipe,
         session: &crate::session::Session,
     ) -> Result<Arc<dyn crate::providers::base::Provider>, anyhow::Error> {
-        let provider_name = self.resolve_provider_name(params, recipe, session)?;
+        let provider_name = params
+            .provider
+            .clone()
+            .or_else(|| {
+                recipe
+                    .settings
+                    .as_ref()
+                    .and_then(|s| s.goose_provider.clone())
+            })
+            .or_else(|| {
+                Config::global()
+                    .get_param::<String>("GOOSE_SUBAGENT_PROVIDER")
+                    .ok()
+            })
+            .or_else(|| session.provider_name.clone())
+            .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
+
         let model_config = self.resolve_model_config(params, recipe, session, &provider_name)?;
         providers::create(&provider_name, model_config, Vec::new()).await
     }
@@ -2181,6 +2176,56 @@ You review code."#;
         assert_eq!(resolved.context_limit, parent_config.context_limit);
         assert_eq!(resolved.max_tokens, parent_config.max_tokens);
         assert_eq!(resolved.reasoning, parent_config.reasoning);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_preserves_parent_request_params_on_override() {
+        // Session-level request_params (e.g. ACP-set anthropic_beta headers or
+        // CLAUDE_THINKING_TYPE) must survive a model override on the delegate.
+        let _env_guard = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+        ]);
+
+        let context = create_test_context();
+        let client = SummonClient::new(context).unwrap();
+
+        let mut parent_config = crate::model::ModelConfig::new("claude-3-5-sonnet-20241022")
+            .unwrap()
+            .with_canonical_limits("anthropic");
+        let mut session_params = std::collections::HashMap::new();
+        session_params.insert(
+            "anthropic_beta".to_string(),
+            serde_json::json!("custom-beta-header"),
+        );
+        parent_config.request_params = Some(session_params);
+
+        let session = crate::session::Session {
+            provider_name: Some("anthropic".to_string()),
+            model_config: Some(parent_config),
+            ..Default::default()
+        };
+
+        let params = DelegateParams {
+            model: Some("claude-opus-4-6".to_string()),
+            ..Default::default()
+        };
+
+        let resolved = client
+            .resolve_model_config(&params, &empty_recipe(), &session, "anthropic")
+            .expect("resolve_model_config");
+
+        assert_eq!(resolved.model_name, "claude-opus-4-6");
+        assert_eq!(
+            resolved
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("anthropic_beta")),
+            Some(&serde_json::json!("custom-beta-header")),
+            "parent session request_params must be preserved when delegate overrides model"
+        );
     }
 
     fn extract_text(content: &Content) -> &str {
