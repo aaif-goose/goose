@@ -834,6 +834,8 @@ export default function ChatInput({
   }, [droppedFiles.length, localDroppedFiles.length, onFilesProcessed, setLocalDroppedFiles]);
 
   const handlePaste = async (evt: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isRecording) return;
+
     const files = Array.from(evt.clipboardData.files || []);
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
 
@@ -844,19 +846,23 @@ export default function ChatInput({
         const hasLinks = doc.querySelectorAll('a[href]').length > 0;
         if (hasLinks) {
           const markdown = turndown.turndown(doc.body).trim();
-          evt.preventDefault();
-          const textarea = textAreaRef.current;
-          if (textarea) {
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const newValue =
-              displayValue.substring(0, start) + markdown + displayValue.substring(end);
-            setDisplayValue(newValue);
-            updateValue(newValue);
-            setHasUserTyped(true);
-            requestAnimationFrame(() => {
-              textarea.selectionStart = textarea.selectionEnd = start + markdown.length;
-            });
+          if (markdown) {
+            evt.preventDefault();
+            const textarea = textAreaRef.current;
+            if (textarea) {
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              const newValue =
+                displayValue.substring(0, start) + markdown + displayValue.substring(end);
+              const cursorPos = start + markdown.length;
+              setDisplayValue(newValue);
+              updateValue(newValue);
+              setHasUserTyped(true);
+              checkForMentionOrSlash(newValue, cursorPos, textarea);
+              requestAnimationFrame(() => {
+                textarea.selectionStart = textarea.selectionEnd = cursorPos;
+              });
+            }
           }
         }
       }
