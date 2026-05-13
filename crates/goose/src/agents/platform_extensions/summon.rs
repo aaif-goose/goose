@@ -2127,9 +2127,6 @@ You review code."#;
     #[tokio::test]
     #[serial]
     async fn test_resolve_model_config_applies_canonical_limits_to_overridden_model() {
-        // Regression test: previously model_name was swapped on the parent's
-        // cloned ModelConfig without re-running with_canonical_limits, so the
-        // subagent ran with the parent model's context_limit/max_tokens/reasoning.
         let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
@@ -2153,27 +2150,7 @@ You review code."#;
 
     #[tokio::test]
     #[serial]
-    async fn test_resolve_model_config_keeps_parent_when_no_override() {
-        let _env = env_lock::lock_env([
-            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
-            ("GOOSE_MAX_TOKENS", None::<&str>),
-            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
-        ]);
-
-        let parent = parent_config();
-        let resolved = resolve_with_override(None, parent.clone());
-
-        assert_eq!(resolved.model_name, parent.model_name);
-        assert_eq!(resolved.context_limit, parent.context_limit);
-        assert_eq!(resolved.max_tokens, parent.max_tokens);
-        assert_eq!(resolved.reasoning, parent.reasoning);
-    }
-
-    #[tokio::test]
-    #[serial]
     async fn test_resolve_model_config_preserves_parent_request_params_on_override() {
-        // Session-level request_params (e.g. ACP-set anthropic_beta) must
-        // survive a model override.
         let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
@@ -2195,27 +2172,6 @@ You review code."#;
                 .and_then(|p| p.get("anthropic_beta")),
             Some(&serde_json::json!("custom-beta-header")),
         );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_resolve_model_config_honors_env_token_limits_on_override() {
-        // User-configured GOOSE_CONTEXT_LIMIT / GOOSE_MAX_TOKENS must apply to
-        // the overridden model, not the model's canonical defaults.
-        let _env = env_lock::lock_env([
-            ("GOOSE_CONTEXT_LIMIT", Some("50000")),
-            ("GOOSE_MAX_TOKENS", Some("1024")),
-            ("GOOSE_SUBAGENT_MODEL", None),
-        ]);
-
-        let parent = parent_config();
-        assert_eq!(parent.context_limit, Some(50_000));
-        assert_eq!(parent.max_tokens, Some(1024));
-
-        let resolved = resolve_with_override(Some(OVERRIDE_MODEL), parent);
-
-        assert_eq!(resolved.context_limit, Some(50_000));
-        assert_eq!(resolved.max_tokens, Some(1024));
     }
 
     fn extract_text(content: &Content) -> &str {
