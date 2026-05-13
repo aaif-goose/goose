@@ -1305,14 +1305,24 @@ impl SummonClient {
 
         if let Some(model) = override_model {
             if model != model_config.model_name {
-                model_config.model_name = model;
-                // Canonical fields are model-specific; reset and re-derive for
-                // the new model. Other fields (request_params, toolshim,
-                // fast_model_config, …) are preserved from the parent session.
-                model_config.context_limit = None;
-                model_config.max_tokens = None;
-                model_config.reasoning = None;
-                model_config = model_config.with_canonical_limits(provider_name);
+                // Build the new config from scratch so canonical fields
+                // (context_limit, max_tokens, reasoning) and env-derived
+                // overrides (GOOSE_CONTEXT_LIMIT, GOOSE_MAX_TOKENS) match the
+                // overridden model, then preserve session-level state that is
+                // not model-specific from the parent.
+                let parent = model_config;
+                let mut cfg =
+                    crate::model::ModelConfig::new(&model)?.with_canonical_limits(provider_name);
+                cfg.toolshim = parent.toolshim;
+                cfg.toolshim_model = parent.toolshim_model;
+                cfg.fast_model_config = parent.fast_model_config;
+                if let Some(parent_params) = parent.request_params {
+                    let merged = cfg.request_params.get_or_insert_with(Default::default);
+                    for (k, v) in parent_params {
+                        merged.insert(k, v);
+                    }
+                }
+                model_config = cfg;
             }
         }
 
@@ -1694,7 +1704,7 @@ impl McpClientTrait for SummonClient {
 mod tests {
     use super::*;
     use serial_test::serial;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::fs;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -2081,151 +2091,130 @@ You review code."#;
         }
     }
 
+    const PARENT_MODEL: &str = "claude-3-5-sonnet-20241022";
+    const OVERRIDE_MODEL: &str = "claude-opus-4-6";
+    const PROVIDER: &str = "anthropic";
+
+    fn session_with(parent: crate::model::ModelConfig) -> crate::session::Session {
+        crate::session::Session {
+            provider_name: Some(PROVIDER.to_string()),
+            model_config: Some(parent),
+            ..Default::default()
+        }
+    }
+
+    fn resolve_with_override(
+        model: Option<&str>,
+        parent: crate::model::ModelConfig,
+    ) -> crate::model::ModelConfig {
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            model: model.map(String::from),
+            ..Default::default()
+        };
+        client
+            .resolve_model_config(&params, &empty_recipe(), &session_with(parent), PROVIDER)
+            .expect("resolve_model_config")
+    }
+
+    fn parent_config() -> crate::model::ModelConfig {
+        crate::model::ModelConfig::new(PARENT_MODEL)
+            .unwrap()
+            .with_canonical_limits(PROVIDER)
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_resolve_model_config_applies_canonical_limits_to_overridden_model() {
-        // Regression test: when the delegate overrides the model name, the new
-        // model's canonical limits/reasoning flag must be applied — not the
-        // parent's. Previously model_name was swapped on the parent's cloned
-        // ModelConfig without re-running with_canonical_limits, so the subagent
-        // ran with the parent model's context_limit/max_tokens/reasoning.
-        let _env_guard = env_lock::lock_env([
+        // Regression test: previously model_name was swapped on the parent's
+        // cloned ModelConfig without re-running with_canonical_limits, so the
+        // subagent ran with the parent model's context_limit/max_tokens/reasoning.
+        let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
             ("GOOSE_SUBAGENT_MODEL", None::<&str>),
         ]);
 
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
-
-        let parent_config = crate::model::ModelConfig::new("claude-3-5-sonnet-20241022")
+        let parent = parent_config();
+        let overridden = crate::model::ModelConfig::new(OVERRIDE_MODEL)
             .unwrap()
-            .with_canonical_limits("anthropic");
+            .with_canonical_limits(PROVIDER);
+        assert_ne!(parent.context_limit, overridden.context_limit);
+        assert_ne!(parent.reasoning, overridden.reasoning);
 
-        // Sanity-check that the parent's canonical values differ from the
-        // overridden model's, so the test is meaningful.
-        let overridden_config = crate::model::ModelConfig::new("claude-opus-4-6")
-            .unwrap()
-            .with_canonical_limits("anthropic");
-        assert_ne!(parent_config.context_limit, overridden_config.context_limit);
-        assert_ne!(parent_config.reasoning, overridden_config.reasoning);
+        let resolved = resolve_with_override(Some(OVERRIDE_MODEL), parent);
 
-        let session = crate::session::Session {
-            provider_name: Some("anthropic".to_string()),
-            model_config: Some(parent_config),
-            ..Default::default()
-        };
-
-        let params = DelegateParams {
-            model: Some("claude-opus-4-6".to_string()),
-            ..Default::default()
-        };
-        let recipe = empty_recipe();
-
-        let resolved = client
-            .resolve_model_config(&params, &recipe, &session, "anthropic")
-            .expect("resolve_model_config");
-
-        assert_eq!(resolved.model_name, "claude-opus-4-6");
-        assert_eq!(
-            resolved.context_limit, overridden_config.context_limit,
-            "canonical context_limit for the overridden model must be applied"
-        );
-        assert_eq!(
-            resolved.max_tokens, overridden_config.max_tokens,
-            "canonical max_tokens for the overridden model must be applied"
-        );
-        assert_eq!(
-            resolved.reasoning, overridden_config.reasoning,
-            "canonical reasoning flag for the overridden model must be applied"
-        );
+        assert_eq!(resolved.model_name, OVERRIDE_MODEL);
+        assert_eq!(resolved.context_limit, overridden.context_limit);
+        assert_eq!(resolved.max_tokens, overridden.max_tokens);
+        assert_eq!(resolved.reasoning, overridden.reasoning);
     }
 
     #[tokio::test]
     #[serial]
     async fn test_resolve_model_config_keeps_parent_when_no_override() {
-        let _env_guard = env_lock::lock_env([
+        let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
             ("GOOSE_SUBAGENT_MODEL", None::<&str>),
         ]);
 
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
+        let parent = parent_config();
+        let resolved = resolve_with_override(None, parent.clone());
 
-        let parent_config = crate::model::ModelConfig::new("claude-3-5-sonnet-20241022")
-            .unwrap()
-            .with_canonical_limits("anthropic");
-
-        let session = crate::session::Session {
-            provider_name: Some("anthropic".to_string()),
-            model_config: Some(parent_config.clone()),
-            ..Default::default()
-        };
-
-        let resolved = client
-            .resolve_model_config(
-                &DelegateParams::default(),
-                &empty_recipe(),
-                &session,
-                "anthropic",
-            )
-            .expect("resolve_model_config");
-
-        assert_eq!(resolved.model_name, parent_config.model_name);
-        assert_eq!(resolved.context_limit, parent_config.context_limit);
-        assert_eq!(resolved.max_tokens, parent_config.max_tokens);
-        assert_eq!(resolved.reasoning, parent_config.reasoning);
+        assert_eq!(resolved.model_name, parent.model_name);
+        assert_eq!(resolved.context_limit, parent.context_limit);
+        assert_eq!(resolved.max_tokens, parent.max_tokens);
+        assert_eq!(resolved.reasoning, parent.reasoning);
     }
 
     #[tokio::test]
     #[serial]
     async fn test_resolve_model_config_preserves_parent_request_params_on_override() {
-        // Session-level request_params (e.g. ACP-set anthropic_beta headers or
-        // CLAUDE_THINKING_TYPE) must survive a model override on the delegate.
-        let _env_guard = env_lock::lock_env([
+        // Session-level request_params (e.g. ACP-set anthropic_beta) must
+        // survive a model override.
+        let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
             ("GOOSE_SUBAGENT_MODEL", None::<&str>),
         ]);
 
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
-
-        let mut parent_config = crate::model::ModelConfig::new("claude-3-5-sonnet-20241022")
-            .unwrap()
-            .with_canonical_limits("anthropic");
-        let mut session_params = std::collections::HashMap::new();
-        session_params.insert(
+        let mut parent = parent_config();
+        parent.request_params = Some(HashMap::from([(
             "anthropic_beta".to_string(),
             serde_json::json!("custom-beta-header"),
-        );
-        parent_config.request_params = Some(session_params);
+        )]));
 
-        let session = crate::session::Session {
-            provider_name: Some("anthropic".to_string()),
-            model_config: Some(parent_config),
-            ..Default::default()
-        };
+        let resolved = resolve_with_override(Some(OVERRIDE_MODEL), parent);
 
-        let params = DelegateParams {
-            model: Some("claude-opus-4-6".to_string()),
-            ..Default::default()
-        };
-
-        let resolved = client
-            .resolve_model_config(&params, &empty_recipe(), &session, "anthropic")
-            .expect("resolve_model_config");
-
-        assert_eq!(resolved.model_name, "claude-opus-4-6");
         assert_eq!(
             resolved
                 .request_params
                 .as_ref()
                 .and_then(|p| p.get("anthropic_beta")),
             Some(&serde_json::json!("custom-beta-header")),
-            "parent session request_params must be preserved when delegate overrides model"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_honors_env_token_limits_on_override() {
+        // User-configured GOOSE_CONTEXT_LIMIT / GOOSE_MAX_TOKENS must apply to
+        // the overridden model, not the model's canonical defaults.
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", Some("50000")),
+            ("GOOSE_MAX_TOKENS", Some("1024")),
+            ("GOOSE_SUBAGENT_MODEL", None),
+        ]);
+
+        let parent = parent_config();
+        assert_eq!(parent.context_limit, Some(50_000));
+        assert_eq!(parent.max_tokens, Some(1024));
+
+        let resolved = resolve_with_override(Some(OVERRIDE_MODEL), parent);
+
+        assert_eq!(resolved.context_limit, Some(50_000));
+        assert_eq!(resolved.max_tokens, Some(1024));
     }
 
     fn extract_text(content: &Content) -> &str {
