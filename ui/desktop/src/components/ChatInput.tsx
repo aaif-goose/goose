@@ -814,7 +814,56 @@ export default function ChatInput({
     const files = Array.from(evt.clipboardData.files || []);
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
 
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length === 0) {
+      // Check for rich text with hyperlinks and convert to markdown
+      const html = evt.clipboardData.getData('text/html');
+      if (html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const links = doc.querySelectorAll('a[href]');
+        if (links.length > 0) {
+          evt.preventDefault();
+          const convertNodeToMarkdown = (node: Node): string => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              return node.textContent || '';
+            }
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const el = node as HTMLElement;
+              if (el.tagName === 'A' && el.getAttribute('href')) {
+                const href = el.getAttribute('href')!;
+                const text = el.textContent || href;
+                return `[${text}](${href})`;
+              }
+              if (el.tagName === 'BR') {
+                return '\n';
+              }
+              if (el.tagName === 'P' || el.tagName === 'DIV') {
+                const inner = Array.from(el.childNodes).map(convertNodeToMarkdown).join('');
+                return inner + '\n';
+              }
+              return Array.from(el.childNodes).map(convertNodeToMarkdown).join('');
+            }
+            return '';
+          };
+          const markdown = convertNodeToMarkdown(doc.body).replace(/\n{3,}/g, '\n\n').trim();
+          const textarea = textAreaRef.current;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const newValue =
+              displayValue.substring(0, start) + markdown + displayValue.substring(end);
+            setDisplayValue(newValue);
+            updateValue(newValue);
+            setHasUserTyped(true);
+            // Set cursor position after inserted text
+            requestAnimationFrame(() => {
+              textarea.selectionStart = textarea.selectionEnd = start + markdown.length;
+            });
+          }
+        }
+      }
+      return;
+    }
 
     // Check if adding these images would exceed the limit
     if (pastedImages.length + imageFiles.length > MAX_IMAGES_PER_MESSAGE) {
