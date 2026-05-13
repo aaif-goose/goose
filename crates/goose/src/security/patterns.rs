@@ -54,13 +54,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         category: ThreatCategory::FileSystemDestruction,
     },
     ThreatPattern {
-        name: "rm_rf_system",
-        pattern: r"rm\s+(-[rf]*[rf][rf]*|--recursive|--force)\s+[^\s;|&]*/?(bin|etc|usr|var|sys|proc|dev|boot|lib|opt|srv)(?:/|\s|[;&|]|$)",
-        description: "Recursive deletion of system directories",
-        risk_level: RiskLevel::Critical,
-        category: ThreatCategory::FileSystemDestruction,
-    },
-    ThreatPattern {
         name: "dd_destruction",
         pattern: r"dd\s+.*if=/dev/(zero|random|urandom).*of=/dev/[sh]d[a-z]",
         description: "Disk destruction using dd command",
@@ -243,14 +236,6 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         category: ThreatCategory::CommandInjection,
     },
     ThreatPattern {
-        name: "alternative_shell_invocation",
-        pattern: r"(/bin/|/usr/bin/|\./)?(bash|sh|zsh|fish|csh|tcsh|dash)\s+-c\s+.*[;&|]",
-        description: "Alternative shell invocation patterns",
-        risk_level: RiskLevel::Medium,
-        category: ThreatCategory::CommandInjection,
-    },
-    // Additional dangerous commands that might be missing
-    ThreatPattern {
         name: "docker_privileged_exec",
         pattern: r"docker\s+(run|exec).*--privileged",
         description: "Docker privileged container execution",
@@ -280,7 +265,9 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "log_manipulation",
-        pattern: r"(>\s*/dev/null|truncate.*log|rm.*\.log|echo\s*>\s*/var/log)",
+        // Removed `> /dev/null` — stderr suppression (2>/dev/null) is standard shell
+        // and generated many false positives. Kept actual log tampering patterns.
+        pattern: r"(truncate.*log|rm\s+(-[rRfF]+\s+)*/var/log/|echo\s*>\s*/var/log)",
         description: "Log file manipulation or deletion",
         risk_level: RiskLevel::Medium,
         category: ThreatCategory::SystemModification,
@@ -418,18 +405,55 @@ mod tests {
     }
 
     #[test]
-    fn rm_rf_system_matches_absolute_and_relative() {
-        let pat = "rm_rf_system";
-        assert!(matches(pat, "rm -rf /etc"));
-        assert!(matches(pat, "rm -rf /usr/bin"));
-        assert!(matches(pat, "rm -rf etc"));
-        assert!(matches(pat, "rm -rf var"));
+    fn rm_rf_system_pattern_removed() {
+        let matcher = PatternMatcher::new();
+        let commands = [
+            "rm -rf /etc",
+            "rm -rf build",
+            "rm -f /tmp/file.json",
+            "rm -rf /opt/homebrew/Library/Taps/square/homebrew-formula",
+        ];
+        for cmd in &commands {
+            let has_rm_rf_system = matcher
+                .scan_for_patterns(cmd)
+                .iter()
+                .any(|m| m.threat.name == "rm_rf_system");
+            assert!(!has_rm_rf_system, "rm_rf_system should not exist: {cmd}");
+        }
     }
 
     #[test]
-    fn rm_rf_system_no_false_positives() {
-        let pat = "rm_rf_system";
-        assert!(!matches(pat, "rm -rf ./etc-backup"));
-        assert!(!matches(pat, "rm -rf /home/user/project"));
+    fn log_manipulation_no_dev_null_false_positives() {
+        let pat = "log_manipulation";
+        // Standard stderr suppression should NOT match
+        assert!(!matches(pat, "ls 2>/dev/null"));
+        assert!(!matches(pat, "rm -f /tmp/file 2>/dev/null"));
+        assert!(!matches(pat, "command > /dev/null 2>&1"));
+        // Actual log tampering should still match
+        assert!(matches(pat, "truncate -s 0 /var/log/auth.log"));
+        assert!(matches(pat, "echo > /var/log/syslog"));
+        assert!(matches(pat, "rm -f /var/log/auth.log"));
+        assert!(matches(pat, "rm -rf /var/log/syslog"));
+        assert!(matches(pat, "rm -fr /var/log/auth.log"));
+    }
+
+    #[test]
+    fn alternative_shell_invocation_removed() {
+        // alternative_shell_invocation was removed — ML classifier handles this.
+        let matcher = PatternMatcher::new();
+        let commands = [
+            r#"bash -c "echo hello && echo world""#,
+            r#"sh -c "ls | grep test""#,
+        ];
+        for cmd in &commands {
+            let has_alt_shell = matcher
+                .scan_for_patterns(cmd)
+                .iter()
+                .any(|m| m.threat.name == "alternative_shell_invocation");
+            assert!(
+                !has_alt_shell,
+                "alternative_shell_invocation should not exist: {cmd}"
+            );
+        }
     }
 }
