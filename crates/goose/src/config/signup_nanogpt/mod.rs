@@ -116,7 +116,7 @@ pub fn configure_nanogpt(config: &Config, api_key: String) -> Result<()> {
     crate::config::set_active_provider(
         config,
         crate::providers::nanogpt::NANOGPT_PROVIDER_NAME,
-        "",
+        crate::providers::nanogpt::NANOGPT_DEFAULT_MODEL,
     )?;
     Ok(())
 }

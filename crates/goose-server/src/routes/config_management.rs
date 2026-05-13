@@ -179,6 +179,7 @@ pub async fn upsert_config(
             // the current active provider's model into the new entry.
             let model = goose::config::get_provider_entry(config, name)
                 .map(|e| e.model)
+                .or_else(|| config.get_goose_model().ok())
                 .unwrap_or_default();
             goose::config::set_active_provider(config, name, &model)?;
             return Ok(Json(Value::String(format!("Upserted key {}", query.key))));

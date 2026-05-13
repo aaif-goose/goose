@@ -1072,7 +1072,9 @@ impl Config {
     }
     pub fn set_goose_provider(&self, v: impl Into<String>) -> Result<(), ConfigError> {
         let name = v.into();
-        let model = crate::config::providers::get_active_model(self).unwrap_or_default();
+        let model = crate::config::providers::get_provider_entry(self, &name)
+            .map(|e| e.model)
+            .unwrap_or_default();
         crate::config::providers::set_active_provider(self, &name, &model)
     }
     pub fn get_goose_model(&self) -> Result<String, ConfigError> {

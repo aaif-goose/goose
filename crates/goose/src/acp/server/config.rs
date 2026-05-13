@@ -113,7 +113,11 @@ impl GooseAcpAgent {
         }
 
         let config = self.config()?;
-        let model = model_id.clone().unwrap_or_default();
+        let model = model_id.clone().unwrap_or_else(|| {
+            crate::config::get_provider_entry(&config, &provider_id)
+                .map(|e| e.model)
+                .unwrap_or_default()
+        });
         crate::config::set_active_provider(&config, &provider_id, &model)
             .internal_err_ctx("Failed to save default provider")?;
 
