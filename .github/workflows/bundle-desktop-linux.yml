@@ -79,35 +79,57 @@ jobs:
             protobuf-compiler \
             flatpak \
             flatpak-builder \
-            elfutils \
-            libvulkan-dev \
-            libvulkan1 \
-            glslc
+            elfutils
 
       - name: Setup Flatpak Runtimes
         run: |
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Activate hermit and set CARGO_HOME
-        run: |
-          source bin/activate-hermit
-          echo "CARGO_HOME=$CARGO_HOME" >> $GITHUB_ENV
-          echo "RUSTUP_HOME=$RUSTUP_HOME" >> $GITHUB_ENV
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
-        with:
-          key: linux
-
-      - name: Build goosed binary
+      # Build goosed inside an Ubuntu 22.04 container to produce a binary
+      # compatible with glibc 2.35+ (Ubuntu 22.04, Debian 12, RHEL 9, etc.)
+      - name: Build goosed binary (Ubuntu 22.04 container)
         env:
           RUST_LOG: debug
           RUST_BACKTRACE: 1
         run: |
-          source ./bin/activate-hermit
-          export TARGET="x86_64-unknown-linux-gnu"
-          rustup target add "${TARGET}"
-          cargo build --release --target ${TARGET} -p goose-server --features vulkan
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            -e RUST_LOG=debug \
+            -e RUST_BACKTRACE=1 \
+            ubuntu:22.04 bash -c '
+              set -euo pipefail
+
+              # Install build dependencies
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                build-essential \
+                pkg-config \
+                libssl-dev \
+                libdbus-1-dev \
+                libxcb1-dev \
+                libvulkan-dev \
+                curl \
+                ca-certificates \
+                wget \
+                gnupg
+
+              # Install glslc from LunarG Vulkan SDK repo (not available in Ubuntu 22.04 base repos)
+              wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add -
+              wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list \
+                https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y shaderc
+
+              # Install Rust toolchain
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | \
+                sh -s -- -y --default-toolchain 1.92.0
+              . "$HOME/.cargo/env"
+
+              export TARGET="x86_64-unknown-linux-gnu"
+              rustup target add "${TARGET}"
+              cargo build --release --target ${TARGET} -p goose-server --features vulkan
+            '
 
       - name: Copy binaries into Electron folder
         run: |

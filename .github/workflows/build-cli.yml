@@ -4,7 +4,9 @@
 #  - canary.yml
 #
 # Platform Build Strategy:
-#  - Linux: Uses native Ubuntu runners, including arm64 hosted runners
+#  - Linux: Uses native Ubuntu runners with Docker container for glibc 2.35
+#    compatibility (builds inside ubuntu:22.04 to support older distros).
+#    Includes arm64 hosted runners.
 #  - macOS: Uses native macOS runners for each architecture
 #  - Windows: Uses Windows runner with native MSVC build
 on:
@@ -22,6 +24,104 @@ on:
 name: "Reusable workflow to build CLI"
 
 jobs:
+  # ------------------------------------
+  # Linux builds: run inside an ubuntu:22.04 container for glibc 2.35 compat.
+  # This ensures the resulting binary works on Ubuntu 22.04+, Debian 12+,
+  # RHEL 9+, Amazon Linux 2023+, and other LTS distros.
+  # ------------------------------------
+  build-cli-linux:
+    name: Build CLI (Linux ${{ matrix.architecture }})
+    runs-on: ${{ matrix.build-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            target: x86_64-unknown-linux-gnu
+            build-on: ubuntu-24.04
+          - architecture: aarch64
+            target: aarch64-unknown-linux-gnu
+            build-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Update version in Cargo.toml
+        if: ${{ inputs.version != '' }}
+        shell: bash
+        run: |
+          sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
+          rm -f Cargo.toml.bak
+
+      - name: Build CLI in Ubuntu 22.04 container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            -e RUST_LOG=debug \
+            -e RUST_BACKTRACE=1 \
+            ubuntu:22.04 bash -c '
+              set -euo pipefail
+
+              # Install build dependencies
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                build-essential \
+                pkg-config \
+                libssl-dev \
+                libdbus-1-dev \
+                libxcb1-dev \
+                libvulkan-dev \
+                curl \
+                ca-certificates \
+                wget \
+                gnupg
+
+              # Install glslc from LunarG Vulkan SDK repo (not available in Ubuntu 22.04 base repos)
+              wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add -
+              wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list \
+                https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y shaderc
+
+              # Install Rust toolchain
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | \
+                sh -s -- -y --default-toolchain 1.92.0
+              . "$HOME/.cargo/env"
+
+              export TARGET="${{ matrix.target }}"
+              rustup target add "${TARGET}"
+              echo "Building for target: ${TARGET}"
+              rustup show
+
+              cargo build --release --target ${TARGET} -p goose-cli --features vulkan
+            '
+
+      - name: Package CLI
+        run: |
+          export TARGET="${{ matrix.target }}"
+          mkdir -p "target/${TARGET}/release/goose-package"
+          cp "target/${TARGET}/release/goose" "target/${TARGET}/release/goose-package/"
+          cd "target/${TARGET}/release"
+          tar -cjf "goose-${TARGET}.tar.bz2" -C goose-package .
+          tar -czf "goose-${TARGET}.tar.gz" -C goose-package .
+          echo "ARTIFACT_BZ2=target/${TARGET}/release/goose-${TARGET}.tar.bz2" >> $GITHUB_ENV
+          echo "ARTIFACT_GZ=target/${TARGET}/release/goose-${TARGET}.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: goose-${{ matrix.architecture }}-unknown-linux-gnu
+          path: |
+            ${{ env.ARTIFACT_BZ2 }}
+            ${{ env.ARTIFACT_GZ }}
+
+  # ------------------------------------
+  # macOS and Windows builds: unchanged, run natively on host runners.
+  # ------------------------------------
   build-cli:
     name: Build CLI
     runs-on: ${{ matrix.build-on }}
@@ -31,16 +131,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: linux
-            architecture: x86_64
-            target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04
-            variant: standard
-          - platform: linux
-            architecture: aarch64
-            target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04-arm
-            variant: standard
           - platform: macos
             architecture: x86_64
             target-suffix: apple-darwin
@@ -75,22 +165,8 @@ jobs:
           sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
           rm -f Cargo.toml.bak
 
-      - name: Install Linux build dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            pkg-config \
-            libssl-dev \
-            libdbus-1-dev \
-            libxcb1-dev \
-            libvulkan-dev \
-            libvulkan1 \
-            glslc
-
-      - name: Cache Cargo artifacts (Linux/macOS)
-        if: matrix.platform != 'windows'
+      - name: Cache Cargo artifacts (macOS)
+        if: matrix.platform == 'macos'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-native-macos-deployment-target-12
@@ -101,8 +177,8 @@ jobs:
         with:
           key: windows-msvc-cli-${{ matrix.variant }}
 
-      - name: Build CLI (Linux/macOS)
-        if: matrix.platform != 'windows'
+      - name: Build CLI (macOS)
+        if: matrix.platform == 'macos'
         env:
           RUST_LOG: debug
           RUST_BACKTRACE: 1
@@ -114,11 +190,7 @@ jobs:
           echo "Rust toolchain info:"
           rustup show
 
-          FEATURE_ARGS=()
-          if [[ "${TARGET}" == *-unknown-linux-gnu ]]; then
-            FEATURE_ARGS=(--features vulkan)
-          fi
-          cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+          cargo build --release --target ${TARGET} -p goose-cli
 
       - name: Setup Rust (Windows)
         if: matrix.platform == 'windows'
@@ -175,8 +247,8 @@ jobs:
           Write-Output "Windows CLI binary found."
           Get-Item ./target/x86_64-pc-windows-msvc/release/goose.exe
 
-      - name: Package CLI (Linux/macOS)
-        if: matrix.platform != 'windows'
+      - name: Package CLI (macOS)
+        if: matrix.platform == 'macos'
         run: |
           source ./bin/activate-hermit
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
