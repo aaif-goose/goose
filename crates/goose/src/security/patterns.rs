@@ -55,7 +55,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "rm_rf_home_or_root",
-        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?(~|\$HOME|/home|/root)/?['\x22]?(\s|[;&|]|$)",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?(~|\$HOME|\$\{HOME\}|/home|/root)/?['\x22]?(\s|[;&|]|$)",
         description: "Recursive deletion of home or root directory",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
@@ -416,6 +416,8 @@ mod tests {
         assert!(matches(pat, "rm -rf ~/"));
         assert!(matches(pat, "rm -rf $HOME"));
         assert!(matches(pat, "rm -rf $HOME/"));
+        assert!(matches(pat, "rm -rf ${HOME}"));
+        assert!(matches(pat, r#"rm -rf "${HOME}""#));
         assert!(matches(pat, "rm -rf /home"));
         assert!(matches(pat, "rm -rf /home/"));
         assert!(matches(pat, "rm -rf /root"));
@@ -432,6 +434,8 @@ mod tests {
         assert!(!matches(pat, "rm -rf ~/Documents/my-gh-repo"));
         assert!(!matches(pat, "rm -rf ~/.cache"));
         assert!(!matches(pat, "rm -rf $HOME/build"));
+        assert!(!matches(pat, "rm -rf ${HOME}/build"));
+        assert!(!matches(pat, "rm -rf ${HOMEDIR}"));
         assert!(!matches(pat, "rm -rf /home/user"));
         assert!(!matches(pat, "rm -rf /home/user/project"));
         assert!(!matches(pat, "rm -rf /root/tmp"));
