@@ -272,7 +272,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "log_manipulation",
-        pattern: r"(truncate.*log|rm\s+(-[rRfF]+\s+)*/var/log/|echo\s*>\s*/var/log)",
+        pattern: r"(truncate.*log|rm\s+((-[rRfF]+|--recursive|--force|--no-preserve-root)\s+)*/var/log(/|\s|[;&|]|$)|echo\s*>\s*/var/log)",
         description: "Log file manipulation or deletion",
         risk_level: RiskLevel::Medium,
         category: ThreatCategory::SystemModification,
@@ -470,6 +470,12 @@ mod tests {
         assert!(matches(pat, "rm -f /var/log/auth.log"));
         assert!(matches(pat, "rm -rf /var/log/syslog"));
         assert!(matches(pat, "rm -fr /var/log/auth.log"));
+        assert!(matches(pat, "rm -rf /var/log"));
+        assert!(matches(pat, "rm --recursive --force /var/log/auth.log"));
+        assert!(matches(pat, "rm --recursive /var/log"));
+        // Similar-looking paths outside /var/log should NOT match
+        assert!(!matches(pat, "rm -rf /var/log-backup"));
+        assert!(!matches(pat, "rm -rf /var/logs"));
     }
 
     #[test]
