@@ -232,15 +232,7 @@ impl BedrockProvider {
         let visible_messages: Vec<&Message> =
             messages.iter().filter(|m| m.is_agent_visible()).collect();
 
-        // Cache the earliest messages (not most recent) because prompt caching
-        // requires exact prefix matching — caching recent messages would shift
-        // positions each turn, causing misses.
-        const MESSAGE_CACHE_BUDGET: usize = 3;
-        let cache_count = if enable_caching {
-            visible_messages.len().min(MESSAGE_CACHE_BUDGET)
-        } else {
-            0
-        };
+        let last_idx = visible_messages.len().saturating_sub(1);
 
         let mut request = self
             .client
@@ -251,7 +243,9 @@ impl BedrockProvider {
                 visible_messages
                     .iter()
                     .enumerate()
-                    .map(|(idx, m)| to_bedrock_message_with_caching(m, idx < cache_count))
+                    .map(|(idx, m)| {
+                        to_bedrock_message_with_caching(m, enable_caching && idx == last_idx)
+                    })
                     .collect::<Result<_>>()?,
             ));
 

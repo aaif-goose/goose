@@ -57,6 +57,7 @@ pub struct AnthropicProvider {
     supports_streaming: bool,
     name: String,
     custom_models: Option<Vec<String>>,
+    dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
 }
 
@@ -84,6 +85,7 @@ impl AnthropicProvider {
             supports_streaming: true,
             name: ANTHROPIC_PROVIDER_NAME.to_string(),
             custom_models: None,
+            dynamic_models: None,
             skip_canonical_filtering: false,
         })
     }
@@ -92,6 +94,26 @@ impl AnthropicProvider {
         model: ModelConfig,
         config: DeclarativeProviderConfig,
     ) -> Result<Self> {
+        let custom_models = if !config.models.is_empty() {
+            Some(
+                config
+                    .models
+                    .iter()
+                    .map(|m| m.name.clone())
+                    .collect::<Vec<String>>(),
+            )
+        } else {
+            None
+        };
+
+        if config.dynamic_models == Some(false) && custom_models.is_none() {
+            return Err(anyhow::anyhow!(
+                "Provider '{}' has dynamic_models: false but no static models listed; \
+                 at least one entry in `models` is required.",
+                config.name
+            ));
+        }
+
         let global_config = crate::config::Config::global();
         let api_key: String = global_config
             .get_secret(&config.api_key_env)
@@ -124,12 +146,6 @@ impl AnthropicProvider {
             ));
         }
 
-        let custom_models = if !config.models.is_empty() {
-            Some(config.models.iter().map(|m| m.name.clone()).collect())
-        } else {
-            None
-        };
-
         let model = if let Some(ref fast_model_name) = config.fast_model {
             model.with_fast(fast_model_name, &config.name)?
         } else {
@@ -142,6 +158,7 @@ impl AnthropicProvider {
             supports_streaming,
             name: config.name.clone(),
             custom_models,
+            dynamic_models: config.dynamic_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
         })
     }
@@ -281,6 +298,9 @@ impl Provider for AnthropicProvider {
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
         if let Some(custom_models) = &self.custom_models {
+            if self.dynamic_models == Some(false) {
+                return Ok(custom_models.clone());
+            }
             match self.fetch_models_from_api().await {
                 Ok(models) => return Ok(models),
                 Err(e) if e.is_endpoint_not_found() => {
@@ -343,5 +363,96 @@ impl Provider for AnthropicProvider {
                 yield (message, usage);
             }
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn make_provider_with_server(
+        server_uri: &str,
+        custom_models: Option<Vec<String>>,
+        dynamic_models: Option<bool>,
+    ) -> AnthropicProvider {
+        let auth = AuthMethod::ApiKey {
+            header_name: "x-api-key".to_string(),
+            key: "test-key".to_string(),
+        };
+        let api_client = ApiClient::new(server_uri.to_string(), auth)
+            .unwrap()
+            .with_header("anthropic-version", ANTHROPIC_API_VERSION)
+            .unwrap();
+        AnthropicProvider {
+            api_client,
+            model: ModelConfig::new_or_fail("claude-test"),
+            supports_streaming: true,
+            name: "custom_anthropic".to_string(),
+            custom_models,
+            dynamic_models,
+            skip_canonical_filtering: false,
+        }
+    }
+
+    fn base_declarative_config(
+        models: Vec<ModelInfo>,
+        dynamic_models: Option<bool>,
+    ) -> DeclarativeProviderConfig {
+        DeclarativeProviderConfig {
+            name: "custom_anthropic".to_string(),
+            engine: ProviderEngine::Anthropic,
+            display_name: "Custom Anthropic".to_string(),
+            description: None,
+            api_key_env: String::new(),
+            base_url: "http://localhost:1".to_string(),
+            models,
+            headers: None,
+            timeout_seconds: None,
+            supports_streaming: Some(true),
+            requires_auth: false,
+            catalog_provider_id: None,
+            base_path: None,
+            env_vars: None,
+            dynamic_models,
+            skip_canonical_filtering: false,
+            model_doc_link: None,
+            setup_steps: vec![],
+            fast_model: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_static_only_skips_api() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let provider = make_provider_with_server(
+            &server.uri(),
+            Some(vec!["m1".to_string(), "m2".to_string()]),
+            Some(false),
+        );
+
+        let models = provider.fetch_supported_models().await.unwrap();
+        assert_eq!(models, vec!["m1".to_string(), "m2".to_string()]);
+    }
+
+    #[test]
+    fn from_custom_config_rejects_static_only_without_models() {
+        let config = base_declarative_config(vec![], Some(false));
+        let err =
+            AnthropicProvider::from_custom_config(ModelConfig::new_or_fail("claude-test"), config)
+                .err()
+                .expect("expected construction error for dynamic_models: false with empty models");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("dynamic_models: false"),
+            "error message should mention dynamic_models: false; got: {msg}"
+        );
     }
 }

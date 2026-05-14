@@ -1,0 +1,35 @@
+{
+  "name": "routstr",
+  "engine": "openai",
+  "display_name": "Routstr",
+  "description": "OpenAI-compatible aggregator that fronts dozens of upstream providers (OpenAI, Anthropic, Google, DeepSeek, Llama, …) behind a single API. Authenticate with an sk-... bearer issued by a Routstr instance — payment (e.g. Cashu top-up) is handled outside goose.",
+  "api_key_env": "ROUTSTR_API_KEY",
+  "base_url": "${ROUTSTR_HOST}/v1",
+  "env_vars": [
+    {
+      "name": "ROUTSTR_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "https://api.routstr.com",
+      "description": "Base URL of the Routstr proxy (default: https://api.routstr.com)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [
+    { "name": "claude-opus-4.7", "context_limit": 1000000 },
+    { "name": "gemini-3.1-pro-preview", "context_limit": 1048576 },
+    { "name": "gemini-3-flash-preview", "context_limit": 1048576 },
+    { "name": "deepseek-v4-pro", "context_limit": 1048576 },
+    { "name": "glm-5.1", "context_limit": 202752 },
+    { "name": "minimax-m2.7", "context_limit": 196608 }
+  ],
+  "supports_streaming": true,
+  "skip_canonical_filtering": true,
+  "model_doc_link": "https://routstr.com/docs",
+  "setup_steps": [
+    "Pick a Routstr instance (e.g. https://api.routstr.com) and obtain an sk-... API key from its payment flow.",
+    "Paste the key above as ROUTSTR_API_KEY.",
+    "Optionally override ROUTSTR_HOST to point at a different Routstr proxy."
+  ]
+}

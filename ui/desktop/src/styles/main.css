@@ -183,6 +183,8 @@
   --text-inverse: var(--color-white);
   --text-danger: var(--color-red-200);
 
+  --color-inline-code: #c2410c;
+
   /* Search highlighting */
   --highlight-color: rgba(255, 213, 0, 0.5);
   --highlight-current: rgba(252, 213, 3, 0.6);
@@ -207,6 +209,8 @@
   /* Legacy aliases */
   --text-inverse: var(--color-black);
   --text-danger: var(--color-red-100);
+
+  --color-inline-code: #ff7235;
 
   /* Search highlighting */
   --highlight-color: rgba(255, 213, 0, 0.5);
@@ -551,12 +555,18 @@ body {
 
 .bg-inline-code {
   border-radius: 4px;
-  color: var(--color-neutral-200);
+  color: var(--color-inline-code);
+  background-color: var(--color-neutral-50);
   font-family: monospace;
   font-size: 12px;
   font-style: normal;
   font-weight: 400;
   line-height: normal;
+  padding: 2px 4px;
+}
+
+.dark .bg-inline-code {
+  background-color: var(--color-neutral-900);
 }
 
 .bg-inline-code:before {
@@ -565,12 +575,6 @@ body {
 
 pre:has(> code.bg-inline-code) {
   padding: 1em;
-}
-
-li > code.bg-inline-code,
-p > code.bg-inline-code {
-  color: var(--color-block-orange);
-  padding: 2px 4px;
 }
 
 .bg-inline-code:after {

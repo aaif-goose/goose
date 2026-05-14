@@ -124,8 +124,8 @@ export function ConnectedFieldsPanel({
                   className="text-muted-foreground"
                 >
                   {resolveFieldValue(field, fieldValueMap).isSet
-                    ? "Edit"
-                    : "Add"}
+                    ? t("common:actions.edit")
+                    : t("common:actions.add")}
                 </Button>
               )}
             </div>
@@ -139,7 +139,7 @@ export function ConnectedFieldsPanel({
                     field.secret &&
                     resolveFieldValue(field, fieldValueMap).isSet
                       ? getDisplayValue(field, fieldValueMap, t)
-                      : field.placeholder
+                      : (field.placeholder ?? undefined)
                   }
                   onChange={(event) =>
                     onDraftChange(field.key, event.target.value)
@@ -273,7 +273,7 @@ export function SetupFieldsPanel({
               placeholder={
                 field.secret && fieldValue.isSet
                   ? getDisplayValue(field, fieldValueMap, t)
-                  : field.placeholder
+                  : (field.placeholder ?? undefined)
               }
               onChange={(event) => onDraftChange(field.key, event.target.value)}
               disabled={saving}
@@ -287,9 +287,9 @@ export function SetupFieldsPanel({
         <AsyncButton
           type="button"
           state={saving ? "pending" : showSavedState ? "success" : "idle"}
-          idleLabel="Save"
-          pendingLabel="Saving..."
-          successLabel="Saved"
+          idleLabel={t("common:actions.save")}
+          pendingLabel={t("common:actions.saving")}
+          successLabel={t("common:actions.saved")}
           pendingVisual="text"
           pendingDelayMs={250}
           size="sm"

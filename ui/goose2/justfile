@@ -1,6 +1,6 @@
-# Derive a stable port from the working directory so the same worktree
-# always gets the same port.
-vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
+# Derive a stable default port from the working directory so the same worktree
+# usually gets the same port. Set VITE_PORT to override it.
+default_vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
 
 # Default recipe
 default:
@@ -10,7 +10,6 @@ default:
 
 # Install dependencies, build workspace packages, and activate git hooks
 setup:
-    git config core.hooksPath .husky
     cd ../ && pnpm install
     cd ../sdk && pnpm build
     cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
@@ -79,17 +78,22 @@ test-e2e-all:
 # ── Run ──────────────────────────────────────────────────────
 
 # Start the desktop app in dev mode
-dev: setup
+dev: build-core
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
+    DEFAULT_VITE_PORT={{ default_vite_port }}
+    VITE_PORT="${VITE_PORT:-$DEFAULT_VITE_PORT}"
     export VITE_PORT
     # Enable perf logs in the child `goose serve` process by default.
     # Override with e.g. RUST_LOG=info just dev to disable.
     export RUST_LOG="${RUST_LOG:-perf=debug,info}"
     PROJECT_DIR=$(pwd)
     REPO_ROOT=$(cd ../.. && pwd)
+    DISTRO_DIR="${PROJECT_DIR}/distro"
+    if [[ -z "${GOOSE_DISTRO_DIR:-}" && -d "${DISTRO_DIR}" ]]; then
+        export GOOSE_DISTRO_DIR="${DISTRO_DIR}"
+    fi
     LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
     LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
     if [[ -x "${LOCAL_GOOSE_DEBUG}" ]]; then
@@ -99,12 +103,16 @@ dev: setup
     else
         unset GOOSE_BIN
     fi
-    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}")
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./scripts/start-dev-vite.sh ${VITE_PORT}\",\"cwd\":\"${PROJECT_DIR}\",\"wait\":false}}}")
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
     else
         echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
+    fi
+
+    if [[ -n "${GOOSE_DISTRO_DIR:-}" ]]; then
+        echo "Using distro dir: ${GOOSE_DISTRO_DIR}"
     fi
 
     # In worktrees, generate a labeled icon so you can tell instances apart
@@ -128,16 +136,22 @@ dev: setup
     pnpm tauri dev --features app-test-driver --config src-tauri/tauri.dev.conf.json "${EXTRA_CONFIG_ARGS[@]}"
 
 # Start the desktop app with dev config
-dev-debug: setup
+dev-debug: build-core
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
+    DEFAULT_VITE_PORT={{ default_vite_port }}
+    VITE_PORT="${VITE_PORT:-$DEFAULT_VITE_PORT}"
     export VITE_PORT
     # Enable perf logs in the child `goose serve` process by default.
     # Override with e.g. RUST_LOG=info just dev-debug to disable.
     export RUST_LOG="${RUST_LOG:-perf=debug,info}"
+    PROJECT_DIR=$(pwd)
     REPO_ROOT=$(cd ../.. && pwd)
+    DISTRO_DIR="$(pwd)/distro"
+    if [[ -z "${GOOSE_DISTRO_DIR:-}" && -d "${DISTRO_DIR}" ]]; then
+        export GOOSE_DISTRO_DIR="${DISTRO_DIR}"
+    fi
     LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
     LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
     if [[ -x "${LOCAL_GOOSE_DEBUG}" ]]; then
@@ -147,12 +161,16 @@ dev-debug: setup
     else
         unset GOOSE_BIN
     fi
-    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}")
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./scripts/start-dev-vite.sh ${VITE_PORT}\",\"cwd\":\"${PROJECT_DIR}\",\"wait\":false}}}")
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
     else
         echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
+    fi
+
+    if [[ -n "${GOOSE_DISTRO_DIR:-}" ]]; then
+        echo "Using distro dir: ${GOOSE_DISTRO_DIR}"
     fi
 
     # In worktrees, generate a labeled icon so you can tell instances apart
@@ -215,7 +233,8 @@ kill branch="":
         TARGET_DIR="$WORKTREE_PATH/ui/goose2"
         VITE_PORT=$(python3 -c '{{ _port_cmd }}' "$TARGET_DIR")
     else
-        VITE_PORT={{ vite_port }}
+        DEFAULT_VITE_PORT={{ default_vite_port }}
+        VITE_PORT="${VITE_PORT:-$DEFAULT_VITE_PORT}"
     fi
 
     PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
@@ -261,3 +280,6 @@ clean:
     cd src-tauri && cargo clean
     rm -rf dist
     rm -rf node_modules
+
+build-core:
+    cargo build -p goose-cli --bin goose

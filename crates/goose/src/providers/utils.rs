@@ -479,7 +479,7 @@ impl Drop for RequestLog {
 
 /// Safely parse a JSON string that may contain doubly-encoded or malformed JSON.
 /// This function first attempts to parse the input string as-is. If that fails,
-/// it applies control character escaping and tries again.
+/// it applies control character escaping and truncated JSON repair and tries again.
 ///
 /// This approach preserves valid JSON like `{"key1": "value1",\n"key2": "value"}`
 /// (which contains a literal \n but is perfectly valid JSON) while still fixing
@@ -490,11 +490,69 @@ pub fn safely_parse_json(s: &str) -> Result<serde_json::Value, serde_json::Error
     match serde_json::from_str(s) {
         Ok(value) => Ok(value),
         Err(_) => {
-            // If that fails, try with control character escaping
-            let escaped = json_escape_control_chars_in_string(s);
-            serde_json::from_str(&escaped)
+            for candidate in [
+                repair_truncated_json(s),
+                json_escape_control_chars_in_string(s),
+            ] {
+                if let Ok(value) = serde_json::from_str(&candidate) {
+                    return Ok(value);
+                }
+            }
+
+            let repaired = repair_truncated_json(&json_escape_control_chars_in_string(s));
+            serde_json::from_str(&repaired)
         }
     }
+}
+
+fn repair_truncated_json(s: &str) -> String {
+    let mut repaired = String::with_capacity(s.len() + 8);
+    let mut in_string = false;
+    let mut escape_next = false;
+    let mut closers = Vec::new();
+
+    for c in s.chars() {
+        repaired.push(c);
+
+        if in_string {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+
+            match c {
+                '\\' => escape_next = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match c {
+            '"' => in_string = true,
+            '{' => closers.push('}'),
+            '[' => closers.push(']'),
+            '}' | ']' => {
+                if closers.last() == Some(&c) {
+                    closers.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if in_string {
+        if escape_next {
+            repaired.push('\\');
+        }
+        repaired.push('"');
+    }
+
+    while let Some(closer) = closers.pop() {
+        repaired.push(closer);
+    }
+
+    repaired
 }
 
 /// Helper to escape control characters in a string that is supposed to be a JSON document.
@@ -809,9 +867,16 @@ mod tests {
         let result = safely_parse_json(good_json).unwrap();
         assert_eq!(result["test"], "value");
 
-        // Test completely invalid JSON that can't be fixed
-        let broken_json = r#"{"key": "unclosed_string"#;
-        assert!(safely_parse_json(broken_json).is_err());
+        // Test truncated JSON with unclosed string, object, and array
+        let truncated_json = r#"{"key": "unclosed_string","nested": {"items": [1, 2, 3"#;
+        let result = safely_parse_json(truncated_json).unwrap();
+        assert_eq!(result["key"], "unclosed_string");
+        assert_eq!(result["nested"]["items"], json!([1, 2, 3]));
+
+        // Test dangling backslash at end of a truncated string
+        let dangling_escape_json = String::from(r#"{"path":"abc\"#);
+        let result = safely_parse_json(&dangling_escape_json).unwrap();
+        assert_eq!(result["path"], "abc\\");
 
         // Test empty object
         let empty_json = "{}";

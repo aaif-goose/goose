@@ -3,10 +3,9 @@ import {
   checkAgentInstalled,
   checkAgentAuth,
 } from "@/features/providers/api/agentSetup";
-import {
-  getAgentProviders,
-  getCatalogEntry,
-} from "@/features/providers/providerCatalog";
+import { getAgentProvidersFromEntries } from "@/features/providers/providerCatalog";
+import { useProviderCatalogStore } from "@/features/providers/stores/providerCatalogStore";
+import type { ProviderCatalogEntry } from "@/shared/types/providers";
 
 interface UseAgentProviderStatusReturn {
   readyAgentIds: Set<string>;
@@ -14,9 +13,10 @@ interface UseAgentProviderStatusReturn {
   refresh: () => Promise<void>;
 }
 
-async function checkAgentProviderReady(providerId: string): Promise<boolean> {
-  const provider = getCatalogEntry(providerId);
-  if (!provider || provider.category !== "agent") {
+async function checkAgentProviderReady(
+  provider: ProviderCatalogEntry,
+): Promise<boolean> {
+  if (provider.category !== "agent") {
     return false;
   }
 
@@ -34,11 +34,11 @@ async function checkAgentProviderReady(providerId: string): Promise<boolean> {
       return false;
     }
 
-    if (provider.authStatusCommand) {
+    if (provider.supportsAuthStatus) {
       return checkAgentAuth(provider.id);
     }
 
-    if (provider.authCommand) {
+    if (provider.supportsAuth) {
       return (
         localStorage.getItem(`agent-provider-auth:${provider.id}`) === "true"
       );
@@ -52,61 +52,57 @@ async function checkAgentProviderReady(providerId: string): Promise<boolean> {
 
 const INITIAL_READY_AGENTS = new Set<string>(["goose"]);
 
+async function checkReadyAgentIds(
+  agents: ProviderCatalogEntry[],
+): Promise<Set<string>> {
+  const readiness = await Promise.all(
+    agents.map(async (provider) => ({
+      id: provider.id,
+      isReady: await checkAgentProviderReady(provider),
+    })),
+  );
+  const readyIds = readiness
+    .filter((provider) => provider.isReady)
+    .map((provider) => provider.id);
+  return new Set(["goose", ...readyIds]);
+}
+
 export function useAgentProviderStatus(): UseAgentProviderStatusReturn {
+  const catalogEntries = useProviderCatalogStore((state) => state.entries);
   const [readyAgentIds, setReadyAgentIds] =
     useState<Set<string>>(INITIAL_READY_AGENTS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    const agentIds = getAgentProviders().map((provider) => provider.id);
-    let remaining = agentIds.length;
-
-    for (const agentId of agentIds) {
-      checkAgentProviderReady(agentId)
-        .then((isReady) => {
-          if (!cancelled && isReady) {
-            setReadyAgentIds((current) => {
-              if (current.has(agentId)) {
-                return current;
-              }
-
-              const next = new Set(current);
-              next.add(agentId);
-              return next;
-            });
-          }
-        })
-        .finally(() => {
-          remaining -= 1;
-          if (!cancelled && remaining === 0) {
-            setLoading(false);
-          }
-        });
-    }
+    const agents = getAgentProvidersFromEntries(catalogEntries);
+    setLoading(true);
+    checkReadyAgentIds(agents)
+      .then((nextReadyAgentIds) => {
+        if (!cancelled) {
+          setReadyAgentIds(nextReadyAgentIds);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [catalogEntries]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const readiness = await Promise.all(
-        getAgentProviders().map(async (provider) => ({
-          id: provider.id,
-          isReady: await checkAgentProviderReady(provider.id),
-        })),
-      );
-      const readyIds = readiness
-        .filter((provider) => provider.isReady)
-        .map((provider) => provider.id);
-      setReadyAgentIds(new Set(["goose", ...readyIds]));
+      const agents = getAgentProvidersFromEntries(catalogEntries);
+      setReadyAgentIds(await checkReadyAgentIds(agents));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [catalogEntries]);
 
   return {
     readyAgentIds,

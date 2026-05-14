@@ -1353,76 +1353,19 @@ impl ExtensionManager {
         cancellation_token: CancellationToken,
     ) -> Result<Vec<Content>, ErrorData> {
         let uri = require_str_parameter(&params, "uri")?;
+        let extension_name = require_str_parameter(&params, "extension_name")?;
 
-        let extension_name = params.get("extension_name").and_then(|v| v.as_str());
+        let read_result = self
+            .read_resource(session_id, uri, extension_name, cancellation_token)
+            .await?;
 
-        // If extension name is provided, we can just look it up
-        if let Some(ext_name) = extension_name {
-            let read_result = self
-                .read_resource(session_id, uri, ext_name, cancellation_token.clone())
-                .await?;
-
-            let mut result = Vec::new();
-            for content in read_result.contents {
-                if let ResourceContents::TextResourceContents { text, .. } = content {
-                    let content_str = format!("{}\n\n{}", uri, text);
-                    result.push(Content::text(content_str));
-                }
-            }
-            return Ok(result);
-        }
-
-        // If extension name is not provided, we need to search for the resource across all extensions
-        // Loop through each extension and try to read the resource, don't raise an error if the resource is not found
-        // TODO: do we want to find if a provided uri is in multiple extensions?
-        // currently it will return the first match and skip any others
-        let extension_names: Vec<String> = self
-            .extensions
-            .lock()
-            .await
-            .iter()
-            .filter(|(_name, ext)| ext.supports_resources())
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        for extension_name in extension_names {
-            let read_result = self
-                .read_resource(session_id, uri, &extension_name, cancellation_token.clone())
-                .await;
-            match read_result {
-                Ok(read_result) => {
-                    let mut result = Vec::new();
-                    for content in read_result.contents {
-                        if let ResourceContents::TextResourceContents { text, .. } = content {
-                            let content_str = format!("{}\n\n{}", uri, text);
-                            result.push(Content::text(content_str));
-                        }
-                    }
-                    return Ok(result);
-                }
-                Err(_) => continue,
+        let mut result = Vec::new();
+        for content in read_result.contents {
+            if let ResourceContents::TextResourceContents { text, .. } = content {
+                result.push(Content::text(format!("{}\n\n{}", uri, text)));
             }
         }
-
-        // None of the extensions had the resource so we raise an error
-        let available_extensions = self
-            .extensions
-            .lock()
-            .await
-            .keys()
-            .map(|s| s.as_str())
-            .collect::<Vec<&str>>()
-            .join(", ");
-        let error_msg = format!(
-            "Resource with uri '{}' not found. Here are the available extensions: {}",
-            uri, available_extensions
-        );
-
-        Err(ErrorData::new(
-            ErrorCode::RESOURCE_NOT_FOUND,
-            error_msg,
-            None,
-        ))
+        Ok(result)
     }
 
     pub async fn read_resource(
@@ -1542,7 +1485,7 @@ impl ExtensionManager {
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<Content>, ErrorData> {
-        let extension = params.get("extension").and_then(|v| v.as_str());
+        let extension = params.get("extension_name").and_then(|v| v.as_str());
 
         match extension {
             Some(extension_name) => {
@@ -1664,9 +1607,18 @@ impl ExtensionManager {
             }
         }
 
+        let available = tools
+            .iter()
+            .map(|t| t.name.as_ref())
+            .collect::<Vec<&str>>()
+            .join(", ");
+
         Err(ErrorData::new(
             ErrorCode::RESOURCE_NOT_FOUND,
-            format!("Tool '{}' not found", tool_name),
+            format!(
+                "Tool '{}' not found. Available tools: [{}]",
+                tool_name, available
+            ),
             None,
         ))
     }
@@ -2522,6 +2474,35 @@ mod tests {
 
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_tool_error_includes_available_tools() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+
+        extension_manager
+            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
+            .await;
+
+        let result = extension_manager
+            .resolve_tool("test-session-id", "definitely_not_a_real_tool")
+            .await;
+        let err = match result {
+            Ok(_) => panic!("resolve_tool should fail for an unknown name"),
+            Err(e) => e,
+        };
+
+        let msg = err.message.to_string();
+        assert!(
+            msg.contains("definitely_not_a_real_tool"),
+            "error should echo the bad name; got: {msg}"
+        );
+        assert!(
+            msg.contains("ext_a__"),
+            "error should list at least one real tool name; got: {msg}"
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
+import { authenticateProviderConfig } from "./credentials";
 
 interface ModelSetupOutput {
   providerId: string;
@@ -9,8 +10,9 @@ interface ModelSetupOutput {
 export async function authenticateModelProvider(
   providerId: string,
   providerLabel: string,
-): Promise<void> {
-  return invoke("authenticate_model_provider", { providerId, providerLabel });
+): Promise<ProviderConfigChangeResponse> {
+  void providerLabel;
+  return authenticateProviderConfig(providerId);
 }
 
 export function onModelSetupOutput(

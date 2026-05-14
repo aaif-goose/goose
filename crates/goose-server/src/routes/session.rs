@@ -11,6 +11,7 @@ use axum::{
 };
 use goose::agents::ExtensionConfig;
 use goose::recipe::Recipe;
+use goose::session::nostr_share;
 use goose::session::session_manager::{SessionInsights, SessionType};
 use goose::session::{EnabledExtensionsState, Session};
 use serde::{Deserialize, Serialize};
@@ -48,6 +49,28 @@ pub struct UpdateSessionUserRecipeValuesResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ImportSessionRequest {
     json: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareSessionNostrRequest {
+    #[serde(default)]
+    relays: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareSessionNostrResponse {
+    deeplink: String,
+    nevent: String,
+    event_id: String,
+    relays: Vec<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSessionNostrRequest {
+    deeplink: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -366,6 +389,79 @@ async fn import_session(
 
 #[utoipa::path(
     post,
+    path = "/sessions/{session_id}/share/nostr",
+    request_body = ShareSessionNostrRequest,
+    params(
+        ("session_id" = String, Path, description = "Unique identifier for the session")
+    ),
+    responses(
+        (status = 200, description = "Session shared to Nostr successfully", body = ShareSessionNostrResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API key"),
+        (status = 404, description = "Session not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("api_key" = [])
+    ),
+    tag = "Session Management"
+)]
+async fn share_session_nostr(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(request): Json<ShareSessionNostrRequest>,
+) -> Result<Json<ShareSessionNostrResponse>, StatusCode> {
+    let exported = state
+        .session_manager()
+        .export_session(&session_id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let relays = nostr_share::resolve_relays(request.relays, goose::config::Config::global());
+    let share = nostr_share::publish_session_json(&exported, relays)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ShareSessionNostrResponse {
+        deeplink: share.deeplink,
+        nevent: share.nevent,
+        event_id: share.event_id,
+        relays: share.relays,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/sessions/import/nostr",
+    request_body = ImportSessionNostrRequest,
+    responses(
+        (status = 200, description = "Nostr shared session imported successfully", body = Session),
+        (status = 401, description = "Unauthorized - Invalid or missing API key"),
+        (status = 400, description = "Bad request - Invalid Nostr share link"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("api_key" = [])
+    ),
+    tag = "Session Management"
+)]
+async fn import_session_nostr(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ImportSessionNostrRequest>,
+) -> Result<Json<Session>, StatusCode> {
+    let json = nostr_share::import_session_json_from_deeplink(&request.deeplink)
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let session = state
+        .session_manager()
+        .import_session(&json, Some(SessionType::User))
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    Ok(Json(session))
+}
+
+#[utoipa::path(
+    post,
     path = "/sessions/{session_id}/fork",
     request_body = ForkRequest,
     params(
@@ -506,8 +602,16 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{session_id}", delete(delete_session))
         .route("/sessions/{session_id}/export", get(export_session))
         .route(
+            "/sessions/{session_id}/share/nostr",
+            post(share_session_nostr).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+        )
+        .route(
             "/sessions/import",
             post(import_session).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+        )
+        .route(
+            "/sessions/import/nostr",
+            post(import_session_nostr).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
         )
         .route("/sessions/insights", get(get_session_insights))
         .route("/sessions/{session_id}/name", put(update_session_name))

@@ -1,4 +1,5 @@
 {
+  "navigationLabel": "Settings navigation",
   "about": {
     "buildModes": {
       "development": "Development",
@@ -82,6 +83,7 @@
   },
   "extensions": {
     "title": "Extensions",
+    "description": "Connect Goose to apps, services, and built-in capabilities.",
     "search": "Search extensions...",
     "empty": "No extensions configured.",
     "noResults": "No extensions match your search.",
@@ -160,6 +162,12 @@
       "spanish": "Spanish",
       "system": "System default ({{language}})"
     },
+    "onboarding": {
+      "description": "Show setup again the next time Goose opens.",
+      "label": "Onboarding",
+      "reset": "Reset onboarding",
+      "resetDescription": "Onboarding will appear the next time Goose opens."
+    },
     "title": "General",
     "voiceInput": {
       "label": "Voice input",
@@ -175,6 +183,9 @@
       "addApiKey": "Add API key",
       "updateApiKey": "Update API key",
       "removeApiKey": "Remove API key",
+      "providerConfigLabel": "Provider credentials",
+      "providerConfigDescription": "This transcription provider uses the credentials from its model provider setup.",
+      "openProviders": "Open Providers",
       "localModelLabel": "Local Whisper Model",
       "localModelDescription": "Download a Whisper model to run transcription locally. Selecting a model sets it as your active local transcription model.",
       "noLocalModels": "No local Whisper models available.",
@@ -328,7 +339,18 @@
         "useTemplateDescription": "Start with endpoint and model defaults for a known provider."
       }
     },
+    "catalog": {
+      "loading": "Loading provider catalog..."
+    },
     "disconnect": "Disconnect",
+    "errors": {
+      "fieldRequired": "Enter a value for {{label}}",
+      "fieldsMissing": "Fill in {{fields}}",
+      "loadFailed": "Failed to load provider settings",
+      "removeFailed": "Failed to remove",
+      "saveFailed": "Failed to save",
+      "signInFailed": "Failed to complete sign-in"
+    },
     "models": {
       "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",
       "notSet": "Not set",

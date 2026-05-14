@@ -188,18 +188,17 @@ export function CreateProjectDialog({
     try {
       let savedProject: ProjectInfo;
       if (isEditing) {
-        savedProject = await updateProject(
-          editingProject.id,
-          name.trim(),
-          "",
-          parsedPrompt,
+        savedProject = await updateProject(editingProject, {
+          name: name.trim(),
+          description: "",
+          prompt: parsedPrompt,
           icon,
           color,
-          preferredProvider || null,
+          preferredProvider: preferredProvider || null,
           preferredModel,
           workingDirs,
           useWorktrees,
-        );
+        });
       } else {
         savedProject = await createProject(
           name.trim(),

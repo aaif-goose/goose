@@ -104,7 +104,7 @@ Once installed, you can:
 - Discover options without checking `--help`
 
 **Arguments:**
-- **`<SHELL>`**: The shell to generate completions for. Supported shells: `bash`, `elvish`, `fish`, `powershell`, `zsh`
+- **`<SHELL>`**: The shell to generate completions for. Supported shells: `bash`, `elvish`, `fish`, `nu`, `powershell`, `zsh`
 
 **Usage:**
 ```bash
@@ -112,6 +112,7 @@ Once installed, you can:
 goose completion bash
 goose completion zsh
 goose completion fish
+goose completion nu
 ```
 
 **Installation by Shell:**
@@ -152,6 +153,20 @@ goose completion fish > ~/.config/fish/completions/goose.fish
 ```
 
 Then restart your terminal or run `exec fish`.
+
+</TabItem>
+<TabItem value="nu" label="Nushell">
+
+```nu
+let autoload_dir = ($nu.user-autoload-dirs | first)
+mkdir $autoload_dir
+goose completion nu | save --force ($autoload_dir | path join "goose.nu")
+```
+
+Then restart Nushell or run:
+```nu
+source (($nu.user-autoload-dirs | first) | path join "goose.nu")
+```
 
 </TabItem>
 <TabItem value="powershell" label="PowerShell">
@@ -440,16 +455,6 @@ goose run --provider anthropic --model claude-4-sonnet -t "initial prompt"
 
 # Run with limited turns before prompting user
 goose run --recipe recipe.yaml --max-turns 10
-```
-
----
-
-#### bench
-Used to evaluate system-configuration across a range of practical tasks. See the [detailed guide](/docs/tutorials/benchmarking) for more information.
-
-**Usage:**
-```bash
-goose bench ...etc.
 ```
 
 ---

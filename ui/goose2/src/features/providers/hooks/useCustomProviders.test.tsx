@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProviderInventoryStore } from "../stores/providerInventoryStore";
 import { useCustomProviders } from "./useCustomProviders";
@@ -26,7 +27,7 @@ vi.mock("../api/inventorySync", () => ({
   syncProviderInventory: mocks.syncProviderInventory,
 }));
 
-function providerEntry(providerId: string) {
+function providerEntry(providerId: string): ProviderInventoryEntryDto {
   return {
     providerId,
     providerName: "Acme AI",
@@ -34,6 +35,7 @@ function providerEntry(providerId: string) {
     defaultModel: "acme-large",
     configured: true,
     providerType: "Custom",
+    category: "model",
     configKeys: [],
     setupSteps: [],
     supportsRefresh: true,

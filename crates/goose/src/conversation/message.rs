@@ -116,11 +116,59 @@ impl ToolRequest {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
     }
+
+    /// Returns the persisted LLM-generated title for this tool call, if any.
+    /// Set asynchronously by [`crate::acp::server`] after `provider.complete_fast`
+    /// resolves; survives session reload via SQLite. Falls back to `None` for
+    /// older sessions that predate persistence — callers should use a deterministic
+    /// title in that case.
+    pub fn persisted_title(&self) -> Option<&str> {
+        self.tool_meta
+            .as_ref()
+            .and_then(|v| v.get(TOOL_META_TITLE_KEY))
+            .and_then(|v| v.as_str())
+    }
+
+    /// Returns the persisted per-chain summary anchored on this tool request,
+    /// if any. Only the FIRST tool request in a chain (a run of consecutive
+    /// tool blocks within one assistant message) carries this. See
+    /// [`crate::acp::server`] for how chains are detected and summarized.
+    pub fn persisted_chain_summary(&self) -> Option<PersistedChainSummary> {
+        let obj = self
+            .tool_meta
+            .as_ref()
+            .and_then(|v| v.get(TOOL_META_CHAIN_SUMMARY_KEY))?;
+        let summary = obj.get("summary").and_then(|v| v.as_str())?.to_string();
+        let count = obj.get("count").and_then(|v| v.as_u64())?;
+        if count == 0 {
+            return None;
+        }
+        Some(PersistedChainSummary {
+            summary,
+            count: count as usize,
+        })
+    }
+}
+
+/// A chain summary persisted on the first tool request of a chain.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PersistedChainSummary {
+    pub summary: String,
+    pub count: usize,
 }
 
 /// Marker key under `ToolRequest.tool_meta` indicating the tool was already
 /// executed externally; the agent loop must skip redispatch.
 pub const TOOL_META_EXTERNAL_DISPATCH_KEY: &str = "goose.external_dispatch";
+
+/// Key under `ToolRequest.tool_meta` storing the LLM-generated short title
+/// for this tool call. Used to make the title survive session reload.
+pub const TOOL_META_TITLE_KEY: &str = "goose.toolSummary.title";
+
+/// Key under `ToolRequest.tool_meta` storing the LLM-generated chain summary
+/// for the chain that starts at this tool request. Shape: `{ "summary": String,
+/// "count": u64 }`. Only attached to the FIRST tool request in a chain.
+pub const TOOL_META_CHAIN_SUMMARY_KEY: &str = "goose.toolChain.summary";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1634,5 +1682,79 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn make_tool_request(meta: Option<serde_json::Value>) -> super::ToolRequest {
+        super::ToolRequest {
+            id: "id-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("test_tool")),
+            metadata: None,
+            tool_meta: meta,
+        }
+    }
+
+    #[test]
+    fn persisted_title_returns_none_when_meta_missing() {
+        let req = make_tool_request(None);
+        assert_eq!(req.persisted_title(), None);
+    }
+
+    #[test]
+    fn persisted_title_returns_value_when_present() {
+        let meta = serde_json::json!({
+            super::TOOL_META_TITLE_KEY: "reading project configuration",
+        });
+        let req = make_tool_request(Some(meta));
+        assert_eq!(req.persisted_title(), Some("reading project configuration"));
+    }
+
+    #[test]
+    fn persisted_title_returns_none_for_non_string_value() {
+        let meta = serde_json::json!({ super::TOOL_META_TITLE_KEY: 42 });
+        let req = make_tool_request(Some(meta));
+        assert_eq!(req.persisted_title(), None);
+    }
+
+    #[test]
+    fn persisted_title_does_not_collide_with_external_dispatch() {
+        let meta = serde_json::json!({
+            super::TOOL_META_EXTERNAL_DISPATCH_KEY: true,
+            super::TOOL_META_TITLE_KEY: "running commands",
+        });
+        let req = make_tool_request(Some(meta));
+        assert!(req.is_externally_dispatched());
+        assert_eq!(req.persisted_title(), Some("running commands"));
+    }
+
+    #[test]
+    fn persisted_chain_summary_round_trips() {
+        let meta = serde_json::json!({
+            super::TOOL_META_CHAIN_SUMMARY_KEY: {
+                "summary": "applied dark mode polish",
+                "count": 4,
+            },
+        });
+        let req = make_tool_request(Some(meta));
+        let summary = req.persisted_chain_summary().expect("summary present");
+        assert_eq!(summary.summary, "applied dark mode polish");
+        assert_eq!(summary.count, 4);
+    }
+
+    #[test]
+    fn persisted_chain_summary_returns_none_for_missing_or_zero_count() {
+        let req = make_tool_request(None);
+        assert!(req.persisted_chain_summary().is_none());
+
+        let meta_zero = serde_json::json!({
+            super::TOOL_META_CHAIN_SUMMARY_KEY: { "summary": "x", "count": 0 },
+        });
+        let req_zero = make_tool_request(Some(meta_zero));
+        assert!(req_zero.persisted_chain_summary().is_none());
+
+        let meta_no_summary = serde_json::json!({
+            super::TOOL_META_CHAIN_SUMMARY_KEY: { "count": 3 },
+        });
+        let req_no_summary = make_tool_request(Some(meta_no_summary));
+        assert!(req_no_summary.persisted_chain_summary().is_none());
     }
 }

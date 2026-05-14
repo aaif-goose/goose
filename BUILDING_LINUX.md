@@ -9,22 +9,22 @@ This guide covers building the goose Desktop application from source on various 
 **Debian/Ubuntu:**
 ```bash
 sudo apt update
-sudo apt install -y dpkg fakeroot build-essential clang libxcb1-dev libxcb-util-dev protobuf-compiler
+sudo apt install -y dpkg fakeroot build-essential clang libxcb1-dev libxcb-util-dev protobuf-compiler libvulkan-dev libvulkan1 glslc
 ```
 
 **Arch/Manjaro:**
 ```bash
-sudo pacman -S --needed dpkg fakeroot base-devel
+sudo pacman -S --needed dpkg fakeroot base-devel vulkan-headers vulkan-icd-loader shaderc
 ```
 
 **Fedora/RHEL/CentOS:**
 ```bash
-sudo dnf install dpkg-dev fakeroot gcc gcc-c++ make libxcb-devel
+sudo dnf install dpkg-dev fakeroot gcc gcc-c++ make libxcb-devel vulkan-headers vulkan-loader glslc
 ```
 
 **openSUSE:**
 ```bash
-sudo zypper install dpkg fakeroot gcc gcc-c++ make
+sudo zypper install dpkg fakeroot gcc gcc-c++ make vulkan-headers vulkan-loader glslc
 ```
 
 **android / termux:**
@@ -125,7 +125,7 @@ sudo dpkg -i out/make/deb/x64/goose_*.deb
 ### Common Issues
 
 #### Missing System Dependencies
-If you see errors about missing `dpkg` or `fakeroot`:
+If you see errors about missing `dpkg`, `fakeroot`, Vulkan headers, or `glslc`:
 ```bash
 # Install the missing packages for your distribution (see Prerequisites above)
 ```

@@ -1,4 +1,5 @@
 {
+  "navigationLabel": "Navegación de configuración",
   "about": {
     "buildModes": {
       "development": "Desarrollo",
@@ -82,6 +83,7 @@
   },
   "extensions": {
     "title": "Extensiones",
+    "description": "Conecta Goose con apps, servicios y capacidades integradas.",
     "search": "Buscar extensiones...",
     "empty": "No hay extensiones configuradas.",
     "noResults": "Ninguna extensión coincide con tu búsqueda.",
@@ -160,6 +162,12 @@
       "spanish": "Español",
       "system": "Predeterminado del sistema ({{language}})"
     },
+    "onboarding": {
+      "description": "Muestra la configuración otra vez la próxima vez que se abra Goose.",
+      "label": "Onboarding",
+      "reset": "Restablecer onboarding",
+      "resetDescription": "El onboarding aparecerá la próxima vez que se abra Goose."
+    },
     "title": "General",
     "voiceInput": {
       "label": "Entrada de voz",
@@ -175,6 +183,9 @@
       "addApiKey": "Agregar clave API",
       "updateApiKey": "Actualizar clave API",
       "removeApiKey": "Eliminar clave API",
+      "providerConfigLabel": "Credenciales del proveedor",
+      "providerConfigDescription": "Este proveedor de transcripción usa las credenciales de la configuración de su proveedor de modelos.",
+      "openProviders": "Abrir proveedores",
       "localModelLabel": "Modelo Whisper local",
       "localModelDescription": "Descarga un modelo Whisper para transcribir localmente. Seleccionar un modelo lo establece como tu modelo de transcripción local activo.",
       "noLocalModels": "No hay modelos Whisper locales disponibles.",
@@ -328,7 +339,18 @@
         "useTemplateDescription": "Comienza con valores predeterminados de endpoint y modelos para un proveedor conocido."
       }
     },
+    "catalog": {
+      "loading": "Cargando catálogo de proveedores..."
+    },
     "disconnect": "Desconectar",
+    "errors": {
+      "fieldRequired": "Ingresa un valor para {{label}}",
+      "fieldsMissing": "Completa los campos: {{fields}}",
+      "loadFailed": "No se pudo cargar la configuración del proveedor",
+      "removeFailed": "Error al eliminar",
+      "saveFailed": "Error al guardar",
+      "signInFailed": "No se pudo completar el inicio de sesión"
+    },
     "models": {
       "description": "Necesitas al menos un proveedor de modelos para usar el agente Goose. Algunos agentes pueden traer sus propias conexiones de modelo.",
       "notSet": "No configurado",

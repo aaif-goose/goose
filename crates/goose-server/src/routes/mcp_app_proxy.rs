@@ -255,10 +255,21 @@ async fn serve_guest_html(
             // no-referrer would cause 401s from SDK servers.
             headers.insert(
                 header::HeaderName::from_static("referrer-policy"),
-                "strict-origin".parse().unwrap(),
+                header::HeaderValue::from_static("strict-origin"),
             );
             if !csp.is_empty() {
-                headers.insert(header::CONTENT_SECURITY_POLICY, csp.parse().unwrap());
+                match csp.parse::<header::HeaderValue>() {
+                    Ok(csp_value) => {
+                        headers.insert(header::CONTENT_SECURITY_POLICY, csp_value);
+                    }
+                    Err(_) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            "Invalid characters in Content-Security-Policy value",
+                        )
+                            .into_response();
+                    }
+                }
             }
             response
         }

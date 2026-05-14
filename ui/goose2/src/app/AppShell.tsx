@@ -1,19 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
 import { archiveProject } from "@/features/projects/api/projects";
 import type { ProjectInfo } from "@/features/projects/api/projects";
-import { SettingsModal } from "@/features/settings/ui/SettingsModal";
-import type { SectionId } from "@/features/settings/ui/SettingsModal";
+import {
+  DEFAULT_SETTINGS_SECTION,
+  isSettingsSection,
+  type SectionId,
+} from "@/features/settings/ui/settingsSections";
 import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
 import { TopBar } from "./ui/TopBar";
 import { useChatStore } from "@/features/chat/stores/chatStore";
+import { selectMessagesBySession } from "@/features/chat/stores/chatSelectors";
 import {
   type ChatSession,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
+import {
+  selectActiveSessionId,
+  selectHasHydratedSessions,
+  selectSessions,
+  selectSessionsLoading,
+} from "@/features/chat/stores/chatSessionSelectors";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
+import { selectSelectedProvider } from "@/features/agents/stores/agentSelectors";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
+import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import { findExistingDraft } from "@/features/chat/lib/newChat";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
 import { useAppStartup } from "./hooks/useAppStartup";
@@ -22,7 +36,8 @@ import { loadStoredHomeSessionId } from "./lib/homeSessionStorage";
 import { resolveSupportedSessionModelPreference } from "./lib/resolveSupportedSessionModelPreference";
 import { useCreatePersonaNavigation } from "./hooks/useCreatePersonaNavigation";
 import { AppShellContent } from "./ui/AppShellContent";
-import { acpPrepareSession, acpSetModel } from "@/shared/api/acp";
+import { applyLatestSessionConfig } from "@/features/chat/lib/sessionConfigRequests";
+import { updateSessionTitle } from "@/features/chat/stores/chatSessionOperations";
 import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
@@ -30,9 +45,12 @@ import {
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import { perfLog } from "@/shared/lib/perfLog";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
-import { sanitizeReplayMessages } from "@/features/chat/lib/replaySanitizer";
 import type { SkillInfo } from "@/features/skills/api/skills";
 import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
+import { OnboardingFlow } from "@/features/onboarding/ui/OnboardingFlow";
+import { useOnboardingGate } from "@/features/onboarding/hooks/useOnboardingGate";
+import { Spinner } from "@/shared/ui/spinner";
+import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 
 export type AppView =
   | "home"
@@ -41,50 +59,125 @@ export type AppView =
   | "extensions"
   | "agents"
   | "projects"
-  | "session-history";
+  | "session-history"
+  | "settings";
 
-const SIDEBAR_DEFAULT_WIDTH = 240;
-const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_OUTER_GUTTER_WIDTH = 12;
+const SIDEBAR_RESIZE_HANDLE_WIDTH = 12;
+const SIDEBAR_DEFAULT_WIDTH = SIDE_PANEL_DEFAULT_WIDTH;
+const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
-const SETTINGS_SECTIONS = new Set<SectionId>([
-  "appearance",
-  "providers",
-  "compaction",
-  "voice",
-  "general",
-  "projects",
-  "chats",
-  "doctor",
-  "about",
-]);
+const APP_SHELL_HORIZONTAL_CHROME_WIDTH = 28;
+const MIN_MAIN_CONTENT_WIDTH = 532;
+const MIN_WINDOW_HEIGHT = 600;
+const COLLAPSED_WINDOW_MIN_WIDTH =
+  SIDEBAR_COLLAPSED_WIDTH +
+  APP_SHELL_HORIZONTAL_CHROME_WIDTH +
+  MIN_MAIN_CONTENT_WIDTH;
+function getExpandedSidebarFitWidth(sidebarWidth: number) {
+  return (
+    sidebarWidth + APP_SHELL_HORIZONTAL_CHROME_WIDTH + MIN_MAIN_CONTENT_WIDTH
+  );
+}
+
+function getInitialSettingsSection(): SectionId | null {
+  if (typeof window === "undefined") return null;
+  if (window.location.pathname !== "/settings") return null;
+  const section = new URLSearchParams(window.location.search).get("section");
+  if (!section) return DEFAULT_SETTINGS_SECTION;
+  return isSettingsSection(section) ? section : DEFAULT_SETTINGS_SECTION;
+}
+
+function setSettingsSectionUrl(section: SectionId) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.pathname = "/settings";
+  url.searchParams.set("section", section);
+  window.history.replaceState(window.history.state, "", url);
+}
+
+function clearSettingsSectionUrl() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (url.pathname === "/settings") {
+    url.pathname = "/";
+  }
+  url.searchParams.delete("section");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+async function ensureWindowWidth(minWidth: number) {
+  if (!window.__TAURI_INTERNALS__ || window.innerWidth >= minWidth) {
+    return;
+  }
+
+  const { getCurrentWindow, LogicalSize } = await import(
+    "@tauri-apps/api/window"
+  );
+  await getCurrentWindow().setSize(
+    new LogicalSize(minWidth, window.innerHeight),
+  );
+}
+
+async function syncWindowMinimumSize() {
+  if (!window.__TAURI_INTERNALS__) {
+    return;
+  }
+
+  const { getCurrentWindow, LogicalSize } = await import(
+    "@tauri-apps/api/window"
+  );
+  await getCurrentWindow().setMinSize(
+    new LogicalSize(COLLAPSED_WINDOW_MIN_WIDTH, MIN_WINDOW_HEIGHT),
+  );
+}
+
 export function AppShell({ children }: { children?: React.ReactNode }) {
+  const { t } = useTranslation("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] =
-    useState<SectionId>("appearance");
+  const initialSettingsSection = getInitialSettingsSection();
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SectionId>(
+    initialSettingsSection ?? DEFAULT_SETTINGS_SECTION,
+  );
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [createProjectInitialWorkingDir, setCreateProjectInitialWorkingDir] =
     useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectInfo | null>(
     null,
   );
-  const [activeView, setActiveView] = useState<AppView>("home");
+  const [activeView, setActiveView] = useState<AppView>(
+    initialSettingsSection ? "settings" : "home",
+  );
   const [homeSessionId, setHomeSessionId] = useState<string | null>(() =>
     loadStoredHomeSessionId(),
   );
 
-  const chatStore = useChatStore();
-  const sessionStore = useChatSessionStore();
-  const agentStore = useAgentStore();
-  const projectStore = useProjectStore();
+  const messagesBySession = useChatStore(selectMessagesBySession);
+  const setChatActiveSession = useChatStore((s) => s.setActiveSession);
+  const cleanupChatSession = useChatStore((s) => s.cleanupSession);
+  const sessions = useChatSessionStore(selectSessions);
+  const activeSessionId = useChatSessionStore(selectActiveSessionId);
+  const hasHydratedSessions = useChatSessionStore(selectHasHydratedSessions);
+  const sessionsLoading = useChatSessionStore(selectSessionsLoading);
+  const createSession = useChatSessionStore((s) => s.createSession);
+  const patchSession = useChatSessionStore((s) => s.patchSession);
+  const setActiveSession = useChatSessionStore((s) => s.setActiveSession);
+  const archiveSession = useChatSessionStore((s) => s.archiveSession);
+  const selectedProvider = useAgentStore(selectSelectedProvider);
+  const projects = useProjectStore(selectProjects);
+  const fetchProjects = useProjectStore((s) => s.fetchProjects);
+  const reorderProjects = useProjectStore((s) => s.reorderProjects);
   const providerInventoryEntries = useProviderInventoryStore((s) => s.entries);
+  const startup = useAppStartup();
+  const onboardingGate = useOnboardingGate(startup.ready);
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
   );
+  const lastNonSettingsViewRef = useRef<AppView>("home");
   const homeSessionRequestRef = useRef<Promise<ChatSession | null> | null>(
     null,
   );
@@ -107,28 +200,24 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const t1 = performance.now();
       perfLog(`[perf:load] ${sid} import in ${(t1 - t0).toFixed(1)}ms`);
       const session = useChatSessionStore.getState().getSession(sessionId);
-      const gooseSessionId = session?.acpSessionId ?? sessionId;
       const project = session?.projectId
         ? (useProjectStore
             .getState()
             .projects.find((p) => p.id === session.projectId) ?? null)
         : null;
       const workingDir = await resolveSessionCwd(project);
-      await acpLoadSession(sessionId, gooseSessionId, workingDir);
+      await acpLoadSession(sessionId, workingDir);
       const tFlush = performance.now();
       useChatStore.getState().setSessionLoading(sessionId, false);
       const buffer = getAndDeleteReplayBuffer(sessionId);
-      const replayMessages = buffer
-        ? sanitizeReplayMessages(buffer)
-        : undefined;
       const replayStats = getReplayPerf(sessionId);
       clearReplayPerf(sessionId);
-      if (replayMessages) {
-        useChatStore.getState().setMessages(sessionId, replayMessages);
+      if (buffer && buffer.length > 0) {
+        useChatStore.getState().setMessages(sessionId, buffer);
       }
       const t2 = performance.now();
       perfLog(
-        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${replayMessages?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
+        `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${buffer?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,
       );
     } catch (err) {
       console.error("Failed to load session messages:", err);
@@ -137,13 +226,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     }
   }, []);
 
-  useAppStartup();
-
   useEffect(() => {
-    projectStore.fetchProjects();
-  }, [projectStore.fetchProjects]);
-
-  const { activeSessionId } = sessionStore;
+    fetchProjects();
+  }, [fetchProjects]);
 
   useEffect(() => {
     if (activeView === "chat" && activeSessionId) {
@@ -151,24 +236,30 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     }
   }, [activeSessionId, activeView]);
 
+  useEffect(() => {
+    if (activeView !== "settings") {
+      lastNonSettingsViewRef.current = activeView;
+    }
+  }, [activeView]);
+
   const activeSession = activeSessionId
-    ? sessionStore.getSession(activeSessionId)
+    ? sessions.find((session) => session.id === activeSessionId)
     : undefined;
   const homeSession = homeSessionId
-    ? sessionStore.getSession(homeSessionId)
+    ? sessions.find((session) => session.id === homeSessionId)
     : undefined;
 
   useHomeSessionStateSync({
     homeSessionId,
     homeSession,
-    messagesBySession: chatStore.messagesBySession,
-    hasHydratedSessions: sessionStore.hasHydratedSessions,
-    isLoading: sessionStore.isLoading,
+    messagesBySession,
+    hasHydratedSessions,
+    isLoading: sessionsLoading,
     setHomeSessionId,
   });
 
   const ensureHomeSession = useCallback(async () => {
-    if (!sessionStore.hasHydratedSessions || sessionStore.isLoading) {
+    if (!hasHydratedSessions || sessionsLoading) {
       return null;
     }
 
@@ -177,60 +268,101 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     }
 
     const request = (async () => {
+      const currentProvider = () =>
+        useAgentStore.getState().selectedProvider ?? "goose";
+
+      // Resolve the provider to use after an async gap. If the user changed
+      // their selection while we were awaiting (liveProvider differs from what
+      // it was before the await), prefer the live value; otherwise use the
+      // model-preference resolution result.
+      const resolveProviderAfterAwait = (
+        providerAtStart: string,
+        sessionModelPreference: { providerId: string },
+      ): string => {
+        const liveProvider = currentProvider();
+        return liveProvider !== providerAtStart
+          ? liveProvider
+          : sessionModelPreference.providerId;
+      };
+
       if (
         homeSession &&
         !homeSession.archivedAt &&
         homeSession.messageCount === 0
       ) {
+        const providerAtStart = currentProvider();
         const sessionModelPreference =
           await resolveSupportedSessionModelPreference(
-            agentStore.selectedProvider ?? "goose",
+            providerAtStart,
             providerInventoryEntries,
           );
         const project = homeSession.projectId
-          ? (projectStore.projects.find(
+          ? (projects.find(
               (candidate) => candidate.id === homeSession.projectId,
             ) ?? null)
           : null;
         const workingDir = await resolveSessionCwd(project);
-        await acpPrepareSession(
-          homeSession.id,
-          sessionModelPreference.providerId,
-          workingDir,
-          {
-            personaId: homeSession.personaId,
-          },
+        const resolvedProviderId = resolveProviderAfterAwait(
+          providerAtStart,
+          sessionModelPreference,
         );
-        const shouldClearHomeModel =
-          sessionModelPreference.providerId !== homeSession.providerId ||
-          !sessionModelPreference.modelId;
-        sessionStore.updateSession(homeSession.id, {
-          providerId: sessionModelPreference.providerId,
-          modelId: shouldClearHomeModel ? undefined : homeSession.modelId,
-          modelName: shouldClearHomeModel ? undefined : homeSession.modelName,
+        const modelIdToApply =
+          resolvedProviderId === sessionModelPreference.providerId
+            ? sessionModelPreference.modelId
+            : undefined;
+        const result = await applyLatestSessionConfig({
+          sessionId: homeSession.id,
+          providerId: resolvedProviderId,
+          workingDir,
+          modelId: modelIdToApply,
         });
-        if (sessionModelPreference.modelId) {
-          await acpSetModel(homeSession.id, sessionModelPreference.modelId);
-          sessionStore.updateSession(homeSession.id, {
-            modelId: sessionModelPreference.modelId,
-            modelName: sessionModelPreference.modelName,
-          });
+        if (!result.applied) {
+          return homeSession;
         }
-        return homeSession;
+
+        const shouldClearHomeModel =
+          resolvedProviderId !== homeSession.providerId || !modelIdToApply;
+        patchSession(homeSession.id, {
+          providerId: resolvedProviderId,
+          modelId:
+            modelIdToApply ??
+            (shouldClearHomeModel ? undefined : homeSession.modelId),
+          modelName:
+            modelIdToApply != null
+              ? sessionModelPreference.modelName
+              : shouldClearHomeModel
+                ? undefined
+                : homeSession.modelName,
+        });
+        return (
+          useChatSessionStore.getState().getSession(homeSession.id) ??
+          homeSession
+        );
       }
 
+      const providerAtStart = currentProvider();
       const workingDir = await resolveSessionCwd(null);
       const sessionModelPreference =
         await resolveSupportedSessionModelPreference(
-          agentStore.selectedProvider ?? "goose",
+          providerAtStart,
           providerInventoryEntries,
         );
-      const session = await sessionStore.createSession({
+      const resolvedProviderId = resolveProviderAfterAwait(
+        providerAtStart,
+        sessionModelPreference,
+      );
+      const session = await createSession({
         title: DEFAULT_CHAT_TITLE,
-        providerId: sessionModelPreference.providerId,
+        providerId: resolvedProviderId,
         workingDir,
-        modelId: sessionModelPreference.modelId,
-        modelName: sessionModelPreference.modelName,
+        modelId:
+          resolvedProviderId === sessionModelPreference.providerId
+            ? sessionModelPreference.modelId
+            : undefined,
+        modelName:
+          resolvedProviderId === sessionModelPreference.providerId
+            ? sessionModelPreference.modelName
+            : undefined,
       });
       setHomeSessionId(session.id);
       return session;
@@ -245,23 +377,23 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       }
     }
   }, [
-    agentStore.selectedProvider,
+    createSession,
+    hasHydratedSessions,
     homeSession,
     providerInventoryEntries,
-    projectStore.projects,
-    sessionStore.hasHydratedSessions,
-    sessionStore,
-    sessionStore.isLoading,
+    projects,
+    sessionsLoading,
+    patchSession,
   ]);
 
   useEffect(() => {
-    if (activeView !== "home") {
+    if (activeView !== "home" || onboardingGate.shouldShowOnboarding) {
       return;
     }
     void ensureHomeSession().catch((error) => {
       console.error("Failed to ensure Home session:", error);
     });
-  }, [activeView, ensureHomeSession]);
+  }, [activeView, ensureHomeSession, onboardingGate.shouldShowOnboarding]);
 
   const createNewTab = useCallback(
     async (title = DEFAULT_CHAT_TITLE, project?: ProjectInfo) => {
@@ -270,7 +402,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         `[perf:newtab] createNewTab start (project=${project?.id ?? "none"})`,
       );
       const providerId =
-        project?.preferredProvider ?? agentStore.selectedProvider ?? "goose";
+        project?.preferredProvider ?? selectedProvider ?? "goose";
       const sessionModelPreference =
         await resolveSupportedSessionModelPreference(
           providerId,
@@ -291,9 +423,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       });
 
       if (existingDraft) {
-        sessionStore.setActiveSession(existingDraft.id);
+        setActiveSession(existingDraft.id);
+        clearSettingsSectionUrl();
         setActiveView("chat");
-        chatStore.setActiveSession(existingDraft.id);
+        setChatActiveSession(existingDraft.id);
         perfLog(
           `[perf:newtab] ${existingDraft.id.slice(0, 8)} reused draft in ${(performance.now() - tStart).toFixed(1)}ms`,
         );
@@ -301,7 +434,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       }
 
       const workingDir = await resolveSessionCwd(project);
-      const session = await sessionStore.createSession({
+      const session = await createSession({
         title,
         projectId: project?.id,
         providerId: sessionModelPreference.providerId,
@@ -309,19 +442,21 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         modelId: sessionModelPreference.modelId,
         modelName: sessionModelPreference.modelName,
       });
-      sessionStore.setActiveSession(session.id);
+      setActiveSession(session.id);
+      clearSettingsSectionUrl();
       setActiveView("chat");
-      chatStore.setActiveSession(session.id);
+      setChatActiveSession(session.id);
       perfLog(
         `[perf:newtab] ${session.id.slice(0, 8)} created session in ${(performance.now() - tStart).toFixed(1)}ms`,
       );
       return session;
     },
     [
-      agentStore.selectedProvider,
-      chatStore,
+      selectedProvider,
+      createSession,
       providerInventoryEntries,
-      sessionStore,
+      setActiveSession,
+      setChatActiveSession,
     ],
   );
 
@@ -335,7 +470,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const handleStartChatWithSkill = useCallback(
     (skill: SkillInfo, projectId?: string | null) => {
       const project = projectId
-        ? projectStore.projects.find((candidate) => candidate.id === projectId)
+        ? projects.find((candidate) => candidate.id === projectId)
         : undefined;
 
       void createNewTab(DEFAULT_CHAT_TITLE, project)
@@ -348,50 +483,84 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           console.error("Failed to start chat with skill:", error);
         });
     },
-    [createNewTab, projectStore.projects],
+    [createNewTab, projects],
   );
 
   const handleNewChatInProject = useCallback(
     (projectId: string) => {
-      const project = projectStore.projects.find((p) => p.id === projectId);
+      const project = projects.find((p) => p.id === projectId);
       if (project) {
         void createNewTab(DEFAULT_CHAT_TITLE, project);
       }
     },
-    [createNewTab, projectStore.projects],
+    [createNewTab, projects],
   );
 
   const handleArchiveProject = useCallback(
     async (projectId: string) => {
       try {
         await archiveProject(projectId);
-        projectStore.fetchProjects();
+        fetchProjects();
       } catch {
         // best-effort
       }
     },
-    [projectStore.fetchProjects],
+    [fetchProjects],
   );
 
   const clearActiveSession = useCallback(
     (sessionId: string) => {
-      chatStore.cleanupSession(sessionId);
-      sessionStore.setActiveSession(null);
+      cleanupChatSession(sessionId);
+      setActiveSession(null);
+      clearSettingsSectionUrl();
       setActiveView("home");
     },
-    [chatStore, sessionStore],
+    [cleanupChatSession, setActiveSession],
   );
-  const openSettings = useCallback((section: SectionId = "appearance") => {
-    setSettingsInitialSection(section);
-    setSettingsOpen(true);
+
+  const expandSidebar = useCallback(async () => {
+    const expandedFitWidth = getExpandedSidebarFitWidth(sidebarWidth);
+
+    try {
+      await ensureWindowWidth(expandedFitWidth);
+    } catch (error) {
+      console.warn("Failed to resize window before expanding sidebar:", error);
+    }
+
+    setSidebarCollapsed(false);
+  }, [sidebarWidth]);
+
+  const openSettings = useCallback(
+    (section: SectionId = DEFAULT_SETTINGS_SECTION) => {
+      if (activeView !== "settings") {
+        lastNonSettingsViewRef.current = activeView;
+      }
+      setActiveSettingsSection(section);
+      setSettingsSectionUrl(section);
+      setActiveView("settings");
+      if (sidebarCollapsed) {
+        void expandSidebar();
+      }
+    },
+    [activeView, expandSidebar, sidebarCollapsed],
+  );
+
+  const leaveSettings = useCallback(() => {
+    clearSettingsSectionUrl();
+    setActiveView(lastNonSettingsViewRef.current);
+  }, []);
+
+  const selectSettingsSection = useCallback((section: SectionId) => {
+    setActiveSettingsSection(section);
+    setSettingsSectionUrl(section);
   }, []);
 
   useEffect(() => {
     const handleOpenSettingsEvent = (event: Event) => {
       const section = (event as CustomEvent<{ section?: string }>).detail
         ?.section;
-      if (section && SETTINGS_SECTIONS.has(section as SectionId)) {
-        openSettings(section as SectionId);
+      if (section && isSettingsSection(section)) {
+        openSettings(section);
         return;
       }
 
@@ -417,36 +586,36 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const wasActiveSession = currentActiveSessionId === sessionId;
 
       try {
-        await sessionStore.archiveSession(sessionId);
-        chatStore.cleanupSession(sessionId);
+        await archiveSession(sessionId);
+        cleanupChatSession(sessionId);
 
         if (!wasActiveSession) {
           return;
         }
 
-        sessionStore.setActiveSession(null);
+        setActiveSession(null);
         setActiveView("home");
       } catch {
         // best-effort
       }
     },
-    [chatStore, sessionStore],
+    [archiveSession, cleanupChatSession, setActiveSession],
   );
 
   const handleEditProject = useCallback(
     (projectId: string) => {
-      const project = projectStore.projects.find((p) => p.id === projectId);
+      const project = projects.find((p) => p.id === projectId);
       if (project) {
         setEditingProject(project);
         setCreateProjectOpen(true);
       }
     },
-    [projectStore.projects],
+    [projects],
   );
 
   const handleMoveToProject = useCallback(
     (sessionId: string, projectId: string | null) => {
-      sessionStore.updateSession(sessionId, { projectId });
+      useChatSessionStore.getState().patchSession(sessionId, { projectId });
 
       const session = useChatSessionStore.getState().getSession(sessionId);
       if (!session) {
@@ -464,14 +633,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         if (!workingDir) {
           return;
         }
-        await acpPrepareSession(
+        await applyLatestSessionConfig({
           sessionId,
-          session.providerId ?? agentStore.selectedProvider ?? "goose",
+          providerId: session.providerId ?? selectedProvider ?? "goose",
           workingDir,
-          {
-            personaId: session.personaId,
-          },
-        );
+          modelId: session.modelId,
+        });
       })().catch((error) => {
         console.error(
           "Failed to update ACP session project working directory:",
@@ -479,17 +646,17 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         );
       });
     },
-    [agentStore.selectedProvider, sessionStore],
+    [selectedProvider],
   );
 
   const handleRenameChat = useCallback(
     (sessionId: string, nextTitle: string) => {
-      sessionStore.updateSession(sessionId, {
-        title: nextTitle,
-        userSetName: true,
+      void updateSessionTitle(sessionId, nextTitle).catch((error) => {
+        console.error("Failed to rename session:", error);
+        toast.error(t("notifications.renameError"));
       });
     },
-    [sessionStore],
+    [t],
   );
 
   const openCreateProjectDialog = useCallback(
@@ -510,23 +677,25 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       if (homeSessionId === sessionId) {
         setHomeSessionId(null);
       }
-      sessionStore.setActiveSession(sessionId);
+      setActiveSession(sessionId);
+      clearSettingsSectionUrl();
       setActiveView("chat");
-      chatStore.setActiveSession(sessionId);
+      setChatActiveSession(sessionId);
       useChatStore.getState().markSessionRead(sessionId);
     },
-    [chatStore, homeSessionId, sessionStore],
+    [homeSessionId, setActiveSession, setChatActiveSession],
   );
 
   const handleSelectSession = useCallback(
     (id: string) => {
-      sessionStore.setActiveSession(id);
+      setActiveSession(id);
+      clearSettingsSectionUrl();
       setActiveView("chat");
-      chatStore.setActiveSession(id);
+      setChatActiveSession(id);
       useChatStore.getState().markSessionRead(id);
       loadSessionMessages(id);
     },
-    [sessionStore, chatStore, loadSessionMessages],
+    [setActiveSession, setChatActiveSession, loadSessionMessages],
   );
 
   const handleSelectSearchResult = useCallback(
@@ -543,19 +712,35 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
   const handleNavigate = useCallback(
     (view: AppView) => {
-      if (view !== "chat") {
-        sessionStore.setActiveSession(null);
+      if (view === "settings") {
+        openSettings();
+        return;
       }
+      if (view !== "chat") {
+        setActiveSession(null);
+      }
+      clearSettingsSectionUrl();
       setActiveView(view);
     },
-    [sessionStore],
+    [openSettings, setActiveSession],
   );
 
   const handleCreatePersona = useCreatePersonaNavigation(() =>
     handleNavigate("agents"),
   );
 
-  const toggleSidebar = () => setSidebarCollapsed((prev) => !prev);
+  const collapseSidebar = useCallback(() => {
+    setSidebarCollapsed(true);
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    if (sidebarCollapsed) {
+      void expandSidebar();
+      return;
+    }
+
+    collapseSidebar();
+  }, [collapseSidebar, expandSidebar, sidebarCollapsed]);
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -602,25 +787,62 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   );
 
   const handleResizeDoubleClick = useCallback(() => {
-    setSidebarCollapsed(false);
     setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+    void ensureWindowWidth(getExpandedSidebarFitWidth(SIDEBAR_DEFAULT_WIDTH))
+      .catch((error) => {
+        console.warn(
+          "Failed to resize window before resetting sidebar:",
+          error,
+        );
+      })
+      .finally(() => setSidebarCollapsed(false));
   }, []);
+
+  useEffect(() => {
+    void syncWindowMinimumSize().catch((error) => {
+      console.warn("Failed to update window minimum size:", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (sidebarCollapsed) {
+      return;
+    }
+
+    const handleWindowResize = () => {
+      if (window.innerWidth < getExpandedSidebarFitWidth(sidebarWidth)) {
+        setSidebarCollapsed(true);
+      }
+    };
+
+    handleWindowResize();
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [sidebarCollapsed, sidebarWidth]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Cmd+, for settings
       if (e.key === "," && e.metaKey) {
         e.preventDefault();
-        setSettingsOpen((prev) => !prev);
+        if (activeView === "settings") {
+          leaveSettings();
+          return;
+        }
+        openSettings();
       }
       // Cmd+B for sidebar toggle
       if (e.key === "b" && e.metaKey) {
         e.preventDefault();
-        setSidebarCollapsed((prev) => !prev);
+        toggleSidebar();
       }
       // Cmd+W returns to home instead of closing the window
       if (e.key === "w" && e.metaKey) {
         e.preventDefault();
+        if (activeView === "settings") {
+          leaveSettings();
+          return;
+        }
         const { activeSessionId } = useChatSessionStore.getState();
         if (activeSessionId) {
           clearActiveSession(activeSessionId);
@@ -629,13 +851,41 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       // Cmd+N opens new conversation screen
       if (e.key === "n" && e.metaKey) {
         e.preventDefault();
-        sessionStore.setActiveSession(null);
+        setActiveSession(null);
+        clearSettingsSectionUrl();
         setActiveView("home");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [clearActiveSession, sessionStore]);
+  }, [
+    activeView,
+    clearActiveSession,
+    leaveSettings,
+    openSettings,
+    setActiveSession,
+    toggleSidebar,
+  ]);
+
+  if (!startup.ready) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+        <Spinner className="size-5 text-brand" />
+      </div>
+    );
+  }
+
+  if (onboardingGate.shouldShowOnboarding) {
+    return (
+      <OnboardingFlow
+        readiness={onboardingGate.readiness}
+        onComplete={(setup) => {
+          onboardingGate.completeOnboarding(setup);
+          setActiveView("home");
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -646,8 +896,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           className="flex-shrink-0 h-full py-3 pl-3"
           style={{
             width: sidebarCollapsed
-              ? SIDEBAR_COLLAPSED_WIDTH + 12
-              : sidebarWidth + 12,
+              ? SIDEBAR_COLLAPSED_WIDTH + SIDEBAR_OUTER_GUTTER_WIDTH
+              : sidebarWidth + SIDEBAR_OUTER_GUTTER_WIDTH,
             transition: isResizing ? "none" : "width 200ms ease-out",
           }}
         >
@@ -657,10 +907,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             isResizing={isResizing}
             onCollapse={toggleSidebar}
             onSettingsClick={() => openSettings()}
+            onSettingsBack={leaveSettings}
+            onSettingsSectionChange={selectSettingsSection}
             onNavigate={handleNavigate}
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
-              sessionStore.setActiveSession(null);
+              setActiveSession(null);
+              clearSettingsSectionUrl();
               setActiveView("home");
             }}
             onCreateProject={() => openCreateProjectDialog()}
@@ -669,12 +922,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onArchiveChat={handleArchiveChat}
             onRenameChat={handleRenameChat}
             onMoveToProject={handleMoveToProject}
-            onReorderProject={projectStore.reorderProjects}
+            onReorderProject={reorderProjects}
             onSelectSession={handleSelectSession}
             onSelectSearchResult={handleSelectSearchResult}
             activeView={activeView}
+            activeSettingsSection={activeSettingsSection}
             activeSessionId={activeSessionId}
-            projects={projectStore.projects}
+            projects={projects}
             className="h-full rounded-xl"
           />
         </div>
@@ -683,7 +937,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         <div
           onMouseDown={handleResizeStart}
           onDoubleClick={handleResizeDoubleClick}
-          className="flex-shrink-0 w-4 h-full cursor-col-resize group flex items-center justify-center"
+          className="flex-shrink-0 h-full cursor-col-resize group flex items-center justify-center"
+          style={{ width: SIDEBAR_RESIZE_HANDLE_WIDTH }}
         >
           <div className="w-px h-8 rounded-full bg-transparent group-hover:bg-border transition-colors" />
         </div>
@@ -692,6 +947,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           {children ?? (
             <AppShellContent
               activeView={activeView}
+              activeSettingsSection={activeSettingsSection}
               activeSession={activeSession}
               homeSessionId={homeSessionId}
               onCreatePersona={handleCreatePersona}
@@ -708,13 +964,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         </main>
       </div>
 
-      {settingsOpen && (
-        <SettingsModal
-          initialSection={settingsInitialSection}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
-
       <CreateProjectDialog
         isOpen={createProjectOpen}
         onClose={() => {
@@ -724,7 +973,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           pendingProjectCreatedRef.current = null;
         }}
         onCreated={(project) => {
-          projectStore.fetchProjects();
+          fetchProjects();
           pendingProjectCreatedRef.current?.(project.id);
           pendingProjectCreatedRef.current = null;
           setCreateProjectInitialWorkingDir(null);

@@ -58,7 +58,8 @@ enum AdcCredentials {
     /// Credentials for a service account
     ServiceAccount(ServiceAccountCredentials),
     /// Credentials for the GCP native default account
-    DefaultAccount(TokenResponse),
+    #[serde(skip)]
+    DefaultAccount(String),
 }
 
 /// Credentials for an authorized user account.
@@ -258,19 +259,11 @@ impl AdcCredentials {
             ));
         }
 
-        // Get the identity token and credentials from metadata server
-        let token_response = response
-            .json::<TokenResponse>()
-            .await
-            .map_err(|e| AuthError::Credentials(format!("Invalid metadata response: {}", e)))?;
-
         // Note: When using metadata server, we have access to the OAuth2 access token
         // that can be used to authenticate applications.
-        Ok(AdcCredentials::DefaultAccount(TokenResponse {
-            token_type: token_response.token_type,
-            access_token: token_response.access_token,
-            expires_in: token_response.expires_in,
-        }))
+        // However, this token expires. Better to keep the base_url, and fetch a new token
+        // when needed
+        Ok(AdcCredentials::DefaultAccount(base_url.to_string()))
     }
 }
 
@@ -539,15 +532,36 @@ impl GcpAuth {
     /// Gets a token directly from the GCP metadata endpoint.
     ///
     /// # Arguments
-    /// * `creds` - Default Access Token Response
+    /// * `base_url` - Default Access Token base url
     ///
     /// # Returns
     /// * `Result<TokenResponse>` - The token response
-    async fn get_default_access_token(
-        &self,
-        creds: &TokenResponse,
-    ) -> Result<TokenResponse, AuthError> {
-        Ok(creds.clone())
+    async fn get_default_access_token(&self, base_url: &str) -> Result<TokenResponse, AuthError> {
+        let metadata_path = "/computeMetadata/v1/instance/service-accounts/default/token";
+        let response = self
+            .client
+            .get(format!("{}{}", base_url, metadata_path))
+            .header("Metadata-Flavor", "Google")
+            .send()
+            .await
+            .map_err(|e| AuthError::TokenExchange(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(AuthError::TokenExchange(format!(
+                "Status {}: {}",
+                status, error_text
+            )));
+        }
+
+        response
+            .json::<TokenResponse>()
+            .await
+            .map_err(|e| AuthError::TokenExchange(format!("Invalid response: {}", e)))
     }
 }
 
@@ -1019,10 +1033,8 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             result
         );
 
-        if let Ok(AdcCredentials::DefaultAccount(token_response)) = result {
-            assert_eq!(token_response.access_token, expected_token);
-            assert_eq!(token_response.token_type, expected_type);
-            assert_eq!(token_response.expires_in, expected_expires);
+        if let Ok(AdcCredentials::DefaultAccount(base_url)) = result {
+            assert_eq!(base_url, mock_server.uri());
         } else {
             panic!("Expected DefaultAccount credentials, got {:?}", result);
         }

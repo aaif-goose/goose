@@ -143,6 +143,8 @@ async fn create_schedule(
         paused: false,
         current_session_id: None,
         process_start_time: None,
+        parameters: vec![],
+        recipe_base_dir: None,
     };
 
     let scheduler = state.scheduler();
@@ -192,7 +194,7 @@ async fn list_schedules(
         ("id" = String, Path, description = "ID of the schedule to delete")
     ),
     responses(
-        (status = 204, description = "Scheduled job deleted successfully"),
+        (status = 204, description = "Scheduled job removed successfully"),
         (status = 404, description = "Scheduled job not found"),
         (status = 500, description = "Internal server error")
     ),
@@ -205,13 +207,13 @@ async fn delete_schedule(
 ) -> Result<StatusCode, ErrorResponse> {
     let scheduler = state.scheduler();
     scheduler
-        .remove_scheduled_job(&id, true)
+        .remove_scheduled_job(&id, false)
         .await
         .map_err(|e| match e {
             goose::scheduler::SchedulerError::JobNotFound(msg) => {
                 ErrorResponse::not_found(format!("Schedule not found: {}", msg))
             }
-            _ => ErrorResponse::internal(format!("Error deleting schedule: {}", e)),
+            _ => ErrorResponse::internal(format!("Error removing schedule: {}", e)),
         })?;
     Ok(StatusCode::NO_CONTENT)
 }

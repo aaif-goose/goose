@@ -5,7 +5,7 @@ import type {
   CustomProviderDeleteResponse,
   CustomProviderReadResponse,
   CustomProviderUpdateResponse,
-  ProviderCatalogEntryDto,
+  ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "@aaif/goose-sdk";
 
@@ -53,6 +53,6 @@ export type {
   CustomProviderDeleteResponse,
   CustomProviderReadResponse,
   CustomProviderUpdateResponse,
-  ProviderCatalogEntryDto,
+  ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 };

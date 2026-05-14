@@ -10,7 +10,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "1.33.0"
+    "version": "1.34.0"
   },
   "paths": {
     "/action-required/tool-confirmation": {
@@ -116,14 +116,45 @@
           "401": {
             "description": "Unauthorized - invalid secret key"
           },
+          "403": {
+            "description": "Forbidden - tool is not app-visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
-            "description": "Resource not found"
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "424": {
-            "description": "Agent not initialized"
+            "description": "Frontend tool execution requires the frontend host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
-            "description": "Internal server error"
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -2749,7 +2780,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Scheduled job deleted successfully"
+            "description": "Scheduled job removed successfully"
           },
           "404": {
             "description": "Scheduled job not found"
@@ -3099,6 +3130,50 @@
           },
           "400": {
             "description": "Bad request - Invalid JSON"
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API key"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/sessions/import/nostr": {
+      "post": {
+        "tags": [
+          "Session Management"
+        ],
+        "operationId": "import_session_nostr",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportSessionNostrRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Nostr shared session imported successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Invalid Nostr share link"
           },
           "401": {
             "description": "Unauthorized - Invalid or missing API key"
@@ -3607,6 +3682,61 @@
           },
           "400": {
             "description": "Bad request - Name too long (max 200 characters)"
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API key"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/sessions/{session_id}/share/nostr": {
+      "post": {
+        "tags": [
+          "Session Management"
+        ],
+        "operationId": "share_session_nostr",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Unique identifier for the session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareSessionNostrRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Session shared to Nostr successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareSessionNostrResponse"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized - Invalid or missing API key"
@@ -4551,6 +4681,7 @@
           },
           "dynamic_models": {
             "type": "boolean",
+            "description": "Controls whether `fetch_supported_models` calls the provider's `/v1/models`\nendpoint or returns the static `models` list directly.\n\n- `Some(false)` + non-empty `models`: return the static list; no API call.\nConstruction fails if `models` is empty.\n- `Some(true)` or `None`: try the API; fall back to `models` on 404.",
             "nullable": true
           },
           "engine": {
@@ -5211,6 +5342,9 @@
           },
           {
             "type": "object",
+            "required": [
+              "enabled"
+            ],
             "properties": {
               "enabled": {
                 "type": "boolean"
@@ -5586,6 +5720,17 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ImportSessionNostrRequest": {
+        "type": "object",
+        "required": [
+          "deeplink"
+        ],
+        "properties": {
+          "deeplink": {
             "type": "string"
           }
         }
@@ -7677,12 +7822,33 @@
             "format": "date-time",
             "nullable": true
           },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
           "paused": {
             "type": "boolean"
           },
           "process_start_time": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "recipe_base_dir": {
+            "type": "string",
+            "description": "Original directory of the recipe file before it was copied to scheduled_recipes/.\nPreserved so that relative paths (sub-recipes, template includes) resolve correctly\nagainst the source tree rather than the scheduler's internal storage directory.",
             "nullable": true
           },
           "source": {
@@ -7715,6 +7881,11 @@
           "accumulated_total_tokens": {
             "type": "integer",
             "format": "int32",
+            "nullable": true
+          },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           },
           "conversation": {
@@ -7763,6 +7934,10 @@
             "format": "int32",
             "nullable": true
           },
+          "project_id": {
+            "type": "string",
+            "nullable": true
+          },
           "provider_name": {
             "type": "string",
             "nullable": true
@@ -7781,10 +7956,6 @@
           },
           "session_type": {
             "$ref": "#/components/schemas/SessionType"
-          },
-          "thread_id": {
-            "type": "string",
-            "nullable": true
           },
           "total_tokens": {
             "type": "integer",
@@ -8041,6 +8212,43 @@
           },
           "success": {
             "type": "boolean"
+          }
+        }
+      },
+      "ShareSessionNostrRequest": {
+        "type": "object",
+        "properties": {
+          "relays": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ShareSessionNostrResponse": {
+        "type": "object",
+        "required": [
+          "deeplink",
+          "nevent",
+          "eventId",
+          "relays"
+        ],
+        "properties": {
+          "deeplink": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "nevent": {
+            "type": "string"
+          },
+          "relays": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
