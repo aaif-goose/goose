@@ -25,6 +25,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Amazon Bedrock](https://aws.amazon.com/bedrock/)                           | Offers a variety of foundation models, including Claude, Jurassic-2, and others. **AWS environment variables must be set in advance, not configured through `goose configure`**                                           | Credential auth: `AWS_PROFILE`, or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`<br /><br />Bearer token auth: `AWS_BEARER_TOKEN_BEDROCK` and `AWS_REGION`, `AWS_DEFAULT_REGION`, or `AWS_PROFILE` |
 | [Amazon SageMaker TGI](https://docs.aws.amazon.com/sagemaker/latest/dg/realtime-endpoints.html) | Run Text Generation Inference models through Amazon SageMaker endpoints. **AWS credentials must be configured in advance.** | `SAGEMAKER_ENDPOINT_NAME`, `AWS_REGION` (optional), `AWS_PROFILE` (optional)  |
 | [Anthropic](https://www.anthropic.com/)                                     | Offers Claude, an advanced AI model for natural language tasks.                                                                                                                                                           | `ANTHROPIC_API_KEY`, `ANTHROPIC_HOST` (optional)                                                                                                                                                                 |
+| [Atomic Chat](https://github.com/AtomicBot-ai/Atomic-Chat)                | Open-source desktop client with a local OpenAI-compatible API (default `http://localhost:1337/v1`) for local MLX / llama.cpp models and optional cloud providers. **Start Atomic Chat and ensure a model is available** (see project README). | None required in goose for the default local API. `ATOMIC_CHAT_HOST` (optional, default `http://localhost:1337`). If your endpoint requires auth, use a [custom OpenAI-compatible provider](#configure-custom-provider). |
 | [Avian](https://avian.io/)                                                   | Cost-effective inference API with DeepSeek, Kimi, GLM, and MiniMax models. OpenAI-compatible with streaming and function calling support.                                                                                  | `AVIAN_API_KEY`, `AVIAN_HOST` (optional)                                                                                                                                            |
 | [Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/) | Access Azure-hosted OpenAI models, including GPT-4 and GPT-3.5. Supports both API key and Azure credential chain authentication.                                                                                          | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT_NAME`, `AZURE_OPENAI_API_KEY` (optional)                                                                                           |
 | [ChatGPT Codex](https://chatgpt.com/codex) | Access GPT-5 Codex models optimized for code generation and understanding. **Requires a ChatGPT Plus/Pro subscription.** | No manual key. Uses browser-based OAuth authentication for both CLI and Desktop. |
@@ -771,6 +772,40 @@ To set up Novita AI with goose, follow these steps:
     3. Follow the prompts to choose `Novita AI` as the provider.
     4. Enter your API key when prompted.
     5. Select the Novita AI model of your choice.
+  </TabItem>
+</Tabs>
+
+### Atomic Chat
+[Atomic Chat](https://github.com/AtomicBot-ai/Atomic-Chat) is an open-source ChatGPT-style desktop app (Tauri) for local LLMs and optional cloud models. While the app is running it serves an **OpenAI-compatible HTTP API** at `http://localhost:1337/v1` by default, so goose can use `POST /v1/chat/completions` against the same local models you use in the UI.
+
+`/v1/models` is queried at configure time when dynamic models are enabled. For the shipped declarative defaults, see [atomic_chat.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/atomic_chat.json).
+
+This built-in provider assumes the default **unauthenticated** local API. If you point goose at an endpoint that requires a bearer token or other auth, configure a [custom OpenAI-compatible provider](#configure-custom-provider) instead.
+
+To set up Atomic Chat with goose, follow these steps:
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  **To update your LLM provider:**
+
+    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click the `Models` tab.
+    4. Click `Configure Providers`
+    5. Choose `Atomic Chat` as provider from the list.
+    6. Click `Configure`, set `ATOMIC_CHAT_HOST` if Atomic Chat's API is not at the default `http://localhost:1337`, and click `Submit`.
+    7. Select a model from the list returned by Atomic Chat's `/v1/models` endpoint.
+
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    1. Run:
+    ```sh
+    goose configure
+    ```
+    2. Select `Configure Providers` from the menu.
+    3. Follow the prompts to choose `Atomic Chat` as the provider.
+    4. Adjust `ATOMIC_CHAT_HOST` if needed (default `http://localhost:1337`).
+    5. Select a model from Atomic Chat's API.
   </TabItem>
 </Tabs>
 

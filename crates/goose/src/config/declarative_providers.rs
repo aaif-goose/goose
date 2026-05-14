@@ -880,6 +880,37 @@ mod tests {
     }
 
     #[test]
+    fn test_atomic_chat_json_deserializes() {
+        let json = include_str!("../providers/declarative/atomic_chat.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("atomic_chat.json should parse");
+        assert_eq!(config.name, "atomic_chat");
+        assert_eq!(config.display_name, "Atomic Chat");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "");
+        assert!(!config.requires_auth);
+        assert!(config.skip_canonical_filtering);
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert_eq!(
+            config.base_url,
+            "${ATOMIC_CHAT_HOST}/v1/chat/completions"
+        );
+        assert!(config.models.is_empty());
+
+        let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
+        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars[0].name, "ATOMIC_CHAT_HOST");
+        assert!(!env_vars[0].required);
+        assert!(!env_vars[0].secret);
+        assert_eq!(env_vars[0].primary, Some(true));
+        assert_eq!(
+            env_vars[0].default,
+            Some("http://localhost:1337".to_string())
+        );
+    }
+
+    #[test]
     fn test_routstr_json_deserializes() {
         let json = include_str!("../providers/declarative/routstr.json");
         let config: DeclarativeProviderConfig =
