@@ -63,14 +63,52 @@ fn recipe_commands(
                 return None;
             }
 
+            let metadata = recipe_entry(&mapping.recipe_path)?;
+
             Some(SlashCommandEntry {
                 name,
-                description: recipe_description(&mapping.recipe_path),
+                description: metadata.description,
                 source: SlashCommandSource::Recipe,
-                input_hint: None,
+                input_hint: metadata.input_hint,
             })
         })
         .collect()
+}
+
+struct RecipeCommandMetadata {
+    description: String,
+    input_hint: Option<String>,
+}
+
+fn recipe_entry(recipe_path: &str) -> Option<RecipeCommandMetadata> {
+    let recipe_path = std::path::PathBuf::from(recipe_path);
+    if !recipe_path.exists() {
+        return None;
+    }
+
+    let recipe_content = std::fs::read_to_string(&recipe_path).ok()?;
+    let recipe_dir = recipe_path.parent()?;
+    let recipe_dir_str = recipe_dir.display().to_string();
+    let validation_result = crate::recipe::validate_recipe::validate_recipe_template_from_content(
+        &recipe_content,
+        Some(recipe_dir_str),
+    )
+    .ok()?;
+
+    let required_param_count = validation_result
+        .parameters
+        .as_ref()
+        .map(|params| params.iter().filter(|p| p.default.is_none()).count())
+        .unwrap_or(0);
+
+    if required_param_count > 1 {
+        return None;
+    }
+
+    Some(RecipeCommandMetadata {
+        description: validation_result.description,
+        input_hint: input_hint_for_recipe(validation_result.parameters.as_ref()),
+    })
 }
 
 fn skill_commands(sources: Vec<SourceEntry>) -> Vec<SlashCommandEntry> {
@@ -96,20 +134,15 @@ fn normalize_command_name(name: &str) -> String {
     name.trim_start_matches('/').to_lowercase()
 }
 
-fn recipe_description(recipe_path: &str) -> String {
-    let default_description = "Run recipe slash command".to_string();
-    let Ok(recipe_content) = std::fs::read_to_string(recipe_path) else {
-        return default_description;
-    };
-    let Ok(recipe) = crate::recipe::Recipe::from_content(&recipe_content) else {
-        return default_description;
-    };
+fn input_hint_for_recipe(params: Option<&Vec<crate::recipe::RecipeParameter>>) -> Option<String> {
+    let params = params?;
 
-    if recipe.description.is_empty() {
-        recipe.title
-    } else {
-        recipe.description
-    }
+    params
+        .iter()
+        .find(|p| p.key == "args")
+        .or_else(|| params.iter().find(|p| p.default.is_none()))
+        .or_else(|| params.first())
+        .map(|p| p.description.clone())
 }
 
 fn builtin_input_hint(command: &str) -> Option<&'static str> {
@@ -221,7 +254,7 @@ mod tests {
         let recipe_path = tmp.path().join("review.yaml");
         std::fs::write(
             &recipe_path,
-            "version: 1.0.0\ntitle: Review Recipe\ndescription: Review with a recipe\ninstructions: Review the change\n",
+            "version: 1.0.0\ntitle: Review Recipe\ndescription: Review with a recipe\ninstructions: Review the change\nparameters:\n  - key: args\n    description: Describe what to review\n",
         )
         .unwrap();
 
@@ -234,11 +267,21 @@ mod tests {
         assert_eq!(commands[0].name, "review");
         assert_eq!(commands[0].description, "Review with a recipe");
         assert_eq!(commands[0].source, SlashCommandSource::Recipe);
-        assert_eq!(commands[0].input_hint, None);
+        assert_eq!(
+            commands[0].input_hint.as_deref(),
+            Some("Describe what to review")
+        );
     }
 
     #[test]
     fn recipe_commands_reserve_names_before_skills() {
+        let tmp = TempDir::new().unwrap();
+        let recipe_path = tmp.path().join("review.yaml");
+        std::fs::write(
+            &recipe_path,
+            "version: 1.0.0\ntitle: Review Recipe\ndescription: Review with a recipe\ninstructions: Review the change\n",
+        )
+        .unwrap();
         let mut commands = list_builtin_commands();
         let mut reserved_names: HashSet<String> = commands
             .iter()
@@ -246,7 +289,7 @@ mod tests {
             .collect();
         for command in recipe_commands(vec![crate::slash_commands::SlashCommandMapping {
             command: "review".to_string(),
-            recipe_path: "missing.yaml".to_string(),
+            recipe_path: recipe_path.to_string_lossy().to_string(),
         }]) {
             let name = normalize_command_name(&command.name);
             if reserved_names.insert(name) {
@@ -270,6 +313,40 @@ mod tests {
 
         assert_eq!(review_commands.len(), 1);
         assert_eq!(review_commands[0].source, SlashCommandSource::Recipe);
+    }
+
+    #[test]
+    fn recipe_commands_skip_missing_invalid_and_multi_required_param_recipes() {
+        let tmp = TempDir::new().unwrap();
+        let invalid_recipe_path = tmp.path().join("invalid.yaml");
+        std::fs::write(&invalid_recipe_path, "not: a recipe").unwrap();
+        let multi_param_recipe_path = tmp.path().join("multi.yaml");
+        std::fs::write(
+            &multi_param_recipe_path,
+            "version: 1.0.0\ntitle: Multi Param Recipe\ndescription: Has too many required params\ninstructions: Review the change\nparameters:\n  - key: first\n    description: First param\n  - key: second\n    description: Second param\n",
+        )
+        .unwrap();
+
+        let commands = recipe_commands(vec![
+            crate::slash_commands::SlashCommandMapping {
+                command: "missing".to_string(),
+                recipe_path: tmp
+                    .path()
+                    .join("missing.yaml")
+                    .to_string_lossy()
+                    .to_string(),
+            },
+            crate::slash_commands::SlashCommandMapping {
+                command: "invalid".to_string(),
+                recipe_path: invalid_recipe_path.to_string_lossy().to_string(),
+            },
+            crate::slash_commands::SlashCommandMapping {
+                command: "multi".to_string(),
+                recipe_path: multi_param_recipe_path.to_string_lossy().to_string(),
+            },
+        ]);
+
+        assert!(commands.is_empty());
     }
 
     fn source_entry(source_type: SourceType, name: &str, description: &str) -> SourceEntry {
