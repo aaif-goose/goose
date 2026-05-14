@@ -5,9 +5,10 @@
 //! explicit diff range), and dispatches the review to the configured agent.
 //!
 //! Modeled after Amp's `review` command.
+//!
+//! Check parsing and discovery live in [`goose::checks`] so they can be reused
+//! from other entry points (server, ACP) without depending on this CLI.
 
-pub mod check;
-pub mod discover;
 pub mod handler;
 pub mod orchestrator;
 pub mod prompt;

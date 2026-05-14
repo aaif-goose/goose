@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use super::check::Check;
-use super::discover::DiscoveredReview;
+use goose::checks::{Check, DiscoveredReview};
 
 /// The default review prompt embedded in the binary.
 pub const DEFAULT_REVIEW_PROMPT: &str = include_str!("default_review_prompt.md");
@@ -112,8 +111,6 @@ fn escape_pipe(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::review::check::Check;
-    use crate::commands::review::discover::DiscoveredReview;
     use std::path::PathBuf;
 
     fn check(name: &str, scope: &str, model: Option<&str>, turn_limit: Option<usize>) -> Check {

@@ -5,7 +5,8 @@ use std::process::Command;
 
 use crate::session::{build_session, SessionBuilderConfig};
 
-use super::discover::{discover, DiscoveredReview};
+use goose::checks::{discover, DiscoveredReview};
+
 use super::orchestrator::{
     emit_findings, run_checks_in_parallel, run_main_pass_in_parallel, Severity,
 };
@@ -485,7 +486,7 @@ fn synthesize_untracked_diff(repo_root: &Path, paths: &[String]) -> Result<Strin
 }
 
 /// Convert repo-relative `touched` paths into paths relative to
-/// `discovery_root` so [`super::discover::discover`] doesn't double-
+/// `discovery_root` so [`goose::checks::discover`] doesn't double-
 /// prefix `<scope>/api/...` when `--check-scope` points at a subtree.
 /// Files outside the scope are dropped — they cannot affect any
 /// scoped check inside `discovery_root`.
@@ -515,7 +516,7 @@ fn rebase_touched_to_scope(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::review::check::Check;
+    use goose::checks::Check;
     use std::path::PathBuf;
 
     fn ck(name: &str) -> Check {
