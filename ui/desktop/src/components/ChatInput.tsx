@@ -60,11 +60,11 @@ turndown.addRule('complexLinks', {
       /\n/.test(node.textContent || '')
     );
   },
-  replacement: (_content, node) => {
+  replacement: (content, node) => {
     const el = node as HTMLElement;
     const href = el.getAttribute('href')!;
-    const text = (el.textContent || '').trim().replace(/\n+/g, ' ');
-    return `[${text}](${href})`;
+    const label = content.replace(/\n+/g, ' ').trim();
+    return `[${label}](${href})`;
   },
 });
 
