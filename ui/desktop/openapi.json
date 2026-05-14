@@ -1583,6 +1583,8 @@
         "tags": [
           "super::routes::config_management"
         ],
+        "summary": "Update configuration values. Fields set to null are left unchanged — to delete",
+        "description": "a key, use `POST /config/remove`. Secret fields (API keys) are stored in the\nsystem keyring, not the config file.",
         "operationId": "patch_typed_config",
         "requestBody": {
           "content": {
@@ -5833,7 +5835,7 @@
             "minimum": 0
           },
           "GOOSE_DISABLE_KEYRING": {
-            "type": "string",
+            "type": "boolean",
             "nullable": true
           },
           "GOOSE_DISABLE_SESSION_NAMING": {
@@ -6133,585 +6135,69 @@
         }
       },
       "GooseConfigUpdate": {
-        "type": "object",
-        "properties": {
-          "ANTHROPIC_API_KEY": {
-            "type": "string",
-            "nullable": true
-          },
-          "ANTHROPIC_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "AVIAN_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "AWS_PROFILE": {
-            "type": "string",
-            "nullable": true
-          },
-          "AWS_REGION": {
-            "type": "string",
-            "nullable": true
-          },
-          "AZURE_OPENAI_API_KEY": {
-            "type": "string",
-            "nullable": true
-          },
-          "AZURE_OPENAI_API_VERSION": {
-            "type": "string",
-            "nullable": true
-          },
-          "AZURE_OPENAI_DEPLOYMENT_NAME": {
-            "type": "string",
-            "nullable": true
-          },
-          "AZURE_OPENAI_ENDPOINT": {
-            "type": "string",
-            "nullable": true
-          },
-          "BEDROCK_BACKOFF_MULTIPLIER": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "BEDROCK_ENABLE_CACHING": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "BEDROCK_INITIAL_RETRY_INTERVAL_MS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "BEDROCK_MAX_RETRIES": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "BEDROCK_MAX_RETRY_INTERVAL_MS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "CHATGPT_CODEX_REASONING_EFFORT": {
-            "type": "string",
-            "nullable": true
-          },
-          "CLAUDE_CODE_COMMAND": {
-            "type": "string",
-            "nullable": true
-          },
-          "CLAUDE_THINKING_BUDGET": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "CLAUDE_THINKING_EFFORT": {
-            "type": "string",
-            "nullable": true
-          },
-          "CLAUDE_THINKING_TYPE": {
-            "type": "string",
-            "nullable": true
-          },
-          "CODEX_COMMAND": {
-            "type": "string",
-            "nullable": true
-          },
-          "CODEX_ENABLE_SKILLS": {
-            "type": "string",
-            "nullable": true
-          },
-          "CODEX_REASONING_EFFORT": {
-            "type": "string",
-            "nullable": true
-          },
-          "CODEX_SKIP_GIT_CHECK": {
-            "type": "string",
-            "nullable": true
-          },
-          "CODE_MODE_TOOL_DISCLOSURE": {
-            "type": "string",
-            "nullable": true
-          },
-          "CONTEXT_FILE_NAMES": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "CURSOR_AGENT_COMMAND": {
-            "type": "string",
-            "nullable": true
-          },
-          "DATABRICKS_BACKOFF_MULTIPLIER": {
-            "type": "string",
-            "nullable": true
-          },
-          "DATABRICKS_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "DATABRICKS_INITIAL_RETRY_INTERVAL_MS": {
-            "type": "string",
-            "nullable": true
-          },
-          "DATABRICKS_MAX_RETRIES": {
-            "type": "string",
-            "nullable": true
-          },
-          "DATABRICKS_MAX_RETRY_INTERVAL_MS": {
-            "type": "string",
-            "nullable": true
-          },
-          "DATABRICKS_TOKEN": {
-            "type": "string",
-            "nullable": true
-          },
-          "EDIT_MODE": {
-            "type": "string",
-            "nullable": true
-          },
-          "GCP_BACKOFF_MULTIPLIER": {
-            "type": "string",
-            "nullable": true
-          },
-          "GCP_INITIAL_RETRY_INTERVAL_MS": {
-            "type": "string",
-            "nullable": true
-          },
-          "GCP_LOCATION": {
-            "type": "string",
-            "nullable": true
-          },
-          "GCP_MAX_RETRIES": {
-            "type": "string",
-            "nullable": true
-          },
-          "GCP_MAX_RETRY_INTERVAL_MS": {
-            "type": "string",
-            "nullable": true
-          },
-          "GCP_PROJECT_ID": {
-            "type": "string",
-            "nullable": true
-          },
-          "GEMINI25_THINKING_BUDGET": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "GEMINI3_THINKING_LEVEL": {
-            "type": "string",
-            "nullable": true
-          },
-          "GEMINI_CLI_COMMAND": {
-            "type": "string",
-            "nullable": true
-          },
-          "GITHUB_COPILOT_CLIENT_ID": {
-            "type": "string",
-            "nullable": true
-          },
-          "GITHUB_COPILOT_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "GITHUB_COPILOT_TOKEN_URL": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOGLE_API_KEY": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOGLE_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_ALLOWLIST": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_AUTO_COMPACT_THRESHOLD": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "GOOSE_CA_CERT_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CLIENT_CERT_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CLIENT_KEY_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CLI_DARK_THEME": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CLI_LIGHT_THEME": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CLI_MIN_PRIORITY": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "GOOSE_CLI_NEWLINE_KEY": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CLI_SHOW_COST": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_CLI_SHOW_THINKING": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_CLI_THEME": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_CONTEXT_LIMIT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_DATABRICKS_CLIENT_REQUEST_ID": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_DEBUG": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_DEFAULT_EXTENSION_TIMEOUT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_DISABLE_KEYRING": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_DISABLE_SESSION_NAMING": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_INPUT_LIMIT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_LOCAL_ENABLE_THINKING": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_MAX_ACTIVE_AGENTS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_MAX_BACKGROUND_TASKS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_MAX_TOKENS": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "GOOSE_MAX_TURNS": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_MODE": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/GooseMode"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GooseConfigSchema"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ANTHROPIC_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "AVIAN_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "AZURE_OPENAI_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "DATABRICKS_TOKEN": {
+                "type": "string",
+                "nullable": true
+              },
+              "GOOGLE_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "GROQ_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "LITELLM_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "OPENAI_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "OPENROUTER_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "SNOWFLAKE_TOKEN": {
+                "type": "string",
+                "nullable": true
+              },
+              "TETRATE_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "VENICE_API_KEY": {
+                "type": "string",
+                "nullable": true
+              },
+              "XAI_API_KEY": {
+                "type": "string",
+                "nullable": true
               }
-            ],
-            "nullable": true
-          },
-          "GOOSE_MODEL": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_PLANNER_MODEL": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_PLANNER_PROVIDER": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_PROMPT_EDITOR": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_PROMPT_EDITOR_ALWAYS": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_PROVIDER": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_RECIPE_GITHUB_REPO": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_SEARCH_PATHS": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "GOOSE_SHOW_FULL_OUTPUT": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_STATUS_HOOK": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_STREAM_TIMEOUT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_SUBAGENT_MAX_TURNS": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_SUBAGENT_MODEL": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_SUBAGENT_PROVIDER": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_SYSTEM_PROMPT_FILE_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "GOOSE_TELEMETRY_ENABLED": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "GOOSE_TOOL_CALL_CUTOFF": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "GOOSE_TOOL_PAIR_SUMMARIZATION": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "LITELLM_BASE_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "LITELLM_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "LITELLM_TIMEOUT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "OLLAMA_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "OLLAMA_STREAM_TIMEOUT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "OLLAMA_STREAM_USAGE": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "OLLAMA_TIMEOUT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "OPENAI_API_KEY": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENAI_BASE_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENAI_BASE_URL": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENAI_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENAI_ORGANIZATION": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENAI_PROJECT": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENAI_TIMEOUT": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "OPENROUTER_API_KEY": {
-            "type": "string",
-            "nullable": true
-          },
-          "OPENROUTER_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "RANDOM_THINKING_MESSAGES": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "SAGEMAKER_ENDPOINT_NAME": {
-            "type": "string",
-            "nullable": true
-          },
-          "SECURITY_COMMAND_CLASSIFIER_ENABLED": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "SECURITY_PROMPT_CLASSIFIER_ENABLED": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "SECURITY_PROMPT_CLASSIFIER_ENDPOINT": {
-            "type": "string",
-            "nullable": true
-          },
-          "SECURITY_PROMPT_CLASSIFIER_MODEL": {
-            "type": "string",
-            "nullable": true
-          },
-          "SECURITY_PROMPT_ENABLED": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "SECURITY_PROMPT_THRESHOLD": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "SNOWFLAKE_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "TETRATE_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "VENICE_BASE_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "VENICE_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "VENICE_MODELS_PATH": {
-            "type": "string",
-            "nullable": true
-          },
-          "XAI_HOST": {
-            "type": "string",
-            "nullable": true
-          },
-          "experiments": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "boolean"
-            },
-            "nullable": true
-          },
-          "extensions": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/ExtensionEntry"
-            },
-            "nullable": true
-          },
-          "otel_exporter_otlp_endpoint": {
-            "type": "string",
-            "nullable": true
-          },
-          "otel_exporter_otlp_timeout": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "slash_commands": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SlashCommandMapping"
-            },
-            "nullable": true
-          },
-          "tunnel_auto_start": {
-            "type": "boolean",
-            "nullable": true
+            }
           }
-        }
+        ],
+        "description": "Config update payload for `PATCH /config/typed`.\n\nEmbeds all non-secret fields from [`GooseConfigSchema`] via `#[serde(flatten)]`,\nplus provider API key fields that route to the system keyring.\nFields set to `null` are left unchanged — to delete a key, use `POST /config/remove`."
       },
       "GooseMode": {
         "type": "string",

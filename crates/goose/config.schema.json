@@ -111,7 +111,7 @@
     },
     "GOOSE_DISABLE_KEYRING": {
       "type": [
-        "string",
+        "boolean",
         "null"
       ]
     },

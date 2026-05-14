@@ -46,7 +46,7 @@ pub struct GooseConfigSchema {
     #[serde(rename = "GOOSE_DISABLE_SESSION_NAMING")]
     pub goose_disable_session_naming: Option<bool>,
     #[serde(rename = "GOOSE_DISABLE_KEYRING")]
-    pub goose_disable_keyring: Option<String>,
+    pub goose_disable_keyring: Option<bool>,
     #[serde(rename = "GOOSE_TELEMETRY_ENABLED")]
     pub goose_telemetry_enabled: Option<bool>,
     #[serde(rename = "GOOSE_DEFAULT_EXTENSION_TIMEOUT")]
@@ -271,7 +271,7 @@ pub struct GooseConfigSchema {
     // === Tunnel Settings (lowercase keys) ===
     pub tunnel_auto_start: Option<bool>,
 
-    // === Structured Config (lowercase keys) ===
+    // Category B: not in ALL_KEYS — these use dedicated module helpers, not config_value! macro
     pub extensions: Option<HashMap<String, ExtensionEntry>>,
     pub slash_commands: Option<Vec<SlashCommandMapping>>,
     pub experiments: Option<HashMap<String, bool>>,
@@ -413,6 +413,7 @@ impl GooseConfigSchema {
         "tunnel_auto_start",
     ];
 
+    // const fn cannot use == on &str in stable Rust; manual byte comparison required
     pub const fn has_key(key: &str) -> bool {
         let key_bytes = key.as_bytes();
         let mut i = 0;
@@ -592,8 +593,9 @@ impl GooseConfigSchema {
         macro_rules! push_if_some {
             ($field:expr, $key:expr) => {
                 if let Some(ref v) = $field {
-                    if let Ok(json) = serde_json::to_value(v) {
-                        updates.push(($key.to_string(), json));
+                    match serde_json::to_value(v) {
+                        Ok(json) => updates.push(($key.to_string(), json)),
+                        Err(e) => tracing::warn!("Failed to serialize config key {}: {}", $key, e),
                     }
                 }
             };
@@ -804,267 +806,15 @@ impl GooseConfigSchema {
     }
 }
 
+/// Config update payload for `PATCH /config/typed`.
+///
+/// Embeds all non-secret fields from [`GooseConfigSchema`] via `#[serde(flatten)]`,
+/// plus provider API key fields that route to the system keyring.
+/// Fields set to `null` are left unchanged — to delete a key, use `POST /config/remove`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
 pub struct GooseConfigUpdate {
-    // === Core Goose Settings ===
-    #[serde(rename = "GOOSE_PROVIDER")]
-    pub goose_provider: Option<String>,
-    #[serde(rename = "GOOSE_MODEL")]
-    pub goose_model: Option<String>,
-    #[serde(rename = "GOOSE_MODE")]
-    pub goose_mode: Option<GooseMode>,
-    #[serde(rename = "GOOSE_MAX_TOKENS")]
-    pub goose_max_tokens: Option<i32>,
-    #[serde(rename = "GOOSE_CONTEXT_LIMIT")]
-    pub goose_context_limit: Option<u64>,
-    #[serde(rename = "GOOSE_INPUT_LIMIT")]
-    pub goose_input_limit: Option<u64>,
-    #[serde(rename = "GOOSE_MAX_TURNS")]
-    pub goose_max_turns: Option<u32>,
-    #[serde(rename = "GOOSE_MAX_ACTIVE_AGENTS")]
-    pub goose_max_active_agents: Option<u64>,
-    #[serde(rename = "GOOSE_AUTO_COMPACT_THRESHOLD")]
-    pub goose_auto_compact_threshold: Option<f64>,
-    #[serde(rename = "GOOSE_TOOL_PAIR_SUMMARIZATION")]
-    pub goose_tool_pair_summarization: Option<bool>,
-    #[serde(rename = "GOOSE_TOOL_CALL_CUTOFF")]
-    pub goose_tool_call_cutoff: Option<u64>,
-    #[serde(rename = "GOOSE_STREAM_TIMEOUT")]
-    pub goose_stream_timeout: Option<u64>,
-    #[serde(rename = "GOOSE_SEARCH_PATHS")]
-    pub goose_search_paths: Option<Vec<String>>,
-    #[serde(rename = "GOOSE_DISABLE_SESSION_NAMING")]
-    pub goose_disable_session_naming: Option<bool>,
-    #[serde(rename = "GOOSE_DISABLE_KEYRING")]
-    pub goose_disable_keyring: Option<String>,
-    #[serde(rename = "GOOSE_TELEMETRY_ENABLED")]
-    pub goose_telemetry_enabled: Option<bool>,
-    #[serde(rename = "GOOSE_DEFAULT_EXTENSION_TIMEOUT")]
-    pub goose_default_extension_timeout: Option<u64>,
-    #[serde(rename = "GOOSE_PROMPT_EDITOR")]
-    pub goose_prompt_editor: Option<String>,
-    #[serde(rename = "GOOSE_PROMPT_EDITOR_ALWAYS")]
-    pub goose_prompt_editor_always: Option<bool>,
-    #[serde(rename = "GOOSE_ALLOWLIST")]
-    pub goose_allowlist: Option<String>,
-    #[serde(rename = "GOOSE_SYSTEM_PROMPT_FILE_PATH")]
-    pub goose_system_prompt_file_path: Option<String>,
-    #[serde(rename = "GOOSE_DEBUG")]
-    pub goose_debug: Option<bool>,
-    #[serde(rename = "GOOSE_SHOW_FULL_OUTPUT")]
-    pub goose_show_full_output: Option<bool>,
-    #[serde(rename = "GOOSE_STATUS_HOOK")]
-    pub goose_status_hook: Option<String>,
-    #[serde(rename = "GOOSE_LOCAL_ENABLE_THINKING")]
-    pub goose_local_enable_thinking: Option<bool>,
-    #[serde(rename = "GOOSE_DATABRICKS_CLIENT_REQUEST_ID")]
-    pub goose_databricks_client_request_id: Option<bool>,
-    #[serde(rename = "CONTEXT_FILE_NAMES")]
-    pub context_file_names: Option<Vec<String>>,
-    #[serde(rename = "EDIT_MODE")]
-    pub edit_mode: Option<String>,
-    #[serde(rename = "RANDOM_THINKING_MESSAGES")]
-    pub random_thinking_messages: Option<bool>,
-    #[serde(rename = "CODE_MODE_TOOL_DISCLOSURE")]
-    pub code_mode_tool_disclosure: Option<String>,
-
-    // === mTLS Settings ===
-    #[serde(rename = "GOOSE_CLIENT_CERT_PATH")]
-    pub goose_client_cert_path: Option<String>,
-    #[serde(rename = "GOOSE_CLIENT_KEY_PATH")]
-    pub goose_client_key_path: Option<String>,
-    #[serde(rename = "GOOSE_CA_CERT_PATH")]
-    pub goose_ca_cert_path: Option<String>,
-
-    // === Planner & Subagent Settings ===
-    #[serde(rename = "GOOSE_PLANNER_PROVIDER")]
-    pub goose_planner_provider: Option<String>,
-    #[serde(rename = "GOOSE_PLANNER_MODEL")]
-    pub goose_planner_model: Option<String>,
-    #[serde(rename = "GOOSE_SUBAGENT_PROVIDER")]
-    pub goose_subagent_provider: Option<String>,
-    #[serde(rename = "GOOSE_SUBAGENT_MODEL")]
-    pub goose_subagent_model: Option<String>,
-    #[serde(rename = "GOOSE_SUBAGENT_MAX_TURNS")]
-    pub goose_subagent_max_turns: Option<u64>,
-    #[serde(rename = "GOOSE_MAX_BACKGROUND_TASKS")]
-    pub goose_max_background_tasks: Option<u64>,
-
-    // === Recipe Settings ===
-    #[serde(rename = "GOOSE_RECIPE_GITHUB_REPO")]
-    pub goose_recipe_github_repo: Option<String>,
-    #[serde(rename = "GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS")]
-    pub goose_recipe_retry_timeout_seconds: Option<u64>,
-    #[serde(rename = "GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS")]
-    pub goose_recipe_on_failure_timeout_seconds: Option<u64>,
-
-    // === CLI Settings ===
-    #[serde(rename = "GOOSE_CLI_MIN_PRIORITY")]
-    pub goose_cli_min_priority: Option<f32>,
-    #[serde(rename = "GOOSE_CLI_THEME")]
-    pub goose_cli_theme: Option<String>,
-    #[serde(rename = "GOOSE_CLI_LIGHT_THEME")]
-    pub goose_cli_light_theme: Option<String>,
-    #[serde(rename = "GOOSE_CLI_DARK_THEME")]
-    pub goose_cli_dark_theme: Option<String>,
-    #[serde(rename = "GOOSE_CLI_SHOW_COST")]
-    pub goose_cli_show_cost: Option<bool>,
-    #[serde(rename = "GOOSE_CLI_SHOW_THINKING")]
-    pub goose_cli_show_thinking: Option<bool>,
-    #[serde(rename = "GOOSE_CLI_NEWLINE_KEY")]
-    pub goose_cli_newline_key: Option<String>,
-
-    // === AI Agent / Thinking Settings ===
-    #[serde(rename = "CLAUDE_CODE_COMMAND")]
-    pub claude_code_command: Option<String>,
-    #[serde(rename = "GEMINI_CLI_COMMAND")]
-    pub gemini_cli_command: Option<String>,
-    #[serde(rename = "CURSOR_AGENT_COMMAND")]
-    pub cursor_agent_command: Option<String>,
-    #[serde(rename = "CODEX_COMMAND")]
-    pub codex_command: Option<String>,
-    #[serde(rename = "CODEX_REASONING_EFFORT")]
-    pub codex_reasoning_effort: Option<String>,
-    #[serde(rename = "CODEX_ENABLE_SKILLS")]
-    pub codex_enable_skills: Option<String>,
-    #[serde(rename = "CODEX_SKIP_GIT_CHECK")]
-    pub codex_skip_git_check: Option<String>,
-    #[serde(rename = "CHATGPT_CODEX_REASONING_EFFORT")]
-    pub chatgpt_codex_reasoning_effort: Option<String>,
-    #[serde(rename = "CLAUDE_THINKING_TYPE")]
-    pub claude_thinking_type: Option<String>,
-    #[serde(rename = "CLAUDE_THINKING_EFFORT")]
-    pub claude_thinking_effort: Option<String>,
-    #[serde(rename = "CLAUDE_THINKING_BUDGET")]
-    pub claude_thinking_budget: Option<i32>,
-    #[serde(rename = "GEMINI3_THINKING_LEVEL")]
-    pub gemini3_thinking_level: Option<String>,
-    #[serde(rename = "GEMINI25_THINKING_BUDGET")]
-    pub gemini25_thinking_budget: Option<i32>,
-
-    // === Security Settings ===
-    #[serde(rename = "SECURITY_PROMPT_ENABLED")]
-    pub security_prompt_enabled: Option<bool>,
-    #[serde(rename = "SECURITY_PROMPT_THRESHOLD")]
-    pub security_prompt_threshold: Option<f64>,
-    #[serde(rename = "SECURITY_PROMPT_CLASSIFIER_ENABLED")]
-    pub security_prompt_classifier_enabled: Option<bool>,
-    #[serde(rename = "SECURITY_PROMPT_CLASSIFIER_MODEL")]
-    pub security_prompt_classifier_model: Option<String>,
-    #[serde(rename = "SECURITY_PROMPT_CLASSIFIER_ENDPOINT")]
-    pub security_prompt_classifier_endpoint: Option<String>,
-    #[serde(rename = "SECURITY_COMMAND_CLASSIFIER_ENABLED")]
-    pub security_command_classifier_enabled: Option<bool>,
-
-    // === Provider Settings ===
-    #[serde(rename = "OPENAI_HOST")]
-    pub openai_host: Option<String>,
-    #[serde(rename = "OPENAI_BASE_URL")]
-    pub openai_base_url: Option<String>,
-    #[serde(rename = "OPENAI_BASE_PATH")]
-    pub openai_base_path: Option<String>,
-    #[serde(rename = "OPENAI_ORGANIZATION")]
-    pub openai_organization: Option<String>,
-    #[serde(rename = "OPENAI_PROJECT")]
-    pub openai_project: Option<String>,
-    #[serde(rename = "OPENAI_TIMEOUT")]
-    pub openai_timeout: Option<u64>,
-    #[serde(rename = "ANTHROPIC_HOST")]
-    pub anthropic_host: Option<String>,
-    #[serde(rename = "OLLAMA_HOST")]
-    pub ollama_host: Option<String>,
-    #[serde(rename = "OLLAMA_TIMEOUT")]
-    pub ollama_timeout: Option<u64>,
-    #[serde(rename = "OLLAMA_STREAM_TIMEOUT")]
-    pub ollama_stream_timeout: Option<u64>,
-    #[serde(rename = "OLLAMA_STREAM_USAGE")]
-    pub ollama_stream_usage: Option<bool>,
-    #[serde(rename = "DATABRICKS_HOST")]
-    pub databricks_host: Option<String>,
-    #[serde(rename = "DATABRICKS_MAX_RETRIES")]
-    pub databricks_max_retries: Option<String>,
-    #[serde(rename = "DATABRICKS_INITIAL_RETRY_INTERVAL_MS")]
-    pub databricks_initial_retry_interval_ms: Option<String>,
-    #[serde(rename = "DATABRICKS_BACKOFF_MULTIPLIER")]
-    pub databricks_backoff_multiplier: Option<String>,
-    #[serde(rename = "DATABRICKS_MAX_RETRY_INTERVAL_MS")]
-    pub databricks_max_retry_interval_ms: Option<String>,
-    #[serde(rename = "AZURE_OPENAI_ENDPOINT")]
-    pub azure_openai_endpoint: Option<String>,
-    #[serde(rename = "AZURE_OPENAI_DEPLOYMENT_NAME")]
-    pub azure_openai_deployment_name: Option<String>,
-    #[serde(rename = "AZURE_OPENAI_API_VERSION")]
-    pub azure_openai_api_version: Option<String>,
-    #[serde(rename = "GOOGLE_HOST")]
-    pub google_host: Option<String>,
-    #[serde(rename = "GCP_PROJECT_ID")]
-    pub gcp_project_id: Option<String>,
-    #[serde(rename = "GCP_LOCATION")]
-    pub gcp_location: Option<String>,
-    #[serde(rename = "GCP_MAX_RETRIES")]
-    pub gcp_max_retries: Option<String>,
-    #[serde(rename = "GCP_INITIAL_RETRY_INTERVAL_MS")]
-    pub gcp_initial_retry_interval_ms: Option<String>,
-    #[serde(rename = "GCP_BACKOFF_MULTIPLIER")]
-    pub gcp_backoff_multiplier: Option<String>,
-    #[serde(rename = "GCP_MAX_RETRY_INTERVAL_MS")]
-    pub gcp_max_retry_interval_ms: Option<String>,
-    #[serde(rename = "AWS_REGION")]
-    pub aws_region: Option<String>,
-    #[serde(rename = "AWS_PROFILE")]
-    pub aws_profile: Option<String>,
-    #[serde(rename = "BEDROCK_MAX_RETRIES")]
-    pub bedrock_max_retries: Option<u64>,
-    #[serde(rename = "BEDROCK_INITIAL_RETRY_INTERVAL_MS")]
-    pub bedrock_initial_retry_interval_ms: Option<u64>,
-    #[serde(rename = "BEDROCK_BACKOFF_MULTIPLIER")]
-    pub bedrock_backoff_multiplier: Option<f64>,
-    #[serde(rename = "BEDROCK_MAX_RETRY_INTERVAL_MS")]
-    pub bedrock_max_retry_interval_ms: Option<u64>,
-    #[serde(rename = "BEDROCK_ENABLE_CACHING")]
-    pub bedrock_enable_caching: Option<bool>,
-    #[serde(rename = "SAGEMAKER_ENDPOINT_NAME")]
-    pub sagemaker_endpoint_name: Option<String>,
-    #[serde(rename = "LITELLM_HOST")]
-    pub litellm_host: Option<String>,
-    #[serde(rename = "LITELLM_BASE_PATH")]
-    pub litellm_base_path: Option<String>,
-    #[serde(rename = "LITELLM_TIMEOUT")]
-    pub litellm_timeout: Option<u64>,
-    #[serde(rename = "SNOWFLAKE_HOST")]
-    pub snowflake_host: Option<String>,
-    #[serde(rename = "GITHUB_COPILOT_HOST")]
-    pub github_copilot_host: Option<String>,
-    #[serde(rename = "GITHUB_COPILOT_CLIENT_ID")]
-    pub github_copilot_client_id: Option<String>,
-    #[serde(rename = "GITHUB_COPILOT_TOKEN_URL")]
-    pub github_copilot_token_url: Option<String>,
-    #[serde(rename = "XAI_HOST")]
-    pub xai_host: Option<String>,
-    #[serde(rename = "OPENROUTER_HOST")]
-    pub openrouter_host: Option<String>,
-    #[serde(rename = "VENICE_HOST")]
-    pub venice_host: Option<String>,
-    #[serde(rename = "VENICE_BASE_PATH")]
-    pub venice_base_path: Option<String>,
-    #[serde(rename = "VENICE_MODELS_PATH")]
-    pub venice_models_path: Option<String>,
-    #[serde(rename = "TETRATE_HOST")]
-    pub tetrate_host: Option<String>,
-    #[serde(rename = "AVIAN_HOST")]
-    pub avian_host: Option<String>,
-
-    // === Observability Settings (lowercase keys) ===
-    pub otel_exporter_otlp_endpoint: Option<String>,
-    pub otel_exporter_otlp_timeout: Option<u64>,
-
-    // === Tunnel Settings (lowercase keys) ===
-    pub tunnel_auto_start: Option<bool>,
-
-    // === Structured Config (lowercase keys) ===
-    pub extensions: Option<HashMap<String, ExtensionEntry>>,
-    pub slash_commands: Option<Vec<SlashCommandMapping>>,
-    pub experiments: Option<HashMap<String, bool>>,
+    #[serde(flatten)]
+    pub config: GooseConfigSchema,
 
     // === Provider API Keys (secrets, stored in keyring) ===
     #[serde(rename = "OPENAI_API_KEY")]
@@ -1079,233 +829,38 @@ pub struct GooseConfigUpdate {
     pub azure_openai_api_key: Option<String>,
     #[serde(rename = "OPENROUTER_API_KEY")]
     pub openrouter_api_key: Option<String>,
+    #[serde(rename = "XAI_API_KEY")]
+    pub xai_api_key: Option<String>,
+    #[serde(rename = "AVIAN_API_KEY")]
+    pub avian_api_key: Option<String>,
+    #[serde(rename = "VENICE_API_KEY")]
+    pub venice_api_key: Option<String>,
+    #[serde(rename = "TETRATE_API_KEY")]
+    pub tetrate_api_key: Option<String>,
+    #[serde(rename = "LITELLM_API_KEY")]
+    pub litellm_api_key: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TOKEN")]
+    pub snowflake_token: Option<String>,
+    #[serde(rename = "GROQ_API_KEY")]
+    pub groq_api_key: Option<String>,
 }
 
 impl GooseConfigUpdate {
     pub fn apply_to_config(&self, config: &Config) -> Result<(), ConfigError> {
-        let mut param_updates: Vec<(String, serde_json::Value)> = Vec::new();
-        let mut secret_updates: Vec<(String, serde_json::Value)> = Vec::new();
+        self.config.apply_to_config(config)?;
 
-        macro_rules! push_param {
-            ($field:expr, $key:expr) => {
-                if let Some(ref v) = $field {
-                    if let Ok(json) = serde_json::to_value(v) {
-                        param_updates.push(($key.to_string(), json));
-                    }
-                }
-            };
-        }
+        let mut secret_updates: Vec<(String, serde_json::Value)> = Vec::new();
 
         macro_rules! push_secret {
             ($field:expr, $key:expr) => {
                 if let Some(ref v) = $field {
-                    if let Ok(json) = serde_json::to_value(v) {
-                        secret_updates.push(($key.to_string(), json));
+                    match serde_json::to_value(v) {
+                        Ok(json) => secret_updates.push(($key.to_string(), json)),
+                        Err(e) => tracing::warn!("Failed to serialize secret key {}: {}", $key, e),
                     }
                 }
             };
         }
-
-        push_param!(self.goose_provider, "GOOSE_PROVIDER");
-        push_param!(self.goose_model, "GOOSE_MODEL");
-        push_param!(self.goose_mode, "GOOSE_MODE");
-        push_param!(self.goose_max_tokens, "GOOSE_MAX_TOKENS");
-        push_param!(self.goose_context_limit, "GOOSE_CONTEXT_LIMIT");
-        push_param!(self.goose_input_limit, "GOOSE_INPUT_LIMIT");
-        push_param!(self.goose_max_turns, "GOOSE_MAX_TURNS");
-        push_param!(self.goose_max_active_agents, "GOOSE_MAX_ACTIVE_AGENTS");
-        push_param!(
-            self.goose_auto_compact_threshold,
-            "GOOSE_AUTO_COMPACT_THRESHOLD"
-        );
-        push_param!(
-            self.goose_tool_pair_summarization,
-            "GOOSE_TOOL_PAIR_SUMMARIZATION"
-        );
-        push_param!(self.goose_tool_call_cutoff, "GOOSE_TOOL_CALL_CUTOFF");
-        push_param!(self.goose_stream_timeout, "GOOSE_STREAM_TIMEOUT");
-        push_param!(self.goose_search_paths, "GOOSE_SEARCH_PATHS");
-        push_param!(
-            self.goose_disable_session_naming,
-            "GOOSE_DISABLE_SESSION_NAMING"
-        );
-        push_param!(self.goose_disable_keyring, "GOOSE_DISABLE_KEYRING");
-        push_param!(self.goose_telemetry_enabled, "GOOSE_TELEMETRY_ENABLED");
-        push_param!(
-            self.goose_default_extension_timeout,
-            "GOOSE_DEFAULT_EXTENSION_TIMEOUT"
-        );
-        push_param!(self.goose_prompt_editor, "GOOSE_PROMPT_EDITOR");
-        push_param!(
-            self.goose_prompt_editor_always,
-            "GOOSE_PROMPT_EDITOR_ALWAYS"
-        );
-        push_param!(self.goose_allowlist, "GOOSE_ALLOWLIST");
-        push_param!(
-            self.goose_system_prompt_file_path,
-            "GOOSE_SYSTEM_PROMPT_FILE_PATH"
-        );
-        push_param!(self.goose_debug, "GOOSE_DEBUG");
-        push_param!(self.goose_show_full_output, "GOOSE_SHOW_FULL_OUTPUT");
-        push_param!(self.goose_status_hook, "GOOSE_STATUS_HOOK");
-        push_param!(
-            self.goose_local_enable_thinking,
-            "GOOSE_LOCAL_ENABLE_THINKING"
-        );
-        push_param!(
-            self.goose_databricks_client_request_id,
-            "GOOSE_DATABRICKS_CLIENT_REQUEST_ID"
-        );
-        push_param!(self.context_file_names, "CONTEXT_FILE_NAMES");
-        push_param!(self.edit_mode, "EDIT_MODE");
-        push_param!(self.random_thinking_messages, "RANDOM_THINKING_MESSAGES");
-        push_param!(self.code_mode_tool_disclosure, "CODE_MODE_TOOL_DISCLOSURE");
-        push_param!(self.goose_client_cert_path, "GOOSE_CLIENT_CERT_PATH");
-        push_param!(self.goose_client_key_path, "GOOSE_CLIENT_KEY_PATH");
-        push_param!(self.goose_ca_cert_path, "GOOSE_CA_CERT_PATH");
-        push_param!(self.goose_planner_provider, "GOOSE_PLANNER_PROVIDER");
-        push_param!(self.goose_planner_model, "GOOSE_PLANNER_MODEL");
-        push_param!(self.goose_subagent_provider, "GOOSE_SUBAGENT_PROVIDER");
-        push_param!(self.goose_subagent_model, "GOOSE_SUBAGENT_MODEL");
-        push_param!(self.goose_subagent_max_turns, "GOOSE_SUBAGENT_MAX_TURNS");
-        push_param!(
-            self.goose_max_background_tasks,
-            "GOOSE_MAX_BACKGROUND_TASKS"
-        );
-        push_param!(self.goose_recipe_github_repo, "GOOSE_RECIPE_GITHUB_REPO");
-        push_param!(
-            self.goose_recipe_retry_timeout_seconds,
-            "GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS"
-        );
-        push_param!(
-            self.goose_recipe_on_failure_timeout_seconds,
-            "GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS"
-        );
-        push_param!(self.goose_cli_min_priority, "GOOSE_CLI_MIN_PRIORITY");
-        push_param!(self.goose_cli_theme, "GOOSE_CLI_THEME");
-        push_param!(self.goose_cli_light_theme, "GOOSE_CLI_LIGHT_THEME");
-        push_param!(self.goose_cli_dark_theme, "GOOSE_CLI_DARK_THEME");
-        push_param!(self.goose_cli_show_cost, "GOOSE_CLI_SHOW_COST");
-        push_param!(self.goose_cli_show_thinking, "GOOSE_CLI_SHOW_THINKING");
-        push_param!(self.goose_cli_newline_key, "GOOSE_CLI_NEWLINE_KEY");
-        push_param!(self.claude_code_command, "CLAUDE_CODE_COMMAND");
-        push_param!(self.gemini_cli_command, "GEMINI_CLI_COMMAND");
-        push_param!(self.cursor_agent_command, "CURSOR_AGENT_COMMAND");
-        push_param!(self.codex_command, "CODEX_COMMAND");
-        push_param!(self.codex_reasoning_effort, "CODEX_REASONING_EFFORT");
-        push_param!(self.codex_enable_skills, "CODEX_ENABLE_SKILLS");
-        push_param!(self.codex_skip_git_check, "CODEX_SKIP_GIT_CHECK");
-        push_param!(
-            self.chatgpt_codex_reasoning_effort,
-            "CHATGPT_CODEX_REASONING_EFFORT"
-        );
-        push_param!(self.claude_thinking_type, "CLAUDE_THINKING_TYPE");
-        push_param!(self.claude_thinking_effort, "CLAUDE_THINKING_EFFORT");
-        push_param!(self.claude_thinking_budget, "CLAUDE_THINKING_BUDGET");
-        push_param!(self.gemini3_thinking_level, "GEMINI3_THINKING_LEVEL");
-        push_param!(self.gemini25_thinking_budget, "GEMINI25_THINKING_BUDGET");
-        push_param!(self.security_prompt_enabled, "SECURITY_PROMPT_ENABLED");
-        push_param!(self.security_prompt_threshold, "SECURITY_PROMPT_THRESHOLD");
-        push_param!(
-            self.security_prompt_classifier_enabled,
-            "SECURITY_PROMPT_CLASSIFIER_ENABLED"
-        );
-        push_param!(
-            self.security_prompt_classifier_model,
-            "SECURITY_PROMPT_CLASSIFIER_MODEL"
-        );
-        push_param!(
-            self.security_prompt_classifier_endpoint,
-            "SECURITY_PROMPT_CLASSIFIER_ENDPOINT"
-        );
-        push_param!(
-            self.security_command_classifier_enabled,
-            "SECURITY_COMMAND_CLASSIFIER_ENABLED"
-        );
-        push_param!(self.openai_host, "OPENAI_HOST");
-        push_param!(self.openai_base_url, "OPENAI_BASE_URL");
-        push_param!(self.openai_base_path, "OPENAI_BASE_PATH");
-        push_param!(self.openai_organization, "OPENAI_ORGANIZATION");
-        push_param!(self.openai_project, "OPENAI_PROJECT");
-        push_param!(self.openai_timeout, "OPENAI_TIMEOUT");
-        push_param!(self.anthropic_host, "ANTHROPIC_HOST");
-        push_param!(self.ollama_host, "OLLAMA_HOST");
-        push_param!(self.ollama_timeout, "OLLAMA_TIMEOUT");
-        push_param!(self.ollama_stream_timeout, "OLLAMA_STREAM_TIMEOUT");
-        push_param!(self.ollama_stream_usage, "OLLAMA_STREAM_USAGE");
-        push_param!(self.databricks_host, "DATABRICKS_HOST");
-        push_param!(self.databricks_max_retries, "DATABRICKS_MAX_RETRIES");
-        push_param!(
-            self.databricks_initial_retry_interval_ms,
-            "DATABRICKS_INITIAL_RETRY_INTERVAL_MS"
-        );
-        push_param!(
-            self.databricks_backoff_multiplier,
-            "DATABRICKS_BACKOFF_MULTIPLIER"
-        );
-        push_param!(
-            self.databricks_max_retry_interval_ms,
-            "DATABRICKS_MAX_RETRY_INTERVAL_MS"
-        );
-        push_param!(self.azure_openai_endpoint, "AZURE_OPENAI_ENDPOINT");
-        push_param!(
-            self.azure_openai_deployment_name,
-            "AZURE_OPENAI_DEPLOYMENT_NAME"
-        );
-        push_param!(self.azure_openai_api_version, "AZURE_OPENAI_API_VERSION");
-        push_param!(self.google_host, "GOOGLE_HOST");
-        push_param!(self.gcp_project_id, "GCP_PROJECT_ID");
-        push_param!(self.gcp_location, "GCP_LOCATION");
-        push_param!(self.gcp_max_retries, "GCP_MAX_RETRIES");
-        push_param!(
-            self.gcp_initial_retry_interval_ms,
-            "GCP_INITIAL_RETRY_INTERVAL_MS"
-        );
-        push_param!(self.gcp_backoff_multiplier, "GCP_BACKOFF_MULTIPLIER");
-        push_param!(self.gcp_max_retry_interval_ms, "GCP_MAX_RETRY_INTERVAL_MS");
-        push_param!(self.aws_region, "AWS_REGION");
-        push_param!(self.aws_profile, "AWS_PROFILE");
-        push_param!(self.bedrock_max_retries, "BEDROCK_MAX_RETRIES");
-        push_param!(
-            self.bedrock_initial_retry_interval_ms,
-            "BEDROCK_INITIAL_RETRY_INTERVAL_MS"
-        );
-        push_param!(
-            self.bedrock_backoff_multiplier,
-            "BEDROCK_BACKOFF_MULTIPLIER"
-        );
-        push_param!(
-            self.bedrock_max_retry_interval_ms,
-            "BEDROCK_MAX_RETRY_INTERVAL_MS"
-        );
-        push_param!(self.bedrock_enable_caching, "BEDROCK_ENABLE_CACHING");
-        push_param!(self.sagemaker_endpoint_name, "SAGEMAKER_ENDPOINT_NAME");
-        push_param!(self.litellm_host, "LITELLM_HOST");
-        push_param!(self.litellm_base_path, "LITELLM_BASE_PATH");
-        push_param!(self.litellm_timeout, "LITELLM_TIMEOUT");
-        push_param!(self.snowflake_host, "SNOWFLAKE_HOST");
-        push_param!(self.github_copilot_host, "GITHUB_COPILOT_HOST");
-        push_param!(self.github_copilot_client_id, "GITHUB_COPILOT_CLIENT_ID");
-        push_param!(self.github_copilot_token_url, "GITHUB_COPILOT_TOKEN_URL");
-        push_param!(self.xai_host, "XAI_HOST");
-        push_param!(self.openrouter_host, "OPENROUTER_HOST");
-        push_param!(self.venice_host, "VENICE_HOST");
-        push_param!(self.venice_base_path, "VENICE_BASE_PATH");
-        push_param!(self.venice_models_path, "VENICE_MODELS_PATH");
-        push_param!(self.tetrate_host, "TETRATE_HOST");
-        push_param!(self.avian_host, "AVIAN_HOST");
-        push_param!(
-            self.otel_exporter_otlp_endpoint,
-            "otel_exporter_otlp_endpoint"
-        );
-        push_param!(
-            self.otel_exporter_otlp_timeout,
-            "otel_exporter_otlp_timeout"
-        );
-        push_param!(self.tunnel_auto_start, "tunnel_auto_start");
-        push_param!(self.extensions, "extensions");
-        push_param!(self.slash_commands, "slash_commands");
-        push_param!(self.experiments, "experiments");
 
         push_secret!(self.openai_api_key, "OPENAI_API_KEY");
         push_secret!(self.anthropic_api_key, "ANTHROPIC_API_KEY");
@@ -1313,8 +868,14 @@ impl GooseConfigUpdate {
         push_secret!(self.databricks_token, "DATABRICKS_TOKEN");
         push_secret!(self.azure_openai_api_key, "AZURE_OPENAI_API_KEY");
         push_secret!(self.openrouter_api_key, "OPENROUTER_API_KEY");
+        push_secret!(self.xai_api_key, "XAI_API_KEY");
+        push_secret!(self.avian_api_key, "AVIAN_API_KEY");
+        push_secret!(self.venice_api_key, "VENICE_API_KEY");
+        push_secret!(self.tetrate_api_key, "TETRATE_API_KEY");
+        push_secret!(self.litellm_api_key, "LITELLM_API_KEY");
+        push_secret!(self.snowflake_token, "SNOWFLAKE_TOKEN");
+        push_secret!(self.groq_api_key, "GROQ_API_KEY");
 
-        config.set_param_values(&param_updates)?;
         config.set_secret_values(&secret_updates)
     }
 }
@@ -1336,6 +897,13 @@ mod tests {
         let schema_keys: std::collections::HashSet<&str> =
             properties.keys().map(|k| k.as_str()).collect();
 
+        let category_b: std::collections::HashSet<&str> =
+            ["extensions", "slash_commands", "experiments"]
+                .iter()
+                .copied()
+                .collect();
+
+        // Forward: every ALL_KEYS entry must exist in the struct
         for key in GooseConfigSchema::ALL_KEYS {
             assert!(
                 schema_keys.contains(key),
@@ -1343,8 +911,17 @@ mod tests {
             );
         }
 
+        // Reverse: every struct field (except Category B) must be in ALL_KEYS
+        for key in &schema_keys {
+            if !category_b.contains(key) {
+                assert!(
+                    GooseConfigSchema::has_key(key),
+                    "GooseConfigSchema has field '{key}' but it's missing from ALL_KEYS (add it, or mark as Category B)"
+                );
+            }
+        }
+
         // Category B keys are in the struct but NOT in ALL_KEYS — that's intentional
-        let category_b = ["extensions", "slash_commands", "experiments"];
         for key in &category_b {
             assert!(
                 schema_keys.contains(key),
@@ -1355,5 +932,56 @@ mod tests {
                 "Category B key '{key}' should NOT be in ALL_KEYS"
             );
         }
+    }
+
+    #[test]
+    fn roundtrip_config_values() {
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+
+        config
+            .set_param_values(&[
+                (
+                    "GOOSE_PROVIDER".to_string(),
+                    serde_json::Value::String("anthropic".to_string()),
+                ),
+                (
+                    "GOOSE_MAX_TOKENS".to_string(),
+                    serde_json::Value::Number(4096.into()),
+                ),
+                ("GOOSE_DEBUG".to_string(), serde_json::Value::Bool(true)),
+                (
+                    "GOOSE_DISABLE_KEYRING".to_string(),
+                    serde_json::Value::Bool(true),
+                ),
+                (
+                    "SECURITY_PROMPT_THRESHOLD".to_string(),
+                    serde_json::json!(0.75),
+                ),
+            ])
+            .expect("set_param_values should succeed");
+
+        let typed = GooseConfigSchema::from_config(&config);
+        assert_eq!(typed.goose_provider.as_deref(), Some("anthropic"));
+        assert_eq!(typed.goose_max_tokens, Some(4096));
+        assert_eq!(typed.goose_debug, Some(true));
+        assert_eq!(typed.goose_disable_keyring, Some(true));
+        assert_eq!(typed.security_prompt_threshold, Some(0.75));
+
+        // Roundtrip: apply to a fresh config and verify
+        let config_file2 = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file2 = tempfile::NamedTempFile::new().unwrap();
+        let config2 =
+            Config::new_with_file_secrets(config_file2.path(), secrets_file2.path()).unwrap();
+        typed
+            .apply_to_config(&config2)
+            .expect("apply_to_config should succeed");
+        let typed2 = GooseConfigSchema::from_config(&config2);
+        assert_eq!(typed2.goose_provider, typed.goose_provider);
+        assert_eq!(typed2.goose_max_tokens, typed.goose_max_tokens);
+        assert_eq!(typed2.goose_debug, typed.goose_debug);
+        assert_eq!(typed2.goose_disable_keyring, typed.goose_disable_keyring);
     }
 }

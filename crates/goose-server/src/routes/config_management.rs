@@ -930,6 +930,9 @@ pub async fn read_typed_config() -> Result<Json<GooseConfigSchema>, ErrorRespons
     Ok(Json(typed))
 }
 
+/// Update configuration values. Fields set to null are left unchanged — to delete
+/// a key, use `POST /config/remove`. Secret fields (API keys) are stored in the
+/// system keyring, not the config file.
 #[utoipa::path(
     patch,
     path = "/config/typed",

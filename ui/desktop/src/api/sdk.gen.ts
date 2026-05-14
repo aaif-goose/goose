@@ -272,6 +272,12 @@ export const getSlashCommands = <ThrowOnError extends boolean = false>(options?:
 
 export const readTypedConfig = <ThrowOnError extends boolean = false>(options?: Options<ReadTypedConfigData, ThrowOnError>) => (options?.client ?? client).get<ReadTypedConfigResponses, ReadTypedConfigErrors, ThrowOnError>({ url: '/config/typed', ...options });
 
+/**
+ * Update configuration values. Fields set to null are left unchanged — to delete
+ *
+ * a key, use `POST /config/remove`. Secret fields (API keys) are stored in the
+ * system keyring, not the config file.
+ */
 export const patchTypedConfig = <ThrowOnError extends boolean = false>(options: Options<PatchTypedConfigData, ThrowOnError>) => (options.client ?? client).patch<PatchTypedConfigResponses, PatchTypedConfigErrors, ThrowOnError>({
     url: '/config/typed',
     ...options,
