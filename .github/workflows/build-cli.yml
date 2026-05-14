@@ -4,7 +4,7 @@
 #  - canary.yml
 #
 # Platform Build Strategy:
-#  - Linux: Uses native Ubuntu runners, including arm64 hosted runners
+#  - Linux: Uses native Ubuntu 22.04 runners to keep glibc compatibility with Ubuntu 22.04 LTS
 #  - macOS: Uses native macOS runners for each architecture
 #  - Windows: Uses Windows runner with native MSVC build
 on:
@@ -34,12 +34,12 @@ jobs:
           - platform: linux
             architecture: x86_64
             target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04
+            build-on: ubuntu-22.04
             variant: standard
           - platform: linux
             architecture: aarch64
             target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04-arm
+            build-on: ubuntu-22.04-arm
             variant: standard
           - platform: macos
             architecture: x86_64
@@ -93,7 +93,7 @@ jobs:
         if: matrix.platform != 'windows'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
-          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-native-macos-deployment-target-12
+          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-${{ matrix.build-on }}-native-macos-deployment-target-12
 
       - name: Cache Cargo artifacts (Windows)
         if: matrix.platform == 'windows'
