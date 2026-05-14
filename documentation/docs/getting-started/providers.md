@@ -1212,11 +1212,11 @@ Here are some local providers we support:
     :::
   </TabItem>
   <TabItem value="atomic-chat" label="Atomic Chat">
-    [Atomic Chat](https://github.com/AtomicBot-ai/Atomic-Chat) runs local (and optional cloud) models behind a single OpenAI-compatible API while the app is open.
+    [Atomic Chat](https://github.com/AtomicBot-ai/Atomic-Chat) lets you run open-source models locally with an OpenAI-compatible API server.
 
     1. Download and install Atomic Chat from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
-    2. Open Atomic Chat and download or select a model that supports tool calling (see the in-app catalog; Qwen, Llama, and Gemma families are common choices).
-    3. Keep Atomic Chat running so the local server stays up. It serves `http://localhost:1337/v1` by default.
+    2. Open Atomic Chat and download a model that supports tool calling (e.g., Qwen, Llama, or Mistral variants).
+    3. Start the local server in Atomic Chat. The server runs on `http://localhost:1337` by default
 
     4. Configure goose to use Atomic Chat:
 
@@ -1227,8 +1227,8 @@ Here are some local providers we support:
         3. Click the `Models` tab.
         4. Click `Configure providers`.
         5. Choose `Atomic Chat` from the provider list and click `Configure`.
-        6. Set `ATOMIC_CHAT_HOST` if your server is not at `http://localhost:1337`, then click `Submit` (no API key is needed for the default local server).
-        7. Select the model exposed by Atomic Chat's `/v1/models` endpoint.
+        6. Click `Submit` (no API key is needed).
+        7. Select the model you have loaded in Atomic Chat.
       </TabItem>
       <TabItem value="cli" label="goose CLI">
         1. Run:
@@ -1237,7 +1237,7 @@ Here are some local providers we support:
         ```
         2. Select `Configure Providers` from the menu.
         3. Choose `Atomic Chat` as the provider.
-        4. Enter the model id that matches a model listed by Atomic Chat.
+        4. Enter the model name that matches the model loaded in Atomic Chat.
 
         ```
         ┌   goose-configure
@@ -1249,15 +1249,15 @@ Here are some local providers we support:
         │  Atomic Chat
         │
         ◇  Enter a model from that provider:
-        │  your-model-id
+        │  qwen2.5-7b-instruct
         │
         └  Configuration saved successfully
         ```
       </TabItem>
     </Tabs>
 
-    :::tip Model name
-    Use the same model identifier Atomic Chat reports from `/v1/models`; if you changed the API origin in Atomic Chat, set `ATOMIC_CHAT_HOST` in goose to match (scheme, host, and port only).
+    :::tip Model Name
+    Make sure the model name you enter in goose matches the model identifier shown for your server in Atomic Chat. If the API listens on a different origin than `http://localhost:1337`, set `ATOMIC_CHAT_HOST` in goose to match (scheme, host, and port only).
     :::
   </TabItem>
   <TabItem value="docker" label="Docker Model Runner" default>

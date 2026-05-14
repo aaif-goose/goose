@@ -886,6 +886,10 @@ mod tests {
             serde_json::from_str(json).expect("atomic_chat.json should parse");
         assert_eq!(config.name, "atomic_chat");
         assert_eq!(config.display_name, "Atomic Chat");
+        assert_eq!(
+            config.description.as_deref(),
+            Some("Local models through Atomic Chat\u{2019}s OpenAI-compatible server")
+        );
         assert!(matches!(config.engine, ProviderEngine::OpenAI));
         assert_eq!(config.api_key_env, "");
         assert!(!config.requires_auth);
@@ -894,6 +898,8 @@ mod tests {
         assert_eq!(config.supports_streaming, Some(true));
         assert_eq!(config.base_url, "${ATOMIC_CHAT_HOST}/v1/chat/completions");
         assert!(config.models.is_empty());
+        assert!(config.model_doc_link.is_none());
+        assert!(config.setup_steps.is_empty());
 
         let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
         assert_eq!(env_vars.len(), 1);
@@ -904,6 +910,10 @@ mod tests {
         assert_eq!(
             env_vars[0].default,
             Some("http://localhost:1337".to_string())
+        );
+        assert_eq!(
+            env_vars[0].description.as_deref(),
+            Some("Base URL of the Atomic Chat server (default: http://localhost:1337)")
         );
     }
 
