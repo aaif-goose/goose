@@ -21,7 +21,7 @@ use crate::providers::inventory::{
     InventoryIdentity, ProviderInventoryEntry, ProviderInventoryService, RefreshJobPlan,
     RefreshPlan, RefreshSkipReason,
 };
-use crate::session::session_manager::SessionType;
+use crate::session::session_manager::{SessionListCursor, SessionType};
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
@@ -51,6 +51,7 @@ use agent_client_protocol::{
     Responder,
 };
 use anyhow::Result;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use fs_err as fs;
 use futures::future::{BoxFuture, Either};
 use futures::stream::{self, StreamExt};
@@ -58,7 +59,7 @@ use futures::FutureExt;
 use rmcp::model::{
     AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -90,6 +91,8 @@ pub type AcpProviderFactory = Arc<
         + Send
         + Sync,
 >;
+
+const SESSION_LIST_PAGE_SIZE: usize = 50;
 
 /// Convenience conversions from any `Display` error into an `agent_client_protocol::Error`.
 ///
@@ -251,6 +254,65 @@ pub struct GooseAcpAgent {
 /// can be extracted with `grep 'perf:' <log> | grep 'sid=abc12345'`.
 fn sid_short(id: &str) -> String {
     id.chars().take(8).collect()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SessionListCursorToken {
+    updated_at: chrono::DateTime<chrono::Utc>,
+    // Goose stores updated_at with second precision in common write paths, so the
+    // cursor needs the full (updated_at, id) sort key to avoid skipping tied rows.
+    session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cwd: Option<std::path::PathBuf>,
+}
+
+fn invalid_session_list_cursor(message: &'static str) -> agent_client_protocol::Error {
+    agent_client_protocol::Error::invalid_params().data(message)
+}
+
+fn decode_session_list_cursor(
+    cursor: Option<&str>,
+    cwd: Option<&std::path::Path>,
+) -> Result<Option<SessionListCursor>, agent_client_protocol::Error> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| invalid_session_list_cursor("malformed session list cursor"))?;
+    let token: SessionListCursorToken = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_session_list_cursor("malformed session list cursor"))?;
+
+    if token.session_id.is_empty() {
+        return Err(invalid_session_list_cursor("malformed session list cursor"));
+    }
+
+    let requested_cwd = cwd.map(std::path::Path::to_path_buf);
+    if token.cwd != requested_cwd {
+        return Err(invalid_session_list_cursor(
+            "session list cursor does not match cwd",
+        ));
+    }
+
+    Ok(Some(SessionListCursor {
+        updated_at: token.updated_at,
+        session_id: token.session_id,
+    }))
+}
+
+fn encode_session_list_cursor(
+    cursor: &SessionListCursor,
+    cwd: Option<&std::path::Path>,
+) -> Result<String, agent_client_protocol::Error> {
+    let token = SessionListCursorToken {
+        updated_at: cursor.updated_at,
+        session_id: cursor.session_id.clone(),
+        cwd: cwd.map(std::path::Path::to_path_buf),
+    };
+    let bytes =
+        serde_json::to_vec(&token).internal_err_ctx("Failed to encode session list cursor")?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value> {
@@ -3306,16 +3368,34 @@ impl GooseAcpAgent {
         Ok(())
     }
 
-    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
+    async fn on_list_sessions(
+        &self,
+        req: ListSessionsRequest,
+    ) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
+        if let Some(cwd) = req.cwd.as_deref() {
+            if !cwd.is_absolute() {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("cwd must be an absolute path"));
+            }
+        }
+
+        let cwd = req.cwd.as_deref();
+        let cursor = decode_session_list_cursor(req.cursor.as_deref(), cwd)?;
+
         // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
-        let sessions = self
+        let page = self
             .session_manager
-            .list_sessions_by_types(&[SessionType::User, SessionType::Scheduled, SessionType::Acp])
+            .list_nonempty_sessions_by_types_paged(
+                &[SessionType::User, SessionType::Scheduled, SessionType::Acp],
+                cwd,
+                cursor.as_ref(),
+                SESSION_LIST_PAGE_SIZE,
+            )
             .await
             .internal_err()?;
-        let session_infos: Vec<SessionInfo> = sessions
+        let session_infos: Vec<SessionInfo> = page
+            .sessions
             .into_iter()
-            .filter(|s| s.message_count > 0)
             .map(|s| {
                 let meta = session_meta(&s);
                 SessionInfo::new(SessionId::new(s.id), s.working_dir)
@@ -3324,7 +3404,12 @@ impl GooseAcpAgent {
                     .meta(meta)
             })
             .collect();
-        Ok(ListSessionsResponse::new(session_infos))
+        let next_cursor = page
+            .next_cursor
+            .as_ref()
+            .map(|cursor| encode_session_list_cursor(cursor, cwd))
+            .transpose()?;
+        Ok(ListSessionsResponse::new(session_infos).next_cursor(next_cursor))
     }
 
     async fn on_fork_session(

@@ -266,6 +266,18 @@ pub struct SessionManager {
     storage: Arc<SessionStorage>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionListCursor {
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) session_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SessionListPage {
+    pub(crate) sessions: Vec<Session>,
+    pub(crate) next_cursor: Option<SessionListCursor>,
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionNameUpdate {
     pub session_id: String,
@@ -330,6 +342,18 @@ impl SessionManager {
 
     pub async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
         self.storage.list_sessions_by_types(Some(types)).await
+    }
+
+    pub(crate) async fn list_nonempty_sessions_by_types_paged(
+        &self,
+        types: &[SessionType],
+        working_dir: Option<&Path>,
+        cursor: Option<&SessionListCursor>,
+        page_size: usize,
+    ) -> Result<SessionListPage> {
+        self.storage
+            .list_nonempty_sessions_by_types_paged(types, working_dir, cursor, page_size)
+            .await
     }
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
@@ -1467,6 +1491,91 @@ impl SessionStorage {
         q.fetch_all(pool).await.map_err(Into::into)
     }
 
+    async fn list_nonempty_sessions_by_types_paged(
+        &self,
+        types: &[SessionType],
+        working_dir: Option<&Path>,
+        cursor: Option<&SessionListCursor>,
+        page_size: usize,
+    ) -> Result<SessionListPage> {
+        if types.is_empty() || page_size == 0 {
+            return Ok(SessionListPage {
+                sessions: Vec::new(),
+                next_cursor: None,
+            });
+        }
+
+        let type_placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let mut where_clause = format!("s.session_type IN ({})", type_placeholders);
+        if working_dir.is_some() {
+            where_clause.push_str(" AND s.working_dir = ?");
+        }
+        if cursor.is_some() {
+            where_clause.push_str(
+                " AND (datetime(s.updated_at) < datetime(?) \
+                 OR (datetime(s.updated_at) = datetime(?) AND s.id < ?))",
+            );
+        }
+
+        let query = format!(
+            r#"
+            SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
+                   s.total_tokens, s.input_tokens, s.output_tokens,
+                   s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
+                   s.schedule_id, s.recipe_json, s.user_recipe_values_json,
+                   s.provider_name, s.model_config_json, s.goose_mode,
+                   s.archived_at, s.project_id,
+                   COUNT(m.id) as message_count
+            FROM sessions s
+            JOIN messages m ON s.id = m.session_id
+            WHERE {}
+            GROUP BY s.id
+            ORDER BY datetime(s.updated_at) DESC, s.id DESC
+            LIMIT ?
+            "#,
+            where_clause
+        );
+
+        let mut q = sqlx::query_as::<_, Session>(&query);
+        for session_type in types {
+            q = q.bind(session_type.to_string());
+        }
+
+        if let Some(working_dir) = working_dir {
+            q = q.bind(working_dir.to_string_lossy().to_string());
+        }
+
+        if let Some(cursor) = cursor {
+            let updated_at = cursor.updated_at.to_rfc3339();
+            // Normalize mixed SQLite CURRENT_TIMESTAMP and RFC3339 stored values.
+            q = q.bind(updated_at.clone());
+            q = q.bind(updated_at);
+            q = q.bind(&cursor.session_id);
+        }
+        q = q.bind((page_size + 1) as i64);
+
+        let pool = self.pool().await?;
+        let mut sessions = q.fetch_all(pool).await?;
+        let has_next_page = sessions.len() > page_size;
+        let next_cursor = if has_next_page {
+            let anchor = &sessions[page_size - 1];
+            Some(SessionListCursor {
+                updated_at: anchor.updated_at,
+                session_id: anchor.id.clone(),
+            })
+        } else {
+            None
+        };
+        if has_next_page {
+            sessions.truncate(page_size);
+        }
+
+        Ok(SessionListPage {
+            sessions,
+            next_cursor,
+        })
+    }
+
     async fn list_sessions(&self) -> Result<Vec<Session>> {
         self.list_sessions_by_types(Some(&[SessionType::User, SessionType::Scheduled]))
             .await
@@ -1790,6 +1899,74 @@ mod tests {
 
     const NUM_CONCURRENT_SESSIONS: i32 = 10;
 
+    async fn insert_session_for_list(
+        sm: &SessionManager,
+        id: &str,
+        working_dir: &str,
+        updated_at: &str,
+        message_count: usize,
+    ) {
+        let pool = sm.storage().pool().await.unwrap();
+        let updated_at = chrono::DateTime::parse_from_rfc3339(updated_at).unwrap();
+        let timestamp = updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        sqlx::query(
+            "INSERT INTO sessions (
+                id, name, user_set_name, session_type, working_dir, created_at, updated_at, extension_data, goose_mode
+             ) VALUES (?, ?, FALSE, ?, ?, ?, ?, '{}', ?)",
+        )
+        .bind(id)
+        .bind(format!("Session {id}"))
+        .bind(SessionType::User.to_string())
+        .bind(working_dir)
+        .bind(&timestamp)
+        .bind(&timestamp)
+        .bind(GooseMode::default().to_string())
+        .execute(pool)
+        .await
+        .unwrap();
+
+        for index in 0..message_count {
+            sqlx::query(
+                "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json)
+                 VALUES (?, ?, 'user', '[]', ?, '{}')",
+            )
+            .bind(format!("{id}_{index}"))
+            .bind(id)
+            .bind(index as i64)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn assert_session_list_page(
+        sm: &SessionManager,
+        cursor: Option<&SessionListCursor>,
+        working_dir: Option<&str>,
+        page_size: usize,
+        expected_ids: &[&str],
+        expected_next_cursor: bool,
+    ) -> Option<SessionListCursor> {
+        let page = sm
+            .list_nonempty_sessions_by_types_paged(
+                &[SessionType::User],
+                working_dir.map(Path::new),
+                cursor,
+                page_size,
+            )
+            .await
+            .unwrap();
+        let ids: Vec<_> = page
+            .sessions
+            .iter()
+            .map(|session| session.id.as_str())
+            .collect();
+        assert_eq!(ids, expected_ids);
+        assert_eq!(page.next_cursor.is_some(), expected_next_cursor);
+        page.next_cursor
+    }
+
     async fn run_lock_upgrade_attempt(
         pool: Pool<Sqlite>,
         session_id: String,
@@ -1880,6 +2057,66 @@ mod tests {
                 .filter_map(|r| r.as_ref().err().map(ToString::to_string))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_first_second_and_final_page() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        for index in 1..=5 {
+            insert_session_for_list(
+                &sm,
+                &format!("s{index:03}"),
+                "/tmp/session-list",
+                &format!("2024-01-01T00:00:0{index}Z"),
+                1,
+            )
+            .await;
+        }
+
+        let cursor = assert_session_list_page(&sm, None, None, 2, &["s005", "s004"], true).await;
+        let cursor =
+            assert_session_list_page(&sm, cursor.as_ref(), None, 2, &["s003", "s002"], true).await;
+        assert_session_list_page(&sm, cursor.as_ref(), None, 2, &["s001"], false).await;
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_uses_id_tiebreaker_for_duplicate_updated_at() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        for id in ["s001", "s002", "s003"] {
+            insert_session_for_list(&sm, id, "/tmp/session-list", "2024-01-01T00:00:00Z", 1).await;
+        }
+
+        let cursor = assert_session_list_page(&sm, None, None, 2, &["s003", "s002"], true).await;
+        assert_session_list_page(&sm, cursor.as_ref(), None, 2, &["s001"], false).await;
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_filters_empty_and_cwd_before_pagination() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        for (id, dir, updated_at, messages) in [
+            ("s004", "/tmp/session-list/a", "2024-01-01T00:00:04Z", 1),
+            ("s003", "/tmp/session-list/a", "2024-01-01T00:00:03Z", 0),
+            ("s002", "/tmp/session-list/b", "2024-01-01T00:00:02Z", 1),
+            ("s001", "/tmp/session-list/a", "2024-01-01T00:00:01Z", 1),
+        ] {
+            insert_session_for_list(&sm, id, dir, updated_at, messages).await;
+        }
+
+        let cursor =
+            assert_session_list_page(&sm, None, Some("/tmp/session-list/a"), 1, &["s004"], true)
+                .await;
+        assert_session_list_page(
+            &sm,
+            cursor.as_ref(),
+            Some("/tmp/session-list/a"),
+            1,
+            &["s001"],
+            false,
+        )
+        .await;
     }
 
     #[tokio::test]
