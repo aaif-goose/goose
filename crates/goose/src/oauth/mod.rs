@@ -68,7 +68,11 @@ pub async fn oauth_flow(
         .route("/oauth_callback", get(handler))
         .with_state(app_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    let port: u16 = std::env::var("GOOSE_OAUTH_CALLBACK_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(0);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let used_addr = listener.local_addr()?;
     tokio::spawn(async move {
