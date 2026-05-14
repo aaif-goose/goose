@@ -85,6 +85,20 @@ jobs:
         run: |
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
+      - name: Install glslc on host
+        run: |
+          # glslc is a build-time shader compiler needed by llama.cpp's Vulkan backend.
+          # Install on host and bind-mount into container for cross-architecture compat.
+          if command -v glslc &>/dev/null; then
+            echo "glslc already available: $(which glslc)"
+          else
+            sudo apt-get update
+            sudo apt-get install -y glslc || sudo apt-get install -y shaderc
+          fi
+          GLSLC_PATH=$(which glslc)
+          echo "GLSLC_PATH=${GLSLC_PATH}" >> $GITHUB_ENV
+          echo "Using glslc at: ${GLSLC_PATH}"
+
       # Build goosed inside an Ubuntu 22.04 container to produce a binary
       # compatible with glibc 2.35+ (Ubuntu 22.04, Debian 12, RHEL 9, etc.)
       - name: Build goosed binary (Ubuntu 22.04 container)
@@ -94,6 +108,7 @@ jobs:
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -v "${GLSLC_PATH}:/usr/local/bin/glslc:ro" \
             -w /workspace \
             -e RUST_LOG=debug \
             -e RUST_BACKTRACE=1 \
@@ -113,16 +128,7 @@ jobs:
                 cmake \
                 curl \
                 ca-certificates \
-                wget \
-                gnupg \
                 sudo
-
-              # Install glslc from LunarG Vulkan SDK repo (not available in Ubuntu 22.04 base repos)
-              wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add -
-              wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list \
-                https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y shaderc
 
               # Create a non-root user matching the host runner UID/GID so that
               # build artifacts are owned by the runner and subsequent host steps
@@ -131,6 +137,8 @@ jobs:
               HOST_GID=$(stat -c "%g" /workspace)
               groupadd -g "${HOST_GID}" builder 2>/dev/null || true
               useradd -m -u "${HOST_UID}" -g "${HOST_GID}" -s /bin/bash builder
+
+              echo "glslc version: $(glslc --version)"
 
               # Install Rust and build as the non-root builder user
               su builder -c '\''

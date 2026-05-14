@@ -56,10 +56,27 @@ jobs:
           sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
           rm -f Cargo.toml.bak
 
+      - name: Install glslc on host
+        run: |
+          # glslc is a build-time shader compiler needed by llama.cpp's Vulkan backend.
+          # We install it on the host runner and bind-mount it into the container
+          # because the LunarG Vulkan SDK repo (used for Ubuntu 22.04 x86_64) only
+          # provides amd64/i386 packages — no arm64.
+          if command -v glslc &>/dev/null; then
+            echo "glslc already available: $(which glslc)"
+          else
+            sudo apt-get update
+            sudo apt-get install -y glslc || sudo apt-get install -y shaderc
+          fi
+          GLSLC_PATH=$(which glslc)
+          echo "GLSLC_PATH=${GLSLC_PATH}" >> $GITHUB_ENV
+          echo "Using glslc at: ${GLSLC_PATH}"
+
       - name: Build CLI in Ubuntu 22.04 container
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -v "${GLSLC_PATH}:/usr/local/bin/glslc:ro" \
             -w /workspace \
             -e RUST_LOG=debug \
             -e RUST_BACKTRACE=1 \
@@ -79,16 +96,7 @@ jobs:
                 cmake \
                 curl \
                 ca-certificates \
-                wget \
-                gnupg \
                 sudo
-
-              # Install glslc from LunarG Vulkan SDK repo (not available in Ubuntu 22.04 base repos)
-              wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add -
-              wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list \
-                https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y shaderc
 
               # Create a non-root user matching the host runner UID/GID so that
               # build artifacts are owned by the runner and subsequent host steps
@@ -98,6 +106,8 @@ jobs:
               groupadd -g "${HOST_GID}" builder 2>/dev/null || true
               useradd -m -u "${HOST_UID}" -g "${HOST_GID}" -s /bin/bash builder
               echo "builder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+              echo "glslc version: $(glslc --version)"
 
               # Install Rust and build as the non-root builder user
               su builder -c '\''
