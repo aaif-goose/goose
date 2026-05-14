@@ -1284,23 +1284,24 @@ mod tests {
     #[test]
     fn resolve_api_key_missing_with_requires_auth_bails() {
         let config = config_with_key("MY_KEY", true);
-        let err = OpenAiProvider::resolve_api_key(
-            &config,
-            &|_| Err(crate::config::ConfigError::NotFound("x".into())),
-        )
+        let err = OpenAiProvider::resolve_api_key(&config, &|_| {
+            Err(crate::config::ConfigError::NotFound("x".into()))
+        })
         .unwrap_err()
         .to_string();
-        assert!(err.contains("MY_KEY"), "error should mention the key name; got: {err}");
+        assert!(
+            err.contains("MY_KEY"),
+            "error should mention the key name; got: {err}"
+        );
     }
 
     #[test]
     fn resolve_api_key_missing_without_requires_auth_returns_none() {
         let config = config_with_key("MY_KEY", false);
         assert_eq!(
-            OpenAiProvider::resolve_api_key(
-                &config,
-                &|_| Err(crate::config::ConfigError::NotFound("x".into()))
-            )
+            OpenAiProvider::resolve_api_key(&config, &|_| Err(
+                crate::config::ConfigError::NotFound("x".into())
+            ))
             .unwrap(),
             None
         );
@@ -1318,23 +1319,24 @@ mod tests {
     #[test]
     fn resolve_api_key_other_error_bails_when_required() {
         let config = config_with_key("MY_KEY", true);
-        let err = OpenAiProvider::resolve_api_key(
-            &config,
-            &|_| Err(crate::config::ConfigError::KeyringError("ring fail".into())),
-        )
+        let err = OpenAiProvider::resolve_api_key(&config, &|_| {
+            Err(crate::config::ConfigError::KeyringError("ring fail".into()))
+        })
         .unwrap_err()
         .to_string();
-        assert!(err.contains("MY_KEY"), "error should mention the key name; got: {err}");
+        assert!(
+            err.contains("MY_KEY"),
+            "error should mention the key name; got: {err}"
+        );
     }
 
     #[test]
     fn resolve_api_key_other_error_warns_and_returns_none_when_optional() {
         let config = config_with_key("MY_KEY", false);
         assert_eq!(
-            OpenAiProvider::resolve_api_key(
-                &config,
-                &|_| Err(crate::config::ConfigError::KeyringError("ring fail".into()))
-            )
+            OpenAiProvider::resolve_api_key(&config, &|_| Err(
+                crate::config::ConfigError::KeyringError("ring fail".into())
+            ))
             .unwrap(),
             None
         );
