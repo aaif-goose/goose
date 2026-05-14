@@ -54,6 +54,13 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
         category: ThreatCategory::FileSystemDestruction,
     },
     ThreatPattern {
+        name: "rm_rf_home_or_root",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?(~|\$HOME|/home|/root)/?['\x22]?(\s|[;&|]|$)",
+        description: "Recursive deletion of home or root directory",
+        risk_level: RiskLevel::Critical,
+        category: ThreatCategory::FileSystemDestruction,
+    },
+    ThreatPattern {
         name: "dd_destruction",
         pattern: r"dd\s+.*if=/dev/(zero|random|urandom).*of=/dev/[sh]d[a-z]",
         description: "Disk destruction using dd command",
@@ -400,6 +407,36 @@ mod tests {
         let pat = "rm_rf_root_bare";
         assert!(!matches(pat, "rm -rf ./build"));
         assert!(!matches(pat, "rm -rf /tmp/cache"));
+    }
+
+    #[test]
+    fn rm_rf_home_or_root_matches_bare_targets() {
+        let pat = "rm_rf_home_or_root";
+        assert!(matches(pat, "rm -rf ~"));
+        assert!(matches(pat, "rm -rf ~/"));
+        assert!(matches(pat, "rm -rf $HOME"));
+        assert!(matches(pat, "rm -rf $HOME/"));
+        assert!(matches(pat, "rm -rf /home"));
+        assert!(matches(pat, "rm -rf /home/"));
+        assert!(matches(pat, "rm -rf /root"));
+        assert!(matches(pat, "rm -rf /root/"));
+        assert!(matches(pat, "rm -fr ~"));
+        assert!(matches(pat, "rm --recursive --force ~"));
+        assert!(matches(pat, r#"rm -rf "$HOME""#));
+        assert!(matches(pat, "rm -rf ~; echo done"));
+    }
+
+    #[test]
+    fn rm_rf_home_or_root_no_false_positives_on_subdirs() {
+        let pat = "rm_rf_home_or_root";
+        assert!(!matches(pat, "rm -rf ~/Documents/my-gh-repo"));
+        assert!(!matches(pat, "rm -rf ~/.cache"));
+        assert!(!matches(pat, "rm -rf $HOME/build"));
+        assert!(!matches(pat, "rm -rf /home/user"));
+        assert!(!matches(pat, "rm -rf /home/user/project"));
+        assert!(!matches(pat, "rm -rf /root/tmp"));
+        assert!(!matches(pat, "rm -rf ./home"));
+        assert!(!matches(pat, "rm -rf $HOMEDIR"));
     }
 
     #[test]
