@@ -55,7 +55,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "rm_rf_home_or_root",
-        pattern: r"rm(\s+(--[a-zA-Z][a-zA-Z\-]*|--|-[a-zA-Z]+))+\s+['\x22]?(~|\$HOME|\$\{HOME\}|/home|/root)/?(\*)?['\x22]?(\s|[;&|]|$)",
+        pattern: r"rm\s+((--[a-zA-Z][a-zA-Z\-]*|--|-[a-zA-Z]+)\s+)*(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive|--dir|-d)(\s+(--[a-zA-Z][a-zA-Z\-]*|--|-[a-zA-Z]+))*\s+['\x22]?(~|\$HOME|\$\{HOME\}|/home|/root)/?(\*)?['\x22]?(\s|[;&|]|$)",
         description: "Recursive deletion of home or root directory",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
@@ -454,6 +454,14 @@ mod tests {
         // Wildcards inside subdirs should not match
         assert!(!matches(pat, "rm -rf /home/user/*"));
         assert!(!matches(pat, "rm -rf ~/Documents/*"));
+        // Flags that cannot recursively remove directories should not fire
+        assert!(!matches(pat, "rm -i /root"));
+        assert!(!matches(pat, "rm -f ~"));
+        assert!(!matches(pat, "rm --force ~"));
+        assert!(!matches(pat, "rm --help ~"));
+        assert!(!matches(pat, "rm -v ~"));
+        assert!(!matches(pat, "rm -- ~"));
+        assert!(!matches(pat, "rm ~"));
     }
 
     #[test]
