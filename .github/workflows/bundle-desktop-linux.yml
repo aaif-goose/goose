@@ -109,6 +109,8 @@ jobs:
                 libdbus-1-dev \
                 libxcb1-dev \
                 libvulkan-dev \
+                libclang-dev \
+                cmake \
                 curl \
                 ca-certificates \
                 wget \
