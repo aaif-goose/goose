@@ -931,6 +931,10 @@ pub trait Provider: Send + Sync {
     /// Get the model config from the provider
     fn get_model_config(&self) -> ModelConfig;
 
+    fn reports_resolved_model(&self) -> bool {
+        false
+    }
+
     fn retry_config(&self) -> RetryConfig {
         RetryConfig::default()
     }

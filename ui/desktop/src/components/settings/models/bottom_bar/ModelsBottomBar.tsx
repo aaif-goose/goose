@@ -1,5 +1,5 @@
 import { Sliders, Bot, LoaderCircle, Settings } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import { SwitchModelModal } from '../subcomponents/SwitchModelModal';
 import { View } from '../../../../utils/navigationUtils';
@@ -16,6 +16,7 @@ import { getModelDisplayName } from '../predefinedModelsUtils';
 import { ModelSettingsPanel } from '../../localInference/ModelSettingsPanel';
 import { ScrollArea } from '../../../ui/scroll-area';
 import { defineMessages, useIntl } from '../../../../i18n';
+import type { Message } from '../../../../api';
 
 const i18n = defineMessages({
   selectModel: {
@@ -42,6 +43,10 @@ const i18n = defineMessages({
     id: 'modelsBottomBar.localModelSettingsTitle',
     defaultMessage: 'Local Model Settings — {modelName}',
   },
+  resolvedModel: {
+    id: 'modelsBottomBar.resolvedModel',
+    defaultMessage: 'Resolved model',
+  },
 });
 
 interface ModelsBottomBarProps {
@@ -50,6 +55,7 @@ interface ModelsBottomBarProps {
   setView: (view: View) => void;
   sessionModel?: string | null;
   sessionProvider?: string | null;
+  latestInference?: Message['metadata']['inference'] | null;
   onModelChanged: (override: { model: string; provider: string }) => void;
   sessionLoaded?: boolean;
 }
@@ -60,6 +66,7 @@ export default function ModelsBottomBar({
   setView,
   sessionModel,
   sessionProvider,
+  latestInference,
   onModelChanged,
   sessionLoaded,
 }: ModelsBottomBarProps) {
@@ -81,6 +88,14 @@ export default function ModelsBottomBar({
   // rather than flashing the config default or leaving the footer blank.
   const isModelLoading = Boolean(sessionId && !sessionLoaded);
   const displayModel = currentModel || providerDefaultModel || displayModelName;
+  const resolvedModel = latestInference?.resolvedModel ?? null;
+  const shouldShowResolvedModel = Boolean(
+    !isModelLoading &&
+      resolvedModel &&
+      latestInference?.provider === currentProvider &&
+      latestInference?.requestedModel === currentModel &&
+      resolvedModel !== currentModel
+  );
   const loadingModelLabel = intl.formatMessage(i18n.loadingModel);
   const triggerLabel = isModelLoading ? loadingModelLabel : displayModel;
   const menuModelLabel = isModelLoading ? loadingModelLabel : displayModelName;
@@ -118,6 +133,11 @@ export default function ModelsBottomBar({
     setDisplayModelName(getModelDisplayName(currentModel));
   }, [currentModel]);
 
+  const resolvedDisplayModelName = useMemo(
+    () => (resolvedModel ? getModelDisplayName(resolvedModel) : null),
+    [resolvedModel]
+  );
+
   const handleModelSelected = (model: string, provider: string) => {
     onModelChanged({ model, provider });
   };
@@ -147,6 +167,14 @@ export default function ModelsBottomBar({
             {menuModelLabel}
             {!isModelLoading && displayProvider && ` — ${displayProvider}`}
           </p>
+          {shouldShowResolvedModel && resolvedDisplayModelName && (
+            <div className="mx-2 pb-2 border-b mb-2">
+              <h6 className="text-xs text-text-primary">{intl.formatMessage(i18n.resolvedModel)}</h6>
+              <p className="text-xs text-text-primary truncate" title={resolvedModel ?? undefined}>
+                {resolvedDisplayModelName}
+              </p>
+            </div>
+          )}
           <DropdownMenuItem onClick={() => setIsAddModelModalOpen(true)}>
             <span>{intl.formatMessage(i18n.changeModel)}</span>
             <Sliders className="ml-auto h-4 w-4 rotate-90" />

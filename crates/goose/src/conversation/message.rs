@@ -641,14 +641,25 @@ impl From<PromptMessage> for Message {
     }
 }
 
-#[derive(ToSchema, Clone, Copy, PartialEq, Serialize, Deserialize, Debug)]
-/// Metadata for message visibility
+#[derive(ToSchema, Clone, PartialEq, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct InferenceMetadata {
+    pub provider: String,
+    pub requested_model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_model: Option<String>,
+}
+
+#[derive(ToSchema, Clone, PartialEq, Serialize, Deserialize, Debug)]
+/// Metadata for message visibility and model inference details
 #[serde(rename_all = "camelCase")]
 pub struct MessageMetadata {
     /// Whether the message should be visible to the user in the UI
     pub user_visible: bool,
     /// Whether the message should be included in the agent's context window
     pub agent_visible: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inference: Option<InferenceMetadata>,
 }
 
 impl Default for MessageMetadata {
@@ -656,6 +667,7 @@ impl Default for MessageMetadata {
         MessageMetadata {
             user_visible: true,
             agent_visible: true,
+            inference: None,
         }
     }
 }
@@ -666,6 +678,7 @@ impl MessageMetadata {
         MessageMetadata {
             user_visible: false,
             agent_visible: true,
+            ..Default::default()
         }
     }
 
@@ -674,6 +687,7 @@ impl MessageMetadata {
         MessageMetadata {
             user_visible: true,
             agent_visible: false,
+            ..Default::default()
         }
     }
 
@@ -682,6 +696,7 @@ impl MessageMetadata {
         MessageMetadata {
             user_visible: false,
             agent_visible: false,
+            ..Default::default()
         }
     }
 
@@ -715,6 +730,11 @@ impl MessageMetadata {
             user_visible: true,
             ..self
         }
+    }
+
+    pub fn with_inference(mut self, inference: InferenceMetadata) -> Self {
+        self.inference = Some(inference);
+        self
     }
 }
 
@@ -994,6 +1014,19 @@ impl Message {
     pub fn with_metadata(mut self, metadata: MessageMetadata) -> Self {
         self.metadata = metadata;
         self
+    }
+
+    pub fn with_inference(mut self, inference: InferenceMetadata) -> Self {
+        self.metadata = self.metadata.with_inference(inference);
+        self
+    }
+
+    pub fn with_inference_if_assistant(self, inference: InferenceMetadata) -> Self {
+        if self.role == Role::Assistant && self.metadata.inference.is_none() {
+            self.with_inference(inference)
+        } else {
+            self
+        }
     }
 
     pub fn user_only(mut self) -> Self {

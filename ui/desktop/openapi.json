@@ -5799,6 +5799,25 @@
           }
         }
       },
+      "InferenceMetadata": {
+        "type": "object",
+        "required": [
+          "provider",
+          "requestedModel"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "requestedModel": {
+            "type": "string"
+          },
+          "resolvedModel": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "InspectJobResponse": {
         "type": "object",
         "properties": {
@@ -6394,7 +6413,7 @@
       },
       "MessageMetadata": {
         "type": "object",
-        "description": "Metadata for message visibility",
+        "description": "Metadata for message visibility and model inference details",
         "required": [
           "userVisible",
           "agentVisible"
@@ -6403,6 +6422,14 @@
           "agentVisible": {
             "type": "boolean",
             "description": "Whether the message should be included in the agent's context window"
+          },
+          "inference": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InferenceMetadata"
+              }
+            ],
+            "nullable": true
           },
           "userVisible": {
             "type": "boolean",

@@ -177,11 +177,41 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
 }
 
 function pushMessage(currentMessages: Message[], incomingMsg: Message): Message[] {
+  if (incomingMsg.content.length === 0 && incomingMsg.metadata?.inference) {
+    let existingMessageIndex = -1;
+    for (let i = currentMessages.length - 1; i >= 0; i--) {
+      const message = currentMessages[i];
+      if (message.role === 'assistant' && message.metadata.userVisible) {
+        existingMessageIndex = i;
+        break;
+      }
+    }
+    if (existingMessageIndex !== -1) {
+      const nextMessages = [...currentMessages];
+      nextMessages[existingMessageIndex] = {
+        ...nextMessages[existingMessageIndex],
+        metadata: {
+          ...nextMessages[existingMessageIndex].metadata,
+          inference: incomingMsg.metadata.inference,
+        },
+      };
+      return nextMessages;
+    }
+    return currentMessages;
+  }
+
   const lastMsg = currentMessages[currentMessages.length - 1];
 
   if (lastMsg?.id && lastMsg.id === incomingMsg.id) {
     const lastContent = lastMsg.content[lastMsg.content.length - 1];
     const newContent = incomingMsg.content[incomingMsg.content.length - 1];
+
+    if (incomingMsg.metadata?.inference) {
+      lastMsg.metadata = {
+        ...lastMsg.metadata,
+        inference: incomingMsg.metadata.inference,
+      };
+    }
 
     if (
       lastContent?.type === 'text' &&

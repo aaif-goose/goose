@@ -645,6 +645,10 @@ impl Provider for DatabricksProvider {
         self.model.clone()
     }
 
+    fn reports_resolved_model(&self) -> bool {
+        true
+    }
+
     async fn stream(
         &self,
         model_config: &ModelConfig,

@@ -2333,6 +2333,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "本地模型设置 — {modelName}"
   },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "解析后的模型"
+  },
   "modelsBottomBar.selectModel": {
     "defaultMessage": "选择模型"
   },
@@ -2629,6 +2632,9 @@
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "正在加载消息…（{renderedCount}/{totalCount}）"
+  },
+  "progressiveMessageList.modelChanged": {
+    "defaultMessage": "模型已更改：{previousModel} → {currentModel}"
   },
   "progressiveMessageList.searchHint": {
     "defaultMessage": "按 Cmd/Ctrl+F 立即加载全部消息以便搜索"

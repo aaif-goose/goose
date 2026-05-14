@@ -34,15 +34,15 @@ use crate::context_mgmt::{
     check_if_compaction_needed, compact_messages, DEFAULT_COMPACTION_THRESHOLD,
 };
 use crate::conversation::message::{
-    ActionRequiredData, Message, MessageContent, ProviderMetadata, SystemNotificationType,
-    ToolRequest,
+    ActionRequiredData, InferenceMetadata, Message, MessageContent, ProviderMetadata,
+    SystemNotificationType, ToolRequest,
 };
 use crate::conversation::{debug_conversation_fix, fix_conversation, Conversation};
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::PermissionConfirmation;
-use crate::providers::base::{PermissionRouting, Provider};
+use crate::providers::base::{PermissionRouting, Provider, ProviderUsage};
 use crate::providers::errors::ProviderError;
 use crate::recipe::{Author, Recipe, Response, Settings};
 use crate::scheduler_trait::SchedulerTrait;
@@ -1586,9 +1586,20 @@ impl Agent {
         self.reset_retry_attempts().await;
 
         let provider = self.provider().await?;
+        let provider_name = provider.get_name().to_string();
+        let requested_model = provider.get_model_config().model_name;
+        let reports_resolved_model = provider.reports_resolved_model();
+        let provider_name_for_inference = provider_name.clone();
+        let requested_model_for_inference = requested_model.clone();
+        let build_inference = move |usage: &ProviderUsage| InferenceMetadata {
+            provider: provider_name_for_inference.clone(),
+            requested_model: requested_model_for_inference.clone(),
+            resolved_model: Some(usage.model.clone()),
+        };
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
+            let provider = provider.clone();
             let manager_for_spawn = session_manager.clone();
             let session_name_update_tx = self.config.session_name_update_tx.clone();
             tokio::spawn(async move {
@@ -1692,6 +1703,7 @@ impl Agent {
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
                 let mut tools_updated = false;
+                let mut turn_usage: Option<ProviderUsage> = None;
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
 
@@ -1711,6 +1723,16 @@ impl Agent {
 
                             if let Some(ref usage) = usage {
                                 self.update_session_metrics(&session_config.id, session_config.schedule_id.clone(), usage, false).await?;
+                                if reports_resolved_model {
+                                    turn_usage = Some(usage.clone());
+                                    if response.is_none() {
+                                        yield AgentEvent::Message(
+                                            Message::assistant()
+                                                .with_visibility(true, false)
+                                                .with_inference(build_inference(usage)),
+                                        );
+                                    }
+                                }
                             }
 
                             if let Some(response) = response {
@@ -1725,6 +1747,17 @@ impl Agent {
                                         surfaced_thinking_in_turn,
                                     )
                                     .await;
+
+                                let filtered_response = if let Some(usage) = turn_usage.as_ref() {
+                                    filtered_response.with_inference(build_inference(usage))
+                                } else {
+                                    filtered_response
+                                };
+                                let response = if let Some(usage) = turn_usage.as_ref() {
+                                    response.with_inference(build_inference(usage))
+                                } else {
+                                    response
+                                };
 
                                 surfaced_thinking_in_turn |= filtered_response.content.iter().any(
                                     |content| {
@@ -2233,6 +2266,16 @@ impl Agent {
                         }
                     }
                 }
+
+                let messages_to_add = if let Some(ref usage) = turn_usage {
+                    Conversation::new_unvalidated(
+                        messages_to_add
+                            .into_iter()
+                            .map(|message| message.with_inference_if_assistant(build_inference(usage))),
+                    )
+                } else {
+                    messages_to_add
+                };
 
                 for msg in &messages_to_add {
                     session_manager.add_message(&session_config.id, msg).await?;

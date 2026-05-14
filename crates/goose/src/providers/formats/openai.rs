@@ -734,15 +734,22 @@ pub fn get_usage(usage: &Value) -> Usage {
         .with_cache_tokens(cache_read_input_tokens, cache_write_input_tokens)
 }
 
-fn extract_usage_with_output_tokens(chunk: &StreamingChunk) -> Option<ProviderUsage> {
+fn extract_usage_with_output_tokens(
+    chunk: &StreamingChunk,
+    fallback_model: Option<&str>,
+) -> Option<ProviderUsage> {
     chunk
         .usage
         .as_ref()
         .and_then(|u| {
-            chunk.model.as_ref().map(|model| ProviderUsage {
-                usage: get_usage(u),
-                model: model.clone(),
-            })
+            chunk
+                .model
+                .as_deref()
+                .or(fallback_model)
+                .map(|model| ProviderUsage {
+                    usage: get_usage(u),
+                    model: model.to_string(),
+                })
         })
         .filter(|u| u.usage.output_tokens.is_some())
 }
@@ -901,6 +908,7 @@ where
         // reasoning will arrive. Emitting it immediately and then receiving
         // reasoning_content in a later chunk would produce duplicated reasoning.
         let mut pending_inline_thinking = String::new();
+        let mut last_seen_model: Option<String> = None;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -917,6 +925,9 @@ where
             let chunk: StreamingChunk = parse_streaming_chunk(
                 line.ok_or_else(|| anyhow!("unexpected stream format"))?
             )?;
+            if let Some(model) = &chunk.model {
+                last_seen_model = Some(model.clone());
+            }
 
             if !chunk.choices.is_empty() {
                 if let Some(details) = &chunk.choices[0].delta.reasoning_details {
@@ -931,7 +942,7 @@ where
                 }
             }
 
-            let mut usage = extract_usage_with_output_tokens(&chunk);
+            let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref());
 
             if chunk.choices.is_empty() {
                 yield (None, usage)
@@ -959,8 +970,11 @@ where
                                 }
 
                                 let tool_chunk: StreamingChunk = parse_streaming_chunk(line)?;
+                                if let Some(model) = &tool_chunk.model {
+                                    last_seen_model = Some(model.clone());
+                                }
 
-                                if let Some(chunk_usage) = extract_usage_with_output_tokens(&tool_chunk) {
+                                if let Some(chunk_usage) = extract_usage_with_output_tokens(&tool_chunk, last_seen_model.as_deref()) {
                                     usage = Some(chunk_usage);
                                 }
 
@@ -2528,6 +2542,10 @@ data: [DONE]
         assert_eq!(result.tool_calls.len(), 1, "Expected 1 tool call");
         assert_eq!(result.tool_calls[0], "developer__shell");
         assert_usage_yielded_once(&result, 8320, 172, 8492);
+        assert_eq!(
+            result.usage.as_ref().map(|usage| usage.model.as_str()),
+            Some("gpt-5.2-1106-preview")
+        );
 
         Ok(())
     }

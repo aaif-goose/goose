@@ -43,11 +43,26 @@ impl Conversation {
     }
 
     pub fn push(&mut self, message: Message) {
+        if message.content.is_empty() && message.metadata.inference.is_some() {
+            if let Some(existing) = self
+                .0
+                .iter_mut()
+                .rev()
+                .find(|m| m.role == message.role && m.is_user_visible())
+            {
+                existing.metadata.inference = message.metadata.inference;
+            }
+            return;
+        }
+
         if let Some(last) = self
             .0
             .last_mut()
             .filter(|m| m.id.is_some() && m.id == message.id)
         {
+            if message.metadata.inference.is_some() {
+                last.metadata.inference = message.metadata.inference.clone();
+            }
             match (last.content.last_mut(), message.content.last()) {
                 (Some(MessageContent::Text(ref mut last)), Some(MessageContent::Text(new)))
                     if message.content.len() == 1 =>

@@ -196,6 +196,15 @@ export default function BaseChat({
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
   const sessionLoaded = session !== undefined;
+  const latestInference = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'assistant' && message.metadata.userVisible && message.metadata.inference) {
+        return message.metadata.inference;
+      }
+    }
+    return null;
+  }, [messages]);
 
   useEffect(() => {
     if (!recipe || !isActiveSession) return;
@@ -508,6 +517,7 @@ export default function BaseChat({
             sessionModel={sessionModel}
             sessionProvider={sessionProvider}
             sessionLoaded={sessionLoaded}
+            latestInference={latestInference}
             {...customChatInputProps}
           />
         </div>
