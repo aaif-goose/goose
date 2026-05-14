@@ -35,7 +35,6 @@ use super::{
     provider_registry::ProviderRegistry,
     snowflake::SnowflakeProvider,
     tetrate::TetrateProvider,
-    venice::VeniceProvider,
     xai::XaiProvider,
 };
 use crate::config::ExtensionConfig;
@@ -84,7 +83,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<SageMakerTgiProvider>(false);
         registry.register::<SnowflakeProvider>(false);
         registry.register::<TetrateProvider>(true);
-        registry.register::<VeniceProvider>(false);
         registry.register::<XaiProvider>(false);
     });
     // Register cleanup functions for providers with cached state
