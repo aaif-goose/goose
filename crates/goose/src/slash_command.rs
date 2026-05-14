@@ -119,12 +119,13 @@ fn skill_commands(sources: Vec<SourceEntry>) -> Vec<SlashCommandEntry> {
             if name.is_empty() {
                 return None;
             }
+            let input_hint = crate::skills::skill_argument_hint(&source);
 
             Some(SlashCommandEntry {
                 name,
                 description: source.description,
                 source: SlashCommandSource::Skill,
-                input_hint: crate::skills::skill_argument_hint(&source),
+                input_hint,
             })
         })
         .collect()
@@ -229,7 +230,7 @@ mod tests {
 
     #[test]
     fn skill_commands_do_not_override_builtins() {
-        let reserved_names = list_builtin_commands()
+        let reserved_names: HashSet<String> = list_builtin_commands()
             .into_iter()
             .map(|command| normalize_command_name(&command.name))
             .collect();
