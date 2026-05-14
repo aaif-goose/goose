@@ -3,6 +3,8 @@ use std::path::Path;
 
 use goose_sdk::custom_requests::SourceEntry;
 
+use crate::recipe::RecipeParameterRequirement;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlashCommandSource {
     Builtin,
@@ -38,8 +40,7 @@ pub fn list_acp_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
         .collect();
 
     for command in recipe_commands(crate::slash_commands::list_commands()) {
-        let name = normalize_command_name(&command.name);
-        if reserved_names.insert(name) {
+        if reserved_names.insert(command.name.clone()) {
             commands.push(command);
         }
     }
@@ -47,7 +48,7 @@ pub fn list_acp_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
     commands.extend(
         skill_commands(crate::skills::list_installed_skills(working_dir))
             .into_iter()
-            .filter(|command| !reserved_names.contains(&normalize_command_name(&command.name))),
+            .filter(|command| !reserved_names.contains(&command.name)),
     );
     commands
 }
@@ -95,16 +96,6 @@ fn recipe_entry(recipe_path: &str) -> Option<RecipeCommandMetadata> {
     )
     .ok()?;
 
-    let required_param_count = validation_result
-        .parameters
-        .as_ref()
-        .map(|params| params.iter().filter(|p| p.default.is_none()).count())
-        .unwrap_or(0);
-
-    if required_param_count > 1 {
-        return None;
-    }
-
     Some(RecipeCommandMetadata {
         description: validation_result.description,
         input_hint: input_hint_for_recipe(validation_result.parameters.as_ref()),
@@ -137,13 +128,31 @@ fn normalize_command_name(name: &str) -> String {
 
 fn input_hint_for_recipe(params: Option<&Vec<crate::recipe::RecipeParameter>>) -> Option<String> {
     let params = params?;
+    if params.is_empty() {
+        return None;
+    }
 
-    params
-        .iter()
-        .find(|p| p.key == "args")
-        .or_else(|| params.iter().find(|p| p.default.is_none()))
-        .or_else(|| params.first())
-        .map(|p| p.description.clone())
+    let mut required = Vec::new();
+    let mut optional = Vec::new();
+
+    for p in params {
+        match p.requirement {
+            RecipeParameterRequirement::Required | RecipeParameterRequirement::UserPrompt => {
+                required.push(format!("<{}>", p.key));
+            }
+            RecipeParameterRequirement::Optional => {
+                optional.push(format!("[--{} <{}>]", p.key, p.key));
+            }
+        }
+    }
+
+    Some(
+        required
+            .into_iter()
+            .chain(optional)
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 
 fn builtin_input_hint(command: &str) -> Option<&'static str> {
@@ -255,7 +264,7 @@ mod tests {
         let recipe_path = tmp.path().join("review.yaml");
         std::fs::write(
             &recipe_path,
-            "version: 1.0.0\ntitle: Review Recipe\ndescription: Review with a recipe\ninstructions: Review the change\nparameters:\n  - key: args\n    description: Describe what to review\n",
+            "version: 1.0.0\ntitle: Review Recipe\ndescription: Review with a recipe\ninstructions: Review the change\n",
         )
         .unwrap();
 
@@ -268,9 +277,65 @@ mod tests {
         assert_eq!(commands[0].name, "review");
         assert_eq!(commands[0].description, "Review with a recipe");
         assert_eq!(commands[0].source, SlashCommandSource::Recipe);
+    }
+
+    #[test]
+    fn recipe_commands_omit_hint_for_no_param_recipe() {
+        let tmp = TempDir::new().unwrap();
+        let recipe_path = tmp.path().join("status.yaml");
+        std::fs::write(
+            &recipe_path,
+            "version: 1.0.0\ntitle: Status\ndescription: Check status\ninstructions: Check status\n",
+        )
+        .unwrap();
+
+        let commands = recipe_commands(vec![crate::slash_commands::SlashCommandMapping {
+            command: "status".to_string(),
+            recipe_path: recipe_path.to_string_lossy().to_string(),
+        }]);
+
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].input_hint, None);
+    }
+
+    #[test]
+    fn recipe_commands_render_one_required_param_hint() {
+        let tmp = TempDir::new().unwrap();
+        let recipe_path = tmp.path().join("review.yaml");
+        std::fs::write(
+            &recipe_path,
+            "version: 1.0.0\ntitle: Review\ndescription: Review target\ninstructions: \"Review {{ target }}\"\nparameters:\n  - key: target\n    input_type: string\n    requirement: required\n    description: Target\n",
+        )
+        .unwrap();
+
+        let commands = recipe_commands(vec![crate::slash_commands::SlashCommandMapping {
+            command: "review".to_string(),
+            recipe_path: recipe_path.to_string_lossy().to_string(),
+        }]);
+
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].input_hint.as_deref(), Some("<target>"));
+    }
+
+    #[test]
+    fn recipe_commands_do_not_special_case_args_hint() {
+        let tmp = TempDir::new().unwrap();
+        let recipe_path = tmp.path().join("deploy.yaml");
+        std::fs::write(
+            &recipe_path,
+            "version: 1.0.0\ntitle: Deploy\ndescription: Deploy\ninstructions: \"Deploy {{ component }} with {{ args }}\"\nparameters:\n  - key: component\n    input_type: string\n    requirement: required\n    description: Component\n  - key: args\n    input_type: string\n    requirement: optional\n    default: default args\n    description: Args\n",
+        )
+        .unwrap();
+
+        let commands = recipe_commands(vec![crate::slash_commands::SlashCommandMapping {
+            command: "deploy".to_string(),
+            recipe_path: recipe_path.to_string_lossy().to_string(),
+        }]);
+
+        assert_eq!(commands.len(), 1);
         assert_eq!(
             commands[0].input_hint.as_deref(),
-            Some("Describe what to review")
+            Some("<component> [--args <args>]")
         );
     }
 
@@ -317,16 +382,10 @@ mod tests {
     }
 
     #[test]
-    fn recipe_commands_skip_missing_invalid_and_multi_required_param_recipes() {
+    fn recipe_commands_skip_missing_and_invalid_recipes() {
         let tmp = TempDir::new().unwrap();
         let invalid_recipe_path = tmp.path().join("invalid.yaml");
         std::fs::write(&invalid_recipe_path, "not: a recipe").unwrap();
-        let multi_param_recipe_path = tmp.path().join("multi.yaml");
-        std::fs::write(
-            &multi_param_recipe_path,
-            "version: 1.0.0\ntitle: Multi Param Recipe\ndescription: Has too many required params\ninstructions: Review the change\nparameters:\n  - key: first\n    description: First param\n  - key: second\n    description: Second param\n",
-        )
-        .unwrap();
 
         let commands = recipe_commands(vec![
             crate::slash_commands::SlashCommandMapping {
@@ -341,13 +400,31 @@ mod tests {
                 command: "invalid".to_string(),
                 recipe_path: invalid_recipe_path.to_string_lossy().to_string(),
             },
-            crate::slash_commands::SlashCommandMapping {
-                command: "multi".to_string(),
-                recipe_path: multi_param_recipe_path.to_string_lossy().to_string(),
-            },
         ]);
 
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn recipe_commands_render_multi_param_hint() {
+        let tmp = TempDir::new().unwrap();
+        let recipe_path = tmp.path().join("deploy.yaml");
+        std::fs::write(
+            &recipe_path,
+            "version: 1.0.0\ntitle: Deploy\ndescription: Deploy a service\ninstructions: \"Deploy {{ component }} from {{ from }} to {{ to }} scope {{ scope }}\"\nparameters:\n  - key: component\n    input_type: string\n    requirement: required\n    description: Component\n  - key: from\n    input_type: string\n    requirement: required\n    description: From\n  - key: to\n    input_type: string\n    requirement: optional\n    default: prod\n    description: To\n  - key: scope\n    input_type: string\n    requirement: optional\n    default: all\n    description: Scope\n",
+        )
+        .unwrap();
+
+        let commands = recipe_commands(vec![crate::slash_commands::SlashCommandMapping {
+            command: "deploy".to_string(),
+            recipe_path: recipe_path.to_string_lossy().to_string(),
+        }]);
+
+        assert_eq!(commands.len(), 1);
+        assert_eq!(
+            commands[0].input_hint.as_deref(),
+            Some("<component> <from> [--to <to>] [--scope <scope>]")
+        );
     }
 
     fn source_entry(source_type: SourceType, name: &str, description: &str) -> SourceEntry {

@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::config::Config;
-use crate::recipe::Recipe;
 
 const SLASH_COMMANDS_CONFIG_KEY: &str = "slash_commands";
 
@@ -59,16 +58,4 @@ pub fn get_recipe_for_command(command: &str) -> Option<PathBuf> {
         .into_iter()
         .find(|mapping| mapping.command == normalized)
         .map(|mapping| PathBuf::from(mapping.recipe_path))
-}
-
-pub fn resolve_slash_command(command: &str) -> Option<Recipe> {
-    let recipe_path = get_recipe_for_command(command)?;
-
-    if !recipe_path.exists() {
-        return None;
-    }
-    let recipe_content = std::fs::read_to_string(&recipe_path).ok()?;
-    let recipe = Recipe::from_content(&recipe_content).ok()?;
-
-    Some(recipe)
 }
