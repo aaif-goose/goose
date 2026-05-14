@@ -486,5 +486,4 @@ mod tests {
         assert!(!matches(pat, "rm -rf /var/log-backup"));
         assert!(!matches(pat, "rm -rf /var/logs"));
     }
-
 }
