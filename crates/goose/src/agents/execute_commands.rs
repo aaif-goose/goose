@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::{Message, SystemNotificationType};
 use crate::recipe::build_recipe::build_recipe_from_template_with_positional_params;
-use crate::skills::render_loaded_skill_with_args;
+use crate::skills::loaded_skill_context_with_args;
 
 use super::Agent;
 
@@ -491,18 +491,8 @@ impl Agent {
             return Ok(None);
         };
 
-        let task = if params_str.is_empty() {
-            "Use this skill for the current task."
-        } else {
-            params_str
-        };
-
-        let prompt = format!(
-            "The user invoked the Goose skill `{}`.\n\n{}\n\nUser request:\n{}",
-            skill.name,
-            render_loaded_skill_with_args(&skill, (!params_str.is_empty()).then_some(params_str))?,
-            task
-        );
+        let prompt =
+            loaded_skill_context_with_args(&skill, (!params_str.is_empty()).then_some(params_str))?;
 
         Ok(Some(Message::user().with_text(prompt)))
     }

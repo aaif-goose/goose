@@ -1,5 +1,5 @@
 use super::discover_skills;
-use super::render_loaded_skill_with_args;
+use super::loaded_skill_context_with_args;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
@@ -133,7 +133,7 @@ impl McpClientTrait for SkillsClient {
         let skills = discover_skills(Some(&self.working_dir));
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
-            return match render_loaded_skill_with_args(skill, args) {
+            return match loaded_skill_context_with_args(skill, args) {
                 Ok(rendered) => Ok(CallToolResult::success(vec![Content::text(rendered)])),
                 Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
                     "Failed to parse skill arguments: {}",

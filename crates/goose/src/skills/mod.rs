@@ -2,6 +2,7 @@
 //! built-ins) and the runtime MCP client (`client` submodule). User-facing
 //! CRUD lives in `crate::sources`, which generalizes across source types.
 
+mod arguments;
 mod builtin;
 pub mod client;
 
@@ -12,13 +13,12 @@ use crate::plugins::installed_plugin_skill_dirs;
 use crate::sources::parse_frontmatter;
 use agent_client_protocol::Error;
 use anyhow::Result;
+use arguments::apply_skill_arguments;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
-use regex::{Captures, Regex};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 use tracing::warn;
 
 #[derive(Debug, Deserialize)]
@@ -99,12 +99,11 @@ pub(crate) fn validate_skill_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn render_loaded_skill(skill: &SourceEntry) -> String {
+fn loaded_skill_context(skill: &SourceEntry, content: &str) -> String {
+    let title = format!("{} ({})", skill.name, skill.source_type);
     let mut output = format!(
-        "# Loaded Skill: {} ({})\n\n{}\n",
-        skill.name,
-        skill.source_type,
-        skill.to_load_text()
+        "# Loaded Skill: {title}\n\n{}\n\n## Content\n\n{}\n",
+        skill.description, content
     );
 
     if !skill.supporting_files.is_empty() {
@@ -128,15 +127,14 @@ pub fn render_loaded_skill(skill: &SourceEntry) -> String {
     output
 }
 
-pub fn render_loaded_skill_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
-    let mut rendered_skill = skill.clone();
-    rendered_skill.content = render_skill_content_with_args(
-        &skill.content,
-        args.unwrap_or_default(),
-        &skill_argument_names(skill),
-    )?;
+pub fn loaded_skill_context_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
+    let content = if let Some(args) = args {
+        apply_skill_arguments(&skill.content, args, &skill_argument_names(skill))?
+    } else {
+        skill.content.clone()
+    };
 
-    Ok(render_loaded_skill(&rendered_skill))
+    Ok(loaded_skill_context(skill, &content))
 }
 
 pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
@@ -162,66 +160,6 @@ pub fn skill_argument_names(skill: &SourceEntry) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-fn render_skill_content_with_args(
-    content: &str,
-    raw_args: &str,
-    argument_names: &[String],
-) -> Result<String> {
-    static VARIABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\$ARGUMENTS(?:\[(\d+)\])?|\$(\d+)|\$([A-Za-z_][A-Za-z0-9_-]*)")
-            .expect("skill argument variable regex should compile")
-    });
-
-    let values = crate::utils::split_command_args(raw_args)?;
-    let named_values: HashMap<&str, &str> = argument_names
-        .iter()
-        .zip(values.iter())
-        .map(|(name, value)| (name.as_str(), value.as_str()))
-        .collect();
-
-    Ok(VARIABLE_RE
-        .replace_all(content, |captures: &Captures<'_>| {
-            if let Some(index) = captures.get(1) {
-                return index
-                    .as_str()
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|index| values.get(index))
-                    .cloned()
-                    .unwrap_or_default();
-            }
-
-            if captures
-                .get(0)
-                .is_some_and(|value| value.as_str() == "$ARGUMENTS")
-            {
-                return raw_args.to_string();
-            }
-
-            if let Some(position) = captures.get(2) {
-                return position
-                    .as_str()
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|position| position.checked_sub(1))
-                    .and_then(|index| values.get(index))
-                    .cloned()
-                    .unwrap_or_default();
-            }
-
-            if let Some(name) = captures.get(3) {
-                return named_values
-                    .get(name.as_str())
-                    .copied()
-                    .unwrap_or_default()
-                    .to_string();
-            }
-
-            String::new()
-        })
-        .into_owned())
 }
 
 fn canonicalize_or_original(path: &Path) -> PathBuf {
@@ -577,41 +515,21 @@ mod tests {
     }
 
     #[test]
-    fn render_loaded_skill_with_args_replaces_positional_and_named_values() {
-        let skill =
-            skill_with_content("Migrate $component from $from to $to. First: $1. Raw: $ARGUMENTS.");
+    fn loaded_skill_context_with_args_replaces_arguments_placeholder_with_raw_args() {
+        let skill = skill_with_content("Review $ARGUMENTS carefully.");
 
-        let rendered =
-            render_loaded_skill_with_args(&skill, Some(r#""Button Group" old-lib new-lib"#))
-                .unwrap();
+        let rendered = loaded_skill_context_with_args(&skill, Some("src/foo.rs --strict")).unwrap();
 
-        assert!(rendered.contains(
-            "Migrate Button Group from old-lib to new-lib. First: Button Group. Raw: \"Button Group\" old-lib new-lib."
-        ));
+        assert!(rendered.contains("Review src/foo.rs --strict carefully."));
     }
 
     #[test]
-    fn render_loaded_skill_with_args_replaces_argument_indexes() {
-        let skill = skill_with_content("Second: $ARGUMENTS[1]. Missing: '$ARGUMENTS[9]' '$4'.");
+    fn loaded_skill_context_with_args_uses_context_without_args() {
+        let skill = skill_with_content("Review the code carefully.");
 
-        let rendered = render_loaded_skill_with_args(&skill, Some("one two three")).unwrap();
+        let rendered = loaded_skill_context_with_args(&skill, None).unwrap();
 
-        assert!(rendered.contains("Second: two. Missing: '' ''."));
-    }
-
-    #[test]
-    fn render_loaded_skill_with_args_preserves_windows_paths() {
-        let skill = skill_with_content("Path: $component");
-
-        let rendered = render_loaded_skill_with_args(&skill, Some(r#""C:\path\""#)).unwrap();
-
-        assert!(rendered.contains(r"Path: C:\path\"));
-    }
-
-    #[test]
-    fn render_loaded_skill_with_args_returns_unmatched_quote_error() {
-        let skill = skill_with_content("Path: $component");
-
-        assert!(render_loaded_skill_with_args(&skill, Some(r#""unterminated"#)).is_err());
+        assert!(rendered.contains("# Loaded Skill: test-skill (skill)"));
+        assert!(rendered.contains("## Content\n\nReview the code carefully."));
     }
 }
