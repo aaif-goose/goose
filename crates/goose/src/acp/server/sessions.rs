@@ -11,6 +11,7 @@ impl GooseAcpAgent {
                 .data("working directory cannot be empty"));
         }
         let path = std::path::PathBuf::from(&working_dir);
+        validate_absolute_cwd(&path)?;
         if !path.exists() || !path.is_dir() {
             return Err(
                 agent_client_protocol::Error::invalid_params().data("invalid directory path")

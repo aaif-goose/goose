@@ -1046,6 +1046,14 @@ fn build_usage_update(session: &Session, context_limit: usize) -> UsageUpdate {
     UsageUpdate::new(used, context_limit as u64)
 }
 
+fn validate_absolute_cwd(cwd: &PathBuf) -> Result<(), agent_client_protocol::Error> {
+    if cwd.is_absolute() {
+        Ok(())
+    } else {
+        Err(agent_client_protocol::Error::invalid_params().data("cwd must be an absolute path"))
+    }
+}
+
 impl GooseAcpAgent {
     pub fn permission_manager(&self) -> Arc<PermissionManager> {
         Arc::clone(&self.permission_manager)
@@ -2433,6 +2441,7 @@ impl GooseAcpAgent {
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "new session request");
         let t_start = std::time::Instant::now();
+        validate_absolute_cwd(&args.cwd)?;
 
         let requested_provider = args
             .meta
@@ -2685,6 +2694,7 @@ impl GooseAcpAgent {
         args: LoadSessionRequest,
     ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
+        validate_absolute_cwd(&args.cwd)?;
 
         let session_id = args.session_id.0.to_string();
         let sid = sid_short(&session_id);
@@ -2856,6 +2866,11 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err_ctx("Failed to update session working directory")?;
+        let goose_session = self
+            .session_manager
+            .get_session(&session_id, false)
+            .await
+            .internal_err_ctx("Failed to reload session")?;
 
         // Register the session with a Loading handle.
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
@@ -3373,6 +3388,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         args: ForkSessionRequest,
     ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
+        validate_absolute_cwd(&args.cwd)?;
         let source_session_id = &*args.session_id.0;
 
         let new_session = self

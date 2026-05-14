@@ -10,7 +10,7 @@ use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
 use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
-use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::base::{current_working_dir, ProviderDef, ProviderMetadata};
 use crate::providers::inventory::InventoryIdentityInput;
 
 const PI_ACP_PROVIDER_NAME: &str = "pi-acp";
@@ -45,8 +45,7 @@ impl ProviderDef for PiAcpProvider {
         model: ModelConfig,
         extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<AcpProvider>> {
-        let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::from_env_with_working_dir(model, extensions, working_dir)
+        Self::from_env_with_working_dir(model, extensions, current_working_dir())
     }
 
     fn from_env_with_working_dir(

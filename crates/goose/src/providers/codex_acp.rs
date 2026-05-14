@@ -10,7 +10,7 @@ use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
 use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
-use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::base::{current_working_dir, ProviderDef, ProviderMetadata};
 use crate::providers::inventory::InventoryIdentityInput;
 
 const CODEX_ACP_PROVIDER_NAME: &str = "codex-acp";
@@ -43,14 +43,13 @@ impl ProviderDef for CodexAcpProvider {
         model: ModelConfig,
         extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<AcpProvider>> {
-        let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::from_env_with_working_dir(model, extensions, working_dir)
+        Self::from_env_with_working_dir(model, extensions, current_working_dir())
     }
 
     fn from_env_with_working_dir(
         model: ModelConfig,
         extensions: Vec<crate::config::ExtensionConfig>,
-        work_dir: PathBuf,
+        working_dir: PathBuf,
     ) -> BoxFuture<'static, Result<AcpProvider>> {
         Box::pin(async move {
             let config = Config::global();
@@ -96,7 +95,7 @@ impl ProviderDef for CodexAcpProvider {
                 args,
                 env,
                 env_remove: vec![],
-                work_dir,
+                work_dir: working_dir,
                 mcp_servers,
                 // Disabled until https://github.com/zed-industries/codex-acp/issues/179 is fixed.
                 session_mode_id: None,

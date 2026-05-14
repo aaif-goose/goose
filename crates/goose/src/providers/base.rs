@@ -767,6 +767,10 @@ impl Usage {
     }
 }
 
+pub(crate) fn current_working_dir() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
 pub trait ProviderDef: Send + Sync {
     type Provider: Provider + 'static;
 
@@ -789,6 +793,8 @@ pub trait ProviderDef: Send + Sync {
     where
         Self: Sized,
     {
+        // ACP subprocess providers must override this so session cwd is preserved.
+        // Non-subprocess providers can rely on the default because cwd is irrelevant.
         Self::from_env(model, extensions)
     }
 

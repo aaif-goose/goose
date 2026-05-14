@@ -162,6 +162,58 @@ fn test_new_session_passes_cwd_to_provider_factory() {
 }
 
 #[test]
+fn test_load_session_passes_load_cwd_to_provider_factory() {
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let initial_cwd = tempfile::tempdir().unwrap();
+        let captured_cwds = Arc::new(Mutex::new(Vec::<Option<PathBuf>>::new()));
+        let factory_cwds = Arc::clone(&captured_cwds);
+        let provider_factory: AcpProviderFactory = Arc::new(
+            move |provider_name, model_config, _extensions, working_dir| {
+                factory_cwds.lock().unwrap().push(working_dir);
+                Box::pin(async move {
+                    Ok(Arc::new(MockProvider {
+                        name: provider_name,
+                        model_config,
+                        recommended_models: Vec::new(),
+                    }) as Arc<dyn Provider>)
+                })
+            },
+        );
+
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                cwd: Some(initial_cwd),
+                provider_factory: Some(provider_factory),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        let SessionData {
+            session: loaded, ..
+        } = conn.load_session(&session_id, vec![]).await.unwrap();
+        let expected_cwd = loaded.work_dir();
+
+        let captured_cwd = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if let Some(cwd) = captured_cwds.lock().unwrap().get(1).cloned() {
+                    break cwd;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("provider factory was not called for load session");
+
+        assert_eq!(captured_cwd, Some(expected_cwd));
+    });
+}
+
+#[test]
 fn test_custom_list_builtin_skill_sources() {
     run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
