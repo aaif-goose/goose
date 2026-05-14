@@ -64,6 +64,12 @@ pub fn recommended_models_from_registry(provider: &str) -> Vec<String> {
         .collect()
 }
 
+/// Providers that run models locally — their cost is always zero regardless
+/// of what the canonical registry says for the underlying model architecture.
+fn is_local_provider(provider: &str) -> bool {
+    matches!(provider, "ollama" | "local")
+}
+
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
     let registry = CanonicalModelRegistry::bundled().ok()?;
 
@@ -74,8 +80,9 @@ pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<Canonica
         return None;
     };
 
-    // TODO: replace with a flag on the provider once we have one
-    if matches!(provider, "ollama" | "local") {
+    // Local providers run models on the user's own hardware — zero out cloud
+    // pricing so every consumer (CLI, server, etc.) sees the correct cost.
+    if is_local_provider(provider) {
         canonical.cost = Pricing::default();
     }
 
@@ -88,11 +95,16 @@ mod tests {
 
     #[test]
     fn ollama_models_have_zero_cost() {
+        // "mistral-nemo" resolves to mistralai/mistral-nemo which has non-zero cloud pricing.
+        // When accessed via ollama, cost must be zeroed out.
         let canonical = maybe_get_canonical_model("ollama", "mistral-nemo")
             .expect("mistral-nemo should resolve via ollama");
         assert_eq!(canonical.cost.input, None);
         assert_eq!(canonical.cost.output, None);
-        assert!(canonical.limit.context > 0);
+        assert!(
+            canonical.limit.context > 0,
+            "context limit should be preserved"
+        );
     }
 
     #[test]
