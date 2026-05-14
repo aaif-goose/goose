@@ -491,13 +491,20 @@ impl Config {
 
     pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let config_values = self.load()?;
-        Ok(HashMap::from_iter(config_values.into_iter().filter_map(
-            |(k, v)| {
-                k.as_str()
-                    .map(|k| k.to_string())
-                    .zip(serde_json::to_value(v).ok())
-            },
-        )))
+        let mut map = HashMap::from_iter(config_values.into_iter().filter_map(|(k, v)| {
+            k.as_str()
+                .map(|k| k.to_string())
+                .zip(serde_json::to_value(v).ok())
+        }));
+
+        if let Ok(provider) = self.get_goose_provider() {
+            map.insert("GOOSE_PROVIDER".to_string(), Value::String(provider));
+        }
+        if let Ok(model) = self.get_goose_model() {
+            map.insert("GOOSE_MODEL".to_string(), Value::String(model));
+        }
+
+        Ok(map)
     }
 
     fn config_write_target_path(&self) -> Result<PathBuf, ConfigError> {
