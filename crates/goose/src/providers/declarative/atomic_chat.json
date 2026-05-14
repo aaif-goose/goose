@@ -2,7 +2,7 @@
   "name": "atomic_chat",
   "engine": "openai",
   "display_name": "Atomic Chat",
-  "description": "Open-source Atomic Chat desktop app (Tauri) for local and cloud models. It exposes an OpenAI-compatible HTTP API (default `http://localhost:1337/v1`) so other tools can call your local MLX / llama.cpp stack through a single endpoint. Project: https://github.com/AtomicBot-ai/Atomic-Chat",
+  "description": "Local models through Atomic Chat's OpenAI-compatible server",
   "api_key_env": "",
   "base_url": "${ATOMIC_CHAT_HOST}/v1/chat/completions",
   "env_vars": [
