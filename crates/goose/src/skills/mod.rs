@@ -125,6 +125,31 @@ pub fn render_loaded_skill(skill: &SourceEntry) -> String {
     output
 }
 
+pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
+    skill
+        .properties
+        .get("argument-hint")
+        .and_then(|value| value.as_str())
+        .filter(|hint| !hint.is_empty())
+        .map(str::to_string)
+}
+
+pub fn skill_argument_names(skill: &SourceEntry) -> Vec<String> {
+    skill
+        .properties
+        .get("arguments")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn canonicalize_or_original(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }

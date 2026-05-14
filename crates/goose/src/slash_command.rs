@@ -124,7 +124,7 @@ fn skill_commands(sources: Vec<SourceEntry>) -> Vec<SlashCommandEntry> {
                 name,
                 description: source.description,
                 source: SlashCommandSource::Skill,
-                input_hint: None,
+                input_hint: crate::skills::skill_argument_hint(&source),
             })
         })
         .collect()
@@ -212,7 +212,7 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            "---\nname: code-review\ndescription: Review changed code\n---\nReview the diff.",
+            "---\nname: code-review\ndescription: Review changed code\nmetadata:\n  argument-hint: \"[task]\"\n  arguments:\n    - task\n---\nReview the diff.",
         )
         .unwrap();
 
@@ -224,7 +224,7 @@ mod tests {
 
         assert_eq!(command.description, "Review changed code");
         assert_eq!(command.source, SlashCommandSource::Skill);
-        assert_eq!(command.input_hint, None);
+        assert_eq!(command.input_hint.as_deref(), Some("[task]"));
     }
 
     #[test]
