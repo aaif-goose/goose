@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "aws-providers")]
@@ -158,6 +159,18 @@ pub async fn create(
 ) -> Result<Arc<dyn Provider>> {
     let entry = get_from_registry(name).await?;
     entry.create(model, extensions).await
+}
+
+pub async fn create_with_working_dir(
+    name: &str,
+    model: ModelConfig,
+    extensions: Vec<ExtensionConfig>,
+    working_dir: PathBuf,
+) -> Result<Arc<dyn Provider>> {
+    let entry = get_from_registry(name).await?;
+    entry
+        .create_with_working_dir(model, extensions, working_dir)
+        .await
 }
 
 pub async fn create_with_default_model(

@@ -47,6 +47,15 @@ impl ProviderDef for CopilotAcpProvider {
         model: ModelConfig,
         extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<AcpProvider>> {
+        let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::from_env_with_working_dir(model, extensions, working_dir)
+    }
+
+    fn from_env_with_working_dir(
+        model: ModelConfig,
+        extensions: Vec<crate::config::ExtensionConfig>,
+        working_dir: PathBuf,
+    ) -> BoxFuture<'static, Result<AcpProvider>> {
         Box::pin(async move {
             let config = Config::global();
             // with_npm() includes npm global bin dir (desktop app PATH may not)
@@ -75,7 +84,7 @@ impl ProviderDef for CopilotAcpProvider {
                 args,
                 env: vec![],
                 env_remove: vec![],
-                work_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                work_dir: working_dir,
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&goose_mode].clone()),
                 mode_mapping,

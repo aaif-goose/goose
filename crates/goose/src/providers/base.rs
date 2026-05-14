@@ -26,6 +26,7 @@ use utoipa::ToSchema;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::ops::{Add, AddAssign};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::sync::Mutex;
@@ -779,6 +780,17 @@ pub trait ProviderDef: Send + Sync {
     ) -> BoxFuture<'static, Result<Self::Provider>>
     where
         Self: Sized;
+
+    fn from_env_with_working_dir(
+        model: ModelConfig,
+        extensions: Vec<ExtensionConfig>,
+        _working_dir: PathBuf,
+    ) -> BoxFuture<'static, Result<Self::Provider>>
+    where
+        Self: Sized,
+    {
+        Self::from_env(model, extensions)
+    }
 
     fn supports_inventory_refresh() -> bool
     where

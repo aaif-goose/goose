@@ -12,6 +12,7 @@ use goose::model::ModelConfig;
 use goose::providers::base::{MessageStream, Provider};
 use goose::providers::errors::ProviderError;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use common_tests::fixtures::OpenAiFixture;
@@ -49,7 +50,7 @@ impl Provider for MockProvider {
 }
 
 fn mock_provider_factory() -> AcpProviderFactory {
-    Arc::new(|provider_name, model_config, _extensions| {
+    Arc::new(|provider_name, model_config, _extensions, _working_dir| {
         Box::pin(async move {
             let recommended_models = match provider_name.as_str() {
                 "anthropic" => vec![
@@ -109,6 +110,54 @@ fn test_custom_get_extensions() {
             response.get("warnings").is_some(),
             "missing 'warnings' field"
         );
+    });
+}
+
+#[test]
+fn test_new_session_passes_cwd_to_provider_factory() {
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let cwd = tempfile::tempdir().unwrap();
+        let expected_cwd = cwd.path().to_path_buf();
+        let captured_cwds = Arc::new(Mutex::new(Vec::<Option<PathBuf>>::new()));
+        let factory_cwds = Arc::clone(&captured_cwds);
+        let provider_factory: AcpProviderFactory = Arc::new(
+            move |provider_name, model_config, _extensions, working_dir| {
+                factory_cwds.lock().unwrap().push(working_dir);
+                Box::pin(async move {
+                    Ok(Arc::new(MockProvider {
+                        name: provider_name,
+                        model_config,
+                        recommended_models: Vec::new(),
+                    }) as Arc<dyn Provider>)
+                })
+            },
+        );
+
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                cwd: Some(cwd),
+                provider_factory: Some(provider_factory),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        conn.new_session().await.unwrap();
+
+        let captured_cwd = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if let Some(cwd) = captured_cwds.lock().unwrap().first().cloned() {
+                    break cwd;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("provider factory was not called");
+
+        assert_eq!(captured_cwd, Some(expected_cwd));
     });
 }
 

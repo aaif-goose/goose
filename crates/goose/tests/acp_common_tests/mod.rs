@@ -93,7 +93,7 @@ impl Provider for NamingProvider {
 }
 
 fn naming_provider_factory() -> AcpProviderFactory {
-    Arc::new(|_provider_name, model_config, _extensions| {
+    Arc::new(|_provider_name, model_config, _extensions, _working_dir| {
         Box::pin(async move { Ok(Arc::new(NamingProvider { model_config }) as Arc<dyn Provider>) })
     })
 }
@@ -448,7 +448,7 @@ pub async fn run_fs_write_text_file_true<C: Connection>() {
 
 pub async fn run_initialize_doesnt_hit_provider<C: Connection>() {
     let provider_factory: AcpProviderFactory =
-        Arc::new(|_, _, _| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
+        Arc::new(|_, _, _, _| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
 
     let openai = OpenAiFixture::new(vec![], C::expected_session_id()).await;
     let config = TestConnectionConfig {

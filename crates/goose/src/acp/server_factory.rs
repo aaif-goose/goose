@@ -34,12 +34,26 @@ impl AcpServer {
             .unwrap_or(crate::config::GooseMode::Auto);
         let disable_session_naming = config.get_goose_disable_session_naming().unwrap_or(false);
 
-        let provider_factory: AcpProviderFactory =
-            Arc::new(move |provider_name, model_config, extensions| {
+        let provider_factory: AcpProviderFactory = Arc::new(
+            move |provider_name, model_config, extensions, working_dir| {
                 Box::pin(async move {
-                    crate::providers::create(&provider_name, model_config, extensions).await
+                    match working_dir {
+                        Some(working_dir) => {
+                            crate::providers::create_with_working_dir(
+                                &provider_name,
+                                model_config,
+                                extensions,
+                                working_dir,
+                            )
+                            .await
+                        }
+                        None => {
+                            crate::providers::create(&provider_name, model_config, extensions).await
+                        }
+                    }
                 })
-            });
+            },
+        );
 
         let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory,

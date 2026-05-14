@@ -43,13 +43,21 @@ impl ProviderDef for CodexAcpProvider {
         model: ModelConfig,
         extensions: Vec<crate::config::ExtensionConfig>,
     ) -> BoxFuture<'static, Result<AcpProvider>> {
+        let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::from_env_with_working_dir(model, extensions, working_dir)
+    }
+
+    fn from_env_with_working_dir(
+        model: ModelConfig,
+        extensions: Vec<crate::config::ExtensionConfig>,
+        work_dir: PathBuf,
+    ) -> BoxFuture<'static, Result<AcpProvider>> {
         Box::pin(async move {
             let config = Config::global();
             // with_npm() includes npm global bin dir (desktop app PATH may not)
             let resolved_command = SearchPaths::builder()
                 .with_npm()
                 .resolve(CODEX_ACP_PROVIDER_NAME)?;
-            let work_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let env = vec![];
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
             let mcp_servers = extension_configs_to_mcp_servers(&extensions);
