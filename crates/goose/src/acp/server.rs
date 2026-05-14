@@ -61,7 +61,7 @@ use rmcp::model::{
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
 use tokio::sync::{Mutex, OnceCell};
@@ -1046,12 +1046,18 @@ fn build_usage_update(session: &Session, context_limit: usize) -> UsageUpdate {
     UsageUpdate::new(used, context_limit as u64)
 }
 
-fn validate_absolute_cwd(cwd: &PathBuf) -> Result<(), agent_client_protocol::Error> {
-    if cwd.is_absolute() {
-        Ok(())
-    } else {
-        Err(agent_client_protocol::Error::invalid_params().data("cwd must be an absolute path"))
+fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_protocol::Error> {
+    if !cwd.is_absolute() {
+        return Err(
+            agent_client_protocol::Error::invalid_params().data("cwd must be an absolute path")
+        );
     }
+
+    if !cwd.exists() || !cwd.is_dir() {
+        return Err(agent_client_protocol::Error::invalid_params().data("invalid directory path"));
+    }
+
+    Ok(())
 }
 
 impl GooseAcpAgent {
