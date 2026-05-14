@@ -37,7 +37,8 @@
     "build:native:all": "tsx scripts/build-native.ts --all",
     "generate": "tsx generate-schema.ts",
     "lint": "tsc --noEmit",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "check:compat": "node scripts/check-binary-compat.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^0.3.1",

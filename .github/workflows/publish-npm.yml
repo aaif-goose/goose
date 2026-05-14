@@ -2,17 +2,7 @@ name: Publish to npm
 
 on:
   workflow_call:
-    inputs:
-      release-tag:
-        description: 'Release tag to fetch binaries from (e.g. v1.0.0)'
-        required: true
-        type: string
   workflow_dispatch:
-    inputs:
-      release-tag:
-        description: 'Release tag to fetch binaries from (e.g. v1.0.0)'
-        required: true
-        type: string
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -22,10 +12,14 @@ permissions:
   id-token: write  # Required for npm trusted publishing (OIDC)
 
 jobs:
+  build-cli:
+    uses: ./.github/workflows/build-cli.yml
+
   # Build npm packages (no environment needed)
   build:
     name: Build npm packages
     runs-on: ubuntu-latest
+    needs: [build-cli]
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -42,14 +36,18 @@ jobs:
         with:
           version: 10.30.3
 
-      - name: Download goose binaries from release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ inputs.release-tag }}"
-          echo "Downloading goose CLI binaries from release ${TAG}"
+      - name: Download freshly-built goose CLI binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: /tmp/cli-artifacts
 
-          # Map: npm platform name -> release artifact name (target triple)
+      - name: Place binaries into goose-binary packages
+        run: |
+          set -euo pipefail
+          echo "Available CLI artifacts:"
+          find /tmp/cli-artifacts -maxdepth 2 -type d | sort
+
+          # Map: npm platform name -> upstream artifact directory name (target triple)
           declare -A PLATFORM_MAP=(
             [darwin-arm64]=aarch64-apple-darwin
             [darwin-x64]=x86_64-apple-darwin
@@ -60,23 +58,30 @@ jobs:
 
           for platform in "${!PLATFORM_MAP[@]}"; do
             target="${PLATFORM_MAP[$platform]}"
+            artifact_dir="/tmp/cli-artifacts/goose-${target}"
             pkg_dir="ui/goose-binary/goose-binary-${platform}/bin"
             mkdir -p "${pkg_dir}"
 
             if [[ "${platform}" == "win32-x64" ]]; then
-              artifact="goose-${target}.zip"
-              gh release download "${TAG}" --pattern "${artifact}" --dir /tmp
-              unzip -o "/tmp/${artifact}" -d /tmp/goose-extract
+              archive="${artifact_dir}/goose-${target}.zip"
+              if [[ ! -f "${archive}" ]]; then
+                echo "::error::Missing Windows CLI artifact: ${archive}"
+                exit 1
+              fi
+              rm -rf /tmp/goose-extract
+              unzip -o "${archive}" -d /tmp/goose-extract
               cp /tmp/goose-extract/goose-package/goose.exe "${pkg_dir}/goose.exe"
-              rm -rf /tmp/goose-extract "/tmp/${artifact}"
             else
-              artifact="goose-${target}.tar.bz2"
-              gh release download "${TAG}" --pattern "${artifact}" --dir /tmp
+              archive="${artifact_dir}/goose-${target}.tar.bz2"
+              if [[ ! -f "${archive}" ]]; then
+                echo "::error::Missing CLI artifact: ${archive}"
+                exit 1
+              fi
+              rm -rf /tmp/goose-extract
               mkdir -p /tmp/goose-extract
-              tar -xjf "/tmp/${artifact}" -C /tmp/goose-extract
+              tar -xjf "${archive}" -C /tmp/goose-extract
               cp /tmp/goose-extract/goose "${pkg_dir}/goose"
               chmod +x "${pkg_dir}/goose"
-              rm -rf /tmp/goose-extract "/tmp/${artifact}"
             fi
 
             echo "  ✅ ${platform} (${target})"
@@ -98,6 +103,13 @@ jobs:
           cd ../text
           pnpm run build
 
+      - name: Compatibility check (TUI client ↔ goose binary)
+        env:
+          GOOSE_BINARY: ${{ github.workspace }}/ui/goose-binary/goose-binary-linux-x64/bin/goose
+        run: |
+          cd ui/sdk
+          pnpm run check:compat
+
       - name: Upload built packages
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -111,11 +123,11 @@ jobs:
           {
             echo "## 📦 Build Summary"
             echo ""
-            echo "### Release"
-            echo "Tag: \`${{ inputs.release-tag }}\`"
+            echo "### Source"
+            echo "Commit: \`${GITHUB_SHA}\`"
             echo ""
             echo "### Goose CLI Binaries"
-            echo "✅ Downloaded from release for all platforms:"
+            echo "✅ Built from this commit for all platforms:"
             for dir in ui/goose-binary/goose-binary-*/; do
               platform=$(basename "$dir" | sed 's/goose-binary-//')
               echo "  - $platform"
