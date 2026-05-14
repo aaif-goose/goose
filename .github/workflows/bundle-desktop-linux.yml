@@ -100,7 +100,7 @@ jobs:
             ubuntu:22.04 bash -c '
               set -euo pipefail
 
-              # Install build dependencies
+              # Install build dependencies as root
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y \
                 build-essential \
@@ -112,7 +112,8 @@ jobs:
                 curl \
                 ca-certificates \
                 wget \
-                gnupg
+                gnupg \
+                sudo
 
               # Install glslc from LunarG Vulkan SDK repo (not available in Ubuntu 22.04 base repos)
               wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add -
@@ -121,14 +122,25 @@ jobs:
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y shaderc
 
-              # Install Rust toolchain
-              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | \
-                sh -s -- -y --default-toolchain 1.92.0
-              . "$HOME/.cargo/env"
+              # Create a non-root user matching the host runner UID/GID so that
+              # build artifacts are owned by the runner and subsequent host steps
+              # (Copy binaries, Electron packaging) can read them without permission errors.
+              HOST_UID=$(stat -c "%u" /workspace)
+              HOST_GID=$(stat -c "%g" /workspace)
+              groupadd -g "${HOST_GID}" builder 2>/dev/null || true
+              useradd -m -u "${HOST_UID}" -g "${HOST_GID}" -s /bin/bash builder
 
-              export TARGET="x86_64-unknown-linux-gnu"
-              rustup target add "${TARGET}"
-              cargo build --release --target ${TARGET} -p goose-server --features vulkan
+              # Install Rust and build as the non-root builder user
+              su builder -c '\''
+                set -euo pipefail
+                curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | \
+                  sh -s -- -y --default-toolchain 1.92.0
+                . "$HOME/.cargo/env"
+
+                export TARGET="x86_64-unknown-linux-gnu"
+                rustup target add "${TARGET}"
+                cargo build --release --target ${TARGET} -p goose-server --features vulkan
+              '\''
             '
 
       - name: Copy binaries into Electron folder
