@@ -892,10 +892,7 @@ mod tests {
         assert!(config.skip_canonical_filtering);
         assert_eq!(config.dynamic_models, Some(true));
         assert_eq!(config.supports_streaming, Some(true));
-        assert_eq!(
-            config.base_url,
-            "${ATOMIC_CHAT_HOST}/v1/chat/completions"
-        );
+        assert_eq!(config.base_url, "${ATOMIC_CHAT_HOST}/v1/chat/completions");
         assert!(config.models.is_empty());
 
         let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
