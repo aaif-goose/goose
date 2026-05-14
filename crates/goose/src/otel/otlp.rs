@@ -359,28 +359,54 @@ fn create_otlp_logs_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
     })
 }
 
-/// Shutdown OTLP providers gracefully
+/// Default shutdown timeout for OTLP providers (milliseconds).
+const DEFAULT_OTEL_SHUTDOWN_TIMEOUT_MS: u64 = 5000;
+
+/// Read the configured OTLP shutdown timeout.
+///
+/// Checked via `Config::global()` key `otel_shutdown_timeout_ms` which
+/// resolves from env var `OTEL_SHUTDOWN_TIMEOUT_MS` first, then the
+/// goose config file, falling back to [`DEFAULT_OTEL_SHUTDOWN_TIMEOUT_MS`].
+fn shutdown_timeout() -> std::time::Duration {
+    let ms = crate::config::Config::global()
+        .get_param::<u64>("otel_shutdown_timeout_ms")
+        .unwrap_or(DEFAULT_OTEL_SHUTDOWN_TIMEOUT_MS);
+    std::time::Duration::from_millis(ms)
+}
+
+/// Shutdown OTLP providers gracefully, flushing all pending telemetry.
+///
+/// The timeout is read from the goose config key `otel_shutdown_timeout_ms`
+/// (env `OTEL_SHUTDOWN_TIMEOUT_MS`), defaulting to 5 000 ms.
 pub fn shutdown_otlp() {
+    let timeout = shutdown_timeout();
+
     if let Some(provider) = TRACER_PROVIDER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take()
     {
-        let _ = provider.shutdown();
+        if let Err(e) = provider.shutdown_with_timeout(timeout) {
+            tracing::warn!("OTLP tracer provider shutdown error: {e}");
+        }
     }
     if let Some(provider) = METER_PROVIDER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take()
     {
-        let _ = provider.shutdown();
+        if let Err(e) = provider.shutdown_with_timeout(timeout) {
+            tracing::warn!("OTLP meter provider shutdown error: {e}");
+        }
     }
     if let Some(provider) = LOGGER_PROVIDER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take()
     {
-        let _ = provider.shutdown();
+        if let Err(e) = provider.shutdown_with_timeout(timeout) {
+            tracing::warn!("OTLP logger provider shutdown error: {e}");
+        }
     }
 }
 
