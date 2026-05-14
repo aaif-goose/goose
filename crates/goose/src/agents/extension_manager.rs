@@ -526,10 +526,7 @@ async fn connect_with_auth(
     let auth_client = AuthClient::new(auth_http_client, auth_manager);
     let transport = StreamableHttpClientTransport::with_client(
         auth_client,
-        StreamableHttpClientTransportConfig {
-            uri: uri.into(),
-            ..Default::default()
-        },
+        StreamableHttpClientTransportConfig::with_uri(uri),
     );
     Ok(Box::new(
         McpClient::connect(
