@@ -19,6 +19,26 @@ pub struct SkillsClient {
     working_dir: PathBuf,
 }
 
+fn build_skill_instructions(working_dir: &Path) -> String {
+    let sources = discover_skills(Some(working_dir));
+    let mut skills: Vec<&SourceEntry> = sources
+        .iter()
+        .filter(|s| s.source_type == SourceType::Skill || s.source_type == SourceType::BuiltinSkill)
+        .collect();
+    skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
+
+    let mut instructions = String::new();
+    if !skills.is_empty() {
+        instructions.push_str(
+            "\n\nYou have these skills at your disposal, when it is clear they can help you solve a problem or you are asked to use them:",
+        );
+        for skill in &skills {
+            instructions.push_str(&format!("\n• {} - {}", skill.name, skill.description));
+        }
+    }
+    instructions
+}
+
 impl SkillsClient {
     pub fn new(context: PlatformExtensionContext) -> anyhow::Result<Self> {
         let working_dir = context
@@ -27,30 +47,8 @@ impl SkillsClient {
             .map(|s| s.working_dir.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-        let mut instructions = String::new();
-        if context.session.is_some() {
-            let sources = discover_skills(Some(&working_dir));
-            let mut skills: Vec<&SourceEntry> = sources
-                .iter()
-                .filter(|s| {
-                    s.source_type == SourceType::Skill || s.source_type == SourceType::BuiltinSkill
-                })
-                .collect();
-            skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
-
-            if !skills.is_empty() {
-                instructions.push_str(
-                    "\n\nYou have these skills at your disposal, when it is clear they can help you solve a problem or you are asked to use them:",
-                );
-                for skill in &skills {
-                    instructions.push_str(&format!("\n• {} - {}", skill.name, skill.description));
-                }
-            }
-        }
-
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Skills"))
-            .with_instructions(instructions);
+            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Skills"));
 
         Ok(Self { info, working_dir })
     }
@@ -250,6 +248,15 @@ impl McpClientTrait for SkillsClient {
 
     fn get_info(&self) -> Option<&InitializeResult> {
         Some(&self.info)
+    }
+
+    fn get_instructions(&self) -> Option<String> {
+        let instructions = build_skill_instructions(&self.working_dir);
+        if instructions.is_empty() {
+            None
+        } else {
+            Some(instructions)
+        }
     }
 
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
