@@ -890,12 +890,13 @@ pub async fn configure_provider_oauth(
         entry.configured = true;
         goose::config::set_provider_entry(config, &provider_name, &entry)?;
     } else {
+        let model = config.get_goose_model().unwrap_or_default();
         goose::config::set_provider_entry(
             config,
             &provider_name,
             &goose::config::ProviderEntry {
                 enabled: true,
-                model: String::new(),
+                model,
                 configured: true,
             },
         )?;
