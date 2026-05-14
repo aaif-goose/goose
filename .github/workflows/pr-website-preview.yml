@@ -50,9 +50,9 @@ jobs:
         id: cloudflare-pages
         working-directory: ./documentation
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ secrets.CLOUDFLARE_PAGES_PROJECT_NAME }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.PAGES_PR_PREVIEW_CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PAGES_PR_PREVIEW_CF_API_TOKEN }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ secrets.PAGES_PR_PREVIEW_CF_PAGES_PROJECT_NAME }}
           PR_NUMBER: ${{ github.event.number }}
         run: |
           set -euo pipefail
