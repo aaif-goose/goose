@@ -15,17 +15,21 @@ concurrency:
 
 jobs:
   build:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
     steps:
       - name: Checkout the branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
-      - name: Setup Node.js
+      - name: Setup Node.js for docs build
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: documentation/package-lock.json
 
       - name: Install dependencies and build docs
         working-directory: ./documentation
@@ -33,11 +37,78 @@ jobs:
           INKEEP_API_KEY: ${{ secrets.INKEEP_API_KEY }}
           INKEEP_INTEGRATION_ID: ${{ secrets.INKEEP_INTEGRATION_ID }}
           INKEEP_ORG_ID: ${{ secrets.INKEEP_ORG_ID }}
-          TARGET_PATH: "/pr-preview/pr-${{ github.event.number }}/"
+          TARGET_PATH: /
         run: |
-          npm install
+          npm ci
           npm run build
 
       - name: Verify docs map was generated
         working-directory: ./documentation
         run: ./scripts/verify-build.sh
+
+      - name: Setup Node.js for Wrangler
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
+        with:
+          node-version: 22
+
+      - name: Deploy preview to Cloudflare Pages
+        id: cloudflare-pages
+        working-directory: ./documentation
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.PAGES_PR_PREVIEW_CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PAGES_PR_PREVIEW_CF_API_TOKEN }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ secrets.PAGES_PR_PREVIEW_CF_PAGES_PROJECT_NAME }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+
+          output=$(npx --yes wrangler@latest pages deploy build \
+            --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" \
+            --branch="pr-$PR_NUMBER" \
+            --commit-dirty=true 2>&1 | tee /dev/stderr)
+
+          preview_url=$(echo "$output" | grep -Eo 'https://[^[:space:]]+' | tail -n 1)
+          if [ -z "$preview_url" ]; then
+            echo "Failed to find Cloudflare Pages preview URL in wrangler output" >&2
+            exit 1
+          fi
+
+          echo "preview-url=$preview_url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        env:
+          PREVIEW_URL: ${{ steps.cloudflare-pages.outputs.preview-url }}
+        with:
+          script: |
+            const marker = '<!-- documentation-site-preview -->';
+            const body = `${marker}\nDocumentation preview deployed: ${process.env.PREVIEW_URL}`;
+
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const {data: comments} = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existingComment = comments.find((comment) =>
+              comment.user.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
