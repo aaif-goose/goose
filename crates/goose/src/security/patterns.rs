@@ -55,7 +55,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "rm_rf_home_or_root",
-        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?(~|\$HOME|\$\{HOME\}|/home|/root)/?['\x22]?(\s|[;&|]|$)",
+        pattern: r"rm(\s+(--[a-zA-Z][a-zA-Z\-]*|--|-[a-zA-Z]+))+\s+['\x22]?(~|\$HOME|\$\{HOME\}|/home|/root)/?(\*)?['\x22]?(\s|[;&|]|$)",
         description: "Recursive deletion of home or root directory",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
@@ -272,7 +272,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "log_manipulation",
-        pattern: r"(truncate.*log|rm\s+((-[rRfF]+|--recursive|--force|--no-preserve-root)\s+)*/var/log(/|\s|[;&|]|$)|echo\s*>\s*/var/log)",
+        pattern: r"(truncate.*log|rm\s+((--[a-zA-Z][a-zA-Z\-]*|--|-[a-zA-Z]+)\s+)*/var/log(/|\s|[;&|]|$)|echo\s*>\s*/var/log)",
         description: "Log file manipulation or deletion",
         risk_level: RiskLevel::Medium,
         category: ThreatCategory::SystemModification,
@@ -426,6 +426,16 @@ mod tests {
         assert!(matches(pat, "rm --recursive --force ~"));
         assert!(matches(pat, r#"rm -rf "$HOME""#));
         assert!(matches(pat, "rm -rf ~; echo done"));
+        // Wildcard wipes of contents
+        assert!(matches(pat, "rm -rf /home/*"));
+        assert!(matches(pat, "rm -rf /root/*"));
+        assert!(matches(pat, "rm -rf ~/*"));
+        assert!(matches(pat, "rm -rf ${HOME}/*"));
+        assert!(matches(pat, r#"rm -rf "/home/*""#));
+        // Extra flags and option separator
+        assert!(matches(pat, "rm -rfv ~"));
+        assert!(matches(pat, "rm -rf -- ~"));
+        assert!(matches(pat, "rm --recursive --force -- /home/*"));
     }
 
     #[test]
@@ -441,6 +451,9 @@ mod tests {
         assert!(!matches(pat, "rm -rf /root/tmp"));
         assert!(!matches(pat, "rm -rf ./home"));
         assert!(!matches(pat, "rm -rf $HOMEDIR"));
+        // Wildcards inside subdirs should not match
+        assert!(!matches(pat, "rm -rf /home/user/*"));
+        assert!(!matches(pat, "rm -rf ~/Documents/*"));
     }
 
     #[test]
@@ -477,6 +490,8 @@ mod tests {
         assert!(matches(pat, "rm -rf /var/log"));
         assert!(matches(pat, "rm --recursive --force /var/log/auth.log"));
         assert!(matches(pat, "rm --recursive /var/log"));
+        assert!(matches(pat, "rm -rf -- /var/log/auth.log"));
+        assert!(matches(pat, "rm -rfv /var/log/auth.log"));
         // Similar-looking paths outside /var/log should NOT match
         assert!(!matches(pat, "rm -rf /var/log-backup"));
         assert!(!matches(pat, "rm -rf /var/logs"));
