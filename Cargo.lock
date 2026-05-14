@@ -4819,6 +4819,7 @@ dependencies = [
  "serde_yaml",
  "socket2",
  "subtle",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",

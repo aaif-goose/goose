@@ -1681,7 +1681,7 @@
         },
         "responses": {
           "200": {
-            "description": "Review session spawned",
+            "description": "Review accepted, running in background",
             "content": {
               "application/json": {
                 "schema": {
@@ -1689,9 +1689,6 @@
                 }
               }
             }
-          },
-          "400": {
-            "description": "Recipe missing or invalid"
           },
           "500": {
             "description": "Internal error"
@@ -4669,12 +4666,13 @@
           "check_run_id": {
             "type": "integer",
             "format": "int64",
-            "description": "The recipe updates this Check Run on completion.",
+            "description": "The endpoint updates this Check Run on completion.",
             "nullable": true,
             "minimum": 0
           },
           "github_token": {
-            "type": "string"
+            "type": "string",
+            "description": "Short-lived GitHub App installation token, scoped to the user's repos."
           },
           "head_sha": {
             "type": "string"
@@ -4696,11 +4694,11 @@
       "CopilotReviewResponse": {
         "type": "object",
         "required": [
-          "session_id"
+          "accepted"
         ],
         "properties": {
-          "session_id": {
-            "type": "string"
+          "accepted": {
+            "type": "boolean"
           }
         }
       },
