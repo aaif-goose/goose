@@ -4293,6 +4293,7 @@ print(\"hello, world\")
             accumulated_total_tokens,
             accumulated_input_tokens,
             accumulated_output_tokens,
+            accumulated_cost: None,
             schedule_id: None,
             recipe: None,
             user_recipe_values: None,

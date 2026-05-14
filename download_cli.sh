@@ -310,7 +310,15 @@ if [ "$CONFIGURE" = true ]; then
   echo ""
   echo "Configuring goose"
   echo ""
-  "$GOOSE_BIN_DIR/$OUT_FILE" configure
+  if [ -t 0 ]; then
+    "$GOOSE_BIN_DIR/$OUT_FILE" configure
+  elif [ -r /dev/tty ]; then
+    "$GOOSE_BIN_DIR/$OUT_FILE" configure < /dev/tty
+  else
+    echo "Non-interactive shell detected (e.g. 'curl ... | bash')."
+    echo "Skipping 'goose configure' — please run it manually after installation:"
+    echo "    $GOOSE_BIN_DIR/$OUT_FILE configure"
+  fi
 else
   echo "Skipping 'goose configure', you may need to run this manually later"
 fi

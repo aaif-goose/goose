@@ -314,9 +314,7 @@
   "costTracker.pricingUnavailable": {
     "defaultMessage": "Pricing data unavailable for {model}"
   },
-  "costTracker.sessionCostBreakdown": {
-    "defaultMessage": "Session cost breakdown:"
-  },
+
   "costTracker.totalSessionCost": {
     "defaultMessage": "Total session cost: {cost}"
   },

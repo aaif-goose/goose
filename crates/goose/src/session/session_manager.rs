@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -72,6 +72,7 @@ pub struct Session {
     pub accumulated_total_tokens: Option<i32>,
     pub accumulated_input_tokens: Option<i32>,
     pub accumulated_output_tokens: Option<i32>,
+    pub accumulated_cost: Option<f64>,
     pub schedule_id: Option<String>,
     pub recipe: Option<Recipe>,
     pub user_recipe_values: Option<HashMap<String, String>>,
@@ -101,6 +102,7 @@ pub struct SessionUpdateBuilder<'a> {
     accumulated_total_tokens: Option<Option<i32>>,
     accumulated_input_tokens: Option<Option<i32>>,
     accumulated_output_tokens: Option<Option<i32>>,
+    accumulated_cost: Option<Option<f64>>,
     schedule_id: Option<Option<String>>,
     recipe: Option<Option<Recipe>>,
     user_recipe_values: Option<Option<HashMap<String, String>>>,
@@ -135,6 +137,7 @@ impl<'a> SessionUpdateBuilder<'a> {
             accumulated_total_tokens: None,
             accumulated_input_tokens: None,
             accumulated_output_tokens: None,
+            accumulated_cost: None,
             schedule_id: None,
             recipe: None,
             user_recipe_values: None,
@@ -210,6 +213,11 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn accumulated_output_tokens(mut self, tokens: Option<i32>) -> Self {
         self.accumulated_output_tokens = Some(tokens);
+        self
+    }
+
+    pub fn accumulated_cost(mut self, cost: Option<f64>) -> Self {
+        self.accumulated_cost = Some(cost);
         self
     }
 
@@ -490,6 +498,7 @@ impl Default for Session {
             accumulated_total_tokens: None,
             accumulated_input_tokens: None,
             accumulated_output_tokens: None,
+            accumulated_cost: None,
             schedule_id: None,
             recipe: None,
             user_recipe_values: None,
@@ -557,6 +566,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             accumulated_total_tokens: row.try_get("accumulated_total_tokens")?,
             accumulated_input_tokens: row.try_get("accumulated_input_tokens")?,
             accumulated_output_tokens: row.try_get("accumulated_output_tokens")?,
+            accumulated_cost: row.try_get("accumulated_cost").ok().flatten(),
             schedule_id: row.try_get("schedule_id")?,
             recipe,
             user_recipe_values,
@@ -666,6 +676,7 @@ impl SessionStorage {
                 accumulated_total_tokens INTEGER,
                 accumulated_input_tokens INTEGER,
                 accumulated_output_tokens INTEGER,
+                accumulated_cost REAL,
                 schedule_id TEXT,
                 recipe_json TEXT,
                 user_recipe_values_json TEXT,
@@ -786,9 +797,10 @@ impl SessionStorage {
             id, name, user_set_name, session_type, working_dir, created_at, updated_at, extension_data,
             total_tokens, input_tokens, output_tokens,
             accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+            accumulated_cost,
             schedule_id, recipe_json, user_recipe_values_json,
             provider_name, model_config_json, goose_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(&session.id)
@@ -805,6 +817,7 @@ impl SessionStorage {
         .bind(session.accumulated_total_tokens)
         .bind(session.accumulated_input_tokens)
         .bind(session.accumulated_output_tokens)
+        .bind(session.accumulated_cost)
         .bind(&session.schedule_id)
         .bind(recipe_json)
         .bind(user_recipe_values_json)
@@ -1087,6 +1100,19 @@ impl SessionStorage {
                         .await?;
                 }
             }
+            13 => {
+                let has_accumulated_cost = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'accumulated_cost'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_accumulated_cost {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN accumulated_cost REAL")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1147,6 +1173,7 @@ impl SessionStorage {
         SELECT id, working_dir, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
                total_tokens, input_tokens, output_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+               accumulated_cost,
                schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
                archived_at, project_id
@@ -1207,6 +1234,7 @@ impl SessionStorage {
             builder.accumulated_output_tokens,
             "accumulated_output_tokens"
         );
+        add_update!(builder.accumulated_cost, "accumulated_cost");
         add_update!(builder.schedule_id, "schedule_id");
         add_update!(builder.recipe, "recipe_json");
         add_update!(builder.user_recipe_values, "user_recipe_values_json");
@@ -1258,6 +1286,9 @@ impl SessionStorage {
         }
         if let Some(aot) = builder.accumulated_output_tokens {
             q = q.bind(aot);
+        }
+        if let Some(ac) = builder.accumulated_cost {
+            q = q.bind(ac);
         }
         if let Some(sid) = builder.schedule_id {
             q = q.bind(sid);
@@ -1445,6 +1476,7 @@ impl SessionStorage {
             SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
                    s.total_tokens, s.input_tokens, s.output_tokens,
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
+                   s.accumulated_cost,
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id,
@@ -1564,6 +1596,7 @@ impl SessionStorage {
             .accumulated_total_tokens(import.accumulated_total_tokens)
             .accumulated_input_tokens(import.accumulated_input_tokens)
             .accumulated_output_tokens(import.accumulated_output_tokens)
+            .accumulated_cost(import.accumulated_cost)
             .schedule_id(import.schedule_id)
             .recipe(import.recipe)
             .user_recipe_values(import.user_recipe_values);

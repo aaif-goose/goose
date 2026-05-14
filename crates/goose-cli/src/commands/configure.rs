@@ -30,12 +30,20 @@ use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::IsTerminal;
 
 // useful for light themes where there is no discernible colour contrast between
 // cursor-selected and cursor-unselected items.
 const MULTISELECT_VISIBILITY_HINT: &str = "<";
 
 pub async fn handle_configure() -> anyhow::Result<()> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "goose configure requires an interactive terminal.\n\
+             If you installed via 'curl ... | bash', run 'goose configure' separately after installation."
+        );
+    }
+
     let config = Config::global();
 
     if !config.exists() {
