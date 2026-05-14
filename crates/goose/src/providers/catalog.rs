@@ -704,6 +704,28 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         }],
     },
     CuratedSetupMetadata {
+        provider_id: "atomic_chat",
+        category: ProviderSetupCategory::Model,
+        setup_method: ProviderSetupMethod::ConfigFields,
+        group: ProviderSetupGroup::Additional,
+        display_name: None,
+        description: None,
+        docs_url: Some("https://github.com/AtomicBot-ai/Atomic-Chat?tab=readme-ov-file#readme"),
+        aliases: &[],
+        native_connect_query: None,
+        binary_name: None,
+        setup_capabilities: setup_capabilities(false, false, false),
+        show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: None,
+        field_overrides: &[CuratedFieldMetadata {
+            key: "ATOMIC_CHAT_HOST",
+            label: "Host URL",
+            placeholder: Some("http://localhost:1337"),
+            default_value: Some("http://localhost:1337"),
+        }],
+    },
+    CuratedSetupMetadata {
         provider_id: "nvidia",
         category: ProviderSetupCategory::Model,
         setup_method: ProviderSetupMethod::SingleApiKey,
@@ -1093,6 +1115,22 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["DATABRICKS_HOST", "DATABRICKS_TOKEN"]
         );
+
+        let atomic_chat = entries
+            .iter()
+            .find(|entry| entry.provider_id == "atomic_chat")
+            .expect("setup catalog should include atomic_chat declarative provider");
+        assert_eq!(atomic_chat.setup_method, ProviderSetupMethod::ConfigFields);
+        let host_field = atomic_chat
+            .fields
+            .iter()
+            .find(|field| field.key == "ATOMIC_CHAT_HOST")
+            .expect("atomic_chat should expose ATOMIC_CHAT_HOST");
+        assert_eq!(host_field.label, "Host URL");
+        assert_eq!(
+            host_field.default_value.as_deref(),
+            Some("http://localhost:1337")
+        );
     }
 
     #[tokio::test]
@@ -1105,6 +1143,7 @@ mod tests {
 
         assert!(provider_ids.contains("claude-acp"));
         assert!(provider_ids.contains("codex-acp"));
+        assert!(provider_ids.contains("atomic_chat"));
         assert!(!provider_ids.contains("claude_code"));
         assert!(!provider_ids.contains("codex"));
         assert!(!provider_ids.contains("gemini_cli"));
