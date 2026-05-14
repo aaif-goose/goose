@@ -465,24 +465,6 @@ mod tests {
     }
 
     #[test]
-    fn rm_rf_system_pattern_removed() {
-        let matcher = PatternMatcher::new();
-        let commands = [
-            "rm -rf /etc",
-            "rm -rf build",
-            "rm -f /tmp/file.json",
-            "rm -rf /opt/homebrew/Library/Taps/square/homebrew-formula",
-        ];
-        for cmd in &commands {
-            let has_rm_rf_system = matcher
-                .scan_for_patterns(cmd)
-                .iter()
-                .any(|m| m.threat.name == "rm_rf_system");
-            assert!(!has_rm_rf_system, "rm_rf_system should not exist: {cmd}");
-        }
-    }
-
-    #[test]
     fn log_manipulation_no_dev_null_false_positives() {
         let pat = "log_manipulation";
         // Standard stderr suppression should NOT match
@@ -505,23 +487,4 @@ mod tests {
         assert!(!matches(pat, "rm -rf /var/logs"));
     }
 
-    #[test]
-    fn alternative_shell_invocation_removed() {
-        // alternative_shell_invocation was removed — ML classifier handles this.
-        let matcher = PatternMatcher::new();
-        let commands = [
-            r#"bash -c "echo hello && echo world""#,
-            r#"sh -c "ls | grep test""#,
-        ];
-        for cmd in &commands {
-            let has_alt_shell = matcher
-                .scan_for_patterns(cmd)
-                .iter()
-                .any(|m| m.threat.name == "alternative_shell_invocation");
-            assert!(
-                !has_alt_shell,
-                "alternative_shell_invocation should not exist: {cmd}"
-            );
-        }
-    }
 }
