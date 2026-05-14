@@ -79,35 +79,27 @@ jobs:
             protobuf-compiler \
             flatpak \
             flatpak-builder \
-            elfutils
+            elfutils \
+            libvulkan-dev \
+            glslc
 
       - name: Setup Flatpak Runtimes
         run: |
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Install glslc on host
-        run: |
-          # glslc is a build-time shader compiler needed by llama.cpp's Vulkan backend.
-          # Install on host and bind-mount into container for cross-architecture compat.
-          if command -v glslc &>/dev/null; then
-            echo "glslc already available: $(which glslc)"
-          else
-            sudo apt-get update
-            sudo apt-get install -y glslc || sudo apt-get install -y shaderc
-          fi
-          GLSLC_PATH=$(which glslc)
-          echo "GLSLC_PATH=${GLSLC_PATH}" >> $GITHUB_ENV
-          echo "Using glslc at: ${GLSLC_PATH}"
-
       # Build goosed inside an Ubuntu 22.04 container to produce a binary
       # compatible with glibc 2.35+ (Ubuntu 22.04, Debian 12, RHEL 9, etc.)
+      # We bind-mount the host's newer Vulkan headers and glslc into the container
+      # because Ubuntu 22.04's Vulkan SDK (1.3.204) is too old for llama-cpp-sys-2.
       - name: Build goosed binary (Ubuntu 22.04 container)
         env:
           RUST_LOG: debug
           RUST_BACKTRACE: 1
         run: |
+          GLSLC_PATH=$(which glslc)
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -v "/usr/include/vulkan:/usr/include/vulkan-host:ro" \
             -v "${GLSLC_PATH}:/usr/local/bin/glslc:ro" \
             -w /workspace \
             -e RUST_LOG=debug \
@@ -129,6 +121,10 @@ jobs:
                 curl \
                 ca-certificates \
                 sudo
+
+              # Overlay newer Vulkan headers from the host over the container'\''s
+              # older ones. The container'\''s libvulkan.so is kept for linking.
+              cp -r /usr/include/vulkan-host/* /usr/include/vulkan/
 
               # Create a non-root user matching the host runner UID/GID so that
               # build artifacts are owned by the runner and subsequent host steps

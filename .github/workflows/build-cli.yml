@@ -56,26 +56,23 @@ jobs:
           sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
           rm -f Cargo.toml.bak
 
-      - name: Install glslc on host
+      - name: Install Vulkan SDK on host
         run: |
-          # glslc is a build-time shader compiler needed by llama.cpp's Vulkan backend.
-          # We install it on the host runner and bind-mount it into the container
-          # because the LunarG Vulkan SDK repo (used for Ubuntu 22.04 x86_64) only
-          # provides amd64/i386 packages — no arm64.
-          if command -v glslc &>/dev/null; then
-            echo "glslc already available: $(which glslc)"
-          else
-            sudo apt-get update
-            sudo apt-get install -y glslc || sudo apt-get install -y shaderc
-          fi
-          GLSLC_PATH=$(which glslc)
-          echo "GLSLC_PATH=${GLSLC_PATH}" >> $GITHUB_ENV
-          echo "Using glslc at: ${GLSLC_PATH}"
+          # Install Vulkan dev packages on the host (ubuntu-24.04) so we can
+          # bind-mount the newer headers and glslc into the ubuntu:22.04 container.
+          # Ubuntu 22.04's Vulkan headers (1.3.204) are too old for llama-cpp-sys-2
+          # which requires types from ~1.3.275+. The host's ubuntu-24.04 headers
+          # are new enough, and since headers are architecture-independent this
+          # works for both x86_64 and arm64 runners.
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev glslc
+          echo "GLSLC_PATH=$(which glslc)" >> $GITHUB_ENV
 
       - name: Build CLI in Ubuntu 22.04 container
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -v "/usr/include/vulkan:/usr/include/vulkan-host:ro" \
             -v "${GLSLC_PATH}:/usr/local/bin/glslc:ro" \
             -w /workspace \
             -e RUST_LOG=debug \
@@ -97,6 +94,12 @@ jobs:
                 curl \
                 ca-certificates \
                 sudo
+
+              # Overlay newer Vulkan headers from the host (ubuntu-24.04) over the
+              # container'\''s older ones (ubuntu-22.04, SDK 1.3.204). The container'\''s
+              # libvulkan.so is kept for glibc-compatible linking; only the headers
+              # are updated for compilation compatibility with llama-cpp-sys-2.
+              cp -r /usr/include/vulkan-host/* /usr/include/vulkan/
 
               # Create a non-root user matching the host runner UID/GID so that
               # build artifacts are owned by the runner and subsequent host steps
