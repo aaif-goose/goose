@@ -18,13 +18,21 @@ fn asset_name() -> &'static str {
     {
         "goose-x86_64-apple-darwin.tar.bz2"
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
     {
         "goose-x86_64-unknown-linux-gnu.tar.bz2"
     }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    #[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"))]
     {
         "goose-aarch64-unknown-linux-gnu.tar.bz2"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "musl"))]
+    {
+        "goose-x86_64-unknown-linux-musl.tar.bz2"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "musl"))]
+    {
+        "goose-aarch64-unknown-linux-musl.tar.bz2"
     }
     #[cfg(all(target_os = "windows", target_arch = "x86_64", feature = "cuda"))]
     {

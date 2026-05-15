@@ -6,6 +6,7 @@
 # Platform Build Strategy:
 #  - Linux standard: Uses native Ubuntu 22.04 runners to keep glibc compatibility with Ubuntu 22.04 LTS
 #  - Linux Vulkan: Uses native Ubuntu 24.04 runners for newer Vulkan headers/tooling
+#  - Linux musl: Uses native Ubuntu 22.04 runners with reduced features for musl compatibility
 #  - macOS: Uses native macOS runners for each architecture
 #  - Windows: Uses Windows runner with native MSVC build
 on:
@@ -42,6 +43,16 @@ jobs:
             target-suffix: unknown-linux-gnu
             build-on: ubuntu-22.04-arm
             variant: standard
+          - platform: linux
+            architecture: x86_64
+            target-suffix: unknown-linux-musl
+            build-on: ubuntu-22.04
+            variant: musl
+          - platform: linux
+            architecture: aarch64
+            target-suffix: unknown-linux-musl
+            build-on: ubuntu-22.04-arm
+            variant: musl
           - platform: linux
             architecture: x86_64
             target-suffix: unknown-linux-gnu
@@ -104,6 +115,10 @@ jobs:
               glslc
           fi
 
+          if [ "${{ matrix.variant }}" = "musl" ]; then
+            sudo apt-get install -y musl-tools
+          fi
+
       - name: Cache Cargo artifacts (Linux/macOS)
         if: matrix.platform != 'windows'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
@@ -133,7 +148,14 @@ jobs:
           if [ "${{ matrix.variant }}" = "vulkan" ]; then
             FEATURE_ARGS=(--features vulkan)
           fi
-          cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+
+          if [ "${{ matrix.variant }}" = "musl" ]; then
+            cargo build --release --target ${TARGET} -p goose-cli --bin goose \
+              --no-default-features \
+              --features rustls-tls,aws-providers,telemetry,otel
+          else
+            cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+          fi
 
       - name: Setup Rust (Windows)
         if: matrix.platform == 'windows'
@@ -233,7 +255,7 @@ jobs:
       - name: Upload CLI artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant != 'standard' && format('-{0}', matrix.variant) || '' }}
+          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant != 'standard' && matrix.variant != 'musl' && format('-{0}', matrix.variant) || '' }}
           path: |
             ${{ env.ARTIFACT_BZ2 }}
             ${{ env.ARTIFACT_GZ }}
