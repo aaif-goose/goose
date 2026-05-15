@@ -39,8 +39,8 @@ where
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-fn is_supported_request_param_key(key: &str) -> bool {
-    matches!(key, "thinking")
+fn is_reserved_request_param_key(key: &str) -> bool {
+    matches!(key, "messages" | "model" | "stream" | "stream_options")
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -1291,7 +1291,7 @@ pub fn create_request_with_options(
     if let Some(params) = &model_config.request_params {
         if let Some(obj) = payload.as_object_mut() {
             for (key, value) in params {
-                if is_supported_request_param_key(key) {
+                if !is_reserved_request_param_key(key) {
                     obj.insert(key.clone(), value.clone());
                 }
             }
@@ -2096,7 +2096,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_applies_request_params() -> anyhow::Result<()> {
+    fn test_request_params_preserve_reserved_fields() -> anyhow::Result<()> {
         let model_config = ModelConfig {
             model_name: "glm-4.7".to_string(),
             context_limit: Some(204800),
@@ -2122,7 +2122,7 @@ mod tests {
                 ("messages".to_string(), json!([])),
                 ("max_tokens".to_string(), json!(1)),
                 ("temperature".to_string(), json!(2.0)),
-                ("unsupported".to_string(), json!("ignored")),
+                ("provider_custom".to_string(), json!("allowed")),
             ])),
             reasoning: None,
         };
@@ -2147,9 +2147,9 @@ mod tests {
         assert_eq!(request["stream_options"], json!({"include_usage": true}));
         assert_eq!(request["model"], "glm-4.7");
         assert_eq!(request["messages"][0]["role"], "system");
-        assert_eq!(request["max_tokens"], 4096);
-        assert!(request.get("temperature").is_none());
-        assert!(request.get("unsupported").is_none());
+        assert_eq!(request["max_tokens"], 1);
+        assert_eq!(request["temperature"], 2.0);
+        assert_eq!(request["provider_custom"], "allowed");
 
         Ok(())
     }
