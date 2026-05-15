@@ -544,15 +544,19 @@ pub fn create_responses_request(
     add_message_items(&mut input_items, messages);
 
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
-    let reasoning_effort = model_config
-        .thinking_effort()
-        .map_or(legacy_reasoning_effort, |effort| {
-            openai_reasoning_effort_for_thinking(&model_name, effort)
-        });
     // All models routed here are responses-capable; temperature is rejected
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
     let is_reasoning_model = is_openai_responses_model(&model_name);
+    let reasoning_effort = if is_reasoning_model {
+        model_config
+            .thinking_effort()
+            .map_or(legacy_reasoning_effort, |effort| {
+                openai_reasoning_effort_for_thinking(&model_name, effort)
+            })
+    } else {
+        None
+    };
 
     let mut payload = json!({
         "model": model_name,
@@ -1310,6 +1314,30 @@ mod tests {
                 "reasoning should be omitted for {model_name} without explicit effort suffix"
             );
         }
+    }
+
+    #[test]
+    fn test_responses_request_non_reasoning_model_ignores_global_thinking_effort() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+        let model_config = ModelConfig {
+            model_name: "gpt-4o".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+
+        let result = create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
+
+        assert_eq!(result["model"], "gpt-4o");
+        assert!(
+            result.get("reasoning").is_none(),
+            "non-reasoning models should not receive reasoning config"
+        );
     }
 
     #[test]
