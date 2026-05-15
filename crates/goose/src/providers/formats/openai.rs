@@ -1212,7 +1212,9 @@ pub fn create_request(
         tools,
         image_format,
         for_streaming,
-        OpenAiFormatOptions::default(),
+        OpenAiFormatOptions {
+            preserve_thinking_context: true,
+        },
     )
 }
 
@@ -2808,6 +2810,41 @@ data: [DONE]"#;
         assert_eq!(spec.len(), 1);
         assert_eq!(spec[0]["content"], "The result is 42");
         assert!(spec[0].get("reasoning_content").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_preserves_reasoning_content_for_legacy_compat() -> anyhow::Result<()> {
+        let model_config = ModelConfig {
+            model_name: "deepseek-reasoner".to_string(),
+            context_limit: Some(128000),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        };
+        let message = Message::assistant()
+            .with_content(MessageContent::thinking("preserve this", ""))
+            .with_tool_request(
+                "tool1",
+                Ok(rmcp::model::CallToolRequestParams::new("test_tool")
+                    .with_arguments(rmcp::object!({}))),
+            );
+
+        let request = create_request(
+            &model_config,
+            "system",
+            &[message],
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )?;
+
+        assert_eq!(request["messages"][1]["reasoning_content"], "preserve this");
 
         Ok(())
     }
