@@ -5,6 +5,7 @@ import { ExtensionsView } from "@/features/extensions/ui/ExtensionsView";
 import { AgentsView } from "@/features/agents/ui/AgentsView";
 import { ProjectsView } from "@/features/projects/ui/ProjectsView";
 import { SessionHistoryView } from "@/features/sessions/ui/SessionHistoryView";
+import { SliceExplorerView } from "@/features/slice-explorer/ui/SliceExplorerView";
 import type { ChatSession } from "@/features/chat/stores/chatSessionStore";
 import type { SkillInfo } from "@/features/skills/api/skills";
 import type { ProjectInfo } from "@/features/projects/api/projects";
@@ -64,6 +65,8 @@ export function AppShellContent({
           onArchiveChat={onArchiveChat}
         />
       );
+    case "slice-explorer":
+      return <SliceExplorerView />;
     case "chat":
       return activeSession ? (
         <ChatView

@@ -15,7 +15,7 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 - [ ] Trace Inspector v0 (Tauri view).
 - [ ] Annotation Queue v0 (Tauri view).
 - [ ] Failure-Mode Taxonomy view v0 (Tauri view).
-- [ ] Slice Explorer v0 (Tauri view) — *Tauri version pending; CLI version (`eval-bench/slices.py runs / show / compare`) shipped.*
+- [x] Slice Explorer v0 (Tauri view) — `ui/goose2` feature `slice-explorer` with read-only Tauri command (`eval_bench_list_runs`, `eval_bench_get_run`) backed by rusqlite against `~/.skein/eval-bench.sqlite`. View renders the runs list, per-run axis breakdowns, and two-run comparison with the same `compute_passk` / `passk_by_slice` semantics as the Python CLI. 7 vitest tests for the TS math layer mirror the kpass.py invariants; 11 Rust unit tests cover store-missing, recipe filter, headline pass^k math, and parsed axes.
 - [ ] Langfuse Bridge MCP extension.
 - [ ] `recipe-scanner/` made a required gate for non-local recipes.
 

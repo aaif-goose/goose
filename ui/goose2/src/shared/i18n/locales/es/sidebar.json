@@ -15,7 +15,8 @@
     "extensions": "Extensiones",
     "home": "Inicio",
     "sessionHistory": "Historial de sesiones",
-    "skills": "Habilidades"
+    "skills": "Habilidades",
+    "sliceExplorer": "Explorador de slices"
   },
   "search": {
     "error": "La búsqueda de mensajes falló. Mostrando solo coincidencias de metadatos. Inténtalo de nuevo.",

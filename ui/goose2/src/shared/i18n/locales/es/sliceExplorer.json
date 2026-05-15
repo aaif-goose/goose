@@ -1,0 +1,17 @@
+{
+  "title": "Explorador de slices",
+  "actions": {
+    "refresh": "Actualizar ejecuciones"
+  },
+  "compare": {
+    "toggle": "Comparar dos ejecuciones",
+    "prompt": "Elige dos ejecuciones de la lista para compararlas."
+  },
+  "detail": {
+    "prompt": "Selecciona una ejecución de la lista para ver su desglose por slice."
+  },
+  "empty": {
+    "noStore": "Aún no hay almacén de eval-bench. Ejecuta una receta con eval-bench/run_kpass.py para poblar ~/.skein/eval-bench.sqlite.",
+    "noRuns": "Todavía no hay ejecuciones registradas."
+  }
+}

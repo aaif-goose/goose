@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 name = "goose2"
 version = "0.1.0"
@@ -36,6 +38,7 @@ ignore = "0.4.25"
 base64 = "0.22"
 mime_guess = "2"
 tauri-plugin-shell = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

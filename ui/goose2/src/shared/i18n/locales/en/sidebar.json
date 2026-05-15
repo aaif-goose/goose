@@ -15,7 +15,8 @@
     "extensions": "Extensions",
     "home": "Home",
     "sessionHistory": "Session history",
-    "skills": "Skills"
+    "skills": "Skills",
+    "sliceExplorer": "Slice explorer"
   },
   "search": {
     "error": "Message search failed. Showing metadata matches only. Try again.",

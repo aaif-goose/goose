@@ -3,6 +3,7 @@ pub mod agent_setup;
 pub mod agents;
 pub mod distro;
 pub mod doctor;
+pub mod eval_bench;
 pub mod git;
 pub mod git_changes;
 pub mod model_setup;
