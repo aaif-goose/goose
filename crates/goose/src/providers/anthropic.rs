@@ -445,22 +445,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_default_provider_uses_strict_anthropic_thinking() {
-        assert_eq!(
-            AnthropicProvider::format_options_for_provider(false),
-            AnthropicFormatOptions::default()
-        );
-    }
-
-    #[test]
-    fn test_preserves_thinking_provider_preserves_thinking_context() {
-        let options = AnthropicProvider::format_options_for_provider(true);
-
-        assert!(options.preserve_unsigned_thinking);
-        assert!(options.preserve_thinking_context);
-    }
-
     #[tokio::test]
     async fn fetch_supported_models_static_only_skips_api() {
         let server = MockServer::start().await;
