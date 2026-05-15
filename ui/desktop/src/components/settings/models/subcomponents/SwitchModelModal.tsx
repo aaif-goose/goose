@@ -191,55 +191,6 @@ const i18n = defineMessages({
 
 // Thinking effort options are created inside the component to support i18n.
 
-function isClaudeModel(name: string | null | undefined): boolean {
-  return typeof name === 'string' && name.toLowerCase().includes('claude');
-}
-
-function isOpenAIReasoningModel(name: string | null | undefined): boolean {
-  if (typeof name !== 'string') return false;
-  return /(?:^|[-/])(?:o\d+(?:$|-)|gpt-5(?:$|[-.]))/.test(name.toLowerCase());
-}
-
-function isGemini3Model(name: string | null | undefined): boolean {
-  return typeof name === 'string' && name.toLowerCase().startsWith('gemini-3');
-}
-
-const CLAUDE_THINKING_PROVIDERS = new Set(['anthropic', 'databricks']);
-const OPENAI_REASONING_THINKING_PROVIDERS = new Set([
-  'openai',
-  'openai_compatible',
-  'codex',
-  'chatgpt_codex',
-  'azure_openai',
-  'openrouter',
-  'litellm',
-  'github_copilot',
-  'nano-gpt',
-  'tetrate',
-  'xai',
-  'databricks',
-]);
-
-function supportsThinking(
-  name: string | null | undefined,
-  provider: string | null | undefined,
-  modelReasoning: boolean | null | undefined
-): boolean {
-  if (provider === 'openrouter') {
-    return modelReasoning === true;
-  }
-  if (provider === 'databricks' && modelReasoning === true) {
-    return true;
-  }
-
-  const claudeSupported = isClaudeModel(name) && CLAUDE_THINKING_PROVIDERS.has(provider ?? '');
-  const openaiReasoningSupported =
-    isOpenAIReasoningModel(name) && OPENAI_REASONING_THINKING_PROVIDERS.has(provider ?? '');
-  const gemini3Supported = isGemini3Model(name) && provider === 'google';
-  return claudeSupported || openaiReasoningSupported || gemini3Supported;
-}
-
-
 const PREFERRED_MODEL_PATTERNS = [
   /claude-sonnet-4/i,
   /claude-4/i,
@@ -356,7 +307,7 @@ export const SwitchModelModal = ({
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
   const effectiveProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
   const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
-  const showThinkingControl = supportsThinking(modelName, effectiveProvider, modelReasoning);
+  const showThinkingControl = modelReasoning === true;
 
   useEffect(() => {
     (async () => {

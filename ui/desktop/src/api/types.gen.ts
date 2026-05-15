@@ -821,7 +821,7 @@ export type ModelInfo = {
     /**
      * Whether this model supports reasoning/thinking controls
      */
-    reasoning?: boolean | null;
+    reasoning?: boolean;
     /**
      * Whether this model supports cache control
      */
@@ -838,7 +838,7 @@ export type ModelInfoData = {
     model: string;
     output_token_cost?: number | null;
     provider: string;
-    reasoning?: boolean | null;
+    reasoning: boolean;
 };
 
 export type ModelInfoQuery = {

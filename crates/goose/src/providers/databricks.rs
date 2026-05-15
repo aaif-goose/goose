@@ -533,6 +533,9 @@ impl DatabricksProvider {
         let context_limit = ModelConfig::new_or_fail(context_model)
             .with_canonical_limits(DATABRICKS_PROVIDER_NAME)
             .context_limit();
+        let reasoning = info
+            .reasoning
+            .unwrap_or_else(|| ModelConfig::new_or_fail(context_model).is_reasoning_model());
 
         ModelInfo {
             name: info.name,
@@ -541,7 +544,7 @@ impl DatabricksProvider {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
-            reasoning: info.reasoning,
+            reasoning,
         }
     }
 

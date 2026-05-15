@@ -736,15 +736,13 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
 
     let spin = spinner();
     spin.start("Attempting to fetch supported models...");
-    let models_res = {
-        let temp_model_config =
-            ModelConfig::new(&provider_meta.default_model)?.with_canonical_limits(provider_name);
-        let temp_provider = create(provider_name, temp_model_config, Vec::new()).await?;
-        retry_operation(&RetryConfig::default(), || async {
-            temp_provider.fetch_recommended_models().await
-        })
-        .await
-    };
+    let temp_model_config =
+        ModelConfig::new(&provider_meta.default_model)?.with_canonical_limits(provider_name);
+    let temp_provider = create(provider_name, temp_model_config, Vec::new()).await?;
+    let models_res = retry_operation(&RetryConfig::default(), || async {
+        temp_provider.fetch_recommended_models().await
+    })
+    .await;
     spin.stop(style("Model fetch complete").green());
 
     // Select a model: on fetch error show styled error and abort; if models available, show list; otherwise free-text input
@@ -765,13 +763,12 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     };
 
     {
-        let claude_thinking_providers = ["anthropic", "databricks"];
-        let supports_thinking = model.to_lowercase().starts_with("gemini-3")
-            || (model.to_lowercase().contains("claude")
-                && claude_thinking_providers.contains(&provider_name.as_str()))
-            || goose::model::ModelConfig::new(&model)
-                .map(|c| c.is_openai_reasoning_model())
-                .unwrap_or(false);
+        let supports_thinking = match temp_provider.fetch_model_info(&model).await {
+            Ok(model_info) => model_info.reasoning,
+            Err(_) => goose::model::ModelConfig::new(&model)
+                .map(|c| c.is_reasoning_model())
+                .unwrap_or(false),
+        };
 
         if supports_thinking {
             let effort: &str = cliclack::select("Select thinking effort:")

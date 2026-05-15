@@ -517,7 +517,7 @@ pub struct ModelInfoData {
     pub model: String,
     pub context_limit: usize,
     pub max_output_tokens: Option<usize>,
-    pub reasoning: Option<bool>,
+    pub reasoning: bool,
     pub input_token_cost: Option<f64>,
     pub output_token_cost: Option<f64>,
     pub cache_read_token_cost: Option<f64>,
@@ -555,7 +555,9 @@ pub async fn get_canonical_model_info(
         model: query.model.clone(),
         context_limit: canonical_model.limit.context,
         max_output_tokens: canonical_model.limit.output,
-        reasoning: canonical_model.reasoning,
+        reasoning: canonical_model
+            .reasoning
+            .unwrap_or_else(|| ModelConfig::new_or_fail(&query.model).is_reasoning_model()),
         // Costs are per million tokens - client handles division for display
         input_token_cost: canonical_model.cost.input,
         output_token_cost: canonical_model.cost.output,

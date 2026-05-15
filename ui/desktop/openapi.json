@@ -6585,8 +6585,7 @@
           },
           "reasoning": {
             "type": "boolean",
-            "description": "Whether this model supports reasoning/thinking controls",
-            "nullable": true
+            "description": "Whether this model supports reasoning/thinking controls"
           },
           "supports_cache_control": {
             "type": "boolean",
@@ -6601,6 +6600,7 @@
           "provider",
           "model",
           "context_limit",
+          "reasoning",
           "currency"
         ],
         "properties": {
@@ -6643,8 +6643,7 @@
             "type": "string"
           },
           "reasoning": {
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           }
         }
       },

@@ -408,6 +408,21 @@ impl ModelConfig {
         crate::providers::utils::is_openai_responses_model(&self.model_name)
     }
 
+    pub fn is_reasoning_model(&self) -> bool {
+        if let Some(reasoning) = self.reasoning {
+            return reasoning;
+        }
+
+        self.is_openai_reasoning_model()
+            || self.model_name.to_lowercase().contains("claude")
+            || Self::is_gemini3_reasoning_model_name(&self.model_name)
+    }
+
+    fn is_gemini3_reasoning_model_name(model_name: &str) -> bool {
+        let lower = model_name.to_lowercase();
+        lower.starts_with("gemini-3") || lower.contains("/gemini-3") || lower.contains("-gemini-3")
+    }
+
     pub fn max_output_tokens(&self) -> i32 {
         if let Some(tokens) = self.max_tokens {
             return tokens;
@@ -989,6 +1004,38 @@ mod tests {
             );
             assert!(!ModelConfig::new_or_fail("goose-claude-sonnet-4").is_openai_reasoning_model());
             assert!(!ModelConfig::new_or_fail("llama-3-70b").is_openai_reasoning_model());
+        }
+    }
+
+    mod is_reasoning_model {
+        use super::*;
+
+        const ENV_LOCK_KEYS: [(&str, Option<&str>); 5] = [
+            ("GOOSE_MAX_TOKENS", None),
+            ("GOOSE_TEMPERATURE", None),
+            ("GOOSE_CONTEXT_LIMIT", None),
+            ("GOOSE_TOOLSHIM", None),
+            ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None),
+        ];
+
+        #[test]
+        fn includes_reasoning_model_families() {
+            let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
+            assert!(ModelConfig::new_or_fail("o3-mini").is_reasoning_model());
+            assert!(ModelConfig::new_or_fail("claude-sonnet-4").is_reasoning_model());
+            assert!(ModelConfig::new_or_fail("gemini-3-pro").is_reasoning_model());
+        }
+
+        #[test]
+        fn uses_explicit_metadata_first() {
+            let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
+            let mut config = ModelConfig::new_or_fail("provider-alias");
+            config.reasoning = Some(true);
+            assert!(config.is_reasoning_model());
+
+            let mut config = ModelConfig::new_or_fail("claude-sonnet-4");
+            config.reasoning = Some(false);
+            assert!(!config.is_reasoning_model());
         }
     }
 }
