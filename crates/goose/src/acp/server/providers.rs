@@ -513,6 +513,7 @@ impl GooseAcpAgent {
                 requires_auth: provider.requires_auth,
                 catalog_provider_id: provider.catalog_provider_id,
                 base_path: provider.base_path,
+                preserves_thinking: None,
             },
         )
         .internal_err_ctx("Failed to create custom provider")?;
@@ -581,6 +582,7 @@ impl GooseAcpAgent {
                 requires_auth: provider.requires_auth,
                 catalog_provider_id: provider.catalog_provider_id,
                 base_path: provider.base_path,
+                preserves_thinking: None,
             },
         )
         .internal_err_ctx("Failed to update custom provider")?;

@@ -276,7 +276,7 @@ impl OpenAiProvider {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
-            preserve_thinking_context: false,
+            preserve_thinking_context: !is_openai,
         })
     }
 

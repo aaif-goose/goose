@@ -1630,6 +1630,7 @@ export type UpdateCustomProviderRequest = {
         [key: string]: string;
     } | null;
     models: Array<string>;
+    preserves_thinking?: boolean | null;
     requires_auth?: boolean;
     supports_streaming?: boolean | null;
 };
