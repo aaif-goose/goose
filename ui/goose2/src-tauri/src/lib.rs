@@ -63,6 +63,8 @@ pub fn run() {
             commands::project_icons::read_project_icon,
             commands::doctor::run_doctor,
             commands::doctor::run_doctor_fix,
+            commands::eval_bench::eval_bench_list_runs,
+            commands::eval_bench::eval_bench_get_run,
             commands::git::get_git_state,
             commands::git_changes::get_changed_files,
             commands::git::git_switch_branch,

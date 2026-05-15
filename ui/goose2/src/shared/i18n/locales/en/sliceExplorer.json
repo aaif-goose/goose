@@ -1,0 +1,17 @@
+{
+  "title": "Slice Explorer",
+  "actions": {
+    "refresh": "Refresh runs"
+  },
+  "compare": {
+    "toggle": "Compare two runs",
+    "prompt": "Pick two runs from the list to compare."
+  },
+  "detail": {
+    "prompt": "Select a run from the list to see its slice breakdown."
+  },
+  "empty": {
+    "noStore": "No eval-bench store yet. Run a recipe with eval-bench/run_kpass.py to populate ~/.skein/eval-bench.sqlite.",
+    "noRuns": "No runs recorded yet."
+  }
+}
