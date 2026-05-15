@@ -213,6 +213,7 @@ const OPENAI_REASONING_THINKING_PROVIDERS = new Set([
   'openrouter',
   'litellm',
   'github_copilot',
+  'nano-gpt',
   'tetrate',
   'xai',
   'databricks',

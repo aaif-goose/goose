@@ -426,9 +426,11 @@ impl ModelConfig {
             None => return,
         };
         let effort = match last {
+            "none" => ThinkingEffort::Off,
             "low" => ThinkingEffort::Low,
             "medium" => ThinkingEffort::Medium,
             "high" => ThinkingEffort::High,
+            "xhigh" => ThinkingEffort::Max,
             _ => return,
         };
         self.model_name = parts[..parts.len() - 1].join("-");
@@ -655,6 +657,36 @@ mod tests {
             let config = ModelConfig::new("o3-mini-high").unwrap();
             assert_eq!(config.model_name, "o3-mini");
             assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
+        }
+
+        #[test]
+        fn none_suffix_stripped_from_model_name() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_THINKING_EFFORT", Some("high")),
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_TEMPERATURE", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+                ("GOOSE_TOOLSHIM", None::<&str>),
+                ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let config = ModelConfig::new("o3-mini-none").unwrap();
+            assert_eq!(config.model_name, "o3-mini");
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Off));
+        }
+
+        #[test]
+        fn xhigh_suffix_stripped_from_model_name() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_THINKING_EFFORT", Some("low")),
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_TEMPERATURE", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+                ("GOOSE_TOOLSHIM", None::<&str>),
+                ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let config = ModelConfig::new("gpt-5.4-xhigh").unwrap();
+            assert_eq!(config.model_name, "gpt-5.4");
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Max));
         }
 
         #[test]
