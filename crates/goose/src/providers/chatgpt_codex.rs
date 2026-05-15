@@ -229,16 +229,29 @@ fn get_reasoning_effort(model_name: &str) -> String {
     }
 }
 
+fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
+    use crate::model::ThinkingEffort;
+
+    model_config
+        .thinking_effort()
+        .map(|effort| match effort {
+            ThinkingEffort::Off => None,
+            ThinkingEffort::Low => Some("low".to_string()),
+            ThinkingEffort::Medium => Some("medium".to_string()),
+            ThinkingEffort::High => Some("high".to_string()),
+            ThinkingEffort::Max => Some("xhigh".to_string()),
+        })
+        .unwrap_or_else(|| Some(get_reasoning_effort(&model_config.model_name)))
+}
+
 fn create_codex_request(
     model_config: &ModelConfig,
     system: &str,
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Value> {
-    use crate::model::ThinkingEffort;
-
     let input_items = build_input_items(messages)?;
-    let reasoning_effort = get_reasoning_effort(&model_config.model_name);
+    let reasoning_effort = reasoning_effort_for_config(model_config);
 
     let instructions = match model_config.model_name.as_str() {
         "gpt-5.3-codex" => format!("{GPT_53_CODEX_TOOL_PREAMBLE}\n\n{system}"),
@@ -249,7 +262,6 @@ fn create_codex_request(
         "model": model_config.model_name,
         "input": input_items,
         "store": false,
-        "reasoning": {"effort": reasoning_effort},
         "instructions": instructions,
     });
 
@@ -279,23 +291,12 @@ fn create_codex_request(
         payload_obj.insert("temperature".to_string(), json!(temp));
     }
 
-    let reasoning_effort = match model_config
-        .thinking_effort()
-        .unwrap_or(ThinkingEffort::High)
-    {
-        ThinkingEffort::Off => {
-            if model_config.model_name.contains("codex") {
-                "low"
-            } else {
-                "none"
-            }
-        }
-        ThinkingEffort::Low => "low",
-        ThinkingEffort::Medium => "medium",
-        ThinkingEffort::High => "high",
-        ThinkingEffort::Max => "xhigh",
-    };
-    payload_obj.insert("reasoning_effort".to_string(), json!(reasoning_effort));
+    if let Some(reasoning_effort) = reasoning_effort {
+        payload_obj.insert(
+            "reasoning".to_string(),
+            json!({ "effort": reasoning_effort }),
+        );
+    }
 
     Ok(payload)
 }
@@ -1205,18 +1206,20 @@ mod tests {
         config.request_params = Some(params);
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
-        assert_eq!(payload["reasoning_effort"], "xhigh");
+        assert_eq!(payload["reasoning"]["effort"], "xhigh");
+        assert!(payload.get("reasoning_effort").is_none());
     }
 
     #[test]
-    fn test_create_codex_request_off_maps_to_low_for_codex_models() {
+    fn test_create_codex_request_off_omits_reasoning_for_codex_models() {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
         let mut config = ModelConfig::new("gpt-5.2-codex").unwrap();
         config.request_params = Some(params);
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
-        assert_eq!(payload["reasoning_effort"], "low");
+        assert!(payload.get("reasoning").is_none());
+        assert!(payload.get("reasoning_effort").is_none());
     }
 
     #[test_case(

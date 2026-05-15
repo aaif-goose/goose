@@ -50,7 +50,7 @@ pub struct CodexProvider {
     #[serde(skip)]
     name: String,
     /// Reasoning effort level (none, low, medium, high, xhigh)
-    reasoning_effort: String,
+    reasoning_effort: Option<String>,
     /// Whether to skip git repo check
     skip_git_check: bool,
     /// CLI config overrides for MCP servers
@@ -61,32 +61,22 @@ pub struct CodexProvider {
 
 impl CodexProvider {
     fn map_thinking_effort(
-        model_name: &str,
+        _model_name: &str,
         effort: Option<crate::model::ThinkingEffort>,
-    ) -> String {
+    ) -> Option<String> {
         use crate::model::ThinkingEffort;
         match effort.unwrap_or(ThinkingEffort::High) {
-            ThinkingEffort::Off => {
-                if model_name.contains("codex") {
-                    "low".to_string()
-                } else {
-                    "none".to_string()
-                }
-            }
-            ThinkingEffort::Low => "low".to_string(),
-            ThinkingEffort::Medium => "medium".to_string(),
-            ThinkingEffort::High => "high".to_string(),
-            ThinkingEffort::Max => "xhigh".to_string(),
+            ThinkingEffort::Off => None,
+            ThinkingEffort::Low => Some("low".to_string()),
+            ThinkingEffort::Medium => Some("medium".to_string()),
+            ThinkingEffort::High => Some("high".to_string()),
+            ThinkingEffort::Max => Some("xhigh".to_string()),
         }
     }
 
     #[cfg(test)]
-    fn supports_reasoning_effort(model_name: &str, reasoning_effort: &str) -> bool {
+    fn supports_reasoning_effort(_model_name: &str, reasoning_effort: &str) -> bool {
         if !CODEX_REASONING_LEVELS.contains(&reasoning_effort) {
-            return false;
-        }
-
-        if reasoning_effort == "none" && model_name.contains("codex") {
             return false;
         }
 
@@ -136,7 +126,7 @@ impl CodexProvider {
             println!("=== CODEX PROVIDER DEBUG ===");
             println!("Command: {:?}", self.command);
             println!("Model: {}", self.model.model_name);
-            println!("Reasoning effort: {}", self.reasoning_effort);
+            println!("Reasoning effort: {:?}", self.reasoning_effort);
             println!("Skip git check: {}", self.skip_git_check);
             println!("Prompt length: {} chars", prompt.len());
             println!("Prompt: {}", prompt);
@@ -163,11 +153,10 @@ impl CodexProvider {
             cmd.arg("-m").arg(&self.model.model_name);
         }
 
-        // Reasoning effort configuration
-        cmd.arg("-c").arg(format!(
-            "model_reasoning_effort=\"{}\"",
-            self.reasoning_effort
-        ));
+        if let Some(reasoning_effort) = &self.reasoning_effort {
+            cmd.arg("-c")
+                .arg(format!("model_reasoning_effort=\"{}\"", reasoning_effort));
+        }
 
         for override_config in &self.mcp_config_overrides {
             cmd.arg("-c").arg(override_config);
@@ -929,7 +918,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -950,7 +939,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -984,7 +973,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1009,7 +998,7 @@ mod tests {
     #[test]
     fn test_reasoning_effort_support_by_model() {
         assert!(CodexProvider::supports_reasoning_effort("gpt-5.2", "none"));
-        assert!(!CodexProvider::supports_reasoning_effort(
+        assert!(CodexProvider::supports_reasoning_effort(
             "gpt-5.2-codex",
             "none"
         ));
@@ -1033,7 +1022,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1059,7 +1048,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1132,7 +1121,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1149,7 +1138,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1236,19 +1225,19 @@ mod tests {
 
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Off)),
-            "low"
+            None
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2", Some(ThinkingEffort::Off)),
-            "none"
+            None
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Max)),
-            "xhigh"
+            Some("xhigh".to_string())
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2-codex", None),
-            "high"
+            Some("high".to_string())
         );
     }
 
@@ -1258,7 +1247,7 @@ mod tests {
             command: PathBuf::from("codex"),
             model: ModelConfig::new("gpt-5.2-codex").unwrap(),
             name: "codex".to_string(),
-            reasoning_effort: "high".to_string(),
+            reasoning_effort: Some("high".to_string()),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),

@@ -189,13 +189,14 @@ impl ModelConfig {
         let toolshim = Self::parse_toolshim()?;
         let toolshim_model = Self::parse_toolshim_model()?;
 
-        // Pick up request_params from predefined models (always applies)
+        // Pick up predefined model settings before legacy suffix normalization.
         let predefined = find_predefined_model(&model_name);
+        let predefined_context_limit = predefined.as_ref().and_then(|pm| pm.context_limit);
         let request_params = predefined.and_then(|pm| pm.request_params);
 
         let mut config = Self {
             model_name,
-            context_limit,
+            context_limit: context_limit.or(predefined_context_limit),
             temperature,
             max_tokens,
             toolshim,

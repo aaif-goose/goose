@@ -23,7 +23,6 @@ use goose::model::ModelConfig;
 #[cfg(feature = "telemetry")]
 use goose::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
 use goose::providers::base::ConfigKey;
-use goose::providers::chatgpt_codex::reasoning_levels_for_model;
 use goose::providers::provider_test::test_provider_configuration;
 use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
@@ -784,26 +783,6 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
                 .initial_value("off")
                 .interact()?;
             config.set_goose_thinking_effort(effort)?;
-        }
-    }
-
-    if provider_name == "chatgpt_codex" {
-        let valid_levels = reasoning_levels_for_model(&model);
-        if !valid_levels.is_empty() {
-            let mut select = cliclack::select("Select reasoning effort level:");
-            for &level in valid_levels {
-                let description = match level {
-                    "low" => "Low - Fast responses with lighter reasoning",
-                    "medium" => "Medium - Balances speed and reasoning depth for everyday tasks",
-                    "high" => "High - Greater reasoning depth for complex problems",
-                    "xhigh" => "Extra High - Extra high reasoning depth for complex problems",
-                    _ => "",
-                };
-                select = select.item(level, description, "");
-            }
-            select = select.initial_value("medium");
-            let effort: &str = select.interact()?;
-            config.set_chatgpt_codex_reasoning_effort(effort.to_string())?;
         }
     }
 
