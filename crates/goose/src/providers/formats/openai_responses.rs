@@ -2,7 +2,9 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::providers::base::{ProviderUsage, Usage};
-use crate::providers::utils::{extract_reasoning_effort, is_openai_responses_model};
+use crate::providers::utils::{
+    extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
+};
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
 use chrono;
@@ -541,7 +543,12 @@ pub fn create_responses_request(
 
     add_message_items(&mut input_items, messages);
 
-    let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
+    let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
+    let reasoning_effort = model_config
+        .thinking_effort()
+        .map_or(legacy_reasoning_effort, |effort| {
+            openai_reasoning_effort_for_thinking(&model_name, effort)
+        });
     // All models routed here are responses-capable; temperature is rejected
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
@@ -1266,6 +1273,17 @@ mod tests {
             );
             assert_eq!(result["reasoning"]["summary"], "auto");
         }
+    }
+
+    #[test]
+    fn test_responses_request_with_normalized_effort_suffix() {
+        let model_config = ModelConfig::new("o3-mini-high").unwrap();
+
+        let result = create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
+
+        assert_eq!(result["model"], "o3-mini");
+        assert_eq!(result["reasoning"]["effort"], "high");
+        assert_eq!(result["reasoning"]["summary"], "auto");
     }
 
     #[test]
