@@ -207,6 +207,7 @@ function isGemini3Model(name: string | null | undefined): boolean {
 const CLAUDE_THINKING_PROVIDERS = new Set(['anthropic', 'databricks']);
 const OPENAI_REASONING_THINKING_PROVIDERS = new Set([
   'openai',
+  'openai_compatible',
   'codex',
   'chatgpt_codex',
   'azure_openai',

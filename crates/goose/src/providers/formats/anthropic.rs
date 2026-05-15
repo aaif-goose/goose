@@ -495,7 +495,7 @@ pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
         .unwrap_or(ThinkingEffort::High)
 }
 
-fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
+pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
     if let Some(request_param) = model_config
         .request_params
         .as_ref()

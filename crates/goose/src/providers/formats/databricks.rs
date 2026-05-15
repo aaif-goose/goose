@@ -1,6 +1,8 @@
 use crate::conversation::message::{Message, MessageContent};
 use crate::model::ModelConfig;
-use crate::providers::formats::anthropic::{thinking_effort, thinking_type, ThinkingType};
+use crate::providers::formats::anthropic::{
+    thinking_budget_tokens, thinking_effort, thinking_type, ThinkingType,
+};
 use crate::providers::utils::{
     convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
     is_valid_function_name, load_image_file, openai_reasoning_effort_for_thinking,
@@ -245,11 +247,7 @@ fn apply_claude_thinking_config(payload: &mut Value, model_config: &ModelConfig)
             );
         }
         ThinkingType::Enabled => {
-            let budget_tokens = model_config
-                .get_config_param::<i32>("budget_tokens", "CLAUDE_THINKING_BUDGET")
-                .unwrap_or(16000)
-                .max(1024);
-
+            let budget_tokens = thinking_budget_tokens(model_config);
             let max_tokens = model_config.max_output_tokens() + budget_tokens;
             obj.insert("max_tokens".to_string(), json!(max_tokens));
             obj.insert(
@@ -1205,6 +1203,30 @@ mod tests {
         assert_eq!(request["max_tokens"], 20096);
         assert_eq!(request["temperature"], 2);
         assert!(request.get("max_completion_tokens").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_enabled_thinking_budget_tracks_effort() -> anyhow::Result<()> {
+        for (effort, expected_budget) in [
+            ("low", 4000),
+            ("medium", 10000),
+            ("high", 16000),
+            ("max", 32000),
+        ] {
+            let mut model_config = ModelConfig::new_or_fail("databricks-claude-3-7-sonnet");
+            model_config.max_tokens = Some(4096);
+            let mut params = std::collections::HashMap::new();
+            params.insert("thinking_effort".to_string(), serde_json::json!(effort));
+            model_config.request_params = Some(params);
+
+            let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+
+            assert_eq!(request["thinking"]["type"], "enabled");
+            assert_eq!(request["thinking"]["budget_tokens"], expected_budget);
+            assert_eq!(request["max_tokens"], 4096 + expected_budget);
+        }
 
         Ok(())
     }
