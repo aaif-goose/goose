@@ -122,6 +122,10 @@ fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Data
         let mut content_array = Vec::new();
         let mut has_tool_calls = false;
         let mut has_multiple_content = false;
+        // Collect image user-messages from tool responses so all tool result messages
+        // can be emitted consecutively before any image messages. Claude's API requires
+        // all tool_result blocks to immediately follow tool_use blocks.
+        let mut pending_image_messages: Vec<DatabricksMessage> = Vec::new();
 
         for content in &message.content {
             match content {
@@ -188,7 +192,13 @@ fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Data
                     }
                 }
                 MessageContent::ToolResponse(response) => {
-                    result.extend(format_tool_response(response, image_format));
+                    for msg in format_tool_response(response, image_format) {
+                        if msg.role == "user" {
+                            pending_image_messages.push(msg);
+                        } else {
+                            result.push(msg);
+                        }
+                    }
                 }
                 MessageContent::Image(image) => {
                     content_array.push(convert_image(image, image_format));
@@ -209,6 +219,8 @@ fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Data
                 | MessageContent::ActionRequired(_) => {}
             }
         }
+
+        result.extend(pending_image_messages);
 
         if !content_array.is_empty() {
             converted.content = if content_array.len() == 1
@@ -1613,6 +1625,77 @@ mod tests {
             "sig_nested"
         );
         assert_eq!(tool_call["custom_field"], "custom_value");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parallel_tool_responses_with_images_are_consecutive() -> anyhow::Result<()> {
+        // Regression test for issue #7449: when multiple parallel tool calls each return images,
+        // the tool result messages must be consecutive. Claude's API requires all tool_result
+        // blocks to immediately follow tool_use blocks with no interleaved user messages.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("id1", Ok(CallToolRequestParams::new("tool_a")))
+                .with_tool_request("id2", Ok(CallToolRequestParams::new("tool_b"))),
+            Message::user()
+                .with_tool_response(
+                    "id1",
+                    Ok(CallToolResult::success(vec![Content::image(
+                        "base64data1".to_string(),
+                        "image/png".to_string(),
+                    )])),
+                )
+                .with_tool_response(
+                    "id2",
+                    Ok(CallToolResult::success(vec![Content::image(
+                        "base64data2".to_string(),
+                        "image/png".to_string(),
+                    )])),
+                ),
+        ];
+
+        let as_value =
+            serde_json::to_value(format_messages(&messages, &ImageFormat::OpenAi)).unwrap();
+        let spec = as_value.as_array().unwrap();
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+
+        // All tool messages must be consecutive, image user messages must come after all tools.
+        // Broken order: ["assistant", "tool", "user", "tool", "user"]
+        assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_tool_responses_image_and_text_ordering() -> anyhow::Result<()> {
+        // When only some tool responses contain images, the ordering must still be correct:
+        // all tool messages first, then user image messages.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("id1", Ok(CallToolRequestParams::new("tool_a")))
+                .with_tool_request("id2", Ok(CallToolRequestParams::new("tool_b"))),
+            Message::user()
+                .with_tool_response(
+                    "id1",
+                    Ok(CallToolResult::success(vec![Content::text("text result")])),
+                )
+                .with_tool_response(
+                    "id2",
+                    Ok(CallToolResult::success(vec![Content::image(
+                        "base64data".to_string(),
+                        "image/png".to_string(),
+                    )])),
+                ),
+        ];
+
+        let as_value =
+            serde_json::to_value(format_messages(&messages, &ImageFormat::OpenAi)).unwrap();
+        let spec = as_value.as_array().unwrap();
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+
+        // tool_a returns text (no extra user message), tool_b returns an image (one user message after)
+        assert_eq!(roles, vec!["assistant", "tool", "tool", "user"]);
 
         Ok(())
     }
