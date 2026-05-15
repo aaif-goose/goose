@@ -908,9 +908,20 @@ impl Agent {
                             .map(|a| serde_json::Value::Object(a.clone())),
                     )
                     .with_working_dir(session.working_dir.to_string_lossy().to_string());
-            self.hook_manager
-                .emit(crate::hooks::HookEvent::PreToolUse, ctx)
-                .await;
+            if let crate::hooks::HookDecision::Deny { reason, plugin } = self
+                .hook_manager
+                .emit_blocking(crate::hooks::HookEvent::PreToolUse, ctx)
+                .await
+            {
+                return (
+                    request_id,
+                    Err(ErrorData::new(
+                        ErrorCode::INVALID_REQUEST,
+                        format!("Tool call blocked by plugin `{plugin}`: {reason}"),
+                        None,
+                    )),
+                );
+            }
         }
 
         let tool_input_for_extended = tool_call
