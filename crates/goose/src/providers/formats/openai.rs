@@ -1318,7 +1318,7 @@ pub fn create_request_with_options(
     if let Some(params) = &model_config.request_params {
         if let Some(obj) = payload.as_object_mut() {
             for (key, value) in params {
-                if !is_reserved_request_param_key(key) {
+                if key != "thinking_effort" && !is_reserved_request_param_key(key) {
                     obj.insert(key.clone(), value.clone());
                 }
             }
@@ -2250,6 +2250,7 @@ mod tests {
         let obj = request.as_object().unwrap();
 
         assert_eq!(obj.get("reasoning_effort"), Some(&json!("medium")));
+        assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
     }
@@ -2293,6 +2294,7 @@ mod tests {
         for (key, value) in expected.as_object().unwrap() {
             assert_eq!(obj.get(key).unwrap(), value);
         }
+        assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
     }

@@ -234,12 +234,20 @@ fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
 
     model_config
         .thinking_effort()
-        .map(|effort| match effort {
-            ThinkingEffort::Off => None,
-            ThinkingEffort::Low => Some("low".to_string()),
-            ThinkingEffort::Medium => Some("medium".to_string()),
-            ThinkingEffort::High => Some("high".to_string()),
-            ThinkingEffort::Max => Some("xhigh".to_string()),
+        .map(|effort| {
+            let valid_levels = reasoning_levels_for_model(&model_config.model_name);
+            let preferred_levels: &[&str] = match effort {
+                ThinkingEffort::Off => return None,
+                ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
+                ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
+                ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
+                ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+            };
+
+            preferred_levels
+                .iter()
+                .find(|level| valid_levels.contains(level))
+                .map(|level| (*level).to_string())
         })
         .unwrap_or_else(|| Some(get_reasoning_effort(&model_config.model_name)))
 }
@@ -1207,6 +1215,18 @@ mod tests {
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert_eq!(payload["reasoning"]["effort"], "xhigh");
+        assert!(payload.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn test_create_codex_request_caps_unified_thinking_to_supported_level() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("max"));
+        let mut config = ModelConfig::new("unknown-model").unwrap();
+        config.request_params = Some(params);
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"]["effort"], "high");
         assert!(payload.get("reasoning_effort").is_none());
     }
 
