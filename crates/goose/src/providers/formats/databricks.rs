@@ -3,8 +3,8 @@ use crate::model::ModelConfig;
 use crate::providers::formats::anthropic::{thinking_effort, thinking_type, ThinkingType};
 use crate::providers::utils::{
     convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
-    is_valid_function_name, load_image_file, safely_parse_json, sanitize_function_name,
-    ImageFormat,
+    is_valid_function_name, load_image_file, openai_reasoning_effort_for_thinking,
+    safely_parse_json, sanitize_function_name, ImageFormat,
 };
 use anyhow::{anyhow, Error};
 use rmcp::model::{
@@ -588,17 +588,7 @@ pub fn create_request(
         model_config
             .thinking_effort()
             .map_or(legacy_reasoning_effort, |effort| {
-                use crate::model::ThinkingEffort;
-                Some(
-                    match effort {
-                        ThinkingEffort::Off => "none",
-                        ThinkingEffort::Low => "low",
-                        ThinkingEffort::Medium => "medium",
-                        ThinkingEffort::High => "high",
-                        ThinkingEffort::Max => "xhigh",
-                    }
-                    .to_string(),
-                )
+                openai_reasoning_effort_for_thinking(&model_name, effort)
             })
     } else {
         None
@@ -1079,6 +1069,48 @@ mod tests {
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
         assert_eq!(request["reasoning_effort"], "high");
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_off_effort_uses_supported_level() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), serde_json::json!("off"));
+        let model_config = ModelConfig {
+            model_name: "databricks-o3-mini".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+        assert_eq!(request["reasoning_effort"], "low");
+        assert!(request.get("thinking_effort").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_max_effort_uses_supported_level() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), serde_json::json!("max"));
+        let model_config = ModelConfig {
+            model_name: "databricks-gpt-5.2-pro".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+        assert_eq!(request["reasoning_effort"], "high");
+        assert!(request.get("thinking_effort").is_none());
         Ok(())
     }
 

@@ -5,8 +5,8 @@ use crate::providers::base::{split_think_blocks, ProviderUsage, ThinkFilter, Usa
 use crate::providers::errors::ProviderError;
 use crate::providers::utils::{
     convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
-    is_valid_function_name, load_image_file, safely_parse_json, sanitize_function_name,
-    ImageFormat,
+    is_valid_function_name, load_image_file, openai_reasoning_effort_for_thinking,
+    safely_parse_json, sanitize_function_name, ImageFormat,
 };
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -1245,17 +1245,7 @@ pub fn create_request_with_options(
         model_config
             .thinking_effort()
             .map_or(legacy_reasoning_effort, |effort| {
-                use crate::model::ThinkingEffort;
-                Some(
-                    match effort {
-                        ThinkingEffort::Off => "none",
-                        ThinkingEffort::Low => "low",
-                        ThinkingEffort::Medium => "medium",
-                        ThinkingEffort::High => "high",
-                        ThinkingEffort::Max => "xhigh",
-                    }
-                    .to_string(),
-                )
+                openai_reasoning_effort_for_thinking(&model_name, effort)
             })
     } else {
         None
@@ -2250,6 +2240,68 @@ mod tests {
         let obj = request.as_object().unwrap();
 
         assert_eq!(obj.get("reasoning_effort"), Some(&json!("medium")));
+        assert!(obj.get("thinking_effort").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_o3_off_effort_uses_supported_level() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("off"));
+        let model_config = ModelConfig {
+            model_name: "o3".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("low")));
+        assert!(obj.get("thinking_effort").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_gpt5_pro_max_effort_uses_supported_level() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("max"));
+        let model_config = ModelConfig {
+            model_name: "gpt-5.2-pro-2025-12-11".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("high")));
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())

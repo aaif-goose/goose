@@ -1,7 +1,7 @@
 use super::base::Usage;
 use super::errors::GoogleErrorCode;
 use crate::config::paths::Paths;
-use crate::model::ModelConfig;
+use crate::model::{ModelConfig, ThinkingEffort};
 use crate::providers::errors::ProviderError;
 use anyhow::{anyhow, Result};
 use base64::Engine;
@@ -235,6 +235,45 @@ pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
     }
 
     (model_name.to_string(), None)
+}
+
+pub fn openai_reasoning_effort_for_thinking(
+    model_name: &str,
+    effort: ThinkingEffort,
+) -> Option<String> {
+    let supported = openai_reasoning_efforts_for_model(model_name);
+    let preferred: &[&str] = match effort {
+        ThinkingEffort::Off => &["none", "low", "medium", "high", "xhigh"],
+        ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
+        ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
+        ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
+        ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+    };
+
+    preferred
+        .iter()
+        .find(|level| supported.contains(level))
+        .map(|level| (*level).to_string())
+}
+
+fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
+    let normalized = model_name.to_ascii_lowercase();
+
+    if normalized.contains("gpt-5") {
+        if normalized.contains("-pro") || normalized.contains("/pro") {
+            &["high"]
+        } else if normalized.contains("gpt-5.4")
+            || normalized.contains("gpt-5-4")
+            || normalized.contains("gpt-5.5")
+            || normalized.contains("gpt-5-5")
+        {
+            &["low", "medium", "high", "xhigh"]
+        } else {
+            &["low", "medium", "high"]
+        }
+    } else {
+        &["low", "medium", "high"]
+    }
 }
 
 pub fn sanitize_function_name(name: &str) -> String {
