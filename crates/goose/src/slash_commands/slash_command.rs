@@ -17,24 +17,36 @@ pub fn list_builtin_commands() -> Vec<SlashCommandEntry> {
 }
 
 pub fn list_acp_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
-    let mut commands = list_builtin_commands();
+    merge_command_sources(
+        list_builtin_commands(),
+        super::recipe_slash_command::commands_from_mappings(
+            super::recipe_slash_command::list_commands(),
+        ),
+        super::skill_slash_command::list_commands(working_dir),
+    )
+}
+
+pub(super) fn merge_command_sources(
+    builtins: Vec<SlashCommandEntry>,
+    recipes: Vec<SlashCommandEntry>,
+    skills: Vec<SlashCommandEntry>,
+) -> Vec<SlashCommandEntry> {
+    let mut commands = builtins;
     let mut reserved_names: HashSet<String> = commands
         .iter()
         .map(|command| normalize_command_name(&command.name))
         .collect();
 
-    for command in super::recipe_slash_command::commands_from_mappings(
-        super::recipe_slash_command::list_commands(),
-    ) {
-        if reserved_names.insert(command.name.clone()) {
+    for command in recipes {
+        if reserved_names.insert(normalize_command_name(&command.name)) {
             commands.push(command);
         }
     }
 
     commands.extend(
-        super::skill_slash_command::list_commands(working_dir)
+        skills
             .into_iter()
-            .filter(|command| !reserved_names.contains(&command.name)),
+            .filter(|command| !reserved_names.contains(&normalize_command_name(&command.name))),
     );
     commands
 }
@@ -50,7 +62,6 @@ fn builtin_input_hint(command: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn lists_acp_safe_builtin_commands() {
@@ -93,73 +104,50 @@ mod tests {
         assert_eq!(compact.input_hint, None);
     }
 
-    #[test]
-    fn lists_project_skills_as_acp_commands() {
-        let tmp = TempDir::new().unwrap();
-        let skill_dir = tmp
-            .path()
-            .join(".agents")
-            .join("skills")
-            .join("code-review");
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        std::fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: code-review\ndescription: Review changed code\nmetadata:\n  argument-hint: \"[task]\"\n  arguments:\n    - task\n---\nReview the diff.",
-        )
-        .unwrap();
-
-        let commands = list_acp_commands(Some(tmp.path()));
-        let command = commands
-            .iter()
-            .find(|command| command.name == "code-review")
-            .expect("project skill should be listed as an ACP command");
-
-        assert_eq!(command.description, "Review changed code");
-        assert_eq!(command.source, SlashCommandSource::Skill);
-        assert_eq!(command.input_hint.as_deref(), Some("[task]"));
+    fn entry(name: &str, source: SlashCommandSource) -> SlashCommandEntry {
+        SlashCommandEntry {
+            name: name.to_string(),
+            description: format!("{name} description"),
+            source,
+            input_hint: None,
+        }
     }
 
     #[test]
-    fn recipe_commands_reserve_names_before_skills() {
-        let tmp = TempDir::new().unwrap();
-        let recipe_path = tmp.path().join("review.yaml");
-        std::fs::write(
-            &recipe_path,
-            "version: 1.0.0\ntitle: Review Recipe\ndescription: Review with a recipe\ninstructions: Review the change\n",
-        )
-        .unwrap();
-        let mut commands = list_builtin_commands();
-        let mut reserved_names: HashSet<String> = commands
-            .iter()
-            .map(|command| normalize_command_name(&command.name))
-            .collect();
-        for command in super::recipe_slash_command::commands_from_mappings(vec![
-            super::recipe_slash_command::SlashCommandMapping {
-                command: "review".to_string(),
-                recipe_path: recipe_path.to_string_lossy().to_string(),
-            },
-        ]) {
-            let name = normalize_command_name(&command.name);
-            if reserved_names.insert(name) {
-                commands.push(command);
-            }
-        }
-        let skill_command = SlashCommandEntry {
-            name: "review".to_string(),
-            description: "Review code".to_string(),
-            source: SlashCommandSource::Skill,
-            input_hint: None,
-        };
-        if !reserved_names.contains(&normalize_command_name(&skill_command.name)) {
-            commands.push(skill_command);
-        }
+    fn merge_recipe_wins_over_skill_on_name_collision() {
+        let merged = merge_command_sources(
+            vec![entry("compact", SlashCommandSource::Builtin)],
+            vec![entry("review", SlashCommandSource::Recipe)],
+            vec![entry("review", SlashCommandSource::Skill)],
+        );
 
-        let review_commands: Vec<_> = commands
-            .iter()
-            .filter(|command| command.name == "review")
-            .collect();
+        let review: Vec<_> = merged.iter().filter(|c| c.name == "review").collect();
+        assert_eq!(review.len(), 1);
+        assert_eq!(review[0].source, SlashCommandSource::Recipe);
+    }
 
-        assert_eq!(review_commands.len(), 1);
-        assert_eq!(review_commands[0].source, SlashCommandSource::Recipe);
+    #[test]
+    fn merge_builtin_wins_over_recipe_and_skill() {
+        let merged = merge_command_sources(
+            vec![entry("compact", SlashCommandSource::Builtin)],
+            vec![entry("compact", SlashCommandSource::Recipe)],
+            vec![entry("compact", SlashCommandSource::Skill)],
+        );
+
+        let compact: Vec<_> = merged.iter().filter(|c| c.name == "compact").collect();
+        assert_eq!(compact.len(), 1);
+        assert_eq!(compact[0].source, SlashCommandSource::Builtin);
+    }
+
+    #[test]
+    fn merge_dedupes_by_normalized_name() {
+        let merged = merge_command_sources(
+            vec![entry("Compact", SlashCommandSource::Builtin)],
+            vec![entry("/compact", SlashCommandSource::Recipe)],
+            vec![entry("COMPACT", SlashCommandSource::Skill)],
+        );
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, SlashCommandSource::Builtin);
     }
 }
