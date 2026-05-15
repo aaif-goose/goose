@@ -107,7 +107,7 @@ pub fn apply_reasoning_config(payload: &mut Value, model_config: &ModelConfig) {
         let clamped_effort = obj
             .remove("reasoning_effort")
             .and_then(|value| value.as_str().map(str::to_owned));
-        if clamped_effort.is_none() && model_config.reasoning != Some(true) {
+        if clamped_effort.is_none() && !model_config.is_reasoning_model() {
             return;
         }
 
@@ -211,6 +211,22 @@ mod tests {
         params.insert("thinking_effort".to_string(), json!("high"));
         model_config.request_params = Some(params);
         model_config.reasoning = Some(true);
+
+        apply_reasoning_config(&mut payload, &model_config);
+
+        assert_eq!(payload["reasoning"], json!({ "effort": "high" }));
+    }
+
+    #[test]
+    fn test_apply_reasoning_config_uses_model_detection() {
+        let mut payload = json!({
+            "model": "anthropic/claude-sonnet-4",
+            "messages": []
+        });
+        let mut model_config = ModelConfig::new_or_fail("anthropic/claude-sonnet-4");
+        let mut params = HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("high"));
+        model_config.request_params = Some(params);
 
         apply_reasoning_config(&mut payload, &model_config);
 
