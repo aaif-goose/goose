@@ -1126,6 +1126,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     }
   });
 
+  const broadcastFullScreenState = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('fullscreen-change', mainWindow.isFullScreen());
+    }
+  };
+  mainWindow.on('enter-full-screen', broadcastFullScreenState);
+  mainWindow.on('leave-full-screen', broadcastFullScreenState);
+
   // Handle mouse back button (button 3)
   // Use type assertion for non-standard Electron event
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1791,6 +1799,11 @@ ipcMain.handle('get-spellcheck-state', () => {
 
 ipcMain.handle('is-any-window-focused', () => {
   return BrowserWindow.getFocusedWindow() !== null;
+});
+
+ipcMain.handle('get-is-fullscreen', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win?.isFullScreen() ?? false;
 });
 
 // Add file/directory selection handler
