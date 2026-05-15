@@ -1160,6 +1160,7 @@ mod tests {
             custom_models,
             dynamic_models,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
         }
     }
 
@@ -1187,6 +1188,7 @@ mod tests {
             model_doc_link: None,
             setup_steps: vec![],
             fast_model: None,
+            preserves_thinking: false,
         }
     }
 
