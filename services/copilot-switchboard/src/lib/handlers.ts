@@ -7,10 +7,11 @@ import {
   generateAppJwt,
   getInstallationToken,
   getPullRequestHead,
+  postIssueComment,
 } from './github';
 import { exchangeCodeAndVerify } from './oauth';
 import { deleteInstall, loadInstall, saveInstall } from './registry';
-import { runReviewViaTunnel } from './tunnel';
+import { runCommentViaTunnel, runReviewViaTunnel } from './tunnel';
 import type {
   Env,
   InstallationEvent,
@@ -19,7 +20,8 @@ import type {
   RegisterRequest,
 } from './types';
 
-const REVIEW_TRIGGER_RE = /(^|\s)@goose-copilot\s+review\b/i;
+const MENTION_RE = /(^|\s)@goose-copilot\b/i;
+const REVIEW_TRIGGER_RE = /(^|\s)@goose-copilot\s+review\s*$/im;
 
 export async function handleRegister(req: RegisterRequest, env: Env): Promise<Response> {
   if (
@@ -92,21 +94,104 @@ export async function handlePullRequest(payload: PullRequestEvent, env: Env): Pr
 export async function handleIssueComment(payload: IssueCommentEvent, env: Env): Promise<void> {
   if (payload.action !== 'created') return;
   if (!payload.issue.pull_request) return;
-  if (!REVIEW_TRIGGER_RE.test(payload.comment.body)) return;
+  // Bot accounts trigger nothing — prevents goose-copilot[bot] from replying
+  // to its own comments and other bots (Dependabot, CodeRabbit, etc).
+  if (payload.comment.user.type === 'Bot') return;
+  if (!MENTION_RE.test(payload.comment.body)) return;
 
   const jwt = await generateAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const token = await getInstallationToken(payload.installation.id, jwt);
   const pr = await getPullRequestHead(payload.repository.full_name, payload.issue.number, token);
 
-  await triggerReview({
+  if (REVIEW_TRIGGER_RE.test(payload.comment.body)) {
+    await triggerReview({
+      fullName: payload.repository.full_name,
+      prNumber: payload.issue.number,
+      headSha: pr.sha,
+      prUrl: pr.htmlUrl,
+      installationId: payload.installation.id,
+      env,
+      token,
+    });
+    return;
+  }
+
+  await triggerComment({
     fullName: payload.repository.full_name,
     prNumber: payload.issue.number,
     headSha: pr.sha,
+    headRef: pr.ref,
     prUrl: pr.htmlUrl,
+    commentBody: payload.comment.body,
+    commenter: payload.comment.user.login,
     installationId: payload.installation.id,
     env,
     token,
   });
+}
+
+async function triggerComment(opts: {
+  fullName: string;
+  prNumber: number;
+  headSha: string;
+  headRef: string;
+  prUrl: string;
+  commentBody: string;
+  commenter: string;
+  installationId: number;
+  env: Env;
+  token: string;
+}): Promise<void> {
+  const { fullName, prNumber, commentBody, commenter, installationId, env, token } = opts;
+
+  const install = await loadInstall(env, installationId);
+  if (!install) {
+    // No registered goosed — surface that as a polite reply rather than silence.
+    await postIssueComment(
+      fullName,
+      prNumber,
+      `@${commenter} Goose Copilot is installed on this repo but no local goose is connected. ` +
+        `Open Goose Desktop → Copilot tab → Connect GitHub to enable.`,
+      token
+    ).catch((err) =>
+      console.error(`[comment] ${fullName} #${prNumber}: post no-install reply failed: ${err}`)
+    );
+    return;
+  }
+
+  try {
+    const result = await runCommentViaTunnel(install, {
+      githubToken: token,
+      repo: fullName,
+      prNumber: opts.prNumber,
+      headSha: opts.headSha,
+      headRef: opts.headRef,
+      prUrl: opts.prUrl,
+      commentBody,
+      commenter,
+    });
+    if (!result.ok) {
+      throw new Error(`tunnel responded ${result.status}: ${result.body.slice(0, 200)}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[comment] ${fullName} #${prNumber}: ${msg}`);
+    try {
+      await postIssueComment(
+        fullName,
+        prNumber,
+        `@${commenter} Goose Copilot couldn't reach your local goose. ` +
+          `Make sure Goose Desktop is running, then try again.`,
+        token
+      );
+    } catch (postErr) {
+      console.error(
+        `[comment] ${fullName} #${prNumber}: also failed to post error reply: ${
+          postErr instanceof Error ? postErr.message : postErr
+        }`
+      );
+    }
+  }
 }
 
 async function triggerReview(opts: {

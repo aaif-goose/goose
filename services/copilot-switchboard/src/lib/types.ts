@@ -51,7 +51,10 @@ export interface PullRequestEvent {
 
 export interface IssueCommentEvent {
   action: 'created' | 'edited' | 'deleted';
-  comment: { body: string; user: { login: string } };
+  comment: {
+    body: string;
+    user: { login: string; type: 'User' | 'Bot' | 'Organization' };
+  };
   issue: {
     number: number;
     pull_request?: { url: string } | null;

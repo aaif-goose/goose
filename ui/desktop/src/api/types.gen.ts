@@ -163,6 +163,20 @@ export type ContentBlock = ({
 
 export type Conversation = Array<Message>;
 
+export type CopilotCommentRequest = {
+    comment_body: string;
+    commenter: string;
+    github_token: string;
+    /**
+     * The PR's head branch name (e.g. `feature/foo`). Used to push any
+     * edits the agent makes back to the PR.
+     */
+    head_ref?: string;
+    pr_number: number;
+    pr_url: string;
+    repo: string;
+};
+
 export type CopilotReviewRequest = {
     /**
      * The endpoint updates this Check Run on completion.
@@ -2995,6 +3009,29 @@ export type ValidateConfigResponses = {
 };
 
 export type ValidateConfigResponse = ValidateConfigResponses[keyof ValidateConfigResponses];
+
+export type CommentData = {
+    body: CopilotCommentRequest;
+    path?: never;
+    query?: never;
+    url: '/copilot/comment';
+};
+
+export type CommentErrors = {
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type CommentResponses = {
+    /**
+     * Comment accepted, replying in background
+     */
+    200: CopilotReviewResponse;
+};
+
+export type CommentResponse = CommentResponses[keyof CommentResponses];
 
 export type ReviewData = {
     body: CopilotReviewRequest;

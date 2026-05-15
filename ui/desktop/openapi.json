@@ -1663,6 +1663,39 @@
         }
       }
     },
+    "/copilot/comment": {
+      "post": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Comment accepted, replying in background",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotReviewResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
     "/copilot/review": {
       "post": {
         "tags": [
@@ -4651,6 +4684,43 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Message"
+        }
+      },
+      "CopilotCommentRequest": {
+        "type": "object",
+        "required": [
+          "github_token",
+          "repo",
+          "pr_number",
+          "pr_url",
+          "comment_body",
+          "commenter"
+        ],
+        "properties": {
+          "comment_body": {
+            "type": "string"
+          },
+          "commenter": {
+            "type": "string"
+          },
+          "github_token": {
+            "type": "string"
+          },
+          "head_ref": {
+            "type": "string",
+            "description": "The PR's head branch name (e.g. `feature/foo`). Used to push any\nedits the agent makes back to the PR."
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pr_url": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
         }
       },
       "CopilotReviewRequest": {

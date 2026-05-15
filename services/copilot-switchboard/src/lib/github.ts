@@ -105,13 +105,16 @@ export async function getPullRequestHead(
   fullName: string,
   prNumber: number,
   token: string
-): Promise<{ sha: string; htmlUrl: string }> {
+): Promise<{ sha: string; ref: string; htmlUrl: string }> {
   const res = await fetch(`${API}/repos/${fullName}/pulls/${prNumber}`, {
     headers: ghHeaders(token),
   });
   if (!res.ok) throw await ghError(res, `Failed to load PR #${prNumber}`);
-  const data = (await res.json()) as { head: { sha: string }; html_url: string };
-  return { sha: data.head.sha, htmlUrl: data.html_url };
+  const data = (await res.json()) as {
+    head: { sha: string; ref: string };
+    html_url: string;
+  };
+  return { sha: data.head.sha, ref: data.head.ref, htmlUrl: data.html_url };
 }
 
 export async function createCheckRun(
@@ -156,6 +159,20 @@ export async function completeCheckRun(opts: {
     }),
   });
   if (!res.ok) throw await ghError(res, 'Failed to complete check run');
+}
+
+export async function postIssueComment(
+  fullName: string,
+  issueNumber: number,
+  body: string,
+  token: string
+): Promise<void> {
+  const res = await fetch(`${API}/repos/${fullName}/issues/${issueNumber}/comments`, {
+    method: 'POST',
+    headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) throw await ghError(res, 'Failed to post issue comment');
 }
 
 function ghHeaders(token: string): HeadersInit {
