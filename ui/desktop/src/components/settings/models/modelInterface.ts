@@ -9,6 +9,7 @@ export default interface Model {
   alias?: string; // optional model display name
   subtext?: string; // goes below model name if not the provider
   context_limit?: number; // optional context limit override
+  reasoning?: boolean; // optional reasoning/thinking support metadata
   request_params?: Record<string, unknown>; // provider-specific request parameters
 }
 

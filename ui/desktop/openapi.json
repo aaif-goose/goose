@@ -6533,6 +6533,11 @@
             "description": "Cost per token for output in USD (optional)",
             "nullable": true
           },
+          "reasoning": {
+            "type": "boolean",
+            "description": "Whether this model supports reasoning/thinking controls",
+            "nullable": true
+          },
           "supports_cache_control": {
             "type": "boolean",
             "description": "Whether this model supports cache control",
@@ -6586,6 +6591,10 @@
           },
           "provider": {
             "type": "string"
+          },
+          "reasoning": {
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

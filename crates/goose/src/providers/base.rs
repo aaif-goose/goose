@@ -395,6 +395,8 @@ pub struct ModelInfo {
     pub currency: Option<String>,
     /// Whether this model supports cache control
     pub supports_cache_control: Option<bool>,
+    /// Whether this model supports reasoning/thinking controls
+    pub reasoning: Option<bool>,
 }
 
 impl ModelInfo {
@@ -407,6 +409,7 @@ impl ModelInfo {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            reasoning: None,
         }
     }
 
@@ -424,6 +427,7 @@ impl ModelInfo {
             output_token_cost: Some(output_cost),
             currency: Some("$".to_string()),
             supports_cache_control: None,
+            reasoning: None,
         }
     }
 }
@@ -476,19 +480,31 @@ impl ProviderMetadata {
             display_name: display_name.to_string(),
             description: description.to_string(),
             default_model: default_model.to_string(),
-            known_models: model_names
-                .iter()
-                .map(|&model_name| ModelInfo {
-                    name: model_name.to_string(),
-                    context_limit: ModelConfig::new_or_fail(model_name)
-                        .with_canonical_limits(name)
-                        .context_limit(),
-                    input_token_cost: None,
-                    output_token_cost: None,
-                    currency: None,
-                    supports_cache_control: None,
-                })
-                .collect(),
+            known_models: {
+                let registry = CanonicalModelRegistry::bundled().ok();
+                model_names
+                    .iter()
+                    .map(|&model_name| {
+                        let canonical = registry.as_ref().and_then(|registry| {
+                            let canonical_id = map_to_canonical_model(name, model_name, registry)?;
+                            let (provider, model) = canonical_id.split_once('/')?;
+                            registry.get(provider, model)
+                        });
+
+                        ModelInfo {
+                            name: model_name.to_string(),
+                            context_limit: ModelConfig::new_or_fail(model_name)
+                                .with_canonical_limits(name)
+                                .context_limit(),
+                            input_token_cost: None,
+                            output_token_cost: None,
+                            currency: None,
+                            supports_cache_control: None,
+                            reasoning: canonical.and_then(|model| model.reasoning),
+                        }
+                    })
+                    .collect()
+            },
             model_doc_link: model_doc_link.to_string(),
             config_keys,
             setup_steps: vec![],
@@ -1739,6 +1755,7 @@ mod tests {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            reasoning: None,
         };
         assert_eq!(info.context_limit, 1000);
 
@@ -1750,6 +1767,7 @@ mod tests {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            reasoning: None,
         };
         assert_eq!(info, info2);
 
@@ -1761,6 +1779,7 @@ mod tests {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            reasoning: None,
         };
         assert_ne!(info, info3);
     }

@@ -19,7 +19,7 @@ import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
 import Model, { getProviderMetadata, fetchModelsForProviders } from '../modelInterface';
 import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../predefinedModelsUtils';
-import { ProviderType } from '../../../../api';
+import { getCanonicalModelInfo, ProviderType } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
@@ -222,8 +222,13 @@ const OPENAI_REASONING_THINKING_PROVIDERS = new Set([
 
 function supportsThinking(
   name: string | null | undefined,
-  provider: string | null | undefined
+  provider: string | null | undefined,
+  modelReasoning: boolean | null | undefined
 ): boolean {
+  if (provider === 'openrouter') {
+    return modelReasoning === true;
+  }
+
   const claudeSupported = isClaudeModel(name) && CLAUDE_THINKING_PROVIDERS.has(provider ?? '');
   const openaiReasoningSupported =
     isOpenAIReasoningModel(name) && OPENAI_REASONING_THINKING_PROVIDERS.has(provider ?? '');
@@ -337,10 +342,12 @@ export const SwitchModelModal = ({
   >([]);
   const fetchedProviders = useRef<Set<string>>(new Set());
   const [thinkingEffort, setThinkingEffort] = useState<string | null>(null);
+  const [selectedModelReasoning, setSelectedModelReasoning] = useState<boolean | null>(null);
 
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
   const effectiveProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
-  const showThinkingControl = supportsThinking(modelName, effectiveProvider);
+  const modelReasoning = selectedPredefinedModel?.reasoning ?? selectedModelReasoning;
+  const showThinkingControl = supportsThinking(modelName, effectiveProvider, modelReasoning);
 
   useEffect(() => {
     (async () => {
@@ -352,6 +359,32 @@ export const SwitchModelModal = ({
       }
     })();
   }, [read]);
+
+  useEffect(() => {
+    if (effectiveProvider !== 'openrouter' || !modelName || modelName === 'custom') {
+      setSelectedModelReasoning(null);
+      return;
+    }
+
+    let cancelled = false;
+    getCanonicalModelInfo({
+      body: { provider: effectiveProvider, model: modelName },
+    })
+      .then((response) => {
+        if (!cancelled) {
+          setSelectedModelReasoning(response.data?.model_info?.reasoning ?? null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedModelReasoning(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProvider, modelName]);
 
   // Validate form data
   const validateForm = useCallback(() => {
