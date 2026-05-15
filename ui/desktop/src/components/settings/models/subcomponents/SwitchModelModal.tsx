@@ -375,25 +375,26 @@ export const SwitchModelModal = ({
     }
 
     let cancelled = false;
+    setSelectedModelReasoning(selectedPredefinedModel?.reasoning ?? null);
     getProviderModelInfo({
       path: { name: effectiveProvider },
       body: { model: modelName },
     })
       .then((response) => {
         if (!cancelled) {
-          setSelectedModelReasoning((previous) => response.data?.reasoning ?? previous);
+          setSelectedModelReasoning(response.data?.reasoning ?? null);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setSelectedModelReasoning((previous) => previous);
+          setSelectedModelReasoning(null);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [effectiveProvider, modelName]);
+  }, [effectiveProvider, modelName, selectedPredefinedModel?.reasoning]);
 
   useEffect(() => {
     if (!provider || !model) return;
