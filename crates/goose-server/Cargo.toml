@@ -56,7 +56,7 @@ anyhow = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }
 base64 = { workspace = true }
-config = { version = "0.15.13", features = ["toml"] }
+config = { version = "0.15.23", features = ["toml"] }
 thiserror = { workspace = true }
 clap = { workspace = true }
 serde_yaml = { workspace = true }
@@ -75,7 +75,7 @@ rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
 uuid = { workspace = true }
 rcgen = "0.14"
 axum-server = { version = "0.8.0" }
-aws-lc-rs = { version = "1.16.3", optional = true }
+aws-lc-rs = { version = "1.17.0", optional = true }
 openssl = { version = "0.10", optional = true }
 pem = "3.0.6"
 
