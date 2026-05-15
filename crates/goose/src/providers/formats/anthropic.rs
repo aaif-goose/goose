@@ -505,6 +505,13 @@ pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
         return request_param.max(1024);
     }
 
+    let config = crate::config::Config::global();
+    for key in ["ANTHROPIC_THINKING_BUDGET", "CLAUDE_THINKING_BUDGET"] {
+        if let Ok(budget) = config.get_param::<i32>(key) {
+            return budget.max(1024);
+        }
+    }
+
     let effort = model_config
         .thinking_effort()
         .unwrap_or(ThinkingEffort::High);
@@ -1450,6 +1457,17 @@ mod tests {
             thinking_type(&cfg_with_effort("claude-3-7-sonnet-20250219", "off")),
             ThinkingType::Disabled
         );
+    }
+
+    #[test]
+    fn test_thinking_budget_uses_legacy_env() {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("ANTHROPIC_THINKING_BUDGET", Some("8192")),
+            ("CLAUDE_THINKING_BUDGET", None::<&str>),
+        ]);
+        let config = cfg_with_effort("claude-3-7-sonnet-20250219", "high");
+        assert_eq!(thinking_budget_tokens(&config), 8192);
     }
 
     #[test]

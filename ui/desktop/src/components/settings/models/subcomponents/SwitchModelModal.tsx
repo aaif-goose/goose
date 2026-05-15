@@ -468,7 +468,7 @@ export const SwitchModelModal = ({
       };
 
       if (showThinkingControl) {
-        const effort = thinkingEffort ?? 'off';
+        const effort = thinkingEffort ?? modelObj.request_params?.thinking_effort ?? 'off';
         modelObj = {
           ...modelObj,
           request_params: { ...modelObj.request_params, thinking_effort: effort },

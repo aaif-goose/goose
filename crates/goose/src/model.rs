@@ -28,7 +28,7 @@ impl FromStr for ThinkingEffort {
             "low" => Ok(Self::Low),
             "medium" | "med" => Ok(Self::Medium),
             "high" => Ok(Self::High),
-            "max" => Ok(Self::Max),
+            "max" | "xhigh" => Ok(Self::Max),
             other => Err(format!("unknown thinking effort: '{other}'")),
         }
     }
@@ -868,6 +868,7 @@ mod tests {
             );
             assert_eq!("med".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Medium));
             assert_eq!("max".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
+            assert_eq!("xhigh".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
             assert!("invalid".parse::<ThinkingEffort>().is_err());
         }
     }

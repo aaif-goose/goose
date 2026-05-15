@@ -549,11 +549,17 @@ pub fn create_responses_request(
     // effort suffix was provided.
     let is_reasoning_model = is_openai_responses_model(&model_name);
     let reasoning_effort = if is_reasoning_model {
-        model_config
-            .thinking_effort()
-            .map_or(legacy_reasoning_effort, |effort| {
-                openai_reasoning_effort_for_thinking(&model_name, effort)
-            })
+        if let Some(effort) = legacy_reasoning_effort.as_deref() {
+            effort
+                .parse()
+                .ok()
+                .and_then(|effort| openai_reasoning_effort_for_thinking(&model_name, effort))
+                .or(legacy_reasoning_effort)
+        } else {
+            model_config
+                .thinking_effort()
+                .and_then(|effort| openai_reasoning_effort_for_thinking(&model_name, effort))
+        }
     } else {
         None
     };
