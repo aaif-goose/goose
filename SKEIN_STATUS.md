@@ -16,7 +16,7 @@ This file tracks Phase 0 deliverables as they land. Maintained by hand; checked 
 - [ ] Annotation Queue v0 (Tauri view).
 - [ ] Failure-Mode Taxonomy view v0 (Tauri view).
 - [ ] Slice Explorer v0 (Tauri view) — *Tauri version pending; CLI version (`eval-bench/slices.py runs / show / compare`) shipped.*
-- [ ] Langfuse Bridge MCP extension.
+- [x] Langfuse Bridge MCP extension — `crates/goose-mcp/src/langfuse_bridge/` registered as the `langfuse_bridge` built-in. Tools: `list_traces` (filters: userId, sessionId, name, tags, fromTimestamp, toTimestamp, limit, page) and `get_trace` (single trace + observations). Reuses the env vars already consumed by the tracing layer (`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_URL`, plus the `LANGFUSE_INIT_PROJECT_*` aliases); when keys are missing the extension still starts but every tool call returns an explicit "not configured" error rather than silently no-op'ing. 11 unit tests cover URL construction (defaults, all filters, limit clamping, percent-encoded trace ids), env-var precedence, the Basic-auth header, and the unconfigured-server error paths.
 - [ ] `recipe-scanner/` made a required gate for non-local recipes.
 
 ## Phase 1 — Tester's Co-Pilot v1
