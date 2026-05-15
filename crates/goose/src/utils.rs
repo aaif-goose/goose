@@ -56,7 +56,9 @@ pub fn split_command_args(input: &str) -> anyhow::Result<Vec<String>> {
     for c in input.chars() {
         match c {
             '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '\'' if !in_double_quote && (in_single_quote || current.is_empty()) => {
+                in_single_quote = !in_single_quote
+            }
             c if c.is_whitespace() && !in_double_quote && !in_single_quote => {
                 if !current.is_empty() {
                     parts.push(std::mem::take(&mut current));
@@ -185,7 +187,16 @@ mod tests {
     }
 
     #[test]
+    fn test_split_command_args_apostrophes_in_unquoted_words() {
+        assert_eq!(
+            split_command_args("O'Reilly wrote don't split").unwrap(),
+            vec!["O'Reilly", "wrote", "don't", "split"]
+        );
+    }
+
+    #[test]
     fn test_split_command_args_unmatched_quote() {
         assert!(split_command_args(r#""unmatched"#).is_err());
+        assert!(split_command_args("'unmatched").is_err());
     }
 }

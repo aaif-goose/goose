@@ -345,6 +345,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_recipe_args_keeps_apostrophes_in_unquoted_values() {
+        let topic = required_param("topic");
+        let theme = optional_param("theme");
+        let required = vec![&topic];
+        let optional = vec![&theme];
+
+        let parsed = parse_recipe_args(
+            "O'Reilly's guide --theme author's-pick",
+            &required,
+            &optional,
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed,
+            vec![
+                ("topic".to_string(), "O'Reilly's guide".to_string()),
+                ("theme".to_string(), "author's-pick".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn parse_recipe_args_greedy_captures_multi_word_required_without_flags() {
         let location = required_param("location");
         let theme = optional_param("theme");

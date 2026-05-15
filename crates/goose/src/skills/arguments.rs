@@ -125,6 +125,18 @@ mod tests {
     }
 
     #[test]
+    fn apostrophes_in_unquoted_arguments_stay_literal() {
+        let out = apply_skill_arguments(
+            "author=$author, contraction=$contraction",
+            "O'Reilly don't",
+            &names(&["author", "contraction"]),
+        )
+        .unwrap();
+
+        assert_eq!(out, "author=O'Reilly, contraction=don't");
+    }
+
+    #[test]
     fn arguments_keeps_raw_quotes_while_positional_strips_them() {
         let out =
             apply_skill_arguments("raw=$ARGUMENTS pos=$1", r#""hello world" tail"#, &[]).unwrap();

@@ -75,46 +75,6 @@ where
     Ok(recipe)
 }
 
-pub fn build_recipe_from_template_with_positional_params<F>(
-    recipe_content: String,
-    recipe_dir: &Path,
-    params: Vec<String>,
-    user_prompt_fn: Option<F>,
-) -> Result<Recipe, RecipeError>
-where
-    F: Fn(&str, &str) -> Result<String, anyhow::Error>,
-{
-    let recipe_dir_str = recipe_dir.display().to_string();
-
-    let recipe_parameters =
-        validate_recipe_template_from_content(&recipe_content, Some(recipe_dir_str.clone()))
-            .map_err(|source| RecipeError::Invalid { source })?
-            .parameters;
-
-    let param_pairs: Vec<(String, String)> = if let Some(recipe_params) = &recipe_parameters {
-        let required_count = recipe_params.iter().filter(|p| p.default.is_none()).count();
-        if params.len() < required_count {
-            let required_keys: Vec<String> = recipe_params
-                .iter()
-                .filter(|p| p.default.is_none())
-                .map(|p| p.key.clone())
-                .collect();
-            return Err(RecipeError::MissingParams {
-                parameters: required_keys,
-            });
-        }
-        recipe_params
-            .iter()
-            .zip(params.iter())
-            .map(|(rp, p)| (rp.key.clone(), p.clone()))
-            .collect()
-    } else {
-        vec![]
-    };
-
-    build_recipe_from_template(recipe_content, recipe_dir, param_pairs, user_prompt_fn)
-}
-
 pub fn apply_values_to_parameters<F>(
     user_params: &[(String, String)],
     recipe_parameters: Option<Vec<RecipeParameter>>,
