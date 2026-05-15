@@ -475,6 +475,12 @@ impl ModelConfig {
             });
         }
 
+        if let Ok(value) = config.get_param::<String>("GEMINI3_THINKING_LEVEL") {
+            if let Some(effort) = Self::legacy_gemini3_thinking_effort(&value) {
+                return Some(effort);
+            }
+        }
+
         for key in [
             "ANTHROPIC_THINKING_BUDGET",
             "CLAUDE_THINKING_BUDGET",
@@ -486,6 +492,14 @@ impl ModelConfig {
         }
 
         None
+    }
+
+    fn legacy_gemini3_thinking_effort(value: &str) -> Option<ThinkingEffort> {
+        match value.to_lowercase().as_str() {
+            "low" => Some(ThinkingEffort::Low),
+            "high" => Some(ThinkingEffort::High),
+            _ => None,
+        }
     }
 
     pub fn get_config_param<T: for<'de> serde::Deserialize<'de>>(
@@ -685,6 +699,7 @@ mod tests {
                 ("GOOSE_THINKING_EFFORT", None::<&str>),
                 ("CLAUDE_THINKING_TYPE", Some("enabled")),
                 ("CLAUDE_THINKING_ENABLED", None::<&str>),
+                ("GEMINI3_THINKING_LEVEL", None::<&str>),
                 ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
                 ("CLAUDE_THINKING_BUDGET", None::<&str>),
                 ("GEMINI25_THINKING_BUDGET", None::<&str>),
@@ -697,11 +712,46 @@ mod tests {
         }
 
         #[test]
+        fn legacy_gemini3_thinking_level_mapping() {
+            assert_eq!(
+                ModelConfig::legacy_gemini3_thinking_effort("low"),
+                Some(ThinkingEffort::Low)
+            );
+            assert_eq!(
+                ModelConfig::legacy_gemini3_thinking_effort("high"),
+                Some(ThinkingEffort::High)
+            );
+            assert_eq!(ModelConfig::legacy_gemini3_thinking_effort("auto"), None);
+        }
+
+        #[test]
+        fn legacy_gemini3_thinking_level_fallback() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let temp_root = temp_dir.path().to_string_lossy().to_string();
+            let _guard = env_lock::lock_env([
+                ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
+                ("GOOSE_THINKING_EFFORT", None::<&str>),
+                ("CLAUDE_THINKING_TYPE", None::<&str>),
+                ("CLAUDE_THINKING_ENABLED", None::<&str>),
+                ("GEMINI3_THINKING_LEVEL", Some("high")),
+                ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
+                ("CLAUDE_THINKING_BUDGET", None::<&str>),
+                ("GEMINI25_THINKING_BUDGET", None::<&str>),
+            ]);
+            let config = ModelConfig {
+                model_name: "gemini-3-pro".to_string(),
+                ..Default::default()
+            };
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
+        }
+
+        #[test]
         fn legacy_thinking_budget_fallback() {
             let _guard = env_lock::lock_env([
                 ("GOOSE_THINKING_EFFORT", None::<&str>),
                 ("CLAUDE_THINKING_TYPE", None::<&str>),
                 ("CLAUDE_THINKING_ENABLED", None::<&str>),
+                ("GEMINI3_THINKING_LEVEL", None::<&str>),
                 ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
                 ("CLAUDE_THINKING_BUDGET", None::<&str>),
                 ("GEMINI25_THINKING_BUDGET", Some("8192")),
