@@ -45,7 +45,7 @@ include_dir = "0.7.4"
 indoc = "2.0"
 lru = "0.16"
 once_cell = "1.20"
-rand = "0.8"
+rand = "0.10"
 regex = "1.12"
 reqwest = { version = "0.13", default-features = false, features = ["multipart", "form"] }
 schemars = { default-features = false, version = "1.0" }
