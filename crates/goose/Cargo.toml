@@ -121,7 +121,7 @@ rand = { workspace = true }
 utoipa = { workspace = true, features = ["chrono"] }
 tokio-cron-scheduler = "0.15.1"
 urlencoding = { workspace = true }
-v_htmlescape = "0.15"
+v_htmlescape = "0.17"
 sqlx = { version = "0.8", default-features = false, features = [
     "sqlite",
     "chrono",
