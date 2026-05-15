@@ -241,9 +241,13 @@ pub fn openai_reasoning_effort_for_thinking(
     model_name: &str,
     effort: ThinkingEffort,
 ) -> Option<String> {
+    if effort == ThinkingEffort::Off {
+        return Some("none".to_string());
+    }
+
     let supported = openai_reasoning_efforts_for_model(model_name);
     let preferred: &[&str] = match effort {
-        ThinkingEffort::Off => &["none", "low", "medium", "high", "xhigh"],
+        ThinkingEffort::Off => unreachable!(),
         ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
         ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
         ThinkingEffort::High => &["high", "medium", "xhigh", "low"],

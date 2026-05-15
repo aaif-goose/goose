@@ -1073,7 +1073,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_off_effort_uses_supported_level() -> anyhow::Result<()> {
+    fn test_create_request_off_effort_preserves_none() -> anyhow::Result<()> {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("off"));
         let model_config = ModelConfig {
@@ -1088,7 +1088,7 @@ mod tests {
             reasoning: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
-        assert_eq!(request["reasoning_effort"], "low");
+        assert_eq!(request["reasoning_effort"], "none");
         assert!(request.get("thinking_effort").is_none());
         Ok(())
     }

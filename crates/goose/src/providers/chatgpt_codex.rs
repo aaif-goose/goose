@@ -1210,7 +1210,7 @@ mod tests {
     fn test_create_codex_request_reasoning_effort_from_unified_thinking() {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("max"));
-        let mut config = ModelConfig::new("gpt-5.2-codex").unwrap();
+        let mut config = ModelConfig::new("gpt-5.3-codex").unwrap();
         config.request_params = Some(params);
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();

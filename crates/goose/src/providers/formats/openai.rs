@@ -2246,7 +2246,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_o3_off_effort_uses_supported_level() -> anyhow::Result<()> {
+    fn test_create_request_o3_off_effort_preserves_none() -> anyhow::Result<()> {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
         let model_config = ModelConfig {
@@ -2270,7 +2270,7 @@ mod tests {
         )?;
         let obj = request.as_object().unwrap();
 
-        assert_eq!(obj.get("reasoning_effort"), Some(&json!("low")));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("none")));
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
