@@ -3,12 +3,14 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
 use super::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
     DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use super::embedding::EmbeddingCapable;
@@ -21,7 +23,7 @@ use super::openai_compatible::{
     stream_openai_compat, stream_responses_compat,
 };
 use super::retry::ProviderRetry;
-use super::utils::{ImageFormat, RequestLog};
+use super::utils::{is_openai_responses_model, ImageFormat, RequestLog};
 use crate::config::ConfigError;
 use crate::conversation::message::Message;
 use crate::instance_id::get_instance_id;
@@ -33,11 +35,35 @@ use crate::providers::retry::{
 use rmcp::model::Tool;
 use serde_json::json;
 
+#[derive(Debug, Clone)]
+struct DatabricksEndpointInfo {
+    name: String,
+    upstream_model_name: Option<String>,
+    upstream_model_provider: Option<String>,
+    reasoning: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+struct DatabricksUpstreamModel {
+    name: String,
+    provider: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedDatabricksEndpointInfo {
+    info: DatabricksEndpointInfo,
+    fetched_at: Instant,
+}
+
 const DEFAULT_CLIENT_ID: &str = "databricks-cli";
 const DEFAULT_REDIRECT_URL: &str = "http://localhost";
 const DEFAULT_SCOPES: &[&str] = &["all-apis", "offline_access"];
 
 const DATABRICKS_PROVIDER_NAME: &str = "databricks";
+const DATABRICKS_ENDPOINT_METADATA_TTL_SECS: u64 = 60;
+static DATABRICKS_ENDPOINT_INFO_CACHE: LazyLock<
+    Mutex<std::collections::HashMap<String, CachedDatabricksEndpointInfo>>,
+> = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
 const DATABRICKS_DEFAULT_FAST_MODEL: &str = "databricks-claude-haiku-4-5";
 pub const DATABRICKS_KNOWN_MODELS: &[&str] = &[
@@ -270,7 +296,248 @@ impl DatabricksProvider {
     }
 
     fn is_responses_model(model_name: &str) -> bool {
-        super::utils::is_openai_responses_model(model_name)
+        is_openai_responses_model(model_name)
+    }
+
+    fn is_claude_model(model_name: &str) -> bool {
+        model_name.to_lowercase().contains("claude")
+    }
+
+    fn is_reasoning_capable_model_name(model_name: &str) -> bool {
+        Self::is_claude_model(model_name) || Self::is_responses_model(model_name)
+    }
+
+    fn endpoint_model_candidates(value: &Value) -> Vec<DatabricksUpstreamModel> {
+        let mut candidates: Vec<DatabricksUpstreamModel> = Vec::new();
+
+        fn get_string_at(value: &Value, path: &[&str]) -> Option<String> {
+            path.iter()
+                .try_fold(value, |current, key| current.get(*key))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+        }
+
+        fn push_candidate(
+            name: Option<String>,
+            provider: Option<String>,
+            candidates: &mut Vec<DatabricksUpstreamModel>,
+        ) {
+            if let Some(name) = name {
+                if !candidates.iter().any(|candidate| candidate.name == name) {
+                    candidates.push(DatabricksUpstreamModel { name, provider });
+                }
+            }
+        }
+
+        for config_key in ["config", "pending_config"] {
+            let Some(config) = value.get(config_key) else {
+                continue;
+            };
+
+            for collection_key in ["served_entities", "served_models"] {
+                let Some(entities) = config.get(collection_key).and_then(|v| v.as_array()) else {
+                    continue;
+                };
+
+                for entity in entities {
+                    push_candidate(
+                        get_string_at(entity, &["external_model", "name"]),
+                        get_string_at(entity, &["external_model", "provider"]),
+                        &mut candidates,
+                    );
+                    push_candidate(
+                        get_string_at(entity, &["foundation_model", "name"]),
+                        get_string_at(entity, &["foundation_model", "provider"]),
+                        &mut candidates,
+                    );
+                    push_candidate(
+                        get_string_at(entity, &["entity_name"]),
+                        None,
+                        &mut candidates,
+                    );
+                }
+            }
+        }
+
+        candidates
+    }
+
+    fn endpoint_info_from_value(endpoint: &Value) -> Option<DatabricksEndpointInfo> {
+        let name = endpoint.get("name")?.as_str()?.to_string();
+        let upstream_model = Self::endpoint_model_candidates(endpoint)
+            .into_iter()
+            .find(|candidate| candidate.name != name);
+        let upstream_model_name = upstream_model.as_ref().map(|model| model.name.clone());
+        let upstream_model_provider = upstream_model.and_then(|model| model.provider);
+
+        let reasoning = upstream_model_name
+            .as_deref()
+            .map(Self::is_reasoning_capable_model_name)
+            .or_else(|| Some(Self::is_reasoning_capable_model_name(&name)));
+
+        Some(DatabricksEndpointInfo {
+            name,
+            upstream_model_name,
+            upstream_model_provider,
+            reasoning,
+        })
+    }
+
+    async fn fetch_endpoint_info(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<DatabricksEndpointInfo, ProviderError> {
+        let response = self
+            .api_client
+            .request(
+                None,
+                &format!(
+                    "api/2.0/serving-endpoints/{}",
+                    urlencoding::encode(endpoint_name)
+                ),
+            )
+            .response_get()
+            .await
+            .map_err(|e| {
+                ProviderError::RequestFailed(format!(
+                    "Failed to fetch Databricks endpoint metadata: {}",
+                    e
+                ))
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let detail = response.text().await.unwrap_or_default();
+            return Err(ProviderError::RequestFailed(format!(
+                "Failed to fetch Databricks endpoint metadata: {} {}",
+                status, detail
+            )));
+        }
+
+        let json: Value = response.json().await.map_err(|e| {
+            ProviderError::RequestFailed(format!(
+                "Failed to parse Databricks endpoint metadata: {}",
+                e
+            ))
+        })?;
+
+        Self::endpoint_info_from_value(&json).ok_or_else(|| {
+            ProviderError::RequestFailed(
+                "Unexpected response format from Databricks endpoint metadata".to_string(),
+            )
+        })
+    }
+
+    async fn resolve_endpoint_info(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<DatabricksEndpointInfo, ProviderError> {
+        const MAX_MODEL_SERVING_HOPS: usize = 4;
+
+        let original_endpoint_name = endpoint_name.to_string();
+        let mut current_endpoint_name = endpoint_name.to_string();
+        let mut visited = HashSet::new();
+        let mut last_info: Option<DatabricksEndpointInfo> = None;
+
+        for _ in 0..MAX_MODEL_SERVING_HOPS {
+            if !visited.insert(current_endpoint_name.clone()) {
+                break;
+            }
+
+            let info = self.fetch_endpoint_info(&current_endpoint_name).await?;
+            let next_endpoint_name = match (
+                info.upstream_model_provider.as_deref(),
+                info.upstream_model_name.as_deref(),
+            ) {
+                (Some("databricks-model-serving"), Some(next_endpoint_name))
+                    if !visited.contains(next_endpoint_name) =>
+                {
+                    Some(next_endpoint_name.to_string())
+                }
+                _ => None,
+            };
+
+            if let Some(next_endpoint_name) = next_endpoint_name {
+                last_info = Some(info);
+                current_endpoint_name = next_endpoint_name;
+                continue;
+            }
+
+            return Ok(if info.name == original_endpoint_name {
+                info
+            } else {
+                let upstream_model_name = info
+                    .upstream_model_name
+                    .clone()
+                    .or_else(|| Some(info.name.clone()));
+                DatabricksEndpointInfo {
+                    name: original_endpoint_name,
+                    upstream_model_name,
+                    upstream_model_provider: info.upstream_model_provider.clone(),
+                    reasoning: info.reasoning,
+                }
+            });
+        }
+
+        last_info
+            .map(|info| DatabricksEndpointInfo {
+                name: original_endpoint_name,
+                upstream_model_name: info.upstream_model_name,
+                upstream_model_provider: info.upstream_model_provider,
+                reasoning: info.reasoning,
+            })
+            .ok_or_else(|| {
+                ProviderError::RequestFailed(
+                    "Failed to resolve Databricks endpoint metadata".to_string(),
+                )
+            })
+    }
+
+    async fn resolve_endpoint_info_cached(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<DatabricksEndpointInfo, ProviderError> {
+        let cached = DATABRICKS_ENDPOINT_INFO_CACHE
+            .lock()
+            .unwrap()
+            .get(endpoint_name)
+            .cloned();
+
+        if let Some(cached) = cached {
+            if cached.fetched_at.elapsed()
+                < Duration::from_secs(DATABRICKS_ENDPOINT_METADATA_TTL_SECS)
+            {
+                return Ok(cached.info);
+            }
+        }
+
+        let info = self.resolve_endpoint_info(endpoint_name).await?;
+        DATABRICKS_ENDPOINT_INFO_CACHE.lock().unwrap().insert(
+            endpoint_name.to_string(),
+            CachedDatabricksEndpointInfo {
+                info: info.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
+        Ok(info)
+    }
+
+    fn model_info_from_endpoint(info: DatabricksEndpointInfo) -> ModelInfo {
+        let context_model = info.upstream_model_name.as_deref().unwrap_or(&info.name);
+        let context_limit = ModelConfig::new_or_fail(context_model)
+            .with_canonical_limits(DATABRICKS_PROVIDER_NAME)
+            .context_limit();
+
+        ModelInfo {
+            name: info.name,
+            context_limit,
+            input_token_cost: None,
+            output_token_cost: None,
+            currency: None,
+            supports_cache_control: None,
+            reasoning: info.reasoning,
+        }
     }
 
     fn get_endpoint_path(&self, model_name: &str, is_embedding: bool) -> String {
@@ -378,11 +645,48 @@ impl Provider for DatabricksProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let path = self.get_endpoint_path(&model_config.model_name, false);
+        let (endpoint_name, _) = super::utils::extract_reasoning_effort(&model_config.model_name);
+        let endpoint_info = self.resolve_endpoint_info_cached(&endpoint_name).await.ok();
+        let effective_model_name = endpoint_info
+            .as_ref()
+            .and_then(|info| info.upstream_model_name.as_deref())
+            .unwrap_or(&model_config.model_name);
+        let is_responses_model = Self::is_responses_model(&model_config.model_name)
+            || Self::is_responses_model(effective_model_name);
+        let path = if is_responses_model {
+            "serving-endpoints/responses".to_string()
+        } else {
+            self.get_endpoint_path(&model_config.model_name, false)
+        };
         let client_request_id = self.build_client_request_id(session_id);
 
-        if Self::is_responses_model(&model_config.model_name) {
-            let mut payload = create_responses_request(model_config, system, messages, tools)?;
+        if is_responses_model {
+            let responses_model_config;
+            let request_model_config = if endpoint_name != model_config.model_name {
+                responses_model_config = {
+                    let mut config = model_config.clone();
+                    config.model_name = endpoint_name.clone();
+                    config
+                };
+                &responses_model_config
+            } else {
+                model_config
+            };
+            let mut payload =
+                create_responses_request(request_model_config, system, messages, tools)?;
+            if payload.get("reasoning").is_none() {
+                if let Some(effort) = model_config.thinking_effort().and_then(|effort| {
+                    super::utils::openai_reasoning_effort_for_thinking(effective_model_name, effort)
+                }) {
+                    payload.as_object_mut().unwrap().insert(
+                        "reasoning".to_string(),
+                        json!({
+                            "effort": effort,
+                            "summary": "auto",
+                        }),
+                    );
+                }
+            }
             payload["stream"] = Value::Bool(true);
             if let Some(ref client_request_id) = client_request_id {
                 payload["client_request_id"] = Value::String(client_request_id.clone());
@@ -406,8 +710,27 @@ impl Provider for DatabricksProvider {
 
             stream_responses_compat(response, log)
         } else {
-            let mut payload =
-                create_request(model_config, system, messages, tools, &self.image_format)?;
+            let format_model_config;
+            let request_model_config = if Self::is_claude_model(effective_model_name)
+                && !Self::is_claude_model(&model_config.model_name)
+            {
+                format_model_config = {
+                    let mut config = model_config.clone();
+                    config.model_name = effective_model_name.to_string();
+                    config
+                };
+                &format_model_config
+            } else {
+                model_config
+            };
+
+            let mut payload = create_request(
+                request_model_config,
+                system,
+                messages,
+                tools,
+                &self.image_format,
+            )?;
             payload
                 .as_object_mut()
                 .expect("payload should have model key")
@@ -498,6 +821,15 @@ impl Provider for DatabricksProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+        Ok(self
+            .fetch_supported_model_info()
+            .await?
+            .into_iter()
+            .map(|model| model.name)
+            .collect())
+    }
+
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
         let response = self
             .api_client
             .request(None, "api/2.0/serving-endpoints")
@@ -530,17 +862,24 @@ impl Provider for DatabricksProvider {
                 )
             })?;
 
-        let models: Vec<String> = endpoints
-            .iter()
-            .filter_map(|endpoint| {
-                endpoint
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .map(|name| name.to_string())
-            })
-            .collect();
+        let mut models = Vec::new();
+        for endpoint in endpoints {
+            if let Some(endpoint_info) = Self::endpoint_info_from_value(endpoint) {
+                models.push(Self::model_info_from_endpoint(endpoint_info));
+            }
+        }
 
         Ok(models)
+    }
+
+    async fn fetch_model_info(&self, model_name: &str) -> Result<ModelInfo, ProviderError> {
+        let (endpoint_name, _) = super::utils::extract_reasoning_effort(model_name);
+        let endpoint_info = self.resolve_endpoint_info_cached(&endpoint_name).await?;
+        Ok(Self::model_info_from_endpoint(endpoint_info))
+    }
+
+    async fn fetch_recommended_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        self.fetch_supported_model_info().await
     }
 }
 
@@ -627,5 +966,92 @@ mod tests {
                 "unexpected endpoint for {model_name}"
             );
         }
+    }
+
+    #[test]
+    fn endpoint_metadata_marks_reasoning_alias_from_external_model() {
+        let endpoint = json!({
+            "name": "goose",
+            "config": {
+                "served_entities": [{
+                    "name": "current",
+                    "external_model": {
+                        "name": "claude-opus-4.6",
+                        "provider": "anthropic",
+                        "task": "llm/v1/chat"
+                    }
+                }]
+            }
+        });
+
+        let info = DatabricksProvider::endpoint_info_from_value(&endpoint).unwrap();
+
+        assert_eq!(info.name, "goose");
+        assert_eq!(info.upstream_model_name.as_deref(), Some("claude-opus-4.6"));
+        assert_eq!(info.reasoning, Some(true));
+    }
+
+    #[test]
+    fn endpoint_metadata_captures_databricks_model_serving_hop() {
+        let endpoint = json!({
+            "name": "goose",
+            "config": {
+                "served_entities": [{
+                    "external_model": {
+                        "name": "databricks-claude-opus-4-6",
+                        "provider": "databricks-model-serving",
+                        "task": "llm/v1/chat"
+                    }
+                }]
+            }
+        });
+
+        let info = DatabricksProvider::endpoint_info_from_value(&endpoint).unwrap();
+
+        assert_eq!(info.name, "goose");
+        assert_eq!(
+            info.upstream_model_name.as_deref(),
+            Some("databricks-claude-opus-4-6")
+        );
+        assert_eq!(
+            info.upstream_model_provider.as_deref(),
+            Some("databricks-model-serving")
+        );
+        assert_eq!(info.reasoning, Some(true));
+    }
+
+    #[test]
+    fn endpoint_metadata_marks_reasoning_alias_from_pending_gpt_model() {
+        let endpoint = json!({
+            "name": "goose",
+            "pending_config": {
+                "served_entities": [{
+                    "external_model": {
+                        "name": "gpt-5.5",
+                        "provider": "openai",
+                        "task": "llm/v1/chat"
+                    }
+                }]
+            }
+        });
+
+        let info = DatabricksProvider::endpoint_info_from_value(&endpoint).unwrap();
+
+        assert_eq!(info.name, "goose");
+        assert_eq!(info.upstream_model_name.as_deref(), Some("gpt-5.5"));
+        assert_eq!(info.reasoning, Some(true));
+    }
+
+    #[test]
+    fn endpoint_metadata_uses_endpoint_name_when_no_upstream_model_exists() {
+        let endpoint = json!({
+            "name": "goose-gpt-5-5"
+        });
+
+        let info = DatabricksProvider::endpoint_info_from_value(&endpoint).unwrap();
+
+        assert_eq!(info.name, "goose-gpt-5-5");
+        assert_eq!(info.upstream_model_name, None);
+        assert_eq!(info.reasoning, Some(true));
     }
 }

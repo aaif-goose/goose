@@ -432,6 +432,27 @@ impl ModelInfo {
     }
 }
 
+fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> ModelInfo {
+    let registry = CanonicalModelRegistry::bundled().ok();
+    let canonical = registry.as_ref().and_then(|registry| {
+        let canonical_id = map_to_canonical_model(provider_name, model_name, registry)?;
+        let (provider, model) = canonical_id.split_once('/')?;
+        registry.get(provider, model)
+    });
+
+    ModelInfo {
+        name: model_name.to_string(),
+        context_limit: ModelConfig::new_or_fail(model_name)
+            .with_canonical_limits(provider_name)
+            .context_limit(),
+        input_token_cost: None,
+        output_token_cost: None,
+        currency: None,
+        supports_cache_control: None,
+        reasoning: canonical.and_then(|model| model.reasoning),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum ProviderType {
     Preferred,
@@ -480,31 +501,10 @@ impl ProviderMetadata {
             display_name: display_name.to_string(),
             description: description.to_string(),
             default_model: default_model.to_string(),
-            known_models: {
-                let registry = CanonicalModelRegistry::bundled().ok();
-                model_names
-                    .iter()
-                    .map(|&model_name| {
-                        let canonical = registry.as_ref().and_then(|registry| {
-                            let canonical_id = map_to_canonical_model(name, model_name, registry)?;
-                            let (provider, model) = canonical_id.split_once('/')?;
-                            registry.get(provider, model)
-                        });
-
-                        ModelInfo {
-                            name: model_name.to_string(),
-                            context_limit: ModelConfig::new_or_fail(model_name)
-                                .with_canonical_limits(name)
-                                .context_limit(),
-                            input_token_cost: None,
-                            output_token_cost: None,
-                            currency: None,
-                            supports_cache_control: None,
-                            reasoning: canonical.and_then(|model| model.reasoning),
-                        }
-                    })
-                    .collect()
-            },
+            known_models: model_names
+                .iter()
+                .map(|&model_name| model_info_for_provider_model(name, model_name))
+                .collect(),
             model_doc_link: model_doc_link.to_string(),
             config_keys,
             setup_steps: vec![],
@@ -933,6 +933,19 @@ pub trait Provider: Send + Sync {
         Ok(vec![])
     }
 
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        Ok(self
+            .fetch_supported_models()
+            .await?
+            .iter()
+            .map(|model_name| model_info_for_provider_model(self.get_name(), model_name))
+            .collect())
+    }
+
+    async fn fetch_model_info(&self, model_name: &str) -> Result<ModelInfo, ProviderError> {
+        Ok(model_info_for_provider_model(self.get_name(), model_name))
+    }
+
     fn skip_canonical_filtering(&self) -> bool {
         false
     }
@@ -996,6 +1009,15 @@ pub trait Provider: Send + Sync {
         } else {
             Ok(inventory_models)
         }
+    }
+
+    async fn fetch_recommended_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        Ok(self
+            .fetch_recommended_models()
+            .await?
+            .iter()
+            .map(|model_name| model_info_for_provider_model(self.get_name(), model_name))
+            .collect())
     }
 
     async fn map_to_canonical_model(

@@ -1369,6 +1369,56 @@
         }
       }
     },
+    "/config/providers/{name}/model-info": {
+      "post": {
+        "tags": [
+          "super::routes::config_management"
+        ],
+        "operationId": "get_provider_model_info",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Provider name (e.g., openai)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderModelInfoQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Model metadata fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown provider, provider not configured, or authentication error"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/config/providers/{name}/models": {
       "get": {
         "tags": [
@@ -1394,7 +1444,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/components/schemas/ModelInfo"
                   }
                 }
               }
@@ -6975,6 +7025,17 @@
               "type": "string"
             },
             "description": "step-by-step instructions for set up providers eg: api key"
+          }
+        }
+      },
+      "ProviderModelInfoQuery": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
           }
         }
       },

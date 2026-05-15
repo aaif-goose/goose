@@ -819,13 +819,13 @@ export type ModelInfo = {
      */
     output_token_cost?: number | null;
     /**
-     * Whether this model supports cache control
-     */
-    supports_cache_control?: boolean | null;
-    /**
      * Whether this model supports reasoning/thinking controls
      */
     reasoning?: boolean | null;
+    /**
+     * Whether this model supports cache control
+     */
+    supports_cache_control?: boolean | null;
 };
 
 export type ModelInfoData = {
@@ -1002,6 +1002,10 @@ export type ProviderMetadata = {
      * step-by-step instructions for set up providers eg: api key
      */
     setup_steps?: Array<string>;
+};
+
+export type ProviderModelInfoQuery = {
+    model: string;
 };
 
 export type ProviderTemplate = {
@@ -2732,6 +2736,42 @@ export type CleanupProviderCacheResponses = {
 
 export type CleanupProviderCacheResponse = CleanupProviderCacheResponses[keyof CleanupProviderCacheResponses];
 
+export type GetProviderModelInfoData = {
+    body: ProviderModelInfoQuery;
+    path: {
+        /**
+         * Provider name (e.g., openai)
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/config/providers/{name}/model-info';
+};
+
+export type GetProviderModelInfoErrors = {
+    /**
+     * Unknown provider, provider not configured, or authentication error
+     */
+    400: unknown;
+    /**
+     * Rate limit exceeded
+     */
+    429: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type GetProviderModelInfoResponses = {
+    /**
+     * Model metadata fetched successfully
+     */
+    200: ModelInfo;
+};
+
+export type GetProviderModelInfoResponse = GetProviderModelInfoResponses[keyof GetProviderModelInfoResponses];
+
 export type GetProviderModelsData = {
     body?: never;
     path: {
@@ -2763,7 +2803,7 @@ export type GetProviderModelsResponses = {
     /**
      * Models fetched successfully
      */
-    200: Array<string>;
+    200: Array<ModelInfo>;
 };
 
 export type GetProviderModelsResponse = GetProviderModelsResponses[keyof GetProviderModelsResponses];

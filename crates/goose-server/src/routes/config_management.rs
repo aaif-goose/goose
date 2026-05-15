@@ -13,7 +13,7 @@ use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
 use goose::custom_requests::SourceType;
 use goose::model::ModelConfig;
-use goose::providers::base::{ProviderMetadata, ProviderType};
+use goose::providers::base::{ModelInfo, ProviderMetadata, ProviderType};
 use goose::providers::canonical::maybe_get_canonical_model;
 use goose::providers::catalog::{
     get_provider_template, get_providers_by_format, ProviderCatalogEntry, ProviderFormat,
@@ -366,7 +366,7 @@ pub async fn providers() -> Result<Json<Vec<ProviderDetails>>, ErrorResponse> {
         ("name" = String, Path, description = "Provider name (e.g., openai)")
     ),
     responses(
-        (status = 200, description = "Models fetched successfully", body = [String]),
+        (status = 200, description = "Models fetched successfully", body = [ModelInfo]),
         (status = 400, description = "Unknown provider, provider not configured, or authentication error"),
         (status = 429, description = "Rate limit exceeded"),
         (status = 500, description = "Internal server error")
@@ -374,7 +374,7 @@ pub async fn providers() -> Result<Json<Vec<ProviderDetails>>, ErrorResponse> {
 )]
 pub async fn get_provider_models(
     Path(name): Path<String>,
-) -> Result<Json<Vec<String>>, ErrorResponse> {
+) -> Result<Json<Vec<ModelInfo>>, ErrorResponse> {
     let all = get_providers().await.into_iter().collect::<Vec<_>>();
     let Some((metadata, provider_type)) = all.into_iter().find(|(m, _)| m.name == name) else {
         return Err(ErrorResponse::bad_request(format!(
@@ -392,12 +392,58 @@ pub async fn get_provider_models(
     let model_config = ModelConfig::new(&metadata.default_model)?.with_canonical_limits(&name);
     let provider = goose::providers::create(&name, model_config, Vec::new()).await?;
 
-    let models_result = provider.fetch_recommended_models().await;
+    let models_result = provider.fetch_recommended_model_info().await;
 
     match models_result {
         Ok(models) => Ok(Json(models)),
         Err(provider_error) => Err(provider_error.into()),
     }
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ProviderModelInfoQuery {
+    pub model: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/config/providers/{name}/model-info",
+    params(
+        ("name" = String, Path, description = "Provider name (e.g., openai)")
+    ),
+    request_body = ProviderModelInfoQuery,
+    responses(
+        (status = 200, description = "Model metadata fetched successfully", body = ModelInfo),
+        (status = 400, description = "Unknown provider, provider not configured, or authentication error"),
+        (status = 429, description = "Rate limit exceeded"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_provider_model_info(
+    Path(name): Path<String>,
+    Json(query): Json<ProviderModelInfoQuery>,
+) -> Result<Json<ModelInfo>, ErrorResponse> {
+    let all = get_providers().await.into_iter().collect::<Vec<_>>();
+    let Some((metadata, provider_type)) = all.into_iter().find(|(m, _)| m.name == name) else {
+        return Err(ErrorResponse::bad_request(format!(
+            "Unknown provider: {}",
+            name
+        )));
+    };
+    if !check_provider_configured(&metadata, provider_type) {
+        return Err(ErrorResponse::bad_request(format!(
+            "Provider '{}' is not configured",
+            name
+        )));
+    }
+
+    let model_config = ModelConfig::new(&query.model)?.with_canonical_limits(&name);
+    let provider = goose::providers::create(&name, model_config, Vec::new()).await?;
+    provider
+        .fetch_model_info(&query.model)
+        .await
+        .map(Json)
+        .map_err(Into::into)
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
@@ -859,6 +905,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/config/extensions/{name}", delete(remove_extension))
         .route("/config/providers", get(providers))
         .route("/config/providers/{name}/models", get(get_provider_models))
+        .route(
+            "/config/providers/{name}/model-info",
+            post(get_provider_model_info),
+        )
         .route("/config/provider-catalog", get(get_provider_catalog))
         .route(
             "/config/provider-catalog/{id}",

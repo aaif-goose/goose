@@ -46,7 +46,7 @@ export async function getProviderMetadata(
 
 export interface ProviderModelsResult {
   provider: ProviderDetails;
-  models: string[] | null;
+  models: Model[] | null;
   error: string | null;
   warning: string | null;
 }
@@ -62,7 +62,7 @@ export async function fetchModelsForProviders(
         const allModels = response.data || [];
         const downloadedModels = allModels
           .filter((m) => m.status.state === 'Downloaded')
-          .map((m) => m.id);
+          .map((m) => ({ name: m.id, provider: p.name }) as Model);
         return { provider: p, models: downloadedModels, error: null, warning: null };
       }
 
@@ -70,12 +70,28 @@ export async function fetchModelsForProviders(
         path: { name: p.name },
         throwOnError: true,
       });
-      const models = response.data || [];
+      const models = (response.data || []).map(
+        (m) =>
+          ({
+            name: m.name,
+            provider: p.name,
+            context_limit: m.context_limit,
+            reasoning: m.reasoning ?? undefined,
+          }) as Model
+      );
       return { provider: p, models, error: null, warning: null };
     } catch (e: unknown) {
       // For custom providers, fall back to the configured model list
       if (p.provider_type === 'Custom') {
-        const fallbackModels = p.metadata.known_models.map((m) => m.name);
+        const fallbackModels = p.metadata.known_models.map(
+          (m) =>
+            ({
+              name: m.name,
+              provider: p.name,
+              context_limit: m.context_limit,
+              reasoning: m.reasoning ?? undefined,
+            }) as Model
+        );
         if (fallbackModels.length > 0) {
           console.warn(`Failed to fetch models for ${p.name}:`, getErrorMessage(e));
           return {

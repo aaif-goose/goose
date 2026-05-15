@@ -19,7 +19,7 @@ import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
 import Model, { getProviderMetadata, fetchModelsForProviders } from '../modelInterface';
 import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../predefinedModelsUtils';
-import { getCanonicalModelInfo, ProviderType } from '../../../../api';
+import { getProviderModelInfo, ProviderType } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
@@ -228,6 +228,9 @@ function supportsThinking(
   if (provider === 'openrouter') {
     return modelReasoning === true;
   }
+  if (provider === 'databricks' && modelReasoning === true) {
+    return true;
+  }
 
   const claudeSupported = isClaudeModel(name) && CLAUDE_THINKING_PROVIDERS.has(provider ?? '');
   const openaiReasoningSupported =
@@ -315,7 +318,13 @@ export const SwitchModelModal = ({
   const currentModel = sessionModel ?? configModel;
   const currentProvider = sessionProvider ?? configProvider;
   const [providerOptions, setProviderOptions] = useState<{ value: string; label: string }[]>([]);
-  type ModelOption = { value: string; label: string; provider: string; isDisabled?: boolean };
+  type ModelOption = {
+    value: string;
+    label: string;
+    provider: string;
+    isDisabled?: boolean;
+    reasoning?: boolean;
+  };
   const [modelOptions, setModelOptions] = useState<{ options: ModelOption[] }[]>([]);
   const [provider, setProvider] = useState<string | null>(
     initialProvider || currentProvider || null
@@ -346,7 +355,7 @@ export const SwitchModelModal = ({
 
   const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
   const effectiveProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
-  const modelReasoning = selectedPredefinedModel?.reasoning ?? selectedModelReasoning;
+  const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
   const showThinkingControl = supportsThinking(modelName, effectiveProvider, modelReasoning);
 
   useEffect(() => {
@@ -361,23 +370,23 @@ export const SwitchModelModal = ({
   }, [read]);
 
   useEffect(() => {
-    if (effectiveProvider !== 'openrouter' || !modelName || modelName === 'custom') {
-      setSelectedModelReasoning(null);
+    if (!effectiveProvider || !modelName || modelName === 'custom') {
       return;
     }
 
     let cancelled = false;
-    getCanonicalModelInfo({
-      body: { provider: effectiveProvider, model: modelName },
+    getProviderModelInfo({
+      path: { name: effectiveProvider },
+      body: { model: modelName },
     })
       .then((response) => {
         if (!cancelled) {
-          setSelectedModelReasoning(response.data?.model_info?.reasoning ?? null);
+          setSelectedModelReasoning((previous) => response.data?.reasoning ?? previous);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setSelectedModelReasoning(null);
+          setSelectedModelReasoning((previous) => previous);
         }
       });
 
@@ -385,6 +394,20 @@ export const SwitchModelModal = ({
       cancelled = true;
     };
   }, [effectiveProvider, modelName]);
+
+  useEffect(() => {
+    if (!provider || !model) return;
+
+    const selectedOption = modelOptions
+      .flatMap((group) => group.options)
+      .find((option) => option.provider === provider && option.value === model);
+
+    if (selectedOption?.reasoning !== undefined) {
+      setSelectedModelReasoning(selectedOption.reasoning);
+    } else {
+      setSelectedModelReasoning(null);
+    }
+  }, [model, provider, modelOptions]);
 
   // Validate form data
   const validateForm = useCallback(() => {
@@ -538,7 +561,7 @@ export const SwitchModelModal = ({
         if (cancelled) return;
 
         const newGroupedOptions: {
-          options: { value: string; label: string; provider: string; providerType: ProviderType }[];
+          options: (ModelOption & { providerType: ProviderType })[];
         }[] = [];
         const newErrors: Record<string, string> = {};
         const newWarnings: Record<string, string> = {};
@@ -559,11 +582,13 @@ export const SwitchModelModal = ({
             label: string;
             provider: string;
             providerType: ProviderType;
+            reasoning?: boolean;
           }[] = modelList.map((m) => ({
-            value: m,
-            label: m,
+            value: m.name,
+            label: m.name,
             provider: p.name,
             providerType: p.provider_type,
+            reasoning: m.reasoning,
           }));
 
           if (p.provider_type !== 'Custom') {
@@ -631,28 +656,36 @@ export const SwitchModelModal = ({
 
   // Handle model selection change
   const handleModelChange = (newValue: unknown) => {
-    const selectedOption = newValue as { value: string; label: string; provider: string } | null;
+    const selectedOption = newValue as {
+      value: string;
+      label: string;
+      provider: string;
+      reasoning?: boolean;
+    } | null;
     if (selectedOption?.value === 'custom') {
       setIsCustomModel(true);
       setModel('');
       setProvider(selectedOption.provider);
+      setSelectedModelReasoning(null);
       setUserClearedModel(false);
     } else if (selectedOption === null) {
       // User cleared the selection
       setIsCustomModel(false);
       setModel('');
+      setSelectedModelReasoning(null);
       setUserClearedModel(true);
     } else {
       setIsCustomModel(false);
       setModel(selectedOption?.value || '');
       setProvider(selectedOption?.provider || '');
+      setSelectedModelReasoning(selectedOption?.reasoning ?? null);
       setUserClearedModel(false);
     }
   };
 
   // Store the original model options in state, initialized from modelOptions
   const [originalModelOptions, setOriginalModelOptions] =
-    useState<{ options: { value: string; label: string; provider: string }[] }[]>(modelOptions);
+    useState<{ options: ModelOption[] }[]>(modelOptions);
 
   const handleInputChange = (inputValue: string) => {
     if (!provider) return;
