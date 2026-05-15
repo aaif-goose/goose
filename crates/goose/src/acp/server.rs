@@ -3308,11 +3308,14 @@ impl GooseAcpAgent {
             current_model
         };
         let model = model_name.unwrap_or(&default_model);
-        let model_config = crate::model::ModelConfig::new(model)
+        let mut model_config = crate::model::ModelConfig::new(model)
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&resolved_provider_name)
-            .with_context_limit(context_limit)
-            .with_request_params(request_params);
+            .with_context_limit(context_limit);
+
+        if let Some(request_params) = request_params {
+            model_config = model_config.with_merged_request_params(request_params);
+        }
 
         let extensions =
             EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
