@@ -110,7 +110,7 @@ fn default_requires_auth() -> bool {
     true
 }
 
-fn should_preserve_thinking_by_default_for_custom_provider(engine: &ProviderEngine) -> bool {
+fn should_preserve_thinking_by_default(engine: &ProviderEngine) -> bool {
     matches!(engine, ProviderEngine::OpenAI)
 }
 
@@ -298,7 +298,7 @@ pub fn create_custom_provider(
     let engine = ProviderEngine::from_str(&params.engine)?;
     let preserves_thinking = params
         .preserves_thinking
-        .unwrap_or_else(|| should_preserve_thinking_by_default_for_custom_provider(&engine));
+        .unwrap_or_else(|| should_preserve_thinking_by_default(&engine));
 
     let provider_config = DeclarativeProviderConfig {
         name: id.clone(),
@@ -371,7 +371,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         let preserves_thinking = match params.preserves_thinking {
             Some(value) => value,
             None if existing_config.engine != engine => {
-                should_preserve_thinking_by_default_for_custom_provider(&engine)
+                should_preserve_thinking_by_default(&engine)
             }
             None => existing_config.preserves_thinking,
         };
@@ -432,7 +432,7 @@ pub fn load_provider(id: &str) -> Result<LoadedProvider> {
 
     if custom_file_path.exists() {
         let content = std::fs::read_to_string(&custom_file_path)?;
-        let config = deserialize_custom_provider_config(&content)?;
+        let config = deserialize_provider_config(&content)?;
         return Ok(LoadedProvider {
             config,
             is_editable: true,
@@ -474,20 +474,19 @@ pub fn load_custom_providers(dir: &Path) -> Result<Vec<DeclarativeProviderConfig
         })
         .map(|path| {
             let content = std::fs::read_to_string(&path)?;
-            deserialize_custom_provider_config(&content)
+            deserialize_provider_config(&content)
                 .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))
         })
         .collect()
 }
 
-fn deserialize_custom_provider_config(content: &str) -> Result<DeclarativeProviderConfig> {
+fn deserialize_provider_config(content: &str) -> Result<DeclarativeProviderConfig> {
     let raw: serde_json::Value = serde_json::from_str(content)?;
     let preserves_thinking_was_set = raw.get("preserves_thinking").is_some();
     let mut config: DeclarativeProviderConfig = serde_json::from_value(raw)?;
 
     if !preserves_thinking_was_set {
-        config.preserves_thinking =
-            should_preserve_thinking_by_default_for_custom_provider(&config.engine);
+        config.preserves_thinking = should_preserve_thinking_by_default(&config.engine);
     }
 
     Ok(config)
@@ -504,7 +503,7 @@ fn load_fixed_providers() -> Result<Vec<DeclarativeProviderConfig>> {
             .contents_utf8()
             .ok_or_else(|| anyhow::anyhow!("Failed to read file as UTF-8: {:?}", file.path()))?;
 
-        match serde_json::from_str(content) {
+        match deserialize_provider_config(content) {
             Ok(config) => res.push(config),
             Err(e) => {
                 tracing::warn!(
@@ -698,13 +697,13 @@ mod tests {
     #[test]
     fn test_existing_json_files_still_deserialize_without_new_fields() {
         let json = include_str!("../providers/declarative/groq.json");
-        let config: DeclarativeProviderConfig =
-            serde_json::from_str(json).expect("groq.json should parse without env_vars");
+        let config =
+            deserialize_provider_config(json).expect("groq.json should parse without env_vars");
         assert!(config.env_vars.is_none());
         assert!(config.dynamic_models.is_none());
         assert!(config.model_doc_link.is_none());
         assert!(config.setup_steps.is_empty());
-        assert!(!config.preserves_thinking);
+        assert!(config.preserves_thinking);
     }
 
     #[test]
@@ -723,8 +722,7 @@ mod tests {
             "requires_auth": false
         }"#;
 
-        let config =
-            deserialize_custom_provider_config(json).expect("custom provider json should parse");
+        let config = deserialize_provider_config(json).expect("custom provider json should parse");
 
         assert!(matches!(config.engine, ProviderEngine::OpenAI));
         assert!(config.preserves_thinking);
@@ -747,8 +745,7 @@ mod tests {
             "preserves_thinking": false
         }"#;
 
-        let config =
-            deserialize_custom_provider_config(json).expect("custom provider json should parse");
+        let config = deserialize_provider_config(json).expect("custom provider json should parse");
 
         assert!(matches!(config.engine, ProviderEngine::OpenAI));
         assert!(!config.preserves_thinking);
