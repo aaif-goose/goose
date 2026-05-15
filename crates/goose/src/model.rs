@@ -459,7 +459,7 @@ impl ModelConfig {
 
         if let Ok(value) = config.get_param::<String>("CLAUDE_THINKING_TYPE") {
             if let Some(effort) = match value.to_lowercase().as_str() {
-                "enabled" => Some(ThinkingEffort::High),
+                "adaptive" | "enabled" => Some(ThinkingEffort::High),
                 "disabled" => Some(ThinkingEffort::Off),
                 _ => None,
             } {
@@ -478,16 +478,6 @@ impl ModelConfig {
         if let Ok(value) = config.get_param::<String>("GEMINI3_THINKING_LEVEL") {
             if let Some(effort) = Self::legacy_gemini3_thinking_effort(&value) {
                 return Some(effort);
-            }
-        }
-
-        for key in [
-            "ANTHROPIC_THINKING_BUDGET",
-            "CLAUDE_THINKING_BUDGET",
-            "GEMINI25_THINKING_BUDGET",
-        ] {
-            if config.get_param::<i32>(key).is_ok() {
-                return Some(ThinkingEffort::High);
             }
         }
 
@@ -695,20 +685,22 @@ mod tests {
 
         #[test]
         fn legacy_claude_thinking_type_fallback() {
-            let _guard = env_lock::lock_env([
-                ("GOOSE_THINKING_EFFORT", None::<&str>),
-                ("CLAUDE_THINKING_TYPE", Some("enabled")),
-                ("CLAUDE_THINKING_ENABLED", None::<&str>),
-                ("GEMINI3_THINKING_LEVEL", None::<&str>),
-                ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
-                ("CLAUDE_THINKING_BUDGET", None::<&str>),
-                ("GEMINI25_THINKING_BUDGET", None::<&str>),
-            ]);
-            let config = ModelConfig {
-                model_name: "test".to_string(),
-                ..Default::default()
-            };
-            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
+            for value in ["enabled", "adaptive"] {
+                let _guard = env_lock::lock_env([
+                    ("GOOSE_THINKING_EFFORT", None::<&str>),
+                    ("CLAUDE_THINKING_TYPE", Some(value)),
+                    ("CLAUDE_THINKING_ENABLED", None::<&str>),
+                    ("GEMINI3_THINKING_LEVEL", None::<&str>),
+                    ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
+                    ("CLAUDE_THINKING_BUDGET", None::<&str>),
+                    ("GEMINI25_THINKING_BUDGET", None::<&str>),
+                ]);
+                let config = ModelConfig {
+                    model_name: "test".to_string(),
+                    ..Default::default()
+                };
+                assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
+            }
         }
 
         #[test]
@@ -740,24 +732,6 @@ mod tests {
             ]);
             let config = ModelConfig {
                 model_name: "gemini-3-pro".to_string(),
-                ..Default::default()
-            };
-            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));
-        }
-
-        #[test]
-        fn legacy_thinking_budget_fallback() {
-            let _guard = env_lock::lock_env([
-                ("GOOSE_THINKING_EFFORT", None::<&str>),
-                ("CLAUDE_THINKING_TYPE", None::<&str>),
-                ("CLAUDE_THINKING_ENABLED", None::<&str>),
-                ("GEMINI3_THINKING_LEVEL", None::<&str>),
-                ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
-                ("CLAUDE_THINKING_BUDGET", None::<&str>),
-                ("GEMINI25_THINKING_BUDGET", Some("8192")),
-            ]);
-            let config = ModelConfig {
-                model_name: "test".to_string(),
                 ..Default::default()
             };
             assert_eq!(config.thinking_effort(), Some(ThinkingEffort::High));

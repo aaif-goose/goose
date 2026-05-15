@@ -79,11 +79,13 @@ pub fn thinking_type(model_config: &ModelConfig) -> ThinkingType {
     }
 
     let is_adaptive_model = supports_adaptive_thinking(&model_config.model_name);
-    let effort = model_config
-        .thinking_effort()
-        .unwrap_or(ThinkingEffort::Off);
+    let effort = model_config.thinking_effort();
 
-    match effort {
+    if effort.is_none() && legacy_thinking_budget_tokens().is_some() {
+        return ThinkingType::Enabled;
+    }
+
+    match effort.unwrap_or(ThinkingEffort::Off) {
         ThinkingEffort::Off => ThinkingType::Disabled,
         _ if is_adaptive_model => ThinkingType::Adaptive,
         _ => ThinkingType::Enabled,
@@ -505,11 +507,8 @@ pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
         return request_param.max(1024);
     }
 
-    let config = crate::config::Config::global();
-    for key in ["ANTHROPIC_THINKING_BUDGET", "CLAUDE_THINKING_BUDGET"] {
-        if let Ok(budget) = config.get_param::<i32>(key) {
-            return budget.max(1024);
-        }
+    if let Some(budget) = legacy_thinking_budget_tokens() {
+        return budget;
     }
 
     let effort = model_config
@@ -522,6 +521,16 @@ pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
         ThinkingEffort::High => 16000,
         ThinkingEffort::Max => 32000,
     }
+}
+
+fn legacy_thinking_budget_tokens() -> Option<i32> {
+    let config = crate::config::Config::global();
+    for key in ["ANTHROPIC_THINKING_BUDGET", "CLAUDE_THINKING_BUDGET"] {
+        if let Ok(budget) = config.get_param::<i32>(key) {
+            return Some(budget.max(1024));
+        }
+    }
+    None
 }
 
 fn apply_thinking_config(
