@@ -647,11 +647,40 @@ impl ConfigKey {
 pub struct ProviderUsage {
     pub model: String,
     pub usage: Usage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<ProviderStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProviderStats {
+    pub time_to_first_token_ms: Option<u64>,
+    pub elapsed_ms: Option<u64>,
+    pub output_tokens: Option<usize>,
+    pub draft: Option<DraftStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DraftStats {
+    pub model: Option<String>,
+    pub draft_tokens: usize,
+    pub accepted_tokens: usize,
+    pub target_tokens: usize,
+    pub rounds: usize,
+    pub accept_rate: f64,
 }
 
 impl ProviderUsage {
     pub fn new(model: String, usage: Usage) -> Self {
-        Self { model, usage }
+        Self {
+            model,
+            usage,
+            stats: None,
+        }
+    }
+
+    pub fn with_stats(mut self, stats: ProviderStats) -> Self {
+        self.stats = Some(stats);
+        self
     }
 
     /// Ensures this ProviderUsage has token counts, estimating them if necessary
@@ -679,6 +708,7 @@ impl ProviderUsage {
         ProviderUsage {
             model: self.model.clone(),
             usage: self.usage + other.usage,
+            stats: self.stats.clone().or_else(|| other.stats.clone()),
         }
     }
 }

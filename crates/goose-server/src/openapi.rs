@@ -692,6 +692,7 @@ pub struct ApiDoc;
         super::routes::local_inference::ModelDownloadStatus,
         super::routes::local_inference::DownloadModelRequest,
         goose::providers::local_inference::hf_models::HfModelInfo,
+        goose::providers::local_inference::hf_models::HfModelVariant,
         goose::providers::local_inference::hf_models::HfGgufFile,
         goose::providers::local_inference::hf_models::HfQuantVariant,
         super::routes::local_inference::RepoVariantsResponse,

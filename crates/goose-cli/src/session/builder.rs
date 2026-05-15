@@ -116,6 +116,8 @@ pub struct SessionBuilderConfig {
     pub output_format: String,
     /// Docker container to run stdio extensions inside
     pub container: Option<Container>,
+    /// Print generation statistics after headless runs.
+    pub stats: bool,
 }
 
 /// Manual implementation of Default to ensure proper initialization of output_format
@@ -143,6 +145,7 @@ impl Default for SessionBuilderConfig {
             quiet: false,
             output_format: "text".to_string(),
             container: None,
+            stats: false,
         }
     }
 }
@@ -604,6 +607,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         edit_mode,
         recipe.and_then(|r| r.retry.clone()),
         session_config.output_format.clone(),
+        session_config.stats,
     )
     .await;
 
@@ -650,6 +654,7 @@ mod tests {
             quiet: false,
             output_format: "text".to_string(),
             container: None,
+            stats: false,
         };
 
         assert_eq!(config.extensions.len(), 1);

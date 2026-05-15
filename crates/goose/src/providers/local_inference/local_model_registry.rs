@@ -38,8 +38,13 @@ impl Default for SamplingConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ModelSettings {
+    /// Backend implementation to use for this model. Defaults to llama.cpp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<String>,
     pub context_size: Option<u32>,
     pub max_output_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_model: Option<String>,
     #[serde(default)]
     pub sampling: SamplingConfig,
     #[serde(default = "default_repeat_penalty")]
@@ -94,8 +99,10 @@ fn default_repeat_last_n() -> i32 {
 impl Default for ModelSettings {
     fn default() -> Self {
         Self {
+            backend_id: None,
             context_size: None,
             max_output_tokens: None,
+            draft_model: None,
             sampling: SamplingConfig::default(),
             repeat_penalty: 1.0,
             repeat_last_n: 64,
@@ -233,6 +240,15 @@ pub fn get_registry() -> &'static Mutex<LocalModelRegistry> {
     })
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalModelStorage {
+    #[default]
+    GooseManaged,
+    HuggingFaceCache,
+    ManualPath,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShardFile {
     pub filename: String,
@@ -249,6 +265,14 @@ pub struct LocalModelEntry {
     pub quantization: String,
     pub local_path: PathBuf,
     pub source_url: String,
+    /// Backend implementation to use for this model. Defaults to llama.cpp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<String>,
+    /// Where the model artifacts are stored. Goose keeps this registry as a
+    /// lightweight settings overlay; Hugging Face cache entries are not deleted
+    /// by Goose because they may be shared with other tools.
+    #[serde(default)]
+    pub storage: LocalModelStorage,
     #[serde(default)]
     pub settings: ModelSettings,
     #[serde(default)]
@@ -295,11 +319,13 @@ impl LocalModelEntry {
         self.local_path.exists() && self.shard_files.iter().all(|s| s.local_path.exists())
     }
 
-    /// Returns all GGUF model file paths (primary + shards).
+    /// Returns all local paths owned by Goose for this model.
     /// Does NOT include mmproj — that has separate shared-ownership deletion logic.
     pub fn all_local_paths(&self) -> impl Iterator<Item = &std::path::Path> {
+        let goose_managed = self.storage == LocalModelStorage::GooseManaged;
         std::iter::once(self.local_path.as_path())
             .chain(self.shard_files.iter().map(|s| s.local_path.as_path()))
+            .filter(move |path| goose_managed && !path.is_dir())
     }
 
     pub fn is_downloading(&self) -> bool {
@@ -367,9 +393,7 @@ impl LocalModelEntry {
         if self.size_bytes > 0 {
             return self.size_bytes;
         }
-        std::fs::metadata(&self.local_path)
-            .map(|m| m.len())
-            .unwrap_or(0)
+        path_size(&self.local_path)
     }
 }
 
@@ -501,6 +525,19 @@ impl LocalModelRegistry {
 }
 
 /// Generate a unique ID for a model from its repo_id and quantization.
+fn path_size(path: &std::path::Path) -> u64 {
+    if path.is_file() {
+        return std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    }
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            total += path_size(&entry.path());
+        }
+    }
+    total
+}
+
 pub fn model_id_from_repo(repo_id: &str, quantization: &str) -> String {
     format!("{}:{}", repo_id, quantization)
 }

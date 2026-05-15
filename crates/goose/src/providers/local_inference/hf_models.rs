@@ -1,10 +1,22 @@
 use anyhow::{bail, Result};
+use futures::StreamExt;
+use hf_hub::progress::{DownloadEvent, FileStatus, ProgressEvent, ProgressHandler};
+use hf_hub::repository::{ModelInfo, RepoSibling};
+use hf_hub::{HFClient, HFRepository, RepoTypeModel};
+
+use super::local_model_registry::{get_registry, model_id_from_repo, LocalModelStorage, ShardFile};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 use utoipa::ToSchema;
 
 const HF_API_BASE: &str = "https://huggingface.co/api/models";
 const HF_DOWNLOAD_BASE: &str = "https://huggingface.co";
+const LLAMACPP_BACKEND_ID: &str = "llamacpp";
+const MLX_BACKEND_ID: &str = "mlx";
+const GGUF_FORMAT: &str = "gguf";
+const MLX_FORMAT: &str = "mlx-safetensors";
+const MLX_VARIANT_ID: &str = "default";
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HfModelInfo {
@@ -13,6 +25,35 @@ pub struct HfModelInfo {
     pub model_name: String,
     pub downloads: u64,
     pub gguf_files: Vec<HfGgufFile>,
+    #[serde(default)]
+    pub variants: Vec<HfModelVariant>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct HfModelVariant {
+    pub variant_id: String,
+    pub label: String,
+    pub backend_id: String,
+    pub format: String,
+    pub model_id: String,
+    pub download_id: String,
+    pub size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
+    pub description: String,
+    pub quality_rank: u8,
+    #[serde(default)]
+    pub sharded: bool,
+    #[serde(default = "default_supported")]
+    pub supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsupported_reason: Option<String>,
+}
+
+fn default_supported() -> bool {
+    true
 }
 
 /// A single downloadable GGUF file (used internally and for downloads).
@@ -37,11 +78,97 @@ pub struct HfQuantVariant {
     pub sharded: bool,
 }
 
+impl HfQuantVariant {
+    pub fn to_model_variant(&self, repo_id: &str) -> HfModelVariant {
+        let model_id = model_id_from_repo(repo_id, &self.quantization);
+        HfModelVariant {
+            variant_id: self.quantization.clone(),
+            label: self.quantization.clone(),
+            backend_id: LLAMACPP_BACKEND_ID.to_string(),
+            format: GGUF_FORMAT.to_string(),
+            model_id: model_id.clone(),
+            download_id: model_id,
+            size_bytes: self.size_bytes,
+            filename: Some(self.filename.clone()),
+            download_url: Some(self.download_url.clone()),
+            description: self.description.to_string(),
+            quality_rank: self.quality_rank,
+            sharded: self.sharded,
+            supported: true,
+            unsupported_reason: None,
+        }
+    }
+}
+
 /// Result of resolving a model spec — may contain multiple shard files.
 #[derive(Debug, Clone)]
 pub struct ResolvedModel {
     pub files: Vec<HfGgufFile>,
     pub total_size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum ResolvedLocalModel {
+    Gguf {
+        repo_id: String,
+        quantization: String,
+        resolved: ResolvedModel,
+        local_paths: Vec<std::path::PathBuf>,
+        storage: LocalModelStorage,
+    },
+    Mlx {
+        repo_id: String,
+        variant_id: String,
+        snapshot_path: std::path::PathBuf,
+        total_size: u64,
+    },
+}
+
+impl ResolvedLocalModel {
+    pub fn repo_id(&self) -> &str {
+        match self {
+            Self::Gguf { repo_id, .. } | Self::Mlx { repo_id, .. } => repo_id,
+        }
+    }
+
+    pub fn variant_id(&self) -> &str {
+        match self {
+            Self::Gguf { quantization, .. } => quantization,
+            Self::Mlx { variant_id, .. } => variant_id,
+        }
+    }
+
+    pub fn backend_id(&self) -> &'static str {
+        match self {
+            Self::Gguf { .. } => "llamacpp",
+            Self::Mlx { .. } => "mlx",
+        }
+    }
+
+    pub fn model_id(&self) -> String {
+        match self {
+            Self::Gguf {
+                repo_id,
+                quantization,
+                ..
+            } => model_id_from_repo(repo_id, quantization),
+            Self::Mlx { repo_id, .. } => repo_id.clone(),
+        }
+    }
+
+    pub fn total_size(&self) -> u64 {
+        match self {
+            Self::Gguf { resolved, .. } => resolved.total_size,
+            Self::Mlx { total_size, .. } => *total_size,
+        }
+    }
+
+    pub fn storage(&self) -> LocalModelStorage {
+        match self {
+            Self::Gguf { storage, .. } => *storage,
+            Self::Mlx { .. } => LocalModelStorage::HuggingFaceCache,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -325,6 +452,40 @@ fn group_into_variants(repo_id: &str, files: Vec<HfApiSibling>) -> Vec<HfQuantVa
     variants
 }
 
+pub async fn search_local_models(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
+    let mut results = Vec::new();
+
+    if looks_like_repo_id(query) {
+        if let Some(model) = get_local_model_info_for_repo(query).await? {
+            results.push(model);
+        }
+    } else if let Some(model) = get_exact_name_local_model_info(query).await? {
+        results.push(model);
+    }
+
+    let mut gguf_results = search_gguf_models(query, limit).await?;
+    for model in &mut gguf_results {
+        let gguf_variants = get_repo_gguf_variants(&model.repo_id)
+            .await
+            .unwrap_or_default();
+        model.variants = gguf_variants
+            .iter()
+            .map(|variant| variant.to_model_variant(&model.repo_id))
+            .collect();
+    }
+
+    results.extend(gguf_results);
+    results.extend(search_mlx_models(query, limit).await?);
+    dedupe_models(&mut results);
+    results.sort_by(|a, b| {
+        model_search_rank(query, a)
+            .cmp(&model_search_rank(query, b))
+            .then_with(|| b.downloads.cmp(&a.downloads))
+    });
+    results.truncate(limit);
+    Ok(results)
+}
+
 pub async fn search_gguf_models(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
     let client = reqwest::Client::new();
     let url = format!(
@@ -382,6 +543,7 @@ pub async fn search_gguf_models(query: &str, limit: usize) -> Result<Vec<HfModel
                 model_name,
                 downloads: m.downloads.unwrap_or(0),
                 gguf_files,
+                variants: Vec::new(),
             })
         })
         .collect();
@@ -816,4 +978,759 @@ mod tests {
         assert_eq!(variants[1].quantization, "Q4_K_M");
         assert_eq!(variants[2].quantization, "IQ1_S");
     }
+}
+
+fn hf_client() -> Result<HFClient> {
+    HFClient::builder()
+        .user_agent("goose-ai-agent")
+        .build()
+        .map_err(Into::into)
+}
+
+fn model_repo(client: &HFClient, repo_id: &str) -> Result<HFRepository<RepoTypeModel>> {
+    let (owner, name) = split_repo_id(repo_id)?;
+    Ok(client.model(owner, name))
+}
+
+fn split_repo_id(repo_id: &str) -> Result<(&str, &str)> {
+    repo_id
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("Invalid repo id '{}': expected owner/name", repo_id))
+}
+
+async fn search_mlx_models(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
+    let mut results = search_mlx_models_with_query(query, limit).await?;
+    if !query.contains('/') {
+        results
+            .extend(search_mlx_models_with_query(&format!("mlx-community/{query}"), limit).await?);
+        results.extend(search_mlx_models_with_query(&format!("google/{query}"), limit).await?);
+    }
+    dedupe_models(&mut results);
+    results.truncate(limit);
+    Ok(results)
+}
+
+async fn search_mlx_models_with_query(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
+    let client = hf_client()?;
+    let stream = client
+        .list_models()
+        .search(query.to_string())
+        .sort("downloads".to_string())
+        .limit(limit.saturating_mul(5).max(limit))
+        .send()?;
+    futures::pin_mut!(stream);
+
+    let mut results = Vec::new();
+    while let Some(info) = stream.next().await {
+        let info = info?;
+        if results.len() >= limit {
+            break;
+        }
+        if let Some(model) = model_info_to_local_model_info(info).await? {
+            results.push(model);
+        }
+    }
+
+    Ok(results)
+}
+
+async fn get_local_model_info_for_repo(repo_id: &str) -> Result<Option<HfModelInfo>> {
+    let client = hf_client()?;
+    let repo = model_repo(&client, repo_id)?;
+    let info = repo
+        .info()
+        .expand(vec![
+            "siblings".to_string(),
+            "config".to_string(),
+            "safetensors".to_string(),
+        ])
+        .send()
+        .await?;
+    model_info_to_local_model_info(info).await
+}
+
+async fn get_exact_name_local_model_info(model_name: &str) -> Result<Option<HfModelInfo>> {
+    for owner in ["google", "mlx-community"] {
+        let repo_id = format!("{owner}/{model_name}");
+        if let Ok(Some(model)) = get_local_model_info_for_repo(&repo_id).await {
+            return Ok(Some(model));
+        }
+    }
+    Ok(None)
+}
+
+async fn model_info_to_local_model_info(info: ModelInfo) -> Result<Option<HfModelInfo>> {
+    let repo_id = info.id.clone();
+    let mut variants: Vec<HfModelVariant> = get_repo_gguf_variants(&repo_id)
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|variant| variant.to_model_variant(&repo_id))
+        .collect();
+    variants.extend(mlx_variants_from_model_info(&repo_id, &info));
+
+    if variants.is_empty() {
+        return Ok(None);
+    }
+
+    let author = info
+        .author
+        .unwrap_or_else(|| repo_id.split('/').next().unwrap_or_default().to_string());
+    let model_name = repo_id
+        .split('/')
+        .next_back()
+        .unwrap_or(&repo_id)
+        .to_string();
+
+    Ok(Some(HfModelInfo {
+        repo_id,
+        author,
+        model_name,
+        downloads: info.downloads.unwrap_or(0),
+        gguf_files: Vec::new(),
+        variants,
+    }))
+}
+
+pub async fn get_repo_local_variants(repo_id: &str) -> Result<Vec<HfModelVariant>> {
+    let mut variants: Vec<HfModelVariant> = get_repo_gguf_variants(repo_id)
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|variant| variant.to_model_variant(repo_id))
+        .collect();
+    variants.extend(get_repo_mlx_variants(repo_id).await.unwrap_or_default());
+    variants.sort_by(|a, b| {
+        a.backend_id
+            .cmp(&b.backend_id)
+            .then_with(|| b.quality_rank.cmp(&a.quality_rank))
+            .then_with(|| a.variant_id.cmp(&b.variant_id))
+    });
+    Ok(variants)
+}
+
+pub async fn get_repo_mlx_variants(repo_id: &str) -> Result<Vec<HfModelVariant>> {
+    let client = hf_client()?;
+    let repo = model_repo(&client, repo_id)?;
+    let info = repo
+        .info()
+        .expand(vec![
+            "siblings".to_string(),
+            "config".to_string(),
+            "safetensors".to_string(),
+        ])
+        .send()
+        .await?;
+    Ok(mlx_variants_from_model_info(repo_id, &info))
+}
+
+fn mlx_variants_from_model_info(repo_id: &str, info: &ModelInfo) -> Vec<HfModelVariant> {
+    let siblings = info.siblings.as_deref().unwrap_or(&[]);
+
+    if !is_mlx_compatible_repo(&info.config, siblings) {
+        return Vec::new();
+    }
+
+    let size_bytes = mlx_download_filenames(siblings)
+        .into_iter()
+        .filter_map(|filename| {
+            siblings
+                .iter()
+                .find(|s| s.rfilename == filename)
+                .and_then(|s| s.size)
+        })
+        .sum();
+    let variant_id = mlx_variant_id(repo_id, &info.config);
+
+    vec![HfModelVariant {
+        variant_id: variant_id.clone(),
+        label: mlx_variant_label(&variant_id),
+        backend_id: MLX_BACKEND_ID.to_string(),
+        format: MLX_FORMAT.to_string(),
+        model_id: repo_id.to_string(),
+        download_id: repo_id.to_string(),
+        size_bytes,
+        filename: None,
+        download_url: None,
+        description: mlx_variant_description(&info.config),
+        quality_rank: 91,
+        sharded: siblings
+            .iter()
+            .filter(|s| s.rfilename.ends_with(".safetensors"))
+            .count()
+            > 1,
+        supported: is_mlx_runtime_supported(&info.config)
+            && cfg!(target_os = "macos")
+            && cfg!(feature = "mlx"),
+        unsupported_reason: mlx_unsupported_reason(&info.config),
+    }]
+}
+
+fn is_mlx_compatible_repo(config: &Option<serde_json::Value>, siblings: &[RepoSibling]) -> bool {
+    let has_config = siblings.iter().any(|s| s.rfilename == "config.json");
+    let has_tokenizer = siblings.iter().any(|s| s.rfilename == "tokenizer.json");
+    let has_safetensors = siblings
+        .iter()
+        .any(|s| s.rfilename.ends_with(".safetensors"));
+
+    has_config && has_tokenizer && has_safetensors && mlx_model_type(config).is_some()
+}
+
+fn mlx_model_type(config: &Option<serde_json::Value>) -> Option<&str> {
+    config
+        .as_ref()
+        .and_then(|config| config.get("model_type"))
+        .and_then(|value| value.as_str())
+}
+
+fn is_mlx_runtime_supported_model_type(model_type: &str) -> bool {
+    matches!(model_type, "gemma4" | "gemma4_text" | "llama" | "qwen3")
+}
+
+fn is_mlx_moe_model(config: &Option<serde_json::Value>) -> bool {
+    config
+        .as_ref()
+        .and_then(|config| config.get("text_config"))
+        .and_then(|text_config| text_config.get("enable_moe_block"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn is_mlx_runtime_supported(config: &Option<serde_json::Value>) -> bool {
+    mlx_model_type(config).is_some_and(is_mlx_runtime_supported_model_type)
+        && !is_mlx_moe_model(config)
+}
+
+fn mlx_unsupported_reason(config: &Option<serde_json::Value>) -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return Some("MLX requires macOS".to_string());
+    }
+    if !cfg!(feature = "mlx") {
+        return Some("MLX support was not compiled in".to_string());
+    }
+
+    let model_type = mlx_model_type(config)?;
+    if !is_mlx_runtime_supported_model_type(model_type) {
+        return Some(format!(
+            "MLX backend does not support '{}' models yet",
+            model_type
+        ));
+    }
+    if is_mlx_moe_model(config) {
+        return Some("MLX backend does not support Gemma 4 MoE models yet".to_string());
+    }
+    None
+}
+
+fn mlx_variant_description(config: &Option<serde_json::Value>) -> String {
+    match mlx_unsupported_reason(config) {
+        None => "MLX safetensors snapshot".to_string(),
+        Some(reason) => format!("MLX safetensors snapshot ({reason})"),
+    }
+}
+
+fn mlx_download_filenames(siblings: &[RepoSibling]) -> Vec<String> {
+    siblings
+        .iter()
+        .filter(|s| should_download_for_mlx(&s.rfilename))
+        .map(|s| s.rfilename.clone())
+        .collect()
+}
+
+fn looks_like_repo_id(query: &str) -> bool {
+    let Some((owner, repo)) = query.split_once('/') else {
+        return false;
+    };
+    !owner.is_empty() && !repo.is_empty() && !repo.contains('/')
+}
+
+fn model_search_rank(query: &str, model: &HfModelInfo) -> u8 {
+    let query = query.to_lowercase();
+    let repo_id = model.repo_id.to_lowercase();
+    let model_name = model.model_name.to_lowercase();
+
+    if repo_id == query {
+        0
+    } else if model_name == query {
+        1
+    } else if repo_id.ends_with(&format!("/{query}")) {
+        2
+    } else if repo_id.contains(&query) {
+        3
+    } else {
+        4
+    }
+}
+
+fn dedupe_models(models: &mut Vec<HfModelInfo>) {
+    let mut seen = std::collections::HashSet::new();
+    models.retain(|model| seen.insert(model.repo_id.clone()));
+}
+
+fn should_download_for_mlx(filename: &str) -> bool {
+    filename.ends_with(".safetensors")
+        || filename == "config.json"
+        || filename == "tokenizer.json"
+        || filename == "tokenizer_config.json"
+        || filename == "generation_config.json"
+        || filename == "special_tokens_map.json"
+        || filename == "model.safetensors.index.json"
+        || filename == "vocab.json"
+        || filename == "merges.txt"
+        || filename == "added_tokens.json"
+        || filename.ends_with(".model")
+        || filename.ends_with(".tiktoken")
+}
+
+fn mlx_variant_id(repo_id: &str, config: &Option<serde_json::Value>) -> String {
+    let repo_lower = repo_id.to_lowercase();
+    for marker in ["bf16", "f16", "fp16", "f32", "fp32", "4bit", "8bit"] {
+        if repo_lower.contains(marker) {
+            return marker.to_string();
+        }
+    }
+    config
+        .as_ref()
+        .and_then(|config| config.get("torch_dtype"))
+        .and_then(|value| value.as_str())
+        .map(|dtype| dtype.replace("float", "f"))
+        .unwrap_or_else(|| MLX_VARIANT_ID.to_string())
+}
+
+fn mlx_variant_label(variant_id: &str) -> String {
+    if variant_id == MLX_VARIANT_ID {
+        "MLX".to_string()
+    } else {
+        format!("MLX {}", variant_id.to_uppercase())
+    }
+}
+
+fn snapshot_root_for_file(
+    path: &std::path::Path,
+    repo_filename: &str,
+) -> Option<std::path::PathBuf> {
+    let mut root = path.to_path_buf();
+    for _ in 0..repo_filename.split('/').count() {
+        root.pop();
+    }
+    Some(root)
+}
+
+async fn resolve_gguf_model(repo_id: &str, quantization: &str) -> Result<ResolvedLocalModel> {
+    let spec = format!("{}:{}", repo_id, quantization);
+    let (_repo, resolved) = resolve_model_spec_full(&spec).await?;
+    let local_paths = download_gguf_to_hf_cache(repo_id, quantization, &resolved).await?;
+    Ok(ResolvedLocalModel::Gguf {
+        repo_id: repo_id.to_string(),
+        quantization: quantization.to_string(),
+        resolved,
+        local_paths,
+        storage: LocalModelStorage::HuggingFaceCache,
+    })
+}
+
+async fn download_gguf_to_hf_cache(
+    repo_id: &str,
+    quantization: &str,
+    resolved: &ResolvedModel,
+) -> Result<Vec<std::path::PathBuf>> {
+    let (owner, name) = split_repo_id(repo_id)?;
+    let model_id = model_id_from_repo(repo_id, quantization);
+    let total_size = resolved.files.iter().map(|file| file.size_bytes).sum();
+    let progress = HfDownloadProgress::new(model_id, total_size);
+    progress.init();
+    let client = hf_client()?;
+    let repo = client.model(owner.to_string(), name.to_string());
+    let mut paths = Vec::with_capacity(resolved.files.len());
+    for file in &resolved.files {
+        let path = match repo
+            .download_file()
+            .filename(file.filename.clone())
+            .progress(progress.clone())
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+        {
+            Ok(path) => path,
+            Err(error) => {
+                progress.fail(&error);
+                return Err(error);
+            }
+        };
+        progress.finish_file(file.size_bytes);
+        paths.push(path);
+    }
+    progress.complete();
+    Ok(paths)
+}
+
+pub async fn resolve_local_model_spec(spec: &str) -> Result<ResolvedLocalModel> {
+    if looks_like_repo_id(spec) {
+        let variants = get_repo_local_variants(spec).await?;
+        let mlx_variants: Vec<_> = variants
+            .iter()
+            .filter(|variant| variant.backend_id == MLX_BACKEND_ID)
+            .collect();
+        if mlx_variants.len() == 1
+            && !variants
+                .iter()
+                .any(|variant| variant.backend_id == LLAMACPP_BACKEND_ID)
+        {
+            return resolve_mlx_model(spec, &mlx_variants[0].variant_id).await;
+        }
+        bail!(
+            "Model spec '{}' is ambiguous; choose one of: {}",
+            spec,
+            variants
+                .iter()
+                .map(|variant| variant.download_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    let (repo_id, quantization) = parse_model_spec(spec)?;
+    resolve_gguf_model(&repo_id, &quantization).await
+}
+
+async fn resolve_mlx_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLocalModel> {
+    let variants = get_repo_mlx_variants(repo_id).await?;
+    if !variants
+        .iter()
+        .any(|variant| variant.variant_id == variant_id)
+    {
+        bail!("No MLX variant '{}' found in {}", variant_id, repo_id);
+    }
+    let (owner, name) = split_repo_id(repo_id)?;
+    let client = hf_client()?;
+    let repo = client.model(owner.to_string(), name.to_string());
+    let info = repo
+        .info()
+        .expand(vec!["siblings".to_string()])
+        .send()
+        .await?;
+    let siblings = info.siblings.as_deref().unwrap_or(&[]);
+    let filenames = mlx_download_filenames(siblings);
+    let total_size = filenames
+        .iter()
+        .filter_map(|filename| {
+            siblings
+                .iter()
+                .find(|s| s.rfilename == *filename)
+                .and_then(|s| s.size)
+        })
+        .sum();
+    let progress = HfDownloadProgress::new(repo_id.to_string(), total_size);
+    progress.init();
+    let mut snapshot_path = None;
+    for filename in filenames {
+        let file_size = siblings
+            .iter()
+            .find(|s| s.rfilename == filename)
+            .and_then(|s| s.size)
+            .unwrap_or(0);
+        let path = match repo
+            .download_file()
+            .filename(filename.clone())
+            .progress(progress.clone())
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+        {
+            Ok(path) => path,
+            Err(error) => {
+                progress.fail(&error);
+                return Err(error);
+            }
+        };
+        if snapshot_path.is_none() {
+            snapshot_path = snapshot_root_for_file(&path, &filename);
+        }
+        progress.finish_file(file_size);
+    }
+    progress.complete();
+    let snapshot_path = snapshot_path
+        .ok_or_else(|| anyhow::anyhow!("MLX model {} has no downloadable files", repo_id))?;
+    let total_size = if total_size > 0 {
+        total_size
+    } else {
+        dir_size(&snapshot_path)
+    };
+    Ok(ResolvedLocalModel::Mlx {
+        repo_id: repo_id.to_string(),
+        variant_id: variant_id.to_string(),
+        snapshot_path,
+        total_size,
+    })
+}
+
+#[derive(Clone)]
+struct HfDownloadProgress {
+    model_id: String,
+    total_bytes: u64,
+    completed_bytes: Arc<Mutex<u64>>,
+    state: Arc<Mutex<HfDownloadState>>,
+}
+
+#[derive(Default)]
+struct HfDownloadState {
+    bytes_downloaded: u64,
+    current_file_total_bytes: u64,
+    speed_bps: Option<u64>,
+}
+
+impl HfDownloadProgress {
+    fn new(model_id: String, total_bytes: u64) -> Self {
+        Self {
+            model_id,
+            total_bytes,
+            completed_bytes: Arc::new(Mutex::new(0)),
+            state: Arc::new(Mutex::new(HfDownloadState::default())),
+        }
+    }
+
+    fn init(&self) {
+        crate::download_manager::get_download_manager().set_progress(
+            crate::download_manager::DownloadProgress {
+                model_id: format!("{}-model", self.model_id),
+                status: crate::download_manager::DownloadStatus::Downloading,
+                bytes_downloaded: 0,
+                total_bytes: self.total_bytes,
+                progress_percent: 0.0,
+                speed_bps: None,
+                eta_seconds: None,
+                error: None,
+                task_exited: false,
+            },
+        );
+    }
+
+    fn is_cancelled(&self) -> bool {
+        crate::download_manager::get_download_manager()
+            .get_progress(&format!("{}-model", self.model_id))
+            .is_some_and(|progress| {
+                progress.status == crate::download_manager::DownloadStatus::Cancelled
+            })
+    }
+
+    fn complete(&self) {
+        crate::download_manager::get_download_manager().update_progress(
+            &format!("{}-model", self.model_id),
+            |progress| {
+                if progress.status != crate::download_manager::DownloadStatus::Cancelled {
+                    progress.status = crate::download_manager::DownloadStatus::Completed;
+                    progress.progress_percent = 100.0;
+                }
+                progress.task_exited = true;
+            },
+        );
+    }
+
+    fn fail(&self, error: impl ToString) {
+        crate::download_manager::get_download_manager().update_progress(
+            &format!("{}-model", self.model_id),
+            |progress| {
+                if progress.status != crate::download_manager::DownloadStatus::Cancelled {
+                    progress.status = crate::download_manager::DownloadStatus::Failed;
+                    progress.error = Some(error.to_string());
+                }
+                progress.task_exited = true;
+            },
+        );
+    }
+
+    fn finish_file(&self, size_bytes: u64) {
+        if let Ok(mut completed_bytes) = self.completed_bytes.lock() {
+            *completed_bytes = completed_bytes.saturating_add(size_bytes);
+        }
+        if let Ok(mut state) = self.state.lock() {
+            state.bytes_downloaded = 0;
+            state.current_file_total_bytes = 0;
+        }
+        self.update_progress_from_state();
+    }
+
+    fn update_progress_from_state(&self) {
+        let completed_bytes = self.completed_bytes.lock().map(|value| *value).unwrap_or(0);
+        if let Ok(state) = self.state.lock() {
+            let bytes_downloaded = completed_bytes.saturating_add(state.bytes_downloaded);
+            update_download_manager_progress(
+                &self.model_id,
+                bytes_downloaded.min(self.total_bytes),
+                self.total_bytes.max(state.current_file_total_bytes),
+                state.speed_bps,
+            );
+        }
+    }
+}
+
+impl ProgressHandler for HfDownloadProgress {
+    fn on_progress(&self, event: &ProgressEvent) {
+        let ProgressEvent::Download(event) = event else {
+            return;
+        };
+        match event {
+            DownloadEvent::Start { total_bytes, .. } => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.current_file_total_bytes = *total_bytes;
+                }
+                self.update_progress_from_state();
+            }
+            DownloadEvent::Progress { files } => {
+                if self.is_cancelled() {
+                    return;
+                }
+                let bytes_downloaded = files
+                    .iter()
+                    .map(|file| {
+                        if file.status == FileStatus::Complete {
+                            file.total_bytes
+                        } else {
+                            file.bytes_completed
+                        }
+                    })
+                    .max()
+                    .unwrap_or(0);
+                if let Ok(mut state) = self.state.lock() {
+                    state.bytes_downloaded = state.bytes_downloaded.max(bytes_downloaded);
+                }
+                self.update_progress_from_state();
+            }
+            DownloadEvent::AggregateProgress {
+                bytes_completed,
+                total_bytes,
+                bytes_per_sec,
+            } => {
+                if self.is_cancelled() {
+                    return;
+                }
+                if let Ok(mut state) = self.state.lock() {
+                    state.bytes_downloaded = *bytes_completed;
+                    state.current_file_total_bytes =
+                        (*total_bytes).max(state.current_file_total_bytes);
+                    state.speed_bps = bytes_per_sec.map(|speed| speed as u64);
+                }
+                self.update_progress_from_state();
+            }
+            DownloadEvent::Complete => {}
+        }
+    }
+}
+
+pub fn register_resolved_model(resolved: ResolvedLocalModel, source: &str) -> Result<String> {
+    let model_id = resolved.model_id();
+    let repo_id = resolved.repo_id().to_string();
+    let variant_id = resolved.variant_id().to_string();
+    let backend_id = resolved.backend_id().to_string();
+    let storage = resolved.storage();
+
+    let entry = match resolved {
+        ResolvedLocalModel::Gguf {
+            resolved,
+            local_paths,
+            ..
+        } => {
+            let first_file = &resolved.files[0];
+            let first_local_path = local_paths
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Resolved GGUF model has no local files"))?;
+            let shard_files: Vec<ShardFile> = resolved
+                .files
+                .iter()
+                .skip(1)
+                .zip(local_paths.iter().skip(1))
+                .map(|(file, local_path)| ShardFile {
+                    filename: file.filename.clone(),
+                    local_path: local_path.clone(),
+                    source_url: file.download_url.clone(),
+                    size_bytes: file.size_bytes,
+                })
+                .collect();
+            let settings = super::local_model_registry::default_settings_for_model(&model_id);
+            super::local_model_registry::LocalModelEntry {
+                id: model_id.clone(),
+                repo_id,
+                filename: first_file.filename.clone(),
+                quantization: variant_id,
+                local_path: first_local_path,
+                source_url: first_file.download_url.clone(),
+                backend_id: settings.backend_id.clone(),
+                storage,
+                settings,
+                size_bytes: resolved.total_size,
+                mmproj_path: None,
+                mmproj_source_url: None,
+                mmproj_size_bytes: 0,
+                shard_files,
+            }
+        }
+        ResolvedLocalModel::Mlx {
+            snapshot_path,
+            total_size,
+            ..
+        } => {
+            let mut settings = super::local_model_registry::default_settings_for_model(&model_id);
+            settings.backend_id = Some(backend_id.clone());
+            super::local_model_registry::LocalModelEntry {
+                id: model_id.clone(),
+                repo_id,
+                filename: variant_id.clone(),
+                quantization: variant_id,
+                local_path: snapshot_path,
+                source_url: source.to_string(),
+                backend_id: Some(backend_id),
+                storage,
+                settings,
+                size_bytes: total_size,
+                mmproj_path: None,
+                mmproj_source_url: None,
+                mmproj_size_bytes: 0,
+                shard_files: vec![],
+            }
+        }
+    };
+
+    let mut registry = get_registry()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
+    registry.add_model(entry)?;
+    Ok(model_id)
+}
+
+fn update_download_manager_progress(
+    model_id: &str,
+    bytes_downloaded: u64,
+    total_bytes: u64,
+    speed_bps: Option<u64>,
+) {
+    crate::download_manager::get_download_manager().update_progress(
+        &format!("{}-model", model_id),
+        |progress| {
+            if progress.status == crate::download_manager::DownloadStatus::Cancelled {
+                return;
+            }
+            progress.bytes_downloaded = bytes_downloaded;
+            progress.total_bytes = total_bytes;
+            progress.progress_percent = if total_bytes > 0 {
+                (bytes_downloaded as f64 / total_bytes as f64 * 100.0) as f32
+            } else {
+                0.0
+            };
+            progress.speed_bps = speed_bps;
+        },
+    );
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    if path.is_file() {
+        return std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    }
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            total += dir_size(&entry.path());
+        }
+    }
+    total
 }

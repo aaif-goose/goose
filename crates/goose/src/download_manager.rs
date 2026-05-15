@@ -106,6 +106,32 @@ impl DownloadManager {
         self.downloads.lock().ok()?.get(model_id).cloned()
     }
 
+    pub fn is_downloading(&self, model_id: &str) -> bool {
+        self.get_progress(model_id)
+            .is_some_and(|progress| progress.status == DownloadStatus::Downloading)
+    }
+
+    pub fn list_progress(&self) -> Vec<DownloadProgress> {
+        self.downloads
+            .lock()
+            .map(|downloads| downloads.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn set_progress(&self, progress: DownloadProgress) {
+        if let Ok(mut downloads) = self.downloads.lock() {
+            downloads.insert(progress.model_id.clone(), progress);
+        }
+    }
+
+    pub fn update_progress(&self, model_id: &str, update: impl FnOnce(&mut DownloadProgress)) {
+        if let Ok(mut downloads) = self.downloads.lock() {
+            if let Some(progress) = downloads.get_mut(model_id) {
+                update(progress);
+            }
+        }
+    }
+
     pub fn cancel_download(&self, model_id: &str) -> Result<()> {
         let mut downloads = self
             .downloads

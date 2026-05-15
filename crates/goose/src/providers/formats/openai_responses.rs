@@ -839,10 +839,7 @@ where
                             Some(u.total_tokens),
                         ),
                     );
-                    final_usage = Some(ProviderUsage {
-                        usage,
-                        model: model.clone(),
-                    });
+                    final_usage = Some(ProviderUsage::new(model.clone(), usage));
 
                     // For complete output, use the response output items
                     if !response.output.is_empty() {

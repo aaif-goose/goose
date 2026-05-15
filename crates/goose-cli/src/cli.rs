@@ -359,6 +359,13 @@ pub struct RunBehavior {
     )]
     pub resume: bool,
 
+    /// Print generation statistics after completion
+    #[arg(
+        long = "stats",
+        help = "Print generation statistics after the run completes"
+    )]
+    pub stats: bool,
+
     /// Scheduled job ID (used internally for scheduled executions)
     #[arg(
         long = "scheduled-job-id",
@@ -1002,8 +1009,8 @@ enum Command {
 #[cfg(feature = "local-inference")]
 #[derive(Subcommand)]
 enum LocalModelsCommand {
-    /// Search HuggingFace for GGUF models
-    #[command(about = "Search HuggingFace for GGUF models")]
+    /// Search HuggingFace for local models
+    #[command(about = "Search HuggingFace for local GGUF and MLX models")]
     Search {
         /// Search query
         query: String,
@@ -1014,9 +1021,9 @@ enum LocalModelsCommand {
     },
 
     /// Download a model from HuggingFace
-    #[command(about = "Download a GGUF model (e.g. bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M)")]
+    #[command(about = "Download a local model from a search result")]
     Download {
-        /// Model spec in user/repo:quantization format
+        /// Model spec/download id, e.g. user/repo:Q4_K_M or user/repo
         spec: String,
     },
 
@@ -1376,6 +1383,7 @@ async fn handle_interactive_session(
         quiet: false,
         output_format: "text".to_string(),
         container: session_opts.container.map(Container::new),
+        stats: false,
     })
     .await;
 
@@ -1588,6 +1596,7 @@ async fn handle_run_command(
         quiet: output_opts.quiet,
         output_format: output_opts.output_format,
         container: session_opts.container.map(Container::new),
+        stats: run_behavior.stats,
     })
     .await;
 
@@ -1690,19 +1699,36 @@ async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
 }
 
 #[cfg(feature = "local-inference")]
+fn print_download_progress(manager: &goose::download_manager::DownloadManager) {
+    let Some(progress) = manager
+        .list_progress()
+        .into_iter()
+        .find(|progress| progress.status == goose::download_manager::DownloadStatus::Downloading)
+    else {
+        return;
+    };
+
+    print!(
+        "\r  {:.1}% ({:.0}MB / {:.0}MB)",
+        progress.progress_percent,
+        progress.bytes_downloaded as f64 / (1024.0 * 1024.0),
+        progress.total_bytes as f64 / (1024.0 * 1024.0),
+    );
+    use std::io::Write;
+    std::io::stdout().flush().ok();
+}
+
 async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> {
     use goose::providers::local_inference::hf_models;
-    use goose::providers::local_inference::local_model_registry::{
-        get_registry, model_id_from_repo, LocalModelEntry,
-    };
+    use goose::providers::local_inference::local_model_registry::get_registry;
 
     match command {
         LocalModelsCommand::Search { query, limit } => {
             println!("Searching HuggingFace for '{}'...", query);
-            let results = hf_models::search_gguf_models(&query, limit).await?;
+            let results = hf_models::search_local_models(&query, limit).await?;
 
             if results.is_empty() {
-                println!("No GGUF models found.");
+                println!("No compatible local models found.");
                 return Ok(());
             }
 
@@ -1711,107 +1737,68 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                     "\n{} (by {}) — {} downloads",
                     model.model_name, model.author, model.downloads
                 );
-                for file in &model.gguf_files {
-                    let size = if file.size_bytes > 0 {
+                for variant in &model.variants {
+                    let size = if variant.size_bytes > 0 {
                         format!(
                             "{:.1}GB",
-                            file.size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+                            variant.size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
                         )
                     } else {
                         "unknown".to_string()
                     };
-                    println!("  {} — {}", file.quantization, size);
+                    let support = if variant.supported {
+                        String::new()
+                    } else {
+                        format!(
+                            " ({})",
+                            variant
+                                .unsupported_reason
+                                .as_deref()
+                                .unwrap_or("unsupported on this platform")
+                        )
+                    };
+                    println!(
+                        "  [{}] {} — {} — {}{}",
+                        variant.format, variant.label, size, variant.description, support
+                    );
+                    if variant.supported {
+                        println!(
+                            "    Download: goose local-models download '{}'",
+                            variant.download_id
+                        );
+                    }
                 }
-                println!(
-                    "  Download: goose local-models download {}:<quantization>",
-                    model.repo_id
-                );
             }
         }
         LocalModelsCommand::Download { spec } => {
             println!("Resolving {}...", spec);
-            let (repo_id, file) = hf_models::resolve_model_spec(&spec).await?;
-            let model_id = model_id_from_repo(&repo_id, &file.quantization);
-            let local_path =
-                goose::config::paths::Paths::in_data_dir("models").join(&file.filename);
+            let manager = goose::download_manager::get_download_manager();
+            let resolve_task = hf_models::resolve_local_model_spec(&spec);
+            tokio::pin!(resolve_task);
+            let resolved = loop {
+                tokio::select! {
+                    result = &mut resolve_task => break result?,
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {
+                        print_download_progress(manager);
+                    }
+                }
+            };
+            let model_id = resolved.model_id();
+            let total_size = resolved.total_size();
 
             println!(
-                "Downloading {} ({})...",
+                "\nDownloaded {} ({}). Registering...",
                 model_id,
-                if file.size_bytes > 0 {
-                    format!(
-                        "{:.1}GB",
-                        file.size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
-                    )
+                if total_size > 0 {
+                    format!("{:.1}GB", total_size as f64 / (1024.0 * 1024.0 * 1024.0))
                 } else {
                     "unknown size".to_string()
                 }
             );
 
-            // Register
-            let entry = LocalModelEntry {
-                id: model_id.clone(),
-                repo_id: repo_id.clone(),
-                filename: file.filename.clone(),
-                quantization: file.quantization.clone(),
-                local_path: local_path.clone(),
-                source_url: file.download_url.clone(),
-                settings: Default::default(),
-                size_bytes: file.size_bytes,
-                mmproj_path: None,
-                mmproj_source_url: None,
-                mmproj_size_bytes: 0,
-                shard_files: vec![],
-            };
+            let model_id = hf_models::register_resolved_model(resolved, &spec)?;
 
-            {
-                let mut registry = get_registry()
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
-                registry.add_model(entry)?;
-            }
-
-            // Download
-            let manager = goose::download_manager::get_download_manager();
-            manager
-                .download_model(
-                    format!("{}-model", model_id),
-                    file.download_url,
-                    local_path,
-                    None,
-                )
-                .await?;
-
-            // Poll progress
-            loop {
-                if let Some(progress) = manager.get_progress(&format!("{}-model", model_id)) {
-                    match progress.status {
-                        goose::download_manager::DownloadStatus::Downloading => {
-                            print!(
-                                "\r  {:.1}% ({:.0}MB / {:.0}MB)",
-                                progress.progress_percent,
-                                progress.bytes_downloaded as f64 / (1024.0 * 1024.0),
-                                progress.total_bytes as f64 / (1024.0 * 1024.0),
-                            );
-                            use std::io::Write;
-                            std::io::stdout().flush().ok();
-                        }
-                        goose::download_manager::DownloadStatus::Completed => {
-                            println!("\nDownloaded: {}", model_id);
-                            break;
-                        }
-                        goose::download_manager::DownloadStatus::Failed => {
-                            let err = progress.error.unwrap_or_default();
-                            anyhow::bail!("Download failed: {}", err);
-                        }
-                        goose::download_manager::DownloadStatus::Cancelled => {
-                            println!("\nDownload cancelled.");
-                            break;
-                        }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
+            println!("Registered: {}", model_id);
         }
         LocalModelsCommand::List => {
             let registry = get_registry()
@@ -1824,12 +1811,16 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                 return Ok(());
             }
 
-            println!("{:<50} {:<10} Downloaded", "ID", "Quant");
-            println!("{}", "-".repeat(70));
+            println!(
+                "{:<50} {:<10} {:<12} Downloaded",
+                "ID", "Backend", "Variant"
+            );
+            println!("{}", "-".repeat(88));
             for m in models {
                 println!(
-                    "{:<50} {:<10} {}",
+                    "{:<50} {:<10} {:<12} {}",
                     m.id,
+                    m.backend_id.as_deref().unwrap_or("llamacpp"),
                     m.quantization,
                     if m.is_downloaded() { "✓" } else { "✗" }
                 );
@@ -1841,8 +1832,8 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                 .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
 
             if let Some(entry) = registry.get_model(&id) {
-                if entry.local_path.exists() {
-                    std::fs::remove_file(&entry.local_path)?;
+                for path in entry.all_local_paths() {
+                    std::fs::remove_file(path)?;
                 }
                 registry.remove_model(&id)?;
                 println!("Deleted model: {}", id);
@@ -1889,6 +1880,7 @@ async fn handle_default_session() -> Result<()> {
         quiet: false,
         output_format: "text".to_string(),
         container: None,
+        stats: false,
     })
     .await;
     session.interactive(None).await

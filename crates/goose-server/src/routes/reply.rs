@@ -356,6 +356,7 @@ pub async fn reply(
 
                             stream_event(MessageEvent::Message { message, token_state }, &tx, &cancel_token).await;
                         }
+                        Ok(Some(Ok(AgentEvent::Usage(_)))) => {}
                         Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
                             all_messages = new_messages.clone();
                             stream_event(MessageEvent::UpdateConversation {conversation: new_messages}, &tx, &cancel_token).await;

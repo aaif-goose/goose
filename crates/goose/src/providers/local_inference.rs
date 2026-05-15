@@ -2,7 +2,11 @@ mod backend;
 pub mod hf_models;
 mod llamacpp;
 pub mod local_model_registry;
+mod mlx;
 pub(crate) mod multimodal;
+#[cfg(feature = "mlx")]
+mod native_tool_parsing;
+mod tool_emulation;
 mod tool_parsing;
 
 use crate::config::ExtensionConfig;
@@ -19,6 +23,7 @@ use async_trait::async_trait;
 use backend::{BackendLoadedModel, LocalInferenceBackend};
 use futures::future::BoxFuture;
 use llamacpp::{LlamaCppBackend, LLAMACPP_BACKEND_ID};
+use mlx::{MlxBackend, MLX_BACKEND_ID};
 use rmcp::model::Tool;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -63,8 +68,10 @@ impl InferenceRuntime {
             return Ok(runtime);
         }
         let llamacpp_backend: Arc<dyn LocalInferenceBackend> = Arc::new(LlamaCppBackend::new()?);
+        let mlx_backend: Arc<dyn LocalInferenceBackend> = Arc::new(MlxBackend::new());
         let mut backends = HashMap::new();
         backends.insert(LLAMACPP_BACKEND_ID, llamacpp_backend);
+        backends.insert(MLX_BACKEND_ID, mlx_backend);
         let runtime = Arc::new(Self {
             models: StdMutex::new(HashMap::new()),
             backends,
@@ -82,14 +89,18 @@ impl InferenceRuntime {
 
     fn backend_for_model(
         &self,
-        _resolved: &ResolvedModelPaths,
+        resolved: &ResolvedModelPaths,
     ) -> Result<Arc<dyn LocalInferenceBackend>, ProviderError> {
-        self.backends
-            .get(LLAMACPP_BACKEND_ID)
-            .cloned()
-            .ok_or_else(|| {
-                ProviderError::ExecutionError("Local inference backend unavailable".to_string())
-            })
+        let backend_id = resolved
+            .backend_id
+            .as_deref()
+            .unwrap_or(LLAMACPP_BACKEND_ID);
+        self.backends.get(backend_id).cloned().ok_or_else(|| {
+            ProviderError::ExecutionError(format!(
+                "Local inference backend '{}' unavailable",
+                backend_id
+            ))
+        })
     }
 
     fn get_or_create_model_slot(&self, key: ModelCacheKey) -> ModelSlot {
@@ -119,6 +130,18 @@ pub(super) struct ResolvedModelPaths {
     pub context_limit: usize,
     pub settings: crate::providers::local_inference::local_model_registry::ModelSettings,
     pub mmproj_path: Option<PathBuf>,
+    pub backend_id: Option<String>,
+    pub draft_model_path: Option<PathBuf>,
+}
+
+fn resolve_model_local_path(model_id: &str) -> Option<PathBuf> {
+    use crate::providers::local_inference::local_model_registry::get_registry;
+
+    get_registry()
+        .lock()
+        .ok()?
+        .get_model(model_id)
+        .map(|entry| entry.local_path.clone())
 }
 
 /// Resolve model path, context limit, settings, and mmproj path for a model ID from the registry.
@@ -139,11 +162,23 @@ fn resolve_model_path(model_id: &str) -> Option<ResolvedModelPaths> {
             settings.vision_capable = defaults.vision_capable;
             settings.mmproj_size_bytes = entry.mmproj_size_bytes;
             let mmproj_path = entry.mmproj_path.as_ref().filter(|p| p.exists()).cloned();
+            let backend_id = entry
+                .backend_id
+                .clone()
+                .or_else(|| settings.backend_id.clone());
+            let draft_model = settings
+                .draft_model
+                .clone()
+                .or_else(|| std::env::var("GOOSE_LOCAL_DRAFT_MODEL").ok())
+                .filter(|draft_model| draft_model != model_id);
+            let draft_model_path = draft_model.as_deref().and_then(resolve_model_local_path);
             return Some(ResolvedModelPaths {
                 model_path: entry.local_path.clone(),
                 context_limit: ctx,
                 settings,
                 mmproj_path,
+                backend_id,
+                draft_model_path,
             });
         }
     }
@@ -239,7 +274,10 @@ fn extract_text_content(msg: &Message) -> String {
     for content in &msg.content {
         match content {
             MessageContent::Text(text) => {
-                parts.push(text.text.clone());
+                let text = strip_info_messages(&text.text);
+                if !text.trim().is_empty() {
+                    parts.push(text);
+                }
             }
             MessageContent::ToolRequest(req) => {
                 if let Ok(call) = &req.tool_call {
@@ -287,6 +325,25 @@ fn extract_text_content(msg: &Message) -> String {
     }
 
     parts.join("\n")
+}
+
+fn strip_info_messages(text: &str) -> String {
+    let mut remaining = text;
+    let mut output = String::new();
+
+    while let Some(start) = remaining.find("<info-msg>") {
+        output.push_str(&remaining[..start]);
+        let after_start = &remaining[start + "<info-msg>".len()..];
+        if let Some(end) = after_start.find("</info-msg>") {
+            remaining = &after_start[end + "</info-msg>".len()..];
+        } else {
+            remaining = "";
+            break;
+        }
+    }
+
+    output.push_str(remaining);
+    output.trim().to_string()
 }
 
 /// Build a `ProviderUsage` and write the request log entry.
@@ -461,6 +518,8 @@ impl Provider for LocalInferenceProvider {
         let model_arc = model_slot.clone();
         let backend = backend.clone();
         let model_name = model_config.model_name.clone();
+        let temperature = model_config.temperature;
+        let max_tokens = model_config.max_tokens;
         let context_limit = model_context_limit;
         let settings = model_settings;
         let resolved_model = resolved.clone();
@@ -525,8 +584,11 @@ impl Provider for LocalInferenceProvider {
                 messages: &messages,
                 tools: &tools,
                 settings: &settings,
+                temperature,
+                max_tokens,
                 context_limit,
                 resolved_model: &resolved_model,
+                draft_model_path: resolved_model.draft_model_path.clone(),
                 message_id: &message_id,
                 tx: &tx,
                 log: &mut log,

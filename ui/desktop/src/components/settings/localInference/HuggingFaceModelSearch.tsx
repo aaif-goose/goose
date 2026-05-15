@@ -15,7 +15,7 @@ import {
   getRepoFiles,
   downloadHfModel,
   type HfModelInfo,
-  type HfQuantVariant,
+  type HfModelVariant,
 } from '../../../api';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -26,7 +26,7 @@ const i18n = defineMessages({
   },
   searchPlaceholder: {
     id: 'huggingFaceModelSearch.searchPlaceholder',
-    defaultMessage: 'Search for GGUF models...',
+    defaultMessage: 'Search for local models...'
   },
   loadingVariants: {
     id: 'huggingFaceModelSearch.loadingVariants',
@@ -54,7 +54,7 @@ const i18n = defineMessages({
   },
   noGgufModels: {
     id: 'huggingFaceModelSearch.noGgufModels',
-    defaultMessage: 'No GGUF models found for this query.',
+    defaultMessage: 'No compatible local models found for this query.',
   },
   searchError: {
     id: 'huggingFaceModelSearch.searchError',
@@ -85,10 +85,11 @@ const formatDownloads = (n: number): string => {
 };
 
 interface RepoData {
-  variants: HfQuantVariant[];
+  variants: HfModelVariant[];
   recommendedIndex: number | null;
   availableMemoryBytes: number;
   downloadedQuants: Set<string>;
+  downloadedVariants: Set<string>;
 }
 
 interface Props {
@@ -129,7 +130,7 @@ export const HuggingFaceModelSearch = ({
           query: { q, limit: 20 },
         });
         if (response.data) {
-          // Pre-fetch variants for all results and filter out repos with no suitable quantizations
+          // Pre-fetch variants for all results and filter out repos with no compatible local variants
           const modelsWithVariants = await Promise.all(
             response.data.map(async (model) => {
               try {
@@ -148,10 +149,11 @@ export const HuggingFaceModelSearch = ({
           const validResults = modelsWithVariants.filter(Boolean) as {
             model: HfModelInfo;
             data: {
-              variants: HfQuantVariant[];
+              variants: HfModelVariant[];
               recommended_index?: number | null;
               available_memory_bytes: number;
               downloaded_quants: string[];
+              downloaded_variants: string[];
             };
           }[];
 
@@ -164,6 +166,7 @@ export const HuggingFaceModelSearch = ({
                 recommendedIndex: r.data.recommended_index ?? null,
                 availableMemoryBytes: r.data.available_memory_bytes,
                 downloadedQuants: new Set(r.data.downloaded_quants),
+                downloadedVariants: new Set(r.data.downloaded_variants),
               };
             }
             return next;
@@ -217,6 +220,7 @@ export const HuggingFaceModelSearch = ({
               recommendedIndex: response.data!.recommended_index ?? null,
               availableMemoryBytes: response.data!.available_memory_bytes,
               downloadedQuants: new Set(response.data!.downloaded_quants),
+              downloadedVariants: new Set(response.data!.downloaded_variants),
             },
           }));
         }
@@ -232,8 +236,8 @@ export const HuggingFaceModelSearch = ({
     }
   };
 
-  const startDownload = async (repoId: string, quantization: string) => {
-    const spec = `${repoId}:${quantization}`;
+  const startDownload = async (variant: HfModelVariant) => {
+    const spec = variant.download_id;
     setDownloading((prev) => new Set(prev).add(spec));
     try {
       const response = await downloadHfModel({
@@ -285,6 +289,7 @@ export const HuggingFaceModelSearch = ({
             const recommendedIndex = data?.recommendedIndex ?? null;
             const availableMemory = data?.availableMemoryBytes ?? 0;
             const downloadedQuants = data?.downloadedQuants ?? new Set<string>();
+            const downloadedVariants = data?.downloadedVariants ?? new Set<string>();
 
             return (
               <div key={model.repo_id} className="border border-border-subtle rounded-lg">
@@ -320,20 +325,20 @@ export const HuggingFaceModelSearch = ({
                       </div>
                     )}
                     {variants.map((variant, idx) => {
-                      const dlKey = `${model.repo_id}:${variant.quantization}`;
-                      const isStarting = downloading.has(dlKey);
+                      const isStarting = downloading.has(variant.download_id);
                       const isRecommended = idx === recommendedIndex;
-                      const modelId = `${model.repo_id}:${variant.quantization}`;
+                      const modelId = variant.model_id;
                       const isActiveDownload = activeDownloadIds?.has(modelId) ?? false;
                       const isDownloaded = downloadedModelIds
                         ? downloadedModelIds.has(modelId)
-                        : downloadedQuants.has(variant.quantization);
+                        : downloadedVariants.has(modelId) || downloadedQuants.has(variant.variant_id);
                       const tooLarge =
                         availableMemory > 0 && variant.size_bytes > availableMemory * 0.85;
+                      const isSupported = variant.supported ?? true;
 
                       return (
                         <div
-                          key={variant.quantization}
+                          key={variant.download_id}
                           className={`flex items-center justify-between py-2 px-2 rounded ${
                             isDownloaded
                               ? 'bg-green-500/5 border border-green-500/20'
@@ -344,8 +349,11 @@ export const HuggingFaceModelSearch = ({
                         >
                           <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-3">
                             <div className="flex items-center gap-2">
+                              <span className="text-xs rounded bg-background-muted border border-border-subtle px-1.5 py-0.5 text-text-muted uppercase">
+                                {variant.format}
+                              </span>
                               <span className="text-xs font-mono font-medium text-text-default">
-                                {variant.quantization}
+                                {variant.label}
                               </span>
                               <span className="text-xs text-text-muted">
                                 {formatBytes(variant.size_bytes)}
@@ -359,6 +367,12 @@ export const HuggingFaceModelSearch = ({
                             </div>
                             {variant.description && (
                               <span className="text-xs text-text-muted">{variant.description}</span>
+                            )}
+                            {!isSupported && variant.unsupported_reason && (
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-500">
+                                <AlertTriangle className="w-3 h-3" />
+                                {variant.unsupported_reason}
+                              </span>
                             )}
                             {tooLarge && !isDownloaded && (
                               <span className="inline-flex items-center gap-1 text-xs text-amber-500">
@@ -384,8 +398,8 @@ export const HuggingFaceModelSearch = ({
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={isStarting}
-                              onClick={() => startDownload(model.repo_id, variant.quantization)}
+                              disabled={isStarting || !isSupported}
+                              onClick={() => startDownload(variant)}
                             >
                               {isStarting ? (
                                 <Loader2 className="w-3 h-3 animate-spin" />

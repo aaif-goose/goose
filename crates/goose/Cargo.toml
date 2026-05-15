@@ -29,7 +29,9 @@ local-inference = [
     "dep:symphonia",
     "dep:rubato",
     "dep:byteorder",
+    "dep:hf-hub",
 ]
+mlx = ["local-inference", "dep:mlx-rs", "dep:mlx-lm", "dep:mlx-lm-utils"]
 aws-providers = [
     "dep:aws-config",
     "dep:aws-smithy-types",
@@ -46,6 +48,7 @@ rustls-tls = [
     "jsonwebtoken/aws_lc_rs",
     "oauth2/reqwest",
     "oauth2/rustls-tls",
+    "hf-hub/rustls-tls",
 ]
 native-tls = [
     "dep:pem",
@@ -199,6 +202,10 @@ process-wrap = { version = "9.1.0", features = ["std"] }
 nostr = { version = "0.44.2", features = ["nip44"] }
 nostr-sdk = { version = "0.44.1", features = ["nip44"] }
 rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
+hf-hub = { version = "1.0.0-rc.1", default-features = false, optional = true }
+mlx-rs = { version = "0.25.3", default-features = false, features = ["accelerate", "metal", "safetensors"], optional = true }
+mlx-lm = { git = "https://github.com/jh-block/mlx-lm", optional = true }
+mlx-lm-utils = { git = "https://github.com/jh-block/mlx-lm", optional = true }
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
