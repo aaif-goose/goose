@@ -724,7 +724,8 @@ const getServerSecret = (settings: Settings): string => {
 };
 
 const buildAcpWebSocketUrl = (baseUrl: string, token: string): string => {
-  const url = new URL('/acp', baseUrl);
+  const url = new URL(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/acp`;
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('token', token);
   return url.toString();
