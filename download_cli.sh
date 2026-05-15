@@ -150,7 +150,7 @@ detect_linux_musl() {
     return 0
   fi
 
-  compgen -G "/lib/ld-musl-*.so.*" >/dev/null
+  return 1
 }
 
 if [ "$OS" = "linux" ] && [ -z "$GOOSE_LINUX_VARIANT" ]; then
