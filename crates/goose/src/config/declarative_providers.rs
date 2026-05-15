@@ -849,6 +849,16 @@ mod tests {
         );
         assert_eq!(config.supports_streaming, Some(true));
         assert!(!config.models.is_empty());
+
+        let headers = config
+            .headers
+            .as_ref()
+            .expect("vercel_ai_gateway should set attribution headers");
+        assert_eq!(
+            headers.get("http-referer").map(String::as_str),
+            Some("https://goose-docs.ai")
+        );
+        assert_eq!(headers.get("x-title").map(String::as_str), Some("goose"));
     }
 
     #[test]

@@ -5,6 +5,10 @@
   "description": "Unified gateway to OpenAI, Anthropic, Google, xAI, and many more frontier models via Vercel AI Gateway",
   "api_key_env": "AI_GATEWAY_API_KEY",
   "base_url": "https://ai-gateway.vercel.sh/v1/chat/completions",
+  "headers": {
+    "http-referer": "https://goose-docs.ai",
+    "x-title": "goose"
+  },
   "models": [
     {
       "name": "anthropic/claude-sonnet-4.6",
