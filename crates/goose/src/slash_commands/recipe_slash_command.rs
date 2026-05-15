@@ -199,8 +199,6 @@ pub fn resolve_command(
             .map_err(|e| format!("Recipe /{}: {}", command, e))?
     };
 
-    let param_values_len = param_values.len();
-
     let recipe = build_recipe_from_template(
         recipe_content,
         recipe_dir,
