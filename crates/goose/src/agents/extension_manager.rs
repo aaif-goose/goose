@@ -106,9 +106,7 @@ impl Extension {
     }
 
     fn get_instructions(&self) -> Option<String> {
-        self.server_info
-            .as_ref()
-            .and_then(|info| info.instructions.clone())
+        self.client.get_instructions()
     }
 
     fn get_client(&self) -> McpClientBox {

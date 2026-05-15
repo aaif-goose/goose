@@ -30,7 +30,7 @@ pub fn custom_providers_dir() -> std::path::PathBuf {
     Paths::config_dir().join("custom_providers")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderEngine {
     OpenAI,
@@ -102,10 +102,16 @@ pub struct DeclarativeProviderConfig {
     pub setup_steps: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_non_empty_string")]
     pub fast_model: Option<String>,
+    #[serde(default)]
+    pub preserves_thinking: bool,
 }
 
 fn default_requires_auth() -> bool {
     true
+}
+
+fn should_preserve_thinking_by_default(engine: &ProviderEngine) -> bool {
+    matches!(engine, ProviderEngine::OpenAI)
 }
 
 impl DeclarativeProviderConfig {
@@ -244,6 +250,7 @@ pub struct CreateCustomProviderParams {
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
     pub base_path: Option<String>,
+    pub preserves_thinking: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -259,6 +266,7 @@ pub struct UpdateCustomProviderParams {
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
     pub base_path: Option<String>,
+    pub preserves_thinking: Option<bool>,
 }
 
 pub fn create_custom_provider(
@@ -287,9 +295,14 @@ pub fn create_custom_provider(
         .map(|name| ModelInfo::new(name, 128000))
         .collect();
 
+    let engine = ProviderEngine::from_str(&params.engine)?;
+    let preserves_thinking = params
+        .preserves_thinking
+        .unwrap_or_else(|| should_preserve_thinking_by_default(&engine));
+
     let provider_config = DeclarativeProviderConfig {
         name: id.clone(),
-        engine: ProviderEngine::from_str(&params.engine)?,
+        engine,
         display_name: params.display_name.clone(),
         description: Some(format!("Custom {} provider", params.display_name)),
         api_key_env,
@@ -307,6 +320,7 @@ pub fn create_custom_provider(
         model_doc_link: None,
         setup_steps: vec![],
         fast_model: None,
+        preserves_thinking,
     };
 
     let custom_providers_dir = custom_providers_dir();
@@ -353,9 +367,18 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             .map(|name| ModelInfo::new(name, 128000))
             .collect();
 
+        let engine = ProviderEngine::from_str(&params.engine)?;
+        let preserves_thinking = match params.preserves_thinking {
+            Some(value) => value,
+            None if existing_config.engine != engine => {
+                should_preserve_thinking_by_default(&engine)
+            }
+            None => existing_config.preserves_thinking,
+        };
+
         let updated_config = DeclarativeProviderConfig {
             name: params.id.clone(),
-            engine: ProviderEngine::from_str(&params.engine)?,
+            engine,
             display_name: params.display_name,
             description: existing_config.description,
             api_key_env,
@@ -377,6 +400,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             model_doc_link: existing_config.model_doc_link,
             setup_steps: existing_config.setup_steps,
             fast_model: existing_config.fast_model.clone(),
+            preserves_thinking,
         };
 
         let file_path = custom_provider_file_path(&updated_config.name)?;
@@ -408,7 +432,7 @@ pub fn load_provider(id: &str) -> Result<LoadedProvider> {
 
     if custom_file_path.exists() {
         let content = std::fs::read_to_string(&custom_file_path)?;
-        let config: DeclarativeProviderConfig = serde_json::from_str(&content)?;
+        let config = deserialize_provider_config(&content)?;
         return Ok(LoadedProvider {
             config,
             is_editable: true,
@@ -450,10 +474,22 @@ pub fn load_custom_providers(dir: &Path) -> Result<Vec<DeclarativeProviderConfig
         })
         .map(|path| {
             let content = std::fs::read_to_string(&path)?;
-            serde_json::from_str(&content)
+            deserialize_provider_config(&content)
                 .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))
         })
         .collect()
+}
+
+fn deserialize_provider_config(content: &str) -> Result<DeclarativeProviderConfig> {
+    let raw: serde_json::Value = serde_json::from_str(content)?;
+    let preserves_thinking_was_set = raw.get("preserves_thinking").is_some();
+    let mut config: DeclarativeProviderConfig = serde_json::from_value(raw)?;
+
+    if !preserves_thinking_was_set {
+        config.preserves_thinking = should_preserve_thinking_by_default(&config.engine);
+    }
+
+    Ok(config)
 }
 
 fn load_fixed_providers() -> Result<Vec<DeclarativeProviderConfig>> {
@@ -467,7 +503,7 @@ fn load_fixed_providers() -> Result<Vec<DeclarativeProviderConfig>> {
             .contents_utf8()
             .ok_or_else(|| anyhow::anyhow!("Failed to read file as UTF-8: {:?}", file.path()))?;
 
-        match serde_json::from_str(content) {
+        match deserialize_provider_config(content) {
             Ok(config) => res.push(config),
             Err(e) => {
                 tracing::warn!(
@@ -661,12 +697,116 @@ mod tests {
     #[test]
     fn test_existing_json_files_still_deserialize_without_new_fields() {
         let json = include_str!("../providers/declarative/groq.json");
-        let config: DeclarativeProviderConfig =
-            serde_json::from_str(json).expect("groq.json should parse without env_vars");
+        let config =
+            deserialize_provider_config(json).expect("groq.json should parse without env_vars");
         assert!(config.env_vars.is_none());
         assert!(config.dynamic_models.is_none());
         assert!(config.model_doc_link.is_none());
         assert!(config.setup_steps.is_empty());
+        assert!(config.preserves_thinking);
+    }
+
+    #[test]
+    fn test_custom_openai_provider_missing_preserves_thinking_defaults_true() {
+        let json = r#"{
+            "name": "custom_reasoning",
+            "engine": "openai",
+            "display_name": "Custom Reasoning",
+            "description": null,
+            "api_key_env": "",
+            "base_url": "https://example.com/v1",
+            "models": [{"name": "reasoning-model", "context_limit": 128000}],
+            "headers": null,
+            "timeout_seconds": null,
+            "supports_streaming": true,
+            "requires_auth": false
+        }"#;
+
+        let config = deserialize_provider_config(json).expect("custom provider json should parse");
+
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert!(config.preserves_thinking);
+    }
+
+    #[test]
+    fn test_custom_provider_explicit_preserves_thinking_false_is_kept() {
+        let json = r#"{
+            "name": "custom_strict",
+            "engine": "openai",
+            "display_name": "Custom Strict",
+            "description": null,
+            "api_key_env": "",
+            "base_url": "https://example.com/v1",
+            "models": [{"name": "strict-model", "context_limit": 128000}],
+            "headers": null,
+            "timeout_seconds": null,
+            "supports_streaming": true,
+            "requires_auth": false,
+            "preserves_thinking": false
+        }"#;
+
+        let config = deserialize_provider_config(json).expect("custom provider json should parse");
+
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert!(!config.preserves_thinking);
+    }
+
+    #[test]
+    fn test_zai_json_deserializes() {
+        let json = include_str!("../providers/declarative/zai.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("zai.json should parse");
+        assert_eq!(config.name, "zai");
+        assert_eq!(config.display_name, "Z.AI");
+        assert!(matches!(config.engine, ProviderEngine::Anthropic));
+        assert_eq!(config.api_key_env, "ZHIPU_API_KEY");
+        assert_eq!(config.base_url, "${ZAI_BASE_URL}");
+        assert_eq!(config.catalog_provider_id, Some("zai".to_string()));
+        assert_eq!(config.fast_model, Some("glm-4.5-air".to_string()));
+        assert!(config.preserves_thinking);
+        assert_eq!(config.supports_streaming, Some(true));
+        assert_eq!(config.models[0].name, "glm-5.1");
+
+        let env_vars = config.env_vars.as_ref().expect("env_vars should be set");
+        assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars[0].name, "ZAI_BASE_URL");
+        assert_eq!(
+            env_vars[0].default,
+            Some("https://api.z.ai/api/anthropic".to_string())
+        );
+    }
+
+    #[test]
+    fn test_openai_reasoning_provider_json_preserves_thinking() {
+        for (name, json) in [
+            (
+                "custom_deepseek",
+                include_str!("../providers/declarative/deepseek.json"),
+            ),
+            (
+                "moonshot",
+                include_str!("../providers/declarative/moonshot.json"),
+            ),
+            (
+                "novita",
+                include_str!("../providers/declarative/novita.json"),
+            ),
+            (
+                "nvidia",
+                include_str!("../providers/declarative/nvidia.json"),
+            ),
+            (
+                "custom_tensorix",
+                include_str!("../providers/declarative/tensorix.json"),
+            ),
+            ("zhipu", include_str!("../providers/declarative/zhipu.json")),
+        ] {
+            let config: DeclarativeProviderConfig =
+                serde_json::from_str(json).expect("provider json should parse");
+            assert_eq!(config.name, name);
+            assert!(matches!(config.engine, ProviderEngine::OpenAI));
+            assert!(config.preserves_thinking);
+        }
     }
 
     #[test]
@@ -767,6 +907,7 @@ mod tests {
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
+            preserves_thinking: None,
         })
         .unwrap();
 
@@ -782,6 +923,22 @@ mod tests {
     fn test_load_provider_rejects_path_segments() {
         assert!(load_provider("custom_../secret").is_err());
         assert!(load_provider("custom_..\\secret").is_err());
+    }
+
+    #[test]
+    fn test_opencode_go_json_deserializes() {
+        let json = include_str!("../providers/declarative/opencode_go.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("opencode_go.json should parse");
+        assert_eq!(config.name, "opencode_go");
+        assert_eq!(config.display_name, "OpenCode Go");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "OPENCODE_API_KEY");
+        assert_eq!(config.base_url, "https://opencode.ai/zen/go/v1");
+        assert_eq!(config.catalog_provider_id, Some("opencode-go".to_string()));
+        assert_eq!(config.dynamic_models, Some(true));
+        assert!(config.preserves_thinking);
+        assert_eq!(config.models[0].name, "kimi-k2.6");
     }
 
     #[test]

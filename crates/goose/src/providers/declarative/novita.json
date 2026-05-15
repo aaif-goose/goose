@@ -33,5 +33,6 @@
       "max_tokens": 131072
     }
   ],
+  "preserves_thinking": true,
   "supports_streaming": true
 }

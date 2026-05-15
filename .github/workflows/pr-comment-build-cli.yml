@@ -81,7 +81,7 @@ jobs:
             }
 
       - name: Run command action
-        if: steps.security_check.outputs.authorized == 'true'
+        if: steps.security_check.outputs.authorized == 'true' && github.event_name == 'issue_comment'
         uses: github/command@v2.0.3
         id: command
         with:
@@ -104,7 +104,7 @@ jobs:
           echo "head_sha=$HEAD_SHA"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ steps.command.outputs.issue_number }}
+          ISSUE_NUMBER: ${{ steps.command.outputs.issue_number || github.event.inputs.pr_number }}
 
   build-cli:
     needs: [trigger-on-command]
@@ -136,8 +136,10 @@ jobs:
             ### CLI Builds
 
             Download CLI builds for different platforms:
-            - [📦 Linux (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-unknown-linux-gnu.zip)
-            - [📦 Linux (aarch64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-gnu.zip)
+            - [📦 Linux (x86_64, Ubuntu 22.04-compatible)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-unknown-linux-gnu.zip)
+            - [📦 Linux (aarch64, Ubuntu 22.04-compatible)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-gnu.zip)
+            - [📦 Linux Vulkan (x86_64, Ubuntu 24.04+)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-unknown-linux-gnu-vulkan.zip)
+            - [📦 Linux Vulkan (aarch64, Ubuntu 24.04+)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-gnu-vulkan.zip)
             - [📦 macOS (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-apple-darwin.zip)
             - [📦 macOS (aarch64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-apple-darwin.zip)
             - [📦 Windows (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-pc-windows-msvc.zip)

@@ -4,7 +4,9 @@ use super::base::{
 };
 use super::embedding::{EmbeddingCapable, EmbeddingRequest, EmbeddingResponse};
 use super::errors::ProviderError;
-use super::formats::openai::{create_request, get_usage, response_to_message};
+use super::formats::openai::{
+    create_request_with_options, get_usage, response_to_message, OpenAiFormatOptions,
+};
 use super::formats::openai_responses::{
     create_responses_request, get_responses_usage, responses_api_to_message, ResponsesApiResponse,
 };
@@ -120,6 +122,7 @@ pub struct OpenAiProvider {
     custom_models: Option<Vec<String>>,
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
+    preserve_thinking_context: bool,
 }
 
 impl OpenAiProvider {
@@ -273,6 +276,7 @@ impl OpenAiProvider {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            preserve_thinking_context: !is_openai,
         })
     }
 
@@ -290,6 +294,7 @@ impl OpenAiProvider {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
         }
     }
 
@@ -394,6 +399,7 @@ impl OpenAiProvider {
             custom_models,
             dynamic_models: config.dynamic_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
+            preserve_thinking_context: config.preserves_thinking,
         })
     }
 
@@ -766,13 +772,16 @@ impl Provider for OpenAiProvider {
                 Ok(super::base::stream_from_single_message(message, usage))
             }
         } else {
-            let payload = create_request(
+            let payload = create_request_with_options(
                 model_config,
                 system,
                 messages,
                 tools,
                 &ImageFormat::OpenAi,
                 self.supports_streaming,
+                OpenAiFormatOptions {
+                    preserve_thinking_context: self.preserve_thinking_context,
+                },
             )?;
             let payload = self.sanitize_request_for_compat(payload);
             let mut log = RequestLog::start(model_config, &payload)?;
@@ -907,6 +916,7 @@ mod tests {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
         }
     }
 
@@ -1150,6 +1160,7 @@ mod tests {
             custom_models,
             dynamic_models,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
         }
     }
 
@@ -1177,6 +1188,7 @@ mod tests {
             model_doc_link: None,
             setup_steps: vec![],
             fast_model: None,
+            preserves_thinking: false,
         }
     }
 

@@ -530,6 +530,23 @@ const SETUP_METADATA: &[CuratedSetupMetadata] = &[
         field_overrides: &[],
     },
     CuratedSetupMetadata {
+        provider_id: "zai",
+        category: ProviderSetupCategory::Model,
+        setup_method: ProviderSetupMethod::SingleApiKey,
+        group: ProviderSetupGroup::Additional,
+        display_name: None,
+        description: Some("GLM models via Z.AI"),
+        docs_url: Some("https://docs.z.ai/devpack/tool/goose"),
+        aliases: &["z.ai", "zhipu"],
+        native_connect_query: None,
+        binary_name: None,
+        setup_capabilities: setup_capabilities(false, false, false),
+        show_only_when_installed: false,
+        synthetic: false,
+        secret_field_default: Some(API_KEY_FIELD),
+        field_overrides: &[],
+    },
+    CuratedSetupMetadata {
         provider_id: "xai",
         category: ProviderSetupCategory::Model,
         setup_method: ProviderSetupMethod::SingleApiKey,
@@ -1045,16 +1062,35 @@ pub fn get_provider_template(provider_id: &str) -> Option<ProviderTemplate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::base::ProviderType;
 
     #[tokio::test]
     async fn test_zai_provider() {
-        let openai_providers = get_providers_by_format(ProviderFormat::OpenAI).await;
-        let zai = openai_providers.iter().find(|p| p.id == "zai");
-        assert!(zai.is_some(), "z.ai should be in catalog");
+        let zai = crate::providers::get_from_registry("zai")
+            .await
+            .expect("z.ai should be registered as a declarative provider");
+        assert_eq!(zai.provider_type(), ProviderType::Declarative);
 
-        let zai = zai.unwrap();
-        println!("Z.AI: {} models", zai.model_count);
-        assert!(zai.model_count > 0, "z.ai should have models");
+        let metadata = zai.metadata();
+        assert_eq!(metadata.display_name, "Z.AI");
+        assert!(
+            !metadata.known_models.is_empty(),
+            "z.ai should have known models"
+        );
+        assert!(
+            metadata
+                .config_keys
+                .iter()
+                .any(|key| key.name == "ZHIPU_API_KEY"),
+            "z.ai should expose its API key config"
+        );
+
+        let setup_entries = get_setup_catalog_entries().await;
+        let setup_entry = setup_entries
+            .iter()
+            .find(|entry| entry.provider_id == "zai")
+            .expect("z.ai should be in the setup catalog");
+        assert_eq!(setup_entry.setup_method, ProviderSetupMethod::SingleApiKey);
 
         let template = get_provider_template("zai");
         assert!(template.is_some(), "z.ai should have a template");

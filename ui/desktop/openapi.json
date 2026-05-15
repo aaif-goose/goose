@@ -4718,6 +4718,9 @@
           "name": {
             "type": "string"
           },
+          "preserves_thinking": {
+            "type": "boolean"
+          },
           "requires_auth": {
             "type": "boolean"
           },
@@ -8944,6 +8947,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "preserves_thinking": {
+            "type": "boolean",
+            "nullable": true
           },
           "requires_auth": {
             "type": "boolean"

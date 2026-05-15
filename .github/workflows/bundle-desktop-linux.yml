@@ -21,7 +21,7 @@ name: "Bundle Desktop (Linux)"
 jobs:
   build-desktop-linux:
     name: Build Desktop (Linux)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
@@ -72,17 +72,14 @@ jobs:
             libxrandr2 \
             libgbm1 \
             libxss1 \
-            libasound2t64 \
+            libasound2 \
             rpm \
             fakeroot \
             dpkg-dev \
             protobuf-compiler \
             flatpak \
             flatpak-builder \
-            elfutils \
-            libvulkan-dev \
-            libvulkan1 \
-            glslc
+            elfutils
 
       - name: Setup Flatpak Runtimes
         run: |
@@ -107,7 +104,7 @@ jobs:
           source ./bin/activate-hermit
           export TARGET="x86_64-unknown-linux-gnu"
           rustup target add "${TARGET}"
-          cargo build --release --target ${TARGET} -p goose-server --features vulkan
+          cargo build --release --target ${TARGET} -p goose-server
 
       - name: Copy binaries into Electron folder
         run: |

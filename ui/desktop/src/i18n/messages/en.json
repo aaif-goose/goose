@@ -4614,11 +4614,11 @@
   "toolCallWithResponse.viewSubagentSession": {
     "defaultMessage": "View subagent session"
   },
-  "toolConfirmation.allowToolCall": {
-    "defaultMessage": "Do you allow this tool call?"
+  "toolConfirmation.allowToolCallWithName": {
+    "defaultMessage": "Allow {toolName}?"
   },
-  "toolConfirmation.gooseWouldLikeToCall": {
-    "defaultMessage": "Goose would like to call the above tool. Allow?"
+  "toolConfirmation.gooseWouldLikeToCallWithName": {
+    "defaultMessage": "Goose would like to call {toolName}. Allow?"
   },
   "tunnelSection.appStoreQrInstructions": {
     "defaultMessage": "Scan this QR code with your iPhone camera to install the goose mobile app from the App Store"

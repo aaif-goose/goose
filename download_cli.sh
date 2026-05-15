@@ -18,6 +18,7 @@ set -eu
 #   GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Overrides CANARY. Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   GOOSE_PROVIDER - Optional: provider for goose
 #   GOOSE_MODEL    - Optional: model for goose
+#   GOOSE_LINUX_VARIANT - Optional: Linux package variant to install (`standard` or `vulkan`)
 #   GOOSE_WINDOWS_VARIANT - Optional: Windows package variant to install (`standard` or `cuda`)
 #   CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   CONFIGURE      - Optional: if set to "false", disables running goose configure interactively
@@ -68,6 +69,7 @@ fi
 GOOSE_BIN_DIR="${GOOSE_BIN_DIR:-$DEFAULT_BIN_DIR}"
 RELEASE="${CANARY:-false}"
 CONFIGURE="${CONFIGURE:-true}"
+GOOSE_LINUX_VARIANT="${GOOSE_LINUX_VARIANT:-standard}"
 GOOSE_WINDOWS_VARIANT="${GOOSE_WINDOWS_VARIANT:-standard}"
 if [ -n "${GOOSE_VERSION:-}" ]; then
   # Validate the version format
@@ -173,7 +175,17 @@ elif [ "$OS" = "windows" ]; then
   EXTRACT_CMD="unzip"
   OUT_FILE="goose.exe"
 else
+  case "$GOOSE_LINUX_VARIANT" in
+    standard|vulkan) ;;
+    *)
+      echo "Error: Unsupported GOOSE_LINUX_VARIANT '$GOOSE_LINUX_VARIANT'. Expected 'standard' or 'vulkan'."
+      exit 1
+      ;;
+  esac
   FILE="goose-$ARCH-unknown-linux-gnu.tar.bz2"
+  if [ "$GOOSE_LINUX_VARIANT" = "vulkan" ]; then
+    FILE="goose-$ARCH-unknown-linux-gnu-vulkan.tar.bz2"
+  fi
   EXTRACT_CMD="tar"
 fi
 
