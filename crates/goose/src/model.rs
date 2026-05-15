@@ -113,6 +113,8 @@ impl<'de> Deserialize<'de> for ModelConfig {
             max_tokens: Option<i32>,
             toolshim: bool,
             toolshim_model: Option<String>,
+            #[serde(default)]
+            fast_model_config: Option<Box<ModelConfig>>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             request_params: Option<HashMap<String, Value>>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -127,7 +129,7 @@ impl<'de> Deserialize<'de> for ModelConfig {
             max_tokens: raw.max_tokens,
             toolshim: raw.toolshim,
             toolshim_model: raw.toolshim_model,
-            fast_model_config: None,
+            fast_model_config: raw.fast_model_config,
             request_params: raw.request_params,
             reasoning: raw.reasoning,
         };
@@ -572,6 +574,33 @@ mod tests {
                 .get_config_param::<String>("nonexistent", "NONEXISTENT_CONFIG_KEY"),
             None
         );
+    }
+
+    #[test]
+    fn test_deserialize_preserves_fast_model_config() {
+        let config: ModelConfig = serde_json::from_value(serde_json::json!({
+            "model_name": "primary-model",
+            "context_limit": null,
+            "temperature": null,
+            "max_tokens": null,
+            "toolshim": false,
+            "toolshim_model": null,
+            "fast_model_config": {
+                "model_name": "fast-model",
+                "context_limit": 4096,
+                "temperature": null,
+                "max_tokens": 1024,
+                "toolshim": false,
+                "toolshim_model": null
+            }
+        }))
+        .unwrap();
+
+        let fast_config = config.fast_model_config.as_ref().unwrap();
+        assert_eq!(fast_config.model_name, "fast-model");
+        assert_eq!(fast_config.context_limit, Some(4096));
+        assert_eq!(fast_config.max_tokens, Some(1024));
+        assert_eq!(config.use_fast_model().model_name, "fast-model");
     }
 
     mod thinking_effort_tests {

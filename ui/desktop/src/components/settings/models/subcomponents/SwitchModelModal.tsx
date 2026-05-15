@@ -197,8 +197,7 @@ function isClaudeModel(name: string | null | undefined): boolean {
 
 function isOpenAIReasoningModel(name: string | null | undefined): boolean {
   if (typeof name !== 'string') return false;
-  const base = name.replace(/^(goose-|databricks-)/, '');
-  return /^(o1|o3|o4|gpt-5)/.test(base);
+  return /(?:^|[-/])(?:o\d+(?:$|-)|gpt-5(?:$|[-.]))/.test(name.toLowerCase());
 }
 
 function isGemini3Model(name: string | null | undefined): boolean {
