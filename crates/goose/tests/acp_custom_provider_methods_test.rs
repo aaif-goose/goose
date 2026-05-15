@@ -68,8 +68,8 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         assert!(
             catalog_providers
                 .iter()
-                .any(|provider| provider.get("providerId") == Some(&serde_json::json!("zai"))),
-            "OpenAI-compatible catalog should include z.ai"
+                .any(|provider| provider.get("providerId") == Some(&serde_json::json!("opencode"))),
+            "OpenAI-compatible catalog should include OpenCode Zen"
         );
 
         let setup_catalog = send_custom(
