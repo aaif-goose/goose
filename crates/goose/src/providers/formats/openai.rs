@@ -164,7 +164,13 @@ fn extract_content_and_signature(
 }
 
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
-    format_messages_with_options(messages, image_format, OpenAiFormatOptions::default())
+    format_messages_with_options(
+        messages,
+        image_format,
+        OpenAiFormatOptions {
+            preserve_thinking_context: true,
+        },
+    )
 }
 
 pub fn format_messages_with_options(
@@ -2797,7 +2803,7 @@ data: [DONE]"#;
     }
 
     #[test]
-    fn test_format_messages_omits_reasoning_content_by_default() -> anyhow::Result<()> {
+    fn test_format_messages_preserves_reasoning_content_for_legacy_compat() -> anyhow::Result<()> {
         let message = Message::assistant()
             .with_content(MessageContent::thinking(
                 "Thinking through the problem...",
@@ -2806,6 +2812,33 @@ data: [DONE]"#;
             .with_text("The result is 42");
 
         let spec = format_messages(&[message], &ImageFormat::OpenAi);
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["content"], "The result is 42");
+        assert_eq!(
+            spec[0]["reasoning_content"],
+            "Thinking through the problem..."
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_messages_with_options_can_omit_reasoning_content() -> anyhow::Result<()> {
+        let message = Message::assistant()
+            .with_content(MessageContent::thinking(
+                "Thinking through the problem...",
+                "",
+            ))
+            .with_text("The result is 42");
+
+        let spec = format_messages_with_options(
+            &[message],
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: false,
+            },
+        );
 
         assert_eq!(spec.len(), 1);
         assert_eq!(spec[0]["content"], "The result is 42");
