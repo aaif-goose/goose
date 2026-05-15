@@ -9057,6 +9057,10 @@
           "provider": {
             "type": "string"
           },
+          "reasoning": {
+            "type": "boolean",
+            "nullable": true
+          },
           "request_params": {
             "type": "object",
             "additionalProperties": {},

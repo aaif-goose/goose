@@ -77,6 +77,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
               provider: providerName,
               model: modelName,
               context_limit: model.context_limit,
+              reasoning: model.reasoning,
               request_params: model.request_params,
             },
           });

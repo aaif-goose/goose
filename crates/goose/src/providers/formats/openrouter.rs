@@ -104,10 +104,16 @@ pub fn apply_reasoning_config(payload: &mut Value, model_config: &ModelConfig) {
     };
 
     if let Some(obj) = payload.as_object_mut() {
-        obj.remove("reasoning_effort");
+        let clamped_effort = obj
+            .remove("reasoning_effort")
+            .and_then(|value| value.as_str().map(str::to_owned));
+        if clamped_effort.is_none() && model_config.reasoning != Some(true) {
+            return;
+        }
+
         obj.insert(
             "reasoning".to_string(),
-            json!({ "effort": reasoning_effort_for_openrouter(effort) }),
+            json!({ "effort": clamped_effort.as_deref().unwrap_or_else(|| reasoning_effort_for_openrouter(effort)) }),
         );
     }
 }
@@ -190,8 +196,42 @@ mod tests {
 
         apply_reasoning_config(&mut payload, &model_config);
 
-        assert_eq!(payload["reasoning"], json!({ "effort": "xhigh" }));
+        assert_eq!(payload["reasoning"], json!({ "effort": "high" }));
         assert!(payload.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn test_apply_reasoning_config_uses_reasoning_metadata() {
+        let mut payload = json!({
+            "model": "x-ai/grok-4",
+            "messages": []
+        });
+        let mut model_config = ModelConfig::new_or_fail("x-ai/grok-4");
+        let mut params = HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("high"));
+        model_config.request_params = Some(params);
+        model_config.reasoning = Some(true);
+
+        apply_reasoning_config(&mut payload, &model_config);
+
+        assert_eq!(payload["reasoning"], json!({ "effort": "high" }));
+    }
+
+    #[test]
+    fn test_apply_reasoning_config_skips_non_reasoning_models() {
+        let mut payload = json!({
+            "model": "openai/gpt-4o",
+            "messages": []
+        });
+        let mut model_config = ModelConfig::new_or_fail("openai/gpt-4o");
+        let mut params = HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("high"));
+        model_config.request_params = Some(params);
+        model_config.reasoning = Some(false);
+
+        apply_reasoning_config(&mut payload, &model_config);
+
+        assert!(payload.get("reasoning").is_none());
     }
 
     #[test]
@@ -204,6 +244,7 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
         model_config.request_params = Some(params);
+        model_config.reasoning = Some(true);
 
         apply_reasoning_config(&mut payload, &model_config);
 

@@ -1652,6 +1652,7 @@ export type UpdateProviderRequest = {
     context_limit?: number | null;
     model?: string | null;
     provider: string;
+    reasoning?: boolean | null;
     request_params?: {
         [key: string]: unknown;
     } | null;

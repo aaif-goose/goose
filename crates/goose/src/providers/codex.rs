@@ -60,13 +60,30 @@ pub struct CodexProvider {
 }
 
 impl CodexProvider {
+    fn legacy_reasoning_effort() -> Option<crate::model::ThinkingEffort> {
+        Config::global()
+            .get_param::<String>("CODEX_REASONING_EFFORT")
+            .ok()
+            .and_then(|effort| match effort.to_lowercase().as_str() {
+                "none" => Some(crate::model::ThinkingEffort::Off),
+                "low" => Some(crate::model::ThinkingEffort::Low),
+                "medium" => Some(crate::model::ThinkingEffort::Medium),
+                "high" => Some(crate::model::ThinkingEffort::High),
+                "xhigh" => Some(crate::model::ThinkingEffort::Max),
+                _ => None,
+            })
+    }
+
     fn map_thinking_effort(
         _model_name: &str,
         effort: Option<crate::model::ThinkingEffort>,
     ) -> Option<String> {
         use crate::model::ThinkingEffort;
-        match effort.unwrap_or(ThinkingEffort::High) {
-            ThinkingEffort::Off => None,
+        match effort
+            .or_else(Self::legacy_reasoning_effort)
+            .unwrap_or(ThinkingEffort::High)
+        {
+            ThinkingEffort::Off => Some("none".to_string()),
             ThinkingEffort::Low => Some("low".to_string()),
             ThinkingEffort::Medium => Some("medium".to_string()),
             ThinkingEffort::High => Some("high".to_string()),
@@ -1223,13 +1240,18 @@ mod tests {
     fn test_map_thinking_effort() {
         use crate::model::ThinkingEffort;
 
+        let _guard = env_lock::lock_env([
+            ("CODEX_REASONING_EFFORT", None::<&str>),
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+        ]);
+
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Off)),
-            None
+            Some("none".to_string())
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2", Some(ThinkingEffort::Off)),
-            None
+            Some("none".to_string())
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Max)),
@@ -1238,6 +1260,19 @@ mod tests {
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.2-codex", None),
             Some("high".to_string())
+        );
+    }
+
+    #[test]
+    fn test_map_thinking_effort_uses_legacy_codex_env() {
+        let _guard = env_lock::lock_env([
+            ("CODEX_REASONING_EFFORT", Some("low")),
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+        ]);
+
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.2-codex", None),
+            Some("low".to_string())
         );
     }
 

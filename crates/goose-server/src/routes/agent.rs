@@ -48,6 +48,7 @@ pub struct UpdateProviderRequest {
     model: Option<String>,
     session_id: String,
     context_limit: Option<usize>,
+    reasoning: Option<bool>,
     request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
@@ -608,6 +609,7 @@ async fn update_agent_provider(
     if let Some(request_params) = payload.request_params {
         model_config = model_config.with_merged_request_params(request_params);
     }
+    model_config.reasoning = payload.reasoning;
 
     let extensions =
         EnabledExtensionsState::for_session(state.session_manager(), &payload.session_id, config)

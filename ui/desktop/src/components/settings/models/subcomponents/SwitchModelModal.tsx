@@ -461,6 +461,10 @@ export const SwitchModelModal = ({
           subtext: providerDisplayName,
         } as Model;
       }
+      modelObj = {
+        ...modelObj,
+        reasoning: selectedModelReasoning ?? modelObj.reasoning,
+      };
 
       if (showThinkingControl) {
         const effort = thinkingEffort ?? 'off';
