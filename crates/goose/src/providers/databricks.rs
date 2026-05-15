@@ -142,6 +142,8 @@ impl AuthProvider for DatabricksAuthProvider {
 pub struct DatabricksProvider {
     #[serde(skip)]
     api_client: ApiClient,
+    #[serde(skip)]
+    host: String,
     auth: DatabricksAuth,
     model: ModelConfig,
     image_format: ImageFormat,
@@ -198,13 +200,14 @@ impl DatabricksProvider {
         }));
 
         let api_client = ApiClient::with_timeout(
-            host,
+            host.clone(),
             auth_method,
             Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )?;
 
         let mut provider = Self {
             api_client,
+            host,
             auth,
             model: model.clone(),
             image_format: ImageFormat::OpenAi,
@@ -266,13 +269,14 @@ impl DatabricksProvider {
         }));
 
         let api_client = ApiClient::with_timeout(
-            host,
+            host.clone(),
             auth_method,
             Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
         )?;
 
         Ok(Self {
             api_client,
+            host,
             auth,
             model,
             image_format: ImageFormat::OpenAi,
@@ -498,10 +502,11 @@ impl DatabricksProvider {
         &self,
         endpoint_name: &str,
     ) -> Result<DatabricksEndpointInfo, ProviderError> {
+        let cache_key = format!("{}:{}", self.host, endpoint_name);
         let cached = DATABRICKS_ENDPOINT_INFO_CACHE
             .lock()
             .unwrap()
-            .get(endpoint_name)
+            .get(&cache_key)
             .cloned();
 
         if let Some(cached) = cached {
@@ -514,7 +519,7 @@ impl DatabricksProvider {
 
         let info = self.resolve_endpoint_info(endpoint_name).await?;
         DATABRICKS_ENDPOINT_INFO_CACHE.lock().unwrap().insert(
-            endpoint_name.to_string(),
+            cache_key,
             CachedDatabricksEndpointInfo {
                 info: info.clone(),
                 fetched_at: Instant::now(),
@@ -662,10 +667,10 @@ impl Provider for DatabricksProvider {
 
         if is_responses_model {
             let responses_model_config;
-            let request_model_config = if endpoint_name != model_config.model_name {
+            let request_model_config = if effective_model_name != model_config.model_name {
                 responses_model_config = {
                     let mut config = model_config.clone();
-                    config.model_name = endpoint_name.clone();
+                    config.model_name = effective_model_name.to_string();
                     config
                 };
                 &responses_model_config
@@ -674,6 +679,7 @@ impl Provider for DatabricksProvider {
             };
             let mut payload =
                 create_responses_request(request_model_config, system, messages, tools)?;
+            payload["model"] = Value::String(endpoint_name.clone());
             if payload.get("reasoning").is_none() {
                 if let Some(effort) = model_config.thinking_effort().and_then(|effort| {
                     super::utils::openai_reasoning_effort_for_thinking(effective_model_name, effort)
@@ -935,6 +941,7 @@ mod tests {
                 super::super::api_client::AuthMethod::NoAuth,
             )
             .unwrap(),
+            host: "https://example.com".to_string(),
             auth: DatabricksAuth::Token("fake".into()),
             model: ModelConfig::new_or_fail("databricks-gpt-5.4"),
             image_format: ImageFormat::OpenAi,
