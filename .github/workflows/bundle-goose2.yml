@@ -737,7 +737,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows installers with Azure Trusted Signing
-        uses: azure/trusted-signing-action@db7a3a6bd3912025c705162fb7475389f5b69ec6 # v1
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v1
         with:
           endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}

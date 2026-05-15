@@ -222,7 +222,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows executables with Azure Trusted Signing
-        uses: azure/trusted-signing-action@b443cf8ea4124818d2ea9f043cba29fc3ec47b16  # v1.2.0
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
         with:
           endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}
