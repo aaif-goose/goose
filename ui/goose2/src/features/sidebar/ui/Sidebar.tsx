@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  IconChartBar,
   IconHistory,
   IconHome,
   IconLayoutSidebar,
@@ -149,6 +150,11 @@ export function Sidebar({
       id: "session-history",
       label: t("navigation.sessionHistory"),
       icon: IconHistory,
+    },
+    {
+      id: "slice-explorer",
+      label: t("navigation.sliceExplorer"),
+      icon: IconChartBar,
     },
   ];
 

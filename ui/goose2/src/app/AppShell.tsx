@@ -56,7 +56,8 @@ export type AppView =
   | "extensions"
   | "agents"
   | "projects"
-  | "session-history";
+  | "session-history"
+  | "slice-explorer";
 
 const SIDEBAR_DEFAULT_WIDTH = 240;
 const SIDEBAR_MIN_WIDTH = 180;

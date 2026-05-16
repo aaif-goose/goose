@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, Runtime};
 #[cfg(target_os = "macos")]
 use tauri::WebviewWindow;
+use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(Deserialize, Debug)]
 struct TestCommand {
@@ -293,8 +293,7 @@ fn take_screenshot<R: Runtime>(window: &WebviewWindow<R>, path: &str) -> TestRes
 
 fn start_server<R: Runtime>(app_handle: AppHandle<R>) {
     std::thread::spawn(move || {
-        let port =
-            std::env::var("APP_TEST_DRIVER_PORT").unwrap_or_else(|_| "9999".to_string());
+        let port = std::env::var("APP_TEST_DRIVER_PORT").unwrap_or_else(|_| "9999".to_string());
         let addr = format!("127.0.0.1:{port}");
         let listener = match TcpListener::bind(&addr) {
             Ok(l) => l,
