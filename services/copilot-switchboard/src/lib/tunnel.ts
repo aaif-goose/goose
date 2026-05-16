@@ -11,6 +11,8 @@ export interface TunnelRunParams {
   headSha: string;
   prUrl: string;
   checkRunId?: number;
+  /** Comment that triggered this review (when invoked via `@goose-copilot review`). */
+  commentId?: number;
 }
 
 export interface TunnelCommentParams {
@@ -22,6 +24,7 @@ export interface TunnelCommentParams {
   prUrl: string;
   commentBody: string;
   commenter: string;
+  commentId: number;
 }
 
 export interface TunnelRunResult {
@@ -67,6 +70,7 @@ export async function runReviewViaTunnel(
     head_sha: params.headSha,
     pr_url: params.prUrl,
     check_run_id: params.checkRunId,
+    comment_id: params.commentId,
   });
 }
 
@@ -83,5 +87,6 @@ export async function runCommentViaTunnel(
     pr_url: params.prUrl,
     comment_body: params.commentBody,
     commenter: params.commenter,
+    comment_id: params.commentId,
   });
 }

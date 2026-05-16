@@ -165,6 +165,11 @@ export type Conversation = Array<Message>;
 
 export type CopilotCommentRequest = {
     comment_body: string;
+    /**
+     * Issue-comment id we're replying to. goosed reacts on this comment
+     * (`+1` on success, `confused` on failure) when done.
+     */
+    comment_id?: number | null;
     commenter: string;
     github_token: string;
     /**
@@ -182,6 +187,11 @@ export type CopilotReviewRequest = {
      * The endpoint updates this Check Run on completion.
      */
     check_run_id?: number | null;
+    /**
+     * Issue-comment id when the review was triggered via `@goose-copilot review`.
+     * goosed reacts on this comment when done.
+     */
+    comment_id?: number | null;
     /**
      * Short-lived GitHub App installation token, scoped to the user's repos.
      */

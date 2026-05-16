@@ -17,10 +17,8 @@ static TEMPLATES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/config/signup_
 
 #[derive(Debug, Deserialize)]
 struct CallbackQuery {
-    installation_id: Option<String>,
     code: Option<String>,
     state: Option<String>,
-    setup_action: Option<String>,
     error: Option<String>,
 }
 
@@ -69,17 +67,6 @@ async fn handle_callback(
         );
     }
 
-    let installation_id = match params.installation_id.and_then(|s| s.parse::<u64>().ok()) {
-        Some(id) => id,
-        None => {
-            return render(
-                &TEMPLATES_DIR,
-                "error.html",
-                StatusCode::BAD_REQUEST,
-                "missing installation_id",
-            )
-        }
-    };
     let code = match params.code {
         Some(c) => c,
         None => {
@@ -100,21 +87,9 @@ async fn handle_callback(
             "state mismatch",
         );
     }
-    if params.setup_action.as_deref() != Some("install") {
-        return render(
-            &TEMPLATES_DIR,
-            "error.html",
-            StatusCode::BAD_REQUEST,
-            "unexpected setup_action",
-        );
-    }
-
     let mut tx_guard = inner.tx.lock().await;
     if let Some(tx) = tx_guard.take() {
-        let _ = tx.send(InstallCallback {
-            installation_id,
-            oauth_code: code,
-        });
+        let _ = tx.send(InstallCallback { oauth_code: code });
     }
 
     render(&TEMPLATES_DIR, "success.html", StatusCode::OK, "")

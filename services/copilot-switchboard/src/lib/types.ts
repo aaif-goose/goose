@@ -21,7 +21,6 @@ export interface InstallRecord {
 }
 
 export interface RegisterRequest {
-  installation_id: number;
   oauth_code: string;
   agent_id: string;
   tunnel_secret: string;
@@ -52,6 +51,7 @@ export interface PullRequestEvent {
 export interface IssueCommentEvent {
   action: 'created' | 'edited' | 'deleted';
   comment: {
+    id: number;
     body: string;
     user: { login: string; type: 'User' | 'Bot' | 'Organization' };
   };

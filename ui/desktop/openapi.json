@@ -4700,6 +4700,13 @@
           "comment_body": {
             "type": "string"
           },
+          "comment_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Issue-comment id we're replying to. goosed reacts on this comment\n(`+1` on success, `confused` on failure) when done.",
+            "nullable": true,
+            "minimum": 0
+          },
           "commenter": {
             "type": "string"
           },
@@ -4737,6 +4744,13 @@
             "type": "integer",
             "format": "int64",
             "description": "The endpoint updates this Check Run on completion.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "comment_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Issue-comment id when the review was triggered via `@goose-copilot review`.\ngoosed reacts on this comment when done.",
             "nullable": true,
             "minimum": 0
           },

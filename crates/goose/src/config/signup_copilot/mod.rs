@@ -13,13 +13,16 @@ const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Deserialize)]
 pub struct InstallCallback {
-    pub installation_id: u64,
     pub oauth_code: String,
 }
 
 pub struct CopilotInstallFlow {
     state: String,
     server_shutdown_tx: Option<oneshot::Sender<()>>,
+    /// Public GitHub OAuth client ID. When set, the flow uses the
+    /// /login/oauth/authorize endpoint instead of /apps/.../installations/new,
+    /// which works whether the app is already installed for the user or not.
+    oauth_client_id: Option<String>,
 }
 
 impl CopilotInstallFlow {
@@ -32,10 +35,27 @@ impl CopilotInstallFlow {
         Self {
             state,
             server_shutdown_tx: None,
+            oauth_client_id: None,
         }
     }
 
+    pub fn with_oauth_client_id(mut self, oauth_client_id: String) -> Self {
+        self.oauth_client_id = Some(oauth_client_id);
+        self
+    }
+
     pub fn install_url(&self) -> String {
+        // OAuth authorize URL: always redirects to redirect_uri with
+        // (code, state, installation_id) regardless of install state.
+        if let Some(client_id) = &self.oauth_client_id {
+            return format!(
+                "https://github.com/login/oauth/authorize?client_id={}&state={}&redirect_uri={}",
+                client_id,
+                self.state,
+                urlencoding::encode(&Self::callback_url())
+            );
+        }
+        // Fallback: legacy install URL — only works on first install.
         format!(
             "https://github.com/apps/{}/installations/new?state={}",
             APP_SLUG, self.state

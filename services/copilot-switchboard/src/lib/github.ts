@@ -175,6 +175,26 @@ export async function postIssueComment(
   if (!res.ok) throw await ghError(res, 'Failed to post issue comment');
 }
 
+export type Reaction = '+1' | '-1' | 'laugh' | 'confused' | 'heart' | 'hooray' | 'rocket' | 'eyes';
+
+export async function postCommentReaction(
+  fullName: string,
+  commentId: number,
+  content: Reaction,
+  token: string
+): Promise<void> {
+  const res = await fetch(
+    `${API}/repos/${fullName}/issues/comments/${commentId}/reactions`,
+    {
+      method: 'POST',
+      headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    }
+  );
+  // 200 = already reacted, 201 = newly reacted; both are fine.
+  if (!res.ok) throw await ghError(res, `Failed to react ${content}`);
+}
+
 function ghHeaders(token: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,

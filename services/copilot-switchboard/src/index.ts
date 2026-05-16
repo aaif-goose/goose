@@ -42,6 +42,16 @@ export default {
       return handleRegisterRoute(request, env);
     }
 
+    // Public OAuth client ID for goosed to build the /login/oauth/authorize URL.
+    // The OAuth *secret* never leaves the Worker — only the client_id does, and
+    // GitHub treats client_ids as public values.
+    if (request.method === 'GET' && url.pathname === '/copilot/oauth-config') {
+      return new Response(
+        JSON.stringify({ oauth_client_id: env.GITHUB_OAUTH_CLIENT_ID }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+
     return new Response('Not Found', { status: 404 });
   },
 };

@@ -45,7 +45,11 @@ pub struct CopilotSetupResponse {
 async fn setup(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CopilotSetupResponse>, ErrorResponse> {
-    let mut flow = CopilotInstallFlow::new();
+    let oauth_client_id = fetch_oauth_client_id()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("oauth-config lookup failed: {e}")))?;
+
+    let mut flow = CopilotInstallFlow::new().with_oauth_client_id(oauth_client_id);
     let callback = flow
         .complete_flow()
         .await
@@ -64,7 +68,6 @@ async fn setup(
         .ok_or_else(|| ErrorResponse::internal("tunnel URL is missing the agent id".to_string()))?;
 
     let body = serde_json::json!({
-        "installation_id": callback.installation_id,
         "oauth_code": callback.oauth_code,
         "agent_id": agent_id,
         "tunnel_secret": tunnel_info.secret,
@@ -84,13 +87,44 @@ async fn setup(
         )));
     }
 
+    #[derive(Deserialize)]
+    struct RegisterResponse {
+        installation_id: u64,
+    }
+    let register: RegisterResponse = res
+        .json()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("parse register response: {e}")))?;
+
     Ok(Json(CopilotSetupResponse {
-        installation_id: callback.installation_id,
+        installation_id: register.installation_id,
     }))
 }
 
 fn switchboard_url() -> String {
     env::var(SWITCHBOARD_URL_ENV).unwrap_or_else(|_| SWITCHBOARD_URL.to_string())
+}
+
+/// Fetch the public OAuth client ID from the switchboard. The client *id* is
+/// public — only the client *secret* stays on the worker.
+async fn fetch_oauth_client_id() -> Result<String> {
+    #[derive(Deserialize)]
+    struct OAuthConfig {
+        oauth_client_id: String,
+    }
+    let res = Client::new()
+        .get(format!("{}/copilot/oauth-config", switchboard_url()))
+        .send()
+        .await
+        .context("switchboard unreachable")?;
+    if !res.status().is_success() {
+        bail!("switchboard returned {}", res.status());
+    }
+    let cfg: OAuthConfig = res.json().await.context("parse oauth-config")?;
+    if cfg.oauth_client_id.trim().is_empty() {
+        bail!("switchboard returned an empty oauth_client_id");
+    }
+    Ok(cfg.oauth_client_id)
 }
 
 fn extract_agent_id(tunnel_url: &str) -> Option<String> {
@@ -111,6 +145,10 @@ pub struct CopilotReviewRequest {
     /// The endpoint updates this Check Run on completion.
     #[serde(default)]
     pub check_run_id: Option<u64>,
+    /// Issue-comment id when the review was triggered via `@goose-copilot review`.
+    /// goosed reacts on this comment when done.
+    #[serde(default)]
+    pub comment_id: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -135,8 +173,16 @@ async fn review(
 ) -> Result<Json<CopilotReviewResponse>, ErrorResponse> {
     let pr_label = format!("{} #{}", req.repo, req.pr_number);
     tokio::spawn(async move {
-        if let Err(e) = run_review(req).await {
+        let result = run_review(req.clone()).await;
+        if let Err(e) = &result {
             tracing::error!("[copilot] review {} failed: {:#}", pr_label, e);
+        }
+        if let Some(id) = req.comment_id {
+            let reaction = if result.is_ok() { "+1" } else { "confused" };
+            if let Err(e) = post_comment_reaction(&req.repo, id, reaction, &req.github_token).await
+            {
+                tracing::warn!("[copilot] review reaction failed: {:#}", e);
+            }
         }
     });
     Ok(Json(CopilotReviewResponse { accepted: true }))
@@ -471,6 +517,10 @@ pub struct CopilotCommentRequest {
     /// edits the agent makes back to the PR.
     #[serde(default)]
     pub head_ref: String,
+    /// Issue-comment id we're replying to. goosed reacts on this comment
+    /// (`+1` on success, `confused` on failure) when done.
+    #[serde(default)]
+    pub comment_id: Option<u64>,
 }
 
 #[utoipa::path(
@@ -490,8 +540,16 @@ async fn comment(
 ) -> Result<Json<CopilotReviewResponse>, ErrorResponse> {
     let pr_label = format!("{} #{}", req.repo, req.pr_number);
     tokio::spawn(async move {
-        if let Err(e) = run_comment_reply(req).await {
+        let result = run_comment_reply(req.clone()).await;
+        if let Err(e) = &result {
             tracing::error!("[copilot] comment {} failed: {:#}", pr_label, e);
+        }
+        if let Some(id) = req.comment_id {
+            let reaction = if result.is_ok() { "+1" } else { "confused" };
+            if let Err(e) = post_comment_reaction(&req.repo, id, reaction, &req.github_token).await
+            {
+                tracing::warn!("[copilot] comment reaction failed: {:#}", e);
+            }
         }
     });
     Ok(Json(CopilotReviewResponse { accepted: true }))
@@ -635,6 +693,27 @@ fn extract_final_assistant_text(stdout: &str) -> Result<String> {
     Ok(text.trim().to_string())
 }
 
+/// React on an issue comment (`eyes`, `+1`, `-1`, `confused`, …). 200 means
+/// the bot already had that reaction; 201 means new — both are success.
+async fn post_comment_reaction(
+    repo: &str,
+    comment_id: u64,
+    content: &str,
+    github_token: &str,
+) -> Result<()> {
+    let url = format!("https://api.github.com/repos/{repo}/issues/comments/{comment_id}/reactions");
+    github_client()
+        .post(&url)
+        .header("Authorization", format!("token {github_token}"))
+        .json(&serde_json::json!({ "content": content }))
+        .send()
+        .await
+        .context("POST comment reaction")?
+        .error_for_status()
+        .context("POST comment reaction rejected")?;
+    Ok(())
+}
+
 async fn post_pr_comment(req: &CopilotCommentRequest, reply: &str) -> Result<()> {
     let url = format!(
         "https://api.github.com/repos/{}/issues/{}/comments",
@@ -756,6 +835,7 @@ mod tests {
             head_sha: "h".into(),
             pr_url: "u".into(),
             check_run_id: None,
+            comment_id: None,
         };
         let findings = vec![Finding {
             severity: "high".into(),
@@ -786,6 +866,7 @@ mod tests {
             head_sha: "h".into(),
             pr_url: "u".into(),
             check_run_id: None,
+            comment_id: None,
         };
         let findings = vec![Finding {
             severity: "medium".into(),
@@ -831,6 +912,7 @@ mod tests {
             head_sha: "h".into(),
             pr_url: "u".into(),
             check_run_id: None,
+            comment_id: None,
         };
         let findings = vec![Finding {
             severity: "high".into(),

@@ -7,9 +7,10 @@ import {
   generateAppJwt,
   getInstallationToken,
   getPullRequestHead,
+  postCommentReaction,
   postIssueComment,
 } from './github';
-import { exchangeCodeAndVerify } from './oauth';
+import { exchangeCodeAndResolve } from './oauth';
 import { deleteInstall, loadInstall, saveInstall } from './registry';
 import { runCommentViaTunnel, runReviewViaTunnel } from './tunnel';
 import type {
@@ -26,7 +27,6 @@ const REVIEW_TRIGGER_RE = /(^|\s)@goose-copilot\s+review\s*$/im;
 export async function handleRegister(req: RegisterRequest, env: Env): Promise<Response> {
   if (
     !req ||
-    typeof req.installation_id !== 'number' ||
     typeof req.oauth_code !== 'string' ||
     typeof req.agent_id !== 'string' ||
     typeof req.tunnel_secret !== 'string' ||
@@ -38,28 +38,35 @@ export async function handleRegister(req: RegisterRequest, env: Env): Promise<Re
     return jsonError(400, 'tunnel_url must be an https URL');
   }
 
-  const verification = await exchangeCodeAndVerify({
+  const resolution = await exchangeCodeAndResolve({
     clientId: env.GITHUB_OAUTH_CLIENT_ID,
     clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
+    appId: Number(env.GITHUB_APP_ID),
     code: req.oauth_code,
-    installationId: req.installation_id,
   });
-  if (!verification.ok) {
-    return jsonError(verification.status, verification.error);
+  if (!resolution.ok) {
+    return jsonError(resolution.status, resolution.error);
   }
 
   await saveInstall(env, {
-    installationId: req.installation_id,
+    installationId: resolution.installationId,
     agentId: req.agent_id,
     tunnelSecret: req.tunnel_secret,
     tunnelUrl: req.tunnel_url,
     registeredAt: new Date().toISOString(),
   });
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  });
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      installation_id: resolution.installationId,
+      account_login: resolution.accountLogin,
+    }),
+    {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }
+  );
 }
 
 function jsonError(status: number, message: string): Response {
@@ -103,6 +110,19 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
   const token = await getInstallationToken(payload.installation.id, jwt);
   const pr = await getPullRequestHead(payload.repository.full_name, payload.issue.number, token);
 
+  // Ack the mention right away so the user knows the webhook fired. goosed
+  // will react with :+1: / :confused: once it's done.
+  await postCommentReaction(
+    payload.repository.full_name,
+    payload.comment.id,
+    'eyes',
+    token
+  ).catch((err) =>
+    console.warn(
+      `[comment] ${payload.repository.full_name} #${payload.issue.number}: :eyes: reaction failed: ${err}`
+    )
+  );
+
   if (REVIEW_TRIGGER_RE.test(payload.comment.body)) {
     await triggerReview({
       fullName: payload.repository.full_name,
@@ -112,6 +132,7 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
       installationId: payload.installation.id,
       env,
       token,
+      commentId: payload.comment.id,
     });
     return;
   }
@@ -124,6 +145,7 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
     prUrl: pr.htmlUrl,
     commentBody: payload.comment.body,
     commenter: payload.comment.user.login,
+    commentId: payload.comment.id,
     installationId: payload.installation.id,
     env,
     token,
@@ -138,6 +160,7 @@ async function triggerComment(opts: {
   prUrl: string;
   commentBody: string;
   commenter: string;
+  commentId: number;
   installationId: number;
   env: Env;
   token: string;
@@ -169,6 +192,7 @@ async function triggerComment(opts: {
       prUrl: opts.prUrl,
       commentBody,
       commenter,
+      commentId: opts.commentId,
     });
     if (!result.ok) {
       throw new Error(`tunnel responded ${result.status}: ${result.body.slice(0, 200)}`);
@@ -203,6 +227,8 @@ async function triggerReview(opts: {
   env: Env;
   /** Reuse a freshly-minted token from the caller if we already have one. */
   token?: string;
+  /** When the review was triggered via `@goose-copilot review`, goosed reacts on this comment when done. */
+  commentId?: number;
 }): Promise<void> {
   const { fullName, prNumber, headSha, prUrl, installationId, env } = opts;
 
@@ -247,6 +273,7 @@ async function triggerReview(opts: {
       headSha,
       prUrl,
       checkRunId,
+      commentId: opts.commentId,
     });
 
     if (!result.ok) {
