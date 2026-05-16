@@ -594,7 +594,7 @@ impl Config {
                             if msg.contains("No entry found")
                                 || msg.contains("No matching entry found") =>
                         {
-                            HashMap::new()
+                            self.fallback_to_file_storage()?
                         }
                         Err(e) => return Err(e),
                     }
