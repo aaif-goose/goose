@@ -99,7 +99,11 @@ function SkillSkeleton() {
   );
 }
 
-export default function SkillsView() {
+interface SkillsViewProps {
+  sessionId?: string;
+}
+
+export default function SkillsView({ sessionId }: SkillsViewProps = {}) {
   const intl = useIntl();
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,7 +129,7 @@ export default function SkillsView() {
       setShowContent(false);
       setError(null);
       const response = await getSlashCommands({
-        query: { working_dir: getInitialWorkingDir() },
+        query: { working_dir: getInitialWorkingDir(), session_id: sessionId },
         throwOnError: true,
       });
       const skillEntries: SkillEntry[] = (response.data?.commands ?? [])
@@ -141,7 +145,7 @@ export default function SkillsView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     loadSkills();

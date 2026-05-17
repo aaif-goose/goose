@@ -1510,6 +1510,16 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "description": "Optional session id; when provided, the endpoint also includes\nMCP-served skills from the corresponding agent's connected extensions.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -8068,6 +8078,11 @@
           },
           "help": {
             "type": "string"
+          },
+          "origin": {
+            "type": "string",
+            "description": "For MCP-sourced skills, the name of the originating MCP extension\n(e.g. \"github\"). `None` for filesystem skills and non-skill commands.",
+            "nullable": true
           }
         }
       },
