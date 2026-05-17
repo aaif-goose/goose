@@ -83,6 +83,7 @@ export default function ExtensionModal({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
   const [hasPendingEnvVars, setHasPendingEnvVars] = useState(false);
+  const [pendingEnvVar, setPendingEnvVar] = useState<{ key: string; value: string } | null>(null);
   const [hasPendingHeaders, setHasPendingHeaders] = useState(false);
   const [pendingHeader, setPendingHeader] = useState<{ key: string; value: string } | null>(null);
 
@@ -232,6 +233,14 @@ export default function ExtensionModal({
     []
   );
 
+  const handlePendingEnvVarChange = useCallback(
+    (hasPending: boolean, envVar: { key: string; value: string } | null) => {
+      setHasPendingEnvVars(hasPending);
+      setPendingEnvVar(envVar);
+    },
+    []
+  );
+
   // Function to store a secret value
   const storeSecret = async (key: string, value: string) => {
     try {
@@ -289,6 +298,14 @@ export default function ExtensionModal({
     return finalHeaders;
   };
 
+  const getFinalEnvVars = () => {
+    const finalEnvVars = [...formData.envVars];
+    if (pendingEnvVar && pendingEnvVar.key.trim() !== '' && pendingEnvVar.value.trim() !== '') {
+      finalEnvVars.push({ ...pendingEnvVar, isEdited: true });
+    }
+    return finalEnvVars;
+  };
+
   const isHeadersValid = () => {
     return getFinalHeaders().every(
       ({ key, value }) => (key === '' && value === '') || (key !== '' && value !== '')
@@ -323,6 +340,7 @@ export default function ExtensionModal({
     if (isFormValid()) {
       const finalFormData = {
         ...formData,
+        envVars: getFinalEnvVars(),
         headers: getFinalHeaders(),
       };
 
@@ -437,7 +455,7 @@ export default function ExtensionModal({
                       onRemove={handleRemoveEnvVar}
                       onChange={handleEnvVarChange}
                       submitAttempted={submitAttempted}
-                      onPendingInputChange={setHasPendingEnvVars}
+                      onPendingInputChange={handlePendingEnvVarChange}
                     />
                   </div>
                 </>
