@@ -139,11 +139,15 @@ Use `${PLUGIN_ROOT}` in a command to reference the plugin directory. goose also 
 | `PostToolUse` | After a tool succeeds | Tool name |
 | `PostToolUseFailure` | After a tool fails | Tool name |
 | `BeforeReadFile` | Before goose reads a file | File path |
-| `AfterFileEdit` | After goose edits a file | File path |
+| `AfterFileEdit` | After goose successfully edits a file | File path |
 | `BeforeShellExecution` | Before goose runs a shell command | Shell command |
-| `AfterShellExecution` | After goose runs a shell command | Shell command |
+| `AfterShellExecution` | After goose successfully runs a shell command | Shell command |
 
 The matcher is a regular expression matched against the most relevant string for the event. For example, use `"\\.rs$"` to match Rust files on `AfterFileEdit`, or `"^(cargo test|pnpm test)"` to match test commands on `AfterShellExecution`.
+
+:::note
+`AfterFileEdit` and `AfterShellExecution` only run after successful tool calls. To react to failed edits, failed shell commands, or other failed tool calls, use `PostToolUseFailure`.
+:::
 
 ## Hook Payload
 
