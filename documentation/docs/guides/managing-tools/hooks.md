@@ -147,7 +147,7 @@ The matcher is a regular expression matched against the most relevant string for
 
 ## Hook Payload
 
-When a hook runs, goose writes a JSON payload to the command's stdin. The payload always includes the event name and session ID, and may include fields such as the tool name, tool input, tool output, user message, or working directory.
+When a hook runs, goose writes a JSON payload to the command's stdin. The payload always includes the event name and session ID, and may include fields such as the tool name, tool input, user message, or working directory.
 
 Example payload for a tool event:
 
@@ -158,7 +158,6 @@ Example payload for a tool event:
   "matcher_context": "developer__shell",
   "tool_name": "developer__shell",
   "tool_input": { "command": "rg TODO" },
-  "tool_output": { "text": "src/main.rs:42:TODO" },
   "working_dir": "/Users/you/project"
 }
 ```
