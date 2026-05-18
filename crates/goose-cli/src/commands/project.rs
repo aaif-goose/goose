@@ -16,13 +16,16 @@ fn format_date(date: DateTime<chrono::Utc>) -> String {
 ///
 /// Offers options to resume the most recently accessed project
 pub fn handle_project_default() -> Result<()> {
+    let goose_bin = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "goose".to_string());
     let tracker = ProjectTracker::load()?;
     let mut projects = tracker.list_projects();
 
     if projects.is_empty() {
         // If no projects exist, just start a new one in the current directory
         println!("No previous projects found. Starting a new session in the current directory.");
-        let mut command = std::process::Command::new("goose");
+        let mut command = std::process::Command::new(&goose_bin);
         command.arg("session");
         let status = command.status()?;
 
@@ -102,7 +105,7 @@ pub fn handle_project_default() -> Result<()> {
             std::env::set_current_dir(project_dir)?;
 
             // Build the command to run goose
-            let mut command = std::process::Command::new("goose");
+            let mut command = std::process::Command::new(&goose_bin);
             command.arg("session");
 
             if let Some(id) = session_id {
@@ -127,7 +130,7 @@ pub fn handle_project_default() -> Result<()> {
             std::env::set_current_dir(project_dir)?;
 
             // Build the command to run goose with a fresh session
-            let mut command = std::process::Command::new("goose");
+            let mut command = std::process::Command::new(&goose_bin);
             command.arg("session");
 
             // Execute the command
@@ -141,7 +144,7 @@ pub fn handle_project_default() -> Result<()> {
             let _ = outro("Starting a new session in the current directory");
 
             // Build the command to run goose
-            let mut command = std::process::Command::new("goose");
+            let mut command = std::process::Command::new(&goose_bin);
             command.arg("session");
 
             // Execute the command
@@ -163,6 +166,9 @@ pub fn handle_project_default() -> Result<()> {
 ///
 /// Shows a list of projects and lets the user select one to resume
 pub fn handle_projects_interactive() -> Result<()> {
+    let goose_bin = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "goose".to_string());
     let tracker = ProjectTracker::load()?;
     let mut projects = tracker.list_projects();
 
@@ -281,7 +287,7 @@ pub fn handle_projects_interactive() -> Result<()> {
     };
 
     // Build the command to run goose
-    let mut command = std::process::Command::new("goose");
+    let mut command = std::process::Command::new(&goose_bin);
     command.arg("session");
 
     if resume_session {

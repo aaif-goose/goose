@@ -26,6 +26,7 @@ use utoipa::ToSchema;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::ops::{Add, AddAssign};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::sync::Mutex;
@@ -766,6 +767,10 @@ impl Usage {
     }
 }
 
+pub(crate) fn current_working_dir() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
 pub trait ProviderDef: Send + Sync {
     type Provider: Provider + 'static;
 
@@ -779,6 +784,19 @@ pub trait ProviderDef: Send + Sync {
     ) -> BoxFuture<'static, Result<Self::Provider>>
     where
         Self: Sized;
+
+    fn from_env_with_working_dir(
+        model: ModelConfig,
+        extensions: Vec<ExtensionConfig>,
+        _working_dir: PathBuf,
+    ) -> BoxFuture<'static, Result<Self::Provider>>
+    where
+        Self: Sized,
+    {
+        // ACP subprocess providers must override this so session cwd is preserved.
+        // Non-subprocess providers can rely on the default because cwd is irrelevant.
+        Self::from_env(model, extensions)
+    }
 
     fn supports_inventory_refresh() -> bool
     where

@@ -436,14 +436,11 @@ if (process.platform !== 'darwin') {
   }
 }
 
-let firstOpenWindow: BrowserWindow;
-let pendingDeepLink: string | null = null;
+const pendingDeepLinks = new Map<number, string>(); // windowId -> deep link URL
 let openUrlHandledLaunch = false;
 
 async function handleProtocolUrl(url: string) {
   if (!url) return;
-
-  pendingDeepLink = url;
 
   const parsedUrl = new URL(url);
   const recentDirs = loadRecentDirs();
@@ -451,38 +448,31 @@ async function handleProtocolUrl(url: string) {
 
   if (parsedUrl.hostname === 'new-session') {
     await createChat(app, { dir: openDir || undefined });
-    pendingDeepLink = null;
     return;
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    // For bot/recipe URLs, get existing window or create new one
     const existingWindows = BrowserWindow.getAllWindows();
     const targetWindow =
       existingWindows.length > 0
         ? existingWindows[0]
         : await createChat(app, { dir: openDir || undefined });
-    await processProtocolUrl(parsedUrl, targetWindow);
+    await processProtocolUrl(url, parsedUrl, targetWindow);
   } else {
-    // For other URL types, reuse existing window if available
     const existingWindows = BrowserWindow.getAllWindows();
+    let targetWindow: BrowserWindow;
     if (existingWindows.length > 0) {
-      firstOpenWindow = existingWindows[0];
-      if (firstOpenWindow.isMinimized()) {
-        firstOpenWindow.restore();
+      targetWindow = existingWindows[0];
+      if (targetWindow.isMinimized()) {
+        targetWindow.restore();
       }
-      firstOpenWindow.focus();
+      targetWindow.focus();
     } else {
-      firstOpenWindow = await createChat(app, { dir: openDir || undefined });
+      targetWindow = await createChat(app, { dir: openDir || undefined });
     }
 
-    if (firstOpenWindow) {
-      const webContents = firstOpenWindow.webContents;
-      if (webContents.isLoadingMainFrame()) {
-        webContents.once('did-finish-load', async () => {
-          await processProtocolUrl(parsedUrl, firstOpenWindow);
-        });
-      } else {
-        await processProtocolUrl(parsedUrl, firstOpenWindow);
-      }
+    if (targetWindow.webContents.isLoadingMainFrame()) {
+      pendingDeepLinks.set(targetWindow.id, url);
+    } else {
+      await processProtocolUrl(url, parsedUrl, targetWindow);
     }
   }
 }
@@ -490,8 +480,8 @@ async function handleProtocolUrl(url: string) {
 let windowDeeplinkURL: string | null = null;
 
 async function openRecipeDeeplink(url: string, openDir: string | null) {
-  const parsedUrl = new URL(url);
   const deeplinkData = parseRecipeDeeplink(url);
+  const parsedUrl = new URL(url);
   const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
 
   const existingWindows = BrowserWindow.getAllWindows();
@@ -507,7 +497,7 @@ async function openRecipeDeeplink(url: string, openDir: string | null) {
     }
     targetWindow.focus();
     targetWindow.webContents.send('open-recipe-deeplink', {
-      recipeDeeplink: url,
+      recipeDeeplink: deeplinkData?.config,
       recipeParameters: deeplinkData?.parameters,
       scheduledJobId: scheduledJobId || undefined,
     });
@@ -529,17 +519,16 @@ async function openRecipeDeeplink(url: string, openDir: string | null) {
   }
 }
 
-async function processProtocolUrl(parsedUrl: URL, window: BrowserWindow) {
+async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
 
   if (parsedUrl.hostname === 'extension') {
-    window.webContents.send('add-extension', pendingDeepLink);
+    window.webContents.send('add-extension', url);
   } else if (parsedUrl.hostname === 'sessions') {
-    window.webContents.send('open-shared-session', pendingDeepLink);
+    window.webContents.send('open-shared-session', url);
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    await openRecipeDeeplink(pendingDeepLink ?? parsedUrl.toString(), openDir);
-    pendingDeepLink = null;
+    await openRecipeDeeplink(url, openDir);
   }
 }
 
@@ -573,28 +562,21 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    // For extension/session URLs, store the deep link for processing after React is ready
-    pendingDeepLink = url;
-    log.info(
-      '[Main] Stored pending deep link for processing after React ready:',
-      url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url
-    );
-
+    // For extension/session URLs, send to existing window or store pending for new one
     const existingWindows = BrowserWindow.getAllWindows();
     if (existingWindows.length > 0) {
-      firstOpenWindow = existingWindows[0];
-      if (firstOpenWindow.isMinimized()) firstOpenWindow.restore();
-      firstOpenWindow.focus();
+      const targetWindow = existingWindows[0];
+      if (targetWindow.isMinimized()) targetWindow.restore();
+      targetWindow.focus();
       if (parsedUrl.hostname === 'extension') {
-        firstOpenWindow.webContents.send('add-extension', pendingDeepLink);
-        pendingDeepLink = null;
+        targetWindow.webContents.send('add-extension', url);
       } else if (parsedUrl.hostname === 'sessions') {
-        firstOpenWindow.webContents.send('open-shared-session', pendingDeepLink);
-        pendingDeepLink = null;
+        targetWindow.webContents.send('open-shared-session', url);
       }
     } else {
       openUrlHandledLaunch = true;
-      firstOpenWindow = await createChat(app, { dir: openDir || undefined });
+      const newWindow = await createChat(app, { dir: openDir || undefined });
+      pendingDeepLinks.set(newWindow.id, url);
     }
   }
 });
@@ -737,6 +719,14 @@ const getServerSecret = (settings: Settings): string => {
     return process.env.GOOSE_SERVER__SECRET_KEY;
   }
   return GENERATED_SECRET;
+};
+
+const buildAcpWebSocketUrl = (baseUrl: string, token: string): string => {
+  const url = new URL(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/acp`;
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('token', token);
+  return url.toString();
 };
 
 let appConfig = {
@@ -1144,6 +1134,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     }
   });
 
+  const broadcastFullScreenState = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('fullscreen-change', mainWindow.isFullScreen());
+    }
+  };
+  mainWindow.on('enter-full-screen', broadcastFullScreenState);
+  mainWindow.on('leave-full-screen', broadcastFullScreenState);
+
   // Handle mouse back button (button 3)
   // Use type assertion for non-standard Electron event
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1160,8 +1158,8 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   mainWindow.on('closed', () => {
     windowMap.delete(windowId);
 
-    // Clean up pending initial message
     pendingInitialMessages.delete(windowId);
+    pendingDeepLinks.delete(windowId);
 
     if (windowPowerSaveBlockers.has(windowId)) {
       const blockerId = windowPowerSaveBlockers.get(windowId)!;
@@ -1528,27 +1526,21 @@ ipcMain.on('react-ready', (event) => {
     pendingInitialMessages.delete(windowId);
   }
 
-  if (pendingDeepLink && window) {
-    log.info('Processing pending deep link:', pendingDeepLink);
+  if (windowId && pendingDeepLinks.has(windowId) && window) {
+    const deepLinkUrl = pendingDeepLinks.get(windowId)!;
+    pendingDeepLinks.delete(windowId);
+    log.info('Processing pending deep link for window:', windowId);
     try {
-      const parsedUrl = new URL(pendingDeepLink);
+      const parsedUrl = new URL(deepLinkUrl);
       if (parsedUrl.hostname === 'extension') {
-        log.info('Sending add-extension IPC to ready window');
-        window.webContents.send('add-extension', pendingDeepLink);
+        window.webContents.send('add-extension', deepLinkUrl);
       } else if (parsedUrl.hostname === 'sessions') {
-        log.info('Sending open-shared-session IPC to ready window');
-        window.webContents.send('open-shared-session', pendingDeepLink);
+        window.webContents.send('open-shared-session', deepLinkUrl);
       }
-      pendingDeepLink = null;
     } catch (error) {
       log.error('Error processing pending deep link:', error);
-      pendingDeepLink = null;
     }
-  } else {
-    log.info('No pending deep link to process');
   }
-
-  log.info('React ready - window is prepared for deep links');
 });
 
 ipcMain.handle('open-external', async (_event, url: string) => {
@@ -1640,6 +1632,19 @@ ipcMain.handle('get-goosed-host-port', async (event) => {
     return null;
   }
   return client.getConfig().baseUrl || null;
+});
+
+ipcMain.handle('get-acp-url', async (event) => {
+  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+  if (!windowId) {
+    return null;
+  }
+  const client = goosedClients.get(windowId);
+  const baseUrl = client?.getConfig().baseUrl;
+  if (!baseUrl) {
+    return null;
+  }
+  return buildAcpWebSocketUrl(baseUrl, getServerSecret(getSettings()));
 });
 
 // Handle menu bar icon visibility
@@ -1809,6 +1814,11 @@ ipcMain.handle('get-spellcheck-state', () => {
 
 ipcMain.handle('is-any-window-focused', () => {
   return BrowserWindow.getFocusedWindow() !== null;
+});
+
+ipcMain.handle('get-is-fullscreen', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win?.isFullScreen() ?? false;
 });
 
 // Add file/directory selection handler

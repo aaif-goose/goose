@@ -703,7 +703,7 @@ impl GooseAcpAgent {
                     let model_config =
                         crate::model::ModelConfig::new(&metadata.metadata().default_model)?
                             .with_canonical_limits(&provider_id);
-                    provider_factory(provider_id.clone(), model_config, Vec::new()).await
+                    provider_factory(provider_id.clone(), model_config, Vec::new(), None).await
                 })
                 .catch_unwind()
                 .await;
