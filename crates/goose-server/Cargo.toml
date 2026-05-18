@@ -12,7 +12,15 @@ description.workspace = true
 workspace = true
 
 [features]
-default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
+default = [
+    "code-mode",
+    "local-inference",
+    "aws-providers",
+    "telemetry",
+    "otel",
+    "rustls-tls",
+    "system-keyring",
+]
 code-mode = ["goose/code-mode"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
@@ -20,6 +28,7 @@ cuda = ["goose/cuda", "local-inference"]
 vulkan = ["goose/vulkan", "local-inference"]
 telemetry = ["goose/telemetry"]
 otel = ["goose/otel"]
+system-keyring = ["goose/system-keyring"]
 rustls-tls = [
     "reqwest/rustls",
     "tokio-tungstenite/rustls-tls-native-roots",

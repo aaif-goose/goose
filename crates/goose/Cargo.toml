@@ -9,7 +9,15 @@ repository.workspace = true
 description.workspace = true
 
 [features]
-default = ["code-mode", "local-inference", "aws-providers", "telemetry", "otel", "rustls-tls"]
+default = [
+    "code-mode",
+    "local-inference",
+    "aws-providers",
+    "telemetry",
+    "otel",
+    "rustls-tls",
+    "system-keyring",
+]
 telemetry = []
 otel = [
     "dep:tracing-opentelemetry",
@@ -59,6 +67,7 @@ native-tls = [
     "oauth2/reqwest",
     "oauth2/native-tls",
 ]
+system-keyring = ["dep:keyring"]
 
 
 [lints]
@@ -110,7 +119,7 @@ opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-appender-tracing = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry-stdout = { workspace = true, optional = true }
-keyring = { version = "3.6.2", features = ["vendored"] }
+keyring = { version = "3.6.2", features = ["vendored"], optional = true }
 serde_yaml = { workspace = true }
 strum = { workspace = true }
 once_cell = { workspace = true }
@@ -203,17 +212,17 @@ rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }
-keyring = { version = "3.6.2", features = ["windows-native"] }
+keyring = { version = "3.6.2", features = ["windows-native"], optional = true }
 
 # Platform-specific GPU acceleration for Whisper and local inference
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.10.2", default-features = false, features = ["metal"], optional = true }
 candle-nn = { version = "0.10.2", default-features = false, features = ["metal"], optional = true }
 llama-cpp-2 = { version = "0.1.145", features = ["sampler", "metal", "mtmd"], optional = true }
-keyring = { version = "3.6.2", features = ["apple-native"] }
+keyring = { version = "3.6.2", features = ["apple-native"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3.6.2", features = ["sync-secret-service"] }
+keyring = { version = "3.6.2", features = ["sync-secret-service"], optional = true }
 libc = "0.2.186"
 
 [dev-dependencies]

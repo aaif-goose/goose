@@ -1,10 +1,6 @@
 use anyhow::Result;
 use goose_cli::cli::cli;
 
-#[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "musl"))]
-#[link(name = "atomic")]
-unsafe extern "C" {}
-
 async fn run() -> Result<()> {
     if let Err(e) = goose_cli::logging::setup_logging(None) {
         eprintln!("Warning: Failed to initialize logging: {}", e);

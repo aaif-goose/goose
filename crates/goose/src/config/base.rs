@@ -1,6 +1,7 @@
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use fs2::FileExt;
+#[cfg(feature = "system-keyring")]
 use keyring::Entry;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,9 @@ fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
     }
 }
 
+#[cfg(feature = "system-keyring")]
 const KEYRING_SERVICE: &str = "goose";
+#[cfg(feature = "system-keyring")]
 const KEYRING_USERNAME: &str = "secrets";
 pub const CONFIG_YAML_NAME: &str = "config.yaml";
 
@@ -68,6 +71,7 @@ impl From<serde_yaml::Error> for ConfigError {
     }
 }
 
+#[cfg(feature = "system-keyring")]
 impl From<keyring::Error> for ConfigError {
     fn from(err: keyring::Error) -> Self {
         ConfigError::KeyringError(err.to_string())
@@ -131,8 +135,13 @@ pub struct Config {
 }
 
 enum SecretStorage {
-    Keyring { service: String },
-    File { path: PathBuf },
+    #[cfg(feature = "system-keyring")]
+    Keyring {
+        service: String,
+    },
+    File {
+        path: PathBuf,
+    },
 }
 
 // Global instance
@@ -175,19 +184,11 @@ impl Default for Config {
             secrets_cache: Arc::new(Mutex::new(None)),
         };
 
-        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+        let keyring_disabled = env::var("GOOSE_DISABLE_KEYRING").is_ok()
             || no_secrets_config
                 .get_param::<serde_yaml::Value>("GOOSE_DISABLE_KEYRING")
-                .is_ok_and(|v| keyring_disabled_value(&v))
-        {
-            SecretStorage::File {
-                path: config_dir.join("secrets.yaml"),
-            }
-        } else {
-            SecretStorage::Keyring {
-                service: KEYRING_SERVICE.to_string(),
-            }
-        };
+                .is_ok_and(|v| keyring_disabled_value(&v));
+        let secrets = secret_storage(&config_dir, keyring_disabled, default_keyring_service());
         Self {
             config_paths,
             secrets,
@@ -337,6 +338,40 @@ fn keyring_disabled_in_config(config_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(feature = "system-keyring")]
+fn default_keyring_service() -> &'static str {
+    KEYRING_SERVICE
+}
+
+#[cfg(not(feature = "system-keyring"))]
+fn default_keyring_service() -> &'static str {
+    ""
+}
+
+fn secrets_file_path_in(config_dir: &Path) -> PathBuf {
+    config_dir.join("secrets.yaml")
+}
+
+#[cfg(feature = "system-keyring")]
+fn secret_storage(config_dir: &Path, keyring_disabled: bool, service: &str) -> SecretStorage {
+    if keyring_disabled {
+        SecretStorage::File {
+            path: secrets_file_path_in(config_dir),
+        }
+    } else {
+        SecretStorage::Keyring {
+            service: service.to_string(),
+        }
+    }
+}
+
+#[cfg(not(feature = "system-keyring"))]
+fn secret_storage(config_dir: &Path, _keyring_disabled: bool, _service: &str) -> SecretStorage {
+    SecretStorage::File {
+        path: secrets_file_path_in(config_dir),
+    }
+}
+
 impl Config {
     /// Get the global configuration instance.
     ///
@@ -352,21 +387,13 @@ impl Config {
     /// to manage multiple configuration files.
     pub fn new<P: AsRef<Path>>(config_path: P, service: &str) -> Result<Self, ConfigError> {
         let config_path = config_path.as_ref().to_path_buf();
-        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
-            || keyring_disabled_in_config(&config_path)
-        {
-            let config_dir = config_path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(Paths::config_dir);
-            SecretStorage::File {
-                path: config_dir.join("secrets.yaml"),
-            }
-        } else {
-            SecretStorage::Keyring {
-                service: service.to_string(),
-            }
-        };
+        let keyring_disabled =
+            env::var("GOOSE_DISABLE_KEYRING").is_ok() || keyring_disabled_in_config(&config_path);
+        let config_dir = config_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(Paths::config_dir);
+        let secrets = secret_storage(&config_dir, keyring_disabled, service);
         Ok(Config {
             config_paths: vec![config_path],
             secrets,
@@ -578,6 +605,7 @@ impl Config {
             tracing::debug!("secrets cache miss, fetching from storage");
 
             let loaded = match &self.secrets {
+                #[cfg(feature = "system-keyring")]
                 SecretStorage::Keyring { service } => {
                     let result =
                         self.handle_keyring_operation(|entry| entry.get_password(), service, None);
@@ -819,6 +847,7 @@ impl Config {
 
     fn write_all_secrets(&self, values: &HashMap<String, Value>) -> Result<(), ConfigError> {
         match &self.secrets {
+            #[cfg(feature = "system-keyring")]
             SecretStorage::Keyring { service } => {
                 let json_value = serde_json::to_string(values)?;
                 match self.handle_keyring_operation(
@@ -937,17 +966,20 @@ impl Config {
     }
 
     /// Get the path to the secrets storage file
+    #[cfg(feature = "system-keyring")]
     fn secrets_file_path() -> PathBuf {
-        Paths::config_dir().join("secrets.yaml")
+        secrets_file_path_in(&Paths::config_dir())
     }
 
     /// Fall back to file storage when keyring is unavailable
+    #[cfg(feature = "system-keyring")]
     fn fallback_to_file_storage(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let path = Self::secrets_file_path();
         self.read_secrets_from_file(&path)
     }
 
     /// Write secrets to file storage (used for fallback)
+    #[cfg(feature = "system-keyring")]
     fn write_secrets_to_file(&self, values: &HashMap<String, Value>) -> Result<(), ConfigError> {
         std::fs::create_dir_all(Paths::config_dir())?;
         let path = Self::secrets_file_path();
@@ -962,6 +994,7 @@ impl Config {
     }
 
     /// Check if an error string indicates a keyring availability issue that should trigger fallback
+    #[cfg(feature = "system-keyring")]
     fn is_keyring_availability_error(&self, error_str: &str) -> bool {
         let lower = error_str.to_lowercase();
         lower.contains("keyring")
@@ -972,11 +1005,13 @@ impl Config {
     }
 
     /// Get a keyring entry for the specified service
+    #[cfg(feature = "system-keyring")]
     fn get_keyring_entry(service: &str) -> Result<keyring::Entry, keyring::Error> {
         Entry::new(service, KEYRING_USERNAME)
     }
 
     /// Handle keyring errors with automatic fallback to file storage
+    #[cfg(feature = "system-keyring")]
     fn handle_keyring_fallback_error<T>(
         &self,
         keyring_err: &keyring::Error,
@@ -998,6 +1033,7 @@ impl Config {
     }
 
     /// Handle keyring operation with automatic fallback to file storage
+    #[cfg(feature = "system-keyring")]
     fn handle_keyring_operation<T>(
         &self,
         operation: impl FnOnce(keyring::Entry) -> Result<T, keyring::Error>,
