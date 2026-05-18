@@ -657,6 +657,7 @@ export type GooseConfigSchema = {
     VENICE_HOST?: string | null;
     VENICE_MODELS_PATH?: string | null;
     XAI_HOST?: string | null;
+    active_provider?: string | null;
     experiments?: {
         [key: string]: boolean;
     } | null;
@@ -665,6 +666,9 @@ export type GooseConfigSchema = {
     } | null;
     otel_exporter_otlp_endpoint?: string | null;
     otel_exporter_otlp_timeout?: number | null;
+    providers?: {
+        [key: string]: ProviderEntry;
+    } | null;
     slash_commands?: Array<SlashCommandMapping> | null;
     tunnel_auto_start?: boolean | null;
 };
@@ -1125,6 +1129,19 @@ export type ProviderDetails = {
 };
 
 export type ProviderEngine = 'openai' | 'ollama' | 'anthropic';
+
+/**
+ * A single provider's persisted configuration within the `providers:` block.
+ *
+ * The `providers` block in config.yaml is the authoritative source for
+ * per-provider settings, replacing the old flat-key scheme where switching
+ * providers destructively overwrote `GOOSE_PROVIDER` / `GOOSE_MODEL`.
+ */
+export type ProviderEntry = {
+    configured?: boolean;
+    enabled?: boolean;
+    model?: string;
+};
 
 /**
  * Metadata about a provider's configuration requirements and capabilities

@@ -3,6 +3,7 @@ use goose::agents::extension::ToolInfo;
 use goose::agents::ExtensionConfig;
 use goose::config::permission::PermissionLevel;
 use goose::config::ExtensionEntry;
+use goose::config::ProviderEntry;
 use goose::conversation::Conversation;
 use goose::download_manager::{DownloadProgress, DownloadStatus};
 use goose::model::ModelConfig;
@@ -564,6 +565,7 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         DeclarativeProviderConfig,
         EnvVarConfig,
         ExtensionEntry,
+        ProviderEntry,
         ExtensionConfig,
         ConfigKey,
         Envs,

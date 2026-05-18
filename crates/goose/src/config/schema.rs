@@ -7,6 +7,7 @@ use utoipa::ToSchema;
 use crate::config::base::{Config, ConfigError};
 use crate::config::extensions::ExtensionEntry;
 use crate::config::goose_mode::GooseMode;
+use crate::config::providers::ProviderEntry;
 use crate::slash_commands::SlashCommandMapping;
 
 /// JSON Schema representation of Goose's config.yaml.
@@ -268,6 +269,9 @@ pub struct GooseConfigSchema {
     #[serde(rename = "AVIAN_HOST")]
     pub avian_host: Option<String>,
 
+    // === Provider Switching (lowercase keys) ===
+    pub active_provider: Option<String>,
+
     // === Observability Settings (lowercase keys) ===
     pub otel_exporter_otlp_endpoint: Option<String>,
     pub otel_exporter_otlp_timeout: Option<u64>,
@@ -279,6 +283,7 @@ pub struct GooseConfigSchema {
     pub extensions: Option<HashMap<String, ExtensionEntry>>,
     pub slash_commands: Option<Vec<SlashCommandMapping>>,
     pub experiments: Option<HashMap<String, bool>>,
+    pub providers: Option<HashMap<String, ProviderEntry>>,
 }
 
 impl GooseConfigSchema {
@@ -411,6 +416,8 @@ impl GooseConfigSchema {
         "VENICE_MODELS_PATH",
         "TETRATE_HOST",
         "AVIAN_HOST",
+        // Provider Switching
+        "active_provider",
         // Observability Settings
         "otel_exporter_otlp_endpoint",
         "otel_exporter_otlp_timeout",
@@ -445,8 +452,8 @@ impl GooseConfigSchema {
 
     pub fn from_config(config: &Config) -> Self {
         GooseConfigSchema {
-            goose_provider: config.get_param("GOOSE_PROVIDER").ok(),
-            goose_model: config.get_param("GOOSE_MODEL").ok(),
+            goose_provider: config.get_goose_provider().ok(),
+            goose_model: config.get_goose_model().ok(),
             goose_mode: config.get_param("GOOSE_MODE").ok(),
             goose_max_tokens: config.get_param("GOOSE_MAX_TOKENS").ok(),
             goose_context_limit: config.get_param("GOOSE_CONTEXT_LIMIT").ok(),
@@ -586,12 +593,14 @@ impl GooseConfigSchema {
             venice_models_path: config.get_param("VENICE_MODELS_PATH").ok(),
             tetrate_host: config.get_param("TETRATE_HOST").ok(),
             avian_host: config.get_param("AVIAN_HOST").ok(),
+            active_provider: config.get_param("active_provider").ok(),
             otel_exporter_otlp_endpoint: config.get_param("otel_exporter_otlp_endpoint").ok(),
             otel_exporter_otlp_timeout: config.get_param("otel_exporter_otlp_timeout").ok(),
             tunnel_auto_start: config.get_param("tunnel_auto_start").ok(),
             extensions: config.get_param("extensions").ok(),
             slash_commands: config.get_param("slash_commands").ok(),
             experiments: config.get_param("experiments").ok(),
+            providers: config.get_param("providers").ok(),
         }
     }
 
@@ -609,8 +618,6 @@ impl GooseConfigSchema {
             };
         }
 
-        push_if_some!(self.goose_provider, "GOOSE_PROVIDER");
-        push_if_some!(self.goose_model, "GOOSE_MODEL");
         push_if_some!(self.goose_mode, "GOOSE_MODE");
         push_if_some!(self.goose_max_tokens, "GOOSE_MAX_TOKENS");
         push_if_some!(self.goose_context_limit, "GOOSE_CONTEXT_LIMIT");
@@ -810,11 +817,26 @@ impl GooseConfigSchema {
             "otel_exporter_otlp_timeout"
         );
         push_if_some!(self.tunnel_auto_start, "tunnel_auto_start");
+        push_if_some!(self.active_provider, "active_provider");
         push_if_some!(self.extensions, "extensions");
         push_if_some!(self.slash_commands, "slash_commands");
         push_if_some!(self.experiments, "experiments");
+        push_if_some!(self.providers, "providers");
 
-        config.set_param_values(&updates)
+        config.set_param_values(&updates)?;
+
+        if let Some(ref provider) = self.goose_provider {
+            let model = self
+                .goose_model
+                .clone()
+                .or_else(|| config.get_goose_model().ok())
+                .unwrap_or_default();
+            crate::config::set_active_provider(config, provider, &model)?;
+        } else if let Some(ref model) = self.goose_model {
+            config.set_goose_model(model)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -920,7 +942,7 @@ mod tests {
             properties.keys().map(|k| k.as_str()).collect();
 
         let category_b: std::collections::HashSet<&str> =
-            ["extensions", "slash_commands", "experiments"]
+            ["extensions", "slash_commands", "experiments", "providers"]
                 .iter()
                 .copied()
                 .collect();
@@ -1128,13 +1150,29 @@ mod tests {
             .apply_to_config(&config2)
             .expect("apply_to_config should succeed");
 
+        // GOOSE_PROVIDER/GOOSE_MODEL route through the structured providers block,
+        // so verify them via the resolution-chain accessors, not raw get_param.
+        let provider_keys: std::collections::HashSet<&str> =
+            ["GOOSE_PROVIDER", "GOOSE_MODEL"].iter().copied().collect();
+
         for key in &string_keys {
-            let val: Result<String, _> = config2.get_param(key);
-            assert!(
-                val.is_ok(),
-                "apply_to_config did not persist key '{}' — check the apply_to_config() body",
-                key
-            );
+            if provider_keys.contains(**key) {
+                let typed2 = GooseConfigSchema::from_config(&config2);
+                let json2 = serde_json::to_value(&typed2).expect("serialize schema");
+                let obj2 = json2.as_object().expect("schema should be object");
+                assert!(
+                    obj2.get(**key).is_some_and(|v| !v.is_null()),
+                    "apply_to_config did not persist key '{}' — check the apply_to_config() body",
+                    key
+                );
+            } else {
+                let val: Result<String, _> = config2.get_param(key);
+                assert!(
+                    val.is_ok(),
+                    "apply_to_config did not persist key '{}' — check the apply_to_config() body",
+                    key
+                );
+            }
         }
     }
 }

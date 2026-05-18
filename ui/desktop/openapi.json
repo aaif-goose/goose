@@ -6101,6 +6101,10 @@
             "type": "string",
             "nullable": true
           },
+          "active_provider": {
+            "type": "string",
+            "nullable": true
+          },
           "experiments": {
             "type": "object",
             "additionalProperties": {
@@ -6124,6 +6128,13 @@
             "format": "int64",
             "nullable": true,
             "minimum": 0
+          },
+          "providers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderEntry"
+            },
+            "nullable": true
           },
           "slash_commands": {
             "type": "array",
@@ -7602,6 +7613,21 @@
           "ollama",
           "anthropic"
         ]
+      },
+      "ProviderEntry": {
+        "type": "object",
+        "description": "A single provider's persisted configuration within the `providers:` block.\n\nThe `providers` block in config.yaml is the authoritative source for\nper-provider settings, replacing the old flat-key scheme where switching\nproviders destructively overwrote `GOOSE_PROVIDER` / `GOOSE_MODEL`.",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
       },
       "ProviderMetadata": {
         "type": "object",

@@ -1,9 +1,11 @@
 use super::base::{Config, ConfigError};
 use indexmap::IndexMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
 use std::env;
 use tracing::warn;
+use utoipa::ToSchema;
 
 const PROVIDERS_CONFIG_KEY: &str = "providers";
 const ACTIVE_PROVIDER_KEY: &str = "active_provider";
@@ -13,7 +15,7 @@ const ACTIVE_PROVIDER_KEY: &str = "active_provider";
 /// The `providers` block in config.yaml is the authoritative source for
 /// per-provider settings, replacing the old flat-key scheme where switching
 /// providers destructively overwrote `GOOSE_PROVIDER` / `GOOSE_MODEL`.
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, ToSchema)]
 pub struct ProviderEntry {
     #[serde(default)]
     pub enabled: bool,

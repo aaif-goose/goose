@@ -759,6 +759,12 @@
         "null"
       ]
     },
+    "active_provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "otel_exporter_otlp_endpoint": {
       "type": [
         "string",
@@ -804,6 +810,15 @@
       ],
       "additionalProperties": {
         "type": "boolean"
+      }
+    },
+    "providers": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderEntry"
       }
     }
   },
@@ -1431,6 +1446,24 @@
         "command",
         "recipe_path"
       ]
+    },
+    "ProviderEntry": {
+      "description": "A single provider's persisted configuration within the `providers:` block.\n\nThe `providers` block in config.yaml is the authoritative source for\nper-provider settings, replacing the old flat-key scheme where switching\nproviders destructively overwrote `GOOSE_PROVIDER` / `GOOSE_MODEL`.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "model": {
+          "type": "string",
+          "default": ""
+        },
+        "configured": {
+          "type": "boolean",
+          "default": false
+        }
+      }
     }
   }
 }
