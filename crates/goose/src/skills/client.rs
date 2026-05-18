@@ -539,10 +539,17 @@ async fn enumerate_mcp_supporting_resources(
     };
 
     let root = entry.skill_root_uri();
+    // Directory-form entries (entry.url ends in '/') and `…/SKILL.md` forms
+    // both legitimately denote the same skill body. Skip both so neither
+    // appears as its own "supporting file" bullet next to the loaded body.
+    let skill_md_alias = entry
+        .url
+        .ends_with('/')
+        .then(|| format!("{}SKILL.md", root));
     let mut out = Vec::new();
     for r in list.resources {
         let uri = r.uri.clone();
-        if uri == entry.url {
+        if uri == entry.url || skill_md_alias.as_deref() == Some(uri.as_str()) {
             continue;
         }
         let Some(rel) = uri.strip_prefix(root) else {
@@ -640,7 +647,7 @@ impl McpClientTrait for SkillsClient {
              - load_skill(name: \"gdrive\") → Loads the gdrive skill instructions\n\
              - load_skill(name: \"my-skill/template.md\") → Loads a supporting file\n\
              - load_skill(name: \"github__pull-requests\") → Disambiguates a collision between two servers\n\n\
-             Use read_resource (from the extensionmanager) if you only have a raw URI. Do NOT use read_text_file, text_editor, or shell on skill URIs — those operate on filesystem paths."
+             Use read_resource (from the extensionmanager) if you only have a raw URI. Do NOT pass skill URIs to file-reading, writing, editing, or shell tools — those operate on filesystem paths."
                 .to_string(),
             load_skill_schema.as_object().unwrap().clone(),
         );
@@ -931,12 +938,7 @@ impl McpClientTrait for SkillsClient {
         let mut out = String::new();
         out.push_str(&format_mcp_skills_section(&collisions, &mcp));
         out.push_str(&format_mcp_skill_templates_section(&collisions, &templates));
-
-        if out.is_empty() {
-            None
-        } else {
-            Some(out)
-        }
+        Some(out)
     }
 }
 
@@ -1974,6 +1976,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_remove_extension_ends_watcher_task() {
+        // Regression: the watcher task used to hold a strong Arc to the
+        // McpClient, so its `rx.recv()` never yielded None (the client's
+        // notification senders couldn't drop while the task itself held
+        // the client). `remove_extension` therefore leaked the task and
+        // every transport handle it kept alive. With CancellationToken
+        // wired in, `remove_extension` fires cancel; the watcher exits;
+        // its `mpsc::Receiver` drops; the corresponding `Sender` in the
+        // fake's subscribers list reports `is_closed()`.
+        let tmp = TempDir::new().unwrap();
+        let mut initial = HashMap::new();
+        initial.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"alpha","type":"skill-md","description":"a","url":"skill://alpha/SKILL.md"}"#,
+            ),
+        );
+        let fake = Arc::new(FakeMcp::new(initial));
+        let mgr = Arc::new(ExtensionManager::new_without_provider(
+            tmp.path().to_path_buf(),
+        ));
+        let trait_handle: Arc<dyn McpClientTrait> = fake.clone();
+        mgr.add_client(
+            "srv".to_string(),
+            ExtensionConfig::Builtin {
+                name: "srv".to_string(),
+                display_name: Some("srv".to_string()),
+                description: "fake".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+            trait_handle,
+            None,
+            None,
+            Some("s"),
+        )
+        .await;
+
+        assert!(
+            fake.wait_for_subscriber(Duration::from_secs(2)).await,
+            "watcher should subscribe before we remove the extension"
+        );
+
+        let tx = {
+            let subs = fake.subscribers.lock().await;
+            subs.first()
+                .expect("at least one subscriber after wait_for_subscriber")
+                .clone()
+        };
+        assert!(!tx.is_closed(), "sender should be open while watcher runs");
+
+        mgr.remove_extension("srv")
+            .await
+            .expect("remove_extension should succeed");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while !tx.is_closed() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            tx.is_closed(),
+            "watcher should have dropped its receiver after remove_extension"
+        );
+    }
+
+    #[tokio::test]
     async fn test_load_skill_template_validates_and_reads() {
         // Server publishes a template with `{owner}` and `{repo}`
         // placeholders and supports completion for both. With validated
@@ -2536,6 +2605,60 @@ mod tests {
         assert!(
             !body.contains("skill://other/SKILL.md"),
             "cross-skill resource must not appear; got:\n{}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_supporting_files_dedupe_directory_form_url() {
+        // When an index entry uses the directory-form url (ends in `/`),
+        // a server that also lists `…/SKILL.md` in resources/list must not
+        // produce a "SKILL.md" bullet next to the loaded body. Both URI
+        // forms denote the same skill; one entry, never both.
+        let tmp = TempDir::new().unwrap();
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"docs","type":"skill-md","description":"D","url":"skill://docs/"}"#,
+            ),
+        );
+        resources.insert("skill://docs/".to_string(), "main skill body".to_string());
+        resources.insert(
+            "skill://docs/SKILL.md".to_string(),
+            "alias body".to_string(),
+        );
+        resources.insert(
+            "skill://docs/references/GUIDE.md".to_string(),
+            "guide content".to_string(),
+        );
+
+        let (client, _mgr, _tmp_guard) =
+            setup_client_with_fake("srv", resources, tmp.path().to_path_buf()).await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+        let args: JsonObject = serde_json::from_value(serde_json::json!({"name": "docs"})).unwrap();
+        let result = client
+            .call_tool(&ctx, "load_skill", Some(args), CancellationToken::new())
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let body = text_of(&result);
+
+        assert!(
+            body.contains("main skill body"),
+            "missing directory-form body; got:\n{}",
+            body
+        );
+        assert!(
+            body.contains("references/GUIDE.md → load_skill(name: \"docs/references/GUIDE.md\")"),
+            "missing GUIDE.md pointer; got:\n{}",
+            body
+        );
+        assert!(
+            !body.contains("SKILL.md → load_skill"),
+            "SKILL.md alias must not be listed as a supporting file; got:\n{}",
             body
         );
     }

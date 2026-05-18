@@ -92,6 +92,10 @@ struct Extension {
     /// fast-path in `add_extension` calls spawn too, so we don't end up
     /// with two watcher tasks both refetching on each notification.
     watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Cancelled by `remove_extension` before the entry is dropped so
+    /// the watcher task ends instead of holding the client Arc alive
+    /// indefinitely. Cloned into the spawned task.
+    cancel: CancellationToken,
 }
 
 impl Extension {
@@ -103,6 +107,7 @@ impl Extension {
         temp_dir: Option<tempfile::TempDir>,
         mcp_skills: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
         watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cancel: CancellationToken,
     ) -> Self {
         Self {
             client,
@@ -112,6 +117,7 @@ impl Extension {
             _temp_dir: temp_dir,
             mcp_skills,
             watcher_spawned,
+            cancel,
         }
     }
 
@@ -744,6 +750,7 @@ fn spawn_skill_list_changed_watcher(
     client: McpClientBox,
     cache: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
     watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cancel: CancellationToken,
     session_id: Option<&str>,
 ) {
     let Some(sid) = session_id.map(str::to_owned) else {
@@ -757,7 +764,19 @@ fn spawn_skill_list_changed_watcher(
     }
     tokio::spawn(async move {
         let mut rx = client.subscribe().await;
-        while let Some(notif) = rx.recv().await {
+        loop {
+            // Select on cancellation so `remove_extension` can end the
+            // task. Without this, the task holds an Arc clone of the
+            // client and `rx.recv()` only yields None when the client's
+            // notification senders drop — which never happens while
+            // we ourselves keep the client alive.
+            let notif = tokio::select! {
+                _ = cancel.cancelled() => return,
+                n = rx.recv() => match n {
+                    Some(n) => n,
+                    None => return,
+                },
+            };
             if !matches!(
                 notif,
                 rmcp::model::ServerNotification::ResourceListChangedNotification(_)
@@ -768,7 +787,7 @@ fn spawn_skill_list_changed_watcher(
                 &server_name,
                 client.as_ref(),
                 &sid,
-                CancellationToken::new(),
+                cancel.clone(),
             )
             .await;
             *cache.write().await = fresh;
@@ -876,6 +895,7 @@ impl ExtensionManager {
             McpClientBox,
             std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
             std::sync::Arc<std::sync::atomic::AtomicBool>,
+            CancellationToken,
         )> = {
             let extensions = self.extensions.lock().await;
             match extensions.get(&sanitized_name) {
@@ -886,6 +906,7 @@ impl ExtensionManager {
                         existing.client.clone(),
                         existing.mcp_skills.clone(),
                         existing.watcher_spawned.clone(),
+                        existing.cancel.clone(),
                     ))
                 }
                 Some(_) => {
@@ -899,7 +920,7 @@ impl ExtensionManager {
             }
         };
 
-        if let Some((client, cache, watcher_spawned)) = fast_path {
+        if let Some((client, cache, watcher_spawned, cancel)) = fast_path {
             // True no-op unless we both have a session id AND the cache is
             // empty (meaning the earlier registration never fetched the
             // index). Reading through the Arc lets us check without
@@ -918,6 +939,7 @@ impl ExtensionManager {
                     client.clone(),
                     cache.clone(),
                     watcher_spawned,
+                    cancel,
                     session_id,
                 );
             }
@@ -1145,18 +1167,20 @@ impl ExtensionManager {
             populate_mcp_skills_cache(&sanitized_name, client_arc.as_ref(), session_id).await;
         let cache = std::sync::Arc::new(tokio::sync::RwLock::new(mcp_skills));
         let watcher_spawned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel = CancellationToken::new();
 
         // Subscribe-and-refresh task. Spawned BEFORE insert so the task
         // is live the moment the extension is reachable through the
-        // manager; ends naturally when the client's notification
-        // channel closes on disconnect. Idempotent per Extension —
-        // the repopulate fast-path may also call this if the first
-        // registration ran with session_id=None.
+        // manager; ends on `remove_extension` (via cancel) or when the
+        // client's notification channel closes on disconnect. Idempotent
+        // per Extension — the repopulate fast-path may also call this
+        // if the first registration ran with session_id=None.
         spawn_skill_list_changed_watcher(
             sanitized_name.clone(),
             client_arc.clone(),
             cache.clone(),
             watcher_spawned.clone(),
+            cancel.clone(),
             session_id,
         );
 
@@ -1171,6 +1195,7 @@ impl ExtensionManager {
                 temp_dir,
                 cache,
                 watcher_spawned,
+                cancel,
             ),
         );
         drop(extensions);
@@ -1193,12 +1218,14 @@ impl ExtensionManager {
         let mcp_skills = populate_mcp_skills_cache(&normalized, client.as_ref(), session_id).await;
         let cache = std::sync::Arc::new(tokio::sync::RwLock::new(mcp_skills));
         let watcher_spawned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel = CancellationToken::new();
 
         spawn_skill_list_changed_watcher(
             normalized.clone(),
             client.clone(),
             cache.clone(),
             watcher_spawned.clone(),
+            cancel.clone(),
             session_id,
         );
 
@@ -1212,6 +1239,7 @@ impl ExtensionManager {
                 temp_dir,
                 cache,
                 watcher_spawned,
+                cancel,
             ),
         );
         self.invalidate_tools_cache_and_bump_version().await;
@@ -1266,7 +1294,11 @@ impl ExtensionManager {
     /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
-        self.extensions.lock().await.remove(&sanitized_name);
+        // Cancel the skill-cache watcher before dropping the Extension so
+        // its spawned task ends instead of holding the client Arc alive.
+        if let Some(removed) = self.extensions.lock().await.remove(&sanitized_name) {
+            removed.cancel.cancel();
+        }
         self.invalidate_tools_cache_and_bump_version().await;
         Ok(())
     }
@@ -2308,6 +2340,7 @@ mod tests {
                     crate::skills::mcp_client::ServerSkills::default(),
                 )),
                 std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                CancellationToken::new(),
             );
             self.extensions
                 .lock()
