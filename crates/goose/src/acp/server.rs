@@ -60,6 +60,7 @@ use rmcp::model::{
     AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -93,6 +94,8 @@ pub type AcpProviderFactory = Arc<
 >;
 
 const SESSION_LIST_PAGE_SIZE: usize = 50;
+const ACP_SESSION_LIST_TYPES: [SessionType; 3] =
+    [SessionType::User, SessionType::Scheduled, SessionType::Acp];
 
 /// Convenience conversions from any `Display` error into an `agent_client_protocol::Error`.
 ///
@@ -262,17 +265,45 @@ struct SessionListCursorToken {
     // Goose stores updated_at with second precision in common write paths, so the
     // cursor needs the full (updated_at, id) sort key to avoid skipping tied rows.
     session_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cwd: Option<std::path::PathBuf>,
+    filter_hash: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionListCursorFilters {
+    cwd: Option<String>,
+    session_types: Vec<String>,
+    non_empty: bool,
 }
 
 fn invalid_session_list_cursor(message: &'static str) -> agent_client_protocol::Error {
     agent_client_protocol::Error::invalid_params().data(message)
 }
 
+// bind cursors to the effective filters so they cannot be reused for a different list.
+fn session_list_filter_hash(
+    cwd: Option<&std::path::Path>,
+    session_types: &[SessionType],
+) -> Result<String, agent_client_protocol::Error> {
+    let mut session_type_names = session_types
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    session_type_names.sort();
+    let filters = SessionListCursorFilters {
+        cwd: cwd.map(|path| path.to_string_lossy().to_string()),
+        session_types: session_type_names,
+        non_empty: true,
+    };
+    let bytes =
+        serde_json::to_vec(&filters).internal_err_ctx("Failed to encode session list filters")?;
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(bytes)))
+}
+
 fn decode_session_list_cursor(
     cursor: Option<&str>,
     cwd: Option<&std::path::Path>,
+    session_types: &[SessionType],
 ) -> Result<Option<SessionListCursor>, agent_client_protocol::Error> {
     let Some(cursor) = cursor else {
         return Ok(None);
@@ -284,14 +315,14 @@ fn decode_session_list_cursor(
     let token: SessionListCursorToken = serde_json::from_slice(&bytes)
         .map_err(|_| invalid_session_list_cursor("malformed session list cursor"))?;
 
-    if token.session_id.is_empty() {
+    if token.session_id.is_empty() || token.filter_hash.is_empty() {
         return Err(invalid_session_list_cursor("malformed session list cursor"));
     }
 
-    let requested_cwd = cwd.map(std::path::Path::to_path_buf);
-    if token.cwd != requested_cwd {
+    let expected_filter_hash = session_list_filter_hash(cwd, session_types)?;
+    if token.filter_hash != expected_filter_hash {
         return Err(invalid_session_list_cursor(
-            "session list cursor does not match cwd",
+            "session list cursor does not match filters",
         ));
     }
 
@@ -304,11 +335,12 @@ fn decode_session_list_cursor(
 fn encode_session_list_cursor(
     cursor: &SessionListCursor,
     cwd: Option<&std::path::Path>,
+    session_types: &[SessionType],
 ) -> Result<String, agent_client_protocol::Error> {
     let token = SessionListCursorToken {
         updated_at: cursor.updated_at,
         session_id: cursor.session_id.clone(),
-        cwd: cwd.map(std::path::Path::to_path_buf),
+        filter_hash: session_list_filter_hash(cwd, session_types)?,
     };
     let bytes =
         serde_json::to_vec(&token).internal_err_ctx("Failed to encode session list cursor")?;
@@ -3380,13 +3412,14 @@ impl GooseAcpAgent {
         }
 
         let cwd = req.cwd.as_deref();
-        let cursor = decode_session_list_cursor(req.cursor.as_deref(), cwd)?;
+        let cursor =
+            decode_session_list_cursor(req.cursor.as_deref(), cwd, &ACP_SESSION_LIST_TYPES)?;
 
         // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
         let page = self
             .session_manager
             .list_nonempty_sessions_by_types_paged(
-                &[SessionType::User, SessionType::Scheduled, SessionType::Acp],
+                &ACP_SESSION_LIST_TYPES,
                 cwd,
                 cursor.as_ref(),
                 SESSION_LIST_PAGE_SIZE,
@@ -3407,7 +3440,7 @@ impl GooseAcpAgent {
         let next_cursor = page
             .next_cursor
             .as_ref()
-            .map(|cursor| encode_session_list_cursor(cursor, cwd))
+            .map(|cursor| encode_session_list_cursor(cursor, cwd, &ACP_SESSION_LIST_TYPES))
             .transpose()?;
         Ok(ListSessionsResponse::new(session_infos).next_cursor(next_cursor))
     }
