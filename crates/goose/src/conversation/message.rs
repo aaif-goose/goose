@@ -377,7 +377,13 @@ impl MessageContent {
                     metadata: res.metadata.clone(),
                 }))
             }
-            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => None,
+            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => {
+                if audience == Role::Assistant {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
             _ => Some(self.clone()),
         }
     }
@@ -1192,6 +1198,35 @@ mod tests {
         };
         assert_eq!(thinking.thinking, "step by step");
         assert!(thinking.signature.is_empty());
+    }
+
+    #[test]
+    fn test_agent_visible_content_preserves_thinking_for_provider() {
+        let message = Message::assistant()
+            .with_thinking("internal reasoning", "sig")
+            .with_redacted_thinking("redacted")
+            .with_text("final answer");
+
+        let provider_message = message.agent_visible_content();
+        assert_eq!(provider_message.content.len(), 3);
+        assert!(matches!(
+            provider_message.content[0],
+            MessageContent::Thinking(_)
+        ));
+        assert!(matches!(
+            provider_message.content[1],
+            MessageContent::RedactedThinking(_)
+        ));
+    }
+
+    #[test]
+    fn test_user_audience_filters_thinking_content() {
+        assert!(MessageContent::thinking("internal reasoning", "sig")
+            .filter_for_audience(Role::User)
+            .is_none());
+        assert!(MessageContent::redacted_thinking("redacted")
+            .filter_for_audience(Role::User)
+            .is_none());
     }
 
     #[test]
