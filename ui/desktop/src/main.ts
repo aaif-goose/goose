@@ -480,10 +480,6 @@ async function handleProtocolUrl(url: string) {
 
     if (targetWindow.webContents.isLoadingMainFrame()) {
       pendingDeepLinks.set(targetWindow.id, url);
-      targetWindow.webContents.once('did-finish-load', async () => {
-        await processProtocolUrl(url, parsedUrl, targetWindow);
-        pendingDeepLinks.delete(targetWindow.id);
-      });
     } else {
       await processProtocolUrl(url, parsedUrl, targetWindow);
     }
