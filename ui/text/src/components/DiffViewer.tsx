@@ -209,5 +209,3 @@ export function DiffViewer({
     </Box>
   );
 }
-
-export default DiffViewer;

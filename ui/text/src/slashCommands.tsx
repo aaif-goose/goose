@@ -28,7 +28,7 @@ const MAX_DIFF_BYTES = 2_000_000;
 function readDiff(cwd: string): { text: string; truncated: boolean } | null {
   const result = spawnSync(
     "git",
-    ["-c", "color.diff=always", "--no-pager", "diff", "--color=always"],
+    ["--no-pager", "diff", "--no-color"],
     {
       cwd,
       encoding: "utf8",
