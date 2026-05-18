@@ -92,29 +92,22 @@ export const currentMessageLocale = resolvedLocale.messageLocale;
 
 /**
  * Load compiled messages for a given locale.
- * English messages are always loaded as the fallback catalog so regional
- * English locales can keep their locale for date/number formatting without
- * triggering missing translation warnings for every message.
+ * Returns an empty object for English (react-intl uses defaultMessage as fallback).
  */
 export async function loadMessages(locale: string): Promise<Record<string, string>> {
-  const englishMod = await import('./compiled/en.json');
-  const englishMessages = englishMod.default ?? englishMod;
-
   if (locale === 'en') {
-    return englishMessages;
+    // English strings live in source code as defaultMessage — no catalog needed.
+    return {};
   }
 
   try {
     // Dynamic import so compiled translation bundles are code-split.
     const mod = await import(`./compiled/${locale}.json`);
-    return {
-      ...englishMessages,
-      ...(mod.default ?? mod),
-    };
+    return mod.default ?? mod;
   } catch {
     console.warn(
       `[i18n] No message catalog found for locale "${locale}", falling back to English.`
     );
-    return englishMessages;
+    return {};
   }
 }

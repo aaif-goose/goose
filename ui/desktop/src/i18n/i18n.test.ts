@@ -1,15 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { getLocale } from './index';
 
-const englishMessages = {
-  shared: 'English shared message',
-  englishOnly: 'English fallback message',
-};
-
-const zhCnMessages = {
-  shared: 'Chinese shared message',
-};
-
 // Helper to mock window.appConfig for tests
 function mockAppConfig(values: Record<string, unknown>) {
   (window as unknown as Record<string, unknown>).appConfig = {
@@ -70,40 +61,17 @@ describe('getLocale', () => {
 });
 
 describe('loadMessages', () => {
-  afterEach(() => {
-    vi.doUnmock('./compiled/en.json');
-    vi.doUnmock('./compiled/zh-CN.json');
-    vi.resetModules();
-  });
-
-  async function loadMessagesWithMockedCatalogs() {
-    vi.resetModules();
-    vi.doMock('./compiled/en.json', () => ({ default: englishMessages }));
-    vi.doMock('./compiled/zh-CN.json', () => ({ default: zhCnMessages }));
-
+  it('returns empty object for English locale', async () => {
     const { loadMessages } = await import('./index');
-    return loadMessages;
-  }
-
-  it('returns compiled English messages for English locale', async () => {
-    const loadMessages = await loadMessagesWithMockedCatalogs();
     const messages = await loadMessages('en');
-    expect(messages).toEqual(englishMessages);
+    expect(messages).toEqual({});
   });
 
-  it('merges locale messages over English fallback messages', async () => {
-    const loadMessages = await loadMessagesWithMockedCatalogs();
-    const messages = await loadMessages('zh-CN');
-
-    expect(messages.shared).toBe(zhCnMessages.shared);
-    expect(messages.englishOnly).toBe(englishMessages.englishOnly);
-  });
-
-  it('returns English messages for unsupported locale (with warning)', async () => {
+  it('returns empty object for unsupported locale (with warning)', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const loadMessages = await loadMessagesWithMockedCatalogs();
+    const { loadMessages } = await import('./index');
     const messages = await loadMessages('xx');
-    expect(messages).toEqual(englishMessages);
+    expect(messages).toEqual({});
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No message catalog found'));
     warnSpy.mockRestore();
   });
