@@ -453,7 +453,7 @@ if (process.platform !== 'darwin') {
   // Handle protocol URLs on Windows and Linux startup
   const protocolUrl = process.argv.find((arg) => arg.startsWith('goose://'));
   if (protocolUrl) {
-    app.whenReady().then(() => {
+    app.whenReady().then(async () => {
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(protocolUrl);
@@ -463,7 +463,15 @@ if (process.platform !== 'darwin') {
       }
 
       openUrlHandledLaunch = true;
-      handleProtocolUrl(protocolUrl, parsedUrl);
+      try {
+        await handleProtocolUrl(protocolUrl, parsedUrl);
+      } catch (error) {
+        log.error('[Main] Failed to handle startup protocol URL:', errorMessage(error));
+        if (BrowserWindow.getAllWindows().length === 0) {
+          const { dirPath } = parseArgs();
+          await createNewWindow(app, dirPath);
+        }
+      }
     });
   }
 }
