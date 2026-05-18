@@ -3,9 +3,14 @@ use crate::state;
 use anyhow::Result;
 use axum::middleware;
 use axum_server::Handle;
-use goose_server::auth::check_token;
+use goose::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+use goose::acp::transport::create_acp_router;
+use goose::agents::GoosePlatform;
+use goose::config::paths::Paths;
+use goose_server::auth::{check_acp_token, check_token};
 #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
 use goose_server::tls::setup_tls;
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
@@ -64,12 +69,28 @@ pub async fn run() -> Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = crate::routes::configure(app_state.clone(), secret_key.clone())
-        .layer(middleware::from_fn_with_state(
-            secret_key.clone(),
-            check_token,
-        ))
-        .layer(cors);
+    // TODO(acp-migration): When ui/desktop launches `goose serve` directly,
+    // move any goosed-only ACP setup into the goose serve path before deleting
+    // this bridge. In particular, verify everything ACP currently gets from
+    // goosed startup/AppState initialization, including builtin extension
+    // registration and the desktop platform identity.
+    let acp_server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
+        builtins: vec!["developer".to_string()],
+        data_dir: Paths::data_dir(),
+        config_dir: Paths::config_dir(),
+        goose_platform: GoosePlatform::GooseDesktop,
+        additional_source_roots: Vec::new(),
+    }));
+
+    let rest_router = crate::routes::configure(app_state.clone(), secret_key.clone()).layer(
+        middleware::from_fn_with_state(secret_key.clone(), check_token),
+    );
+    let acp_router = create_acp_router(acp_server).layer(middleware::from_fn_with_state(
+        secret_key.clone(),
+        check_acp_token,
+    ));
+
+    let app = rest_router.merge(acp_router).layer(cors);
 
     let addr = settings.socket_addr();
 
@@ -137,7 +158,6 @@ pub async fn run() -> Result<()> {
 
     #[cfg(feature = "otel")]
     if goose::otel::otlp::is_otlp_initialized() {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         goose::otel::otlp::shutdown_otlp();
     }
 

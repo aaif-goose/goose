@@ -231,6 +231,7 @@ export type DeclarativeProviderConfig = {
     model_doc_link?: string | null;
     models: Array<ModelInfo>;
     name: string;
+    preserves_thinking?: boolean;
     requires_auth?: boolean;
     setup_steps?: Array<string>;
     skip_canonical_filtering?: boolean;
@@ -1629,6 +1630,7 @@ export type UpdateCustomProviderRequest = {
         [key: string]: string;
     } | null;
     models: Array<string>;
+    preserves_thinking?: boolean | null;
     requires_auth?: boolean;
     supports_streaming?: boolean | null;
 };

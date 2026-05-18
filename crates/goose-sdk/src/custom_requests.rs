@@ -704,6 +704,7 @@ pub struct CustomProviderConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
     pub api_key_set: bool,
+    pub preserves_thinking: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -725,6 +726,8 @@ pub struct CustomProviderUpsertDto {
     pub catalog_provider_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserves_thinking: Option<bool>,
 }
 
 /// Create a custom provider backed by Goose's declarative provider store.

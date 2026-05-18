@@ -9,6 +9,7 @@
   },
   "main": ".vite/build/main.js",
   "scripts": {
+    "postinstall": "pnpm --filter @aaif/goose-sdk run build",
     "typecheck": "tsc --noEmit",
     "generate-api": "openapi-ts",
     "start-gui": "pnpm run generate-api && pnpm run i18n:compile && electron-forge start",
@@ -46,6 +47,7 @@
   },
   "dependencies": {
     "@aaif/goose-sdk": "workspace:*",
+    "@agentclientprotocol/sdk": "^0.19.0",
     "@mcp-ui/client": "6.1.0",
     "@modelcontextprotocol/ext-apps": "^1.1.1",
     "@radix-ui/react-accordion": "^1.2.12",

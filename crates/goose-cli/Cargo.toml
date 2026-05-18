@@ -25,7 +25,7 @@ goose = { path = "../goose", default-features = false }
 goose-mcp = { path = "../goose-mcp" }
 rmcp = { workspace = true }
 clap = { workspace = true }
-cliclack = "0.3.5"
+cliclack = "0.5.4"
 console = "0.16.1"
 dotenvy = { workspace = true }
 bat = { version = "0.26.1", default-features = false, features = ["regex-onig"] }

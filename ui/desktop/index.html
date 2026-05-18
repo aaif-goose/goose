@@ -1,8 +1,11 @@
 <!doctype html>
 <html>
   <head>
-    <meta charset="UTF-8"/>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' http://127.0.0.1:* https:; object-src 'none'; font-src 'self' data: https:; media-src 'self' mediastream:; form-action 'none'; base-uri 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'self' https: http:;"/>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' http://127.0.0.1:* https: ws: wss:; object-src 'none'; font-src 'self' data: https:; media-src 'self' mediastream:; form-action 'none'; base-uri 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'self' https: http:;"
+    />
     <title>Goose</title>
     <script>
       // Initialize theme before any content loads
@@ -13,8 +16,12 @@
               const useSystemTheme = localStorage.getItem('use_system_theme') === 'true';
               const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
               const savedTheme = localStorage.getItem('theme');
-              const isDark = useSystemTheme ? systemPrefersDark : (savedTheme ? savedTheme === 'dark' : systemPrefersDark);
-              
+              const isDark = useSystemTheme
+                ? systemPrefersDark
+                : savedTheme
+                  ? savedTheme === 'dark'
+                  : systemPrefersDark;
+
               if (isDark) {
                 document.documentElement.classList.add('dark');
                 document.documentElement.style.colorScheme = 'dark';
@@ -33,7 +40,10 @@
               }
             }
           } catch (error) {
-            console.warn('Failed to initialize theme from localStorage, using system preference:', error);
+            console.warn(
+              'Failed to initialize theme from localStorage, using system preference:',
+              error
+            );
             const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             if (systemPrefersDark) {
               document.documentElement.classList.add('dark');
@@ -47,16 +57,16 @@
 
         // Run immediately
         initializeTheme();
-        
+
         // Retry after DOM is ready if initial attempt failed
         if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', function() {
+          document.addEventListener('DOMContentLoaded', function () {
             setTimeout(initializeTheme, 50);
           });
         }
       })();
     </script>
-    <link href="./src/styles/main.css" rel="stylesheet"/>
+    <link href="./src/styles/main.css" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
