@@ -68,6 +68,7 @@ native-tls = [
     "oauth2/native-tls",
 ]
 system-keyring = ["dep:keyring"]
+portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 
 
 [lints]

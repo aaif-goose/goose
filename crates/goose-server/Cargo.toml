@@ -29,6 +29,7 @@ vulkan = ["goose/vulkan", "local-inference"]
 telemetry = ["goose/telemetry"]
 otel = ["goose/otel"]
 system-keyring = ["goose/system-keyring"]
+portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 rustls-tls = [
     "reqwest/rustls",
     "tokio-tungstenite/rustls-tls-native-roots",

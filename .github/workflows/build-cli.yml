@@ -152,7 +152,7 @@ jobs:
           if [ "${{ matrix.variant }}" = "musl" ]; then
             cargo build --release --target ${TARGET} -p goose-cli --bin goose \
               --no-default-features \
-              --features rustls-tls,aws-providers,telemetry,otel
+              --features portable-default
           else
             cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
           fi
