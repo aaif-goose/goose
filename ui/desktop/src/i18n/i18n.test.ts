@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getLocale } from './index';
+import { getLocale, loadMessagesWithCatalogLoader } from './index';
 
 const englishMessages = {
   shared: 'English shared message',
@@ -70,39 +70,37 @@ describe('getLocale', () => {
 });
 
 describe('loadMessages', () => {
-  afterEach(() => {
-    vi.doUnmock('./compiled/en.json');
-    vi.doUnmock('./compiled/zh-CN.json');
-    vi.resetModules();
-  });
-
-  async function loadMessagesWithMockedCatalogs() {
-    vi.resetModules();
-    vi.doMock('./compiled/en.json', () => ({ default: englishMessages }));
-    vi.doMock('./compiled/zh-CN.json', () => ({ default: zhCnMessages }));
-
-    const { loadMessages } = await import('./index');
-    return loadMessages;
-  }
-
   it('returns compiled English messages for English locale', async () => {
-    const loadMessages = await loadMessagesWithMockedCatalogs();
-    const messages = await loadMessages('en');
+    const loadCatalog = vi.fn().mockResolvedValue(englishMessages);
+    const messages = await loadMessagesWithCatalogLoader('en', loadCatalog);
+
     expect(messages).toEqual(englishMessages);
+    expect(loadCatalog).toHaveBeenCalledOnce();
+    expect(loadCatalog).toHaveBeenCalledWith('en');
   });
 
   it('merges locale messages over English fallback messages', async () => {
-    const loadMessages = await loadMessagesWithMockedCatalogs();
-    const messages = await loadMessages('zh-CN');
+    const loadCatalog = vi.fn(async (locale: string) =>
+      locale === 'zh-CN' ? zhCnMessages : englishMessages
+    );
+    const messages = await loadMessagesWithCatalogLoader('zh-CN', loadCatalog);
 
     expect(messages.shared).toBe(zhCnMessages.shared);
     expect(messages.englishOnly).toBe(englishMessages.englishOnly);
+    expect(loadCatalog).toHaveBeenCalledWith('en');
+    expect(loadCatalog).toHaveBeenCalledWith('zh-CN');
   });
 
   it('returns English messages for unsupported locale (with warning)', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const loadMessages = await loadMessagesWithMockedCatalogs();
-    const messages = await loadMessages('xx');
+    const loadCatalog = vi.fn(async (locale: string) => {
+      if (locale === 'xx') {
+        throw new Error('missing catalog');
+      }
+      return englishMessages;
+    });
+    const messages = await loadMessagesWithCatalogLoader('xx', loadCatalog);
+
     expect(messages).toEqual(englishMessages);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No message catalog found'));
     warnSpy.mockRestore();
