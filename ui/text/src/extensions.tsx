@@ -76,8 +76,8 @@ export default function ExtensionsManager({
     setPhase("loading");
     try {
       const [configResp, sessionResp] = await Promise.all([
-        client.goose.GooseConfigExtensions({}),
-        client.goose.GooseSessionExtensions({sessionId}),
+        client.goose.GooseConfigExtensionsList({}),
+        client.goose.GooseSessionExtensionsList({sessionId}),
       ]);
 
       const allExtensions = (configResp.extensions as unknown[]).filter(isExtEntry);
@@ -112,9 +112,9 @@ export default function ExtensionsManager({
     if (!sel) return;
     withSaving(async () => {
       if (sel.enabled) {
-        await client.goose.GooseExtensionsRemove({sessionId, name: sel.name});
+        await client.goose.GooseSessionExtensionsRemove({sessionId, name: sel.name});
       } else {
-        await client.goose.GooseExtensionsAdd({sessionId, config: sel as any});
+        await client.goose.GooseSessionExtensionsAdd({sessionId, config: sel as any});
       }
     });
   }, [entries, selectedIdx, client, sessionId, withSaving]);
@@ -127,7 +127,7 @@ export default function ExtensionsManager({
         extensionConfig: config as any,
         enabled: true,
       });
-      await client.goose.GooseExtensionsAdd({sessionId, config: config as any});
+      await client.goose.GooseSessionExtensionsAdd({sessionId, config: config as any});
     });
   }, [addType, addValue, addName, client, sessionId, withSaving]);
 
