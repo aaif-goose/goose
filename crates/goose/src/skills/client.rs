@@ -563,12 +563,19 @@ async fn enumerate_mcp_supporting_resources(
     out
 }
 
-/// Reads a resource from the owning MCP server and wraps it in the same
-/// "Loaded Skill" framing used for filesystem skills, so the model sees a
-/// consistent shape regardless of source. When the resource is the skill's
-/// own entry URI (i.e. `uri == entry.url`), also appends a Supporting
-/// Files hint section built from the server's `resources/list` response —
-/// same shape as the FS path, surfacing pointers only, never content.
+/// Reads a resource from the owning MCP server and wraps it in framing
+/// that matches the FS load_skill shape, so the model sees a consistent
+/// signal regardless of source.
+///
+/// When `uri == entry.url`, this is a SKILL.md load: `# Loaded Skill: …`
+/// header (with origin tag), optional Supporting Files block from the
+/// server's `resources/list`, and the `This knowledge is now available
+/// in your context.` footer.
+///
+/// Otherwise it's a supporting-file load: `# Loaded: <skill>/<rel>`
+/// header and `File loaded into context.` footer — matching the FS
+/// supporting-file framing at the load_skill call site below, so the
+/// model can't mistake a supporting file for a fresh skill load.
 async fn read_mcp_and_frame(
     mgr: &ExtensionManager,
     session_id: &str,
@@ -583,12 +590,11 @@ async fn read_mcp_and_frame(
     {
         Ok(result) => match first_text_content(result, &entry.server, uri) {
             Some(body) => {
-                let mut output = format!(
-                    "# Loaded Skill: {} (mcp skill from {})\n\n{}\n",
-                    entry.name, entry.server, body
-                );
-
                 if is_skill_md {
+                    let mut output = format!(
+                        "# Loaded Skill: {} (mcp skill from {})\n\n{}\n",
+                        entry.name, entry.server, body
+                    );
                     let supporting =
                         enumerate_mcp_supporting_resources(mgr, session_id, entry, cancel).await;
                     if !supporting.is_empty() {
@@ -603,10 +609,16 @@ async fn read_mcp_and_frame(
                             ));
                         }
                     }
+                    output.push_str("\n---\nThis knowledge is now available in your context.");
+                    CallToolResult::success(vec![Content::text(output)])
+                } else {
+                    let rel = uri.strip_prefix(entry.skill_root_uri()).unwrap_or(uri);
+                    let output = format!(
+                        "# Loaded: {}/{}\n\n{}\n\n---\nFile loaded into context.",
+                        entry.name, rel, body
+                    );
+                    CallToolResult::success(vec![Content::text(output)])
                 }
-
-                output.push_str("\n---\nThis knowledge is now available in your context.");
-                CallToolResult::success(vec![Content::text(output)])
             }
             None => CallToolResult::error(vec![Content::text(format!(
                 "Resource '{}' from '{}' had no text content.",
@@ -2661,5 +2673,111 @@ mod tests {
             "SKILL.md alias must not be listed as a supporting file; got:\n{}",
             body
         );
+    }
+
+    #[tokio::test]
+    async fn test_supporting_file_framing_parity_fs_vs_mcp() {
+        // Supporting-file loads (both FS and MCP) must use the
+        // `# Loaded: <skill>/<rel>` header + `File loaded into context.`
+        // footer — distinct from the SKILL.md framing so the model can
+        // tell "I just loaded a reference file" from "I just loaded a
+        // new skill". Regression guard: MCP supporting-file loads used
+        // to reuse the SKILL.md framing.
+        let tmp = TempDir::new().unwrap();
+
+        // FS skill with a supporting file.
+        let fs_skill_dir = tmp.path().join(".goose/skills/fs-demo");
+        fs::create_dir_all(&fs_skill_dir).unwrap();
+        fs::write(
+            fs_skill_dir.join("SKILL.md"),
+            "---\nname: fs-demo\ndescription: demo\n---\nbody",
+        )
+        .unwrap();
+        fs::write(fs_skill_dir.join("guide.md"), "fs supporting body").unwrap();
+
+        // MCP skill with the same shape.
+        let mut resources = HashMap::new();
+        resources.insert(
+            "skill://index.json".to_string(),
+            index_json(
+                r#"{"name":"mcp-demo","type":"skill-md","description":"d","url":"skill://mcp-demo/SKILL.md"}"#,
+            ),
+        );
+        resources.insert(
+            "skill://mcp-demo/SKILL.md".to_string(),
+            "mcp body".to_string(),
+        );
+        resources.insert(
+            "skill://mcp-demo/guide.md".to_string(),
+            "mcp supporting body".to_string(),
+        );
+        let (client, _mgr, _tmp_guard) =
+            setup_client_with_fake("srv", resources, tmp.path().to_path_buf()).await;
+
+        let ctx = ToolCallContext::new("s".to_string(), None, None);
+
+        let fs_result = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(
+                    serde_json::from_value::<JsonObject>(
+                        serde_json::json!({"name": "fs-demo/guide.md"}),
+                    )
+                    .unwrap(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let fs_text = text_of(&fs_result);
+
+        let mcp_result = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(
+                    serde_json::from_value::<JsonObject>(
+                        serde_json::json!({"name": "mcp-demo/guide.md"}),
+                    )
+                    .unwrap(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let mcp_text = text_of(&mcp_result);
+
+        for (label, text) in [("fs", &fs_text), ("mcp", &mcp_text)] {
+            assert!(
+                text.starts_with("# Loaded: "),
+                "{}: supporting-file load must use `# Loaded: ` header; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                text.contains("File loaded into context."),
+                "{}: supporting-file load must use the file footer; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                !text.starts_with("# Loaded Skill: "),
+                "{}: supporting-file load must NOT use the SKILL.md header; got:\n{}",
+                label,
+                text
+            );
+            assert!(
+                !text.contains("This knowledge is now available in your context."),
+                "{}: supporting-file load must NOT use the SKILL.md footer; got:\n{}",
+                label,
+                text
+            );
+        }
+
+        assert!(fs_text.contains("fs-demo/guide.md"));
+        assert!(fs_text.contains("fs supporting body"));
+        assert!(mcp_text.contains("mcp-demo/guide.md"));
+        assert!(mcp_text.contains("mcp supporting body"));
     }
 }
