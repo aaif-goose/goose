@@ -109,16 +109,7 @@ export async function loadMessagesWithCatalogLoader(
   locale: string,
   loadCatalog: (locale: string) => Promise<Record<string, string>>
 ): Promise<Record<string, string>> {
-  let englishMessages: Record<string, string>;
-
-  try {
-    englishMessages = await loadCatalog('en');
-  } catch {
-    console.warn(
-      '[i18n] No English fallback catalog found; missing messages will use source defaultMessage values.'
-    );
-    englishMessages = {};
-  }
+  const englishMessages = await loadCatalog('en');
 
   if (locale === 'en') {
     return englishMessages;
@@ -133,7 +124,7 @@ export async function loadMessagesWithCatalogLoader(
     };
   } catch {
     console.warn(
-      `[i18n] No message catalog found for locale "${locale}"; using fallback messages.`
+      `[i18n] No message catalog found for locale "${locale}", falling back to English.`
     );
     return englishMessages;
   }
