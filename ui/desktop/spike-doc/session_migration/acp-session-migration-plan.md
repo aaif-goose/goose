@@ -127,6 +127,9 @@ Build the minimum ACP path needed to load an existing text-only session:
 - add the session-scoped ACP notification router
 - add the minimal notification adapter for `user_message_chunk`,
   `agent_message_chunk`, and session metadata needed by load
+- add server support for an initial `session_info_update` during
+  `session/load`, so desktop has session metadata without depending on REST
+  `resumeAgent.session`
 - wire conversation load in the chat hook
 - verify an existing text-only session renders through ACP
 
@@ -135,11 +138,18 @@ This slice should prove:
 ```text
 React hook subscribes by sessionId
   -> calls ACP session/load
-  -> ACP sends session/update
-  -> router delivers to the matching session
-  -> adapter converts text chunks
+  -> ACP sends session/update: session_info_update
+  -> ACP sends session/update: replayed message chunks
+  -> ACP sends session/update: usage_update
+  -> router delivers notifications to the matching session
+  -> adapter converts metadata, usage, and text chunks
   -> UI renders messages
 ```
+
+Do not make `useChatStream` depend on both `resumeAgent.session.conversation`
+and ACP replay as competing conversation sources. REST may remain temporarily
+for setup behavior that ACP does not yet expose, but conversation and session
+metadata for the load slice should come from ACP notifications.
 
 ### 3. Live Text Prompt Slice
 

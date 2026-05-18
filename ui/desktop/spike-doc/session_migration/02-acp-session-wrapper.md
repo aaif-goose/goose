@@ -35,6 +35,10 @@ until the adapter and hooks consume notifications in later steps.
    - Sends `sessionId`, `cwd: workingDir`, and `mcpServers: []`.
    - Does not expect conversation messages in the direct response. Conversation
      replay arrives through ACP `session/update`.
+   - Treats `workingDir` as required input from session metadata. Do not pass
+     `getInitialWorkingDir()` or an arbitrary fallback for existing sessions,
+     because Goose currently updates the stored session working directory from
+     the ACP `session/load` request.
 
 4. Later live prompt slice: add `promptAcpSession(sessionId, userInput, meta?)`:
 
@@ -61,6 +65,8 @@ until the adapter and hooks consume notifications in later steps.
 
    - Calls `client.listSessions({})`.
    - Maps ACP `SessionInfo` into the shape consumed by desktop session list UI.
+   - Preserves `cwd`/`working_dir`, because the conversation load slice needs it
+     before calling `session/load`.
 
 8. Keep the wrapper free of React state and UI side effects.
 
@@ -75,8 +81,12 @@ until the adapter and hooks consume notifications in later steps.
 
 ### 2B. Session Notification Router
 
-10. Add one global ACP notification router and register it once with
-    `setAcpNotificationHandler`.
+10. Add one global ACP notification router and expose an explicit install
+    function that registers it once with `setAcpNotificationHandler`.
+
+    Do not call `setAcpNotificationHandler` at module load time. Registration
+    should happen from the load/prompt integration path before ACP methods that
+    can emit notifications are invoked.
 
 11. Expose a session-scoped subscription API, for example:
 
@@ -129,6 +139,8 @@ desktop/user session rather than a programmatic ACP session.
 - Desktop code can call the ACP session methods needed by the current vertical
   slice through one wrapper module.
 - ACP has one global notification handler that routes by `sessionId`.
+- ACP notification handler registration is explicit, not a module-load side
+  effect.
 - Multiple mounted chat sessions can subscribe without overwriting each other.
 - UI hooks do not need raw ACP response details.
 - The wrapper exposes no REST fallback.

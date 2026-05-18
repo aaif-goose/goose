@@ -75,6 +75,95 @@ registration.
 15. Add unit tests before the hook is fully migrated. This keeps the riskiest
     conversion logic testable without driving the whole UI.
 
+## Notification Design
+
+ACP `session/update` is the source of truth for loaded and live session state.
+The desktop client should not infer conversation or session metadata from the
+direct `session/load` response.
+
+Responsibilities:
+
+- `acpConnection.ts`: owns the ACP transport callback and forwards every
+  `session/update` notification to the installed handler.
+- `sessionNotificationRouter.ts`: routes notifications by `sessionId` only. It
+  should not cache, transform, or interpret notifications.
+- `sessionNotificationAdapter.ts`: converts ACP notification payloads into
+  desktop-facing updates for one session.
+- `useChatStream.ts`: owns React state transitions, loading/error lifecycle, and
+  reduced-motion batching. It should consume adapter updates rather than raw ACP
+  notification shapes.
+
+### Server Notification Contract
+
+During `session/load`, Goose ACP should emit notifications in this shape:
+
+```text
+session/load request
+  -> session/update: session_info_update
+  -> session/update: replayed message/tool/thought updates
+  -> session/update: usage_update
+  -> session/load response
+```
+
+The initial `session_info_update` should contain enough metadata for desktop to
+paint the loaded session without reading a REST `Session` object:
+
+- `title`
+- `updatedAt`
+- `_meta.goose.messageCount`
+- `_meta.goose.userSetName`
+- `_meta.goose.workingDir`, if desktop still needs it after load starts
+- `_meta.goose.sessionType`, `projectId`, or `scheduleId` only if a desktop
+  call site needs those fields during chat load
+
+Conversation content should remain separate from session metadata:
+
+- `user_message_chunk` and `agent_message_chunk` replay visible text history.
+- `agent_thought_chunk`, `tool_call`, and `tool_call_update` replay richer
+  history in later slices.
+- `usage_update` reports cumulative usage and context limit.
+
+The direct `LoadSessionResponse` should remain setup-oriented. It can carry ACP
+standard setup state such as modes, models, and config options, but the desktop
+chat view should not expect messages from it.
+
+### Desktop Adapter Update Contract
+
+The adapter should emit narrow desktop updates:
+
+```ts
+type AcpDesktopUpdate =
+  | { type: 'messages'; messages: Message[] }
+  | { type: 'sessionInfo'; sessionInfo: AcpDesktopSessionInfo }
+  | { type: 'usage'; used: number; max: number }
+  | { type: 'chatState'; chatState: ChatState }
+  | { type: 'error'; error: string };
+```
+
+`sessionInfo` should be a desktop-facing metadata object, not the raw ACP
+`SessionInfoUpdate`. It can be merged into the current desktop session state by
+the hook.
+
+`usage_update` is push-only. The adapter should convert it directly; the router
+should not cache it and the client should not add a custom usage RPC unless a
+future product flow needs usage without loading/subscribing to the session.
+
+### Metadata Boundaries
+
+Use ACP standard fields first. Use `_meta.goose.*` only for desktop-specific
+metadata that ACP does not model directly.
+
+Do not put these into `session_info_update` unless we intentionally define a
+Goose-specific extension contract:
+
+- extension load results
+- provider restore errors
+- permission prompts
+
+Extension setup results currently come from REST `resumeAgent`. Before removing
+that dependency, Goose ACP needs an explicit replacement for those setup results,
+either in `LoadSessionResponse` metadata or a dedicated Goose ACP notification.
+
 ## Completion Criteria
 
 - `session/load` and `session/prompt` callers can register before notifications

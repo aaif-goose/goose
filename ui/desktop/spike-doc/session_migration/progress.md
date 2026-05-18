@@ -2,7 +2,8 @@
 
 ## Status
 
-Current status: step 1 complete; next slice is text-only conversation load.
+Current status: step 1 complete; text-only conversation load is paused for
+notification contract design before further hook changes.
 
 Owner: Codex
 
@@ -51,25 +52,32 @@ Detailed plans: `02-acp-session-wrapper.md`, `03-notification-adapter.md`,
 
 #### 2B. Session Notification Router
 
-- [ ] Create `ui/desktop/src/acp/sessionNotificationRouter.ts`, or equivalent.
-- [ ] Register one global ACP notification router with
-  `setAcpNotificationHandler`.
-- [ ] Add session-scoped subscription/unsubscription routed by ACP `sessionId`.
-- [ ] Add router tests for session routing, multiple subscribers, unsubscribe,
+- [x] Create `ui/desktop/src/acp/sessionNotificationRouter.ts`, or equivalent.
+- [x] Add explicit router install function that registers one global ACP
+  notification router with `setAcpNotificationHandler`.
+- [x] Add session-scoped subscription/unsubscription routed by ACP `sessionId`.
+- [x] Add router tests for session routing, multiple subscribers, unsubscribe,
   double-unsubscribe, and no-subscriber dispatch.
 
 #### 2C. Minimal Text Adapter
 
-- [ ] Create `ui/desktop/src/acp/sessionNotificationAdapter.ts`.
-- [ ] Convert `user_message_chunk`.
-- [ ] Convert `agent_message_chunk`.
-- [ ] Convert minimal `session_info_update`, if needed for load.
-- [ ] Add adapter tests for text-only replay.
+- [x] Create `ui/desktop/src/acp/sessionNotificationAdapter.ts`.
+- [x] Convert `user_message_chunk`.
+- [x] Convert `agent_message_chunk`.
+- [x] Convert minimal `session_info_update`, if needed for load.
+- [x] Add adapter tests for text-only replay.
 
 #### 2D. Load Hook Integration
 
+- [ ] Add server-side initial `session_info_update` during ACP `session/load`.
+- [ ] Extend adapter `session_info_update` handling for desktop session
+  metadata.
+- [ ] Extend adapter `usage_update` handling for token/context usage.
+- [ ] Resolve the session's working directory from session-list metadata before
+  calling ACP `session/load`.
 - [ ] Register session-scoped notification subscription before `session/load`.
-- [ ] Replace REST `resumeAgent` loading for the text-only load path.
+- [ ] Stop using REST `resumeAgent` conversation data for the text-only load
+  path.
 - [ ] Preserve loading conversation state.
 - [ ] Preserve session load error state.
 - [ ] Call `onSessionLoaded` at the correct point.
@@ -79,6 +87,10 @@ Notes:
 
 - This is the first true vertical slice. It should prove wrapper, router,
   adapter, and React load state together for existing text-only sessions.
+- For existing sessions, ACP `session/load` must use the saved working directory
+  from session-list metadata. Do not use `getInitialWorkingDir()` or an
+  arbitrary fallback, because Goose updates the session working directory from
+  the ACP load request.
 - 2A added only `loadAcpSession(sessionId, workingDir)`. It calls ACP
   `session/load` with `sessionId`, `cwd`, and `mcpServers: []`, then returns the
   ACP `LoadSessionResponse` directly. Conversation content still must come from
@@ -86,6 +98,33 @@ Notes:
 - Ran `pnpm exec prettier --write src/acp/sessions.ts`.
 - Ran `pnpm run typecheck`; passed with the existing Node engine warning
   (`^24.10.0` wanted, shell has `v25.8.1`).
+- 2B added `installAcpSessionNotificationRouter()` and
+  `subscribeToAcpSession(sessionId, listener)`. Router registration is explicit,
+  not a module-load side effect.
+- The installed router dispatches by `notification.sessionId`.
+- Router unsubscribe is idempotent and removes empty session entries.
+- Ran `pnpm exec prettier --write src/acp/sessionNotificationRouter.ts
+  src/acp/sessionNotificationRouter.test.ts`.
+- Ran `pnpm exec vitest run src/acp/sessionNotificationRouter.test.ts`; 6 tests
+  passed.
+- Ran `pnpm run typecheck`; passed with the existing Node engine warning
+  (`^24.10.0` wanted, shell has `v25.8.1`).
+- 2C added `createAcpSessionNotificationAdapter()`, which converts ACP text
+  notifications into desktop `Message[]` updates and returns updates immediately
+  per chunk. Progressive rendering still depends on hook integration dispatching
+  each adapter update as notifications arrive.
+- The minimal adapter intentionally ignores non-text content for this slice.
+- Ran `pnpm exec prettier --write src/acp/sessionNotificationAdapter.ts
+  src/acp/__tests__/sessionNotificationAdapter.test.ts`.
+- Ran `pnpm exec vitest run src/acp/__tests__/sessionNotificationAdapter.test.ts
+  src/acp/__tests__/sessionNotificationRouter.test.ts`; 12 tests passed.
+- Ran `pnpm run typecheck`; passed with the existing Node engine warning
+  (`^24.10.0` wanted, shell has `v25.8.1`).
+- 2D hook integration should not proceed until ACP `session/load` has a clear
+  notification contract for initial session metadata. Avoid making
+  `resumeAgent.session.conversation` and ACP replay competing sources of truth.
+- Updated `03-notification-adapter.md`, `05-conversation-load.md`, and the main
+  migration plan with the notification design.
 
 ### 3. Live Text Prompt Slice
 
