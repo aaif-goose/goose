@@ -122,9 +122,7 @@ fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Data
         let mut content_array = Vec::new();
         let mut has_tool_calls = false;
         let mut has_multiple_content = false;
-        // Collect image user-messages from tool responses so all tool result messages
-        // can be emitted consecutively before any image messages. Claude's API requires
-        // all tool_result blocks to immediately follow tool_use blocks.
+        // Deferred so all tool-role messages stay consecutive (required by Claude via Databricks).
         let mut pending_image_messages: Vec<DatabricksMessage> = Vec::new();
 
         for content in &message.content {
@@ -1631,9 +1629,7 @@ mod tests {
 
     #[test]
     fn test_parallel_tool_responses_with_images_are_consecutive() -> anyhow::Result<()> {
-        // Regression test for issue #7449: when multiple parallel tool calls each return images,
-        // the tool result messages must be consecutive. Claude's API requires all tool_result
-        // blocks to immediately follow tool_use blocks with no interleaved user messages.
+        // Regression: #7449 — parallel tool calls with images must keep tool messages consecutive.
         let messages = vec![
             Message::assistant()
                 .with_tool_request("id1", Ok(CallToolRequestParams::new("tool_a")))
@@ -1660,8 +1656,7 @@ mod tests {
         let spec = as_value.as_array().unwrap();
         let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
 
-        // All tool messages must be consecutive, image user messages must come after all tools.
-        // Broken order: ["assistant", "tool", "user", "tool", "user"]
+        // Without the fix this was ["assistant", "tool", "user", "tool", "user"].
         assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
 
         Ok(())
@@ -1669,8 +1664,7 @@ mod tests {
 
     #[test]
     fn test_mixed_tool_responses_image_and_text_ordering() -> anyhow::Result<()> {
-        // When only some tool responses contain images, the ordering must still be correct:
-        // all tool messages first, then user image messages.
+        // Mixed case: only one tool response has an image.
         let messages = vec![
             Message::assistant()
                 .with_tool_request("id1", Ok(CallToolRequestParams::new("tool_a")))
@@ -1694,7 +1688,6 @@ mod tests {
         let spec = as_value.as_array().unwrap();
         let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
 
-        // tool_a returns text (no extra user message), tool_b returns an image (one user message after)
         assert_eq!(roles, vec!["assistant", "tool", "tool", "user"]);
 
         Ok(())
