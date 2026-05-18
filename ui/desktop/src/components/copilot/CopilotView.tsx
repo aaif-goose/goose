@@ -18,6 +18,8 @@ import CopilotGeneral from './sections/CopilotGeneral';
 import CopilotCodeReview from './sections/CopilotCodeReview';
 import CopilotAnalytics from './sections/CopilotAnalytics';
 import CopilotConnectors from './sections/CopilotConnectors';
+import { SaveIndicator } from './SaveIndicator';
+import { useCopilotPrefs } from './useCopilotPrefs';
 
 const STORAGE_KEY = 'goose-copilot:installation';
 
@@ -82,6 +84,7 @@ export default function CopilotView() {
     secret: '',
   });
   const [stored, setStored] = useState<StoredInstall | null>(loadStoredInstall);
+  const { prefs, update: updatePrefs, retry: retryPrefs, syncState } = useCopilotPrefs();
 
   const refreshTunnel = useCallback(async () => {
     try {
@@ -116,6 +119,7 @@ export default function CopilotView() {
           <div className="flex flex-col page-transition">
             <div className="flex justify-between items-center mb-1">
               <h1 className="text-4xl font-light">{intl.formatMessage(i18n.pageTitle)}</h1>
+              <SaveIndicator syncState={syncState} onRetry={retryPrefs} />
             </div>
           </div>
         </div>
@@ -183,14 +187,14 @@ export default function CopilotView() {
                 value="general"
                 className="mt-0 focus-visible:outline-none focus-visible:ring-0"
               >
-                <CopilotGeneral />
+                <CopilotGeneral prefs={prefs} onUpdate={updatePrefs} />
               </TabsContent>
 
               <TabsContent
                 value="code-review"
                 className="mt-0 focus-visible:outline-none focus-visible:ring-0"
               >
-                <CopilotCodeReview />
+                <CopilotCodeReview prefs={prefs} onUpdate={updatePrefs} />
               </TabsContent>
 
               <TabsContent

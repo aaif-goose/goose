@@ -12,8 +12,11 @@ import { verifyWebhookSignature } from './lib/github';
 import {
   handleInstallation,
   handleIssueComment,
+  handleListRepos,
   handlePullRequest,
   handleRegister,
+  handleRoutingPrefs,
+  handleWhoami,
 } from './lib/handlers';
 import type {
   Env,
@@ -40,6 +43,18 @@ export default {
 
     if (request.method === 'POST' && url.pathname === '/copilot/register') {
       return handleRegisterRoute(request, env);
+    }
+
+    if (request.method === 'PUT' && url.pathname === '/copilot/routing-prefs') {
+      return handleRoutingPrefs(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/copilot/whoami') {
+      return handleWhoami(request, env);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/copilot/repos') {
+      return handleListRepos(request, env);
     }
 
     // Public OAuth client ID for goosed to build the /login/oauth/authorize URL.

@@ -101,6 +101,110 @@ export async function getInstallationToken(
   return data.token;
 }
 
+interface InstallationReposPage {
+  total_count: number;
+  repositories: Array<{
+    id: number;
+    name: string;
+    full_name: string;
+    owner: { login: string } | null;
+    visibility?: string;
+    archived?: boolean;
+    default_branch?: string;
+    html_url?: string;
+  }>;
+}
+
+/** Maximum repo pages we'll fetch. 100/page × 5 pages = 500 repos.
+ *  Past that, Desktop shows a `truncated` notice. */
+const MAX_REPO_PAGES = 5;
+const REPOS_PER_PAGE = 100;
+
+export interface RepoSummary {
+  id: number;
+  full_name: string;
+  name: string;
+  owner: string;
+  visibility: 'public' | 'private' | 'internal' | 'unknown';
+  archived: boolean;
+  default_branch: string;
+  html_url: string;
+}
+
+export interface ListReposResult {
+  total_count: number;
+  repos: RepoSummary[];
+  truncated: boolean;
+}
+
+export async function listInstallationRepos(token: string): Promise<ListReposResult> {
+  const collected: RepoSummary[] = [];
+  let totalCount = 0;
+  let truncated = false;
+
+  for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+    const res = await fetch(
+      `${API}/installation/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`,
+      { headers: ghHeaders(token) }
+    );
+    if (!res.ok) throw await ghError(res, 'Failed to list installation repositories');
+    const data = (await res.json()) as InstallationReposPage;
+    totalCount = data.total_count ?? collected.length;
+    for (const r of data.repositories) {
+      collected.push({
+        id: r.id,
+        full_name: r.full_name,
+        name: r.name,
+        owner: r.owner?.login ?? '',
+        visibility: normalizeVisibility(r.visibility),
+        archived: r.archived ?? false,
+        default_branch: r.default_branch ?? '',
+        html_url: r.html_url ?? '',
+      });
+    }
+    if (data.repositories.length < REPOS_PER_PAGE) break;
+    if (page === MAX_REPO_PAGES && collected.length < totalCount) {
+      truncated = true;
+    }
+  }
+
+  return { total_count: totalCount, repos: collected, truncated };
+}
+
+function normalizeVisibility(v: string | undefined): RepoSummary['visibility'] {
+  if (v === 'public' || v === 'private' || v === 'internal') return v;
+  return 'unknown';
+}
+
+/**
+ * GitHub returns one of: `admin`, `maintain`, `write`, `triage`, `read`,
+ * `none`. Returns `null` if the API rejects or the user is anonymous.
+ */
+export async function getCommenterPermission(
+  fullName: string,
+  username: string,
+  token: string
+): Promise<'admin' | 'maintain' | 'write' | 'triage' | 'read' | 'none' | null> {
+  const res = await fetch(
+    `${API}/repos/${fullName}/collaborators/${encodeURIComponent(username)}/permission`,
+    { headers: ghHeaders(token) }
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { permission?: string };
+  const p = data.permission;
+  if (
+    p === 'admin' ||
+    p === 'maintain' ||
+    p === 'write' ||
+    p === 'triage' ||
+    p === 'read' ||
+    p === 'none'
+  ) {
+    return p;
+  }
+  return null;
+}
+
 export async function getPullRequestHead(
   fullName: string,
   prNumber: number,

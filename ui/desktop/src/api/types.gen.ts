@@ -182,6 +182,81 @@ export type CopilotCommentRequest = {
     repo: string;
 };
 
+/**
+ * Full Copilot preference set. The user sees this as one object in Desktop;
+ * the backend splits it into "routing prefs" (shipped to the switchboard for
+ * fast webhook decisions) and "execution prefs" (kept local on goosed).
+ */
+export type CopilotPrefs = {
+    allow_act_on_issues?: boolean;
+    allow_commit_on_fix?: boolean;
+    allow_open_new_prs?: boolean;
+    auto_review_on_pr_open?: boolean;
+    custom_instructions?: string;
+    exhaustive_review?: boolean;
+    /**
+     * Model name used when `review_model_choice` is `Custom`.
+     * Ignored when `Default`.
+     */
+    review_model?: string | null;
+    review_model_choice?: ReviewModelChoice;
+    review_output_style?: ReviewOutputStyle;
+    /**
+     * Provider name (e.g. "openai", "anthropic") used when
+     * `review_model_choice` is `Custom`. Ignored when `Default`.
+     */
+    review_provider?: string | null;
+    /**
+     * Set on the client; rejected if higher than the server understands.
+     */
+    schema_version?: number;
+    trigger_permission?: TriggerPermission;
+    trigger_preference?: TriggerPreference;
+};
+
+export type CopilotPrefsRequest = {
+    prefs: CopilotPrefs;
+};
+
+export type CopilotPrefsResponse = {
+    prefs: CopilotPrefs;
+    /**
+     * Populated when `switchboard_synced` is `false`. Surface in UI.
+     */
+    switchboard_error?: string | null;
+    /**
+     * `true` when the routing subset reached the switchboard. `false` is
+     * non-fatal — local persistence still succeeded and the bot will use
+     * the saved values once Desktop manages to push them.
+     */
+    switchboard_synced: boolean;
+};
+
+export type CopilotRepo = {
+    archived?: boolean;
+    default_branch?: string;
+    full_name: string;
+    html_url?: string;
+    id: number;
+    name: string;
+    owner: string;
+    visibility?: RepoVisibility;
+};
+
+export type CopilotReposResponse = {
+    repos: Array<CopilotRepo>;
+    /**
+     * Total repos accessible to the installation. May be larger than
+     * `repos.len()` if pagination cut the list off.
+     */
+    total_count: number;
+    /**
+     * `true` when GitHub had more pages than we fetched. Desktop can show a
+     * "showing first N" notice.
+     */
+    truncated?: boolean;
+};
+
 export type CopilotReviewRequest = {
     /**
      * The endpoint updates this Check Run on completion.
@@ -1204,6 +1279,8 @@ export type RepoVariantsResponse = {
     variants: Array<HfQuantVariant>;
 };
 
+export type RepoVisibility = 'public' | 'private' | 'internal' | 'unknown';
+
 export type ResourceContents = {
     _meta?: {
         [key: string]: unknown;
@@ -1275,7 +1352,23 @@ export type RetryConfig = {
     timeout_seconds?: number | null;
 };
 
+export type ReviewModelChoice = 'default' | 'custom';
+
+export type ReviewOutputStyle = 'inline' | 'summary' | 'both';
+
 export type Role = 'user' | 'assistant';
+
+/**
+ * The strict subset of `CopilotPrefs` shipped to the switchboard. Nothing
+ * here is sensitive — it's behavior-shaping for webhook routing only.
+ */
+export type RoutingPrefs = {
+    allow_act_on_issues: boolean;
+    auto_review_on_pr_open: boolean;
+    schema_version: number;
+    trigger_permission: TriggerPermission;
+    trigger_preference: TriggerPreference;
+};
 
 export type RunNowResponse = {
     session_id: string;
@@ -1666,6 +1759,10 @@ export type TranscribeResponse = {
      */
     text: string;
 };
+
+export type TriggerPermission = 'anyone' | 'write-access' | 'specific-users';
+
+export type TriggerPreference = 'pr-open' | 'on-every-push' | 'manual-only';
 
 export type TunnelInfo = {
     hostname: string;
@@ -3042,6 +3139,83 @@ export type CommentResponses = {
 };
 
 export type CommentResponse = CommentResponses[keyof CommentResponses];
+
+export type GetPrefsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/copilot/prefs';
+};
+
+export type GetPrefsErrors = {
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type GetPrefsResponses = {
+    /**
+     * Current Copilot preferences
+     */
+    200: CopilotPrefs;
+};
+
+export type GetPrefsResponse = GetPrefsResponses[keyof GetPrefsResponses];
+
+export type PutPrefsData = {
+    body: CopilotPrefsRequest;
+    path?: never;
+    query?: never;
+    url: '/copilot/prefs';
+};
+
+export type PutPrefsErrors = {
+    /**
+     * Validation error
+     */
+    400: unknown;
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type PutPrefsResponses = {
+    /**
+     * Preferences saved
+     */
+    200: CopilotPrefsResponse;
+};
+
+export type PutPrefsResponse = PutPrefsResponses[keyof PutPrefsResponses];
+
+export type GetReposData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/copilot/repos';
+};
+
+export type GetReposErrors = {
+    /**
+     * Setup not completed
+     */
+    412: unknown;
+    /**
+     * Switchboard / GitHub error
+     */
+    502: unknown;
+};
+
+export type GetReposResponses = {
+    /**
+     * Repos accessible to the installation
+     */
+    200: CopilotReposResponse;
+};
+
+export type GetReposResponse = GetReposResponses[keyof GetReposResponses];
 
 export type ReviewData = {
     body: CopilotReviewRequest;

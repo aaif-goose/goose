@@ -5,13 +5,22 @@ import {
   completeCheckRun,
   createCheckRun,
   generateAppJwt,
+  getCommenterPermission,
   getInstallationToken,
   getPullRequestHead,
+  listInstallationRepos,
   postCommentReaction,
   postIssueComment,
 } from './github';
 import { exchangeCodeAndResolve } from './oauth';
-import { deleteInstall, loadInstall, saveInstall } from './registry';
+import {
+  deleteRoutingPrefs,
+  loadRoutingPrefs,
+  parseRoutingPrefs,
+  saveRoutingPrefs,
+  type TriggerPermission,
+} from './prefs';
+import { deleteInstall, loadInstall, loadInstallByAgent, saveInstall } from './registry';
 import { runCommentViaTunnel, runReviewViaTunnel } from './tunnel';
 import type {
   Env,
@@ -76,17 +85,137 @@ function jsonError(status: number, message: string): Response {
   });
 }
 
+/**
+ * Persist the routing-prefs subset goosed pushed to us. Authenticated by the
+ * install secret minted at register time — same secret the tunnel uses, so
+ * no new credential surface.
+ */
+export async function handleRoutingPrefs(request: Request, env: Env): Promise<Response> {
+  const installIdRaw = request.headers.get('x-install-id');
+  const installSecret = request.headers.get('x-install-secret');
+  if (!installIdRaw || !installSecret) {
+    return jsonError(401, 'missing install credentials');
+  }
+  const installId = Number.parseInt(installIdRaw, 10);
+  if (!Number.isFinite(installId)) {
+    return jsonError(400, 'invalid install id');
+  }
+
+  const install = await loadInstall(env, installId);
+  if (!install || install.tunnelSecret !== installSecret) {
+    return jsonError(401, 'install credentials rejected');
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError(400, 'invalid JSON body');
+  }
+
+  let prefs;
+  try {
+    prefs = parseRoutingPrefs(body);
+  } catch (e) {
+    return jsonError(400, e instanceof Error ? e.message : 'invalid routing prefs');
+  }
+
+  await saveRoutingPrefs(env, installId, prefs);
+  return new Response(JSON.stringify({ ok: true, prefs }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/**
+ * `whoami`: given the (agent_id, tunnel_secret) any registered goosed has,
+ * return its installation_id. This is the authoritative way for goosed to
+ * learn its own install id when local config is empty (fresh install,
+ * pre-this-code install, or wiped config).
+ *
+ * Auth is the same shape as the tunnel itself: agent_id + matching
+ * tunnel_secret. Constant-time on success/failure paths.
+ */
+export async function handleWhoami(request: Request, env: Env): Promise<Response> {
+  let body: { agent_id?: unknown; tunnel_secret?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return jsonError(400, 'invalid JSON body');
+  }
+  const agentId = typeof body.agent_id === 'string' ? body.agent_id : '';
+  const tunnelSecret = typeof body.tunnel_secret === 'string' ? body.tunnel_secret : '';
+  if (!agentId || !tunnelSecret) {
+    return jsonError(400, 'agent_id and tunnel_secret are required');
+  }
+
+  const install = await loadInstallByAgent(env, agentId);
+  if (!install || install.tunnelSecret !== tunnelSecret) {
+    // Don't differentiate "no such agent" from "wrong secret" — same surface
+    // either way, no oracle for attackers.
+    return jsonError(401, 'unrecognized credentials');
+  }
+
+  return new Response(
+    JSON.stringify({ installation_id: install.installationId }),
+    { status: 200, headers: { 'content-type': 'application/json' } }
+  );
+}
+
+/**
+ * List the repositories accessible to the installation. Mints an install
+ * token (cached) from the App JWT and calls GitHub's
+ * `/installation/repositories` endpoint, paginated up to a hard cap.
+ */
+export async function handleListRepos(request: Request, env: Env): Promise<Response> {
+  const installIdRaw = request.headers.get('x-install-id');
+  const installSecret = request.headers.get('x-install-secret');
+  if (!installIdRaw || !installSecret) {
+    return jsonError(401, 'missing install credentials');
+  }
+  const installId = Number.parseInt(installIdRaw, 10);
+  if (!Number.isFinite(installId)) {
+    return jsonError(400, 'invalid install id');
+  }
+
+  const install = await loadInstall(env, installId);
+  if (!install || install.tunnelSecret !== installSecret) {
+    return jsonError(401, 'install credentials rejected');
+  }
+
+  try {
+    const jwt = await generateAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    const token = await getInstallationToken(installId, jwt);
+    const result = await listInstallationRepos(token);
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[repos] install=${installId}: ${msg}`);
+    return jsonError(502, msg);
+  }
+}
+
 // `created`/`added`/suspend/unsuspend are no-ops here — Desktop owns
 // /register once the user enables Copilot. We only need to clean up KV on uninstall.
 export async function handleInstallation(payload: InstallationEvent, env: Env): Promise<void> {
   if (payload.action === 'deleted') {
     await deleteInstall(env, payload.installation.id);
+    await deleteRoutingPrefs(env, payload.installation.id);
   }
 }
 
 export async function handlePullRequest(payload: PullRequestEvent, env: Env): Promise<void> {
   if (!['opened', 'synchronize', 'reopened'].includes(payload.action)) return;
   if (payload.pull_request.draft) return;
+
+  // Routing prefs gate.
+  const routing = await loadRoutingPrefs(env, payload.installation.id);
+  if (!routing.auto_review_on_pr_open) return;
+  if (routing.trigger_preference === 'manual-only') return;
+  if (payload.action === 'synchronize' && routing.trigger_preference === 'pr-open') return;
 
   await triggerReview({
     fullName: payload.repository.full_name,
@@ -108,6 +237,18 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
 
   const jwt = await generateAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const token = await getInstallationToken(payload.installation.id, jwt);
+
+  // Trigger-permission gate. We check BEFORE reacting, so an unauthorized
+  // commenter sees nothing (silent drop, no :eyes:).
+  const routing = await loadRoutingPrefs(env, payload.installation.id);
+  if (!(await commenterMayTrigger(routing.trigger_permission, payload, token))) {
+    console.log(
+      `[comment] ${payload.repository.full_name} #${payload.issue.number}: ` +
+        `commenter ${payload.comment.user.login} blocked by trigger_permission=${routing.trigger_permission}`
+    );
+    return;
+  }
+
   const pr = await getPullRequestHead(payload.repository.full_name, payload.issue.number, token);
 
   // Ack the mention right away so the user knows the webhook fired. goosed
@@ -327,4 +468,25 @@ async function postNeutralCheck(opts: {
     summary: opts.summary,
     token,
   });
+}
+
+/** Returns true when the commenter passes the configured trigger permission.
+ *  Errors fail closed except for `'anyone'`, where we don't need a check at all. */
+async function commenterMayTrigger(
+  permission: TriggerPermission,
+  payload: IssueCommentEvent,
+  token: string
+): Promise<boolean> {
+  if (permission === 'anyone') return true;
+  if (permission === 'specific-users') {
+    // Allowlist storage not yet wired; treat as a deny-all to avoid surprises.
+    return false;
+  }
+  // write-access: collaborator-permission lookup.
+  const level = await getCommenterPermission(
+    payload.repository.full_name,
+    payload.comment.user.login,
+    token
+  );
+  return level === 'admin' || level === 'maintain' || level === 'write';
 }

@@ -1696,6 +1696,89 @@
         }
       }
     },
+    "/copilot/prefs": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_prefs",
+        "responses": {
+          "200": {
+            "description": "Current Copilot preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotPrefs"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "put_prefs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotPrefsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Preferences saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotPrefsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/repos": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_repos",
+        "responses": {
+          "200": {
+            "description": "Repos accessible to the installation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotReposResponse"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Setup not completed"
+          },
+          "502": {
+            "description": "Switchboard / GitHub error"
+          }
+        }
+      }
+    },
     "/copilot/review": {
       "post": {
         "tags": [
@@ -4730,6 +4813,152 @@
           }
         }
       },
+      "CopilotPrefs": {
+        "type": "object",
+        "description": "Full Copilot preference set. The user sees this as one object in Desktop;\nthe backend splits it into \"routing prefs\" (shipped to the switchboard for\nfast webhook decisions) and \"execution prefs\" (kept local on goosed).",
+        "properties": {
+          "allow_act_on_issues": {
+            "type": "boolean"
+          },
+          "allow_commit_on_fix": {
+            "type": "boolean"
+          },
+          "allow_open_new_prs": {
+            "type": "boolean"
+          },
+          "auto_review_on_pr_open": {
+            "type": "boolean"
+          },
+          "custom_instructions": {
+            "type": "string"
+          },
+          "exhaustive_review": {
+            "type": "boolean"
+          },
+          "review_model": {
+            "type": "string",
+            "description": "Model name used when `review_model_choice` is `Custom`.\nIgnored when `Default`.",
+            "nullable": true
+          },
+          "review_model_choice": {
+            "$ref": "#/components/schemas/ReviewModelChoice"
+          },
+          "review_output_style": {
+            "$ref": "#/components/schemas/ReviewOutputStyle"
+          },
+          "review_provider": {
+            "type": "string",
+            "description": "Provider name (e.g. \"openai\", \"anthropic\") used when\n`review_model_choice` is `Custom`. Ignored when `Default`.",
+            "nullable": true
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Set on the client; rejected if higher than the server understands.",
+            "minimum": 0
+          },
+          "trigger_permission": {
+            "$ref": "#/components/schemas/TriggerPermission"
+          },
+          "trigger_preference": {
+            "$ref": "#/components/schemas/TriggerPreference"
+          }
+        }
+      },
+      "CopilotPrefsRequest": {
+        "type": "object",
+        "required": [
+          "prefs"
+        ],
+        "properties": {
+          "prefs": {
+            "$ref": "#/components/schemas/CopilotPrefs"
+          }
+        }
+      },
+      "CopilotPrefsResponse": {
+        "type": "object",
+        "required": [
+          "prefs",
+          "switchboard_synced"
+        ],
+        "properties": {
+          "prefs": {
+            "$ref": "#/components/schemas/CopilotPrefs"
+          },
+          "switchboard_error": {
+            "type": "string",
+            "description": "Populated when `switchboard_synced` is `false`. Surface in UI.",
+            "nullable": true
+          },
+          "switchboard_synced": {
+            "type": "boolean",
+            "description": "`true` when the routing subset reached the switchboard. `false` is\nnon-fatal — local persistence still succeeded and the bot will use\nthe saved values once Desktop manages to push them."
+          }
+        }
+      },
+      "CopilotRepo": {
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "name",
+          "owner"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/RepoVisibility"
+          }
+        }
+      },
+      "CopilotReposResponse": {
+        "type": "object",
+        "required": [
+          "total_count",
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopilotRepo"
+            }
+          },
+          "total_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total repos accessible to the installation. May be larger than\n`repos.len()` if pagination cut the list off.",
+            "minimum": 0
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "`true` when GitHub had more pages than we fetched. Desktop can show a\n\"showing first N\" notice."
+          }
+        }
+      },
       "CopilotReviewRequest": {
         "type": "object",
         "required": [
@@ -7739,6 +7968,15 @@
           }
         }
       },
+      "RepoVisibility": {
+        "type": "string",
+        "enum": [
+          "public",
+          "private",
+          "internal",
+          "unknown"
+        ]
+      },
       "ResourceContents": {
         "anyOf": [
           {
@@ -7909,6 +8147,21 @@
           }
         }
       },
+      "ReviewModelChoice": {
+        "type": "string",
+        "enum": [
+          "default",
+          "custom"
+        ]
+      },
+      "ReviewOutputStyle": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "summary",
+          "both"
+        ]
+      },
       "Role": {
         "oneOf": [
           {
@@ -7924,6 +8177,36 @@
             ]
           }
         ]
+      },
+      "RoutingPrefs": {
+        "type": "object",
+        "description": "The strict subset of `CopilotPrefs` shipped to the switchboard. Nothing\nhere is sensitive — it's behavior-shaping for webhook routing only.",
+        "required": [
+          "schema_version",
+          "auto_review_on_pr_open",
+          "trigger_preference",
+          "trigger_permission",
+          "allow_act_on_issues"
+        ],
+        "properties": {
+          "allow_act_on_issues": {
+            "type": "boolean"
+          },
+          "auto_review_on_pr_open": {
+            "type": "boolean"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "trigger_permission": {
+            "$ref": "#/components/schemas/TriggerPermission"
+          },
+          "trigger_preference": {
+            "$ref": "#/components/schemas/TriggerPreference"
+          }
+        }
       },
       "RunNowResponse": {
         "type": "object",
@@ -9160,6 +9443,22 @@
             "description": "Transcribed text from the audio"
           }
         }
+      },
+      "TriggerPermission": {
+        "type": "string",
+        "enum": [
+          "anyone",
+          "write-access",
+          "specific-users"
+        ]
+      },
+      "TriggerPreference": {
+        "type": "string",
+        "enum": [
+          "pr-open",
+          "on-every-push",
+          "manual-only"
+        ]
       },
       "TunnelInfo": {
         "type": "object",

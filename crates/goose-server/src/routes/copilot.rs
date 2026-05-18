@@ -12,8 +12,17 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
-use axum::{extract::State, response::Json, routing::post, Router};
+use axum::{
+    extract::State,
+    response::Json,
+    routing::{get, post},
+    Router,
+};
 use goose::config::signup_copilot::CopilotInstallFlow;
+use goose::config::Config;
+use goose::copilot::{
+    CopilotPrefs, CopilotReposResponse, ReviewModelChoice, ReviewOutputStyle, RoutingPrefs,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
@@ -25,6 +34,13 @@ use crate::state::AppState;
 const SWITCHBOARD_URL: &str = "https://goose-copilot-switchboard.example.workers.dev";
 const SWITCHBOARD_URL_ENV: &str = "GOOSE_COPILOT_SWITCHBOARD_URL";
 const USER_AGENT: &str = "goose-copilot/0.1";
+
+/// goose config key holding the Copilot pref blob (JSON).
+const PREFS_CONFIG_KEY: &str = "copilot.prefs";
+/// goose config key holding the installation_id assigned at register-time.
+/// Stored on first successful `setup` so subsequent `prefs` writes can be
+/// forwarded to the switchboard's KV.
+const INSTALLATION_ID_CONFIG_KEY: &str = "copilot.installation_id";
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CopilotSetupResponse {
@@ -95,6 +111,16 @@ async fn setup(
         .json()
         .await
         .map_err(|e| ErrorResponse::internal(format!("parse register response: {e}")))?;
+
+    // Persist install_id so subsequent /copilot/prefs writes know where to
+    // forward the routing subset. Non-fatal if it fails — Desktop still gets
+    // the id in the response.
+    if let Err(e) = Config::global().set_param(
+        INSTALLATION_ID_CONFIG_KEY,
+        serde_json::json!(register.installation_id),
+    ) {
+        tracing::warn!("[copilot] failed to persist installation_id: {e}");
+    }
 
     Ok(Json(CopilotSetupResponse {
         installation_id: register.installation_id,
@@ -208,11 +234,12 @@ struct Finding {
 }
 
 async fn run_review(req: CopilotReviewRequest) -> Result<()> {
+    let prefs = load_prefs();
     let pr = fetch_pr_metadata(&req).await?;
     let workdir = tempfile::tempdir().context("create temp workdir")?;
     git_clone_and_checkout(&req, workdir.path()).await?;
-    let findings = run_goose_review(workdir.path(), &pr.base_sha, &req.head_sha).await?;
-    post_review(&req, &findings).await?;
+    let findings = run_goose_review(workdir.path(), &pr.base_sha, &req.head_sha, &prefs).await?;
+    post_review(&req, &findings, &prefs).await?;
     if let Some(crid) = req.check_run_id {
         complete_check_run(&req, crid, &findings).await?;
     }
@@ -286,13 +313,36 @@ async fn git_run(cwd: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-async fn run_goose_review(workdir: &Path, base: &str, head: &str) -> Result<Vec<Finding>> {
+async fn run_goose_review(
+    workdir: &Path,
+    base: &str,
+    head: &str,
+    prefs: &CopilotPrefs,
+) -> Result<Vec<Finding>> {
     let bin = locate_goose_binary()?;
     let range = format!("{base}...{head}");
 
+    let mut args: Vec<String> = vec![
+        "review".into(),
+        range,
+        "--severity".into(),
+        "medium".into(),
+        "--quiet".into(),
+    ];
+    if matches!(prefs.review_model_choice, ReviewModelChoice::Custom) {
+        if let Some(provider) = prefs.review_provider.as_deref().filter(|s| !s.is_empty()) {
+            args.push("--provider".into());
+            args.push(provider.to_string());
+        }
+        if let Some(model) = prefs.review_model.as_deref().filter(|s| !s.is_empty()) {
+            args.push("--model".into());
+            args.push(model.to_string());
+        }
+    }
+
     let output = Command::new(&bin)
         .current_dir(workdir)
-        .args(["review", &range, "--severity", "medium", "--quiet"])
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -342,12 +392,17 @@ fn locate_goose_binary() -> Result<PathBuf> {
     Ok(PathBuf::from("goose"))
 }
 
-async fn post_review(req: &CopilotReviewRequest, findings: &[Finding]) -> Result<()> {
+async fn post_review(
+    req: &CopilotReviewRequest,
+    findings: &[Finding],
+    prefs: &CopilotPrefs,
+) -> Result<()> {
     let url = format!(
         "https://api.github.com/repos/{}/pulls/{}/reviews",
         req.repo, req.pr_number
     );
-    let payload = build_review_payload(req, findings, false);
+    let style = &prefs.review_output_style;
+    let payload = build_review_payload(req, findings, style);
 
     let res = github_client()
         .post(&url)
@@ -370,7 +425,7 @@ async fn post_review(req: &CopilotReviewRequest, findings: &[Finding]) -> Result
         detail.chars().take(300).collect::<String>()
     );
 
-    let fallback = build_review_payload(req, findings, true);
+    let fallback = build_review_payload(req, findings, &ReviewOutputStyle::Summary);
     github_client()
         .post(&url)
         .header("Authorization", format!("token {}", req.github_token))
@@ -386,11 +441,12 @@ async fn post_review(req: &CopilotReviewRequest, findings: &[Finding]) -> Result
 fn build_review_payload(
     req: &CopilotReviewRequest,
     findings: &[Finding],
-    summary_only: bool,
+    style: &ReviewOutputStyle,
 ) -> serde_json::Value {
-    let comments: Vec<serde_json::Value> = if summary_only {
-        Vec::new()
-    } else {
+    let include_inline = matches!(style, ReviewOutputStyle::Inline | ReviewOutputStyle::Both);
+    let include_summary = matches!(style, ReviewOutputStyle::Summary | ReviewOutputStyle::Both);
+
+    let comments: Vec<serde_json::Value> = if include_inline {
         findings
             .iter()
             .filter(|f| !f.path.is_empty())
@@ -425,28 +481,40 @@ fn build_review_payload(
                 })
             })
             .collect()
+    } else {
+        Vec::new()
     };
 
-    let mut summary = format!(
-        "**[goose Copilot]({})** — {} finding(s)",
-        req.pr_url,
-        findings.len()
-    );
-    if !findings.is_empty() {
-        summary.push_str(":\n\n");
-        for f in findings.iter().take(10) {
-            summary.push_str(&format!(
-                "- **{}** in `{}`: {}\n",
-                f.severity, f.path, f.summary
-            ));
+    let summary = if include_summary {
+        let mut s = format!(
+            "**[goose Copilot]({})** — {} finding(s)",
+            req.pr_url,
+            findings.len()
+        );
+        if !findings.is_empty() {
+            s.push_str(":\n\n");
+            for f in findings.iter().take(10) {
+                s.push_str(&format!(
+                    "- **{}** in `{}`: {}\n",
+                    f.severity, f.path, f.summary
+                ));
+            }
+            if findings.len() > 10 {
+                s.push_str(&format!("…and {} more.\n", findings.len() - 10));
+            }
         }
-        if findings.len() > 10 {
-            summary.push_str(&format!("…and {} more.\n", findings.len() - 10));
+        if !include_inline {
+            s.push_str("\n_(summary-only mode; inline annotations disabled.)_");
         }
-    }
-    if summary_only {
-        summary.push_str("\n_(inline comments were rejected by GitHub; posted summary only.)_");
-    }
+        s
+    } else {
+        // Inline-only: GitHub requires a non-empty body; use a one-liner.
+        format!(
+            "[goose Copilot]({}) — {} inline finding(s).",
+            req.pr_url,
+            findings.len()
+        )
+    };
 
     serde_json::json!({
         "commit_id": req.head_sha,
@@ -556,11 +624,17 @@ async fn comment(
 }
 
 async fn run_comment_reply(req: CopilotCommentRequest) -> Result<()> {
+    let prefs = load_prefs();
     let workdir = tempfile::tempdir().context("create temp workdir")?;
     git_clone_and_checkout_for_comment(&req, workdir.path()).await?;
-    let prompt = build_comment_prompt(&req);
+    let prompt = build_comment_prompt(&req, &prefs);
     let reply = run_goose_for_reply(workdir.path(), &prompt).await?;
-    let pushed = commit_and_push_if_changed(&req, workdir.path()).await?;
+
+    let pushed = if prefs.allow_commit_on_fix {
+        commit_and_push_if_changed(&req, workdir.path()).await?
+    } else {
+        None
+    };
     let final_reply = match pushed {
         Some(n) => format!(
             "{reply}\n\n_Pushed {n} file change(s) to `{}`._",
@@ -587,13 +661,29 @@ async fn git_clone_and_checkout_for_comment(
     Ok(())
 }
 
-fn build_comment_prompt(req: &CopilotCommentRequest) -> String {
+fn build_comment_prompt(req: &CopilotCommentRequest, prefs: &CopilotPrefs) -> String {
     // Strip the @goose-copilot mention so the model sees the user's actual ask.
     let cleaned = req
         .comment_body
         .replace("@goose-copilot", "")
         .trim()
         .to_string();
+    let commit_clause = if prefs.allow_commit_on_fix {
+        "- Any files you change will be automatically committed and pushed to\n  \
+         the PR branch after you finish — do NOT run `git commit` or `git push`\n  \
+         yourself."
+    } else {
+        "- The repo owner has DISABLED commit push for this bot. Tell the commenter\n  \
+         what you would change, but don't expect your edits to land on the PR."
+    };
+    let custom = if prefs.custom_instructions.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nThe repo owner added these custom instructions — apply them:\n---\n{}\n---\n",
+            prefs.custom_instructions.trim()
+        )
+    };
     format!(
         "You are responding to a comment on a GitHub pull request.\n\
 \n\
@@ -607,15 +697,13 @@ and use any available tools.\n\
 \n\
 If the commenter asks you to fix, address, or apply changes:\n\
 - Make the edits directly with your file-editing tools.\n\
-- Any files you change will be automatically committed and pushed to\n\
-  the PR branch after you finish — do NOT run `git commit` or `git push`\n\
-  yourself.\n\
+{}\n\
 - Then reply with a short summary of what you changed.\n\
 \n\
 If the commenter is asking a question or for analysis only:\n\
 - Don't modify any files.\n\
 - Reply with a concise answer, referencing files/lines when relevant.\n\
-\n\
+{}\n\
 The commenter's message (with @goose-copilot stripped):\n\
 ---\n\
 {}\n\
@@ -623,7 +711,7 @@ The commenter's message (with @goose-copilot stripped):\n\
 \n\
 Reply with a single concise GitHub-flavored markdown response. Do NOT\n\
 include a preamble like \"Sure, here's my response.\" Just answer.\n",
-        req.repo, req.pr_number, req.pr_url, req.commenter, cleaned,
+        req.repo, req.pr_number, req.pr_url, req.commenter, commit_clause, custom, cleaned,
     )
 }
 
@@ -783,11 +871,231 @@ async fn commit_and_push_if_changed(
     Ok(Some(changed))
 }
 
+// ---- Preferences ----------------------------------------------------------
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CopilotPrefsResponse {
+    pub prefs: CopilotPrefs,
+    /// `true` when the routing subset reached the switchboard. `false` is
+    /// non-fatal — local persistence still succeeded and the bot will use
+    /// the saved values once Desktop manages to push them.
+    pub switchboard_synced: bool,
+    /// Populated when `switchboard_synced` is `false`. Surface in UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub switchboard_error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CopilotPrefsRequest {
+    pub prefs: CopilotPrefs,
+}
+
+#[utoipa::path(
+    get,
+    path = "/copilot/prefs",
+    responses(
+        (status = 200, description = "Current Copilot preferences", body = CopilotPrefs),
+        (status = 500, description = "Internal error"),
+    ),
+    tag = "copilot"
+)]
+#[axum::debug_handler]
+async fn get_prefs() -> Result<Json<CopilotPrefs>, ErrorResponse> {
+    Ok(Json(load_prefs()))
+}
+
+#[utoipa::path(
+    put,
+    path = "/copilot/prefs",
+    request_body = CopilotPrefsRequest,
+    responses(
+        (status = 200, description = "Preferences saved", body = CopilotPrefsResponse),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal error"),
+    ),
+    tag = "copilot"
+)]
+#[axum::debug_handler]
+async fn put_prefs(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CopilotPrefsRequest>,
+) -> Result<Json<CopilotPrefsResponse>, ErrorResponse> {
+    req.prefs
+        .validate()
+        .map_err(|e| ErrorResponse::bad_request(e.to_string()))?;
+
+    save_prefs(&req.prefs).map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+    let sync = forward_routing_prefs(&state, &req.prefs.routing_subset()).await;
+    let (switchboard_synced, switchboard_error) = match sync {
+        Ok(()) => (true, None),
+        Err(e) => {
+            tracing::warn!("[copilot] routing prefs sync failed: {e:#}");
+            (false, Some(e.to_string()))
+        }
+    };
+
+    Ok(Json(CopilotPrefsResponse {
+        prefs: req.prefs,
+        switchboard_synced,
+        switchboard_error,
+    }))
+}
+
+fn load_prefs() -> CopilotPrefs {
+    match Config::global().get_param::<serde_json::Value>(PREFS_CONFIG_KEY) {
+        Ok(v) => serde_json::from_value(v).unwrap_or_default(),
+        Err(_) => CopilotPrefs::default(),
+    }
+}
+
+fn save_prefs(prefs: &CopilotPrefs) -> Result<()> {
+    Config::global()
+        .set_param(PREFS_CONFIG_KEY, serde_json::to_value(prefs)?)
+        .map_err(|e| anyhow!("persist copilot prefs: {e}"))
+}
+
+/// Forward the routing subset to the switchboard.
+async fn forward_routing_prefs(state: &AppState, routing: &RoutingPrefs) -> Result<()> {
+    let creds = install_credentials(state).await?;
+    let res = Client::new()
+        .put(format!("{}/copilot/routing-prefs", switchboard_url()))
+        .header("X-Install-Id", creds.installation_id.to_string())
+        .header("X-Install-Secret", &creds.tunnel_secret)
+        .json(routing)
+        .send()
+        .await
+        .context("switchboard unreachable")?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let detail = res.text().await.unwrap_or_default();
+        bail!("switchboard rejected routing prefs: {status} {detail}");
+    }
+    Ok(())
+}
+
+/// Credentials goosed uses to talk to the switchboard on behalf of a single
+/// install. The installation_id is resolved via `whoami` when not cached.
+struct InstallCredentials {
+    installation_id: u64,
+    tunnel_secret: String,
+}
+
+/// Resolve goosed's own (installation_id, tunnel_secret) pair.
+///
+/// `tunnel_secret` must be present locally — it was minted during the
+/// initial tunnel setup. If it isn't there, the install has not been
+/// completed and we surface that as an error.
+///
+/// `installation_id` is read from the goose config cache. On a cache miss
+/// (a fresh install, an install made before this code shipped, or a wiped
+/// config) we ask the switchboard via `whoami` — authenticated by the
+/// tunnel credentials we already have — and persist the answer for next time.
+async fn install_credentials(state: &AppState) -> Result<InstallCredentials> {
+    let tunnel_info = state.tunnel_manager.get_info().await;
+    let tunnel_secret = if tunnel_info.secret.is_empty() {
+        Config::global()
+            .get_secret::<String>("tunnel_secret")
+            .context("tunnel_secret unavailable; complete setup first")?
+    } else {
+        tunnel_info.secret.clone()
+    };
+    let agent_id = extract_agent_id(&tunnel_info.url)
+        .context("tunnel URL is missing the agent id; complete setup first")?;
+
+    if let Ok(cached) = Config::global().get_param::<u64>(INSTALLATION_ID_CONFIG_KEY) {
+        return Ok(InstallCredentials {
+            installation_id: cached,
+            tunnel_secret,
+        });
+    }
+
+    let resolved = whoami(&agent_id, &tunnel_secret).await?;
+    if let Err(e) =
+        Config::global().set_param(INSTALLATION_ID_CONFIG_KEY, serde_json::json!(resolved))
+    {
+        tracing::warn!("[copilot] failed to cache installation_id after whoami: {e}");
+    }
+    Ok(InstallCredentials {
+        installation_id: resolved,
+        tunnel_secret,
+    })
+}
+
+async fn whoami(agent_id: &str, tunnel_secret: &str) -> Result<u64> {
+    #[derive(Deserialize)]
+    struct WhoamiResponse {
+        installation_id: u64,
+    }
+    let res = Client::new()
+        .post(format!("{}/copilot/whoami", switchboard_url()))
+        .json(&serde_json::json!({
+            "agent_id": agent_id,
+            "tunnel_secret": tunnel_secret,
+        }))
+        .send()
+        .await
+        .context("switchboard unreachable")?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let detail = res.text().await.unwrap_or_default();
+        bail!("switchboard whoami rejected: {status} {detail}");
+    }
+    let body: WhoamiResponse = res.json().await.context("parse whoami response")?;
+    Ok(body.installation_id)
+}
+
+// ---- Repository listing --------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/copilot/repos",
+    responses(
+        (status = 200, description = "Repos accessible to the installation", body = CopilotReposResponse),
+        (status = 412, description = "Setup not completed"),
+        (status = 502, description = "Switchboard / GitHub error"),
+    ),
+    tag = "copilot"
+)]
+#[axum::debug_handler]
+async fn get_repos(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<CopilotReposResponse>, ErrorResponse> {
+    let creds = install_credentials(&state)
+        .await
+        .map_err(|e| ErrorResponse {
+            message: e.to_string(),
+            status: axum::http::StatusCode::PRECONDITION_FAILED,
+        })?;
+
+    let res = Client::new()
+        .get(format!("{}/copilot/repos", switchboard_url()))
+        .header("X-Install-Id", creds.installation_id.to_string())
+        .header("X-Install-Secret", &creds.tunnel_secret)
+        .send()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("switchboard unreachable: {e}")))?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let detail = res.text().await.unwrap_or_default();
+        return Err(ErrorResponse::internal(format!(
+            "switchboard returned {status}: {detail}"
+        )));
+    }
+    let body: CopilotReposResponse = res
+        .json()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("parse repos response: {e}")))?;
+    Ok(Json(body))
+}
+
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/copilot/review", post(review))
         .route("/copilot/setup", post(setup))
         .route("/copilot/comment", post(comment))
+        .route("/copilot/prefs", get(get_prefs).put(put_prefs))
+        .route("/copilot/repos", get(get_repos))
         .with_state(state)
 }
 
@@ -846,7 +1154,7 @@ mod tests {
             check: "main".into(),
             suggestion: None,
         }];
-        let payload = build_review_payload(&req, &findings, false);
+        let payload = build_review_payload(&req, &findings, &ReviewOutputStyle::Both);
         let comments = payload["comments"].as_array().unwrap();
         assert_eq!(comments.len(), 1);
         assert_eq!(comments[0]["path"], "a.rs");
@@ -877,7 +1185,7 @@ mod tests {
             check: "main".into(),
             suggestion: Some("def add_tag(tag, tags=None):".into()),
         }];
-        let payload = build_review_payload(&req, &findings, false);
+        let payload = build_review_payload(&req, &findings, &ReviewOutputStyle::Both);
         let body = payload["comments"][0]["body"].as_str().unwrap();
         assert!(body.contains("```suggestion\ndef add_tag(tag, tags=None):\n```"));
     }
@@ -923,11 +1231,39 @@ mod tests {
             check: "main".into(),
             suggestion: None,
         }];
-        let payload = build_review_payload(&req, &findings, true);
+        let payload = build_review_payload(&req, &findings, &ReviewOutputStyle::Summary);
         assert!(payload["comments"].as_array().unwrap().is_empty());
         assert!(payload["body"]
             .as_str()
             .unwrap()
-            .contains("rejected by GitHub"));
+            .contains("summary-only mode"));
+    }
+
+    #[test]
+    fn build_review_payload_inline_only_drops_summary_body() {
+        let req = CopilotReviewRequest {
+            github_token: "t".into(),
+            repo: "o/r".into(),
+            pr_number: 1,
+            head_sha: "h".into(),
+            pr_url: "u".into(),
+            check_run_id: None,
+            comment_id: None,
+        };
+        let findings = vec![Finding {
+            severity: "high".into(),
+            path: "a.rs".into(),
+            line_start: 1,
+            line_end: 2,
+            summary: "bug".into(),
+            check: "main".into(),
+            suggestion: None,
+        }];
+        let payload = build_review_payload(&req, &findings, &ReviewOutputStyle::Inline);
+        assert_eq!(payload["comments"].as_array().unwrap().len(), 1);
+        let body = payload["body"].as_str().unwrap();
+        // Inline-only body is a one-liner — no per-finding bullet list.
+        assert!(body.contains("1 inline finding(s)"), "got body: {body}");
+        assert!(!body.contains("- **high**"));
     }
 }
