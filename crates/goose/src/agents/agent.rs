@@ -150,6 +150,7 @@ pub struct AgentConfig {
     pub goose_platform: GoosePlatform,
     pub mcp_host_info: Option<GooseMcpHostInfo>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
+    pub use_login_shell_path: Option<bool>,
 }
 
 impl AgentConfig {
@@ -170,6 +171,7 @@ impl AgentConfig {
             goose_platform,
             mcp_host_info: None,
             session_name_update_tx: None,
+            use_login_shell_path: None,
         }
     }
 
@@ -183,6 +185,11 @@ impl AgentConfig {
         tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     ) -> Self {
         self.session_name_update_tx = tx;
+        self
+    }
+
+    pub fn with_use_login_shell_path(mut self, use_login_shell_path: bool) -> Self {
+        self.use_login_shell_path = Some(use_login_shell_path);
         self
     }
 }
@@ -295,6 +302,9 @@ impl Agent {
             .unwrap_or_else(|| goose_platform.to_string());
         let session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
+        let use_login_shell_path = config
+            .use_login_shell_path
+            .unwrap_or(matches!(goose_platform, GoosePlatform::GooseDesktop));
         Self {
             provider: provider.clone(),
             config,
@@ -304,6 +314,7 @@ impl Agent {
                 session_manager,
                 client_name,
                 capabilities,
+                use_login_shell_path,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
             frontend_extensions: Mutex::new(HashMap::new()),

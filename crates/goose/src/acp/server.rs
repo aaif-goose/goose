@@ -238,6 +238,7 @@ pub struct GooseAcpAgent {
     client_fs_capabilities: OnceCell<FileSystemCapabilities>,
     client_terminal: OnceCell<bool>,
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
+    use_login_shell_path: OnceCell<bool>,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
     permission_manager: Arc<PermissionManager>,
@@ -383,6 +384,14 @@ fn extract_client_mcp_host_info(args: &InitializeRequest) -> GooseMcpHostInfo {
         client_name: args.client_info.as_ref().map(|info| info.name.clone()),
         client_version: args.client_info.as_ref().map(|info| info.version.clone()),
     }
+}
+
+fn extract_use_login_shell_path(args: &InitializeRequest) -> bool {
+    args.meta
+        .as_ref()
+        .and_then(|meta| meta.get("goose/useLoginShellPath"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConfig, String> {
@@ -1085,6 +1094,7 @@ impl GooseAcpAgent {
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
+            use_login_shell_path: OnceCell::new(),
             config_dir: options.config_dir,
             session_manager,
             permission_manager,
@@ -1327,6 +1337,7 @@ impl GooseAcpAgent {
             .unwrap_or_default();
         let client_terminal = self.client_terminal.get().copied().unwrap_or(false);
         let client_mcp_host_info = self.client_mcp_host_info.get().cloned();
+        let use_login_shell_path = self.use_login_shell_path.get().copied().unwrap_or(false);
         let provider_factory = Arc::clone(&self.provider_factory);
         let disable_session_naming = self.disable_session_naming;
         let goose_platform = self.goose_platform.clone();
@@ -1360,7 +1371,8 @@ impl GooseAcpAgent {
                         goose_platform,
                     )
                     .with_mcp_host_info(client_mcp_host_info)
-                    .with_session_name_update_tx(session_name_update_tx),
+                    .with_session_name_update_tx(session_name_update_tx)
+                    .with_use_login_shell_path(use_login_shell_path),
                 ));
 
                 // Init provider — reuse the pre-resolved name + model when
@@ -2417,6 +2429,9 @@ impl GooseAcpAgent {
         let _ = self
             .client_mcp_host_info
             .set(extract_client_mcp_host_info(&args));
+        let _ = self
+            .use_login_shell_path
+            .set(extract_use_login_shell_path(&args));
 
         let capabilities = AgentCapabilities::new()
             .load_session(true)

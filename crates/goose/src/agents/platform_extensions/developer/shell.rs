@@ -284,7 +284,6 @@ impl LoginPath {
         }
     }
 
-    #[cfg(test)]
     fn resolved(value: Option<String>) -> Self {
         let cell = OnceCell::new();
         let _ = cell.set(value.map(Arc::from));
@@ -320,12 +319,16 @@ pub struct ShellTool {
 }
 
 impl ShellTool {
-    pub fn new() -> std::io::Result<Self> {
+    pub fn new(use_login_shell_path: bool) -> std::io::Result<Self> {
         Ok(Self {
             output_dir: tempfile::tempdir()?,
             call_index: AtomicUsize::new(0),
             #[cfg(not(windows))]
-            login_path: LoginPath::spawn(),
+            login_path: if use_login_shell_path {
+                LoginPath::spawn()
+            } else {
+                LoginPath::resolved(None)
+            },
         })
     }
 
