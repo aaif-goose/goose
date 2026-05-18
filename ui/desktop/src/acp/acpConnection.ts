@@ -4,23 +4,53 @@ import {
   type Client,
   type GooseInitializeRequest,
 } from '@aaif/goose-sdk';
-import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
+import {
+  PROTOCOL_VERSION,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type SessionNotification,
+} from '@agentclientprotocol/sdk';
 import packageJson from '../../package.json';
 import { createWebSocketStream } from './createWebSocketStream';
 
 let clientPromise: Promise<GooseClient> | null = null;
 let resolvedClient: GooseClient | null = null;
+let notificationHandler: AcpNotificationHandler | null = null;
+let permissionHandler: AcpPermissionHandler | null = null;
+
+export interface AcpNotificationHandler {
+  handleSessionNotification(notification: SessionNotification): Promise<void>;
+}
+
+export type AcpPermissionHandler = (
+  request: RequestPermissionRequest
+) => Promise<RequestPermissionResponse>;
+
+export function setAcpNotificationHandler(handler: AcpNotificationHandler | null): void {
+  notificationHandler = handler;
+}
+
+export function setAcpPermissionHandler(handler: AcpPermissionHandler | null): void {
+  permissionHandler = handler;
+}
 
 function createClientCallbacks(): () => Client {
   return () => ({
-    requestPermission: async () => {
+    requestPermission: async (request) => {
+      if (permissionHandler) {
+        return permissionHandler(request);
+      }
+
+      console.warn('ACP permission request received before a permission handler was registered');
       return {
         outcome: {
           outcome: 'cancelled',
         },
       };
     },
-    sessionUpdate: async () => {},
+    sessionUpdate: async (notification) => {
+      await notificationHandler?.handleSessionNotification(notification);
+    },
   });
 }
 
