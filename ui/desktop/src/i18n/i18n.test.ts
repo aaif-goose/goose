@@ -105,4 +105,18 @@ describe('loadMessages', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No message catalog found'));
     warnSpy.mockRestore();
   });
+
+  it('falls back to default messages when the English catalog is unavailable', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const loadCatalog = vi.fn(async () => {
+      throw new Error('missing catalog');
+    });
+    const messages = await loadMessagesWithCatalogLoader('en', loadCatalog);
+
+    expect(messages).toEqual({});
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[i18n] No English fallback catalog found; missing messages will use source defaultMessage values.'
+    );
+    warnSpy.mockRestore();
+  });
 });
