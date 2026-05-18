@@ -454,8 +454,16 @@ if (process.platform !== 'darwin') {
   const protocolUrl = process.argv.find((arg) => arg.startsWith('goose://'));
   if (protocolUrl) {
     app.whenReady().then(() => {
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(protocolUrl);
+      } catch (error) {
+        log.warn('[Main] Ignoring invalid startup protocol URL:', errorMessage(error));
+        return;
+      }
+
       openUrlHandledLaunch = true;
-      handleProtocolUrl(protocolUrl);
+      handleProtocolUrl(protocolUrl, parsedUrl);
     });
   }
 }
@@ -470,10 +478,10 @@ function getResumeSessionId(parsedUrl: URL): string | undefined {
   return parsedUrl.pathname.replace(/^\//, '') || undefined;
 }
 
-async function handleProtocolUrl(url: string) {
+async function handleProtocolUrl(url: string, parsedUrl?: URL) {
   if (!url) return;
 
-  const parsedUrl = new URL(url);
+  parsedUrl ??= new URL(url);
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
   const resumeSessionId = getResumeSessionId(parsedUrl);
