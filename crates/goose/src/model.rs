@@ -292,8 +292,16 @@ impl ModelConfig {
         fast_model_name: &str,
         provider_name: &str,
     ) -> Result<Self, ConfigError> {
-        // Create a full ModelConfig for the fast model with proper canonical lookup
-        let fast_config = ModelConfig::new(fast_model_name)?.with_canonical_limits(provider_name);
+        // Allow a global override via GOOSE_FAST_MODEL. When set and non-empty
+        // it replaces the provider-supplied default — mirrors the GOOSE_MODEL
+        // pattern for the primary model and lets users pin auxiliary traffic
+        // (tool-selection, classification, session titles) to a chosen model.
+        let resolved = std::env::var("GOOSE_FAST_MODEL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| fast_model_name.to_string());
+        let fast_config = ModelConfig::new(&resolved)?.with_canonical_limits(provider_name);
         self.fast_model_config = Some(Box::new(fast_config));
         Ok(self)
     }
@@ -415,6 +423,39 @@ mod tests {
         ]);
         let config = ModelConfig::new("test-model").unwrap();
         assert_eq!(config.max_tokens, None);
+    }
+
+    #[test]
+    fn test_with_fast_uses_default_when_env_unset() {
+        let _guard = env_lock::lock_env([("GOOSE_FAST_MODEL", None::<&str>)]);
+        let cfg = ModelConfig::new("anthropic/claude-sonnet-4")
+            .unwrap()
+            .with_fast("google/gemini-2.5-flash", "openrouter")
+            .unwrap();
+        let fast = cfg.use_fast_model();
+        assert_eq!(fast.model_name, "google/gemini-2.5-flash");
+    }
+
+    #[test]
+    fn test_with_fast_honors_env_override() {
+        let _guard = env_lock::lock_env([("GOOSE_FAST_MODEL", Some("deepseek/deepseek-v4-flash"))]);
+        let cfg = ModelConfig::new("anthropic/claude-sonnet-4")
+            .unwrap()
+            .with_fast("google/gemini-2.5-flash", "openrouter")
+            .unwrap();
+        let fast = cfg.use_fast_model();
+        assert_eq!(fast.model_name, "deepseek/deepseek-v4-flash");
+    }
+
+    #[test]
+    fn test_with_fast_ignores_empty_env() {
+        let _guard = env_lock::lock_env([("GOOSE_FAST_MODEL", Some("   "))]);
+        let cfg = ModelConfig::new("anthropic/claude-sonnet-4")
+            .unwrap()
+            .with_fast("google/gemini-2.5-flash", "openrouter")
+            .unwrap();
+        let fast = cfg.use_fast_model();
+        assert_eq!(fast.model_name, "google/gemini-2.5-flash");
     }
 
     #[test]
