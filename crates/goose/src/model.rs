@@ -294,7 +294,8 @@ impl ModelConfig {
     ) -> Result<Self, ConfigError> {
         let name = std::env::var("GOOSE_FAST_MODEL")
             .ok()
-            .filter(|v| !v.trim().is_empty())
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
             .unwrap_or_else(|| fast_model_name.to_string());
         let fast_config = ModelConfig::new(&name)?.with_canonical_limits(provider_name);
         self.fast_model_config = Some(Box::new(fast_config));
