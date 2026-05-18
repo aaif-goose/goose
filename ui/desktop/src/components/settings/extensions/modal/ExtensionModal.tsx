@@ -300,7 +300,12 @@ export default function ExtensionModal({
 
   const getFinalEnvVars = () => {
     const finalEnvVars = [...formData.envVars];
-    if (pendingEnvVar && pendingEnvVar.key.trim() !== '' && pendingEnvVar.value.trim() !== '') {
+    if (
+      pendingEnvVar &&
+      pendingEnvVar.key.trim() !== '' &&
+      pendingEnvVar.value.trim() !== '' &&
+      !pendingEnvVar.key.includes(' ')
+    ) {
       finalEnvVars.push({ ...pendingEnvVar, isEdited: true });
     }
     return finalEnvVars;

@@ -42,7 +42,7 @@ interface EnvVarsSectionProps {
   onRemove: (index: number) => void;
   onChange: (index: number, field: 'key' | 'value', value: string) => void;
   submitAttempted: boolean;
-  onPendingInputChange?: (
+  onPendingInputChange: (
     hasPendingInput: boolean,
     pendingEnvVar: { key: string; value: string } | null
   ) => void;
@@ -70,7 +70,7 @@ export default function EnvVarsSection({
     const hasPendingInput = newKey.trim() !== '' || newValue.trim() !== '';
     const pendingEnvVar =
       newKey.trim() && newValue.trim() ? { key: newKey, value: newValue } : null;
-    onPendingInputChange?.(hasPendingInput, pendingEnvVar);
+    onPendingInputChange(hasPendingInput, pendingEnvVar);
   }, [newKey, newValue, onPendingInputChange]);
 
   const handleAdd = () => {
