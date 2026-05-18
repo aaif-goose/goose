@@ -33,7 +33,12 @@ impl GooseAcpAgent {
     pub(super) async fn on_get_extensions(
         &self,
     ) -> Result<GetExtensionsResponse, agent_client_protocol::Error> {
-        let extensions = crate::config::extensions::get_all_extensions();
+        let extensions = crate::config::extensions::get_all_extensions()
+            .into_iter()
+            .filter(|ext| {
+                !crate::agents::extension_manager::is_hidden_extension(&ext.config.name())
+            })
+            .collect::<Vec<_>>();
         let warnings = crate::config::extensions::get_warnings();
         let extensions_json = extensions
             .into_iter()

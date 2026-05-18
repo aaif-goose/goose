@@ -21,6 +21,9 @@ importers:
       '@aaif/goose-sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@agentclientprotocol/sdk':
+        specifier: ^0.19.0
+        version: 0.19.0(zod@3.25.76)
       '@mcp-ui/client':
         specifier: 6.1.0
         version: 6.1.0(@preact/signals-core@1.14.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

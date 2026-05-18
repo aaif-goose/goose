@@ -140,6 +140,7 @@ const InputBar = React.memo(function InputBar({
       borderStyle="round"
       borderColor={RULE_COLOR}
       paddingX={1}
+      marginTop={1}
       width={constrainedWidth}
       flexShrink={0}
     >
@@ -847,7 +848,8 @@ function App({
   );
 
   const PAD_X = 2;
-  const PAD_Y = 1;
+  const PAD_TOP = 0;
+  const PAD_BOTTOM = 0;
   const safeTermWidth = Math.max(termWidth, 40);
   const safeTermHeight = Math.max(termHeight, 10);
   const contentWidth = Math.max(safeTermWidth - PAD_X * 2, 20);
@@ -867,10 +869,12 @@ function App({
     : 0;
   const inputExtraLines =
     (isPasteMode ? 1 : 0) + (queuedMessages.length > 0 ? 1 : 0);
-  const inputBarH = showInputBar ? 2 + inputContentRows + inputExtraLines : 0;
+  const inputBarH = showInputBar
+    ? 2 + inputContentRows + inputExtraLines + 1 // +1 for marginTop gap above input bar
+    : 0;
   const historyBarH = isViewingHistory ? 2 : 0;
   const viewportHeight = Math.max(
-    safeTermHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
+    safeTermHeight - PAD_TOP - PAD_BOTTOM - headerH - inputBarH - historyBarH,
     3,
   );
 
@@ -1130,13 +1134,17 @@ function App({
       width={safeTermWidth}
       height={safeTermHeight}
       paddingX={PAD_X}
-      paddingY={PAD_Y}
+      paddingTop={PAD_TOP}
+      paddingBottom={PAD_BOTTOM}
     >
       {bannerVisible ? (
         <SplashScreen
           animFrame={gooseFrame}
           width={contentWidth}
-          height={Math.max(safeTermHeight - PAD_Y * 2 - inputBarH, 0)}
+          height={Math.max(
+            safeTermHeight - PAD_TOP - PAD_BOTTOM - inputBarH,
+            0,
+          )}
           status={status}
           loading={loading}
           spinIdx={spinIdx}

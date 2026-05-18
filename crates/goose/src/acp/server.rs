@@ -61,6 +61,7 @@ use rmcp::model::{
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
 use tokio::sync::{Mutex, OnceCell};
@@ -86,6 +87,7 @@ pub type AcpProviderFactory = Arc<
             String,
             crate::model::ModelConfig,
             Vec<ExtensionConfig>,
+            Option<PathBuf>,
         ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
         + Send
         + Sync,
@@ -1044,6 +1046,20 @@ fn build_usage_update(session: &Session, context_limit: usize) -> UsageUpdate {
     UsageUpdate::new(used, context_limit as u64)
 }
 
+fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_protocol::Error> {
+    if !cwd.is_absolute() {
+        return Err(
+            agent_client_protocol::Error::invalid_params().data("cwd must be an absolute path")
+        );
+    }
+
+    if !cwd.exists() || !cwd.is_dir() {
+        return Err(agent_client_protocol::Error::invalid_params().data("invalid directory path"));
+    }
+
+    Ok(())
+}
+
 impl GooseAcpAgent {
     pub fn permission_manager(&self) -> Arc<PermissionManager> {
         Arc::clone(&self.permission_manager)
@@ -1093,8 +1109,15 @@ impl GooseAcpAgent {
         provider_name: &str,
         model_config: crate::model::ModelConfig,
         extensions: Vec<ExtensionConfig>,
+        working_dir: Option<PathBuf>,
     ) -> Result<Arc<dyn Provider>> {
-        (self.provider_factory)(provider_name.to_string(), model_config, extensions).await
+        (self.provider_factory)(
+            provider_name.to_string(),
+            model_config,
+            extensions,
+            working_dir,
+        )
+        .await
     }
 
     async fn prepare_session_init_config(
@@ -1131,7 +1154,12 @@ impl GooseAcpAgent {
                     );
                     Config::global().invalidate_secrets_cache();
                     match self
-                        .create_provider(provider_name, model_config.clone(), ext_state)
+                        .create_provider(
+                            provider_name,
+                            model_config.clone(),
+                            ext_state,
+                            Some(goose_session.working_dir.clone()),
+                        )
                         .await
                     {
                         Ok(provider) => {
@@ -1348,9 +1376,14 @@ impl GooseAcpAgent {
                 );
                 let provider = match prebuilt_provider {
                     Some(provider) => provider,
-                    None => provider_factory(provider_name.to_string(), model_config, ext_state)
-                        .await
-                        .map_err(|e| e.to_string())?,
+                    None => provider_factory(
+                        provider_name.to_string(),
+                        model_config,
+                        ext_state,
+                        Some(goose_session.working_dir.clone()),
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?,
                 };
                 agent
                     .update_provider(provider.clone(), &goose_session.id)
@@ -1440,15 +1473,17 @@ impl GooseAcpAgent {
                 }
 
                 let ext_manager = &agent.extension_manager;
+                let working_dir = goose_session.working_dir.clone();
                 let extension_futures = extensions
                     .into_iter()
                     .map(|ext| {
                         let ext_manager = Arc::clone(ext_manager);
                         let sid_inner = sid_str.clone();
+                        let working_dir = working_dir.clone();
                         async move {
                             let name = ext.name().to_string();
                             if let Err(e) = ext_manager
-                                .add_extension(ext, None, None, sid_inner.as_deref())
+                                .add_extension(ext, Some(working_dir), None, sid_inner.as_deref())
                                 .await
                             {
                                 warn!(extension = %name, error = %e, "extension load failed");
@@ -2412,6 +2447,7 @@ impl GooseAcpAgent {
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "new session request");
         let t_start = std::time::Instant::now();
+        validate_absolute_cwd(&args.cwd)?;
 
         let requested_provider = args
             .meta
@@ -2664,6 +2700,7 @@ impl GooseAcpAgent {
         args: LoadSessionRequest,
     ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
+        validate_absolute_cwd(&args.cwd)?;
 
         let session_id = args.session_id.0.to_string();
         let sid = sid_short(&session_id);
@@ -2835,6 +2872,11 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err_ctx("Failed to update session working directory")?;
+        let goose_session = self
+            .session_manager
+            .get_session(&session_id, false)
+            .await
+            .internal_err_ctx("Failed to reload session")?;
 
         // Register the session with a Loading handle.
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
@@ -3137,8 +3179,18 @@ impl GooseAcpAgent {
         let model_config = crate::model::ModelConfig::new(model_id)
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to get session")?;
         let provider = self
-            .create_provider(&provider_name, model_config, extensions)
+            .create_provider(
+                &provider_name,
+                model_config,
+                extensions,
+                Some(session.working_dir),
+            )
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
@@ -3264,8 +3316,18 @@ impl GooseAcpAgent {
 
         let extensions =
             EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to get session")?;
         let new_provider = self
-            .create_provider(&resolved_provider_name, model_config, extensions)
+            .create_provider(
+                &resolved_provider_name,
+                model_config,
+                extensions,
+                Some(session.working_dir),
+            )
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
@@ -3332,6 +3394,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         args: ForkSessionRequest,
     ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
+        validate_absolute_cwd(&args.cwd)?;
         let source_session_id = &*args.session_id.0;
 
         let new_session = self

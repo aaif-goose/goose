@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -329,17 +329,6 @@
     "is_builtin": false,
     "endorsed": true,
     "type": "streamable-http",
-    "environmentVariables": []
-  },
-  {
-    "id": "filesystem",
-    "name": "Filesystem",
-    "description": "File system operations and management (requires updating local paths)",
-    "command": "npx -y @modelcontextprotocol/server-filesystem /path/to/dir1 /path/to/dir2",
-    "link": "https://github.com/modelcontextprotocol/servers",
-    "installation_notes": "Install using npx package manager. Update the placeholder paths before running the 'goose session' command. If installing from the link, you must update the paths from the Extensions page before activating the extension.",
-    "is_builtin": false,
-    "endorsed": true,
     "environmentVariables": []
   },
   {
@@ -848,7 +837,7 @@
   {
     "id": "cash-app",
     "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",

@@ -26,6 +26,11 @@ import styles from '@site/src/components/Card/styles.module.css';
       link="/docs/guides/managing-tools/adjust-tool-output"
     />
     <Card 
+      title="Hooks"
+      description="Run scripts when goose starts sessions, submits prompts, calls tools, edits files, or executes shell commands."
+      link="/docs/guides/managing-tools/hooks"
+    />
+    <Card 
       title="Code Mode"
       description="Programmatic approach that discovers and calls MCP tools on demand."
       link="/docs/guides/managing-tools/code-mode"
@@ -55,6 +60,11 @@ import styles from '@site/src/components/Card/styles.module.css';
       title="Finetuning Toolshim Models for Tool Calling"
       description="Technical deep-dive into the challenges of tool calling with open-source models and the research behind toolshim solutions."
       link="/blog/2025/04/11/finetuning-toolshim"
+    />
+    <Card
+      title="Hooks: run your own scripts on every goose event"
+      description="Learn how lifecycle hooks let you react to session, prompt, tool, file, and shell events with your own scripts."
+      link="/blog/2026/05/14/goose-hooks"
     />
   </div>
 </div>

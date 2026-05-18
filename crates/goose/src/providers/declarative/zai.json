@@ -1,0 +1,34 @@
+{
+  "name": "zai",
+  "engine": "anthropic",
+  "display_name": "Z.AI",
+  "description": "Z.AI GLM models via Anthropic-compatible API.",
+  "api_key_env": "ZHIPU_API_KEY",
+  "base_url": "${ZAI_BASE_URL}",
+  "env_vars": [
+    {
+      "name": "ZAI_BASE_URL",
+      "required": false,
+      "secret": false,
+      "default": "https://api.z.ai/api/anthropic",
+      "description": "Z.AI Anthropic-compatible API base URL."
+    }
+  ],
+  "catalog_provider_id": "zai",
+  "model_doc_link": "https://docs.z.ai/devpack/tool/goose",
+  "fast_model": "glm-4.5-air",
+  "preserves_thinking": true,
+  "models": [
+    {"name": "glm-5.1", "context_limit": 200000},
+    {"name": "glm-5", "context_limit": 204800},
+    {"name": "glm-5-turbo", "context_limit": 200000},
+    {"name": "glm-4.7", "context_limit": 204800},
+    {"name": "glm-4.7-flash", "context_limit": 200000},
+    {"name": "glm-4.7-flashx", "context_limit": 200000},
+    {"name": "glm-4.6", "context_limit": 204800},
+    {"name": "glm-4.5", "context_limit": 131072},
+    {"name": "glm-4.5-air", "context_limit": 131072},
+    {"name": "glm-4.5-flash", "context_limit": 131072}
+  ],
+  "supports_streaming": true
+}
