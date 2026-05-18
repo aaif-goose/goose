@@ -5584,6 +5584,11 @@
             "type": "string",
             "nullable": true
           },
+          "ANTHROPIC_THINKING_BUDGET": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "AVIAN_HOST": {
             "type": "string",
             "nullable": true

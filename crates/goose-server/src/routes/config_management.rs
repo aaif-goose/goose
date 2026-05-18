@@ -926,7 +926,12 @@ pub async fn configure_provider_oauth(
 )]
 pub async fn read_typed_config() -> Result<Json<GooseConfigSchema>, ErrorResponse> {
     let config = Config::global();
-    let typed = GooseConfigSchema::from_config(config);
+    let mut typed = GooseConfigSchema::from_config(config);
+    if let Some(ref mut exts) = typed.extensions {
+        exts.retain(|_key, entry| {
+            !goose::agents::extension_manager::is_hidden_extension(&entry.config.name())
+        });
+    }
     Ok(Json(typed))
 }
 
@@ -956,7 +961,12 @@ pub async fn patch_typed_config(
 ) -> Result<Json<GooseConfigSchema>, ErrorResponse> {
     let config = Config::global();
     update.apply_to_config(config)?;
-    let typed = GooseConfigSchema::from_config(config);
+    let mut typed = GooseConfigSchema::from_config(config);
+    if let Some(ref mut exts) = typed.extensions {
+        exts.retain(|_key, entry| {
+            !goose::agents::extension_manager::is_hidden_extension(&entry.config.name())
+        });
+    }
     Ok(Json(typed))
 }
 

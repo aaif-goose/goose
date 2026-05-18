@@ -209,11 +209,11 @@ generate-config-schema:
     @echo "Config schema generated: crates/goose/config.schema.json"
 
 # Check if config.schema.json is up-to-date
-check-config-schema: generate-config-schema
+check-config-schema:
     #!/usr/bin/env bash
     set -e
     echo "🔍 Checking config schema is up-to-date..."
-    if ! git diff --exit-code crates/goose/config.schema.json; then
+    if ! cargo run -p goose --bin generate-config-schema -- --check; then
       echo ""
       echo "❌ Config schema is out of date!"
       echo ""

@@ -541,6 +541,7 @@ export type GooseApp = McpAppResource & (WindowProps | null) & {
  */
 export type GooseConfigSchema = {
     ANTHROPIC_HOST?: string | null;
+    ANTHROPIC_THINKING_BUDGET?: number | null;
     AVIAN_HOST?: string | null;
     AWS_PROFILE?: string | null;
     AWS_REGION?: string | null;

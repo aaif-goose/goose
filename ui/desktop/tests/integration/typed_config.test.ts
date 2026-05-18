@@ -250,7 +250,44 @@ describe('typed config HTTP endpoints', () => {
     }
   });
 
-  // --- Group F: Response shape validation ---
+  // --- Group F: Regression tests for review findings ---
+
+  it('switching GOOSE_PROVIDER preserves the target provider model (not current)', async () => {
+    await patchTypedConfig({
+      client: ctx.client,
+      body: { GOOSE_PROVIDER: 'openai', GOOSE_MODEL: 'gpt-4o' },
+    });
+    await patchTypedConfig({
+      client: ctx.client,
+      body: { GOOSE_PROVIDER: 'anthropic', GOOSE_MODEL: 'claude-sonnet-4-20250514' },
+    });
+
+    const patchRes = await patchTypedConfig({
+      client: ctx.client,
+      body: { GOOSE_PROVIDER: 'openai' },
+    });
+    expect(patchRes.response).toBeOkResponse();
+    expect(patchRes.data!.GOOSE_PROVIDER).toBe('openai');
+    expect(patchRes.data!.GOOSE_MODEL).toBe('gpt-4o');
+
+    const getRes = await readTypedConfig({ client: ctx.client });
+    expect(getRes.data!.GOOSE_PROVIDER).toBe('openai');
+    expect(getRes.data!.GOOSE_MODEL).toBe('gpt-4o');
+  });
+
+  it('PATCH ANTHROPIC_THINKING_BUDGET round-trips correctly', async () => {
+    const patchRes = await patchTypedConfig({
+      client: ctx.client,
+      body: { ANTHROPIC_THINKING_BUDGET: 5000 },
+    });
+    expect(patchRes.response).toBeOkResponse();
+    expect(patchRes.data!.ANTHROPIC_THINKING_BUDGET).toBe(5000);
+
+    const getRes = await readTypedConfig({ client: ctx.client });
+    expect(getRes.data!.ANTHROPIC_THINKING_BUDGET).toBe(5000);
+  });
+
+  // --- Group G: Response shape validation ---
 
   it('PATCH response does not contain GooseConfigUpdate-only fields', async () => {
     const patchRes = await patchTypedConfig({

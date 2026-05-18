@@ -152,6 +152,8 @@ pub struct GooseConfigSchema {
     pub claude_thinking_effort: Option<String>,
     #[serde(rename = "CLAUDE_THINKING_BUDGET")]
     pub claude_thinking_budget: Option<i32>,
+    #[serde(rename = "ANTHROPIC_THINKING_BUDGET")]
+    pub anthropic_thinking_budget: Option<i32>,
     #[serde(rename = "GEMINI3_THINKING_LEVEL")]
     pub gemini3_thinking_level: Option<String>,
     #[serde(rename = "GEMINI25_THINKING_BUDGET")]
@@ -358,6 +360,7 @@ impl GooseConfigSchema {
         "CLAUDE_THINKING_TYPE",
         "CLAUDE_THINKING_EFFORT",
         "CLAUDE_THINKING_BUDGET",
+        "ANTHROPIC_THINKING_BUDGET",
         "GEMINI3_THINKING_LEVEL",
         "GEMINI25_THINKING_BUDGET",
         // Security Settings
@@ -523,6 +526,7 @@ impl GooseConfigSchema {
             claude_thinking_type: config.get_param("CLAUDE_THINKING_TYPE").ok(),
             claude_thinking_effort: config.get_param("CLAUDE_THINKING_EFFORT").ok(),
             claude_thinking_budget: config.get_param("CLAUDE_THINKING_BUDGET").ok(),
+            anthropic_thinking_budget: config.get_param("ANTHROPIC_THINKING_BUDGET").ok(),
             gemini3_thinking_level: config.get_param("GEMINI3_THINKING_LEVEL").ok(),
             gemini25_thinking_budget: config.get_param("GEMINI25_THINKING_BUDGET").ok(),
             security_prompt_enabled: config.get_param("SECURITY_PROMPT_ENABLED").ok(),
@@ -716,6 +720,7 @@ impl GooseConfigSchema {
         push_if_some!(self.claude_thinking_type, "CLAUDE_THINKING_TYPE");
         push_if_some!(self.claude_thinking_effort, "CLAUDE_THINKING_EFFORT");
         push_if_some!(self.claude_thinking_budget, "CLAUDE_THINKING_BUDGET");
+        push_if_some!(self.anthropic_thinking_budget, "ANTHROPIC_THINKING_BUDGET");
         push_if_some!(self.gemini3_thinking_level, "GEMINI3_THINKING_LEVEL");
         push_if_some!(self.gemini25_thinking_budget, "GEMINI25_THINKING_BUDGET");
         push_if_some!(self.security_prompt_enabled, "SECURITY_PROMPT_ENABLED");
@@ -829,11 +834,15 @@ impl GooseConfigSchema {
             let model = self
                 .goose_model
                 .clone()
-                .or_else(|| config.get_goose_model().ok())
+                .or_else(|| crate::config::get_provider_entry(config, provider).map(|e| e.model))
                 .unwrap_or_default();
             crate::config::set_active_provider(config, provider, &model)?;
         } else if let Some(ref model) = self.goose_model {
-            config.set_goose_model(model)?;
+            if crate::config::get_active_provider(config).is_some() {
+                config.set_goose_model(model)?;
+            } else {
+                config.set_param("GOOSE_MODEL", model)?;
+            }
         }
 
         Ok(())
@@ -889,8 +898,6 @@ pub struct GooseConfigUpdate {
 
 impl GooseConfigUpdate {
     pub fn apply_to_config(&self, config: &Config) -> Result<(), ConfigError> {
-        self.config.apply_to_config(config)?;
-
         let mut secret_updates: Vec<(String, serde_json::Value)> = Vec::new();
 
         macro_rules! push_secret {
@@ -920,7 +927,11 @@ impl GooseConfigUpdate {
         push_secret!(self.nanogpt_api_key, "NANOGPT_API_KEY");
         push_secret!(self.litellm_custom_headers, "LITELLM_CUSTOM_HEADERS");
 
-        config.set_secret_values(&secret_updates)
+        // Write secrets first — keyring is more failure-prone; if it fails,
+        // no config.yaml writes have been committed
+        config.set_secret_values(&secret_updates)?;
+
+        self.config.apply_to_config(config)
     }
 }
 
@@ -1093,6 +1104,7 @@ mod tests {
             "GOOSE_CLI_SHOW_COST",
             "GOOSE_CLI_SHOW_THINKING",
             "CLAUDE_THINKING_BUDGET",
+            "ANTHROPIC_THINKING_BUDGET",
             "GEMINI25_THINKING_BUDGET",
             "SECURITY_PROMPT_ENABLED",
             "SECURITY_PROMPT_THRESHOLD",
