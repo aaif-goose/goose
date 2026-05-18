@@ -566,9 +566,9 @@ These variables configure the `goosed` server process. They are most often used 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
 | `GOOSE_HOST` | Interface the server binds to. Use `0.0.0.0` to accept connections from other machines; `localhost` or `127.0.0.1` restricts to the local machine. | Hostname or IP | `127.0.0.1` |
-| `GOOSE_PORT` | TCP port the server listens on | Port number | Server-assigned |
-| `GOOSE_TLS` | Enable TLS with a self-signed certificate. Required when connecting goose Desktop to a remote `goosed`. | `true`, `false` | `false` |
-| `GOOSE_SERVER__SECRET_KEY` | Shared secret required in the `X-Secret-Key` header on all client requests | Secret string | None |
+| `GOOSE_PORT` | TCP port the server listens on | Port number | `3000` |
+| `GOOSE_TLS` | Enable TLS with a self-signed certificate. Required when connecting goose Desktop to a remote `goosed`. | `true`, `false` | `true` |
+| `GOOSE_SERVER__SECRET_KEY` | Shared secret required in the `X-Secret-Key` header on all client requests | Secret string | Random (auto-generated) |
 
 **Examples**
 

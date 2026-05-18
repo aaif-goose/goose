@@ -20,7 +20,7 @@ This guide covers:
 6. [Troubleshooting](#troubleshooting)
 
 :::warning TLS is required
-goose Desktop will refuse to connect to a remote `goosed` server over plain HTTP. You must enable TLS (`GOOSE_TLS=true`) when running the server, even when it is reachable only over a private network or VPN.
+goose Desktop will refuse to connect to a remote `goosed` server over plain HTTP. TLS is enabled by default (`GOOSE_TLS=true`), so make sure you have not disabled it.
 :::
 
 ## Initial Setup
