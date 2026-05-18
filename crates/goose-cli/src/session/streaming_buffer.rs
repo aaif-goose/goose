@@ -24,10 +24,42 @@ use regex::Regex;
 use std::io::Write;
 use std::sync::LazyLock;
 
-const MAX_CODE_BLOCK_LINES: usize = 50;
-const TRUNCATED_SHOW_LINES: usize = 20;
+const DEFAULT_MAX_CODE_BLOCK_LINES: usize = 50;
+const DEFAULT_TRUNCATED_SHOW_LINES: usize = 20;
+
+fn max_code_block_lines() -> Option<usize> {
+    static VALUE: LazyLock<Option<usize>> = LazyLock::new(|| {
+        if std::env::var("GOOSE_NO_CODE_TRUNCATION")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        Some(
+            std::env::var("GOOSE_MAX_CODE_BLOCK_LINES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(DEFAULT_MAX_CODE_BLOCK_LINES),
+        )
+    });
+    *VALUE
+}
+
+fn truncated_show_lines() -> usize {
+    static VALUE: LazyLock<usize> = LazyLock::new(|| {
+        std::env::var("GOOSE_TRUNCATED_SHOW_LINES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(DEFAULT_TRUNCATED_SHOW_LINES)
+    });
+    *VALUE
+}
 
 fn truncate_code_blocks(content: &str) -> String {
+    let Some(max_lines) = max_code_block_lines() else {
+        return content.to_string();
+    };
+
     let (open_pos, fence) = match (content.find("```"), content.find("~~~")) {
         (Some(a), Some(b)) if a <= b => (a, "```"),
         (Some(a), None) => (a, "```"),
@@ -57,17 +89,18 @@ fn truncate_code_blocks(content: &str) -> String {
     };
     let lines: Vec<&str> = code_content.lines().collect();
 
-    if lines.len() <= MAX_CODE_BLOCK_LINES {
+    if lines.len() <= max_lines {
         return content.to_string();
     }
 
+    let show_lines = truncated_show_lines();
     let truncated: String = lines
         .iter()
-        .take(TRUNCATED_SHOW_LINES)
+        .take(show_lines)
         .copied()
         .collect::<Vec<_>>()
         .join("\n");
-    let remaining = lines.len() - TRUNCATED_SHOW_LINES;
+    let remaining = lines.len() - show_lines;
 
     let file_msg = save_to_temp_file(code_content)
         .map(|p| format!(" → {}", p))
