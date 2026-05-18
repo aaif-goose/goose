@@ -381,6 +381,7 @@ if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
 // Apply single instance lock on Windows and Linux where it's needed for deep links
 // macOS uses the 'open-url' event instead
 let gotTheLock = true;
+let openUrlHandledLaunch = false;
 if (process.platform !== 'darwin') {
   gotTheLock = app.requestSingleInstanceLock();
 
@@ -453,13 +454,13 @@ if (process.platform !== 'darwin') {
   const protocolUrl = process.argv.find((arg) => arg.startsWith('goose://'));
   if (protocolUrl) {
     app.whenReady().then(() => {
+      openUrlHandledLaunch = true;
       handleProtocolUrl(protocolUrl);
     });
   }
 }
 
 const pendingDeepLinks = new Map<number, string>(); // windowId -> deep link URL
-let openUrlHandledLaunch = false;
 
 function getResumeSessionId(parsedUrl: URL): string | undefined {
   if (parsedUrl.hostname !== 'resume') {
