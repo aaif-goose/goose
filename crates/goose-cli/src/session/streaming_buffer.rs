@@ -93,7 +93,7 @@ fn truncate_code_blocks(content: &str) -> String {
         return content.to_string();
     }
 
-    let show_lines = truncated_show_lines().min(lines.len());
+    let show_lines = truncated_show_lines().min(max_lines).min(lines.len());
     let truncated: String = lines
         .iter()
         .take(show_lines)
