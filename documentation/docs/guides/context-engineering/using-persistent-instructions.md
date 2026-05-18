@@ -1,6 +1,6 @@
 ---
 title: Persistent Instructions
-sidebar_position: 12
+sidebar_position: 8
 sidebar_label: Persistent Instructions
 ---
 

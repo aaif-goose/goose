@@ -28,7 +28,7 @@ goose performs best with fewer than 25 total tools enabled across all extensions
 
 ## Permission Levels
 
-Tool permissions work alongside [goose permission modes](/docs/guides/goose-permissions). The mode sets the default behavior, while tool permissions let you override the behavior of specific tools.
+Tool permissions work alongside [goose permission modes](/docs/guides/managing-tools/goose-permissions). The mode sets the default behavior, while tool permissions let you override the behavior of specific tools.
 
 Each tool can be set to one of three permission levels:
 

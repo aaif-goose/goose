@@ -114,10 +114,10 @@ If the analysis results exceed 1000 lines, the tool returns a warning message in
 - **Use `force=true`** to bypass the warning and see the full output (may consume significant conversation context)
 - **Narrow your scope** by analyzing a specific subdirectory or file
 - **Reduce depth** with `max_depth=1` or `max_depth=2` for directories
-- **Delegate to a [subagent](/docs/guides/subagents)** to analyze and summarize without filling your conversation history, for example: "Use a subagent to analyze the entire src/ directory and summarize the main components"
+- **Delegate to a [subagent](/docs/guides/context-engineering/subagents)** to analyze and summarize without filling your conversation history, for example: "Use a subagent to analyze the entire src/ directory and summarize the main components"
 
 ### Performance Tips
 
 - Start with smaller scopes (specific files or subdirectories) before analyzing entire projects
 - Use `max_depth=1` or `max_depth=2` to limit directory traversal depth
-- Use [`.gooseignore`](/docs/guides/using-gooseignore) and `.gitignore` files to exclude unnecessary files from analysis (like `node_modules/`, build artifacts, or sensitive files)
+- Use [`.gooseignore`](/docs/guides/context-engineering/using-gooseignore) and `.gitignore` files to exclude unnecessary files from analysis (like `node_modules/`, build artifacts, or sensitive files)

@@ -1,6 +1,6 @@
 ---
 title: Hooks
-sidebar_position: 4
+sidebar_position: 5
 sidebar_label: Hooks
 ---
 
@@ -8,7 +8,7 @@ sidebar_label: Hooks
 
 Hooks let you run your own scripts when key events happen during a goose session. Use hooks to log activity, send notifications, format files after edits, run checks after shell commands, or integrate goose with local workflows without writing a custom extension.
 
-goose follows the [Open Plugins hooks specification](https://open-plugins.com/agent-builders/components/hooks). Hooks are discovered from plugins on disk and run as shell commands when matching lifecycle events fire.
+goose follows the [Open Plugins hooks specification](https://open-plugins.com/agent-builders/components/hooks). Hooks are discovered from [plugins](/docs/guides/context-engineering/plugins) on disk and run as shell commands when matching lifecycle events fire.
 
 :::warning Run trusted hooks only
 Hooks execute local commands on your machine. Only install or create hooks from sources you trust, and review hook scripts before enabling them.
@@ -16,7 +16,7 @@ Hooks execute local commands on your machine. Only install or create hooks from 
 
 ## Where Hooks Live
 
-A hook belongs to a plugin directory. goose discovers plugins from these locations:
+A hook belongs to a [plugin](/docs/guides/context-engineering/plugins) directory. goose discovers plugins from these locations:
 
 | Scope | Location |
 |---|---|

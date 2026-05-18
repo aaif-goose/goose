@@ -1,5 +1,5 @@
 ---
-sidebar_position: 86
+sidebar_position: 6
 title: Customizing Prompt Templates
 sidebar_label: Prompt Templates
 description: Learn how to customize the prompt templates that define goose's behavior in different situations

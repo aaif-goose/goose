@@ -1,5 +1,5 @@
 ---
-sidebar_position: 87
+sidebar_position: 2
 title: Creating Plans Before Working
 sidebar_label: Creating Plans
 ---
@@ -39,7 +39,7 @@ You can combine planning mode with a different default execution model to balanc
 :::
 
 :::tip Customize Plan Format
-You can also customize how goose creates plans by editing the `plan.md` [prompt template](/docs/guides/prompt-templates).
+You can also customize how goose creates plans by editing the `plan.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
 
 ### Set goose planner environment variables

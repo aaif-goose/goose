@@ -30,13 +30,13 @@ Rather than picking one philosophy, [goose](https://github.com/aaif-goose/goose)
 ### For The Architect
 **`/plan` Mode**
 
-When you enter [plan mode](/docs/guides/creating-plans) in the goose CLI, goose shifts into an interactive dialogue. Instead of immediately executing, it asks clarifying questions to understand your project deeply. It might ask about your tech stack preferences, authentication requirements, deployment targets, or how you want to handle error cases. This back and forth continues until goose has enough context to generate a comprehensive, actionable plan.
+When you enter [plan mode](/docs/guides/context-engineering/creating-plans) in the goose CLI, goose shifts into an interactive dialogue. Instead of immediately executing, it asks clarifying questions to understand your project deeply. It might ask about your tech stack preferences, authentication requirements, deployment targets, or how you want to handle error cases. This back and forth continues until goose has enough context to generate a comprehensive, actionable plan.
 
 Plan mode uses a separate planner configuration that you can customize. By setting **`GOOSE_PLANNER_PROVIDER`** and **`GOOSE_PLANNER_MODEL`** [environment variables](/docs/guides/environment-variables), you can use one model for strategic planning and a different model for execution. When you're satisfied with the plan, goose asks if you want to clear the message history and act on it, giving you a clear checkpoint before any code changes happen.
 
 I used this approach recently when converting a static Vite/React project to Next.js. I understood the scope clearly since it's a common migration pattern, so I asked goose to make a comprehensive plan before starting any work. It produced an 11 phase migration plan with specific checkboxes for each step, covering everything from dependency updates to routing changes to component boundaries. Once I approved, I said "yes start" and goose executed methodically, committing after each phase.
 
-[Learn more about creating plans →](/docs/guides/creating-plans)
+[Learn more about creating plans →](/docs/guides/context-engineering/creating-plans)
 
 ### For The Director
 **Instruction Files**

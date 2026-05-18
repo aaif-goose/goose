@@ -1,5 +1,5 @@
 ---
-sidebar_position: 45
+sidebar_position: 8
 title: CLI Providers
 sidebar_label: CLI Providers
 description: Use Claude Code, Codex, Cursor Agent, or Gemini CLI subscriptions in goose

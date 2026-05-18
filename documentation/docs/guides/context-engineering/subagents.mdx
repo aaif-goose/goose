@@ -1,6 +1,6 @@
 ---
 title: Subagents
-sidebar_position: 50
+sidebar_position: 2
 sidebar_label: Subagents
 ---
 
@@ -24,7 +24,7 @@ Subagents are independent instances that execute tasks while keeping your main c
 ## How to Use Subagents
 
 :::tip Autonomous Subagent Creation
-goose can autonomously decide to use subagents when it determines they would be beneficial for your task - you don't always need to explicitly request them. This happens automatically in autonomous [permission mode](/docs/guides/goose-permissions) (the default). Subagents are disabled in manual approval, smart approval, and chat-only modes.
+goose can autonomously decide to use subagents when it determines they would be beneficial for your task - you don't always need to explicitly request them. This happens automatically in autonomous [permission mode](/docs/guides/managing-tools/goose-permissions) (the default). Subagents are disabled in manual approval, smart approval, and chat-only modes.
 :::
 
 To use subagents, ask goose to delegate tasks using natural language. goose automatically decides when to spawn subagents and handles their lifecycle. You can:
@@ -277,7 +277,7 @@ Subagents use the following pre-configured settings, but you can override any de
 | **Return Mode** | All subagent information provided in main session | Specify how much detail you want in your prompt |
 
 :::tip Advanced Customization
-You can also customize subagent behavior by editing the `subagent_system.md` [prompt template](/docs/guides/prompt-templates).
+You can also customize subagent behavior by editing the `subagent_system.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
 
 ### Customizing Settings in Prompts

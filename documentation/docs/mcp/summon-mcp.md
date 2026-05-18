@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import { PlatformExtensionNote } from '@site/src/components/PlatformExtensionNote';
 import GooseBuiltinInstaller from '@site/src/components/GooseBuiltinInstaller';
 
-The Summon extension lets you load knowledge into goose's context and delegate tasks to [subagents](/docs/guides/subagents). 
+The Summon extension lets you load knowledge into goose's context and delegate tasks to [subagents](/docs/guides/context-engineering/subagents). 
 
 You can load different types of sources:
 - [**Skills**](/docs/guides/context-engineering/using-skills) - Reusable instruction sets that teach goose specific workflows
