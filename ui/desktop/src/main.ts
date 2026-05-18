@@ -420,6 +420,19 @@ if (process.platform !== 'darwin') {
           return;
         }
 
+        const resumeSessionId = getResumeSessionId(parsedUrl);
+        if (resumeSessionId) {
+          app.whenReady().then(async () => {
+            const recentDirs = loadRecentDirs();
+            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+            await createChat(app, {
+              dir: openDir || undefined,
+              resumeSessionId,
+            });
+          });
+          return;
+        }
+
         // For non-bot URLs, continue with normal handling
         handleProtocolUrl(protocolUrl);
       }
@@ -448,15 +461,30 @@ if (process.platform !== 'darwin') {
 const pendingDeepLinks = new Map<number, string>(); // windowId -> deep link URL
 let openUrlHandledLaunch = false;
 
+function getResumeSessionId(parsedUrl: URL): string | undefined {
+  if (parsedUrl.hostname !== 'resume') {
+    return undefined;
+  }
+
+  return parsedUrl.pathname.replace(/^\//, '') || undefined;
+}
+
 async function handleProtocolUrl(url: string) {
   if (!url) return;
 
   const parsedUrl = new URL(url);
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+  const resumeSessionId = getResumeSessionId(parsedUrl);
 
   if (parsedUrl.hostname === 'new-session') {
     await createChat(app, { dir: openDir || undefined });
+    return;
+  } else if (resumeSessionId) {
+    await createChat(app, {
+      dir: openDir || undefined,
+      resumeSessionId,
+    });
     return;
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     const existingWindows = BrowserWindow.getAllWindows();
@@ -513,7 +541,10 @@ app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
     const parsedUrl = new URL(url);
 
-    log.info('[Main] Received open-url event:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
+    log.info(
+      '[Main] Received open-url event:',
+      url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url
+    );
 
     await app.whenReady();
 
@@ -525,6 +556,17 @@ app.on('open-url', async (_event, url) => {
       log.info('[Main] Detected new-session URL, creating new chat window');
       openUrlHandledLaunch = true;
       await createChat(app, { dir: openDir || undefined });
+      return;
+    }
+
+    const resumeSessionId = getResumeSessionId(parsedUrl);
+    if (resumeSessionId) {
+      log.info('[Main] Detected resume URL, creating resumed chat window');
+      openUrlHandledLaunch = true;
+      await createChat(app, {
+        dir: openDir || undefined,
+        resumeSessionId,
+      });
       return;
     }
 
