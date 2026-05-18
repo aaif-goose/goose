@@ -55,6 +55,10 @@ pub struct ChatGptCodexModelAttrs {
 
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
+        name: "gpt-5.5",
+        reasoning_levels: &["low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-5.4",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
