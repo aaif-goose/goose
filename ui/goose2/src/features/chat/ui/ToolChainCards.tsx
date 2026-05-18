@@ -17,25 +17,25 @@ import type { ToolCallStatus } from "@/shared/types/messages";
 export type { ToolChainItem };
 
 const STEP_BULLET_ICON: Record<
-  Exclude<ToolCallStatus, "error" | "stopped">,
+  Exclude<ToolCallStatus, "failed" | "stopped">,
   LucideIcon
 > = {
   pending: CircleIcon,
-  executing: ClockIcon,
+  in_progress: ClockIcon,
   completed: Check,
 };
 
 const STEP_BULLET_CLASS: Record<
-  Exclude<ToolCallStatus, "error" | "stopped">,
+  Exclude<ToolCallStatus, "failed" | "stopped">,
   string
 > = {
   pending: "text-muted-foreground/70",
-  executing: "text-muted-foreground animate-pulse",
+  in_progress: "text-muted-foreground animate-pulse",
   completed: "text-muted-foreground",
 };
 
 function ChainStepBullet({ status }: { status: ToolCallStatus }) {
-  if (status === "error") {
+  if (status === "failed") {
     return (
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-red-600" />
     );
@@ -172,7 +172,7 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
   const aggregateStatus = getChainAggregateStatus(toolItems);
   const summary = summarizeToolChainSteps(primaryItems);
   const isActiveChain =
-    aggregateStatus === "executing" || aggregateStatus === "pending";
+    aggregateStatus === "in_progress" || aggregateStatus === "pending";
   // Chains that mount as already-complete (history replay) start collapsed;
   // live chains mount mid-execution, stay open while running, and auto-collapse
   // once they finish so the chat keeps moving forward.

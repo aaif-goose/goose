@@ -13,7 +13,10 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
 import type { Persona } from "@/shared/types/agents";
-import { getPersonaSource } from "@/features/agents/lib/personaPresentation";
+import {
+  getPersonaSource,
+  isPersonaReadOnly,
+} from "@/features/agents/lib/personaPresentation";
 
 interface PersonaCardProps {
   persona: Persona;
@@ -40,8 +43,9 @@ export function PersonaCard({
   const initials = persona.displayName.charAt(0).toUpperCase();
   const avatarSrc = useAvatarSrc(persona.avatar);
   const personaSource = getPersonaSource(persona);
-  const canEditPersona = personaSource === "custom";
-  const canDeletePersona = personaSource !== "builtin";
+  const canEditPersona = !isPersonaReadOnly(persona);
+  const canDeletePersona =
+    personaSource !== "builtin" && persona.writable !== false;
   const providerModelLabel = [persona.provider, persona.model]
     .filter(Boolean)
     .join(" / ");

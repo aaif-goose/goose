@@ -1,0 +1,23 @@
+{
+  "name": "atomic_chat",
+  "engine": "openai",
+  "display_name": "Atomic Chat",
+  "description": "Local models through Atomic Chat\u2019s OpenAI-compatible server",
+  "api_key_env": "",
+  "base_url": "${ATOMIC_CHAT_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "ATOMIC_CHAT_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:1337",
+      "description": "Base URL of the Atomic Chat server (default: http://localhost:1337)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true
+}

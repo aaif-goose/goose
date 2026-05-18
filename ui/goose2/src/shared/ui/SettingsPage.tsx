@@ -23,7 +23,7 @@ export function SettingsPage({
   return (
     <div className={cn("min-h-full", className)}>
       <div className="sticky top-0 z-20 -mx-6 border-b bg-background px-6 py-4">
-        <div className="flex items-center justify-between gap-3 pr-12">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h3 className="max-w-prose truncate font-display text-sm font-semibold leading-5 tracking-tight">
               {title}
@@ -40,7 +40,7 @@ export function SettingsPage({
             </div>
           ) : null}
         </div>
-        {controls ? <div className="mt-3 pr-12">{controls}</div> : null}
+        {controls ? <div className="mt-3">{controls}</div> : null}
       </div>
       {children ? (
         <div className={cn("py-3", contentClassName)}>{children}</div>

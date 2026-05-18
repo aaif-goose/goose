@@ -1,12 +1,14 @@
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
+use clap_complete_nushell::Nushell as ClapNushell;
 use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
 use goose::recipe::Recipe;
+use goose::source_roots::SourceRoot;
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
@@ -14,7 +16,7 @@ use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, Tu
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
-use crate::commands::plugin::handle_plugin_install;
+use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
 use crate::commands::project::{handle_project_default, handle_projects_interactive};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
 use crate::commands::term::{
@@ -541,6 +543,28 @@ enum SessionCommand {
             default_value = "markdown"
         )]
         format: String,
+
+        #[arg(
+            long = "nostr",
+            help = "Publish the JSON session export as an encrypted Nostr event and print a Goose share link"
+        )]
+        nostr: bool,
+
+        #[arg(
+            long = "relay",
+            value_name = "RELAY",
+            help = "Nostr relay URL to publish to (can be specified multiple times)",
+            action = clap::ArgAction::Append
+        )]
+        relays: Vec<String>,
+    },
+    #[command(about = "Import a session from JSON or an encrypted Nostr share link")]
+    Import {
+        #[arg(help = "Path to a JSON session export, or a goose://sessions/nostr share link")]
+        input: String,
+
+        #[arg(long = "nostr", help = "Treat input as an encrypted Nostr share link")]
+        nostr: bool,
     },
     #[command(name = "diagnostics")]
     Diagnostics {
@@ -575,6 +599,14 @@ enum SchedulerCommand {
             help = "Recipe source (path to file, or base64 encoded recipe string)"
         )]
         recipe_source: String,
+        #[arg(
+            long,
+            value_name = "KEY=VALUE",
+            help = "Recipe parameter in KEY=VALUE format (can be specified multiple times)",
+            action = clap::ArgAction::Append,
+            value_parser = parse_key_val,
+        )]
+        params: Vec<(String, String)>,
     },
     #[command(about = "List all scheduled jobs")]
     List {},
@@ -649,8 +681,21 @@ enum PluginCommand {
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
     Install {
+        #[arg(
+            long,
+            help = "Automatically update this plugin before plugin skills are loaded"
+        )]
+        auto_update: bool,
+
         #[arg(help = "URL to a git repository containing a supported plugin")]
         url: String,
+    },
+
+    /// Update an installed git-backed plugin
+    #[command(about = "Update an installed git-backed plugin")]
+    Update {
+        #[arg(help = "Name of the installed plugin to update")]
+        name: String,
     },
 }
 
@@ -912,7 +957,8 @@ enum Command {
         long_about = "Runs a goose session tied to your terminal window.\n\
                       Each terminal maintains its own persistent session that resumes automatically.\n\n\
                       Setup:\n  \
-                        eval \"$(goose term init zsh)\"  # Add to ~/.zshrc\n\n\
+                        eval \"$(goose term init zsh)\"  # zsh/bash\n  \
+                        let init = ($nu.cache-dir | path join \"goose-term-init.nu\"); ^goose term init nu | save --force $init; source $init\n\n\
                       Usage:\n  \
                         goose term run \"list files in this directory\"\n  \
                         @goose \"create a python script\"  # using alias\n  \
@@ -931,10 +977,12 @@ enum Command {
     },
 
     /// Generate completions for various shells
-    #[command(about = "Generate the autocompletion script for the specified shell")]
+    #[command(
+        about = "Generate the autocompletion script or Nushell module for the specified shell"
+    )]
     Completion {
         #[arg(value_enum)]
-        shell: ClapShell,
+        shell: CompletionShell,
 
         #[arg(long, default_value = "goose", help = "Provide a custom binary name")]
         bin_name: String,
@@ -994,11 +1042,16 @@ enum TermCommand {
                       Setup:\n  \
                         echo 'eval \"$(goose term init zsh)\"' >> ~/.zshrc\n  \
                         source ~/.zshrc\n\n\
+                        Nushell:\n  \
+                        let init = ($nu.cache-dir | path join \"goose-term-init.nu\")\n  \
+                        ^goose term init nu | save --force $init\n  \
+                        source $init\n\n\
                       With --default (anything typed that isn't a command goes to goose):\n  \
-                        echo 'eval \"$(goose term init zsh --default)\"' >> ~/.zshrc"
+                        echo 'eval \"$(goose term init zsh --default)\"' >> ~/.zshrc\n  \
+                        ^goose term init nu --default | save --force $init"
     )]
     Init {
-        /// Shell type (bash, zsh, fish, powershell)
+        /// Shell type (bash, zsh, fish, nu, powershell)
         #[arg(value_enum)]
         shell: Shell,
 
@@ -1009,7 +1062,7 @@ enum TermCommand {
         #[arg(
             long = "default",
             help = "Make goose the default handler for unknown commands",
-            long_help = "When enabled, anything you type that isn't a valid command will be sent to goose. Only supported for zsh and bash."
+            long_help = "When enabled, anything you type that isn't a valid command will be sent to goose. Supported for zsh, bash, and nu."
         )]
         default: bool,
     },
@@ -1050,6 +1103,31 @@ enum CliProviderVariant {
     OpenAi,
     Databricks,
     Ollama,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    #[value(alias = "pwsh")]
+    Powershell,
+    #[value(alias = "nushell")]
+    Nu,
+    Zsh,
+}
+
+impl CompletionShell {
+    fn generate(self, cmd: &mut clap::Command, bin_name: &str, writer: &mut dyn std::io::Write) {
+        match self {
+            CompletionShell::Bash => generate(ClapShell::Bash, cmd, bin_name, writer),
+            CompletionShell::Elvish => generate(ClapShell::Elvish, cmd, bin_name, writer),
+            CompletionShell::Fish => generate(ClapShell::Fish, cmd, bin_name, writer),
+            CompletionShell::Powershell => generate(ClapShell::PowerShell, cmd, bin_name, writer),
+            CompletionShell::Nu => generate(ClapNushell, cmd, bin_name, writer),
+            CompletionShell::Zsh => generate(ClapShell::Zsh, cmd, bin_name, writer),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1110,11 +1188,24 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         builtins
     };
 
+    let additional_source_roots = Config::global()
+        .get_param::<String>("ADDITIONAL_AGENT_SOURCE_ROOTS")
+        .ok()
+        .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| {
+            let path = path.canonicalize().unwrap_or(path);
+            SourceRoot::read_only(path)
+        })
+        .collect();
+
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         goose_platform: GoosePlatform::GooseCli,
+        additional_source_roots,
     }));
     let secret_key = std::env::var(GOOSE_SERVER_SECRET_KEY_ENV)
         .ok()
@@ -1158,6 +1249,8 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             identifier,
             output,
             format,
+            nostr,
+            relays,
         } => {
             let session_manager = SessionManager::instance();
             let session_identifier = if let Some(id) = identifier {
@@ -1175,8 +1268,17 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                     }
                 }
             };
-            crate::commands::session::handle_session_export(session_identifier, output, format)
-                .await?;
+            crate::commands::session::handle_session_export(
+                session_identifier,
+                output,
+                format,
+                nostr,
+                relays,
+            )
+            .await?;
+        }
+        SessionCommand::Import { input, nostr } => {
+            crate::commands::session::handle_session_import(input, nostr).await?;
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();
@@ -1535,7 +1637,8 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
             schedule_id,
             cron,
             recipe_source,
-        } => handle_schedule_add(schedule_id, cron, recipe_source).await,
+            params,
+        } => handle_schedule_add(schedule_id, cron, recipe_source, params).await,
         SchedulerCommand::List {} => handle_schedule_list().await,
         SchedulerCommand::Remove { schedule_id } => handle_schedule_remove(schedule_id).await,
         SchedulerCommand::Sessions { schedule_id, limit } => {
@@ -1550,7 +1653,8 @@ async fn handle_schedule_command(command: SchedulerCommand) -> Result<()> {
 
 fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
-        PluginCommand::Install { url } => handle_plugin_install(&url),
+        PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
+        PluginCommand::Update { name } => handle_plugin_update(&name),
     }
 }
 
@@ -1809,7 +1913,7 @@ pub async fn cli() -> anyhow::Result<()> {
     match cli.command {
         Some(Command::Completion { shell, bin_name }) => {
             let mut cmd = Cli::command();
-            generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+            shell.generate(&mut cmd, &bin_name, &mut std::io::stdout());
             Ok(())
         }
         Some(Command::Configure {}) => handle_configure().await,
@@ -1900,5 +2004,64 @@ pub async fn cli() -> anyhow::Result<()> {
             }
         }
         None => handle_default_session().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_command_accepts_nushell_alias() {
+        let cli = Cli::try_parse_from(["goose", "completion", "nushell"]).expect("parse failed");
+
+        match cli.command {
+            Some(Command::Completion {
+                shell: CompletionShell::Nu,
+                ..
+            }) => {}
+            _ => panic!("expected nu completion shell"),
+        }
+    }
+
+    #[test]
+    fn nushell_completion_generation_emits_module() {
+        let mut cmd = Cli::command();
+        let mut buffer = Vec::new();
+
+        CompletionShell::Nu.generate(&mut cmd, "goose", &mut buffer);
+
+        let script = String::from_utf8(buffer).expect("utf8");
+        assert!(script.contains("module completions"));
+        assert!(script.contains("export extern goose"));
+        assert!(script.contains("export use completions *"));
+    }
+
+    #[test]
+    fn term_init_help_mentions_nushell() {
+        let mut cmd = Cli::command();
+        let term = cmd.find_subcommand_mut("term").expect("term command");
+        let init = term.find_subcommand_mut("init").expect("init command");
+        let mut buffer = Vec::new();
+
+        init.write_long_help(&mut buffer).expect("write help");
+
+        let help = String::from_utf8(buffer).expect("utf8");
+        assert!(help.contains("goose term init nu"));
+        assert!(help.contains("Supported for zsh, bash, and nu"));
+    }
+
+    #[test]
+    fn completion_help_lists_nu() {
+        let mut cmd = Cli::command();
+        let completion = cmd
+            .find_subcommand_mut("completion")
+            .expect("completion command");
+        let mut buffer = Vec::new();
+
+        completion.write_long_help(&mut buffer).expect("write help");
+
+        let help = String::from_utf8(buffer).expect("utf8");
+        assert!(help.contains("nu"));
     }
 }

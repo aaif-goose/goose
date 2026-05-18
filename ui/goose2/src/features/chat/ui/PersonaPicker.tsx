@@ -43,11 +43,11 @@ export function PersonaPicker({
   );
 
   const builtinPersonas = useMemo(
-    () => personas.filter((p) => p.isBuiltin),
+    () => personas.filter((p) => p.isBuiltin || p.writable === false),
     [personas],
   );
   const customPersonas = useMemo(
-    () => personas.filter((p) => !p.isBuiltin),
+    () => personas.filter((p) => !p.isBuiltin && p.writable !== false),
     [personas],
   );
 
@@ -211,7 +211,9 @@ function PersonaAvatar({
     );
   }
 
-  const isBuiltin = persona?.isBuiltin ?? true;
+  const isBuiltin = persona
+    ? persona.isBuiltin || persona.writable === false
+    : true;
 
   return (
     <div

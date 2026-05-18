@@ -19,7 +19,7 @@ export interface ChatSession {
   title: string;
   projectId?: string | null;
   providerId?: string;
-  personaId?: string;
+  agentId?: string;
   modelId?: string;
   modelName?: string;
   workingDir?: string | null;
@@ -66,7 +66,7 @@ interface CreateSessionOpts {
   title?: string;
   projectId?: string;
   providerId?: string;
-  personaId?: string;
+  agentId?: string;
   workingDir?: string;
   modelId?: string;
   modelName?: string;
@@ -100,7 +100,6 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
     title: normalizeAcpTitle(session.title) ?? "Untitled",
     projectId: session.projectId ?? undefined,
     providerId: session.providerId ?? undefined,
-    personaId: session.personaId ?? undefined,
     modelId: session.modelId ?? undefined,
     workingDir: session.workingDir ?? undefined,
     createdAt: session.createdAt ?? session.updatedAt ?? now,
@@ -123,7 +122,6 @@ export function sessionToChatSession(session: Session): ChatSession {
     title: session.title,
     projectId: session.projectId,
     providerId: session.providerId,
-    personaId: session.personaId,
     modelId: session.modelId,
     modelName: session.modelName,
     workingDir: session.workingDir,
@@ -150,7 +148,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const now = new Date().toISOString();
     const providerId = opts.providerId ?? "goose";
     const { sessionId } = await acpCreateSession(providerId, opts.workingDir, {
-      personaId: opts.personaId,
       modelId: opts.modelId,
       projectId: opts.projectId,
     });
@@ -159,7 +156,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       title: opts.title ?? DEFAULT_CHAT_TITLE,
       projectId: opts.projectId,
       providerId,
-      personaId: opts.personaId,
+      agentId: opts.agentId,
       modelId: opts.modelId,
       modelName: opts.modelName,
       workingDir: opts.workingDir,

@@ -390,6 +390,7 @@ fn custom_provider_config_to_dto(
         base_path: config.base_path.clone(),
         api_key_env,
         api_key_set,
+        preserves_thinking: config.preserves_thinking,
     }
 }
 
@@ -513,6 +514,7 @@ impl GooseAcpAgent {
                 requires_auth: provider.requires_auth,
                 catalog_provider_id: provider.catalog_provider_id,
                 base_path: provider.base_path,
+                preserves_thinking: provider.preserves_thinking,
             },
         )
         .internal_err_ctx("Failed to create custom provider")?;
@@ -581,6 +583,7 @@ impl GooseAcpAgent {
                 requires_auth: provider.requires_auth,
                 catalog_provider_id: provider.catalog_provider_id,
                 base_path: provider.base_path,
+                preserves_thinking: provider.preserves_thinking,
             },
         )
         .internal_err_ctx("Failed to update custom provider")?;
@@ -700,7 +703,7 @@ impl GooseAcpAgent {
                     let model_config =
                         crate::model::ModelConfig::new(&metadata.metadata().default_model)?
                             .with_canonical_limits(&provider_id);
-                    provider_factory(provider_id.clone(), model_config, Vec::new()).await
+                    provider_factory(provider_id.clone(), model_config, Vec::new(), None).await
                 })
                 .catch_unwind()
                 .await;

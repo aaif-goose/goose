@@ -173,10 +173,6 @@ const config: Config = {
             to: "/docs/guides/managing-tools/adjust-tool-output",
           },
           {
-            from: "/docs/guides/benchmarking",
-            to: "/docs/tutorials/benchmarking",
-          },
-          {
             from: "/docs/guides/goose-in-docker",
             to: "/docs/tutorials/goose-in-docker",
           },
@@ -238,8 +234,8 @@ const config: Config = {
             to: "/docs/mcp/figma-mcp",
           },
           {
-            from: "/docs/tutorials/filesystem-mcp",
-            to: "/docs/mcp/filesystem-mcp",
+            from: ["/docs/tutorials/filesystem-mcp", "/docs/mcp/filesystem-mcp"],
+            to: "/docs/getting-started/using-extensions",
           },
           {
             from: "/docs/tutorials/github-mcp",

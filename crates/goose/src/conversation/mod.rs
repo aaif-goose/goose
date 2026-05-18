@@ -54,6 +54,25 @@ impl Conversation {
                 {
                     last.text.push_str(&new.text);
                 }
+                (
+                    Some(MessageContent::Thinking(ref mut last)),
+                    Some(MessageContent::Thinking(new)),
+                ) if message.content.len() == 1
+                    && (last.signature.is_empty() || new.signature == last.signature) =>
+                {
+                    // Merge cases:
+                    //   - `last` is still unsigned (block in progress) — append
+                    //     and adopt `new.signature` if it's the closing delta.
+                    //   - signatures match — same block continuing.
+                    // An unsigned delta arriving after a signed block belongs
+                    // to the next block (signature-at-end streams emit the
+                    // first text of block N+1 before its signature), so the
+                    // outer match arm falls through to push it separately.
+                    last.thinking.push_str(&new.thinking);
+                    if !new.signature.is_empty() {
+                        last.signature = new.signature.clone();
+                    }
+                }
                 (_, _) => {
                     last.content.extend(message.content);
                 }
@@ -1253,5 +1272,161 @@ mod tests {
 
         assert_eq!(fixed_messages[5].as_concat_text(), "Non-vis C");
         assert!(!fixed_messages[5].metadata.agent_visible);
+    }
+
+    #[test]
+    fn test_push_coalesces_thinking_deltas() {
+        use crate::conversation::message::MessageContent;
+
+        let mut conv = Conversation::empty();
+        for fragment in ["I ", "should ", "think ", "about ", "this."] {
+            conv.push(
+                Message::assistant()
+                    .with_thinking(fragment, "")
+                    .with_id("turn-1"),
+            );
+        }
+
+        assert_eq!(conv.messages().len(), 1);
+        let content = &conv.messages()[0].content;
+        assert_eq!(content.len(), 1);
+        match &content[0] {
+            MessageContent::Thinking(t) => {
+                assert_eq!(t.thinking, "I should think about this.");
+                assert_eq!(t.signature, "");
+            }
+            other => panic!("expected single Thinking block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_push_thinking_adopts_signature_on_closing_delta() {
+        use crate::conversation::message::MessageContent;
+
+        let mut conv = Conversation::empty();
+        // Streamed shape for one signed block: text deltas accumulate while
+        // unsigned; the closing delta carries the signature.
+        conv.push(
+            Message::assistant()
+                .with_thinking("a", "")
+                .with_id("turn-1"),
+        );
+        conv.push(
+            Message::assistant()
+                .with_thinking("b", "sig1")
+                .with_id("turn-1"),
+        );
+
+        let content = &conv.messages()[0].content;
+        assert_eq!(content.len(), 1);
+        match &content[0] {
+            MessageContent::Thinking(t) => {
+                assert_eq!(t.thinking, "ab");
+                assert_eq!(t.signature, "sig1");
+            }
+            other => panic!("expected Thinking, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_push_unsigned_thinking_after_signed_starts_new_block() {
+        use crate::conversation::message::MessageContent;
+
+        let mut conv = Conversation::empty();
+        conv.push(
+            Message::assistant()
+                .with_thinking("first body", "sig1")
+                .with_id("turn-1"),
+        );
+        // A second thinking block begins; in signature-at-end streams the
+        // first text arrives before the block's signature, so the new
+        // unsigned delta must NOT be appended to the already-signed block —
+        // otherwise the closing signature later would replay text under
+        // the wrong signature.
+        conv.push(
+            Message::assistant()
+                .with_thinking("second body start", "")
+                .with_id("turn-1"),
+        );
+
+        let content = &conv.messages()[0].content;
+        assert_eq!(
+            content.len(),
+            2,
+            "unsigned delta must not merge into a signed block: {:?}",
+            content
+        );
+        match (&content[0], &content[1]) {
+            (MessageContent::Thinking(a), MessageContent::Thinking(b)) => {
+                assert_eq!(a.thinking, "first body");
+                assert_eq!(a.signature, "sig1");
+                assert_eq!(b.thinking, "second body start");
+                assert_eq!(b.signature, "");
+            }
+            other => panic!("unexpected content shape: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_push_keeps_distinct_signed_thinking_blocks_separate() {
+        use crate::conversation::message::MessageContent;
+
+        let mut conv = Conversation::empty();
+        conv.push(
+            Message::assistant()
+                .with_thinking("block A", "sig-A")
+                .with_id("turn-1"),
+        );
+        conv.push(
+            Message::assistant()
+                .with_thinking("block B", "sig-B")
+                .with_id("turn-1"),
+        );
+
+        let content = &conv.messages()[0].content;
+        assert_eq!(
+            content.len(),
+            2,
+            "two distinct signed blocks must not coalesce: {:?}",
+            content
+        );
+        match (&content[0], &content[1]) {
+            (MessageContent::Thinking(a), MessageContent::Thinking(b)) => {
+                assert_eq!(a.thinking, "block A");
+                assert_eq!(a.signature, "sig-A");
+                assert_eq!(b.thinking, "block B");
+                assert_eq!(b.signature, "sig-B");
+            }
+            other => panic!("unexpected content shape: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_push_does_not_coalesce_multi_block_thinking_message() {
+        use crate::conversation::message::MessageContent;
+
+        let mut conv = Conversation::empty();
+        conv.push(
+            Message::assistant()
+                .with_thinking("first", "")
+                .with_id("turn-1"),
+        );
+
+        // Multi-block message must NOT coalesce into the existing thinking
+        // block — the merge arm requires `message.content.len() == 1`.
+        let mut multi = Message::assistant().with_thinking("second", "");
+        multi = multi.with_text("and now text").with_id("turn-1");
+        conv.push(multi);
+
+        let content = &conv.messages()[0].content;
+        assert_eq!(content.len(), 3);
+        match (&content[0], &content[1], &content[2]) {
+            (MessageContent::Thinking(a), MessageContent::Thinking(b), MessageContent::Text(c)) => {
+                assert_eq!(a.thinking, "first");
+                assert_eq!(b.thinking, "second");
+                assert_eq!(c.text, "and now text");
+            }
+            other => panic!("unexpected content shape: {:?}", other),
+        }
     }
 }

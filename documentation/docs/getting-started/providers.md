@@ -25,11 +25,13 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Amazon Bedrock](https://aws.amazon.com/bedrock/)                           | Offers a variety of foundation models, including Claude, Jurassic-2, and others. **AWS environment variables must be set in advance, not configured through `goose configure`**                                           | Credential auth: `AWS_PROFILE`, or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`<br /><br />Bearer token auth: `AWS_BEARER_TOKEN_BEDROCK` and `AWS_REGION`, `AWS_DEFAULT_REGION`, or `AWS_PROFILE` |
 | [Amazon SageMaker TGI](https://docs.aws.amazon.com/sagemaker/latest/dg/realtime-endpoints.html) | Run Text Generation Inference models through Amazon SageMaker endpoints. **AWS credentials must be configured in advance.** | `SAGEMAKER_ENDPOINT_NAME`, `AWS_REGION` (optional), `AWS_PROFILE` (optional)  |
 | [Anthropic](https://www.anthropic.com/)                                     | Offers Claude, an advanced AI model for natural language tasks.                                                                                                                                                           | `ANTHROPIC_API_KEY`, `ANTHROPIC_HOST` (optional)                                                                                                                                                                 |
+| [Atomic Chat](https://github.com/AtomicBot-ai/Atomic-Chat)                | Run local models with Atomic Chat's OpenAI-compatible server. **Because this provider runs locally, you must first [download a model](#local-llms).** | None required. Connects to local server at `localhost:1337` by default. |
 | [Avian](https://avian.io/)                                                   | Cost-effective inference API with DeepSeek, Kimi, GLM, and MiniMax models. OpenAI-compatible with streaming and function calling support.                                                                                  | `AVIAN_API_KEY`, `AVIAN_HOST` (optional)                                                                                                                                            |
 | [Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/) | Access Azure-hosted OpenAI models, including GPT-4 and GPT-3.5. Supports both API key and Azure credential chain authentication.                                                                                          | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT_NAME`, `AZURE_OPENAI_API_KEY` (optional)                                                                                           |
 | [ChatGPT Codex](https://chatgpt.com/codex) | Access GPT-5 Codex models optimized for code generation and understanding. **Requires a ChatGPT Plus/Pro subscription.** | No manual key. Uses browser-based OAuth authentication for both CLI and Desktop. |
 | [Databricks](https://www.databricks.com/)                                   | Unified data analytics and AI platform for building and deploying models.                                                                                                                                                 | `DATABRICKS_HOST`, `DATABRICKS_TOKEN` |
 | [Docker Model Runner](https://docs.docker.com/ai/model-runner/)                             | Local models running in Docker Desktop or Docker CE with OpenAI-compatible API endpoints. **Because this provider runs locally, you must first [download a model](#local-llms).**                     | `OPENAI_HOST`, `OPENAI_BASE_PATH`   |
+| [FuturMix](https://futurmix.ai/)                                            | Unified AI gateway providing access to models from Anthropic, Google, OpenAI, and DeepSeek through an OpenAI-compatible API.                                                                          | `FUTURMIX_API_KEY`                                                                                                                                                                  |
 | [Gemini](https://ai.google.dev/gemini-api/docs)                             | Advanced LLMs by Google with multimodal capabilities (text, images). Gemini 3 models support configurable [thinking levels](#gemini-3-thinking-levels).                                                                                                | `GOOGLE_API_KEY`, `GEMINI3_THINKING_LEVEL` (optional)                                                                                                                              |
 | [GCP Vertex AI](https://cloud.google.com/vertex-ai)                         | Google Cloud's Vertex AI platform, supporting Gemini and Claude models. **Credentials must be [configured in advance](https://cloud.google.com/vertex-ai/docs/authentication).** Filters for allowed models by organization policy (if configured). | `GCP_PROJECT_ID`, `GCP_LOCATION` and optionally `GCP_MAX_RATE_LIMIT_RETRIES` (5), `GCP_MAX_OVERLOADED_RETRIES` (5), `GCP_INITIAL_RETRY_INTERVAL_MS` (5000), `GCP_BACKOFF_MULTIPLIER` (2.0), `GCP_MAX_RETRY_INTERVAL_MS` (320_000). |
 | [GitHub Copilot](https://docs.github.com/en/copilot/using-github-copilot/ai-models) | Access to AI models from OpenAI, Anthropic, Google, and other providers through GitHub's Copilot infrastructure. **GitHub account with Copilot access required.** | No manual key. Uses [device flow authentication](#github-copilot-authentication) for both CLI and Desktop. |
@@ -44,6 +46,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [OpenRouter](https://openrouter.ai/)                                        | API gateway for unified access to various models with features like rate-limiting management.                                                                                                                             | `OPENROUTER_API_KEY`                                                                                                                                                                |
 | [OVHcloud AI](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/)       | Provides access to open-source models including Qwen, Llama, Mistral, and DeepSeek through AI Endpoints service.                                                       | `OVHCLOUD_API_KEY`                                                                                                                                                                  |
 | [Ramalama](https://ramalama.ai/)                                            | Local model using native [OCI](https://opencontainers.org/) container runtimes, [CNCF](https://www.cncf.io/) tools, and supporting models as OCI artifacts. Ramalama API is a compatible alternative to Ollama and can be used with the goose Ollama provider. Supports Qwen, Llama, DeepSeek, and other open-source models. **Because this provider runs locally, you must first [download and run a model](#local-llms).**  | `OLLAMA_HOST`                                                                                                                                                                       |
+| [Routstr](https://routstr.com/)                                             | OpenAI-compatible aggregator that fronts dozens of upstream providers (Anthropic, OpenAI, Google, DeepSeek, Llama, …) behind a single API. Authenticate with an `sk-...` bearer issued by your Routstr instance — payment is handled outside goose.                                                                                                                                                                       | `ROUTSTR_API_KEY`, `ROUTSTR_HOST` (optional, default `https://api.routstr.com`)                                                                                                     |
 | [Snowflake](https://docs.snowflake.com/user-guide/snowflake-cortex/aisql#choosing-a-model) | Access the latest models using Snowflake Cortex services, including Claude models. **Requires a Snowflake account and programmatic access token (PAT)**.                                                     | `SNOWFLAKE_HOST`, `SNOWFLAKE_TOKEN`                                                                                                                                                                 |
 | [VMware Tanzu Platform](https://techdocs.broadcom.com/us/en/vmware-tanzu/platform/ai-services/10-3/ai/index.html) | Enterprise-managed LLM access through AI Services on VMware Tanzu Platform. Models are fetched dynamically from the endpoint. | `TANZU_AI_API_KEY`, `TANZU_AI_ENDPOINT` |
 | [Tetrate Agent Router Service](https://router.tetrate.ai)                   | Unified API gateway for AI models including Claude, Gemini, GPT, open-weight models, and others. Supports PKCE authentication flow for secure API key generation.                                                                                | `TETRATE_API_KEY`, `TETRATE_HOST` (optional)                                                                                                                                        |
@@ -694,6 +697,45 @@ To set up Groq with goose, follow these steps:
   </TabItem>
 </Tabs>
 
+### FuturMix
+[FuturMix](https://futurmix.ai/) is a unified AI gateway providing access to models from Anthropic, Google, OpenAI, and DeepSeek through an OpenAI-compatible API. To use FuturMix with goose, you need an API key from [FuturMix](https://futurmix.ai/).
+
+FuturMix offers models that support tool calling, including:
+- **claude-sonnet-4-20250514** - Anthropic Claude Sonnet 4 with 200K context
+- **gpt-4o** - OpenAI GPT-4o with 128K context
+- **gemini-2.5-pro** - Google Gemini 2.5 Pro with 1M context
+- **deepseek-chat** - DeepSeek V3 with 131K context
+- **claude-haiku-4-20250514** - Anthropic Claude Haiku 4 with 200K context
+
+For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/futurmix.json).
+
+To set up FuturMix with goose, follow these steps:
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  **To update your LLM provider and API key:** 
+
+    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click the `Models` tab.
+    4. Click `Configure Providers`
+    5. Choose `FuturMix` as provider from the list.
+    6. Click `Configure`, enter your API key, and click `Submit`.
+    7. Select the FuturMix model of your choice.
+
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    1. Run: 
+    ```sh
+    goose configure
+    ```
+    2. Select `Configure Providers` from the menu.
+    3. Follow the prompts to choose `FuturMix` as the provider.
+    4. Enter your API key when prompted.
+    5. Select the FuturMix model of your choice.
+  </TabItem>
+</Tabs>
+
 ### Novita AI
 [Novita AI](https://novita.ai/) provides access to 90+ open-source models via an OpenAI-compatible API with competitive pricing. To use Novita AI with goose, you need an API key from [Novita AI](https://novita.ai/settings#key-management).
 
@@ -730,6 +772,43 @@ To set up Novita AI with goose, follow these steps:
     3. Follow the prompts to choose `Novita AI` as the provider.
     4. Enter your API key when prompted.
     5. Select the Novita AI model of your choice.
+  </TabItem>
+</Tabs>
+
+### Routstr
+[Routstr](https://routstr.com/) is an OpenAI-compatible aggregator that fronts dozens of upstream providers behind a single API. Payment is handled by the Routstr instance itself, so all goose needs is the `sk-...` bearer that instance issues you. To use Routstr with goose, pick an instance (the default is `https://api.routstr.com`) and obtain an API key from its payment flow.
+
+Routstr aggregates models from many upstream providers, including:
+- **claude-opus-4.7** — Anthropic's Claude opus 4.7
+- **deepseek-v4-pro** — DeepSeek V4 Pro
+- **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
+
+`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/routstr.json).
+
+To set up Routstr with goose, follow these steps:
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  **To update your LLM provider and API key:**
+
+    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click the `Models` tab.
+    4. Click `Configure Providers`
+    5. Choose `Routstr` as provider from the list.
+    6. Click `Configure`, enter your `ROUTSTR_API_KEY` (and optionally override `ROUTSTR_HOST` to point at a different Routstr instance), and click `Submit`.
+    7. Select the Routstr model of your choice.
+
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    1. Run:
+    ```sh
+    goose configure
+    ```
+    2. Select `Configure Providers` from the menu.
+    3. Follow the prompts to choose `Routstr` as the provider.
+    4. Enter your API key when prompted (and optionally override `ROUTSTR_HOST`).
+    5. Select the Routstr model of your choice.
   </TabItem>
 </Tabs>
 
@@ -1130,6 +1209,55 @@ Here are some local providers we support:
 
     :::tip Model Name
     Make sure the model name you enter in goose matches the model identifier shown in LM Studio's server panel.
+    :::
+  </TabItem>
+  <TabItem value="atomic-chat" label="Atomic Chat">
+    [Atomic Chat](https://github.com/AtomicBot-ai/Atomic-Chat) lets you run open-source models locally with an OpenAI-compatible API server.
+
+    1. Download and install Atomic Chat from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
+    2. Open Atomic Chat and download a model that supports tool calling (e.g., Qwen, Llama, or Mistral variants).
+    3. Start the local server in Atomic Chat. The server runs on `http://localhost:1337` by default
+
+    4. Configure goose to use Atomic Chat:
+
+    <Tabs groupId="interface">
+      <TabItem value="ui" label="goose Desktop" default>
+        1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+        2. Click the `Settings` button on the sidebar.
+        3. Click the `Models` tab.
+        4. Click `Configure providers`.
+        5. Choose `Atomic Chat` from the provider list and click `Configure`.
+        6. Click `Submit` (no API key is needed).
+        7. Select the model you have loaded in Atomic Chat.
+      </TabItem>
+      <TabItem value="cli" label="goose CLI">
+        1. Run:
+        ```sh
+        goose configure
+        ```
+        2. Select `Configure Providers` from the menu.
+        3. Choose `Atomic Chat` as the provider.
+        4. Enter the model name that matches the model loaded in Atomic Chat.
+
+        ```
+        ┌   goose-configure
+        │
+        ◇  What would you like to configure?
+        │  Configure Providers
+        │
+        ◇  Which model provider should we use?
+        │  Atomic Chat
+        │
+        ◇  Enter a model from that provider:
+        │  qwen2.5-7b-instruct
+        │
+        └  Configuration saved successfully
+        ```
+      </TabItem>
+    </Tabs>
+
+    :::tip Model Name
+    Make sure the model name you enter in goose matches the model identifier shown for your server in Atomic Chat. If the API listens on a different origin than `http://localhost:1337`, set `ATOMIC_CHAT_HOST` in goose to match (scheme, host, and port only).
     :::
   </TabItem>
   <TabItem value="docker" label="Docker Model Runner" default>

@@ -106,6 +106,7 @@ describe("custom provider API", () => {
         headers: input.headers ?? {},
         apiKeyEnv: "ACME_AI_API_KEY",
         apiKeySet: true,
+        preservesThinking: true,
       },
       editable: true,
       status: { providerId: "acme_ai", isConfigured: true },

@@ -30,7 +30,7 @@ describe("buildSessionSearchResults", () => {
       makeSession({
         id: "session-2",
         title: "Builder notes",
-        personaId: "persona-1",
+        agentId: "persona-1",
         updatedAt: "2026-04-09T12:00:00Z",
       }),
     ];

@@ -26,7 +26,6 @@ import {
   buildAcpImages,
   buildMessageAttachments,
 } from "../lib/attachments";
-import { sanitizeReplayMessages } from "../lib/replaySanitizer";
 import { i18n } from "@/shared/i18n";
 import type { ChatSendOptions } from "../types";
 
@@ -94,7 +93,7 @@ function markMessageStopped(sessionId: string, messageId: string) {
         completionStatus: "stopped",
       },
       content: message.content.map((block) =>
-        block.type === "toolRequest" && block.status === "executing"
+        block.type === "toolRequest" && block.status === "in_progress"
           ? { ...block, status: "stopped" }
           : block,
       ),
@@ -215,11 +214,8 @@ export function useChat(
         for (const img of images) {
           userMessage.content.push({
             type: "image",
-            source: {
-              type: "base64",
-              mediaType: img.mimeType,
-              data: img.base64,
-            },
+            data: img.base64,
+            mimeType: img.mimeType,
           });
         }
       }
@@ -272,8 +268,7 @@ export function useChat(
           ...(sendOptions?.assistantPrompt
             ? { assistantPrompt: sendOptions.assistantPrompt }
             : {}),
-          personaId: effectivePersonaInfo?.id,
-          personaName: effectivePersonaInfo?.name,
+
           images: images?.map(
             (img) => [img.base64, img.mimeType] as [string, string],
           ),
@@ -419,10 +414,7 @@ export function useChat(
       clearReplayBuffer(sessionId);
 
       try {
-        const sendOptions = effectivePersonaInfo?.id
-          ? { personaId: effectivePersonaInfo.id }
-          : undefined;
-        await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER, sendOptions);
+        await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER);
 
         // Command responses are streamed via prompt notifications, but the ACP
         // layer does not currently forward history replacement events. Drop those
@@ -436,7 +428,7 @@ export function useChat(
         const buffer = getAndDeleteReplayBuffer(sessionId);
         if (buffer) {
           setMessages(sessionId, [
-            ...sanitizeReplayMessages(buffer),
+            ...buffer,
             createCompactionConfirmationMessage(),
           ]);
         } else {

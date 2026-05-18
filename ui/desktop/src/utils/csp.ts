@@ -4,8 +4,12 @@ const DEFAULT_CONNECT_SOURCES = [
   "'self'",
   'http://127.0.0.1:*',
   'https://127.0.0.1:*',
+  'ws://127.0.0.1:*',
+  'wss://127.0.0.1:*',
   'http://localhost:*',
   'https://localhost:*',
+  'ws://localhost:*',
+  'wss://localhost:*',
   'https://api.github.com',
   'https://github.com',
   'https://objects.githubusercontent.com',
@@ -17,6 +21,8 @@ export function buildConnectSrc(externalGoosed?: ExternalGoosedConfig): string {
   if (externalGoosed?.enabled && externalGoosed.url) {
     try {
       const externalUrl = new URL(externalGoosed.url);
+      sources.push(externalUrl.origin);
+      externalUrl.protocol = externalUrl.protocol === 'https:' ? 'wss:' : 'ws:';
       sources.push(externalUrl.origin);
     } catch {
       console.warn('Invalid external goosed URL in settings, skipping CSP entry');

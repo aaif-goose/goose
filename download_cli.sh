@@ -18,6 +18,7 @@ set -eu
 #   GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Overrides CANARY. Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   GOOSE_PROVIDER - Optional: provider for goose
 #   GOOSE_MODEL    - Optional: model for goose
+#   GOOSE_LINUX_VARIANT - Optional: Linux package variant to install (`standard` or `vulkan`)
 #   GOOSE_WINDOWS_VARIANT - Optional: Windows package variant to install (`standard` or `cuda`)
 #   CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   CONFIGURE      - Optional: if set to "false", disables running goose configure interactively
@@ -60,20 +61,15 @@ OUT_FILE="goose"
 if [[ "${WINDIR:-}" ]] || [[ "${windir:-}" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
     # Native Windows environments - use Windows user profile path
     DEFAULT_BIN_DIR="$USERPROFILE/goose"
-elif [[ -f "/proc/version" ]] && grep -q "Microsoft\|WSL" /proc/version 2>/dev/null; then
-    # WSL - use Linux-style path but make sure it exists
-    DEFAULT_BIN_DIR="$HOME/.local/bin"
-elif [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]]; then
-    # WSL mount point detection
-    DEFAULT_BIN_DIR="$HOME/.local/bin"
 else
-    # Default for Linux/macOS
+    # Linux, macOS, and WSL all use the same bin directory
     DEFAULT_BIN_DIR="$HOME/.local/bin"
 fi
 
 GOOSE_BIN_DIR="${GOOSE_BIN_DIR:-$DEFAULT_BIN_DIR}"
 RELEASE="${CANARY:-false}"
 CONFIGURE="${CONFIGURE:-true}"
+GOOSE_LINUX_VARIANT="${GOOSE_LINUX_VARIANT:-standard}"
 GOOSE_WINDOWS_VARIANT="${GOOSE_WINDOWS_VARIANT:-standard}"
 if [ -n "${GOOSE_VERSION:-}" ]; then
   # Validate the version format
@@ -103,32 +99,11 @@ else
   if [[ "${WINDIR:-}" ]] || [[ "${windir:-}" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
     OS="windows"
   elif [[ -f "/proc/version" ]] && grep -q "Microsoft\|WSL" /proc/version 2>/dev/null; then
-    # WSL detected. Prefer Linux unless there are clear signs we should install the Windows build:
-    # - running on a Windows-mounted path like /mnt/c/...   OR
-    # - Windows executables are available AND we're on a Windows mount
-    if [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]]; then
-      OS="windows"
-    else
-      # If powershell/cmd exist, only treat as Windows when in a Windows mount
-      if command -v powershell.exe >/dev/null 2>&1 || command -v cmd.exe >/dev/null 2>&1; then
-        if [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]] || [[ -d "/c" || -d "/d" || -d "/e" ]]; then
-          OS="windows"
-        else
-          OS="linux"
-        fi
-      else
-        # No strong Windows interop present — install Linux build inside WSL by default
-        OS="linux"
-      fi
-    fi
-  elif [[ "$PWD" =~ ^/mnt/[a-zA-Z]/ ]]; then
-    # WSL mount point detection (like /mnt/c/) outside of /proc/version check
-    OS="windows"
+    # WSL is a Linux environment regardless of the current working directory.
+    # The PWD (e.g. /mnt/c/) does not change the kernel — always install Linux.
+    OS="linux"
   elif [[ "$OSTYPE" == "darwin"* ]]; then
     OS="darwin"
-  elif command -v powershell.exe >/dev/null 2>&1 || command -v cmd.exe >/dev/null 2>&1; then
-    # Presence of Windows executables (likely a Windows environment)
-    OS="windows"
   elif [[ "$PWD" =~ ^/[a-zA-Z]/ ]] && [[ -d "/c" || -d "/d" || -d "/e" ]]; then
     # Check for Windows-style mount points (like in Git Bash)
     OS="windows"
@@ -200,7 +175,17 @@ elif [ "$OS" = "windows" ]; then
   EXTRACT_CMD="unzip"
   OUT_FILE="goose.exe"
 else
+  case "$GOOSE_LINUX_VARIANT" in
+    standard|vulkan) ;;
+    *)
+      echo "Error: Unsupported GOOSE_LINUX_VARIANT '$GOOSE_LINUX_VARIANT'. Expected 'standard' or 'vulkan'."
+      exit 1
+      ;;
+  esac
   FILE="goose-$ARCH-unknown-linux-gnu.tar.bz2"
+  if [ "$GOOSE_LINUX_VARIANT" = "vulkan" ]; then
+    FILE="goose-$ARCH-unknown-linux-gnu-vulkan.tar.bz2"
+  fi
   EXTRACT_CMD="tar"
 fi
 
@@ -337,7 +322,15 @@ if [ "$CONFIGURE" = true ]; then
   echo ""
   echo "Configuring goose"
   echo ""
-  "$GOOSE_BIN_DIR/$OUT_FILE" configure
+  if [ -t 0 ]; then
+    "$GOOSE_BIN_DIR/$OUT_FILE" configure
+  elif [ -r /dev/tty ]; then
+    "$GOOSE_BIN_DIR/$OUT_FILE" configure < /dev/tty
+  else
+    echo "Non-interactive shell detected (e.g. 'curl ... | bash')."
+    echo "Skipping 'goose configure' — please run it manually after installation:"
+    echo "    $GOOSE_BIN_DIR/$OUT_FILE configure"
+  fi
 else
   echo "Skipping 'goose configure', you may need to run this manually later"
 fi

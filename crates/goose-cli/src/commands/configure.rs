@@ -30,12 +30,20 @@ use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::IsTerminal;
 
 // useful for light themes where there is no discernible colour contrast between
 // cursor-selected and cursor-unselected items.
 const MULTISELECT_VISIBILITY_HINT: &str = "<";
 
 pub async fn handle_configure() -> anyhow::Result<()> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "goose configure requires an interactive terminal.\n\
+             If you installed via 'curl ... | bash', run 'goose configure' separately after installation."
+        );
+    }
+
     let config = Config::global();
 
     if !config.exists() {
@@ -2005,6 +2013,7 @@ fn collect_custom_headers() -> anyhow::Result<Option<std::collections::HashMap<S
 }
 
 fn add_provider() -> anyhow::Result<()> {
+    let config = Config::global();
     let provider_type = cliclack::select("What type of API is this?")
         .item(
             "openai_compatible",
@@ -2089,7 +2098,7 @@ fn add_provider() -> anyhow::Result<()> {
 
     let headers = collect_custom_headers()?;
 
-    create_custom_provider(CreateCustomProviderParams {
+    let provider_config = create_custom_provider(CreateCustomProviderParams {
         engine: provider_type.to_string(),
         display_name: display_name.clone(),
         api_url,
@@ -2100,7 +2109,23 @@ fn add_provider() -> anyhow::Result<()> {
         requires_auth,
         catalog_provider_id: None,
         base_path,
+        preserves_thinking: None,
     })?;
+
+    if !provider_config.models.is_empty() {
+        let model_items: Vec<_> = provider_config
+            .models
+            .iter()
+            .map(|m| (m.name.as_str(), m.name.as_str(), ""))
+            .collect();
+        if let Ok(model) = cliclack::select("Which model should be the default?")
+            .items(&model_items)
+            .interact()
+        {
+            config.set_goose_provider(&provider_config.name)?;
+            config.set_goose_model(model)?;
+        }
+    }
 
     cliclack::outro(format!("Custom provider added: {}", display_name))?;
     Ok(())

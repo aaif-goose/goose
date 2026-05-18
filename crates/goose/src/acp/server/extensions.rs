@@ -5,13 +5,13 @@ impl GooseAcpAgent {
         &self,
         req: AddExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session_id = &req.session_id;
         let config: ExtensionConfig = serde_json::from_value(req.config).map_err(|e| {
             agent_client_protocol::Error::invalid_params().data(format!("bad config: {e}"))
         })?;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         agent
-            .add_extension(config, &internal_id)
+            .add_extension(config, session_id)
             .await
             .internal_err()?;
         Ok(EmptyResponse {})
@@ -21,10 +21,10 @@ impl GooseAcpAgent {
         &self,
         req: RemoveExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id, None).await?;
         agent
-            .remove_extension(&req.name, &internal_id)
+            .remove_extension(&req.name, session_id)
             .await
             .internal_err()?;
         Ok(EmptyResponse {})
@@ -33,7 +33,12 @@ impl GooseAcpAgent {
     pub(super) async fn on_get_extensions(
         &self,
     ) -> Result<GetExtensionsResponse, agent_client_protocol::Error> {
-        let extensions = crate::config::extensions::get_all_extensions();
+        let extensions = crate::config::extensions::get_all_extensions()
+            .into_iter()
+            .filter(|ext| {
+                !crate::agents::extension_manager::is_hidden_extension(&ext.config.name())
+            })
+            .collect::<Vec<_>>();
         let warnings = crate::config::extensions::get_warnings();
         let extensions_json = extensions
             .into_iter()
@@ -114,10 +119,10 @@ impl GooseAcpAgent {
         &self,
         req: GetSessionExtensionsRequest,
     ) -> Result<GetSessionExtensionsResponse, agent_client_protocol::Error> {
-        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let session_id = &req.session_id;
         let session = self
             .session_manager
-            .get_session(&internal_id, false)
+            .get_session(session_id, false)
             .await
             .internal_err()?;
 

@@ -127,8 +127,8 @@ impl AzureAuth {
             }
         }
 
-        // Get new token using Azure CLI credential
-        let output = tokio::process::Command::new("az")
+        let az = if cfg!(windows) { "az.cmd" } else { "az" };
+        let output = tokio::process::Command::new(az)
             .args([
                 "account",
                 "get-access-token",

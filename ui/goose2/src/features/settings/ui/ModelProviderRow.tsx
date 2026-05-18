@@ -71,7 +71,7 @@ export function ModelProviderRow({
   inventorySyncing = false,
   inventoryWarning = null,
 }: ModelProviderRowProps) {
-  const { t } = useTranslation("settings");
+  const { t } = useTranslation(["settings", "common"]);
   const [expanded, setExpanded] = useState(false);
   const [configValues, setConfigValues] = useState<ProviderFieldValue[]>([]);
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
@@ -114,7 +114,7 @@ export function ModelProviderRow({
         setError(
           nextError instanceof Error
             ? nextError.message
-            : "Failed to load provider settings",
+            : t("providers.errors.loadFailed"),
         );
       } finally {
         if (showSkeleton) {
@@ -122,7 +122,7 @@ export function ModelProviderRow({
         }
       }
     },
-    [fields, hasFields, onGetConfig, provider.id],
+    [fields, hasFields, onGetConfig, provider.id, t],
   );
 
   useEffect(() => {
@@ -185,7 +185,7 @@ export function ModelProviderRow({
       setSetupError(
         nextError instanceof Error
           ? nextError.message
-          : "Failed to complete sign-in",
+          : t("providers.errors.signInFailed"),
       );
     } finally {
       unlisten();
@@ -230,7 +230,7 @@ export function ModelProviderRow({
   async function handleSaveField(field: ProviderField) {
     const nextValue = draftValues[field.key]?.trim() ?? "";
     if (!nextValue) {
-      setError(`Enter a value for ${field.label}`);
+      setError(t("providers.errors.fieldRequired", { label: field.label }));
       return;
     }
     setError("");
@@ -244,7 +244,9 @@ export function ModelProviderRow({
       setShowSavedState(true);
     } catch (nextError) {
       setError(
-        nextError instanceof Error ? nextError.message : "Failed to save",
+        nextError instanceof Error
+          ? nextError.message
+          : t("providers.errors.saveFailed"),
       );
     }
   }
@@ -262,7 +264,11 @@ export function ModelProviderRow({
       .map((field) => field.label);
 
     if (missingLabels.length > 0) {
-      setError(`Fill in ${missingLabels.join(", ")}`);
+      setError(
+        t("providers.errors.fieldsMissing", {
+          fields: missingLabels.join(", "),
+        }),
+      );
       return;
     }
 
@@ -299,7 +305,9 @@ export function ModelProviderRow({
       setShowSavedState(false);
     } catch (nextError) {
       setError(
-        nextError instanceof Error ? nextError.message : "Failed to save",
+        nextError instanceof Error
+          ? nextError.message
+          : t("providers.errors.saveFailed"),
       );
     }
   }
@@ -314,7 +322,9 @@ export function ModelProviderRow({
       setShowSavedState(false);
     } catch (nextError) {
       setError(
-        nextError instanceof Error ? nextError.message : "Failed to remove",
+        nextError instanceof Error
+          ? nextError.message
+          : t("providers.errors.removeFailed"),
       );
     }
   }
@@ -373,7 +383,9 @@ export function ModelProviderRow({
                 {authenticating ? (
                   <Spinner className="size-3.5 text-current" />
                 ) : null}
-                {setupError ? "Retry" : "Connect"}
+                {setupError
+                  ? t("common:actions.retry")
+                  : t("common:actions.connect")}
               </Button>
             </div>
           ) : (

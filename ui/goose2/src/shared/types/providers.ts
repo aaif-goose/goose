@@ -11,13 +11,7 @@ export type ProviderSetupMethod = ProviderSetupMethodDto;
 export type ProviderGroup = ProviderSetupGroupDto;
 export type ProviderField = ProviderSetupFieldDto;
 
-export interface ProviderFieldValue {
-  key: string;
-  value: string | null;
-  isSet: boolean;
-  isSecret: boolean;
-  required: boolean;
-}
+export type { ProviderConfigFieldValueDto as ProviderFieldValue } from "@aaif/goose-sdk";
 
 export type ProviderCatalogEntry = Omit<
   ProviderSetupCatalogEntryDto,

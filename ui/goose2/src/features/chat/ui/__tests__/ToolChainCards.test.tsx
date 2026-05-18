@@ -79,7 +79,7 @@ describe("ToolChainCards", () => {
         toolItems={[
           pair("Shell · npm test", { completed: true }),
           pair("Shell · npm build", {
-            status: "executing",
+            status: "in_progress",
             completed: false,
           }),
         ]}
@@ -97,7 +97,7 @@ describe("ToolChainCards", () => {
         toolItems={[
           pair("Edit · src/a.ts"),
           pair("Edit · src/b.ts", {
-            status: "executing",
+            status: "in_progress",
             completed: false,
           }),
         ]}
@@ -129,7 +129,7 @@ describe("ToolChainCards", () => {
   it("auto-collapses a live chain once every step has completed", () => {
     const a = pair("Edit · src/a.ts");
     const bRequest = pair("Edit · src/b.ts", {
-      status: "executing",
+      status: "in_progress",
       completed: false,
     });
     const { rerender } = render(<ToolChainCards toolItems={[a, bRequest]} />);
@@ -171,7 +171,7 @@ describe("ToolChainCards", () => {
       />,
     );
     const wrapper = container.querySelector('[data-role="tool-chain-card"]');
-    expect(wrapper?.getAttribute("data-status")).toBe("error");
+    expect(wrapper?.getAttribute("data-status")).toBe("failed");
   });
 
   it("renders a step rail row for each child inside a chain", () => {
@@ -181,7 +181,7 @@ describe("ToolChainCards", () => {
           pair("Edit · src/a.ts"),
           pair("Edit · src/b.ts"),
           pair("Edit · src/c.ts", {
-            status: "executing",
+            status: "in_progress",
             completed: false,
           }),
         ]}
@@ -317,7 +317,7 @@ describe("ToolChainCards", () => {
   it("does not surface the chain summary while the chain is still active", () => {
     const a = pair("Edit · src/a.ts");
     const b = pair("Edit · src/b.ts", {
-      status: "executing",
+      status: "in_progress",
       completed: false,
     });
     if (a.request) {

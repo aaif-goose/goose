@@ -44,6 +44,29 @@ import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
 import { fetchCanonicalModelInfo } from '../utils/canonical';
 import { defineMessages, useIntl } from '../i18n';
+import TurndownService from 'turndown';
+
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  bulletListMarker: '-',
+  codeBlockStyle: 'fenced',
+});
+
+turndown.addRule('complexLinks', {
+  filter: (node) => {
+    return (
+      node.nodeName === 'A' &&
+      !!node.getAttribute('href') &&
+      /\n/.test(node.textContent || '')
+    );
+  },
+  replacement: (content, node) => {
+    const el = node as HTMLElement;
+    const href = el.getAttribute('href')!;
+    const label = content.replace(/\n+/g, ' ').trim();
+    return `[${label}](${href})`;
+  },
+});
 
 interface PastedImage {
   id: string;
@@ -51,6 +74,18 @@ interface PastedImage {
   isLoading: boolean;
   error?: string;
 }
+
+const moveQueuedMessageToFront = (
+  messages: QueuedMessage[],
+  messageId: string
+): QueuedMessage[] => {
+  const selectedMessage = messages.find((msg) => msg.id === messageId);
+  if (!selectedMessage) return messages;
+  return [selectedMessage, ...messages.filter((msg) => msg.id !== messageId)];
+};
+
+const removeQueuedMessage = (messages: QueuedMessage[], messageId: string): QueuedMessage[] =>
+  messages.filter((msg) => msg.id !== messageId);
 
 const MAX_IMAGES_PER_MESSAGE = 10;
 
@@ -155,14 +190,8 @@ interface ChatInputProps {
   totalTokens?: number;
   accumulatedInputTokens?: number;
   accumulatedOutputTokens?: number;
+  accumulatedCost?: number | null;
   messages?: Message[];
-  sessionCosts?: {
-    [key: string]: {
-      inputTokens: number;
-      outputTokens: number;
-      totalCost: number;
-    };
-  };
   disableAnimation?: boolean;
   recipe?: Recipe | null;
   recipeId?: string | null;
@@ -191,9 +220,9 @@ export default function ChatInput({
   totalTokens,
   accumulatedInputTokens,
   accumulatedOutputTokens,
+  accumulatedCost,
   messages = [],
   disableAnimation = false,
-  sessionCosts,
   recipe,
   recipeId,
   recipeAccepted,
@@ -220,7 +249,24 @@ export default function ChatInput({
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const queuePausedRef = useRef(false);
   const editingMessageIdRef = useRef<string | null>(null);
+  const sendAfterStopMessageIdRef = useRef<string | null>(null);
   const [lastInterruption, setLastInterruption] = useState<string | null>(null);
+
+  const pauseRemainingQueue = useCallback(() => {
+    queuePausedRef.current = true;
+  }, []);
+
+  const clearPendingSendAfterStop = useCallback((messageId?: string) => {
+    if (!messageId || sendAfterStopMessageIdRef.current === messageId) {
+      sendAfterStopMessageIdRef.current = null;
+    }
+  }, []);
+
+  const clearQueueState = useCallback(() => {
+    queuePausedRef.current = false;
+    sendAfterStopMessageIdRef.current = null;
+    setLastInterruption(null);
+  }, []);
 
   const { alerts, addAlert, clearAlerts } = useAlerts();
   const dropdownRef: React.RefObject<HTMLDivElement> = useRef<HTMLDivElement>(
@@ -315,20 +361,40 @@ export default function ChatInput({
   // Queue processing
   useEffect(() => {
     if (wasLoadingRef.current && !isLoading && queuedMessages.length > 0) {
-      // After an interruption, we should process the interruption message immediately
-      // The queue is only truly paused if there was an interruption AND we want to keep it paused
-      const shouldProcessQueue = !queuePausedRef.current || lastInterruption;
+      const pendingSendAfterStopId = sendAfterStopMessageIdRef.current;
+      const messageToSend = pendingSendAfterStopId
+        ? queuedMessages.find((message) => message.id === pendingSendAfterStopId)
+        : queuedMessages[0];
+
+      if (pendingSendAfterStopId && !messageToSend) {
+        clearPendingSendAfterStop(pendingSendAfterStopId);
+        wasLoadingRef.current = isLoading;
+        return;
+      }
+
+      if (!messageToSend) {
+        wasLoadingRef.current = isLoading;
+        return;
+      }
+
+      const shouldSendAfterStop = pendingSendAfterStopId === messageToSend.id;
+      const shouldProcessQueue = !queuePausedRef.current || lastInterruption || shouldSendAfterStop;
 
       if (shouldProcessQueue) {
-        const nextMessage = queuedMessages[0];
-        LocalMessageStorage.addMessage(nextMessage.content);
-        handleSubmit({ msg: nextMessage.content, images: nextMessage.images });
+        LocalMessageStorage.addMessage(messageToSend.content);
+        handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+        if (shouldSendAfterStop) {
+          clearPendingSendAfterStop(messageToSend.id);
+        }
         setQueuedMessages((prev) => {
-          const newQueue = prev.slice(1);
+          const newQueue = shouldSendAfterStop
+            ? removeQueuedMessage(prev, messageToSend.id)
+            : prev.slice(1);
           // If queue becomes empty after processing, clear the paused state
           if (newQueue.length === 0) {
-            queuePausedRef.current = false;
-            setLastInterruption(null);
+            clearQueueState();
+          } else if (shouldSendAfterStop) {
+            pauseRemainingQueue();
           }
           return newQueue;
         });
@@ -338,12 +404,20 @@ export default function ChatInput({
           setLastInterruption(null);
           // Keep the queue paused after sending the interruption message
           // User can manually resume if they want to continue with queued messages
-          queuePausedRef.current = true;
+          pauseRemainingQueue();
         }
       }
     }
     wasLoadingRef.current = isLoading;
-  }, [isLoading, queuedMessages, handleSubmit, lastInterruption]);
+  }, [
+    isLoading,
+    queuedMessages,
+    handleSubmit,
+    lastInterruption,
+    clearPendingSendAfterStop,
+    clearQueueState,
+    pauseRemainingQueue,
+  ]);
   const [mentionPopover, setMentionPopover] = useState<{
     isOpen: boolean;
     position: { x: number; y: number };
@@ -754,10 +828,40 @@ export default function ChatInput({
   }, [droppedFiles.length, localDroppedFiles.length, onFilesProcessed, setLocalDroppedFiles]);
 
   const handlePaste = async (evt: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isRecording) return;
+
     const files = Array.from(evt.clipboardData.files || []);
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
 
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length === 0) {
+      const html = evt.clipboardData.getData('text/html');
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const hasLinks = doc.querySelectorAll('a[href]').length > 0;
+        if (hasLinks) {
+          const markdown = turndown.turndown(doc.body).trim();
+          if (markdown) {
+            evt.preventDefault();
+            const textarea = textAreaRef.current;
+            if (textarea) {
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              const newValue =
+                displayValue.substring(0, start) + markdown + displayValue.substring(end);
+              const cursorPos = start + markdown.length;
+              setDisplayValue(newValue);
+              updateValue(newValue);
+              setHasUserTyped(true);
+              checkForMentionOrSlash(newValue, cursorPos, textarea);
+              requestAnimationFrame(() => {
+                textarea.selectionStart = textarea.selectionEnd = cursorPos;
+              });
+            }
+          }
+        }
+      }
+      return;
+    }
 
     // Check if adding these images would exceed the limit
     if (pastedImages.length + imageFiles.length > MAX_IMAGES_PER_MESSAGE) {
@@ -934,7 +1038,7 @@ export default function ChatInput({
     if (interruptionMatch && interruptionMatch.shouldInterrupt) {
       setLastInterruption(interruptionMatch.matchedText);
       if (onStop) onStop();
-      queuePausedRef.current = true;
+      pauseRemainingQueue();
 
       // For interruptions, we need to queue the message to be sent after the stop completes
       // rather than trying to send it immediately while the system is still loading
@@ -1227,13 +1331,13 @@ export default function ChatInput({
 
   // Queue management functions - no storage persistence, only in-memory
   const handleRemoveQueuedMessage = (messageId: string) => {
+    clearPendingSendAfterStop(messageId);
     setQueuedMessages((prev) => prev.filter((msg) => msg.id !== messageId));
   };
 
   const handleClearQueue = () => {
     setQueuedMessages([]);
-    queuePausedRef.current = false;
-    setLastInterruption(null);
+    clearQueueState();
   };
 
   const handleReorderMessages = (reorderedMessages: QueuedMessage[]) => {
@@ -1250,20 +1354,17 @@ export default function ChatInput({
     const messageToSend = queuedMessages.find((msg) => msg.id === messageId);
     if (!messageToSend) return;
 
-    // Stop current processing and temporarily pause queue to prevent double-send
+    if (!isLoading) {
+      setQueuedMessages((prev) => removeQueuedMessage(prev, messageId));
+      LocalMessageStorage.addMessage(messageToSend.content);
+      handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+      return;
+    }
+
+    sendAfterStopMessageIdRef.current = messageId;
+    pauseRemainingQueue();
+    setQueuedMessages((prev) => moveQueuedMessageToFront(prev, messageId));
     if (onStop) onStop();
-    const wasPaused = queuePausedRef.current;
-    queuePausedRef.current = true;
-
-    // Remove the message from queue and send it immediately
-    setQueuedMessages((prev) => prev.filter((msg) => msg.id !== messageId));
-    LocalMessageStorage.addMessage(messageToSend.content);
-    handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
-
-    // Restore previous pause state after a brief delay to prevent race condition
-    setTimeout(() => {
-      queuePausedRef.current = wasPaused;
-    }, 100);
   };
 
   const handleResumeQueue = () => {
@@ -1327,7 +1428,7 @@ export default function ChatInput({
             data-testid="chat-input"
             autoFocus
             id="dynamic-textarea"
-            placeholder={isRecording ? '' : getNavigationShortcutText()}
+            placeholder={isRecording ? '' : getNavigationShortcutText(intl)}
             value={displayValue}
             onChange={handleChange}
             onCompositionStart={handleCompositionStart}
@@ -1460,7 +1561,7 @@ export default function ChatInput({
                       }`}
                     >
                       <Send className="w-4 h-4" />
-                      <span className="text-sm">Send</span>
+                      <span className="text-sm">{intl.formatMessage(i18n.send)}</span>
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -1636,7 +1737,7 @@ export default function ChatInput({
                 <CostTracker
                   inputTokens={accumulatedInputTokens}
                   outputTokens={accumulatedOutputTokens}
-                  sessionCosts={sessionCosts}
+                  accumulatedCost={accumulatedCost}
                   model={effectiveModel}
                   provider={effectiveProvider}
                 />

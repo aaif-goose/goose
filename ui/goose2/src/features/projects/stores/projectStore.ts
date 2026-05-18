@@ -125,8 +125,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     workingDirs,
     useWorktrees,
   ) => {
-    const project = await updateProject(
-      id,
+    const existing = get().projects.find((p) => p.id === id);
+    if (!existing) throw new Error(`Project ${id} not found`);
+    const project = await updateProject(existing, {
       name,
       description,
       prompt,
@@ -136,7 +137,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       preferredModel,
       workingDirs,
       useWorktrees,
-    );
+    });
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? project : p)),
     }));

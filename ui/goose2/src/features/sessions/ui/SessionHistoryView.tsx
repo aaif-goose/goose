@@ -236,8 +236,8 @@ export function SessionHistoryView({
                     title={result.session.title}
                     updatedAt={result.session.updatedAt}
                     personaName={
-                      result.session.personaId
-                        ? getPersonaName(result.session.personaId)
+                      result.session.agentId
+                        ? getPersonaName(result.session.agentId)
                         : undefined
                     }
                     projectName={
@@ -299,8 +299,8 @@ export function SessionHistoryView({
                       title={session.title}
                       updatedAt={session.updatedAt}
                       personaName={
-                        session.personaId
-                          ? getPersonaName(session.personaId)
+                        session.agentId
+                          ? getPersonaName(session.agentId)
                           : undefined
                       }
                       projectName={

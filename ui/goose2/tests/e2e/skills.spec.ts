@@ -52,8 +52,12 @@ test.describe("Skills view", () => {
 
     await page.getByPlaceholder("Search skills").fill("review");
 
-    await expect(page.getByText("code-review")).toBeVisible();
-    await expect(page.getByText("test-writer")).not.toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open code-review details" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open test-writer details" }),
+    ).not.toBeVisible();
   });
 
   test("project filtering isolates project skills", async ({

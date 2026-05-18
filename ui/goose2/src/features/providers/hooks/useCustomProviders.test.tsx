@@ -84,6 +84,7 @@ describe("useCustomProviders", () => {
         headers: {},
         requiresAuth: true,
         apiKeySet: true,
+        preservesThinking: true,
       },
       editable: true,
       status: { providerId: "acme_ai", isConfigured: true },

@@ -192,7 +192,7 @@ var McpAppBridge = (function () {
     };
     sendRequest("ui/initialize", {
       protocolVersion: "2026-01-26",
-      clientInfo: appIdentity,
+      appInfo: appIdentity,
       appCapabilities: {
         availableDisplayModes: ["inline", "fullscreen"],
       },
