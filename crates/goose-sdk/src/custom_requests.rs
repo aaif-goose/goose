@@ -818,7 +818,6 @@ pub enum SourceType {
     Subrecipe,
     Agent,
     Project,
-    Check,
 }
 
 impl std::fmt::Display for SourceType {
@@ -830,7 +829,6 @@ impl std::fmt::Display for SourceType {
             SourceType::Subrecipe => write!(f, "subrecipe"),
             SourceType::Agent => write!(f, "agent"),
             SourceType::Project => write!(f, "project"),
-            SourceType::Check => write!(f, "check"),
         }
     }
 }

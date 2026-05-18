@@ -175,11 +175,16 @@ impl Check {
     }
 
     /// Render this check as a generic [`SourceEntry`] so it can flow through
-    /// the same listing/UI pipeline as skills and projects. Per-check tunables
-    /// (`model`, `turn-limit`, `tools`, `severity-default`, `scope_dir`) live
-    /// in `properties` so the SDK schema doesn't need check-specific fields.
+    /// the same listing/UI pipeline as skills and projects. Checks surface as
+    /// [`SourceType::Agent`] entries — they're sub-agent definitions
+    /// specialized for code review — with `properties["kind"] = "check"`
+    /// so clients can distinguish them from `.agents/agents/*.md` agents.
+    /// Per-check tunables (`model`, `turn-limit`, `tools`, `severity-default`,
+    /// `scope_dir`) live in `properties` so the SDK schema doesn't need
+    /// check-specific fields.
     pub fn to_source_entry(&self, global: bool) -> SourceEntry {
         let mut properties: HashMap<String, serde_json::Value> = HashMap::new();
+        properties.insert("kind".into(), serde_json::Value::String("check".into()));
         if let Some(m) = &self.model {
             properties.insert("model".into(), serde_json::Value::String(m.clone()));
         }
@@ -209,7 +214,7 @@ impl Check {
             );
         }
         SourceEntry {
-            source_type: SourceType::Check,
+            source_type: SourceType::Agent,
             name: self.name.clone(),
             description: self.description.clone().unwrap_or_default(),
             content: self.body.clone(),
