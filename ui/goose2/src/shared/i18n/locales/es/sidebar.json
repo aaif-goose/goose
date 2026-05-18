@@ -1,5 +1,6 @@
 {
   "actions": {
+    "backToMainNavigation": "Atrás",
     "collapse": "Contraer barra lateral",
     "expand": "Expandir barra lateral",
     "newChat": "Nuevo chat",
@@ -14,6 +15,7 @@
     "agents": "Agentes",
     "extensions": "Extensiones",
     "home": "Inicio",
+    "main": "Navegación principal",
     "sessionHistory": "Historial de sesiones",
     "skills": "Habilidades"
   },

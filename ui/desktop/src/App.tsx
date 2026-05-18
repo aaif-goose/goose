@@ -8,7 +8,7 @@ import {
   useLocation,
   useSearchParams,
 } from 'react-router-dom';
-import { openSharedSessionFromDeepLink } from './sessionLinks';
+import { openSharedSessionFromDeepLink, importNostrSessionFromDeepLink } from './sessionLinks';
 import { type SharedSessionDetails } from './sharedSessions';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
@@ -428,6 +428,11 @@ export function AppInner() {
       setIsLoadingSharedSession(true);
       setSharedSessionError(null);
       try {
+        if (link.startsWith('goose://sessions/nostr')) {
+          await importNostrSessionFromDeepLink(link);
+          navigate('/sessions');
+          return;
+        }
         await openSharedSessionFromDeepLink(link, (_view: View, options?: ViewOptions) => {
           navigate('/shared-session', { state: options });
         });
@@ -438,14 +443,18 @@ export function AppInner() {
           action: 'open_shared_session',
           recoverable: true,
         });
-        // Navigate to shared session view with error
-        const shareToken = link.replace('goose://sessions/', '');
-        const options = {
-          sessionDetails: null,
-          error: errorMessage(error, 'Unknown error'),
-          shareToken,
-        };
-        navigate('/shared-session', { state: options });
+        if (link.startsWith('goose://sessions/nostr')) {
+          toast.error(`Failed to import Nostr session: ${errorMessage(error, 'Unknown error')}`);
+          navigate('/sessions');
+        } else {
+          const shareToken = link.replace('goose://sessions/', '');
+          const options = {
+            sessionDetails: null,
+            error: errorMessage(error, 'Unknown error'),
+            shareToken,
+          };
+          navigate('/shared-session', { state: options });
+        }
       } finally {
         setIsLoadingSharedSession(false);
       }

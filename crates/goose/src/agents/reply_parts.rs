@@ -17,10 +17,11 @@ use crate::providers::base::stream_from_single_message;
 use crate::providers::base::{MessageStream, Provider, ProviderUsage};
 use crate::providers::errors::ProviderError;
 use crate::providers::toolshim::{
-    augment_message_with_tool_calls, convert_tool_messages_to_text,
-    modify_system_prompt_for_tool_json, OllamaInterpreter,
+    augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
+    modify_system_prompt_for_tool_json, sanitize_residual_markers,
 };
 use rmcp::model::Tool;
+use tracing::warn;
 
 async fn enhance_model_error(error: ProviderError, provider: &Arc<dyn Provider>) -> ProviderError {
     let ProviderError::RequestFailed(ref msg) = error else {
@@ -123,13 +124,16 @@ async fn toolshim_postprocess(
     response: Message,
     toolshim_tools: &[Tool],
 ) -> Result<Message, ProviderError> {
-    let interpreter = OllamaInterpreter::new().map_err(|e| {
-        ProviderError::ExecutionError(format!("Failed to create OllamaInterpreter: {}", e))
-    })?;
-
-    augment_message_with_tool_calls(&interpreter, response, toolshim_tools)
-        .await
-        .map_err(|e| ProviderError::ExecutionError(format!("Failed to augment message: {}", e)))
+    match augment_message_with_selected_tool_interpreter(response.clone(), toolshim_tools).await {
+        Ok(message) => Ok(message),
+        Err(e) => {
+            warn!(
+                "Toolshim augmentation failed, skipping tool augmentation: {}",
+                e
+            );
+            Ok(sanitize_residual_markers(response))
+        }
+    }
 }
 
 impl Agent {
@@ -138,14 +142,7 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> Result<(Vec<Tool>, Vec<Tool>, String)> {
-        // Get tools from extension manager
         let mut tools = self.list_tools(session_id, None).await;
-
-        // Add frontend tools
-        let frontend_tools = self.frontend_tools.lock().await;
-        for frontend_tool in frontend_tools.values() {
-            tools.push(frontend_tool.tool.clone());
-        }
 
         #[cfg(feature = "code-mode")]
         let code_execution_active = self
@@ -214,10 +211,7 @@ impl Agent {
             .extension_manager
             .get_extensions_info(working_dir)
             .await;
-        let (extension_count, tool_count) = self
-            .extension_manager
-            .get_extension_and_tool_counts(session_id)
-            .await;
+        let (extension_count, tool_count) = self.total_extension_and_tool_counts(session_id).await;
 
         // Get model name from provider
         let provider = self.provider().await?;
@@ -312,20 +306,67 @@ impl Agent {
         };
 
         Ok(Box::pin(try_stream! {
-            while let Some(result) = stream.next().await {
-                let (mut message, usage) = result?;
+            if config.toolshim {
+                // Toolshim mode: accumulate the full response before processing
+                // so that tool-use markers spanning multiple chunks are detected
+                // and stripped before any output reaches the UI.
+                let mut accumulated_message: Option<Message> = None;
+                let mut final_usage: Option<ProviderUsage> = None;
 
-                // Store the model information in the global store
-                if let Some(usage) = usage.as_ref() {
-                    crate::providers::base::set_current_model(&usage.model);
+                while let Some(result) = stream.next().await {
+                    let (msg_opt, usage_opt) = result?;
+
+                    if let Some(usage) = usage_opt.as_ref() {
+                        crate::providers::base::set_current_model(&usage.model);
+                    }
+
+                    if let Some(msg) = msg_opt {
+                        accumulated_message = Some(match accumulated_message {
+                            Some(mut prev) => {
+                                for new_content in msg.content {
+                                    match (&mut prev.content.last_mut(), &new_content) {
+                                        (
+                                            Some(MessageContent::Text(last_text)),
+                                            MessageContent::Text(new_text),
+                                        ) => {
+                                            last_text.text.push_str(&new_text.text);
+                                        }
+                                        _ => {
+                                            prev.content.push(new_content);
+                                        }
+                                    }
+                                }
+                                prev
+                            }
+                            None => msg,
+                        });
+                    }
+
+                    if let Some(usage) = usage_opt {
+                        final_usage = Some(usage);
+                    }
+
+                    // Yield empty item so the agent loop can check cancellation
+                    yield (None, None);
                 }
 
-                // Post-process / structure the response only if tool interpretation is enabled
-                if message.is_some() && config.toolshim {
-                    message = Some(toolshim_postprocess(message.unwrap(), &toolshim_tools).await?);
+                if let Some(msg) = accumulated_message {
+                    let processed = toolshim_postprocess(msg, &toolshim_tools).await?;
+                    yield (Some(processed), final_usage);
+                } else if final_usage.is_some() {
+                    // Preserve usage-only responses (no message content)
+                    yield (None, final_usage);
                 }
+            } else {
+                while let Some(result) = stream.next().await {
+                    let (message, usage) = result?;
 
-                yield (message, usage);
+                    if let Some(usage) = usage.as_ref() {
+                        crate::providers::base::set_current_model(&usage.model);
+                    }
+
+                    yield (message, usage);
+                }
             }
         }))
     }
@@ -486,6 +527,12 @@ impl Agent {
         let accumulated_output =
             accumulate(session.accumulated_output_tokens, usage.usage.output_tokens);
 
+        let accumulated_cost = session
+            .provider_name
+            .as_deref()
+            .and_then(|pn| self.accumulate_cost(session.accumulated_cost, usage, pn))
+            .or(session.accumulated_cost);
+
         let (current_total, current_input, current_output) = if is_compaction_usage {
             // After compaction: summary output becomes new input context
             let new_input = usage.usage.output_tokens;
@@ -507,10 +554,31 @@ impl Agent {
             .accumulated_total_tokens(accumulated_total)
             .accumulated_input_tokens(accumulated_input)
             .accumulated_output_tokens(accumulated_output)
+            .accumulated_cost(accumulated_cost)
             .apply()
             .await?;
 
         Ok(())
+    }
+
+    fn accumulate_cost(
+        &self,
+        existing: Option<f64>,
+        usage: &ProviderUsage,
+        provider_name: &str,
+    ) -> Option<f64> {
+        let canonical =
+            crate::providers::canonical::maybe_get_canonical_model(provider_name, &usage.model)?;
+
+        let input_price = canonical.cost.input?;
+        let output_price = canonical.cost.output?;
+
+        let input_tokens = usage.usage.input_tokens.unwrap_or(0) as f64;
+        let output_tokens = usage.usage.output_tokens.unwrap_or(0) as f64;
+
+        let chunk_cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000.0;
+
+        Some(existing.unwrap_or(0.0) + chunk_cost)
     }
 }
 

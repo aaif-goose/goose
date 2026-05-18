@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "../Sidebar";
 
 const mockSessions: Array<{
@@ -44,6 +44,11 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
 }));
 
 describe("Sidebar", () => {
+  beforeEach(() => {
+    mockSessions.splice(0, mockSessions.length);
+    window.localStorage.clear();
+  });
+
   it("shows sessions in recents when their project is not loaded", () => {
     mockSessions.splice(0, mockSessions.length, {
       id: "session-1",
@@ -131,5 +136,94 @@ describe("Sidebar", () => {
     );
 
     expect(screen.getByRole("button", { name: /home/i })).toBeInTheDocument();
+  });
+
+  it("collapses and expands the recents section", async () => {
+    const user = userEvent.setup();
+    mockSessions.splice(0, mockSessions.length, {
+      id: "session-1",
+      title: "Recovered Session",
+      updatedAt: "2026-04-09T12:00:00.000Z",
+      messageCount: 3,
+    });
+
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectSession={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    const recentsHeader = screen.getByRole("button", { name: /chats/i });
+    expect(screen.getByText("Recovered Session")).toBeInTheDocument();
+
+    await user.click(recentsHeader);
+    expect(screen.queryByText("Recovered Session")).not.toBeInTheDocument();
+
+    await user.click(recentsHeader);
+    expect(screen.getByText("Recovered Session")).toBeInTheDocument();
+
+    mockSessions.splice(0, mockSessions.length);
+  });
+
+  it("renders settings navigation as the active sidebar surface", async () => {
+    const user = userEvent.setup();
+    const onSettingsBack = vi.fn();
+    const onSettingsSectionChange = vi.fn();
+
+    render(
+      <Sidebar
+        collapsed={false}
+        activeView="settings"
+        activeSettingsSection="providers"
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSettingsBack={onSettingsBack}
+        onSettingsSectionChange={onSettingsSectionChange}
+        projects={[]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("navigation", { name: /settings navigation/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /providers/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      screen.queryByRole("button", { name: /^home$/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^back$/i }));
+    expect(onSettingsBack).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: /general/i }));
+    expect(onSettingsSectionChange).toHaveBeenCalledWith("general");
+  });
+
+  it("shows an expand control in collapsed settings navigation", async () => {
+    const user = userEvent.setup();
+    const onCollapse = vi.fn();
+
+    render(
+      <Sidebar
+        collapsed
+        activeView="settings"
+        activeSettingsSection="general"
+        onCollapse={onCollapse}
+        onNavigate={vi.fn()}
+        onSettingsBack={vi.fn()}
+        onSettingsSectionChange={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /expand sidebar/i }));
+
+    expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 });

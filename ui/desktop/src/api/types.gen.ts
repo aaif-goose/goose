@@ -213,6 +213,14 @@ export type DeclarativeProviderConfig = {
     catalog_provider_id?: string | null;
     description?: string | null;
     display_name: string;
+    /**
+     * Controls whether `fetch_supported_models` calls the provider's `/v1/models`
+     * endpoint or returns the static `models` list directly.
+     *
+     * - `Some(false)` + non-empty `models`: return the static list; no API call.
+     * Construction fails if `models` is empty.
+     * - `Some(true)` or `None`: try the API; fall back to `models` on 404.
+     */
     dynamic_models?: boolean | null;
     engine: ProviderEngine;
     env_vars?: Array<EnvVarConfig> | null;
@@ -223,6 +231,7 @@ export type DeclarativeProviderConfig = {
     model_doc_link?: string | null;
     models: Array<ModelInfo>;
     name: string;
+    preserves_thinking?: boolean;
     requires_auth?: boolean;
     setup_steps?: Array<string>;
     skip_canonical_filtering?: boolean;
@@ -583,6 +592,10 @@ export type ImportAppRequest = {
 export type ImportAppResponse = {
     message: string;
     name: string;
+};
+
+export type ImportSessionNostrRequest = {
+    deeplink: string;
 };
 
 export type ImportSessionRequest = {
@@ -1247,12 +1260,20 @@ export type ScheduledJob = {
     currently_running?: boolean;
     id: string;
     last_run?: string | null;
+    parameters?: Array<Array<string>>;
     paused?: boolean;
     process_start_time?: string | null;
+    /**
+     * Original directory of the recipe file before it was copied to scheduled_recipes/.
+     * Preserved so that relative paths (sub-recipes, template includes) resolve correctly
+     * against the source tree rather than the scheduler's internal storage directory.
+     */
+    recipe_base_dir?: string | null;
     source: string;
 };
 
 export type Session = {
+    accumulated_cost?: number | null;
     accumulated_input_tokens?: number | null;
     accumulated_output_tokens?: number | null;
     accumulated_total_tokens?: number | null;
@@ -1353,6 +1374,17 @@ export type SetupResponse = {
     success: boolean;
 };
 
+export type ShareSessionNostrRequest = {
+    relays?: Array<string>;
+};
+
+export type ShareSessionNostrResponse = {
+    deeplink: string;
+    eventId: string;
+    nevent: string;
+    relays: Array<string>;
+};
+
 export type SlashCommand = {
     command: string;
     command_type: CommandType;
@@ -1450,6 +1482,7 @@ export type ThinkingContent = {
 };
 
 export type TokenState = {
+    accumulatedCost?: number | null;
     accumulatedInputTokens: number;
     accumulatedOutputTokens: number;
     accumulatedTotalTokens: number;
@@ -1597,6 +1630,7 @@ export type UpdateCustomProviderRequest = {
         [key: string]: string;
     } | null;
     models: Array<string>;
+    preserves_thinking?: boolean | null;
     requires_auth?: boolean;
     supports_streaming?: boolean | null;
 };
@@ -1756,18 +1790,24 @@ export type CallToolErrors = {
      */
     401: unknown;
     /**
+     * Forbidden - tool is not app-visible
+     */
+    403: ErrorResponse;
+    /**
      * Resource not found
      */
-    404: unknown;
+    404: ErrorResponse;
     /**
-     * Agent not initialized
+     * Frontend tool execution requires the frontend host
      */
-    424: unknown;
+    424: ErrorResponse;
     /**
      * Internal server error
      */
-    500: unknown;
+    500: ErrorResponse;
 };
+
+export type CallToolError = CallToolErrors[keyof CallToolErrors];
 
 export type CallToolResponses = {
     /**
@@ -4070,6 +4110,37 @@ export type ImportSessionResponses = {
 
 export type ImportSessionResponse = ImportSessionResponses[keyof ImportSessionResponses];
 
+export type ImportSessionNostrData = {
+    body: ImportSessionNostrRequest;
+    path?: never;
+    query?: never;
+    url: '/sessions/import/nostr';
+};
+
+export type ImportSessionNostrErrors = {
+    /**
+     * Bad request - Invalid Nostr share link
+     */
+    400: unknown;
+    /**
+     * Unauthorized - Invalid or missing API key
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type ImportSessionNostrResponses = {
+    /**
+     * Nostr shared session imported successfully
+     */
+    200: Session;
+};
+
+export type ImportSessionNostrResponse = ImportSessionNostrResponses[keyof ImportSessionNostrResponses];
+
 export type GetSessionInsightsData = {
     body?: never;
     path?: never;
@@ -4451,6 +4522,42 @@ export type UpdateSessionNameResponses = {
      */
     200: unknown;
 };
+
+export type ShareSessionNostrData = {
+    body: ShareSessionNostrRequest;
+    path: {
+        /**
+         * Unique identifier for the session
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/sessions/{session_id}/share/nostr';
+};
+
+export type ShareSessionNostrErrors = {
+    /**
+     * Unauthorized - Invalid or missing API key
+     */
+    401: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type ShareSessionNostrResponses = {
+    /**
+     * Session shared to Nostr successfully
+     */
+    200: ShareSessionNostrResponse;
+};
+
+export type ShareSessionNostrResponse2 = ShareSessionNostrResponses[keyof ShareSessionNostrResponses];
 
 export type UpdateSessionUserRecipeValuesData = {
     body: UpdateSessionUserRecipeValuesRequest;

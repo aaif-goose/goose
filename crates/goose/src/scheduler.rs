@@ -21,6 +21,7 @@ use crate::conversation::Conversation;
 #[cfg(feature = "telemetry")]
 use crate::posthog;
 use crate::providers::create;
+use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::Recipe;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::session::session_manager::SessionType;
@@ -115,6 +116,13 @@ pub struct ScheduledJob {
     pub current_session_id: Option<String>,
     #[serde(default)]
     pub process_start_time: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub parameters: Vec<(String, String)>,
+    /// Original directory of the recipe file before it was copied to scheduled_recipes/.
+    /// Preserved so that relative paths (sub-recipes, template includes) resolve correctly
+    /// against the source tree rather than the scheduler's internal storage directory.
+    #[serde(default)]
+    pub recipe_base_dir: Option<String>,
 }
 
 async fn persist_jobs(
@@ -291,7 +299,13 @@ impl Scheduler {
 
         let mut stored_job = original_job_spec;
         if make_copy {
-            let original_recipe_path = Path::new(&stored_job.source);
+            let original_recipe_path =
+                Path::new(&stored_job.source).canonicalize().map_err(|e| {
+                    SchedulerError::RecipeLoadError(format!(
+                        "Recipe file not found: {}: {}",
+                        stored_job.source, e
+                    ))
+                })?;
             if !original_recipe_path.is_file() {
                 return Err(SchedulerError::RecipeLoadError(format!(
                     "Recipe file not found: {}",
@@ -308,7 +322,10 @@ impl Scheduler {
             let destination_filename = format!("{}.{}", stored_job.id, original_extension);
             let destination_recipe_path = scheduled_recipes_dir.join(destination_filename);
 
-            fs::copy(original_recipe_path, &destination_recipe_path)?;
+            fs::copy(&original_recipe_path, &destination_recipe_path)?;
+            stored_job.recipe_base_dir = original_recipe_path
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned());
             stored_job.source = destination_recipe_path.to_string_lossy().into_owned();
             stored_job.current_session_id = None;
             stored_job.process_start_time = None;
@@ -361,6 +378,8 @@ impl Scheduler {
                         paused: false,
                         current_session_id: None,
                         process_start_time: None,
+                        parameters: vec![],
+                        recipe_base_dir: None,
                     };
                     self.add_scheduled_job(job, false).await
                 }
@@ -792,19 +811,23 @@ async fn execute_job(
 
     let recipe_path = Path::new(&job.source);
     let recipe_content = fs::read_to_string(recipe_path)?;
-
-    let recipe: Recipe = {
-        let extension = recipe_path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("yaml")
-            .to_lowercase();
-
-        match extension.as_str() {
-            "json" | "jsonl" => serde_json::from_str(&recipe_content)?,
-            _ => serde_yaml::from_str(&recipe_content)?,
-        }
+    // Use the original recipe directory for path resolution so that relative
+    // references (sub-recipes, template includes) survive the copy into scheduled_recipes/.
+    let recipe_dir_owned;
+    let recipe_dir = if let Some(ref base) = job.recipe_base_dir {
+        recipe_dir_owned = PathBuf::from(base);
+        recipe_dir_owned.as_path()
+    } else {
+        recipe_path.parent().unwrap_or(Path::new("."))
     };
+
+    let recipe: Recipe = build_recipe_from_template(
+        recipe_content,
+        recipe_dir,
+        job.parameters.clone(),
+        None::<fn(&str, &str) -> anyhow::Result<String>>,
+    )
+    .map_err(|e| anyhow!(e.to_string()))?;
 
     let agent = Agent::new();
 
@@ -1106,6 +1129,8 @@ mod tests {
             paused: false,
             current_session_id: None,
             process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
         };
 
         scheduler.add_scheduled_job(job, true).await.unwrap();
@@ -1138,6 +1163,8 @@ mod tests {
             paused: false,
             current_session_id: None,
             process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
         };
 
         scheduler.add_scheduled_job(job, true).await.unwrap();
@@ -1165,6 +1192,8 @@ mod tests {
             paused: false,
             current_session_id: None,
             process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
         };
 
         scheduler
@@ -1220,6 +1249,8 @@ mod tests {
             paused: false,
             current_session_id: None,
             process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
         };
 
         // Schedule the job and let it run — should not panic

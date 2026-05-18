@@ -341,7 +341,10 @@ impl OAuthFlow {
 
         // If no port is specified (or port is explicitly 0), let the OS assign one
         // Otherwise, use the requested port
-        let bind_port = requested_port.unwrap_or(0);
+        let env_port: Option<u16> = std::env::var("GOOSE_OAUTH_CALLBACK_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok());
+        let bind_port = requested_port.or(env_port).unwrap_or(0);
         let addr = SocketAddr::from(([127, 0, 0, 1], bind_port));
         let listener = tokio::net::TcpListener::bind(addr).await?;
 

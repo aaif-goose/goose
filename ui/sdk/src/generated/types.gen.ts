@@ -401,6 +401,7 @@ export type CustomProviderCreateRequest = {
     requiresAuth: boolean;
     catalogProviderId?: string | null;
     basePath?: string | null;
+    preservesThinking?: boolean | null;
 };
 
 export type CustomProviderCreateResponse = {
@@ -463,6 +464,7 @@ export type CustomProviderConfigDto = {
     basePath?: string | null;
     apiKeyEnv?: string | null;
     apiKeySet: boolean;
+    preservesThinking: boolean;
 };
 
 /**
@@ -482,6 +484,7 @@ export type CustomProviderUpdateRequest = {
     requiresAuth: boolean;
     catalogProviderId?: string | null;
     basePath?: string | null;
+    preservesThinking?: boolean | null;
 };
 
 export type CustomProviderUpdateResponse = {

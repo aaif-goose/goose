@@ -44,6 +44,29 @@ import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
 import { fetchCanonicalModelInfo } from '../utils/canonical';
 import { defineMessages, useIntl } from '../i18n';
+import TurndownService from 'turndown';
+
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  bulletListMarker: '-',
+  codeBlockStyle: 'fenced',
+});
+
+turndown.addRule('complexLinks', {
+  filter: (node) => {
+    return (
+      node.nodeName === 'A' &&
+      !!node.getAttribute('href') &&
+      /\n/.test(node.textContent || '')
+    );
+  },
+  replacement: (content, node) => {
+    const el = node as HTMLElement;
+    const href = el.getAttribute('href')!;
+    const label = content.replace(/\n+/g, ' ').trim();
+    return `[${label}](${href})`;
+  },
+});
 
 interface PastedImage {
   id: string;
@@ -167,14 +190,8 @@ interface ChatInputProps {
   totalTokens?: number;
   accumulatedInputTokens?: number;
   accumulatedOutputTokens?: number;
+  accumulatedCost?: number | null;
   messages?: Message[];
-  sessionCosts?: {
-    [key: string]: {
-      inputTokens: number;
-      outputTokens: number;
-      totalCost: number;
-    };
-  };
   disableAnimation?: boolean;
   recipe?: Recipe | null;
   recipeId?: string | null;
@@ -203,9 +220,9 @@ export default function ChatInput({
   totalTokens,
   accumulatedInputTokens,
   accumulatedOutputTokens,
+  accumulatedCost,
   messages = [],
   disableAnimation = false,
-  sessionCosts,
   recipe,
   recipeId,
   recipeAccepted,
@@ -811,10 +828,40 @@ export default function ChatInput({
   }, [droppedFiles.length, localDroppedFiles.length, onFilesProcessed, setLocalDroppedFiles]);
 
   const handlePaste = async (evt: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isRecording) return;
+
     const files = Array.from(evt.clipboardData.files || []);
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
 
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length === 0) {
+      const html = evt.clipboardData.getData('text/html');
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const hasLinks = doc.querySelectorAll('a[href]').length > 0;
+        if (hasLinks) {
+          const markdown = turndown.turndown(doc.body).trim();
+          if (markdown) {
+            evt.preventDefault();
+            const textarea = textAreaRef.current;
+            if (textarea) {
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              const newValue =
+                displayValue.substring(0, start) + markdown + displayValue.substring(end);
+              const cursorPos = start + markdown.length;
+              setDisplayValue(newValue);
+              updateValue(newValue);
+              setHasUserTyped(true);
+              checkForMentionOrSlash(newValue, cursorPos, textarea);
+              requestAnimationFrame(() => {
+                textarea.selectionStart = textarea.selectionEnd = cursorPos;
+              });
+            }
+          }
+        }
+      }
+      return;
+    }
 
     // Check if adding these images would exceed the limit
     if (pastedImages.length + imageFiles.length > MAX_IMAGES_PER_MESSAGE) {
@@ -1381,7 +1428,7 @@ export default function ChatInput({
             data-testid="chat-input"
             autoFocus
             id="dynamic-textarea"
-            placeholder={isRecording ? '' : getNavigationShortcutText()}
+            placeholder={isRecording ? '' : getNavigationShortcutText(intl)}
             value={displayValue}
             onChange={handleChange}
             onCompositionStart={handleCompositionStart}
@@ -1514,7 +1561,7 @@ export default function ChatInput({
                       }`}
                     >
                       <Send className="w-4 h-4" />
-                      <span className="text-sm">Send</span>
+                      <span className="text-sm">{intl.formatMessage(i18n.send)}</span>
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -1690,7 +1737,7 @@ export default function ChatInput({
                 <CostTracker
                   inputTokens={accumulatedInputTokens}
                   outputTokens={accumulatedOutputTokens}
-                  sessionCosts={sessionCosts}
+                  accumulatedCost={accumulatedCost}
                   model={effectiveModel}
                   provider={effectiveProvider}
                 />

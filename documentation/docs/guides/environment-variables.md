@@ -232,6 +232,7 @@ These variables control how goose manages conversation sessions and context.
 | `GOOSE_MAX_BACKGROUND_TASKS` | Sets the maximum number of concurrent background [subagent](/docs/guides/subagents) tasks goose can run at once | Integer (e.g., 1, 5, 10) | 5 |
 | `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goosehints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goosehints"]`) | `[".goosehints"]` |
 | `GOOSE_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (goose CLI) or "New Chat" (goose Desktop) | "1", "true" (case-insensitive) to enable | false |
+| `GOOSE_DISABLE_TOOL_CALL_SUMMARY` | Disables the per-tool-call AI-generated summary title, keeping the fallback title instead. Saves one provider call per tool invocation. | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_PROMPT_EDITOR` | [External editor](/docs/guides/goose-cli-commands#external-editor-mode) to use for composing prompts instead of CLI input | Editor command (e.g., "vim", "code --wait") | Unset (uses CLI input) |
 | `GOOSE_CLI_THEME` | [Theme](/docs/guides/goose-cli-commands#themes) for CLI response  markdown | "light", "dark", "ansi" | "dark" |
 | `GOOSE_CLI_LIGHT_THEME` | Custom [bat theme](https://github.com/sharkdp/bat#adding-new-themes) for syntax highlighting when using light mode | bat theme name (e.g., "Solarized (light)", "OneHalfLight") | "GitHub" |
@@ -454,6 +455,25 @@ Optional [macOS sandbox](/docs/guides/sandbox) for goose Desktop that restricts 
 ## Network Configuration
 
 These variables configure network proxy settings for goose.
+
+### OAuth Callback Port
+
+By default, goose starts a temporary local server on a random port to receive OAuth callbacks. Enterprise identity providers that require exact `redirect_uri` matching (and forbid wildcard ports) will reject the callback. Set this variable to use a fixed port instead.
+
+| Variable | Purpose | Values | Default |
+|----------|---------|---------|---------|
+| `GOOSE_OAUTH_CALLBACK_PORT` | Fixed port for the local OAuth callback server | Port number (e.g., 8080, 9999) | Random (OS-assigned) |
+
+**Examples**
+
+```bash
+# Use a fixed port so your IdP's redirect_uri whitelist can match exactly
+export GOOSE_OAUTH_CALLBACK_PORT=8080
+```
+
+Then register the appropriate redirect URI in your identity provider:
+- For MCP server OAuth: `http://127.0.0.1:8080/oauth_callback`
+- For Databricks OAuth: `http://localhost:8080`
 
 ### HTTP Proxy
 

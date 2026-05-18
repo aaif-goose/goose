@@ -3,6 +3,109 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
+use tracing_appender::rolling::Rotation;
+use tracing_subscriber::{
+    filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    Registry,
+};
+
+/// Configuration for the shared logging setup.
+pub struct LoggingConfig<'a> {
+    /// Component name used for the log directory (e.g. "cli", "server").
+    pub component: &'a str,
+    /// Optional session/run name appended to the log filename.
+    pub name: Option<&'a str>,
+    /// Additional `EnvFilter` directives beyond the defaults (e.g. "goose_server=info").
+    /// Only applied when `RUST_LOG` is **not** set.
+    pub extra_directives: &'a [&'a str],
+    /// Whether to emit a pretty console layer to stderr in addition to the file layer.
+    pub console: bool,
+    /// Whether the file layer should use JSON formatting. When false, uses plain text
+    /// with source file path included.
+    pub json: bool,
+}
+
+/// Build the `EnvFilter`. If `RUST_LOG` is set, use it as-is. Otherwise build a
+/// default filter and append the caller's extra directives.
+fn build_env_filter(extra_directives: &[&str]) -> EnvFilter {
+    if let Ok(filter) = EnvFilter::try_from_default_env() {
+        return filter;
+    }
+
+    let mut filter = EnvFilter::new("")
+        .add_directive("mcp_client=info".parse().unwrap())
+        .add_directive("goose=info".parse().unwrap())
+        .add_directive(LevelFilter::WARN.into());
+
+    for directive in extra_directives {
+        if let Ok(d) = directive.parse() {
+            filter = filter.add_directive(d);
+        }
+    }
+    filter
+}
+
+/// Set up file-based (and optionally console) tracing for a goose component.
+///
+/// This is the shared implementation used by both `goose-cli` and `goose-server`.
+/// Call `try_init` on the returned subscriber — callers are responsible for the
+/// `Once`-guard or direct init as appropriate for their use case.
+pub fn build_logging_subscriber(
+    config: &LoggingConfig<'_>,
+) -> Result<impl SubscriberInitExt + Send + Sync + 'static> {
+    let log_dir = prepare_log_directory(config.component, true)?;
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let log_filename = match config.name {
+        Some(n) => format!("{}-{}.log", timestamp, n),
+        None => format!("{}.log", timestamp),
+    };
+
+    let file_appender =
+        tracing_appender::rolling::RollingFileAppender::new(Rotation::NEVER, log_dir, log_filename);
+
+    let env_filter = build_env_filter(config.extra_directives);
+
+    let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = if config.json {
+        let file_layer = fmt::layer()
+            .with_target(true)
+            .with_level(true)
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .json();
+        vec![file_layer.with_filter(env_filter.clone()).boxed()]
+    } else {
+        let file_layer = fmt::layer()
+            .with_target(true)
+            .with_level(true)
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .with_file(true);
+        vec![file_layer.with_filter(env_filter.clone()).boxed()]
+    };
+
+    if config.console {
+        let console_layer = fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_target(true)
+            .with_level(true)
+            .with_file(true)
+            .with_ansi(false)
+            .with_line_number(true)
+            .pretty();
+        layers.push(console_layer.with_filter(env_filter).boxed());
+    }
+
+    #[cfg(feature = "otel")]
+    layers.extend(crate::otel::otlp::init_otlp_layers(
+        crate::config::Config::global(),
+    ));
+
+    if let Some(langfuse) = crate::tracing::langfuse_layer::create_langfuse_observer() {
+        layers.push(langfuse.with_filter(LevelFilter::DEBUG).boxed());
+    }
+
+    Ok(Registry::default().with(layers))
+}
 
 /// Returns the directory where log files should be stored for a specific component.
 /// Creates the directory structure if it doesn't exist.

@@ -1,0 +1,23 @@
+{
+  "name": "omlx",
+  "engine": "openai",
+  "display_name": "oMLX",
+  "description": "Run local models with oMLX",
+  "api_key_env": "",
+  "base_url": "${OMLX_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "OMLX_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:8000",
+      "description": "Base URL of the oMLX server (default: http://localhost:8000)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true
+}

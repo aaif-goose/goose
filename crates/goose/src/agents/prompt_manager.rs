@@ -441,11 +441,9 @@ mod tests {
             .values()
             .map(|def| {
                 let client = (def.client_factory)(context.clone());
-                let info = client.get_info();
-                let instructions = info
-                    .and_then(|i| i.instructions.clone())
-                    .unwrap_or_default();
-                let has_resources = info
+                let instructions = client.get_instructions().unwrap_or_default();
+                let has_resources = client
+                    .get_info()
                     .and_then(|i| i.capabilities.resources.as_ref())
                     .is_some();
                 ExtensionInfo::new(def.name, &instructions, has_resources)

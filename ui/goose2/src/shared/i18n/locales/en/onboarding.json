@@ -57,7 +57,7 @@
       "defaultFallback": "Ready on Home",
       "defaultDescription": "This is what Goose will use when you start a new chat.",
       "extensionsTitle": "Extensions",
-      "extensionsDescription": "Connected tools are available in Settings. Imported Claude Desktop tools stay off until you enable them.",
+      "extensionsDescription": "Goose can use connected tools in chats when needed. Manage imported tools from Extensions.",
       "skillsTitle": "Skills",
       "skillsDescription": "Personal skills Goose can see now. Project skills appear when you open a project."
     },

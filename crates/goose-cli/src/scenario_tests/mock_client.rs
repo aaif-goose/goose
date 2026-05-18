@@ -56,7 +56,7 @@ impl McpClientTrait for MockClient {
     }
 
     fn get_info(&self) -> std::option::Option<&rmcp::model::InitializeResult> {
-        todo!()
+        None
     }
 
     async fn read_resource(

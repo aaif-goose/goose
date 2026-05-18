@@ -1026,6 +1026,7 @@ pub struct TokenState {
     pub accumulated_input_tokens: i32,
     pub accumulated_output_tokens: i32,
     pub accumulated_total_tokens: i32,
+    pub accumulated_cost: Option<f64>,
 }
 
 #[cfg(test)]

@@ -118,6 +118,7 @@ describe("custom provider helper functions", () => {
         basePath: "/v1",
         apiKeyEnv: "ACME_AI_API_KEY",
         apiKeySet: true,
+        preservesThinking: true,
       },
       editable: true,
       status: { providerId: "acme_ai", isConfigured: true },

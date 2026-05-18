@@ -7,6 +7,7 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Duration, Utc};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::warn;
@@ -93,10 +94,20 @@ pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
         Err(_) => return Vec::new(),
     };
 
+    let mut seen = HashSet::new();
     entries
         .flatten()
-        .map(|entry| entry.path().join("skills"))
-        .filter(|path| path.is_dir())
+        .flat_map(|entry| {
+            let plugin_dir = entry.path();
+            let default_skills_dir = plugin_dir.join("skills");
+            let mut skill_dirs = Vec::new();
+            if default_skills_dir.is_dir() {
+                skill_dirs.push(default_skills_dir);
+            }
+            skill_dirs.extend(formats::open_plugins::installed_skill_dirs(&plugin_dir));
+            skill_dirs
+        })
+        .filter(|path| seen.insert(path.clone()))
         .collect()
 }
 
@@ -367,34 +378,32 @@ fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
             copy_dir_all(&source_path, &destination_path)?;
         } else if file_type.is_file() {
             fs::copy(&source_path, &destination_path)?;
-        } else if file_type.is_symlink() {
-            copy_symlink(&source_path, &destination_path)?;
         }
     }
 
     Ok(())
 }
 
-#[cfg(unix)]
-fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
-    let target = fs::read_link(source)?;
-    if source.is_dir() {
-        std::os::windows::fs::symlink_dir(target, destination)?;
-    } else {
-        std::os::windows::fs::symlink_file(target, destination)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_repo_without_supported_manifest() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+
+        let err = install_from_checkout_at_root(
+            "https://example.invalid/repo.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("No supported plugin format found"));
+    }
 
     #[test]
     fn updates_git_backed_plugin() {

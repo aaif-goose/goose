@@ -28,6 +28,10 @@ When the main recipe is run, goose generates a tool for each subrecipe that:
 
 Sub-recipe sessions run in isolation - they don't share conversation history, memory, or state with the main recipe or other subrecipes. Additionally, subrecipes cannot define their own subrecipes (no nesting allowed).
 
+:::note
+Recipes that define `sub_recipes` automatically get the `summon` platform extension injected, so the `delegate` tool is available without needing to list it in `extensions`.
+:::
+
 ### Parameter Handling
 
 Parameters received by subrecipes can be used in prompts and instructions using `{{ parameter_name }}` syntax. Subrecipes receive parameters in two ways:

@@ -299,6 +299,19 @@ You can override any default by including the setting in your natural language r
 
 Control which tools and capabilities subagents can access. By default, subagents inherit all extensions from your main session, but you can restrict access for security, focus or performance.
 
+:::note Summon Extension
+The `delegate` and `load` tools are provided by the `summon` platform extension, which is enabled by default. If you are using a [recipe](/docs/guides/recipes/) with an explicit `extensions` block, you must include `summon` in that list or the `delegate` tool will not be available:
+
+```yaml
+extensions:
+  - type: platform
+    name: summon
+  # ... your other extensions
+```
+
+Recipes that define [`sub_recipes`](/docs/guides/recipes/subrecipes) have `summon` auto-injected.
+:::
+
 **Examples:**
 ```
 "Create a subagent to write a summary, but don't give it file access"

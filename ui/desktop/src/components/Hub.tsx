@@ -107,7 +107,6 @@ export default function Hub({
           onFilesProcessed={() => {}}
           messages={[]}
           disableAnimation={false}
-          sessionCosts={undefined}
           toolCount={0}
           onWorkingDirChange={setWorkingDir}
           inputRef={inputRef}

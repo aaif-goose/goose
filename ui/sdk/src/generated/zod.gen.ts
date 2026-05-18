@@ -368,6 +368,10 @@ export const zCustomProviderCreateRequest = z.object({
     basePath: z.union([
         z.string(),
         z.null()
+    ]).optional(),
+    preservesThinking: z.union([
+        z.boolean(),
+        z.null()
     ]).optional()
 });
 
@@ -433,7 +437,8 @@ export const zCustomProviderConfigDto = z.object({
         z.string(),
         z.null()
     ]).optional(),
-    apiKeySet: z.boolean()
+    apiKeySet: z.boolean(),
+    preservesThinking: z.boolean()
 });
 
 export const zCustomProviderReadResponse = z.object({
@@ -467,6 +472,10 @@ export const zCustomProviderUpdateRequest = z.object({
     ]).optional(),
     basePath: z.union([
         z.string(),
+        z.null()
+    ]).optional(),
+    preservesThinking: z.union([
+        z.boolean(),
         z.null()
     ]).optional()
 });
