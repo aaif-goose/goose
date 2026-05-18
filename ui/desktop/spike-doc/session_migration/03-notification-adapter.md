@@ -3,46 +3,26 @@
 ## Goal
 
 Add a protocol adapter that translates ACP `session/update` notifications into
-the current desktop chat state model.
+the current desktop chat state model. Use the session-scoped notification router
+from Step 2; this step should focus on conversion logic, not global
+registration.
 
 ## Files
 
 - `ui/desktop/src/acp/sessionNotificationAdapter.ts`
-- `ui/desktop/src/acp/sessionNotificationRouter.ts`, or equivalent session-scoped
-  routing module
 - Adapter tests under the existing desktop test pattern
 
 ## Implementation Steps
 
-1. Add one global ACP notification router and register it once with
-   `setAcpNotificationHandler`.
+1. Use the Step 2 session-scoped router rather than calling
+   `setAcpNotificationHandler` directly from React hooks.
 
-   The router should expose session-scoped subscription APIs, for example:
-
-   ```ts
-   subscribeToAcpSession(
-     sessionId: string,
-     handler: (notification: SessionNotification) => Promise<void> | void
-   ): () => void
-   ```
-
-   The exact function name can change, but the behavior should be:
-
-   - store handlers by `notification.sessionId`
-   - dispatch each ACP `session/update` only to subscribers for that session
-   - return an unsubscribe function
-   - remove empty session entries during cleanup
-
-2. Do not let individual React chat hooks call `setAcpNotificationHandler`
-   directly. Desktop can keep multiple chat sessions mounted at the same time,
-   so a single global handler would cause the last mounted hook to win.
-
-3. Register the session-scoped subscription before calling ACP methods that emit
+2. Register the session-scoped subscription before calling ACP methods that emit
    replay or live notifications, especially `session/load` and `session/prompt`.
    This avoids dropping notifications that arrive while the method promise is
    still pending.
 
-4. Define an adapter state object that stores the current desktop state for one
+3. Define an adapter state object that stores the current desktop state for one
    session:
 
    - `messages`
@@ -51,7 +31,7 @@ the current desktop chat state model.
    - pending tool call state, if needed
    - latest session metadata, if needed
 
-5. Define a small output event shape for the React hook to consume:
+4. Define a small output event shape for the React hook to consume:
 
    ```ts
    type AcpDesktopUpdate =
@@ -62,45 +42,43 @@ the current desktop chat state model.
      | { type: 'error'; error: string };
    ```
 
-6. Add a function that accepts ACP `SessionNotification` and returns one or more
+5. Add a function that accepts ACP `SessionNotification` and returns one or more
    desktop updates:
 
    ```ts
    applyAcpSessionNotification(notification: SessionNotification): AcpDesktopUpdate[]
    ```
 
-7. Handle replay and live updates through the same conversion path. ACP
+6. Handle replay and live updates through the same conversion path. ACP
    `session/load` sends replayed messages as notifications, and
    `session/prompt` sends live messages the same way.
 
-8. Map `user_message_chunk` into a desktop user `Message`.
+7. Map `user_message_chunk` into a desktop user `Message`.
 
-9. Map `agent_message_chunk` into an assistant `Message`.
+8. Map `agent_message_chunk` into an assistant `Message`.
 
-10. Map `agent_thought_chunk` into the desktop thinking content shape.
+9. Map `agent_thought_chunk` into the desktop thinking content shape.
 
-11. Map `tool_call` into the desktop tool request display shape.
+10. Map `tool_call` into the desktop tool request display shape.
 
-12. Map `tool_call_update` into the matching desktop tool response/update shape.
+11. Map `tool_call_update` into the matching desktop tool response/update shape.
 
-13. Map `usage_update` into `TokenState`.
+12. Map `usage_update` into `TokenState`.
 
-14. Map `session_info_update` into session metadata updates, especially session
+13. Map `session_info_update` into session metadata updates, especially session
     name changes.
 
-15. Preserve existing batching behavior where needed. The existing hook batches
+14. Preserve existing batching behavior where needed. The existing hook batches
     updates for reduced-motion users; either keep that in the hook or expose
     adapter updates in a way that still lets the hook batch them.
 
-16. Add unit tests before the hook is fully migrated. This keeps the riskiest
+15. Add unit tests before the hook is fully migrated. This keeps the riskiest
     conversion logic testable without driving the whole UI.
 
 ## Completion Criteria
 
-- ACP has one global notification handler that routes by `sessionId`.
-- Multiple mounted chat sessions can subscribe without overwriting each other.
 - `session/load` and `session/prompt` callers can register before notifications
-  start arriving.
+  start arriving by using the Step 2 router.
 - ACP notification conversion is isolated from React components.
 - Replay and live streaming use the same conversion path.
 - Unit tests cover text, thinking, tool calls, tool updates, usage, and session

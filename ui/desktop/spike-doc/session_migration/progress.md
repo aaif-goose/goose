@@ -2,13 +2,15 @@
 
 ## Status
 
-Current status: not started.
+Current status: step 1 complete; next slice is text-only conversation load.
 
-Owner: TBD
+Owner: Codex
 
-Last updated: TBD
+Last updated: 2026-05-18
 
 Plan: `ui/desktop/spike-doc/session_migration/acp-session-migration-plan.md`
+
+Working agreement: `ui/desktop/spike-doc/session_migration/working-agreement.md`
 
 ## Progress Checklist
 
@@ -16,116 +18,101 @@ Plan: `ui/desktop/spike-doc/session_migration/acp-session-migration-plan.md`
 
 Detailed plan: `01-harden-acp-client.md`
 
-- [ ] Add `AcpNotificationHandler` interface.
-- [ ] Add `setAcpNotificationHandler(...)`.
-- [ ] Route ACP `sessionUpdate` notifications to the registered handler.
-- [ ] Add ACP permission handler interface.
-- [ ] Add `setAcpPermissionHandler(...)`.
-- [ ] Replace silent always-cancel permission behavior before live chat is enabled.
-- [ ] Confirm ACP reconnect still clears cached client state.
+- [x] Add `AcpNotificationHandler` interface.
+- [x] Add `setAcpNotificationHandler(...)`.
+- [x] Route ACP `sessionUpdate` notifications to the registered handler.
+- [x] Add ACP permission handler interface.
+- [x] Add `setAcpPermissionHandler(...)`.
+- [x] Replace silent always-cancel permission behavior before live chat is enabled.
+- [x] Confirm ACP reconnect still clears cached client state.
 
 Notes:
 
-- TBD
+- Updated `ui/desktop/src/acp/acpConnection.ts`.
+- No behavior migration yet; Step 1 only adds integration points.
+- If no permission handler is registered, ACP permission requests now warn before
+  returning `cancelled`.
+- Reconnect cleanup remains unchanged.
+- Ran `pnpm exec prettier --write src/acp/acpConnection.ts`.
+- Ran `pnpm run typecheck`; passed with the existing Node engine warning
+  (`^24.10.0` wanted, shell has `v25.8.1`).
 
-### 2. Add ACP Session API Wrapper
+### 2. Text-Only Conversation Load Slice
 
-Detailed plan: `02-acp-session-wrapper.md`
+Detailed plans: `02-acp-session-wrapper.md`, `03-notification-adapter.md`,
+`05-conversation-load.md`
 
-- [ ] Create `ui/desktop/src/acp/sessions.ts`.
-- [ ] Add `createAcpSession`.
-- [ ] Add `loadAcpSession`.
-- [ ] Add `promptAcpSession`.
-- [ ] Add `cancelAcpSession`.
-- [ ] Add `listAcpSessions`, if included in this migration.
-- [ ] Normalize ACP responses into desktop-facing types.
-- [ ] Keep wrapper free of React state and UI side effects.
+#### 2A. Minimal Session API Wrapper
 
-Notes:
+- [x] Create `ui/desktop/src/acp/sessions.ts`.
+- [x] Add `loadAcpSession`.
+- [x] Keep load response narrow; do not infer messages from the direct response.
+- [x] Keep wrapper free of React state and UI side effects.
 
-- TBD
+#### 2B. Session Notification Router
 
-### 3. Add ACP Notification Adapter
+- [ ] Create `ui/desktop/src/acp/sessionNotificationRouter.ts`, or equivalent.
+- [ ] Register one global ACP notification router with
+  `setAcpNotificationHandler`.
+- [ ] Add session-scoped subscription/unsubscription routed by ACP `sessionId`.
+- [ ] Add router tests for session routing, multiple subscribers, unsubscribe,
+  double-unsubscribe, and no-subscriber dispatch.
 
-Detailed plan: `03-notification-adapter.md`
+#### 2C. Minimal Text Adapter
 
 - [ ] Create `ui/desktop/src/acp/sessionNotificationAdapter.ts`.
-- [ ] Define adapter state for one session.
-- [ ] Define desktop update event shape.
 - [ ] Convert `user_message_chunk`.
 - [ ] Convert `agent_message_chunk`.
-- [ ] Convert `agent_thought_chunk`.
-- [ ] Convert `tool_call`.
-- [ ] Convert `tool_call_update`.
-- [ ] Convert `usage_update`.
-- [ ] Convert `session_info_update`.
-- [ ] Preserve or support reduced-motion batching.
-- [ ] Add adapter unit tests for representative update sequences.
+- [ ] Convert minimal `session_info_update`, if needed for load.
+- [ ] Add adapter tests for text-only replay.
 
-Notes:
+#### 2D. Load Hook Integration
 
-- TBD
-
-### 4. Migrate Session Creation
-
-Detailed plan: `04-session-creation.md`
-
-- [ ] Replace REST `startAgent` usage in `createSession`.
-- [ ] Preserve `AppEvents.SESSION_CREATED`.
-- [ ] Preserve `AppEvents.ADD_ACTIVE_SESSION`.
-- [ ] Preserve `setView('pair', ...)` behavior.
-- [ ] Verify launcher/new chat flow.
-- [ ] Verify recipe-related creation paths.
-- [ ] Verify extension override creation paths.
-- [ ] Add backend ACP parity if required for recipes or extension overrides.
-
-Notes:
-
-- TBD
-
-### 5. Migrate Conversation Load
-
-Detailed plan: `05-conversation-load.md`
-
-- [ ] Register ACP notification handler before `session/load`.
-- [ ] Replace REST `getSession`/`resumeAgent` loading path.
-- [ ] Scope notifications by ACP `sessionId`.
-- [ ] Reset adapter state when session changes.
-- [ ] Use `session/load` notifications for conversation replay.
+- [ ] Register session-scoped notification subscription before `session/load`.
+- [ ] Replace REST `resumeAgent` loading for the text-only load path.
 - [ ] Preserve loading conversation state.
 - [ ] Preserve session load error state.
-- [ ] Preserve token state after load.
-- [ ] Preserve tool call history after load.
-- [ ] Preserve session metadata/name after load.
 - [ ] Call `onSessionLoaded` at the correct point.
+- [ ] Manually verify an existing text-only session loads through ACP.
 
 Notes:
 
-- TBD
+- This is the first true vertical slice. It should prove wrapper, router,
+  adapter, and React load state together for existing text-only sessions.
+- 2A added only `loadAcpSession(sessionId, workingDir)`. It calls ACP
+  `session/load` with `sessionId`, `cwd`, and `mcpServers: []`, then returns the
+  ACP `LoadSessionResponse` directly. Conversation content still must come from
+  `session/update` notifications in later 2B-2D work.
+- Ran `pnpm exec prettier --write src/acp/sessions.ts`.
+- Ran `pnpm run typecheck`; passed with the existing Node engine warning
+  (`^24.10.0` wanted, shell has `v25.8.1`).
 
-### 6. Migrate Live Prompt Streaming
+### 3. Live Text Prompt Slice
 
-Detailed plan: `06-live-prompt-streaming.md`
+Detailed plans: `02-acp-session-wrapper.md`, `03-notification-adapter.md`,
+`06-live-prompt-streaming.md`
 
-- [ ] Remove REST request ID routing from migrated chat flow.
-- [ ] Replace REST `sessionReply` with ACP `session/prompt`.
+- [ ] Add `promptAcpSession`.
+- [ ] Reuse the session-scoped router for live prompt notifications.
+- [ ] Extend adapter behavior as needed for live text accumulation.
+- [ ] Replace REST `sessionReply` for text prompt path.
 - [ ] Set streaming state on submit.
-- [ ] Feed live ACP notifications through the adapter.
 - [ ] Handle successful ACP prompt completion.
 - [ ] Handle ACP prompt errors.
 - [ ] Preserve task completion desktop notification behavior.
 - [ ] Preserve `AppEvents.MESSAGE_STREAM_FINISHED`, if still needed.
 - [ ] Replace REST session-name refresh with ACP session info handling.
-- [ ] Remove `useSessionEvents` from the migrated chat path.
+- [ ] Manually verify a text prompt streams through ACP.
 
 Notes:
 
 - TBD
 
-### 7. Migrate Cancellation
+### 4. Cancellation Slice
 
 Detailed plan: `07-cancellation.md`
 
+- [ ] Add `cancelAcpSession`.
 - [ ] Replace REST `sessionCancel` with ACP `session/cancel`.
 - [ ] Track ACP active prompt state.
 - [ ] Make stop no-op when there is no active prompt.
@@ -137,7 +124,24 @@ Notes:
 
 - TBD
 
-### 8. Wire Tool Permission Requests
+### 5. Tool Call Display Slice
+
+Detailed plan: `03-notification-adapter.md`
+
+- [ ] Convert `agent_thought_chunk`.
+- [ ] Convert `tool_call`.
+- [ ] Convert `tool_call_update`.
+- [ ] Convert `usage_update`.
+- [ ] Preserve token state after load and live prompt.
+- [ ] Preserve tool call history after load.
+- [ ] Preserve or support reduced-motion batching.
+- [ ] Add adapter tests for thinking, tool calls, tool updates, and usage.
+
+Notes:
+
+- TBD
+
+### 6. Tool Permission Slice
 
 Detailed plan: `08-tool-permissions.md`
 
@@ -152,6 +156,37 @@ Detailed plan: `08-tool-permissions.md`
 - [ ] Avoid assuming fixed ACP option IDs unless backend guarantees them.
 - [ ] Verify approved tool call continues.
 - [ ] Verify rejected tool call is handled cleanly.
+
+Notes:
+
+- Updated the Step 8 plan with context for permission handler readiness and
+  permission request lifetime risks.
+
+### 7. Session Creation Slice
+
+Detailed plan: `04-session-creation.md`
+
+- [ ] Add `createAcpSession`.
+- [ ] Replace REST `startAgent` usage in `createSession`.
+- [ ] Preserve `AppEvents.SESSION_CREATED`.
+- [ ] Preserve `AppEvents.ADD_ACTIVE_SESSION`.
+- [ ] Preserve `setView('pair', ...)` behavior.
+- [ ] Verify launcher/new chat flow.
+- [ ] Verify recipe-related creation paths.
+- [ ] Verify extension override creation paths.
+- [ ] Add backend ACP parity if required for recipes or extension overrides.
+
+Notes:
+
+- TBD
+
+### 8. Optional Session List Slice
+
+Detailed plan: `02-acp-session-wrapper.md`
+
+- [ ] Add `listAcpSessions`, if included in this migration.
+- [ ] Map ACP `SessionInfo` into the shape consumed by desktop session list UI.
+- [ ] Audit whether session list should remain REST for the first migration PR.
 
 Notes:
 
@@ -180,21 +215,24 @@ Notes:
 
 Manual:
 
-- [ ] Create a new session.
 - [ ] Load an existing session with plain text.
+- [ ] Send a prompt and receive streamed assistant text.
+- [ ] Cancel a running prompt.
 - [ ] Load an existing session with thinking content.
 - [ ] Load an existing session with tool calls.
-- [ ] Send a prompt and receive streamed assistant text.
 - [ ] Send a prompt that triggers tool approval.
 - [ ] Approve a tool request.
 - [ ] Reject a tool request.
-- [ ] Cancel a running prompt.
+- [ ] Create a new session.
 - [ ] Navigate away from and back to an active session.
 - [ ] Navigate away from and back to a completed session.
 - [ ] Confirm session name updates still appear.
 
 Automated:
 
+- [ ] Router test for session-scoped dispatch.
+- [ ] Router test for multiple subscribers.
+- [ ] Router test for unsubscribe and double-unsubscribe.
 - [ ] Adapter test for text chunk accumulation.
 - [ ] Adapter test for thinking chunk conversion.
 - [ ] Adapter test for tool call conversion.

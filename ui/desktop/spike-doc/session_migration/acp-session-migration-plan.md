@@ -97,10 +97,18 @@ Instead:
 This avoids keeping REST response objects and ACP response objects alive at the
 same call site.
 
-## One PR Plan
+## Vertical Slice Plan
 
-The migration can land in one PR, but it should still be structured internally as
-clear phases.
+The migration can land in one PR, but implementation should proceed as vertical
+slices. Each slice should prove one user-visible path end to end before adding
+more ACP surface area.
+
+Working agreement: `working-agreement.md`
+
+This is intentionally different from building all wrappers first. ACP session
+behavior is notification-driven, so a wrapper can typecheck without proving that
+chat actually works. The first useful proof is a narrow `session/load` path that
+exercises the wrapper, notification router, adapter, and React state together.
 
 ### 1. Harden ACP Client
 
@@ -109,62 +117,36 @@ Detailed plan: `01-harden-acp-client.md`
 Update `ui/desktop/src/acp/acpConnection.ts` so ACP session notifications and
 permission requests have explicit integration points.
 
-### 2. Add ACP Session API Wrapper
+### 2. Text-Only Conversation Load Slice
 
 Detailed plan: `02-acp-session-wrapper.md`
 
-Add `ui/desktop/src/acp/sessions.ts` with desktop-facing wrappers for ACP
-session methods.
+Build the minimum ACP path needed to load an existing text-only session:
 
-### 3. Add ACP Notification Adapter
+- add `loadAcpSession` in `ui/desktop/src/acp/sessions.ts`
+- add the session-scoped ACP notification router
+- add the minimal notification adapter for `user_message_chunk`,
+  `agent_message_chunk`, and session metadata needed by load
+- wire conversation load in the chat hook
+- verify an existing text-only session renders through ACP
 
-Detailed plan: `03-notification-adapter.md`
+This slice should prove:
 
-Add a protocol adapter that translates ACP `session/update` notifications into
-the current desktop chat state model.
+```text
+React hook subscribes by sessionId
+  -> calls ACP session/load
+  -> ACP sends session/update
+  -> router delivers to the matching session
+  -> adapter converts text chunks
+  -> UI renders messages
+```
 
-### 4. Migrate Session Creation
+### 3. Live Text Prompt Slice
 
-Detailed plan: `04-session-creation.md`
+Detailed plans: `03-notification-adapter.md`, `06-live-prompt-streaming.md`
 
-Update `ui/desktop/src/sessions.ts` so new sessions use ACP `session/new`.
-
-Before switching, check whether the current REST creation behavior needs parity
-for:
-
-- working directory
-- recipe deeplinks
-- recipe IDs
-- extension overrides
-
-If any of these are required for the initial ACP cutover and ACP does not support
-them yet, add the missing behavior to ACP first. Do not keep a hidden REST
-fallback for only those cases unless the migration scope is intentionally reduced.
-
-### 5. Migrate Conversation Load
-
-Detailed plan: `05-conversation-load.md`
-
-Replace REST `getSession`/`resumeAgent` loading with ACP `session/load`.
-
-ACP `session/load` replays conversation content through `session/update`
-notifications. The adapter should collect those updates and produce the same
-message state the UI expects today.
-
-Important behavior to preserve:
-
-- loading state
-- session load errors
-- initial conversation display
-- token state
-- tool call history
-- session name/info
-
-### 6. Migrate Live Prompt Streaming
-
-Detailed plan: `06-live-prompt-streaming.md`
-
-Replace REST `sessionReply` plus `useSessionEvents` with ACP `session/prompt`.
+Add `promptAcpSession` and migrate the live text submit path. Reuse the router
+and text adapter path proven by conversation load.
 
 The new flow should be:
 
@@ -180,11 +162,12 @@ user submits message
 Do not carry over REST request ID routing. ACP session notifications are scoped
 by ACP `sessionId`.
 
-### 7. Migrate Cancellation
+### 4. Cancellation Slice
 
 Detailed plan: `07-cancellation.md`
 
-Replace REST `sessionCancel` with ACP `session/cancel`.
+Add `cancelAcpSession` and replace REST cancellation after live prompt state
+exists.
 
 Keep the existing stop button behavior:
 
@@ -192,7 +175,21 @@ Keep the existing stop button behavior:
 - UI returns to idle or cancelled state
 - no stale active request state remains
 
-### 8. Wire Tool Permission Requests
+### 5. Tool Call Display Slice
+
+Detailed plan: `03-notification-adapter.md`
+
+Extend the notification adapter beyond text:
+
+- `agent_thought_chunk`
+- `tool_call`
+- `tool_call_update`
+- `usage_update`
+- richer `session_info_update`
+
+Verify loading and live prompt sessions with thinking and tool history.
+
+### 6. Tool Permission Slice
 
 Detailed plan: `08-tool-permissions.md`
 
@@ -208,6 +205,33 @@ Minimum acceptable behavior for live chat:
 - approve/reject maps to ACP response options
 - cancellation maps to ACP cancelled outcome
 
+### 7. Session Creation Slice
+
+Detailed plan: `04-session-creation.md`
+
+Add `createAcpSession` and update `ui/desktop/src/sessions.ts` so new sessions
+use ACP `session/new`.
+
+Session creation comes after load/prompt because it has extra parity risk.
+Before switching, check whether the current REST creation behavior needs parity
+for:
+
+- working directory
+- recipe deeplinks
+- recipe IDs
+- extension overrides
+
+If any of these are required for the initial ACP cutover and ACP does not support
+them yet, add the missing behavior to ACP first. Do not keep a hidden REST
+fallback for only those cases unless the migration scope is intentionally reduced.
+
+### 8. Optional Session List Slice
+
+Detailed plan: `02-acp-session-wrapper.md`
+
+Add `listAcpSessions()` only if session list migration is included in this PR.
+Otherwise leave session list on REST until cleanup scope is explicit.
+
 ### 9. Remove Desktop REST Session Usage
 
 Detailed plan: `09-rest-cleanup.md`
@@ -218,6 +242,20 @@ paths.
 Keep unrelated REST APIs untouched.
 
 Do not manually edit `ui/desktop/openapi.json`.
+
+## Legacy Phase Docs
+
+The detailed files still split work by subsystem because that is useful while
+implementing. Use them inside the vertical slices above:
+
+- `02-acp-session-wrapper.md` for the wrapper and router.
+- `03-notification-adapter.md` for conversion logic.
+- `04-session-creation.md` for the later creation slice.
+- `05-conversation-load.md` for load integration details.
+- `06-live-prompt-streaming.md` for prompt integration details.
+- `07-cancellation.md` for cancellation.
+- `08-tool-permissions.md` for permission bridging.
+- `09-rest-cleanup.md` for cleanup after replacement behavior is proven.
 
 ## Main Risks
 
