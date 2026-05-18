@@ -90,11 +90,6 @@ export const currentLocale = resolvedLocale.locale;
 /** Base language for loading message catalogs (e.g. "en"). */
 export const currentMessageLocale = resolvedLocale.messageLocale;
 
-async function loadCompiledMessages(locale: string): Promise<Record<string, string>> {
-  const mod = await import(`./compiled/${locale}.json`);
-  return (mod.default ?? mod) as Record<string, string>;
-}
-
 /**
  * Load compiled messages for a given locale.
  * English messages are always loaded as the fallback catalog so regional
@@ -102,7 +97,8 @@ async function loadCompiledMessages(locale: string): Promise<Record<string, stri
  * triggering missing translation warnings for every message.
  */
 export async function loadMessages(locale: string): Promise<Record<string, string>> {
-  const englishMessages = await loadCompiledMessages('en');
+  const englishMod = await import('./compiled/en.json');
+  const englishMessages = englishMod.default ?? englishMod;
 
   if (locale === 'en') {
     return englishMessages;
@@ -110,10 +106,10 @@ export async function loadMessages(locale: string): Promise<Record<string, strin
 
   try {
     // Dynamic import so compiled translation bundles are code-split.
-    const messages = await loadCompiledMessages(locale);
+    const mod = await import(`./compiled/${locale}.json`);
     return {
       ...englishMessages,
-      ...messages,
+      ...(mod.default ?? mod),
     };
   } catch {
     console.warn(
