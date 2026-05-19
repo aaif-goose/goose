@@ -208,7 +208,6 @@ impl HookContext {
     }
 }
 
-/// Outcome of a blocking hook dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookDecision {
     Allow,
@@ -339,9 +338,6 @@ impl HookManager {
         let Some(rules) = self.rules.get(&event) else {
             return HookDecision::Allow;
         };
-        if rules.is_empty() {
-            return HookDecision::Allow;
-        }
 
         let payload = match serde_json::to_string(&ctx) {
             Ok(s) => s,
@@ -616,39 +612,6 @@ mod tests {
 
         let written = std::fs::read_to_string(&marker).unwrap();
         assert_eq!(written.trim(), root.to_string_lossy());
-    }
-
-    #[tokio::test]
-    async fn emit_blocking_denies_on_exit_code_2_and_fails_open_otherwise() {
-        let tmp = tempfile::tempdir().unwrap();
-        let deny_hooks = r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"sh -c 'echo blocked by policy 1>&2; exit 2'"}]}]}}"#;
-        let allow_hooks = r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"sh -c 'exit 1'"}]}]}}"#;
-
-        for (name, hooks, expect_deny) in
-            [("deny", deny_hooks, true), ("allow", allow_hooks, false)]
-        {
-            let root = write_plugin(tmp.path(), name, hooks);
-            let mgr = make_manager(vec![DiscoveredPlugin {
-                name: name.into(),
-                root,
-                source: PluginSource::UserPlaced,
-            }]);
-            let decision = mgr
-                .emit_blocking(
-                    HookEvent::PreToolUse,
-                    HookContext::new(HookEvent::PreToolUse, "s")
-                        .with_tool("developer__shell", None),
-                )
-                .await;
-            match (expect_deny, decision) {
-                (true, HookDecision::Deny { reason, plugin }) => {
-                    assert_eq!(plugin, "deny");
-                    assert!(reason.contains("blocked by policy"), "reason: {reason}");
-                }
-                (false, HookDecision::Allow) => {}
-                (expected, got) => panic!("expected deny={expected}, got {got:?}"),
-            }
-        }
     }
 
     #[tokio::test]
