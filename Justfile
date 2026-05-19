@@ -28,7 +28,13 @@ release-binary:
     @echo "Generating OpenAPI schema..."
     cargo run -p goose-server --bin generate_schema
 
-# Build Windows executable
+# Build Windows executable on a Windows host
+[unix]
+release-windows:
+    @echo "just release-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-desktop-windows.yml for CI builds."
+    @exit 1
+
+[windows]
 release-windows:
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p goose-server; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/goosed.exe"'
 
@@ -71,7 +77,13 @@ copy-binary-intel:
         exit 1; \
     fi
 
-# Copy Windows binary command
+# Copy Windows binary command on a Windows host
+[unix]
+copy-binary-windows:
+    @echo "just copy-binary-windows requires a Windows host because it copies the MSVC build output."
+    @exit 1
+
+[windows]
 copy-binary-windows:
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (Test-Path ./target/x86_64-pc-windows-msvc/release/goosed.exe) { \
         Write-Host "Copying Windows binary to ui/desktop/src/bin..."; \
@@ -208,7 +220,13 @@ make-ui:
     @just release-binary
     cd ui/desktop && pnpm run bundle:default
 
-# make GUI with latest Windows binary
+# make GUI with latest Windows binary on a Windows host
+[unix]
+make-ui-windows:
+    @echo "just make-ui-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-desktop-windows.yml for CI builds."
+    @exit 1
+
+[windows]
 make-ui-windows:
     @just release-windows
     @just copy-binary-windows
