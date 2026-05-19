@@ -1,12 +1,12 @@
-import { Session } from '../api';
+import type { SessionListItem } from '../acp/sessions';
 
 export interface DateGroup {
   label: string;
-  sessions: Session[];
+  sessions: SessionListItem[];
   date: Date;
 }
 
-export function groupSessionsByDate(sessions: Session[]): DateGroup[] {
+export function groupSessionsByDate(sessions: SessionListItem[]): DateGroup[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -16,7 +16,7 @@ export function groupSessionsByDate(sessions: Session[]): DateGroup[] {
   const groups: { [key: string]: DateGroup } = {};
 
   sessions.forEach((session) => {
-    const sessionDate = new Date(session.updated_at);
+    const sessionDate = new Date(session.updatedAt);
     const sessionDateStart = new Date(sessionDate);
     sessionDateStart.setHours(0, 0, 0, 0);
 

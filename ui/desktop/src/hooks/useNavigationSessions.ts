@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { getSession, listSessions } from '../api';
+import { getSession } from '../api';
 import { useChatContext } from '../contexts/ChatContext';
 import { useConfig } from '../components/ConfigContext';
 import { useNavigation } from './useNavigation';
@@ -8,12 +8,53 @@ import { startNewSession, resumeSession, shouldShowNewChatTitle } from '../sessi
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { AppEvents } from '../constants/events';
 import type { Session } from '../api';
+import {
+  listAcpSessions,
+  sessionInfoToListItem,
+  type SessionListItem,
+} from '../acp/sessions';
+import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 
 const MAX_RECENT_SESSIONS = 5;
 
 interface UseNavigationSessionsOptions {
   onNavigate?: () => void;
   fetchOnMount?: boolean;
+}
+
+// Preserves locally-tracked empty sessions that the API hasn't returned yet
+// (newly created sessions are absent from listSessions until they get a message).
+function mergeWithEmptyLocals(
+  prev: SessionListItem[],
+  apiSessions: SessionListItem[]
+): SessionListItem[] {
+  const emptyLocals = prev.filter(
+    (local) => local.messageCount === 0 && !apiSessions.some((api) => api.id === local.id)
+  );
+  return [...emptyLocals, ...apiSessions].slice(0, MAX_RECENT_SESSIONS);
+}
+
+function sortAndTrim(sessions: SessionListItem[]): SessionListItem[] {
+  return [...sessions]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, MAX_RECENT_SESSIONS);
+}
+
+function sessionToListItem(s: Session): SessionListItem {
+  return {
+    id: s.id,
+    name: s.name || DEFAULT_CHAT_TITLE,
+    workingDir: s.working_dir,
+    updatedAt: s.updated_at,
+    messageCount: s.message_count,
+    createdAt: s.created_at,
+    archivedAt: s.archived_at ?? undefined,
+    projectId: s.project_id ?? undefined,
+    providerId: s.provider_name ?? undefined,
+    modelId: s.model_config?.model_name ?? undefined,
+    userSetName: s.user_set_name ?? undefined,
+    hasRecipe: !!s.recipe,
+  };
 }
 
 export function useNavigationSessions(options: UseNavigationSessionsOptions = {}) {
@@ -26,8 +67,8 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
   const { extensionsList } = useConfig();
   const setView = useNavigation();
 
-  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
-  const sessionsRef = useRef<Session[]>([]);
+  const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
+  const sessionsRef = useRef<SessionListItem[]>([]);
   const lastSessionIdRef = useRef<string | null>(null);
   const isCreatingSessionRef = useRef(false);
 
@@ -47,14 +88,8 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
 
   const fetchSessions = useCallback(async () => {
     try {
-      const response = await listSessions({ throwOnError: false });
-      if (response.data) {
-        const sorted = [...response.data.sessions]
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, MAX_RECENT_SESSIONS);
-        setRecentSessions(sorted);
-        sessionsRef.current = response.data.sessions;
-      }
+      const response = await listAcpSessions();
+      setRecentSessions(sortAndTrim(response.sessions.map(sessionInfoToListItem)));
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }
@@ -72,9 +107,10 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
 
     getSession({ path: { session_id: activeSessionId }, throwOnError: false }).then((response) => {
       if (!response.data) return;
+      const item = sessionToListItem(response.data as Session);
       setRecentSessions((prev) => {
         if (prev.some((s) => s.id === activeSessionId)) return prev;
-        return [response.data as Session, ...prev].slice(0, MAX_RECENT_SESSIONS);
+        return [item, ...prev].slice(0, MAX_RECENT_SESSIONS);
       });
     });
   }, [activeSessionId, recentSessions]);
@@ -86,11 +122,11 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
     const handleSessionCreated = (event: Event) => {
       const { session } = (event as CustomEvent<{ session?: Session }>).detail || {};
       if (session) {
+        const item = sessionToListItem(session);
         setRecentSessions((prev) => {
-          if (prev.some((s) => s.id === session.id)) return prev;
-          return [session, ...prev].slice(0, MAX_RECENT_SESSIONS);
+          if (prev.some((s) => s.id === item.id)) return prev;
+          return [item, ...prev].slice(0, MAX_RECENT_SESSIONS);
         });
-        sessionsRef.current = [session, ...sessionsRef.current.filter((s) => s.id !== session.id)];
       }
 
       if (isPolling) return;
@@ -104,18 +140,11 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       const pollForUpdates = async () => {
         pollCount++;
         try {
-          const response = await listSessions({ throwOnError: false });
-          if (response.data) {
-            const apiSessions = response.data.sessions.slice(0, MAX_RECENT_SESSIONS);
-            setRecentSessions((prev) => {
-              const emptyLocalSessions = prev.filter(
-                (local) =>
-                  local.message_count === 0 && !apiSessions.some((api) => api.id === local.id)
-              );
-              return [...emptyLocalSessions, ...apiSessions].slice(0, MAX_RECENT_SESSIONS);
-            });
-            sessionsRef.current = response.data.sessions;
-          }
+          const response = await listAcpSessions();
+          const apiSessions = response.sessions
+            .slice(0, MAX_RECENT_SESSIONS)
+            .map(sessionInfoToListItem);
+          setRecentSessions((prev) => mergeWithEmptyLocals(prev, apiSessions));
         } catch (error) {
           console.error('Failed to poll sessions:', error);
         }
@@ -131,62 +160,31 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       pollForUpdates();
     };
 
-    window.addEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
-    return () => {
-      window.removeEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
-      pollingTimeouts.forEach(clearTimeout);
-    };
-  }, []);
-
-  useEffect(() => {
-    let fetchVersion = 0;
-
     const handleSessionDeleted = (event: Event) => {
       const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
-
-      setRecentSessions((prev) => prev.filter((session) => session.id !== sessionId));
-      sessionsRef.current = sessionsRef.current.filter((session) => session.id !== sessionId);
-
+      setRecentSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
-      const version = ++fetchVersion;
-      listSessions({ throwOnError: false })
-        .then((response) => {
-          if (version !== fetchVersion || !response.data) return;
-          const apiSessions = [...response.data.sessions]
-            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-            .slice(0, MAX_RECENT_SESSIONS);
-          setRecentSessions((prev) => {
-            const emptyLocalSessions = prev.filter(
-              (local) =>
-                local.message_count === 0 && !apiSessions.some((api) => api.id === local.id)
-            );
-            return [...emptyLocalSessions, ...apiSessions].slice(0, MAX_RECENT_SESSIONS);
-          });
-          sessionsRef.current = response.data.sessions;
-        })
-        .catch((error) => console.error('Failed to fetch sessions:', error));
     };
 
     const handleSessionRenamed = (event: Event) => {
       const { sessionId, newName } = (event as CustomEvent<{ sessionId: string; newName: string }>)
         .detail;
-
       setRecentSessions((prev) =>
         prev.map((session) => (session.id === sessionId ? { ...session, name: newName } : session))
       );
-      sessionsRef.current = sessionsRef.current.map((session) =>
-        session.id === sessionId ? { ...session, name: newName } : session
-      );
     };
 
+    window.addEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
     window.addEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
     window.addEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
 
     return () => {
+      window.removeEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
       window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
+      pollingTimeouts.forEach(clearTimeout);
     };
   }, []);
 
@@ -211,27 +209,30 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
   const handleNewChat = useCallback(async () => {
     if (isCreatingSessionRef.current) return;
 
-    // Only reuse the current window's own active session if it is empty.
-    // Previously this grabbed the first empty session globally, which caused
-    // multiple windows to claim the same empty session after a restart/upgrade.
-    const currentActiveSession = activeSessionId
-      ? sessionsRef.current.find((s) => s.id === activeSessionId)
-      : undefined;
-    const canReuseActive = currentActiveSession && shouldShowNewChatTitle(currentActiveSession);
-
-    if (canReuseActive) {
-      resumeSession(currentActiveSession, setView);
-    } else {
-      isCreatingSessionRef.current = true;
-      try {
-        await startNewSession('', setView, getInitialWorkingDir(), {
-          allExtensions: extensionsList,
-        });
-      } finally {
-        setTimeout(() => {
-          isCreatingSessionRef.current = false;
-        }, 1000);
+    // Empty placeholder sessions are filtered out of listAcpSessions, so the
+    // active one isn't in sessionsRef. Fetch it directly to check reusability.
+    if (activeSessionId) {
+      const resp = await getSession({
+        path: { session_id: activeSessionId },
+        throwOnError: false,
+      });
+      const active = resp.data;
+      if (active && shouldShowNewChatTitle(active)) {
+        resumeSession(active, setView);
+        onNavigate?.();
+        return;
       }
+    }
+
+    isCreatingSessionRef.current = true;
+    try {
+      await startNewSession('', setView, getInitialWorkingDir(), {
+        allExtensions: extensionsList,
+      });
+    } finally {
+      setTimeout(() => {
+        isCreatingSessionRef.current = false;
+      }, 1000);
     }
     onNavigate?.();
   }, [setView, onNavigate, extensionsList, activeSessionId]);

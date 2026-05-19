@@ -254,6 +254,19 @@ fn sid_short(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
+fn display_title(s: &Session) -> Option<String> {
+    if !s.user_set_name {
+        if let Some(recipe) = &s.recipe {
+            return Some(recipe.title.clone());
+        }
+    }
+    if s.name.is_empty() {
+        None
+    } else {
+        Some(s.name.clone())
+    }
+}
+
 fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value> {
     let mut meta = serde_json::Map::new();
     meta.insert(
@@ -273,6 +286,10 @@ fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value>
     meta.insert(
         "userSetName".to_string(),
         serde_json::Value::Bool(session.user_set_name),
+    );
+    meta.insert(
+        "hasRecipe".to_string(),
+        serde_json::Value::Bool(session.recipe.is_some()),
     );
 
     if let Some(ref pid) = session.project_id {
@@ -3360,10 +3377,14 @@ impl GooseAcpAgent {
             .filter(|s| s.message_count > 0)
             .map(|s| {
                 let meta = session_meta(&s);
-                SessionInfo::new(SessionId::new(s.id), s.working_dir)
-                    .title(s.name)
+                let title = display_title(&s);
+                let mut info = SessionInfo::new(SessionId::new(s.id), s.working_dir)
                     .updated_at(s.updated_at.to_rfc3339())
-                    .meta(meta)
+                    .meta(meta);
+                if let Some(t) = title {
+                    info = info.title(t);
+                }
+                info
             })
             .collect();
         Ok(ListSessionsResponse::new(session_infos))

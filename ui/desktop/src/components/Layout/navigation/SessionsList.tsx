@@ -4,9 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SessionIndicators } from '../../SessionIndicators';
 import { InlineEditText } from '../../common/InlineEditText';
 import { cn } from '../../../utils';
-import { getSessionDisplayName } from '../../../hooks/useNavigationSessions';
 import { updateSessionName } from '../../../api';
-import type { Session } from '../../../api';
+import type { SessionListItem } from '../../../acp/sessions';
 import type { SessionStatus } from './types';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -26,7 +25,7 @@ const i18n = defineMessages({
 });
 
 interface SessionsListProps {
-  sessions: Session[];
+  sessions: SessionListItem[];
   activeSessionId?: string;
   isExpanded: boolean;
   getSessionStatus: (sessionId: string) => SessionStatus | undefined;
@@ -114,13 +113,13 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                   )}
                 >
                   <div className="w-4 flex-shrink-0" />
-                  {session.recipe ? (
+                  {session.hasRecipe ? (
                     <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
                   ) : (
                     <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
                   )}
                   <InlineEditText
-                    value={getSessionDisplayName(session)}
+                    value={session.name}
                     onSave={(newName) => handleSaveSessionName(session.id, newName)}
                     placeholder={intl.formatMessage(i18n.untitledSession)}
                     disabled={isStreaming}

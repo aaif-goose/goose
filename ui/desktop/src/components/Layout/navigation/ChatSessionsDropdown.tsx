@@ -7,9 +7,9 @@ import {
 } from '../../ui/dropdown-menu';
 import { SessionIndicators } from '../../SessionIndicators';
 import { cn } from '../../../utils';
-import { getSessionDisplayName, truncateMessage } from '../../../hooks/useNavigationSessions';
+import { truncateMessage } from '../../../hooks/useNavigationSessions';
 import { defineMessages, useIntl } from '../../../i18n';
-import type { Session } from '../../../api';
+import type { SessionListItem } from '../../../acp/sessions';
 import type { SessionStatus } from './types';
 
 const i18n = defineMessages({
@@ -24,7 +24,7 @@ const i18n = defineMessages({
 });
 
 interface ChatSessionsDropdownProps {
-  sessions: Session[];
+  sessions: SessionListItem[];
   activeSessionId?: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
   zIndex?: number;
@@ -84,14 +84,12 @@ export const ChatSessionsDropdown: React.FC<ChatSessionsDropdownProps> = ({
               isActiveSession && 'bg-background-tertiary'
             )}
           >
-            {session.recipe ? (
+            {session.hasRecipe ? (
               <ChefHat className="w-4 h-4 flex-shrink-0 text-text-secondary" />
             ) : (
               <MessageSquare className="w-4 h-4 flex-shrink-0 text-text-secondary" />
             )}
-            <span className="truncate flex-1">
-              {truncateMessage(getSessionDisplayName(session), 30)}
-            </span>
+            <span className="truncate flex-1">{truncateMessage(session.name, 30)}</span>
             <SessionIndicators
               isStreaming={isStreaming}
               hasUnread={hasUnread}

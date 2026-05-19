@@ -1,5 +1,5 @@
 import type { NavItem } from '../../../hooks/useNavigationItems';
-import type { Session } from '../../../api';
+import type { SessionListItem } from '../../../acp/sessions';
 import type { NavigationPosition } from '../NavigationContext';
 
 export type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
@@ -31,7 +31,7 @@ export interface NavigationRendererProps {
   isActive: (path: string) => boolean;
 
   // Sessions
-  recentSessions: Session[];
+  recentSessions: SessionListItem[];
   activeSessionId?: string;
   onNavClick: (path: string) => void;
   onNewChat: () => void;

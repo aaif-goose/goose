@@ -10,10 +10,14 @@ import { Goose } from '../icons/Goose';
 import { Skeleton } from '../ui/skeleton';
 import {
   getSessionInsights,
-  listSessions,
   Session,
   SessionInsights as ApiSessionInsights,
 } from '../../api';
+import {
+  listAcpSessions,
+  sessionInfoToListItem,
+  type SessionListItem,
+} from '../../acp/sessions';
 import { resumeSession } from '../../sessions';
 import { useNavigation } from '../../hooks/useNavigation';
 
@@ -48,7 +52,7 @@ export function SessionInsights() {
   const intl = useIntl();
   const [insights, setInsights] = useState<ApiSessionInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
+  const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const navigate = useNavigate();
@@ -76,8 +80,8 @@ export function SessionInsights() {
 
     const loadRecentSessions = async () => {
       try {
-        const response = await listSessions<true>({ throwOnError: true });
-        setRecentSessions(response.data.sessions.slice(0, 3));
+        const response = await listAcpSessions();
+        setRecentSessions(response.sessions.slice(0, 3).map(sessionInfoToListItem));
       } finally {
         setIsLoadingSessions(false);
       }
@@ -115,9 +119,9 @@ export function SessionInsights() {
     };
   }, []);
 
-  const handleSessionClick = async (session: Session) => {
+  const handleSessionClick = async (session: SessionListItem) => {
     try {
-      resumeSession(session, setView);
+      resumeSession({ id: session.id } as Session, setView);
     } catch (error) {
       console.error('Failed to start session:', error);
       navigate('/sessions', {
@@ -369,7 +373,7 @@ export function SessionInsights() {
                         <span className="truncate max-w-[300px]">{session.name}</span>
                       </div>
                       <span className="text-text-secondary font-mono font-light">
-                        {formatDateOnly(session.updated_at)}
+                        {formatDateOnly(session.updatedAt)}
                       </span>
                     </div>
                   ))
