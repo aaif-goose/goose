@@ -28,48 +28,9 @@ release-binary:
     @echo "Generating OpenAPI schema..."
     cargo run -p goose-server --bin generate_schema
 
-# release-windows docker build command
-win_docker_build_sh := '''rustup target add x86_64-pc-windows-gnu && \
-	apt-get update && \
-	apt-get install -y mingw-w64 protobuf-compiler cmake && \
-	export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc && \
-	export CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++ && \
-	export AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar && \
-	export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc && \
-	export PKG_CONFIG_ALLOW_CROSS=1 && \
-	export PROTOC=/usr/bin/protoc && \
-	export PATH=/usr/bin:\$PATH && \
-	protoc --version && \
-	cargo build --release --target x86_64-pc-windows-gnu && \
-	GCC_DIR=\$(ls -d /usr/lib/gcc/x86_64-w64-mingw32/*/ | head -n 1) && \
-	cp \$GCC_DIR/libstdc++-6.dll /usr/src/myapp/target/x86_64-pc-windows-gnu/release/ && \
-	cp \$GCC_DIR/libgcc_s_seh-1.dll /usr/src/myapp/target/x86_64-pc-windows-gnu/release/ && \
-	cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll /usr/src/myapp/target/x86_64-pc-windows-gnu/release/
-'''
-
 # Build Windows executable
 release-windows:
-    #!/usr/bin/env sh
-    if [ "$(uname)" = "Darwin" ] || [ "$(uname)" = "Linux" ]; then
-        echo "Building Windows executable using Docker..."
-        docker volume create goose-windows-cache || true
-        docker run --rm \
-            -v "$(pwd)":/usr/src/myapp \
-            -v goose-windows-cache:/usr/local/cargo/registry \
-            -w /usr/src/myapp \
-            rust:latest \
-            sh -c "{{win_docker_build_sh}}"
-    else
-        echo "Building Windows executable using Docker through PowerShell..."
-        powershell.exe -Command "docker volume create goose-windows-cache; \`
-            docker run --rm \`
-                -v ${PWD}:/usr/src/myapp \`
-                -v goose-windows-cache:/usr/local/cargo/registry \`
-                -w /usr/src/myapp \`
-                rust:latest \`
-                sh -c '{{win_docker_build_sh}}'"
-    fi
-    echo "Windows executable and required DLLs created at ./target/x86_64-pc-windows-gnu/release/"
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p goose-server; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/goosed.exe"'
 
 # Build for Intel Mac
 release-intel:
@@ -112,14 +73,14 @@ copy-binary-intel:
 
 # Copy Windows binary command
 copy-binary-windows:
-    @powershell.exe -Command "if (Test-Path ./target/x86_64-pc-windows-gnu/release/goosed.exe) { \
-        Write-Host 'Copying Windows binary and DLLs to ui/desktop/src/bin...'; \
-        Copy-Item -Path './target/x86_64-pc-windows-gnu/release/goosed.exe' -Destination './ui/desktop/src/bin/' -Force; \
-        Copy-Item -Path './target/x86_64-pc-windows-gnu/release/*.dll' -Destination './ui/desktop/src/bin/' -Force; \
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (Test-Path ./target/x86_64-pc-windows-msvc/release/goosed.exe) { \
+        Write-Host "Copying Windows binary to ui/desktop/src/bin..."; \
+        New-Item -ItemType Directory -Force "./ui/desktop/src/bin" | Out-Null; \
+        Copy-Item -Path "./target/x86_64-pc-windows-msvc/release/goosed.exe" -Destination "./ui/desktop/src/bin/" -Force; \
     } else { \
-        Write-Host 'Windows binary not found.' -ForegroundColor Red; \
+        Write-Host "Windows binary not found." -ForegroundColor Red; \
         exit 1; \
-    }"
+    }'
 
 # Run UI with latest
 run-ui:
@@ -250,22 +211,8 @@ make-ui:
 # make GUI with latest Windows binary
 make-ui-windows:
     @just release-windows
-    #!/usr/bin/env sh
-    set -e
-    if [ -f "./target/x86_64-pc-windows-gnu/release/goosed.exe" ]; then \
-        echo "Cleaning destination directory..." && \
-        rm -rf ./ui/desktop/src/bin && \
-        mkdir -p ./ui/desktop/src/bin && \
-        echo "Copying Windows binary and DLLs..." && \
-        cp -f ./target/x86_64-pc-windows-gnu/release/goosed.exe ./ui/desktop/src/bin/ && \
-        cp -f ./target/x86_64-pc-windows-gnu/release/*.dll ./ui/desktop/src/bin/ && \
-        echo "Starting Windows package build..." && \
-        (cd ui/desktop && pnpm run bundle:windows) && \
-        echo "Windows package build complete!"; \
-    else \
-        echo "Windows binary not found."; \
-        exit 1; \
-    fi
+    @just copy-binary-windows
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'Set-Location ui/desktop; $env:ELECTRON_PLATFORM="win32"; node scripts/prepare-platform-binaries.js; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; pnpm run make --platform=win32 --arch=x64; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows package build complete!"'
 
 # make GUI with latest binary
 make-ui-intel:

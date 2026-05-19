@@ -513,7 +513,6 @@ fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Copy any .dll files from the extracted archive alongside the installed binary.
-/// Windows GNU builds ship with libgcc, libstdc++, libwinpthread DLLs.
 #[cfg(target_os = "windows")]
 fn copy_dlls(extracted_binary: &Path, current_exe: &Path) -> Result<()> {
     let source_dir = extracted_binary
