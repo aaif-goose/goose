@@ -1259,6 +1259,7 @@ mod tests {
             extension_manager: Some(Arc::downgrade(&mgr)),
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: Some(session),
+            use_login_shell_path: false,
         })
         .unwrap();
 
@@ -1480,6 +1481,7 @@ mod tests {
                 extension_manager: Some(Arc::downgrade(&mgr)),
                 session_manager: Arc::new(crate::session::SessionManager::instance()),
                 session: Some(session),
+                use_login_shell_path: false,
             })
             .unwrap(),
         );
@@ -1664,6 +1666,7 @@ mod tests {
             extension_manager: Some(Arc::downgrade(&mgr)),
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: Some(session),
+            use_login_shell_path: false,
         })
         .unwrap();
         (client, mgr, tmp)
