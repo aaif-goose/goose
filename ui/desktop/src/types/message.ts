@@ -94,12 +94,22 @@ export function getTextAndImageContent(message: Message): {
     }
   }
 
-  // Strip <think> tags from assistant text — the thinking is surfaced via getThinkingContent
+  // Strip assistant-only markup that shouldn't appear in rendered text
   if (message.role === 'assistant') {
+    textContent = stripToolCallMarkers(textContent);
     textContent = textContent.replace(/<think>[\s\S]*?<\/think>/gi, '');
   }
 
   return { textContent, imagePaths };
+}
+
+function stripToolCallMarkers(text: string): string {
+  // Remove all tool call XML markers and their content
+  return text
+    .replace(/<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>/g, '')
+    .replace(/<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>/g, '')
+    .replace(/<\|tool_call_argument_begin\|>[\s\S]*?<\|tool_call_argument_end\|>/g, '')
+    .trim();
 }
 
 export function getThinkingContent(message: Message): string | null {

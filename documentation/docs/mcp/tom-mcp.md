@@ -16,7 +16,7 @@ The Top Of Mind extension injects custom text into goose's working memory every 
 Unlike system prompts or [goosehints](/docs/guides/context-engineering/using-goosehints) which can fade from attention as conversations grow, content injected by the tom extension appears fresh in every turn, making it more reliable for critical instructions.
 
 :::tip
-For a complete guide on use cases and best practices, see [Persistent Instructions](/docs/guides/using-persistent-instructions).
+For a complete guide on use cases and best practices, see [Persistent Instructions](/docs/guides/context-engineering/using-persistent-instructions).
 :::
 
 ## Configuration

@@ -13,5 +13,6 @@
     {"name": "moonshot-v1-8k", "context_limit": 8192},
     {"name": "moonshot-v1-32k", "context_limit": 32768}
   ],
+  "preserves_thinking": true,
   "supports_streaming": true
 }

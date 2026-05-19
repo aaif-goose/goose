@@ -17,6 +17,20 @@ const App = lazy(() => import('./App'));
 
 const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
 
+let warnedFallbackLocale = false;
+function handleIntlError(err: { code: string; message?: string }) {
+  if (err.code === 'MISSING_TRANSLATION' && currentLocale !== currentMessageLocale) {
+    if (!warnedFallbackLocale) {
+      warnedFallbackLocale = true;
+      console.warn(
+        `[i18n] Locale "${currentLocale}" has no translations; falling back to "${currentMessageLocale}".`
+      );
+    }
+    return;
+  }
+  console.error(err);
+}
+
 (async () => {
   // Check if we're in the launcher view (doesn't need goosed connection)
   const isLauncher = window.location.hash === '#/launcher';
@@ -50,7 +64,12 @@ const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <IntlProvider locale={currentLocale} defaultLocale="en" messages={messages}>
+      <IntlProvider
+        locale={currentLocale}
+        defaultLocale="en"
+        messages={messages}
+        onError={handleIntlError}
+      >
         <Suspense fallback={SuspenseLoader()}>
           <ConfigProvider>
             <ErrorBoundary>

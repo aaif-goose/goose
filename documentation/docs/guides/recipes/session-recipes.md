@@ -181,7 +181,7 @@ You can turn your current goose session into a reusable recipe that includes the
 </Tabs>
 
 :::tip Customize Recipe Generation
-You can customize how goose generates recipes by editing the `recipe.md` [prompt template](/docs/guides/prompt-templates).
+You can customize how goose generates recipes by editing the `recipe.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
 
 ## Edit Recipe

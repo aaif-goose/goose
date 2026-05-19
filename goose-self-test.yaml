@@ -120,7 +120,7 @@ prompt: |
   Test phases: {{ test_phases }}, Depth: {{ test_depth }}, Parallel: {{ parallel_tests }}
 
   ## 🚀 INITIALIZATION
-  Create test workspace: {{ workspace_dir }}/ for all test artifacts and reports.
+  Create test workspace using `mkdir -p {{ workspace_dir }}/archive` for all test artifacts and reports.
 
   Track your progress using the todo extension. Start with:
   - [ ] Initialize test workspace

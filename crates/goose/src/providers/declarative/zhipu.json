@@ -24,5 +24,6 @@
     {"name": "glm-4.7-flash", "context_limit": 200000},
     {"name": "glm-5", "context_limit": 204800}
   ],
+  "preserves_thinking": true,
   "supports_streaming": true
 }

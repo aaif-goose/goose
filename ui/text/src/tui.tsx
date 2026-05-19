@@ -20,6 +20,7 @@ import { resolveGooseBinary } from "@aaif/goose-sdk/node";
 import Onboarding from "./onboarding.js";
 import ConfigureScreen, { ConfigureIntent } from "./configure.js";
 import ExtensionsManager from "./extensions.js";
+import { DiffViewer } from "./components/DiffViewer.js";
 import type { Turn } from "./types.js";
 import {
   emptyLine,
@@ -53,6 +54,7 @@ import {
   SCROLL_STEP,
   SCROLL_FAST_MULTIPLIER,
 } from "./constants.js";
+import { tryRunSlashCommand } from "./slashCommands.js";
 
 const InputBar = React.memo(function InputBar({
   width,
@@ -140,6 +142,7 @@ const InputBar = React.memo(function InputBar({
       borderStyle="round"
       borderColor={RULE_COLOR}
       paddingX={1}
+      marginTop={1}
       width={constrainedWidth}
       flexShrink={0}
     >
@@ -511,11 +514,13 @@ function App({
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   type Overlay =
     | { screen: "configure"; intent: ConfigureIntent }
-    | { screen: "extensions" };
+    | { screen: "extensions" }
+    | { screen: "diff"; content: string; truncated: boolean };
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   const clientRef = useRef<GooseClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const sessionCwdRef = useRef<string>(process.cwd());
   const streamBuf = useRef("");
   const sentInitialPrompt = useRef(false);
   const queueRef = useRef<string[]>([]);
@@ -706,8 +711,10 @@ function App({
       setStatus("creating session…");
       setLoading(true);
       try {
+        const cwd = process.cwd();
+        sessionCwdRef.current = cwd;
         const session = await client.newSession({
-          cwd: process.cwd(),
+          cwd,
           mcpServers: [],
         });
         sessionIdRef.current = session.sessionId;
@@ -824,6 +831,52 @@ function App({
     exit,
   ]);
 
+  const addLocalTurn = useCallback(
+    (userText: string, message?: string) => {
+      setTurns((prev) => [
+        ...prev,
+        {
+          userText,
+          responseItems: message
+            ? [
+                {
+                  itemType: "content_chunk",
+                  content: { type: "text", text: message },
+                },
+              ]
+            : [],
+          toolCallsById: new Map(),
+        },
+      ]);
+      setViewTurnIdx(-1);
+      setSelectedToolCallIdx(null);
+      setToolCallExpanded(false);
+      setToolCallExpandedScroll(0);
+      setScrollOffset(0);
+    },
+    [],
+  );
+
+  const runSlashCommand = useCallback(
+    (raw: string): boolean => {
+      const result = tryRunSlashCommand(raw, {
+        cwd: sessionCwdRef.current,
+      });
+      if (!result.handled) return false;
+      if ("overlay" in result && result.overlay === "diff") {
+        setOverlay({
+          screen: "diff",
+          content: result.content,
+          truncated: result.truncated,
+        });
+        return true;
+      }
+      addLocalTurn(raw, "message" in result ? result.message : undefined);
+      return true;
+    },
+    [addLocalTurn],
+  );
+
   const handleSubmit = useCallback(
     (value: string) => {
       const trimmed = value.trim();
@@ -836,6 +889,8 @@ function App({
       setToolCallExpandedScroll(0);
       setScrollOffset(0);
 
+      if (trimmed.startsWith("/") && runSlashCommand(trimmed)) return;
+
       if (loading || isProcessingRef.current) {
         queueRef.current.push(trimmed);
         setQueuedMessages([...queueRef.current]);
@@ -843,11 +898,12 @@ function App({
         sendPrompt(trimmed);
       }
     },
-    [loading, sendPrompt],
+    [loading, sendPrompt, runSlashCommand],
   );
 
   const PAD_X = 2;
-  const PAD_Y = 1;
+  const PAD_TOP = 0;
+  const PAD_BOTTOM = 0;
   const safeTermWidth = Math.max(termWidth, 40);
   const safeTermHeight = Math.max(termHeight, 10);
   const contentWidth = Math.max(safeTermWidth - PAD_X * 2, 20);
@@ -867,10 +923,12 @@ function App({
     : 0;
   const inputExtraLines =
     (isPasteMode ? 1 : 0) + (queuedMessages.length > 0 ? 1 : 0);
-  const inputBarH = showInputBar ? 2 + inputContentRows + inputExtraLines : 0;
+  const inputBarH = showInputBar
+    ? 2 + inputContentRows + inputExtraLines + 1 // +1 for marginTop gap above input bar
+    : 0;
   const historyBarH = isViewingHistory ? 2 : 0;
   const viewportHeight = Math.max(
-    safeTermHeight - PAD_Y * 2 - headerH - inputBarH - historyBarH,
+    safeTermHeight - PAD_TOP - PAD_BOTTOM - headerH - inputBarH - historyBarH,
     3,
   );
 
@@ -1083,6 +1141,18 @@ function App({
     );
   }
 
+  if (overlay && overlay.screen === "diff") {
+    return (
+      <DiffViewer
+        content={overlay.content}
+        truncated={overlay.truncated}
+        width={safeTermWidth}
+        height={safeTermHeight}
+        onClose={() => setOverlay(null)}
+      />
+    );
+  }
+
   if (overlay && clientRef.current && sessionIdRef.current) {
     if (overlay.screen === "configure") {
       const intent = overlay.intent;
@@ -1130,13 +1200,17 @@ function App({
       width={safeTermWidth}
       height={safeTermHeight}
       paddingX={PAD_X}
-      paddingY={PAD_Y}
+      paddingTop={PAD_TOP}
+      paddingBottom={PAD_BOTTOM}
     >
       {bannerVisible ? (
         <SplashScreen
           animFrame={gooseFrame}
           width={contentWidth}
-          height={Math.max(safeTermHeight - PAD_Y * 2 - inputBarH, 0)}
+          height={Math.max(
+            safeTermHeight - PAD_TOP - PAD_BOTTOM - inputBarH,
+            0,
+          )}
           status={status}
           loading={loading}
           spinIdx={spinIdx}

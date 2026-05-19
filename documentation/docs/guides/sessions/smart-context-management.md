@@ -42,7 +42,7 @@ When you reach the auto-compaction threshold:
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for goose.
 
 :::tip Customize Compaction
-You can customize how goose summarizes conversations during compaction by editing the `compaction.md` [prompt template](/docs/guides/prompt-templates).
+You can customize how goose summarizes conversations during compaction by editing the `compaction.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
 
 :::tip Tool Output Summarization
@@ -293,7 +293,7 @@ Context limits are automatically detected based on your model name, but goose pr
 | Model | Description | Best For | Setting |
 |-------|-------------|----------|---------|
 | **Main** | Set context limit for the main model (also serves as fallback for other models) | LiteLLM proxies, custom models with non-standard names | `GOOSE_CONTEXT_LIMIT` |
-| **Planner** | Set context for [planner models](/docs/guides/creating-plans) | Large planning tasks requiring extensive context | `GOOSE_PLANNER_CONTEXT_LIMIT` |
+| **Planner** | Set context for [planner models](/docs/guides/context-engineering/creating-plans) | Large planning tasks requiring extensive context | `GOOSE_PLANNER_CONTEXT_LIMIT` |
 
 :::info
 This setting only affects the displayed token usage and progress indicators. Actual context management is handled by your LLM, so you may experience more or less usage than the limit you set, regardless of what the display shows.

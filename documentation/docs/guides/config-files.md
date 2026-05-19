@@ -1,5 +1,5 @@
 ---
-sidebar_position: 85
+sidebar_position: 10
 title: Configuration Files
 sidebar_label: Configuration Files
 ---
@@ -19,7 +19,7 @@ The configuration files allow you to set default behaviors, configure language m
 - **permission.yaml** - Tool permission levels configured via `goose configure`
 - **secrets.yaml** - API keys and secrets (when goose is using [file-based secret storage](#security-considerations))
 - **permissions/tool_permissions.json** - Runtime permission decisions (auto-managed)
-- **prompts/** - Customized [prompt templates](/docs/guides/prompt-templates)
+- **prompts/** - Customized [prompt templates](/docs/guides/context-engineering/prompt-templates)
 
 In addition to editing configuration files directly, many settings can be managed from goose Desktop and goose CLI:
 - **goose Desktop**: From the `Settings` page and the bottom toolbar
@@ -35,9 +35,9 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_MODEL` | Default model to use | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
 | `GOOSE_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOOSE_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
-| `GOOSE_MODE` | [Tool execution behavior](/docs/guides/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
+| `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
-| `GOOSE_PLANNER_PROVIDER` | Provider for [planning mode](/docs/guides/creating-plans) | Same as `GOOSE_PROVIDER` options | Falls back to `GOOSE_PROVIDER` | No |
+| `GOOSE_PLANNER_PROVIDER` | Provider for [planning mode](/docs/guides/context-engineering/creating-plans) | Same as `GOOSE_PROVIDER` options | Falls back to `GOOSE_PROVIDER` | No |
 | `GOOSE_PLANNER_MODEL` | Model for planning mode | Model name | Falls back to `GOOSE_MODEL` | No |
 | `GOOSE_TOOLSHIM` | Enable tool interpretation | true/false | false | No |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Model for tool interpretation | Model name (e.g., "llama3.2") | System default | No |

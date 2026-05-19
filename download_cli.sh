@@ -18,6 +18,7 @@ set -eu
 #   GOOSE_VERSION  - Optional: specific version to install (e.g., "v1.0.25"). Overrides CANARY. Can be in the format vX.Y.Z, vX.Y.Z-suffix, or X.Y.Z
 #   GOOSE_PROVIDER - Optional: provider for goose
 #   GOOSE_MODEL    - Optional: model for goose
+#   GOOSE_LINUX_VARIANT - Optional: Linux package variant to install (`standard`, `vulkan`, or `musl`)
 #   GOOSE_WINDOWS_VARIANT - Optional: Windows package variant to install (`standard` or `cuda`)
 #   CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   CONFIGURE      - Optional: if set to "false", disables running goose configure interactively
@@ -68,6 +69,7 @@ fi
 GOOSE_BIN_DIR="${GOOSE_BIN_DIR:-$DEFAULT_BIN_DIR}"
 RELEASE="${CANARY:-false}"
 CONFIGURE="${CONFIGURE:-true}"
+GOOSE_LINUX_VARIANT="${GOOSE_LINUX_VARIANT:-}"
 GOOSE_WINDOWS_VARIANT="${GOOSE_WINDOWS_VARIANT:-standard}"
 if [ -n "${GOOSE_VERSION:-}" ]; then
   # Validate the version format
@@ -139,6 +141,28 @@ case "$ARCH" in
     ;;
 esac
 
+detect_linux_musl() {
+  if [[ "$OSTYPE" == "linux-musl"* ]]; then
+    return 0
+  fi
+
+  if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+    return 0
+  fi
+
+  return 1
+}
+
+if [ "$OS" = "linux" ] && [ -z "$GOOSE_LINUX_VARIANT" ]; then
+  if detect_linux_musl; then
+    GOOSE_LINUX_VARIANT="musl"
+  else
+    GOOSE_LINUX_VARIANT="standard"
+  fi
+elif [ -z "$GOOSE_LINUX_VARIANT" ]; then
+  GOOSE_LINUX_VARIANT="standard"
+fi
+
 # Debug output (safely handle undefined variables)
 echo "WINDIR: ${WINDIR:-<not set>}"
 echo "OSTYPE: $OSTYPE"
@@ -173,7 +197,19 @@ elif [ "$OS" = "windows" ]; then
   EXTRACT_CMD="unzip"
   OUT_FILE="goose.exe"
 else
+  case "$GOOSE_LINUX_VARIANT" in
+    standard|vulkan|musl) ;;
+    *)
+      echo "Error: Unsupported GOOSE_LINUX_VARIANT '$GOOSE_LINUX_VARIANT'. Expected 'standard', 'vulkan', or 'musl'."
+      exit 1
+      ;;
+  esac
   FILE="goose-$ARCH-unknown-linux-gnu.tar.bz2"
+  if [ "$GOOSE_LINUX_VARIANT" = "vulkan" ]; then
+    FILE="goose-$ARCH-unknown-linux-gnu-vulkan.tar.bz2"
+  elif [ "$GOOSE_LINUX_VARIANT" = "musl" ]; then
+    FILE="goose-$ARCH-unknown-linux-musl.tar.bz2"
+  fi
   EXTRACT_CMD="tar"
 fi
 
@@ -310,7 +346,15 @@ if [ "$CONFIGURE" = true ]; then
   echo ""
   echo "Configuring goose"
   echo ""
-  "$GOOSE_BIN_DIR/$OUT_FILE" configure
+  if [ -t 0 ]; then
+    "$GOOSE_BIN_DIR/$OUT_FILE" configure
+  elif [ -r /dev/tty ]; then
+    "$GOOSE_BIN_DIR/$OUT_FILE" configure < /dev/tty
+  else
+    echo "Non-interactive shell detected (e.g. 'curl ... | bash')."
+    echo "Skipping 'goose configure' — please run it manually after installation:"
+    echo "    $GOOSE_BIN_DIR/$OUT_FILE configure"
+  fi
 else
   echo "Skipping 'goose configure', you may need to run this manually later"
 fi

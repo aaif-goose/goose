@@ -14,10 +14,6 @@ const i18n = defineMessages({
     id: 'costTracker.costUnavailable',
     defaultMessage: 'Cost data not available for {model} ({inputTokens} input, {outputTokens} output tokens)',
   },
-  sessionCostBreakdown: {
-    id: 'costTracker.sessionCostBreakdown',
-    defaultMessage: 'Session cost breakdown:',
-  },
   totalSessionCost: {
     id: 'costTracker.totalSessionCost',
     defaultMessage: 'Total session cost: {cost}',
@@ -31,13 +27,7 @@ const i18n = defineMessages({
 interface CostTrackerProps {
   inputTokens?: number;
   outputTokens?: number;
-  sessionCosts?: {
-    [key: string]: {
-      inputTokens: number;
-      outputTokens: number;
-      totalCost: number;
-    };
-  };
+  accumulatedCost?: number | null;
   model: string | null;
   provider: string | null;
 }
@@ -45,7 +35,7 @@ interface CostTrackerProps {
 export function CostTracker({
   inputTokens = 0,
   outputTokens = 0,
-  sessionCosts,
+  accumulatedCost,
   model: currentModel,
   provider: currentProvider,
 }: CostTrackerProps) {
@@ -106,41 +96,7 @@ export function CostTracker({
   }
 
   const calculateCost = (): number => {
-    // If we have session costs, calculate the total across all models
-    if (sessionCosts) {
-      let totalCost = 0;
-
-      // Add up all historical costs from different models
-      Object.values(sessionCosts).forEach((modelCost) => {
-        totalCost += modelCost.totalCost;
-      });
-
-      // Add current model cost if we have pricing info
-      if (
-        costInfo &&
-        (costInfo.input_token_cost !== undefined || costInfo.output_token_cost !== undefined)
-      ) {
-        const currentInputCost = (inputTokens * (costInfo.input_token_cost || 0)) / 1_000_000;
-        const currentOutputCost = (outputTokens * (costInfo.output_token_cost || 0)) / 1_000_000;
-        totalCost += currentInputCost + currentOutputCost;
-      }
-
-      return totalCost;
-    }
-
-    // Fallback to simple calculation for current model only
-    if (
-      !costInfo ||
-      (costInfo.input_token_cost === undefined && costInfo.output_token_cost === undefined)
-    ) {
-      return 0;
-    }
-
-    const inputCost = (inputTokens * (costInfo.input_token_cost || 0)) / 1_000_000;
-    const outputCost = (outputTokens * (costInfo.output_token_cost || 0)) / 1_000_000;
-    const total = inputCost + outputCost;
-
-    return total;
+    return accumulatedCost ?? 0;
   };
 
   const formatCost = (cost: number): string => {
@@ -165,10 +121,10 @@ export function CostTracker({
     );
   }
 
-  // If no cost info found, try to return a default
   if (
-    !costInfo ||
-    (costInfo.input_token_cost === undefined && costInfo.output_token_cost === undefined)
+    accumulatedCost == null &&
+    (!costInfo ||
+      (costInfo.input_token_cost === undefined && costInfo.output_token_cost === undefined))
   ) {
     const freeProviders = ['ollama', 'local', 'localhost'];
     if (freeProviders.includes(currentProvider.toLowerCase())) {
@@ -216,38 +172,22 @@ export function CostTracker({
 
   // Build tooltip content
   const getTooltipContent = (): string => {
-    // Handle error states first
     if (pricingFailed) {
       return intl.formatMessage(i18n.pricingUnavailable, { model: `${currentProvider}/${currentModel}` });
     }
 
-    // Handle session costs
-    if (sessionCosts && Object.keys(sessionCosts).length > 0) {
-      // Show session breakdown
-      let tooltip = intl.formatMessage(i18n.sessionCostBreakdown) + '\n';
+    const currency = costInfo?.currency || '$';
 
-      Object.entries(sessionCosts).forEach(([modelKey, cost]) => {
-        const costStr = `${costInfo?.currency || '$'}${cost.totalCost.toFixed(6)}`;
-        tooltip += `${modelKey}: ${costStr} (${cost.inputTokens.toLocaleString()} in, ${cost.outputTokens.toLocaleString()} out)\n`;
-      });
-
-      // Add current model if it has costs
-      if (costInfo && (inputTokens > 0 || outputTokens > 0)) {
-        const currentCost =
-          (inputTokens * (costInfo.input_token_cost || 0) +
-            outputTokens * (costInfo.output_token_cost || 0)) /
-          1_000_000;
-        if (currentCost > 0) {
-          tooltip += `${currentProvider}/${currentModel} (current): ${costInfo.currency || '$'}${currentCost.toFixed(6)} (${inputTokens.toLocaleString()} in, ${outputTokens.toLocaleString()} out)\n`;
-        }
-      }
-
-      tooltip += '\n' + intl.formatMessage(i18n.totalSessionCost, { cost: `${costInfo?.currency || '$'}${totalCost.toFixed(6)}` });
-      return tooltip;
+    if (accumulatedCost != null) {
+      return intl.formatMessage(i18n.totalSessionCost, { cost: `${currency}${totalCost.toFixed(4)}` })
+        + `\n` + intl.formatMessage(i18n.inputOutputTooltip, {
+          inputTokens: inputTokens.toLocaleString(),
+          inputCost: `${currency}${((inputTokens * (costInfo?.input_token_cost || 0)) / 1_000_000).toFixed(6)}`,
+          outputTokens: outputTokens.toLocaleString(),
+          outputCost: `${currency}${((outputTokens * (costInfo?.output_token_cost || 0)) / 1_000_000).toFixed(6)}`,
+        });
     }
 
-    // Default tooltip for single model
-    const currency = costInfo?.currency || '$';
     const inputCostStr = `${currency}${((inputTokens * (costInfo?.input_token_cost || 0)) / 1_000_000).toFixed(6)}`;
     const outputCostStr = `${currency}${((outputTokens * (costInfo?.output_token_cost || 0)) / 1_000_000).toFixed(6)}`;
     return intl.formatMessage(i18n.inputOutputTooltip, {

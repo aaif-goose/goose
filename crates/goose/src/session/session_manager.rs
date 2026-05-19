@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 
@@ -72,6 +72,7 @@ pub struct Session {
     pub accumulated_total_tokens: Option<i32>,
     pub accumulated_input_tokens: Option<i32>,
     pub accumulated_output_tokens: Option<i32>,
+    pub accumulated_cost: Option<f64>,
     pub schedule_id: Option<String>,
     pub recipe: Option<Recipe>,
     pub user_recipe_values: Option<HashMap<String, String>>,
@@ -101,6 +102,7 @@ pub struct SessionUpdateBuilder<'a> {
     accumulated_total_tokens: Option<Option<i32>>,
     accumulated_input_tokens: Option<Option<i32>>,
     accumulated_output_tokens: Option<Option<i32>>,
+    accumulated_cost: Option<Option<f64>>,
     schedule_id: Option<Option<String>>,
     recipe: Option<Option<Recipe>>,
     user_recipe_values: Option<Option<HashMap<String, String>>>,
@@ -135,6 +137,7 @@ impl<'a> SessionUpdateBuilder<'a> {
             accumulated_total_tokens: None,
             accumulated_input_tokens: None,
             accumulated_output_tokens: None,
+            accumulated_cost: None,
             schedule_id: None,
             recipe: None,
             user_recipe_values: None,
@@ -213,6 +216,11 @@ impl<'a> SessionUpdateBuilder<'a> {
         self
     }
 
+    pub fn accumulated_cost(mut self, cost: Option<f64>) -> Self {
+        self.accumulated_cost = Some(cost);
+        self
+    }
+
     pub fn schedule_id(mut self, schedule_id: Option<String>) -> Self {
         self.schedule_id = Some(schedule_id);
         self
@@ -264,6 +272,27 @@ impl<'a> SessionUpdateBuilder<'a> {
 
 pub struct SessionManager {
     storage: Arc<SessionStorage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionListCursor {
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) session_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SessionListPage {
+    pub(crate) sessions: Vec<Session>,
+    pub(crate) next_cursor: Option<SessionListCursor>,
+}
+
+#[derive(Debug, Default)]
+struct SessionListQuery<'a> {
+    types: Option<&'a [SessionType]>,
+    working_dir: Option<&'a Path>,
+    cursor: Option<&'a SessionListCursor>,
+    limit: Option<usize>,
+    require_messages: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -330,6 +359,18 @@ impl SessionManager {
 
     pub async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
         self.storage.list_sessions_by_types(Some(types)).await
+    }
+
+    pub(crate) async fn list_nonempty_sessions_by_types_paged(
+        &self,
+        types: &[SessionType],
+        working_dir: Option<&Path>,
+        cursor: Option<&SessionListCursor>,
+        page_size: usize,
+    ) -> Result<SessionListPage> {
+        self.storage
+            .list_nonempty_sessions_by_types_paged(types, working_dir, cursor, page_size)
+            .await
     }
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
@@ -490,6 +531,7 @@ impl Default for Session {
             accumulated_total_tokens: None,
             accumulated_input_tokens: None,
             accumulated_output_tokens: None,
+            accumulated_cost: None,
             schedule_id: None,
             recipe: None,
             user_recipe_values: None,
@@ -557,6 +599,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             accumulated_total_tokens: row.try_get("accumulated_total_tokens")?,
             accumulated_input_tokens: row.try_get("accumulated_input_tokens")?,
             accumulated_output_tokens: row.try_get("accumulated_output_tokens")?,
+            accumulated_cost: row.try_get("accumulated_cost").ok().flatten(),
             schedule_id: row.try_get("schedule_id")?,
             recipe,
             user_recipe_values,
@@ -632,25 +675,39 @@ impl SessionStorage {
     }
 
     async fn create_schema(pool: &Pool<Sqlite>) -> Result<()> {
+        // Run schema creation under `BEGIN IMMEDIATE` so SQLite serializes
+        // writers across processes. Combined with `IF NOT EXISTS` on every
+        // DDL statement and `INSERT OR IGNORE` on the bootstrap version
+        // row, this makes init safe under concurrent first-run startup —
+        // the previous flow:
+        //
+        //   SELECT EXISTS('schema_version') → false
+        //   CREATE TABLE schema_version (...)
+        //
+        // raced when two processes both saw "doesn't exist" and the
+        // second one's CREATE TABLE failed with `table already exists`,
+        // which surfaced to callers as "Could not create session".
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
         sqlx::query(
             r#"
-            CREATE TABLE schema_version (
+            CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY,
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         "#,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-        sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO schema_version (version) VALUES (?)")
             .bind(CURRENT_SCHEMA_VERSION)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
 
         sqlx::query(
             r#"
-            CREATE TABLE sessions (
+            CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '',
@@ -666,6 +723,7 @@ impl SessionStorage {
                 accumulated_total_tokens INTEGER,
                 accumulated_input_tokens INTEGER,
                 accumulated_output_tokens INTEGER,
+                accumulated_cost REAL,
                 schedule_id TEXT,
                 recipe_json TEXT,
                 user_recipe_values_json TEXT,
@@ -677,12 +735,12 @@ impl SessionStorage {
             )
         "#,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
         sqlx::query(
             r#"
-            CREATE TABLE messages (
+            CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id TEXT,
                 session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -695,24 +753,30 @@ impl SessionStorage {
             )
         "#,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-        sqlx::query("CREATE INDEX idx_messages_session ON messages(session_id)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_messages_timestamp ON messages(timestamp)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_messages_message_id ON messages(message_id)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_sessions_updated ON sessions(updated_at DESC)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)")
+            .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE INDEX idx_sessions_type ON sessions(session_type)")
-            .execute(pool)
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type)")
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
+
+        // The inventory tables already use `CREATE TABLE IF NOT EXISTS`
+        // and run on the shared pool, so they don't need to be inside
+        // the same transaction.
         crate::providers::inventory::create_tables(pool).await?;
 
         Ok(())
@@ -786,9 +850,10 @@ impl SessionStorage {
             id, name, user_set_name, session_type, working_dir, created_at, updated_at, extension_data,
             total_tokens, input_tokens, output_tokens,
             accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+            accumulated_cost,
             schedule_id, recipe_json, user_recipe_values_json,
             provider_name, model_config_json, goose_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(&session.id)
@@ -805,6 +870,7 @@ impl SessionStorage {
         .bind(session.accumulated_total_tokens)
         .bind(session.accumulated_input_tokens)
         .bind(session.accumulated_output_tokens)
+        .bind(session.accumulated_cost)
         .bind(&session.schedule_id)
         .bind(recipe_json)
         .bind(user_recipe_values_json)
@@ -1087,6 +1153,19 @@ impl SessionStorage {
                         .await?;
                 }
             }
+            13 => {
+                let has_accumulated_cost = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'accumulated_cost'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_accumulated_cost {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN accumulated_cost REAL")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1147,6 +1226,7 @@ impl SessionStorage {
         SELECT id, working_dir, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
                total_tokens, input_tokens, output_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+               accumulated_cost,
                schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
                archived_at, project_id
@@ -1207,6 +1287,7 @@ impl SessionStorage {
             builder.accumulated_output_tokens,
             "accumulated_output_tokens"
         );
+        add_update!(builder.accumulated_cost, "accumulated_cost");
         add_update!(builder.schedule_id, "schedule_id");
         add_update!(builder.recipe, "recipe_json");
         add_update!(builder.user_recipe_values, "user_recipe_values_json");
@@ -1258,6 +1339,9 @@ impl SessionStorage {
         }
         if let Some(aot) = builder.accumulated_output_tokens {
             q = q.bind(aot);
+        }
+        if let Some(ac) = builder.accumulated_cost {
+            q = q.bind(ac);
         }
         if let Some(sid) = builder.schedule_id {
             q = q.bind(sid);
@@ -1427,17 +1511,46 @@ impl SessionStorage {
         Self::replace_conversation_inner(pool, session_id, conversation).await
     }
 
-    async fn list_sessions_by_types(&self, types: Option<&[SessionType]>) -> Result<Vec<Session>> {
-        let (where_clause, binds): (String, Vec<String>) = match types {
-            Some(t) if !t.is_empty() => {
-                let placeholders: String = t.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-                (
-                    format!("WHERE s.session_type IN ({})", placeholders),
-                    t.iter().map(|t| t.to_string()).collect(),
-                )
-            }
-            Some(_) => return Ok(Vec::new()),
-            None => (String::new(), Vec::new()),
+    async fn list_sessions_matching(&self, options: SessionListQuery<'_>) -> Result<Vec<Session>> {
+        if matches!(options.types, Some(types) if types.is_empty()) {
+            return Ok(Vec::new());
+        }
+
+        let mut where_clauses = Vec::new();
+        if let Some(types) = options.types {
+            let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            where_clauses.push(format!("s.session_type IN ({})", placeholders));
+        }
+        if options.working_dir.is_some() {
+            where_clauses.push("s.working_dir = ?".to_string());
+        }
+        if options.cursor.is_some() {
+            where_clauses.push(
+                "(datetime(s.updated_at) < datetime(?) \
+                 OR (datetime(s.updated_at) = datetime(?) AND s.id < ?))"
+                    .to_string(),
+            );
+        }
+
+        let where_clause = if where_clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", where_clauses.join(" AND "))
+        };
+        let message_join = if options.require_messages {
+            "JOIN messages m ON s.id = m.session_id"
+        } else {
+            "LEFT JOIN messages m ON s.id = m.session_id"
+        };
+        let order_by = if options.cursor.is_some() || options.limit.is_some() {
+            "ORDER BY datetime(s.updated_at) DESC, s.id DESC"
+        } else {
+            "ORDER BY s.updated_at DESC"
+        };
+        let limit_clause = if options.limit.is_some() {
+            "LIMIT ?"
+        } else {
+            ""
         };
 
         let query = format!(
@@ -1445,26 +1558,94 @@ impl SessionStorage {
             SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
                    s.total_tokens, s.input_tokens, s.output_tokens,
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
+                   s.accumulated_cost,
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id,
                    COUNT(m.id) as message_count
             FROM sessions s
-            LEFT JOIN messages m ON s.id = m.session_id
+            {}
             {}
             GROUP BY s.id
-            ORDER BY s.updated_at DESC
+            {}
+            {}
             "#,
-            where_clause
+            message_join, where_clause, order_by, limit_clause
         );
 
         let mut q = sqlx::query_as::<_, Session>(&query);
-        for b in &binds {
-            q = q.bind(b);
+        if let Some(types) = options.types {
+            for session_type in types {
+                q = q.bind(session_type.to_string());
+            }
+        }
+        if let Some(working_dir) = options.working_dir {
+            q = q.bind(working_dir.to_string_lossy().to_string());
+        }
+        if let Some(cursor) = options.cursor {
+            let updated_at = cursor.updated_at.to_rfc3339();
+            // Normalize mixed SQLite CURRENT_TIMESTAMP and RFC3339 stored values.
+            q = q.bind(updated_at.clone());
+            q = q.bind(updated_at);
+            q = q.bind(&cursor.session_id);
+        }
+        if let Some(limit) = options.limit {
+            q = q.bind(limit as i64);
         }
 
         let pool = self.pool().await?;
         q.fetch_all(pool).await.map_err(Into::into)
+    }
+
+    async fn list_sessions_by_types(&self, types: Option<&[SessionType]>) -> Result<Vec<Session>> {
+        self.list_sessions_matching(SessionListQuery {
+            types,
+            ..Default::default()
+        })
+        .await
+    }
+
+    async fn list_nonempty_sessions_by_types_paged(
+        &self,
+        types: &[SessionType],
+        working_dir: Option<&Path>,
+        cursor: Option<&SessionListCursor>,
+        page_size: usize,
+    ) -> Result<SessionListPage> {
+        if types.is_empty() || page_size == 0 {
+            return Ok(SessionListPage {
+                sessions: Vec::new(),
+                next_cursor: None,
+            });
+        }
+
+        let mut sessions = self
+            .list_sessions_matching(SessionListQuery {
+                types: Some(types),
+                working_dir,
+                cursor,
+                limit: Some(page_size + 1),
+                require_messages: true,
+            })
+            .await?;
+        let has_next_page = sessions.len() > page_size;
+        let next_cursor = if has_next_page {
+            let anchor = &sessions[page_size - 1];
+            Some(SessionListCursor {
+                updated_at: anchor.updated_at,
+                session_id: anchor.id.clone(),
+            })
+        } else {
+            None
+        };
+        if has_next_page {
+            sessions.truncate(page_size);
+        }
+
+        Ok(SessionListPage {
+            sessions,
+            next_cursor,
+        })
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
@@ -1564,6 +1745,7 @@ impl SessionStorage {
             .accumulated_total_tokens(import.accumulated_total_tokens)
             .accumulated_input_tokens(import.accumulated_input_tokens)
             .accumulated_output_tokens(import.accumulated_output_tokens)
+            .accumulated_cost(import.accumulated_cost)
             .schedule_id(import.schedule_id)
             .recipe(import.recipe)
             .user_recipe_values(import.user_recipe_values);
@@ -1790,6 +1972,89 @@ mod tests {
 
     const NUM_CONCURRENT_SESSIONS: i32 = 10;
 
+    async fn create_session_for_list(
+        sm: &SessionManager,
+        working_dir: &str,
+        has_message: bool,
+    ) -> String {
+        let session = sm
+            .create_session(
+                PathBuf::from(working_dir),
+                format!("Session in {working_dir}"),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        if has_message {
+            sm.add_message(&session.id, &Message::user().with_text("message"))
+                .await
+                .unwrap();
+        }
+
+        session.id
+    }
+
+    async fn set_sessions_updated_at(
+        sm: &SessionManager,
+        session_ids: &[String],
+        updated_at: &str,
+    ) {
+        let pool = sm.storage().pool().await.unwrap();
+        let updated_at = chrono::DateTime::parse_from_rfc3339(updated_at).unwrap();
+        let timestamp = updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        for session_id in session_ids {
+            sqlx::query("UPDATE sessions SET updated_at = ? WHERE id = ?")
+                .bind(&timestamp)
+                .bind(session_id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn expected_session_list_ids(sm: &SessionManager, session_ids: &[String]) -> Vec<String> {
+        let mut sessions = Vec::new();
+        for session_id in session_ids {
+            sessions.push(sm.get_session(session_id, false).await.unwrap());
+        }
+        sessions.sort_by(|a, b| {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| b.id.cmp(&a.id))
+        });
+        sessions.into_iter().map(|session| session.id).collect()
+    }
+
+    async fn assert_session_list_page(
+        sm: &SessionManager,
+        cursor: Option<&SessionListCursor>,
+        working_dir: Option<&str>,
+        page_size: usize,
+        expected_ids: &[String],
+        expected_next_cursor: bool,
+    ) -> Option<SessionListCursor> {
+        let page = sm
+            .list_nonempty_sessions_by_types_paged(
+                &[SessionType::User],
+                working_dir.map(Path::new),
+                cursor,
+                page_size,
+            )
+            .await
+            .unwrap();
+        let ids = page
+            .sessions
+            .iter()
+            .map(|session| session.id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(ids.as_slice(), expected_ids);
+        assert_eq!(page.next_cursor.is_some(), expected_next_cursor);
+        page.next_cursor
+    }
+
     async fn run_lock_upgrade_attempt(
         pool: Pool<Sqlite>,
         session_id: String,
@@ -1880,6 +2145,70 @@ mod tests {
                 .filter_map(|r| r.as_ref().err().map(ToString::to_string))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_first_second_and_final_page() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let mut expected_ids = Vec::new();
+        for _ in 0..5 {
+            expected_ids.push(create_session_for_list(&sm, "/tmp/session-list", true).await);
+        }
+        let expected_ids = expected_session_list_ids(&sm, &expected_ids).await;
+
+        let cursor = assert_session_list_page(&sm, None, None, 2, &expected_ids[0..2], true).await;
+        let cursor =
+            assert_session_list_page(&sm, cursor.as_ref(), None, 2, &expected_ids[2..4], true)
+                .await;
+        assert_session_list_page(&sm, cursor.as_ref(), None, 2, &expected_ids[4..5], false).await;
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_uses_id_tiebreaker_for_duplicate_updated_at() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let mut expected_ids = Vec::new();
+        for _ in 0..3 {
+            expected_ids.push(create_session_for_list(&sm, "/tmp/session-list", true).await);
+        }
+        set_sessions_updated_at(&sm, &expected_ids, "2024-01-01T00:00:00Z").await;
+        let expected_ids = expected_session_list_ids(&sm, &expected_ids).await;
+
+        let cursor = assert_session_list_page(&sm, None, None, 2, &expected_ids[0..2], true).await;
+        assert_session_list_page(&sm, cursor.as_ref(), None, 2, &expected_ids[2..3], false).await;
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_filters_empty_and_cwd_before_pagination() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let expected_ids = vec![
+            create_session_for_list(&sm, "/tmp/session-list/a", true).await,
+            create_session_for_list(&sm, "/tmp/session-list/a", true).await,
+        ];
+        create_session_for_list(&sm, "/tmp/session-list/a", false).await;
+        create_session_for_list(&sm, "/tmp/session-list/b", true).await;
+        let expected_ids = expected_session_list_ids(&sm, &expected_ids).await;
+
+        let cursor = assert_session_list_page(
+            &sm,
+            None,
+            Some("/tmp/session-list/a"),
+            1,
+            &expected_ids[0..1],
+            true,
+        )
+        .await;
+        assert_session_list_page(
+            &sm,
+            cursor.as_ref(),
+            Some("/tmp/session-list/a"),
+            1,
+            &expected_ids[1..2],
+            false,
+        )
+        .await;
     }
 
     #[tokio::test]

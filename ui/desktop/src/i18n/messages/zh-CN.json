@@ -4520,11 +4520,11 @@
   "toolCallWithResponse.viewSubagentSession": {
     "defaultMessage": "查看子 agent 会话"
   },
-  "toolConfirmation.allowToolCall": {
-    "defaultMessage": "允许此次工具调用吗？"
+  "toolConfirmation.allowToolCallWithName": {
+    "defaultMessage": "允许 {toolName} 吗？"
   },
-  "toolConfirmation.gooseWouldLikeToCall": {
-    "defaultMessage": "Goose 想调用上述工具，允许吗？"
+  "toolConfirmation.gooseWouldLikeToCallWithName": {
+    "defaultMessage": "Goose 想调用 {toolName}，允许吗？"
   },
   "tunnelSection.appStoreQrInstructions": {
     "defaultMessage": "用 iPhone 相机扫描此二维码，从 App Store 安装 goose 手机应用"

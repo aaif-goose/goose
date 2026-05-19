@@ -36,7 +36,7 @@ Think lone developer grinding through the ticket.
 
 ## The Subagent Setup: Orchestrator With a Crew
 
-With [subagents](/docs/guides/subagents), you still have one "main" agent, but instead of doing everything, it plays tech lead and delegates pieces of the work to other specialized agents.
+With [subagents](/docs/guides/context-engineering/subagents), you still have one "main" agent, but instead of doing everything, it plays tech lead and delegates pieces of the work to other specialized agents.
 
 The main agent says:
 

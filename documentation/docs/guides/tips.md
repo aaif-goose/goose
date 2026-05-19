@@ -15,7 +15,7 @@ You don't need fancy language or special syntax to prompt goose. Talk with goose
 goose's capabilities are extensible. As an [MCP](https://modelcontextprotocol.io/) client, goose can connect to your apps and services through [extensions](/extensions), allowing it to work across your entire workflow.
 
 ### Choose how much control goose has
-You can customize how much [supervision](/docs/guides/goose-permissions) goose needs. Choose between full autonomy, requiring approval before actions, or simply chatting without any actions.
+You can customize how much [supervision](/docs/guides/managing-tools/goose-permissions) goose needs. Choose between full autonomy, requiring approval before actions, or simply chatting without any actions.
 
 ### Choose the right LLM
 Your experience with goose is shaped by your [choice of LLM](/blog/2025/03/31/goose-benchmark), as it handles all the planning while goose manages the execution. When choosing an LLM, consider its tool support, specific capabilities, and associated costs.
@@ -37,7 +37,7 @@ Consider enabling [Code Mode](/docs/guides/managing-tools/code-mode), an alterna
 Help goose remember how you like to work by using [`.goosehints` or other context files](/docs/guides/context-engineering/using-goosehints) or [skills](/docs/guides/context-engineering/using-skills) for permanent project preferences and the [Memory extension](/docs/mcp/memory-mcp) for things you want goose to dynamically recall later. Both can help save valuable context window space while keeping your preferences available.
 
 ### Protect sensitive files
-goose is often eager to make changes. You can stop it from changing specific files by creating a [.gooseignore](/docs/guides/using-gooseignore) file. In this file, you can list all the file paths you want it to avoid.
+goose is often eager to make changes. You can stop it from changing specific files by creating a [.gooseignore](/docs/guides/context-engineering/using-gooseignore) file. In this file, you can list all the file paths you want it to avoid.
 
 ### Version Control
 Commit your code changes early and often. This allows you to rollback any unexpected changes.
@@ -58,7 +58,7 @@ goose Desktop lets you [customize the sidebar](/docs/guides/desktop-navigation) 
 Regularly [update](/docs/guides/updating-goose) goose to benefit from the latest features, bug fixes, and performance improvements.
 
 ### Use a Dedicated Planner Model
-Use [planning mode](/docs/guides/creating-plans) with a dedicated planner model for complex reasoning, while keeping a faster default model for everyday execution.
+Use [planning mode](/docs/guides/context-engineering/creating-plans) with a dedicated planner model for complex reasoning, while keeping a faster default model for everyday execution.
 
 ### Make Recipes Safe to Re-run
 Write [recipes](/docs/guides/recipes/session-recipes) that check your current state before acting, so they can be run multiple times without causing any errors or duplication. 

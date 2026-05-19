@@ -12,7 +12,8 @@ use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata};
 use super::errors::ProviderError;
 use super::formats::anthropic::{
-    create_request, response_to_streaming_message, thinking_type, ThinkingType,
+    create_request_with_options, response_to_streaming_message, thinking_type,
+    AnthropicFormatOptions, ThinkingType,
 };
 use super::inventory::{config_secret_value, serialize_string_map, InventoryIdentityInput};
 use super::openai_compatible::handle_status;
@@ -59,6 +60,8 @@ pub struct AnthropicProvider {
     custom_models: Option<Vec<String>>,
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
+    #[serde(skip)]
+    format_options: AnthropicFormatOptions,
 }
 
 impl AnthropicProvider {
@@ -87,6 +90,7 @@ impl AnthropicProvider {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            format_options: AnthropicFormatOptions::default(),
         })
     }
 
@@ -124,6 +128,8 @@ impl AnthropicProvider {
             key: api_key,
         };
 
+        let format_options = Self::format_options_for_provider(config.preserves_thinking);
+
         let mut api_client = ApiClient::new(config.base_url, auth)?
             .with_header("anthropic-version", ANTHROPIC_API_VERSION)?;
 
@@ -160,7 +166,15 @@ impl AnthropicProvider {
             custom_models,
             dynamic_models: config.dynamic_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
+            format_options,
         })
+    }
+
+    fn format_options_for_provider(preserves_thinking: bool) -> AnthropicFormatOptions {
+        AnthropicFormatOptions {
+            preserve_unsigned_thinking: preserves_thinking,
+            preserve_thinking_context: preserves_thinking,
+        }
     }
 
     fn get_conditional_headers(&self) -> Vec<(&str, &str)> {
@@ -326,7 +340,13 @@ impl Provider for AnthropicProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload = create_request(model_config, system, messages, tools)?;
+        let mut payload = create_request_with_options(
+            model_config,
+            system,
+            messages,
+            tools,
+            self.format_options,
+        )?;
         payload
             .as_object_mut()
             .unwrap()
@@ -365,7 +385,6 @@ impl Provider for AnthropicProvider {
         }))
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +413,7 @@ mod tests {
             custom_models,
             dynamic_models,
             skip_canonical_filtering: false,
+            format_options: AnthropicFormatOptions::default(),
         }
     }
 
@@ -421,6 +441,7 @@ mod tests {
             model_doc_link: None,
             setup_steps: vec![],
             fast_model: None,
+            preserves_thinking: false,
         }
     }
 

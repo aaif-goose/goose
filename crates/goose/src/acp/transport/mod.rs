@@ -94,10 +94,8 @@ async fn health() -> &'static str {
     "ok"
 }
 
-pub fn create_router(server: Arc<AcpServer>, secret_key: String) -> Router {
-    let registry = Arc::new(connection::ConnectionRegistry::new(server));
-
-    let cors = CorsLayer::new()
+fn acp_cors_layer() -> CorsLayer {
+    CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([
@@ -113,14 +111,26 @@ pub fn create_router(server: Arc<AcpServer>, secret_key: String) -> Router {
         .expose_headers([
             HeaderName::from_static("acp-connection-id"),
             HeaderName::from_static("acp-session-id"),
-        ]);
+        ])
+}
+
+fn create_acp_routes(server: Arc<AcpServer>) -> Router {
+    let registry = Arc::new(connection::ConnectionRegistry::new(server));
 
     Router::new()
-        .route("/health", get(health))
-        .route("/status", get(health))
         .route("/acp", post(http::handle_post).with_state(registry.clone()))
         .route("/acp", get(handle_get).with_state(registry.clone()))
         .route("/acp", delete(http::handle_delete).with_state(registry))
+}
+
+pub fn create_acp_router(server: Arc<AcpServer>) -> Router {
+    create_acp_routes(server).layer(acp_cors_layer())
+}
+
+pub fn create_router(server: Arc<AcpServer>, secret_key: String) -> Router {
+    create_acp_routes(server)
+        .route("/health", get(health))
+        .route("/status", get(health))
         .merge(super::mcp_app_proxy::routes(secret_key))
-        .layer(cors)
+        .layer(acp_cors_layer())
 }

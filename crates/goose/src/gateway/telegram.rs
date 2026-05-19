@@ -101,10 +101,12 @@ impl TelegramGateway {
             .ok_or_else(|| anyhow::anyhow!("missing bot_token in platform_config"))?
             .to_string();
 
-        Ok(Self {
-            bot_token,
-            client: Client::new(),
-        })
+        let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .http1_only()
+            .build()?;
+
+        Ok(Self { bot_token, client })
     }
 
     fn api_url(&self, method: &str) -> String {
@@ -438,7 +440,7 @@ impl Gateway for TelegramGateway {
                             }
                         }
                         Err(e) => {
-                            tracing::error!(error = %e, "Telegram poll error");
+                            tracing::error!(error = ?e, "Telegram poll error");
                             tokio::time::sleep(RETRY_DELAY).await;
                         }
                     }
