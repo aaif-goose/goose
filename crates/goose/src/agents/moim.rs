@@ -1,5 +1,5 @@
 use crate::agents::extension_manager::ExtensionManager;
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{fix_conversation, Conversation};
 use rmcp::model::Role;
 use std::path::Path;
@@ -7,6 +7,13 @@ use std::path::Path;
 // Test-only utility. Do not use in production code. No `test` directive due to call outside crate.
 thread_local! {
     pub static SKIP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn has_tool_request(message: &Message) -> bool {
+    message
+        .content
+        .iter()
+        .any(|c| matches!(c, MessageContent::ToolRequest(_)))
 }
 
 pub async fn inject_moim(
@@ -24,10 +31,16 @@ pub async fn inject_moim(
         .await
     {
         let mut messages = conversation.messages().clone();
-        let idx = messages
+        let idx = if let Some(pos) = messages
             .iter()
-            .rposition(|m| m.role == Role::Assistant)
-            .unwrap_or(0);
+            .rposition(|m| m.role == Role::Assistant && !has_tool_request(m))
+        {
+            pos
+        } else if !messages.iter().any(|m| m.role == Role::Assistant) {
+            0
+        } else {
+            return conversation;
+        };
         messages.insert(idx, Message::user().with_text(moim));
 
         let (fixed, issues) = fix_conversation(Conversation::new_unvalidated(messages));
@@ -58,7 +71,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[tokio::test]
-    async fn test_moim_injection_before_assistant() {
+    async fn test_moim_injected_before_assistant() {
         let temp_dir = tempfile::tempdir().unwrap();
         let em = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
         let working_dir = PathBuf::from("/test/dir");
@@ -81,13 +94,12 @@ mod tests {
             .filter_map(|c| c.as_text())
             .collect::<Vec<_>>()
             .join("");
-        assert!(merged_content.contains("Hello"));
         assert!(merged_content.contains("<info-msg>"));
         assert!(merged_content.contains("Working directory: /test/dir"));
     }
 
     #[tokio::test]
-    async fn test_moim_injection_no_assistant() {
+    async fn test_moim_injected_without_assistant_message() {
         let temp_dir = tempfile::tempdir().unwrap();
         let em = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
         let working_dir = PathBuf::from("/test/dir");
@@ -109,7 +121,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_moim_with_tool_calls() {
+    async fn test_moim_skipped_when_all_assistants_have_tool_calls() {
         let temp_dir = tempfile::tempdir().unwrap();
         let em = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
         let working_dir = PathBuf::from("/test/dir");
@@ -131,17 +143,15 @@ mod tests {
         let result = inject_moim("test-session-id", conv, &em, &working_dir).await;
         let msgs = result.messages();
 
-        assert_eq!(msgs.len(), 6);
-
-        let moim_msg = &msgs[3];
-        let has_moim = moim_msg
-            .content
-            .iter()
-            .any(|c| c.as_text().is_some_and(|t| t.contains("<info-msg>")));
-
+        assert_eq!(msgs.len(), 5);
+        let any_moim = msgs.iter().any(|m| {
+            m.content
+                .iter()
+                .any(|c| c.as_text().is_some_and(|t| t.contains("<info-msg>")))
+        });
         assert!(
-            has_moim,
-            "MOIM should be in message before latest assistant message"
+            !any_moim,
+            "MOIM should be skipped when no non-tool assistant exists"
         );
     }
 }
