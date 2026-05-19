@@ -13,6 +13,7 @@ use crate::recipe::{Recipe, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::SessionType;
 use crate::sources::parse_frontmatter;
+use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
@@ -34,23 +35,20 @@ use tracing::{info, warn};
 
 pub static EXTENSION_NAME: &str = "summon";
 
+/// Max characters when rendering a subagent's description in a list shown
+/// to the model (system-prompt blurb, `load` discovery output, etc.).
+const SUBAGENT_DESCRIPTION_BUDGET: usize = 160;
+
+/// Max characters for a human-readable label of a running or completed
+/// task. Used for progress display and bookkeeping, not sent to the model.
+const TASK_LABEL_BUDGET: usize = 60;
+
 fn kind_plural(kind: SourceType) -> &'static str {
     match kind {
         SourceType::Subrecipe => "Subrecipes",
         SourceType::Recipe => "Recipes",
         SourceType::Agent => "Agents",
         _ => "Other",
-    }
-}
-
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.chars().count() <= max_len {
-        s.to_string()
-    } else if max_len <= 3 {
-        "...".to_string()
-    } else {
-        let truncated: String = s.chars().take(max_len - 3).collect();
-        format!("{}...", truncated)
     }
 }
 
@@ -332,7 +330,7 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
         out.push_str(&format!(
             "\n• {} — {}",
             s.name,
-            truncate(&s.description, 200)
+            safe_truncate(&s.description, SUBAGENT_DESCRIPTION_BUDGET)
         ));
     }
 
@@ -926,7 +924,7 @@ impl SummonClient {
                     output.push_str(&format!(
                         "• {} - {}\n",
                         source.name,
-                        truncate(&source.description, 60)
+                        safe_truncate(&source.description, SUBAGENT_DESCRIPTION_BUDGET)
                     ));
                 }
             }
@@ -1464,16 +1462,11 @@ impl SummonClient {
     }
 
     fn get_task_description(params: &DelegateParams) -> String {
-        if let Some(source) = &params.source {
-            if let Some(instructions) = &params.instructions {
-                format!("{}: {}", source, truncate(instructions, 30))
-            } else {
-                source.clone()
-            }
-        } else if let Some(instructions) = &params.instructions {
-            truncate(instructions, 40)
-        } else {
-            "Unknown task".to_string()
+        match (&params.source, &params.instructions) {
+            (Some(source), Some(instructions)) => format!("{}: {}", source, instructions),
+            (Some(source), None) => source.clone(),
+            (None, Some(instructions)) => instructions.clone(),
+            (None, None) => "Unknown task".to_string(),
         }
     }
 
@@ -1508,7 +1501,7 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
 
-        let description = truncate(&Self::get_task_description(&params), 40);
+        let description = safe_truncate(&Self::get_task_description(&params), TASK_LABEL_BUDGET);
 
         // Subagents must use Auto until get_agent_messages forwards
         // ActionRequired messages to the parent. Until then, any mode
@@ -1998,10 +1991,10 @@ You review code."#;
             SummonClient::get_task_description(&make_params(Some("r"), Some("task"))),
             "r: task"
         );
-
-        let long = "x".repeat(100);
-        let desc = SummonClient::get_task_description(&make_params(None, Some(&long)));
-        assert!(desc.len() <= 43 && desc.ends_with("..."));
+        assert_eq!(
+            SummonClient::get_task_description(&make_params(None, None)),
+            "Unknown task"
+        );
     }
 
     #[test]
