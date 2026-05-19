@@ -10,11 +10,13 @@
 //! and add a serde-compatible default for any new field so older payloads
 //! still deserialize.
 
+pub mod analytics;
 pub mod prefs;
 pub mod repos;
 
+pub use analytics::{AnalyticsEvent, CopilotAnalytics};
 pub use prefs::{
-    CopilotPrefs, ReviewModelChoice, ReviewOutputStyle, RoutingPrefs, TriggerPermission,
-    TriggerPreference, SCHEMA_VERSION,
+    CopilotPrefs, ReviewModelChoice, ReviewOutputStyle, ReviewSeverity, RoutingPrefs,
+    TriggerPermission, TriggerPreference, SCHEMA_VERSION,
 };
 pub use repos::{CopilotRepo, CopilotReposResponse, RepoVisibility};

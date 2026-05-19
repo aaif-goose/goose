@@ -5,6 +5,7 @@ import {
   completeCheckRun,
   createCheckRun,
   generateAppJwt,
+  getBranchHeadSha,
   getCommenterPermission,
   getInstallationToken,
   getPullRequestHead,
@@ -12,6 +13,12 @@ import {
   postCommentReaction,
   postIssueComment,
 } from './github';
+import {
+  type AnalyticsEvent,
+  deleteAnalytics,
+  loadAnalytics,
+  recordEvent,
+} from './analytics';
 import { exchangeCodeAndResolve } from './oauth';
 import {
   deleteRoutingPrefs,
@@ -198,12 +205,76 @@ export async function handleListRepos(request: Request, env: Env): Promise<Respo
   }
 }
 
+/** GET analytics rollups for the calling install. Auth same as routing-prefs. */
+export async function handleAnalyticsGet(request: Request, env: Env): Promise<Response> {
+  const auth = authenticateInstall(request);
+  if (!auth.ok) return jsonError(auth.status, auth.message);
+  const install = await loadInstall(env, auth.installId);
+  if (!install || install.tunnelSecret !== auth.secret) {
+    return jsonError(401, 'install credentials rejected');
+  }
+  const data = await loadAnalytics(env, auth.installId);
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/** POST a single event; switchboard increments the rollup counters. */
+export async function handleAnalyticsEvent(request: Request, env: Env): Promise<Response> {
+  const auth = authenticateInstall(request);
+  if (!auth.ok) return jsonError(auth.status, auth.message);
+  const install = await loadInstall(env, auth.installId);
+  if (!install || install.tunnelSecret !== auth.secret) {
+    return jsonError(401, 'install credentials rejected');
+  }
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError(400, 'invalid JSON body');
+  }
+  const event = parseAnalyticsEvent(body);
+  if (!event) return jsonError(400, 'invalid analytics event');
+  await recordEvent(env, auth.installId, event);
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+type AuthOk = { ok: true; installId: number; secret: string };
+type AuthErr = { ok: false; status: number; message: string };
+
+function authenticateInstall(request: Request): AuthOk | AuthErr {
+  const idRaw = request.headers.get('x-install-id');
+  const secret = request.headers.get('x-install-secret');
+  if (!idRaw || !secret) {
+    return { ok: false, status: 401, message: 'missing install credentials' };
+  }
+  const installId = Number.parseInt(idRaw, 10);
+  if (!Number.isFinite(installId)) {
+    return { ok: false, status: 400, message: 'invalid install id' };
+  }
+  return { ok: true, installId, secret };
+}
+
+function parseAnalyticsEvent(body: unknown): AnalyticsEvent | null {
+  if (!body || typeof body !== 'object') return null;
+  const kind = (body as { kind?: string }).kind;
+  if (kind === 'pr_reviewed' || kind === 'issue_handled' || kind === 'commit_pushed') {
+    return { kind };
+  }
+  return null;
+}
+
 // `created`/`added`/suspend/unsuspend are no-ops here — Desktop owns
 // /register once the user enables Copilot. We only need to clean up KV on uninstall.
 export async function handleInstallation(payload: InstallationEvent, env: Env): Promise<void> {
   if (payload.action === 'deleted') {
     await deleteInstall(env, payload.installation.id);
     await deleteRoutingPrefs(env, payload.installation.id);
+    await deleteAnalytics(env, payload.installation.id);
   }
 }
 
@@ -211,7 +282,6 @@ export async function handlePullRequest(payload: PullRequestEvent, env: Env): Pr
   if (!['opened', 'synchronize', 'reopened'].includes(payload.action)) return;
   if (payload.pull_request.draft) return;
 
-  // Routing prefs gate.
   const routing = await loadRoutingPrefs(env, payload.installation.id);
   if (!routing.auto_review_on_pr_open) return;
   if (routing.trigger_preference === 'manual-only') return;
@@ -229,19 +299,28 @@ export async function handlePullRequest(payload: PullRequestEvent, env: Env): Pr
 
 export async function handleIssueComment(payload: IssueCommentEvent, env: Env): Promise<void> {
   if (payload.action !== 'created') return;
-  if (!payload.issue.pull_request) return;
   // Bot accounts trigger nothing — prevents goose-copilot[bot] from replying
   // to its own comments and other bots (Dependabot, CodeRabbit, etc).
   if (payload.comment.user.type === 'Bot') return;
   if (!MENTION_RE.test(payload.comment.body)) return;
+
+  const routing = await loadRoutingPrefs(env, payload.installation.id);
+  const isPr = Boolean(payload.issue.pull_request);
+  if (!isPr && !routing.allow_act_on_issues) return;
 
   const jwt = await generateAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const token = await getInstallationToken(payload.installation.id, jwt);
 
   // Trigger-permission gate. We check BEFORE reacting, so an unauthorized
   // commenter sees nothing (silent drop, no :eyes:).
-  const routing = await loadRoutingPrefs(env, payload.installation.id);
-  if (!(await commenterMayTrigger(routing.trigger_permission, payload, token))) {
+  if (
+    !(await commenterMayTrigger(
+      routing.trigger_permission,
+      routing.specific_users_allowlist,
+      payload,
+      token
+    ))
+  ) {
     console.log(
       `[comment] ${payload.repository.full_name} #${payload.issue.number}: ` +
         `commenter ${payload.comment.user.login} blocked by trigger_permission=${routing.trigger_permission}`
@@ -249,7 +328,24 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
     return;
   }
 
-  const pr = await getPullRequestHead(payload.repository.full_name, payload.issue.number, token);
+  let headSha: string;
+  let headRef: string;
+  let contextUrl: string;
+  if (isPr) {
+    const pr = await getPullRequestHead(
+      payload.repository.full_name,
+      payload.issue.number,
+      token
+    );
+    headSha = pr.sha;
+    headRef = pr.ref;
+    contextUrl = pr.htmlUrl;
+  } else {
+    const branch = payload.repository.default_branch;
+    headSha = await getBranchHeadSha(payload.repository.full_name, branch, token);
+    headRef = '';
+    contextUrl = payload.issue.html_url;
+  }
 
   // Ack the mention right away so the user knows the webhook fired. goosed
   // will react with :+1: / :confused: once it's done.
@@ -264,12 +360,12 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
     )
   );
 
-  if (REVIEW_TRIGGER_RE.test(payload.comment.body)) {
+  if (isPr && REVIEW_TRIGGER_RE.test(payload.comment.body)) {
     await triggerReview({
       fullName: payload.repository.full_name,
       prNumber: payload.issue.number,
-      headSha: pr.sha,
-      prUrl: pr.htmlUrl,
+      headSha,
+      prUrl: contextUrl,
       installationId: payload.installation.id,
       env,
       token,
@@ -281,12 +377,13 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
   await triggerComment({
     fullName: payload.repository.full_name,
     prNumber: payload.issue.number,
-    headSha: pr.sha,
-    headRef: pr.ref,
-    prUrl: pr.htmlUrl,
+    headSha,
+    headRef,
+    prUrl: contextUrl,
     commentBody: payload.comment.body,
     commenter: payload.comment.user.login,
     commentId: payload.comment.id,
+    isPr,
     installationId: payload.installation.id,
     env,
     token,
@@ -302,6 +399,7 @@ async function triggerComment(opts: {
   commentBody: string;
   commenter: string;
   commentId: number;
+  isPr: boolean;
   installationId: number;
   env: Env;
   token: string;
@@ -334,6 +432,7 @@ async function triggerComment(opts: {
       commentBody,
       commenter,
       commentId: opts.commentId,
+      isPr: opts.isPr,
     });
     if (!result.ok) {
       throw new Error(`tunnel responded ${result.status}: ${result.body.slice(0, 200)}`);
@@ -384,7 +483,13 @@ async function triggerReview(opts: {
       summary:
         'No local goosed is registered for this installation. Open Goose Desktop → Copilot tab → enable code review to start receiving reviews.',
       token: opts.token,
-    }).catch(() => {});
+    }).catch((err) =>
+      console.error(
+        `[trigger] ${fullName} #${prNumber}: failed to post no-install neutral check: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
     return;
   }
 
@@ -474,15 +579,15 @@ async function postNeutralCheck(opts: {
  *  Errors fail closed except for `'anyone'`, where we don't need a check at all. */
 async function commenterMayTrigger(
   permission: TriggerPermission,
+  allowlist: string[],
   payload: IssueCommentEvent,
   token: string
 ): Promise<boolean> {
   if (permission === 'anyone') return true;
   if (permission === 'specific-users') {
-    // Allowlist storage not yet wired; treat as a deny-all to avoid surprises.
-    return false;
+    const commenter = payload.comment.user.login.toLowerCase();
+    return allowlist.some((u) => u.trim().toLowerCase() === commenter);
   }
-  // write-access: collaborator-permission lookup.
   const level = await getCommenterPermission(
     payload.repository.full_name,
     payload.comment.user.login,

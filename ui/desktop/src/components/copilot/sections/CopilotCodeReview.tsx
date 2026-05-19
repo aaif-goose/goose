@@ -25,6 +25,7 @@ import type {
   CopilotRepo,
   ReviewModelChoice,
   ReviewOutputStyle,
+  ReviewSeverity,
   TriggerPermission,
   TriggerPreference,
 } from '../../../api/types.gen';
@@ -71,14 +72,14 @@ const i18n = defineMessages({
     id: 'copilotCodeReview.outputStyleHelper',
     defaultMessage: 'How findings are posted back to the pull request.',
   },
-  exhaustiveLabel: {
-    id: 'copilotCodeReview.exhaustiveLabel',
-    defaultMessage: 'Exhaustive code review',
+  severityLabel: {
+    id: 'copilotCodeReview.severityLabel',
+    defaultMessage: 'Minimum severity to surface',
   },
-  exhaustiveHelper: {
-    id: 'copilotCodeReview.exhaustiveHelper',
+  severityHelper: {
+    id: 'copilotCodeReview.severityHelper',
     defaultMessage:
-      'Keep looking for additional findings until the model stops finding new issues. Uses more tokens.',
+      'Findings below this rank are dropped from the review. Higher = quieter.',
   },
   reviewModelLabel: {
     id: 'copilotCodeReview.reviewModelLabel',
@@ -126,12 +127,25 @@ const i18n = defineMessages({
   },
   allowNewPrsLabel: {
     id: 'copilotCodeReview.allowNewPrsLabel',
-    defaultMessage: 'Allow opening new pull requests',
+    defaultMessage: 'Open new pull requests for issue fixes',
   },
   allowNewPrsHelper: {
     id: 'copilotCodeReview.allowNewPrsHelper',
     defaultMessage:
-      'When a fix needs a fresh branch, let the bot open a new pull request instead of pushing to an existing one.',
+      'When someone @-mentions the bot on a plain issue and asks for a fix, push the changes on a fresh branch and open a PR linked back to the issue.',
+  },
+  allowlistLabel: {
+    id: 'copilotCodeReview.allowlistLabel',
+    defaultMessage: 'Allowlist',
+  },
+  allowlistHelper: {
+    id: 'copilotCodeReview.allowlistHelper',
+    defaultMessage:
+      'One GitHub username per line. Only listed users can mention the bot.',
+  },
+  allowlistPlaceholder: {
+    id: 'copilotCodeReview.allowlistPlaceholder',
+    defaultMessage: 'octocat\nabhi-jay',
   },
   repoPrefsTitle: {
     id: 'copilotCodeReview.repoPrefsTitle',
@@ -227,6 +241,32 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
         value: 'manual-only',
         label: 'Manual only',
         description: 'Only review when someone mentions @goose-copilot review.',
+      },
+    ],
+    []
+  );
+
+  const severityOptions = useMemo<RichOption<ReviewSeverity>[]>(
+    () => [
+      {
+        value: 'low',
+        label: 'Low — surface everything',
+        description: 'Every finding the model produces. Highest signal *and* noise.',
+      },
+      {
+        value: 'medium',
+        label: 'Medium (default)',
+        description: 'Drop low-severity nits; show medium and above.',
+      },
+      {
+        value: 'high',
+        label: 'High — only important issues',
+        description: 'Only high- and critical-severity findings.',
+      },
+      {
+        value: 'critical',
+        label: 'Critical — blocking issues only',
+        description: 'Only the most severe issues that should block the PR.',
       },
     ],
     []
@@ -353,14 +393,14 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
           />
 
           <PreferenceRow
-            label={intl.formatMessage(i18n.exhaustiveLabel)}
-            helper={intl.formatMessage(i18n.exhaustiveHelper)}
+            label={intl.formatMessage(i18n.severityLabel)}
+            helper={intl.formatMessage(i18n.severityHelper)}
             control={
-              <Switch
+              <RichSelect
                 disabled={disabled}
-                checked={prefs?.exhaustive_review ?? false}
-                onCheckedChange={(checked) => onUpdate({ exhaustive_review: checked })}
-                variant="mono"
+                options={severityOptions}
+                value={prefs?.review_severity ?? 'medium'}
+                onChange={(v) => onUpdate({ review_severity: v })}
               />
             }
           />
@@ -411,6 +451,31 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
             }
           />
 
+          {prefs?.trigger_permission === 'specific-users' && (
+            <div className="pl-4 border-l-2 border-border space-y-2">
+              <h3 className="text-text-primary text-xs">
+                {intl.formatMessage(i18n.allowlistLabel)}
+              </h3>
+              <p className="text-xs text-text-secondary max-w-md">
+                {intl.formatMessage(i18n.allowlistHelper)}
+              </p>
+              <textarea
+                value={(prefs?.specific_users_allowlist ?? []).join('\n')}
+                onChange={(e) =>
+                  onUpdate({
+                    specific_users_allowlist: e.target.value
+                      .split('\n')
+                      .map((s) => s.trim())
+                      .filter((s) => s.length > 0),
+                  })
+                }
+                placeholder={intl.formatMessage(i18n.allowlistPlaceholder)}
+                rows={4}
+                className="flex w-full rounded-md border focus:border-border-secondary hover:border-border-secondary bg-background-primary px-3 py-2 text-xs font-mono transition-colors placeholder:text-text-secondary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[80px]"
+              />
+            </div>
+          )}
+
           <PreferenceRow
             label={intl.formatMessage(i18n.allowCommitLabel)}
             helper={intl.formatMessage(i18n.allowCommitHelper)}
@@ -440,9 +505,10 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
           <PreferenceRow
             label={intl.formatMessage(i18n.allowNewPrsLabel)}
             helper={intl.formatMessage(i18n.allowNewPrsHelper)}
+            disabled={!prefs?.allow_act_on_issues}
             control={
               <Switch
-                disabled={disabled}
+                disabled={disabled || !prefs?.allow_act_on_issues}
                 checked={prefs?.allow_open_new_prs ?? false}
                 onCheckedChange={(checked) => onUpdate({ allow_open_new_prs: checked })}
                 variant="mono"

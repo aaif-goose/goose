@@ -205,6 +205,22 @@ export async function getCommenterPermission(
   return null;
 }
 
+export async function getBranchHeadSha(
+  fullName: string,
+  branch: string,
+  token: string
+): Promise<string> {
+  const res = await fetch(
+    `${API}/repos/${fullName}/git/refs/heads/${encodeURIComponent(branch)}`,
+    { headers: ghHeaders(token) }
+  );
+  if (!res.ok) throw await ghError(res, `Failed to resolve branch ${branch}`);
+  const data = (await res.json()) as { object?: { sha?: string } };
+  const sha = data.object?.sha;
+  if (!sha) throw new Error(`branch ${branch} resolved with no SHA`);
+  return sha;
+}
+
 export async function getPullRequestHead(
   fullName: string,
   prNumber: number,

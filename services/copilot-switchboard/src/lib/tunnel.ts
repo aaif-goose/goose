@@ -25,6 +25,8 @@ export interface TunnelCommentParams {
   commentBody: string;
   commenter: string;
   commentId: number;
+  /** `false` when this mention came from a plain issue (no PR head ref). */
+  isPr: boolean;
 }
 
 export interface TunnelRunResult {
@@ -88,5 +90,6 @@ export async function runCommentViaTunnel(
     comment_body: params.commentBody,
     commenter: params.commenter,
     comment_id: params.commentId,
+    is_pr: params.isPr,
   });
 }

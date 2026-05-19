@@ -1,92 +1,84 @@
-import { BarChart3, Info } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Card, CardContent } from '../../ui/card';
+import { Button } from '../../ui/button';
+import { useCopilotAnalytics } from '../useCopilotAnalytics';
 import { defineMessages, useIntl } from '../../../i18n';
 
+interface Props {
+  enabled: boolean;
+}
+
 const i18n = defineMessages({
-  comingSoonTitle: {
-    id: 'copilotAnalytics.comingSoonTitle',
-    defaultMessage: 'Analytics is wiring up',
-  },
-  comingSoonBody: {
-    id: 'copilotAnalytics.comingSoonBody',
-    defaultMessage:
-      'Goose Copilot does not record review metrics yet. These cards show the shape of what is coming — reviews delivered, issues found by severity, and reaction sentiment from PR authors.',
-  },
-  issuesRaised: {
-    id: 'copilotAnalytics.issuesRaised',
-    defaultMessage: 'Issues raised',
-  },
   prsReviewed: {
     id: 'copilotAnalytics.prsReviewed',
     defaultMessage: 'PRs reviewed',
+  },
+  issuesHandled: {
+    id: 'copilotAnalytics.issuesHandled',
+    defaultMessage: 'Issues handled',
   },
   commitsPushed: {
     id: 'copilotAnalytics.commitsPushed',
     defaultMessage: 'Commits pushed',
   },
-  issuesBySeverity: {
-    id: 'copilotAnalytics.issuesBySeverity',
-    defaultMessage: 'Issues found by severity',
+  loadFailed: {
+    id: 'copilotAnalytics.loadFailed',
+    defaultMessage: 'Could not load analytics',
   },
-  reactionSentiment: {
-    id: 'copilotAnalytics.reactionSentiment',
-    defaultMessage: 'Reviewer reactions',
-  },
-  reactionSentimentDescription: {
-    id: 'copilotAnalytics.reactionSentimentDescription',
-    defaultMessage: '👍 / 👎 reactions left on Goose Copilot review comments.',
-  },
-  noData: {
-    id: 'copilotAnalytics.noData',
-    defaultMessage: 'No data for this period',
+  retry: {
+    id: 'copilotAnalytics.retry',
+    defaultMessage: 'Retry',
   },
 });
 
-export default function CopilotAnalytics() {
+export default function CopilotAnalyticsSection({ enabled }: Props) {
   const intl = useIntl();
+  const { state, refresh } = useCopilotAnalytics(enabled);
 
+  if (state.kind === 'idle' || state.kind === 'loading') {
+    return (
+      <div className="space-y-4 pr-4 pb-8 mt-1">
+        <div className="h-32 rounded-md border border-dashed border-border flex items-center justify-center text-xs text-text-secondary gap-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading…
+        </div>
+      </div>
+    );
+  }
+
+  if (state.kind === 'error') {
+    return (
+      <div className="space-y-4 pr-4 pb-8 mt-1">
+        <div className="h-32 rounded-md border border-dashed border-border flex flex-col items-center justify-center text-xs text-text-secondary gap-2 px-6 text-center">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+            {intl.formatMessage(i18n.loadFailed)}: {state.error}
+          </span>
+          <Button size="sm" variant="outline" onClick={refresh} className="h-7 px-3 text-xs">
+            <RefreshCw className="h-3 w-3 mr-1.5" />
+            {intl.formatMessage(i18n.retry)}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const data = state.data;
   return (
     <div className="space-y-4 pr-4 pb-8 mt-1">
-      <Card className="rounded-lg border-dashed">
-        <CardContent className="pt-4 px-4 flex items-start gap-3">
-          <Info className="h-5 w-5 text-text-secondary mt-0.5 shrink-0" />
-          <div>
-            <p className="text-text-primary text-xs font-medium">
-              {intl.formatMessage(i18n.comingSoonTitle)}
-            </p>
-            <p className="text-xs text-text-secondary max-w-md mt-[2px]">
-              {intl.formatMessage(i18n.comingSoonBody)}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatCard label={intl.formatMessage(i18n.issuesRaised)} value="—" />
-        <StatCard label={intl.formatMessage(i18n.prsReviewed)} value="—" />
-        <StatCard label={intl.formatMessage(i18n.commitsPushed)} value="—" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="rounded-lg">
-          <CardHeader className="pb-0">
-            <CardTitle className="mb-1">{intl.formatMessage(i18n.issuesBySeverity)}</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4 px-4">
-            <EmptyChart label={intl.formatMessage(i18n.noData)} />
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg">
-          <CardHeader className="pb-0">
-            <CardTitle className="mb-1">{intl.formatMessage(i18n.reactionSentiment)}</CardTitle>
-            <CardDescription>
-              {intl.formatMessage(i18n.reactionSentimentDescription)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4 px-4">
-            <EmptyChart label={intl.formatMessage(i18n.noData)} />
-          </CardContent>
-        </Card>
+        <StatCard
+          label={intl.formatMessage(i18n.prsReviewed)}
+          value={String(data.prs_reviewed ?? 0)}
+        />
+        <StatCard
+          label={intl.formatMessage(i18n.issuesHandled)}
+          value={String(data.issues_handled ?? 0)}
+        />
+        <StatCard
+          label={intl.formatMessage(i18n.commitsPushed)}
+          value={String(data.commits_pushed ?? 0)}
+        />
       </div>
     </div>
   );
@@ -100,14 +92,5 @@ function StatCard({ label, value }: { label: string; value: string }) {
         <p className="text-3xl font-light mt-1">{value}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="h-40 rounded-md border border-dashed border-border flex items-center justify-center text-xs text-text-secondary">
-      <BarChart3 className="h-3.5 w-3.5 mr-2" />
-      {label}
-    </div>
   );
 }

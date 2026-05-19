@@ -201,7 +201,7 @@ export default function CopilotView() {
                 value="analytics"
                 className="mt-0 focus-visible:outline-none focus-visible:ring-0"
               >
-                <CopilotAnalytics />
+                <CopilotAnalytics enabled={prefs !== null} />
               </TabsContent>
 
               <TabsContent

@@ -21,7 +21,8 @@ use axum::{
 use goose::config::signup_copilot::CopilotInstallFlow;
 use goose::config::Config;
 use goose::copilot::{
-    CopilotPrefs, CopilotReposResponse, ReviewModelChoice, ReviewOutputStyle, RoutingPrefs,
+    AnalyticsEvent, CopilotAnalytics, CopilotPrefs, CopilotReposResponse, ReviewModelChoice,
+    ReviewOutputStyle, RoutingPrefs,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -33,14 +34,10 @@ use crate::state::AppState;
 
 const SWITCHBOARD_URL: &str = "https://goose-copilot-switchboard.example.workers.dev";
 const SWITCHBOARD_URL_ENV: &str = "GOOSE_COPILOT_SWITCHBOARD_URL";
-const USER_AGENT: &str = "goose-copilot/0.1";
+const USER_AGENT: &str = concat!("goose-copilot/", env!("CARGO_PKG_VERSION"));
 
-/// goose config key holding the Copilot pref blob (JSON).
-const PREFS_CONFIG_KEY: &str = "copilot.prefs";
-/// goose config key holding the installation_id assigned at register-time.
-/// Stored on first successful `setup` so subsequent `prefs` writes can be
-/// forwarded to the switchboard's KV.
-const INSTALLATION_ID_CONFIG_KEY: &str = "copilot.installation_id";
+const PREFS_CONFIG_KEY: &str = "copilot_prefs";
+const INSTALLATION_ID_CONFIG_KEY: &str = "copilot_installation_id";
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CopilotSetupResponse {
@@ -112,9 +109,6 @@ async fn setup(
         .await
         .map_err(|e| ErrorResponse::internal(format!("parse register response: {e}")))?;
 
-    // Persist install_id so subsequent /copilot/prefs writes know where to
-    // forward the routing subset. Non-fatal if it fails — Desktop still gets
-    // the id in the response.
     if let Err(e) = Config::global().set_param(
         INSTALLATION_ID_CONFIG_KEY,
         serde_json::json!(register.installation_id),
@@ -194,18 +188,20 @@ pub struct CopilotReviewResponse {
 )]
 #[axum::debug_handler]
 async fn review(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CopilotReviewRequest>,
 ) -> Result<Json<CopilotReviewResponse>, ErrorResponse> {
     let pr_label = format!("{} #{}", req.repo, req.pr_number);
     tokio::spawn(async move {
         let result = run_review(req.clone()).await;
-        if let Err(e) = &result {
-            tracing::error!("[copilot] review {} failed: {:#}", pr_label, e);
+        match &result {
+            Ok(_) => report_analytics_event(&state, AnalyticsEvent::PrReviewed).await,
+            Err(e) => tracing::error!("[copilot] review {} failed: {:#}", pr_label, e),
         }
         if let Some(id) = req.comment_id {
             let reaction = if result.is_ok() { "+1" } else { "confused" };
-            if let Err(e) = post_comment_reaction(&req.repo, id, reaction, &req.github_token).await
+            if let Err(e) =
+                replace_comment_reaction(&req.repo, id, reaction, &req.github_token).await
             {
                 tracing::warn!("[copilot] review reaction failed: {:#}", e);
             }
@@ -233,24 +229,20 @@ struct Finding {
     suggestion: Option<String>,
 }
 
-async fn run_review(req: CopilotReviewRequest) -> Result<()> {
+async fn run_review(req: CopilotReviewRequest) -> Result<Vec<Finding>> {
     let prefs = load_prefs();
-    let pr = fetch_pr_metadata(&req).await?;
+    let base_sha = fetch_pr_base_sha(&req).await?;
     let workdir = tempfile::tempdir().context("create temp workdir")?;
     git_clone_and_checkout(&req, workdir.path()).await?;
-    let findings = run_goose_review(workdir.path(), &pr.base_sha, &req.head_sha, &prefs).await?;
+    let findings = run_goose_review(workdir.path(), &base_sha, &req.head_sha, &prefs).await?;
     post_review(&req, &findings, &prefs).await?;
     if let Some(crid) = req.check_run_id {
         complete_check_run(&req, crid, &findings).await?;
     }
-    Ok(())
+    Ok(findings)
 }
 
-struct PrMetadata {
-    base_sha: String,
-}
-
-async fn fetch_pr_metadata(req: &CopilotReviewRequest) -> Result<PrMetadata> {
+async fn fetch_pr_base_sha(req: &CopilotReviewRequest) -> Result<String> {
     #[derive(Deserialize)]
     struct PrResponse {
         base: BaseRef,
@@ -278,9 +270,7 @@ async fn fetch_pr_metadata(req: &CopilotReviewRequest) -> Result<PrMetadata> {
         );
     }
     let pr: PrResponse = res.json().await.context("parse PR metadata")?;
-    Ok(PrMetadata {
-        base_sha: pr.base.sha,
-    })
+    Ok(pr.base.sha)
 }
 
 async fn git_clone_and_checkout(req: &CopilotReviewRequest, dest: &Path) -> Result<()> {
@@ -313,20 +303,12 @@ async fn git_run(cwd: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-async fn run_goose_review(
-    workdir: &Path,
-    base: &str,
-    head: &str,
-    prefs: &CopilotPrefs,
-) -> Result<Vec<Finding>> {
-    let bin = locate_goose_binary()?;
-    let range = format!("{base}...{head}");
-
+fn build_goose_review_args(base: &str, head: &str, prefs: &CopilotPrefs) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "review".into(),
-        range,
+        format!("{base}...{head}"),
         "--severity".into(),
-        "medium".into(),
+        prefs.review_severity.as_cli_flag().into(),
         "--quiet".into(),
     ];
     if matches!(prefs.review_model_choice, ReviewModelChoice::Custom) {
@@ -339,6 +321,22 @@ async fn run_goose_review(
             args.push(model.to_string());
         }
     }
+    let instructions = prefs.custom_instructions.trim();
+    if !instructions.is_empty() {
+        args.push("--instructions".into());
+        args.push(instructions.to_string());
+    }
+    args
+}
+
+async fn run_goose_review(
+    workdir: &Path,
+    base: &str,
+    head: &str,
+    prefs: &CopilotPrefs,
+) -> Result<Vec<Finding>> {
+    let bin = locate_goose_binary()?;
+    let args = build_goose_review_args(base, head, prefs);
 
     let output = Command::new(&bin)
         .current_dir(workdir)
@@ -589,6 +587,15 @@ pub struct CopilotCommentRequest {
     /// (`+1` on success, `confused` on failure) when done.
     #[serde(default)]
     pub comment_id: Option<u64>,
+    /// `false` when the mention came from a plain issue (no PR head ref).
+    /// Defaults to `true` so older switchboard payloads keep PR-only
+    /// semantics until they redeploy.
+    #[serde(default = "default_true")]
+    pub is_pr: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[utoipa::path(
@@ -603,18 +610,27 @@ pub struct CopilotCommentRequest {
 )]
 #[axum::debug_handler]
 async fn comment(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CopilotCommentRequest>,
 ) -> Result<Json<CopilotReviewResponse>, ErrorResponse> {
     let pr_label = format!("{} #{}", req.repo, req.pr_number);
     tokio::spawn(async move {
         let result = run_comment_reply(req.clone()).await;
-        if let Err(e) = &result {
-            tracing::error!("[copilot] comment {} failed: {:#}", pr_label, e);
+        match &result {
+            Ok(commit_pushed) => {
+                if !req.is_pr {
+                    report_analytics_event(&state, AnalyticsEvent::IssueHandled).await;
+                }
+                if *commit_pushed {
+                    report_analytics_event(&state, AnalyticsEvent::CommitPushed).await;
+                }
+            }
+            Err(e) => tracing::error!("[copilot] comment {} failed: {:#}", pr_label, e),
         }
         if let Some(id) = req.comment_id {
             let reaction = if result.is_ok() { "+1" } else { "confused" };
-            if let Err(e) = post_comment_reaction(&req.repo, id, reaction, &req.github_token).await
+            if let Err(e) =
+                replace_comment_reaction(&req.repo, id, reaction, &req.github_token).await
             {
                 tracing::warn!("[copilot] comment reaction failed: {:#}", e);
             }
@@ -623,27 +639,71 @@ async fn comment(
     Ok(Json(CopilotReviewResponse { accepted: true }))
 }
 
-async fn run_comment_reply(req: CopilotCommentRequest) -> Result<()> {
+async fn run_comment_reply(req: CopilotCommentRequest) -> Result<bool> {
     let prefs = load_prefs();
     let workdir = tempfile::tempdir().context("create temp workdir")?;
     git_clone_and_checkout_for_comment(&req, workdir.path()).await?;
-    let prompt = build_comment_prompt(&req, &prefs);
+    let context = match fetch_comment_context(&req).await {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!(
+                "[copilot] could not fetch issue/PR context (continuing without): {e:#}"
+            );
+            None
+        }
+    };
+    let prompt = build_comment_prompt(&req, &prefs, context.as_ref());
     let reply = run_goose_for_reply(workdir.path(), &prompt).await?;
 
-    let pushed = if prefs.allow_commit_on_fix {
-        commit_and_push_if_changed(&req, workdir.path()).await?
-    } else {
-        None
-    };
-    let final_reply = match pushed {
-        Some(n) => format!(
-            "{reply}\n\n_Pushed {n} file change(s) to `{}`._",
-            req.head_ref
-        ),
-        None => reply,
+    let outcome = decide_push_path(&req, &prefs, workdir.path()).await?;
+    let final_reply = match &outcome {
+        PushOutcome::CommittedToPr { files, branch } => {
+            format!("{reply}\n\n_Pushed {files} file change(s) to `{branch}`._")
+        }
+        PushOutcome::OpenedPr { url, files } => {
+            format!("{reply}\n\n_Opened a new pull request with {files} file change(s): {url}_")
+        }
+        PushOutcome::NoChanges | PushOutcome::Disabled => reply,
     };
     post_pr_comment(&req, &final_reply).await?;
-    Ok(())
+    Ok(matches!(
+        outcome,
+        PushOutcome::CommittedToPr { .. } | PushOutcome::OpenedPr { .. }
+    ))
+}
+
+enum PushOutcome {
+    /// Agent didn't modify anything.
+    NoChanges,
+    /// Push paths are disabled for this combination of prefs / context.
+    Disabled,
+    /// Pushed to the existing PR branch.
+    CommittedToPr { files: usize, branch: String },
+    /// Created a fresh branch and opened a new PR (issue path).
+    OpenedPr { url: String, files: usize },
+}
+
+async fn decide_push_path(
+    req: &CopilotCommentRequest,
+    prefs: &CopilotPrefs,
+    workdir: &Path,
+) -> Result<PushOutcome> {
+    if req.is_pr {
+        if !prefs.allow_commit_on_fix {
+            return Ok(PushOutcome::Disabled);
+        }
+        return match commit_and_push_if_changed(req, workdir).await? {
+            Some(files) => Ok(PushOutcome::CommittedToPr {
+                files,
+                branch: req.head_ref.clone(),
+            }),
+            None => Ok(PushOutcome::NoChanges),
+        };
+    }
+    if !prefs.allow_open_new_prs {
+        return Ok(PushOutcome::Disabled);
+    }
+    create_branch_and_open_pr_if_changed(req, workdir).await
 }
 
 async fn git_clone_and_checkout_for_comment(
@@ -655,26 +715,248 @@ async fn git_clone_and_checkout_for_comment(
         req.github_token, req.repo
     );
     git_run(dest, &["clone", "--quiet", "--no-tags", &url, "."]).await?;
-    let refspec = format!("+refs/pull/{}/head:refs/copilot/pr", req.pr_number);
-    git_run(dest, &["fetch", "--quiet", "origin", &refspec]).await?;
-    git_run(dest, &["checkout", "--quiet", "refs/copilot/pr"]).await?;
+    // For PR mentions, check out the PR head. For plain-issue mentions there
+    // is no `refs/pull/<n>/head` to fetch — the default branch checked out by
+    // `clone` is what the agent should see.
+    if req.is_pr {
+        let refspec = format!("+refs/pull/{}/head:refs/copilot/pr", req.pr_number);
+        git_run(dest, &["fetch", "--quiet", "origin", &refspec]).await?;
+        git_run(dest, &["checkout", "--quiet", "refs/copilot/pr"]).await?;
+    }
     Ok(())
 }
 
-fn build_comment_prompt(req: &CopilotCommentRequest, prefs: &CopilotPrefs) -> String {
+/// The bits of issue / PR context the agent needs to answer mentions sensibly.
+/// Fetched via the GitHub API at job-start time using the per-install token.
+struct CommentContext {
+    title: String,
+    body: String,
+    state: String,
+    /// Base branch name — only set for PRs.
+    base_ref: Option<String>,
+    /// Earlier comments on the thread (general + inline review comments for
+    /// PRs). Sorted oldest-first, capped to the most recent N.
+    prior_comments: Vec<PriorComment>,
+}
+
+struct PriorComment {
+    author: String,
+    /// `Some(path:line)` when this came from an inline review comment.
+    location: Option<String>,
+    body: String,
+}
+
+/// Cap to keep verbose issue bodies from blowing up the prompt budget. Truncated
+/// bodies still give the agent enough framing to answer the user.
+const MAX_CONTEXT_BODY_BYTES: usize = 8 * 1024;
+/// Max prior comments to include. Newest are kept.
+const MAX_PRIOR_COMMENTS: usize = 20;
+/// Per-comment body cap so a single chatty reviewer can't blow the budget.
+const MAX_PRIOR_COMMENT_BYTES: usize = 1500;
+
+async fn fetch_comment_context(req: &CopilotCommentRequest) -> Result<CommentContext> {
+    #[derive(Deserialize)]
+    struct IssueResponse {
+        title: Option<String>,
+        body: Option<String>,
+        state: Option<String>,
+        #[serde(default)]
+        pull_request: Option<serde_json::Value>,
+    }
+    let url = format!(
+        "https://api.github.com/repos/{}/issues/{}",
+        req.repo, req.pr_number
+    );
+    let res = github_client()
+        .get(&url)
+        .header("Authorization", format!("token {}", req.github_token))
+        .send()
+        .await
+        .context("fetch issue context")?;
+    if !res.status().is_success() {
+        bail!(
+            "fetch issue context: {} — {}",
+            res.status(),
+            res.text().await.unwrap_or_default()
+        );
+    }
+    let issue: IssueResponse = res.json().await.context("parse issue context")?;
+
+    let mut body = issue.body.unwrap_or_default();
+    if body.len() > MAX_CONTEXT_BODY_BYTES {
+        body.truncate(MAX_CONTEXT_BODY_BYTES);
+        body.push_str("\n…[truncated]");
+    }
+
+    let is_pr = issue.pull_request.is_some();
+    // PR-specific: pull the base branch ref so the prompt can suggest the
+    // right `git diff base...HEAD` invocation to the agent.
+    let base_ref = if is_pr {
+        match fetch_pr_base_ref(req).await {
+            Ok(r) => Some(r),
+            Err(e) => {
+                tracing::warn!("[copilot] could not fetch PR base ref: {e:#}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let prior_comments = fetch_prior_comments(req, is_pr).await.unwrap_or_else(|e| {
+        tracing::warn!("[copilot] could not fetch prior comments: {e:#}");
+        Vec::new()
+    });
+
+    Ok(CommentContext {
+        title: issue.title.unwrap_or_default(),
+        body,
+        state: issue.state.unwrap_or_default(),
+        base_ref,
+        prior_comments,
+    })
+}
+
+async fn fetch_prior_comments(
+    req: &CopilotCommentRequest,
+    is_pr: bool,
+) -> Result<Vec<PriorComment>> {
+    #[derive(Deserialize)]
+    struct UserRef {
+        login: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct RawComment {
+        id: u64,
+        user: Option<UserRef>,
+        body: Option<String>,
+        #[serde(default)]
+        created_at: String,
+        #[serde(default)]
+        path: Option<String>,
+        #[serde(default)]
+        line: Option<u64>,
+    }
+    async fn get_page(url: &str, token: &str) -> Result<Vec<RawComment>> {
+        let res = github_client()
+            .get(url)
+            .header("Authorization", format!("token {token}"))
+            .send()
+            .await
+            .with_context(|| format!("GET {url}"))?;
+        if !res.status().is_success() {
+            bail!("GET {url} -> {}", res.status());
+        }
+        res.json().await.with_context(|| format!("parse {url}"))
+    }
+
+    let issue_url = format!(
+        "https://api.github.com/repos/{}/issues/{}/comments?per_page=100",
+        req.repo, req.pr_number
+    );
+    let mut raw = get_page(&issue_url, &req.github_token)
+        .await
+        .unwrap_or_default();
+    if is_pr {
+        let pr_url = format!(
+            "https://api.github.com/repos/{}/pulls/{}/comments?per_page=100",
+            req.repo, req.pr_number
+        );
+        match get_page(&pr_url, &req.github_token).await {
+            Ok(mut more) => raw.append(&mut more),
+            Err(e) => tracing::warn!("[copilot] PR review-comments fetch failed: {e:#}"),
+        }
+    }
+
+    // Drop the comment we're replying to so we don't echo it back as "prior".
+    if let Some(cur) = req.comment_id {
+        raw.retain(|c| c.id != cur);
+    }
+    raw.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    if raw.len() > MAX_PRIOR_COMMENTS {
+        let skip = raw.len() - MAX_PRIOR_COMMENTS;
+        raw.drain(0..skip);
+    }
+
+    Ok(raw
+        .into_iter()
+        .map(|c| {
+            let mut body = c.body.unwrap_or_default();
+            if body.len() > MAX_PRIOR_COMMENT_BYTES {
+                body.truncate(MAX_PRIOR_COMMENT_BYTES);
+                body.push_str("\n…[truncated]");
+            }
+            let location = match (c.path, c.line) {
+                (Some(p), Some(l)) => Some(format!("{p}:{l}")),
+                (Some(p), None) => Some(p),
+                _ => None,
+            };
+            PriorComment {
+                author: c.user.and_then(|u| u.login).unwrap_or_default(),
+                location,
+                body,
+            }
+        })
+        .collect())
+}
+
+async fn fetch_pr_base_ref(req: &CopilotCommentRequest) -> Result<String> {
+    #[derive(Deserialize)]
+    struct PrResponse {
+        base: BaseRef,
+    }
+    #[derive(Deserialize)]
+    struct BaseRef {
+        #[serde(rename = "ref")]
+        ref_name: String,
+    }
+    let url = format!(
+        "https://api.github.com/repos/{}/pulls/{}",
+        req.repo, req.pr_number
+    );
+    let res = github_client()
+        .get(&url)
+        .header("Authorization", format!("token {}", req.github_token))
+        .send()
+        .await
+        .context("fetch PR base")?;
+    if !res.status().is_success() {
+        bail!("fetch PR base: {}", res.status());
+    }
+    let pr: PrResponse = res.json().await.context("parse PR base")?;
+    Ok(pr.base.ref_name)
+}
+
+fn build_comment_prompt(
+    req: &CopilotCommentRequest,
+    prefs: &CopilotPrefs,
+    context: Option<&CommentContext>,
+) -> String {
     // Strip the @goose-copilot mention so the model sees the user's actual ask.
     let cleaned = req
         .comment_body
         .replace("@goose-copilot", "")
         .trim()
         .to_string();
-    let commit_clause = if prefs.allow_commit_on_fix {
+    let (context_kind, context_label) = if req.is_pr {
+        ("pull request", "Pull request")
+    } else {
+        ("issue", "Issue")
+    };
+    let checkout_clause = if req.is_pr {
+        "PR's head commit"
+    } else {
+        "repository's default branch"
+    };
+    let commit_clause = if req.is_pr && prefs.allow_commit_on_fix {
         "- Any files you change will be automatically committed and pushed to\n  \
          the PR branch after you finish — do NOT run `git commit` or `git push`\n  \
          yourself."
-    } else {
+    } else if req.is_pr {
         "- The repo owner has DISABLED commit push for this bot. Tell the commenter\n  \
          what you would change, but don't expect your edits to land on the PR."
+    } else {
+        "- This is an issue, not a PR — there is no branch to push to. Reply with\n  \
+         analysis, suggestions, or code samples in the comment itself."
     };
     let custom = if prefs.custom_instructions.trim().is_empty() {
         String::new()
@@ -684,34 +966,97 @@ fn build_comment_prompt(req: &CopilotCommentRequest, prefs: &CopilotPrefs) -> St
             prefs.custom_instructions.trim()
         )
     };
+    let context_block = match context {
+        Some(c) => {
+            let mut block = format!(
+                "\n{label} title: {title}\n{label} state: {state}\n",
+                label = context_label,
+                title = if c.title.is_empty() {
+                    "(no title)"
+                } else {
+                    c.title.as_str()
+                },
+                state = c.state,
+            );
+            if let Some(base) = &c.base_ref {
+                block.push_str(&format!(
+                    "PR base branch: {base} (you can run `git diff {base}...HEAD` to see what changed)\n"
+                ));
+            }
+            if !c.body.trim().is_empty() {
+                block.push_str(&format!(
+                    "\n{label} body:\n---\n{body}\n---\n",
+                    label = context_label,
+                    body = c.body.trim()
+                ));
+            }
+            if !c.prior_comments.is_empty() {
+                block.push_str(
+                    "\nPrior comments on this thread (oldest first). When the user\n\
+                     says \"address the suggested changes\" or \"fix what you flagged,\"\n\
+                     they are referring to these — look here, then apply the changes\n\
+                     in the working directory:\n",
+                );
+                for c in &c.prior_comments {
+                    let loc = c
+                        .location
+                        .as_deref()
+                        .map(|l| format!(" @ {l}"))
+                        .unwrap_or_default();
+                    block.push_str(&format!(
+                        "---\n@{author}{loc}:\n{body}\n",
+                        author = c.author,
+                        loc = loc,
+                        body = c.body
+                    ));
+                }
+                block.push_str("---\n");
+            }
+            block
+        }
+        None => String::new(),
+    };
     format!(
-        "You are responding to a comment on a GitHub pull request.\n\
+        "You are responding to a comment on a GitHub {kind}.\n\
 \n\
-Repository: {}\n\
-Pull request: #{} ({})\n\
-Commenter: @{}\n\
-\n\
+Repository: {repo}\n\
+{label}: #{num} ({url})\n\
+Commenter: @{user}\n\
+{context}\n\
 The repository is checked out at the current working directory at the\n\
-PR's head commit. You can read AND modify files, run shell commands,\n\
+{checkout}. You can read AND modify files, run shell commands,\n\
 and use any available tools.\n\
 \n\
 If the commenter asks you to fix, address, or apply changes:\n\
 - Make the edits directly with your file-editing tools.\n\
-{}\n\
+{commit}\n\
 - Then reply with a short summary of what you changed.\n\
 \n\
 If the commenter is asking a question or for analysis only:\n\
 - Don't modify any files.\n\
 - Reply with a concise answer, referencing files/lines when relevant.\n\
-{}\n\
+- If the commenter is asking whether something is resolved or addressed,\n  \
+   read the {kind} body above for what they want, then check the working\n  \
+   directory to see if the code addresses it.\n\
+{custom}\n\
 The commenter's message (with @goose-copilot stripped):\n\
 ---\n\
-{}\n\
+{body}\n\
 ---\n\
 \n\
 Reply with a single concise GitHub-flavored markdown response. Do NOT\n\
 include a preamble like \"Sure, here's my response.\" Just answer.\n",
-        req.repo, req.pr_number, req.pr_url, req.commenter, commit_clause, custom, cleaned,
+        kind = context_kind,
+        repo = req.repo,
+        label = context_label,
+        num = req.pr_number,
+        url = req.pr_url,
+        user = req.commenter,
+        context = context_block,
+        checkout = checkout_clause,
+        commit = commit_clause,
+        custom = custom,
+        body = cleaned,
     )
 }
 
@@ -802,6 +1147,66 @@ async fn post_comment_reaction(
     Ok(())
 }
 
+/// Swap the bot's reaction on a comment from whatever it currently is to
+/// `new_content`. Used to transition from `:eyes:` (added by switchboard on
+/// receipt) to `:+1:` / `:confused:` (added by goosed on completion) without
+/// leaving two emojis on the same comment.
+async fn replace_comment_reaction(
+    repo: &str,
+    comment_id: u64,
+    new_content: &str,
+    github_token: &str,
+) -> Result<()> {
+    #[derive(Deserialize)]
+    struct ReactionUser {
+        login: String,
+    }
+    #[derive(Deserialize)]
+    struct Reaction {
+        id: u64,
+        content: String,
+        user: Option<ReactionUser>,
+    }
+    let list_url =
+        format!("https://api.github.com/repos/{repo}/issues/comments/{comment_id}/reactions");
+    let existing: Vec<Reaction> = github_client()
+        .get(&list_url)
+        .header("Authorization", format!("token {github_token}"))
+        .send()
+        .await
+        .context("list comment reactions")?
+        .error_for_status()
+        .context("list comment reactions rejected")?
+        .json()
+        .await
+        .context("parse comment reactions")?;
+    for r in existing {
+        let is_ours = r
+            .user
+            .as_ref()
+            .map(|u| u.login.starts_with("goose-copilot"))
+            .unwrap_or(false);
+        if !is_ours || r.content == new_content {
+            continue;
+        }
+        let delete_url = format!(
+            "https://api.github.com/repos/{repo}/issues/comments/{comment_id}/reactions/{id}",
+            id = r.id
+        );
+        // Best-effort: a 404 here just means the reaction is already gone.
+        if let Err(e) = github_client()
+            .delete(&delete_url)
+            .header("Authorization", format!("token {github_token}"))
+            .send()
+            .await
+            .and_then(|res| res.error_for_status())
+        {
+            tracing::warn!("[copilot] failed to delete stale reaction {}: {e:#}", r.id);
+        }
+    }
+    post_comment_reaction(repo, comment_id, new_content, github_token).await
+}
+
 async fn post_pr_comment(req: &CopilotCommentRequest, reply: &str) -> Result<()> {
     let url = format!(
         "https://api.github.com/repos/{}/issues/{}/comments",
@@ -871,7 +1276,100 @@ async fn commit_and_push_if_changed(
     Ok(Some(changed))
 }
 
-// ---- Preferences ----------------------------------------------------------
+/// Issue path: create a fresh branch named `goose-copilot/issue-<n>`, commit
+/// the agent's edits, push, and open a PR via the GitHub API.
+async fn create_branch_and_open_pr_if_changed(
+    req: &CopilotCommentRequest,
+    workdir: &Path,
+) -> Result<PushOutcome> {
+    let status = Command::new("git")
+        .current_dir(workdir)
+        .args(["status", "--porcelain"])
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .context("git status")?;
+    if !status.status.success() {
+        bail!(
+            "git status failed: {}",
+            String::from_utf8_lossy(&status.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    let changed = stdout.lines().filter(|l| !l.trim().is_empty()).count();
+    if changed == 0 {
+        return Ok(PushOutcome::NoChanges);
+    }
+
+    git_run(
+        workdir,
+        &[
+            "config",
+            "user.email",
+            "goose-copilot[bot]@users.noreply.github.com",
+        ],
+    )
+    .await?;
+    git_run(workdir, &["config", "user.name", "goose-copilot[bot]"]).await?;
+
+    let head_out = Command::new("git")
+        .current_dir(workdir)
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .context("git symbolic-ref")?;
+    let default_branch = String::from_utf8_lossy(&head_out.stdout).trim().to_string();
+    if default_branch.is_empty() {
+        bail!("could not determine default branch from clone");
+    }
+
+    let branch = format!("goose-copilot/issue-{}", req.pr_number);
+    git_run(workdir, &["checkout", "--quiet", "-b", &branch]).await?;
+    git_run(workdir, &["add", "-A"]).await?;
+    let commit_msg = format!(
+        "Address issue #{} requested by @{}",
+        req.pr_number, req.commenter
+    );
+    git_run(workdir, &["commit", "--quiet", "-m", &commit_msg]).await?;
+    let refspec = format!("HEAD:refs/heads/{branch}");
+    git_run(workdir, &["push", "--quiet", "origin", &refspec]).await?;
+
+    let title = format!("Address issue #{}", req.pr_number);
+    let body = format!(
+        "Closes #{issue}.\n\nRequested by @{user} via Goose Copilot.",
+        issue = req.pr_number,
+        user = req.commenter,
+    );
+    let url = format!("https://api.github.com/repos/{}/pulls", req.repo);
+    let res = github_client()
+        .post(&url)
+        .header("Authorization", format!("token {}", req.github_token))
+        .json(&serde_json::json!({
+            "title": title,
+            "head": branch,
+            "base": default_branch,
+            "body": body,
+        }))
+        .send()
+        .await
+        .context("POST new PR")?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let detail = res.text().await.unwrap_or_default();
+        bail!("create PR failed ({status}): {detail}");
+    }
+    let pr: serde_json::Value = res.json().await.context("parse new-PR response")?;
+    let html_url = pr
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(PushOutcome::OpenedPr {
+        url: html_url,
+        files: changed,
+    })
+}
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CopilotPrefsResponse {
@@ -955,9 +1453,8 @@ fn save_prefs(prefs: &CopilotPrefs) -> Result<()> {
         .map_err(|e| anyhow!("persist copilot prefs: {e}"))
 }
 
-/// Forward the routing subset to the switchboard.
 async fn forward_routing_prefs(state: &AppState, routing: &RoutingPrefs) -> Result<()> {
-    let creds = install_credentials(state).await?;
+    let creds = resolve_install_credentials(state).await?;
     let res = Client::new()
         .put(format!("{}/copilot/routing-prefs", switchboard_url()))
         .header("X-Install-Id", creds.installation_id.to_string())
@@ -974,24 +1471,14 @@ async fn forward_routing_prefs(state: &AppState, routing: &RoutingPrefs) -> Resu
     Ok(())
 }
 
-/// Credentials goosed uses to talk to the switchboard on behalf of a single
-/// install. The installation_id is resolved via `whoami` when not cached.
 struct InstallCredentials {
     installation_id: u64,
     tunnel_secret: String,
 }
 
-/// Resolve goosed's own (installation_id, tunnel_secret) pair.
-///
-/// `tunnel_secret` must be present locally — it was minted during the
-/// initial tunnel setup. If it isn't there, the install has not been
-/// completed and we surface that as an error.
-///
-/// `installation_id` is read from the goose config cache. On a cache miss
-/// (a fresh install, an install made before this code shipped, or a wiped
-/// config) we ask the switchboard via `whoami` — authenticated by the
-/// tunnel credentials we already have — and persist the answer for next time.
-async fn install_credentials(state: &AppState) -> Result<InstallCredentials> {
+/// Resolve (installation_id, tunnel_secret). `installation_id` falls back to
+/// a switchboard `whoami` lookup on cache miss and is then cached locally.
+async fn resolve_install_credentials(state: &AppState) -> Result<InstallCredentials> {
     let tunnel_info = state.tunnel_manager.get_info().await;
     let tunnel_secret = if tunnel_info.secret.is_empty() {
         Config::global()
@@ -1010,7 +1497,7 @@ async fn install_credentials(state: &AppState) -> Result<InstallCredentials> {
         });
     }
 
-    let resolved = whoami(&agent_id, &tunnel_secret).await?;
+    let resolved = resolve_install_id(&agent_id, &tunnel_secret).await?;
     if let Err(e) =
         Config::global().set_param(INSTALLATION_ID_CONFIG_KEY, serde_json::json!(resolved))
     {
@@ -1022,7 +1509,7 @@ async fn install_credentials(state: &AppState) -> Result<InstallCredentials> {
     })
 }
 
-async fn whoami(agent_id: &str, tunnel_secret: &str) -> Result<u64> {
+async fn resolve_install_id(agent_id: &str, tunnel_secret: &str) -> Result<u64> {
     #[derive(Deserialize)]
     struct WhoamiResponse {
         installation_id: u64,
@@ -1045,8 +1532,6 @@ async fn whoami(agent_id: &str, tunnel_secret: &str) -> Result<u64> {
     Ok(body.installation_id)
 }
 
-// ---- Repository listing --------------------------------------------------
-
 #[utoipa::path(
     get,
     path = "/copilot/repos",
@@ -1061,7 +1546,7 @@ async fn whoami(agent_id: &str, tunnel_secret: &str) -> Result<u64> {
 async fn get_repos(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CopilotReposResponse>, ErrorResponse> {
-    let creds = install_credentials(&state)
+    let creds = resolve_install_credentials(&state)
         .await
         .map_err(|e| ErrorResponse {
             message: e.to_string(),
@@ -1089,6 +1574,70 @@ async fn get_repos(
     Ok(Json(body))
 }
 
+#[utoipa::path(
+    get,
+    path = "/copilot/analytics",
+    responses(
+        (status = 200, description = "Per-install analytics rollups", body = CopilotAnalytics),
+        (status = 412, description = "Setup not completed"),
+    ),
+    tag = "copilot"
+)]
+#[axum::debug_handler]
+async fn get_analytics(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<CopilotAnalytics>, ErrorResponse> {
+    let creds = resolve_install_credentials(&state)
+        .await
+        .map_err(|e| ErrorResponse {
+            message: e.to_string(),
+            status: axum::http::StatusCode::PRECONDITION_FAILED,
+        })?;
+    let res = Client::new()
+        .get(format!("{}/copilot/analytics", switchboard_url()))
+        .header("X-Install-Id", creds.installation_id.to_string())
+        .header("X-Install-Secret", &creds.tunnel_secret)
+        .send()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("switchboard unreachable: {e}")))?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let detail = res.text().await.unwrap_or_default();
+        return Err(ErrorResponse::internal(format!(
+            "switchboard returned {status}: {detail}"
+        )));
+    }
+    let body: CopilotAnalytics = res
+        .json()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("parse analytics response: {e}")))?;
+    Ok(Json(body))
+}
+
+/// Fire-and-forget analytics event. Errors are logged but never surface to
+/// the caller — analytics are best-effort, not load-bearing.
+async fn report_analytics_event(state: &AppState, event: AnalyticsEvent) {
+    let creds = match resolve_install_credentials(state).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("[copilot] skipping analytics event — no install credentials: {e}");
+            return;
+        }
+    };
+    let res = Client::new()
+        .post(format!("{}/copilot/analytics/event", switchboard_url()))
+        .header("X-Install-Id", creds.installation_id.to_string())
+        .header("X-Install-Secret", &creds.tunnel_secret)
+        .json(&event)
+        .send()
+        .await;
+    match res {
+        Ok(r) if r.status().is_success() => {}
+        Ok(r) => tracing::warn!("[copilot] analytics event rejected: {}", r.status()),
+        Err(e) => tracing::warn!("[copilot] analytics event failed: {e}"),
+    }
+}
+
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/copilot/review", post(review))
@@ -1096,6 +1645,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/copilot/comment", post(comment))
         .route("/copilot/prefs", get(get_prefs).put(put_prefs))
         .route("/copilot/repos", get(get_repos))
+        .route("/copilot/analytics", get(get_analytics))
         .with_state(state)
 }
 
@@ -1262,8 +1812,76 @@ mod tests {
         let payload = build_review_payload(&req, &findings, &ReviewOutputStyle::Inline);
         assert_eq!(payload["comments"].as_array().unwrap().len(), 1);
         let body = payload["body"].as_str().unwrap();
-        // Inline-only body is a one-liner — no per-finding bullet list.
         assert!(body.contains("1 inline finding(s)"), "got body: {body}");
         assert!(!body.contains("- **high**"));
+    }
+
+    #[test]
+    fn review_args_defaults() {
+        let args = build_goose_review_args("base", "head", &CopilotPrefs::default());
+        assert_eq!(
+            args,
+            vec!["review", "base...head", "--severity", "medium", "--quiet"]
+        );
+    }
+
+    #[test]
+    fn review_args_severity_reflects_pref() {
+        use goose::copilot::ReviewSeverity;
+        let prefs = CopilotPrefs {
+            review_severity: ReviewSeverity::High,
+            ..Default::default()
+        };
+        let args = build_goose_review_args("base", "head", &prefs);
+        let pos = args.iter().position(|a| a == "--severity").unwrap();
+        assert_eq!(args[pos + 1], "high");
+    }
+
+    #[test]
+    fn review_args_threads_custom_instructions() {
+        let prefs = CopilotPrefs {
+            custom_instructions: "Be strict on missing tests.".into(),
+            ..Default::default()
+        };
+        let args = build_goose_review_args("base", "head", &prefs);
+        let pos = args.iter().position(|a| a == "--instructions").unwrap();
+        assert_eq!(args[pos + 1], "Be strict on missing tests.");
+    }
+
+    #[test]
+    fn review_args_skip_instructions_when_blank() {
+        let prefs = CopilotPrefs {
+            custom_instructions: "   \n\t  ".into(),
+            ..Default::default()
+        };
+        let args = build_goose_review_args("base", "head", &prefs);
+        assert!(!args.iter().any(|a| a == "--instructions"));
+    }
+
+    #[test]
+    fn review_args_skip_model_flags_when_choice_is_default() {
+        let prefs = CopilotPrefs {
+            review_provider: Some("openai".into()),
+            review_model: Some("gpt-4o".into()),
+            ..Default::default()
+        };
+        let args = build_goose_review_args("base", "head", &prefs);
+        assert!(!args.iter().any(|a| a == "--provider"));
+        assert!(!args.iter().any(|a| a == "--model"));
+    }
+
+    #[test]
+    fn review_args_pass_provider_and_model_when_choice_is_custom() {
+        let prefs = CopilotPrefs {
+            review_model_choice: ReviewModelChoice::Custom,
+            review_provider: Some("anthropic".into()),
+            review_model: Some("claude-sonnet-4-6".into()),
+            ..Default::default()
+        };
+        let args = build_goose_review_args("base", "head", &prefs);
+        let p = args.iter().position(|a| a == "--provider").unwrap();
+        assert_eq!(args[p + 1], "anthropic");
+        let m = args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(args[m + 1], "claude-sonnet-4-6");
     }
 }

@@ -5,20 +5,15 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RepoVisibility {
     Public,
     Private,
     Internal,
     /// Falls through unknown values from GitHub instead of failing the call.
+    #[default]
     Unknown,
-}
-
-impl Default for RepoVisibility {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]

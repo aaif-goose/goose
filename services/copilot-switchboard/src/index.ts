@@ -10,6 +10,8 @@
 
 import { verifyWebhookSignature } from './lib/github';
 import {
+  handleAnalyticsEvent,
+  handleAnalyticsGet,
   handleInstallation,
   handleIssueComment,
   handleListRepos,
@@ -55,6 +57,14 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/copilot/repos') {
       return handleListRepos(request, env);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/copilot/analytics') {
+      return handleAnalyticsGet(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/copilot/analytics/event') {
+      return handleAnalyticsEvent(request, env);
     }
 
     // Public OAuth client ID for goosed to build the /login/oauth/authorize URL.

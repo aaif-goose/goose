@@ -79,7 +79,6 @@ export function SaveIndicator({
     );
   }
 
-  // failed
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-red-700 dark:text-red-400">
       <AlertCircle className="h-3 w-3" />

@@ -163,6 +163,25 @@ export type ContentBlock = ({
 
 export type Conversation = Array<Message>;
 
+/**
+ * Per-install rollups the switchboard stores in KV and Desktop renders in
+ * the Analytics tab. Counts only — no per-event timestamps, no PII.
+ */
+export type CopilotAnalytics = {
+    /**
+     * Commits goose-copilot has pushed (existing branch or fresh PR).
+     */
+    commits_pushed?: number;
+    /**
+     * GitHub issues goose-copilot has responded to.
+     */
+    issues_handled?: number;
+    /**
+     * Pull requests goose-copilot has reviewed.
+     */
+    prs_reviewed?: number;
+};
+
 export type CopilotCommentRequest = {
     comment_body: string;
     /**
@@ -177,6 +196,12 @@ export type CopilotCommentRequest = {
      * edits the agent makes back to the PR.
      */
     head_ref?: string;
+    /**
+     * `false` when the mention came from a plain issue (no PR head ref).
+     * Defaults to `true` so older switchboard payloads keep PR-only
+     * semantics until they redeploy.
+     */
+    is_pr?: boolean;
     pr_number: number;
     pr_url: string;
     repo: string;
@@ -190,10 +215,14 @@ export type CopilotCommentRequest = {
 export type CopilotPrefs = {
     allow_act_on_issues?: boolean;
     allow_commit_on_fix?: boolean;
+    /**
+     * When `true` and the mention came from an issue, goosed pushes the
+     * agent's edits to a fresh branch and opens a PR linked to the issue.
+     * Ignored on PR mentions (they push to the existing PR branch).
+     */
     allow_open_new_prs?: boolean;
     auto_review_on_pr_open?: boolean;
     custom_instructions?: string;
-    exhaustive_review?: boolean;
     /**
      * Model name used when `review_model_choice` is `Custom`.
      * Ignored when `Default`.
@@ -206,10 +235,16 @@ export type CopilotPrefs = {
      * `review_model_choice` is `Custom`. Ignored when `Default`.
      */
     review_provider?: string | null;
+    review_severity?: ReviewSeverity;
     /**
      * Set on the client; rejected if higher than the server understands.
      */
     schema_version?: number;
+    /**
+     * GitHub usernames allowed to trigger the bot when `trigger_permission`
+     * is `SpecificUsers`. Case-insensitive on lookup; stored as user typed.
+     */
+    specific_users_allowlist?: Array<string>;
     trigger_permission?: TriggerPermission;
     trigger_preference?: TriggerPreference;
 };
@@ -1356,6 +1391,8 @@ export type ReviewModelChoice = 'default' | 'custom';
 
 export type ReviewOutputStyle = 'inline' | 'summary' | 'both';
 
+export type ReviewSeverity = 'low' | 'medium' | 'high' | 'critical';
+
 export type Role = 'user' | 'assistant';
 
 /**
@@ -1366,6 +1403,7 @@ export type RoutingPrefs = {
     allow_act_on_issues: boolean;
     auto_review_on_pr_open: boolean;
     schema_version: number;
+    specific_users_allowlist?: Array<string>;
     trigger_permission: TriggerPermission;
     trigger_preference: TriggerPreference;
 };
@@ -3116,6 +3154,29 @@ export type ValidateConfigResponses = {
 };
 
 export type ValidateConfigResponse = ValidateConfigResponses[keyof ValidateConfigResponses];
+
+export type GetAnalyticsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/copilot/analytics';
+};
+
+export type GetAnalyticsErrors = {
+    /**
+     * Setup not completed
+     */
+    412: unknown;
+};
+
+export type GetAnalyticsResponses = {
+    /**
+     * Per-install analytics rollups
+     */
+    200: CopilotAnalytics;
+};
+
+export type GetAnalyticsResponse = GetAnalyticsResponses[keyof GetAnalyticsResponses];
 
 export type CommentData = {
     body: CopilotCommentRequest;

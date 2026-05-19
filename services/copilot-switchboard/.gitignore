@@ -1,0 +1,7 @@
+# Operator-specific Worker config (KV namespace ID, account, etc.).
+# Copy from wrangler.toml.example and fill in your values.
+wrangler.toml
+
+# Wrangler local state
+.wrangler/
+.dev.vars

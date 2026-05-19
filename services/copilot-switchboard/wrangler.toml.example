@@ -3,18 +3,19 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Secrets (set via `wrangler secret put`):
+# Each operator copies this file to `wrangler.toml` (gitignored) and fills in
+# the values below. See README.md → "Deploying your own switchboard".
+#
+# Secrets (set via `wrangler secret put`, NOT here):
 #   GITHUB_APP_ID            — numeric App ID
 #   GITHUB_APP_PRIVATE_KEY   — PEM contents (full PRIVATE KEY block, newlines preserved)
 #   GITHUB_WEBHOOK_SECRET    — HMAC shared secret configured on the App's webhook
-#   REGISTER_SHARED_SECRET   — bearer token Desktop presents on POST /register
-#
-# Optional vars (set via [vars] below or `wrangler secret put`):
-#   REVIEW_RECIPE_ID         — recipe id goosed should run; default `goose-copilot-review`
+#   GITHUB_OAUTH_CLIENT_ID   — public OAuth client ID from the App settings
+#   GITHUB_OAUTH_CLIENT_SECRET — OAuth client secret from the App settings
 
 [[kv_namespaces]]
 binding = "INSTALL_REGISTRY"
-# After running `wrangler kv namespace create INSTALL_REGISTRY`, paste the id here:
+# Run `wrangler kv namespace create INSTALL_REGISTRY` and paste the id here.
 id = "<your-kv-namespace-id>"
 
 [observability]

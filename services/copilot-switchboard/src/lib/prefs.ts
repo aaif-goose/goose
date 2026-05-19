@@ -20,6 +20,7 @@ export interface RoutingPrefs {
   trigger_preference: TriggerPreference;
   trigger_permission: TriggerPermission;
   allow_act_on_issues: boolean;
+  specific_users_allowlist: string[];
 }
 
 /** Server-side defaults; mirrored from goose/src/copilot/prefs.rs. Used on KV
@@ -30,6 +31,7 @@ export const DEFAULT_ROUTING_PREFS: RoutingPrefs = {
   trigger_preference: 'pr-open',
   trigger_permission: 'anyone',
   allow_act_on_issues: false,
+  specific_users_allowlist: [],
 };
 
 function key(installationId: number): string {
@@ -122,11 +124,25 @@ export function parseRoutingPrefs(body: unknown): RoutingPrefs {
     throw new Error('allow_act_on_issues must be a boolean');
   }
 
+  const rawAllowlist = b.specific_users_allowlist ?? [];
+  if (!Array.isArray(rawAllowlist)) {
+    throw new Error('specific_users_allowlist must be an array of strings');
+  }
+  const allowlist: string[] = [];
+  for (const entry of rawAllowlist) {
+    if (typeof entry !== 'string') {
+      throw new Error('specific_users_allowlist entries must be strings');
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length > 0) allowlist.push(trimmed);
+  }
+
   return {
     schema_version: sv,
     auto_review_on_pr_open: b.auto_review_on_pr_open,
     trigger_preference: triggerPref,
     trigger_permission: triggerPerm,
     allow_act_on_issues: b.allow_act_on_issues,
+    specific_users_allowlist: allowlist,
   };
 }

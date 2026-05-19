@@ -11,10 +11,18 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// context budget by accident. 16 KiB is generous (~4k tokens).
 pub const MAX_CUSTOM_INSTRUCTIONS_BYTES: usize = 16 * 1024;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+/// Hard cap on the specific-users allowlist so a single user can't push
+/// thousands of entries into KV.
+pub const MAX_ALLOWLIST_ENTRIES: usize = 256;
+
+/// GitHub username max length (per GitHub's docs) plus a small margin.
+pub const MAX_GITHUB_USERNAME_LEN: usize = 39;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerPreference {
     /// Run a review when a pull request is opened.
+    #[default]
     PrOpen,
     /// Re-run on every push (PR opened + synchronize).
     OnEveryPush,
@@ -22,16 +30,11 @@ pub enum TriggerPreference {
     ManualOnly,
 }
 
-impl Default for TriggerPreference {
-    fn default() -> Self {
-        Self::PrOpen
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerPermission {
     /// Any GitHub user who can see the PR can mention the bot.
+    #[default]
     Anyone,
     /// Only repository collaborators with `write` access or higher.
     WriteAccess,
@@ -39,13 +42,7 @@ pub enum TriggerPermission {
     SpecificUsers,
 }
 
-impl Default for TriggerPermission {
-    fn default() -> Self {
-        Self::Anyone
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReviewOutputStyle {
     /// Inline review comments with GitHub `suggestion` blocks where possible.
@@ -53,28 +50,43 @@ pub enum ReviewOutputStyle {
     /// One summary comment listing all findings, no inline annotations.
     Summary,
     /// Inline annotations + summary comment at the top of the review.
+    #[default]
     Both,
 }
 
-impl Default for ReviewOutputStyle {
-    fn default() -> Self {
-        Self::Both
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewSeverity {
+    /// Surface every finding the model produces. Highest signal *and* noise.
+    Low,
+    /// Drop low-severity findings; surface medium and above.
+    #[default]
+    Medium,
+    /// Only high and critical findings.
+    High,
+    /// Only the most severe blocking issues.
+    Critical,
+}
+
+impl ReviewSeverity {
+    pub fn as_cli_flag(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReviewModelChoice {
     /// Reuse whatever model `goose` is globally configured with.
+    #[default]
     Default,
     /// A separate review-specific model. Picker not yet wired.
     Custom,
-}
-
-impl Default for ReviewModelChoice {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 /// Full Copilot preference set. The user sees this as one object in Desktop;
@@ -87,7 +99,6 @@ pub struct CopilotPrefs {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 
-    // -- Routing prefs (forwarded to the switchboard) --
     #[serde(default = "default_true")]
     pub auto_review_on_pr_open: bool,
     #[serde(default)]
@@ -96,14 +107,20 @@ pub struct CopilotPrefs {
     pub trigger_permission: TriggerPermission,
     #[serde(default)]
     pub allow_act_on_issues: bool,
+    /// GitHub usernames allowed to trigger the bot when `trigger_permission`
+    /// is `SpecificUsers`. Case-insensitive on lookup; stored as user typed.
+    #[serde(default)]
+    pub specific_users_allowlist: Vec<String>,
 
-    // -- Execution prefs (stay on goosed) --
     #[serde(default)]
     pub allow_commit_on_fix: bool,
+    /// When `true` and the mention came from an issue, goosed pushes the
+    /// agent's edits to a fresh branch and opens a PR linked to the issue.
+    /// Ignored on PR mentions (they push to the existing PR branch).
     #[serde(default)]
     pub allow_open_new_prs: bool,
     #[serde(default)]
-    pub exhaustive_review: bool,
+    pub review_severity: ReviewSeverity,
     #[serde(default)]
     pub custom_instructions: String,
     #[serde(default)]
@@ -136,9 +153,10 @@ impl Default for CopilotPrefs {
             trigger_preference: TriggerPreference::default(),
             trigger_permission: TriggerPermission::default(),
             allow_act_on_issues: false,
+            specific_users_allowlist: Vec::new(),
             allow_commit_on_fix: false,
             allow_open_new_prs: false,
-            exhaustive_review: false,
+            review_severity: ReviewSeverity::default(),
             custom_instructions: String::new(),
             review_output_style: ReviewOutputStyle::default(),
             review_model_choice: ReviewModelChoice::default(),
@@ -172,11 +190,24 @@ impl CopilotPrefs {
         {
             bail!("custom_instructions contains disallowed control characters");
         }
-        // `review_model_choice == Custom` with empty provider/model is a
-        // legal transitional state — the user has flipped the toggle but
-        // hasn't picked a model yet. `run_goose_review` falls back to the
-        // global default when either field is empty, so accepting this state
-        // here keeps the save flow snappy and avoids spurious 400s.
+        if self.specific_users_allowlist.len() > MAX_ALLOWLIST_ENTRIES {
+            bail!(
+                "specific_users_allowlist exceeds {} entries",
+                MAX_ALLOWLIST_ENTRIES
+            );
+        }
+        for entry in &self.specific_users_allowlist {
+            let trimmed = entry.trim();
+            if trimmed.is_empty() {
+                bail!("specific_users_allowlist contains a blank entry");
+            }
+            if trimmed.len() > MAX_GITHUB_USERNAME_LEN {
+                bail!("allowlist entry `{trimmed}` exceeds {MAX_GITHUB_USERNAME_LEN} chars",);
+            }
+            if !is_valid_github_username(trimmed) {
+                bail!("allowlist entry `{trimmed}` is not a valid GitHub username");
+            }
+        }
         Ok(())
     }
 
@@ -190,8 +221,20 @@ impl CopilotPrefs {
             trigger_preference: self.trigger_preference.clone(),
             trigger_permission: self.trigger_permission.clone(),
             allow_act_on_issues: self.allow_act_on_issues,
+            specific_users_allowlist: self.specific_users_allowlist.clone(),
         }
     }
+}
+
+/// GitHub usernames: alphanumeric and single hyphens, no leading/trailing hyphen.
+fn is_valid_github_username(s: &str) -> bool {
+    if s.is_empty() || s.starts_with('-') || s.ends_with('-') {
+        return false;
+    }
+    if s.contains("--") {
+        return false;
+    }
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 /// The strict subset of `CopilotPrefs` shipped to the switchboard. Nothing
@@ -204,6 +247,8 @@ pub struct RoutingPrefs {
     pub trigger_preference: TriggerPreference,
     pub trigger_permission: TriggerPermission,
     pub allow_act_on_issues: bool,
+    #[serde(default)]
+    pub specific_users_allowlist: Vec<String>,
 }
 
 impl Default for RoutingPrefs {
@@ -238,7 +283,6 @@ mod tests {
         .unwrap();
         assert!(!p.auto_review_on_pr_open);
         assert_eq!(p.custom_instructions, "be nice");
-        // Untouched fields fall back to defaults.
         assert_eq!(p.trigger_preference, TriggerPreference::PrOpen);
         assert_eq!(p.review_output_style, ReviewOutputStyle::Both);
     }
@@ -308,5 +352,72 @@ mod tests {
         let json = serde_json::to_string(&routing).unwrap();
         assert!(!json.contains("custom_instructions"));
         assert!(!json.contains("review_model_choice"));
+    }
+
+    #[test]
+    fn review_severity_cli_flag_strings() {
+        assert_eq!(ReviewSeverity::Low.as_cli_flag(), "low");
+        assert_eq!(ReviewSeverity::Medium.as_cli_flag(), "medium");
+        assert_eq!(ReviewSeverity::High.as_cli_flag(), "high");
+        assert_eq!(ReviewSeverity::Critical.as_cli_flag(), "critical");
+    }
+
+    #[test]
+    fn validate_accepts_well_formed_allowlist() {
+        let p = CopilotPrefs {
+            specific_users_allowlist: vec!["octocat".into(), "abhi-jay".into(), "user123".into()],
+            ..Default::default()
+        };
+        p.validate().unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_blank_allowlist_entry() {
+        let p = CopilotPrefs {
+            specific_users_allowlist: vec!["octocat".into(), "  ".into()],
+            ..Default::default()
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_malformed_username() {
+        for bad in [
+            "-leading",
+            "trailing-",
+            "double--hyphen",
+            "has space",
+            "has_underscore",
+        ] {
+            let p = CopilotPrefs {
+                specific_users_allowlist: vec![bad.into()],
+                ..Default::default()
+            };
+            assert!(p.validate().is_err(), "expected reject for `{bad}`");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_oversize_allowlist() {
+        let p = CopilotPrefs {
+            specific_users_allowlist: (0..(MAX_ALLOWLIST_ENTRIES + 1))
+                .map(|i| format!("user{i}"))
+                .collect(),
+            ..Default::default()
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn routing_subset_carries_allowlist() {
+        let p = CopilotPrefs {
+            specific_users_allowlist: vec!["octocat".into()],
+            ..Default::default()
+        };
+        let routing = p.routing_subset();
+        assert_eq!(
+            routing.specific_users_allowlist,
+            vec!["octocat".to_string()]
+        );
     }
 }

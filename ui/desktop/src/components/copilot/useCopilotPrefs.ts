@@ -2,24 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getPrefs, putPrefs } from '../../api/sdk.gen';
 import type { CopilotPrefs } from '../../api/types.gen';
 
-/**
- * Single source of truth for Copilot preferences on the Desktop side.
- *
- * Flow:
- *   1. Initial mount: GET /copilot/prefs → store + cache to localStorage.
- *      If the GET fails (goosed offline), fall back to a cached value
- *      from localStorage so the UI stays responsive.
- *   2. Edit: callers invoke `update(patch)` which merges + persists to
- *      localStorage immediately (optimistic) and queues a debounced PUT.
- *   3. PUT response carries `switchboard_synced`. We surface it via
- *      `syncState` so the UI can show "Saving / Saved / Sync pending".
- *
- * Migration from localStorage-only state:
- *   On first successful PUT, we delete the legacy keys (`goose-copilot:preferences`,
- *   `goose-copilot:custom-instructions`). Their values have already been
- *   migrated by the schema-default fallback chain.
- */
-
 const CACHE_KEY = 'goose-copilot:prefs-cache';
 const LEGACY_PREFS_KEY = 'goose-copilot:preferences';
 const LEGACY_INSTRUCTIONS_KEY = 'goose-copilot:custom-instructions';
@@ -50,12 +32,7 @@ function loadCachedPrefs(): CopilotPrefs | null {
       /* fall through */
     }
   }
-  // Legacy: pre-backend builds wrote two separate localStorage keys.
-  // Compose a partial CopilotPrefs from them so first-time backend writes
-  // preserve the user's existing toggles. Untouched fields will get
-  // server defaults filled in by the schema.
-  const legacy = legacyPrefsFromLocalStorage();
-  return legacy;
+  return legacyPrefsFromLocalStorage();
 }
 
 function legacyPrefsFromLocalStorage(): CopilotPrefs | null {
@@ -70,8 +47,6 @@ function legacyPrefsFromLocalStorage(): CopilotPrefs | null {
       /* ignore */
     }
   }
-  // Map legacy camelCase keys → backend snake_case CopilotPrefs.
-  // Anything missing will fall back to server defaults on PUT.
   return {
     schema_version: 1,
     auto_review_on_pr_open:
@@ -109,7 +84,6 @@ export function useCopilotPrefs(): UseCopilotPrefs {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<CopilotPrefs | null>(null);
 
-  // Initial GET.
   useEffect(() => {
     let cancelled = false;
     (async () => {

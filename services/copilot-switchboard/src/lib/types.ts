@@ -57,8 +57,9 @@ export interface IssueCommentEvent {
   };
   issue: {
     number: number;
+    html_url: string;
     pull_request?: { url: string } | null;
   };
-  repository: { full_name: string };
+  repository: { full_name: string; default_branch: string };
   installation: { id: number };
 }

@@ -1663,6 +1663,29 @@
         }
       }
     },
+    "/copilot/analytics": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_analytics",
+        "responses": {
+          "200": {
+            "description": "Per-install analytics rollups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotAnalytics"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Setup not completed"
+          }
+        }
+      }
+    },
     "/copilot/comment": {
       "post": {
         "tags": [
@@ -4769,6 +4792,30 @@
           "$ref": "#/components/schemas/Message"
         }
       },
+      "CopilotAnalytics": {
+        "type": "object",
+        "description": "Per-install rollups the switchboard stores in KV and Desktop renders in\nthe Analytics tab. Counts only — no per-event timestamps, no PII.",
+        "properties": {
+          "commits_pushed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Commits goose-copilot has pushed (existing branch or fresh PR).",
+            "minimum": 0
+          },
+          "issues_handled": {
+            "type": "integer",
+            "format": "int64",
+            "description": "GitHub issues goose-copilot has responded to.",
+            "minimum": 0
+          },
+          "prs_reviewed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pull requests goose-copilot has reviewed.",
+            "minimum": 0
+          }
+        }
+      },
       "CopilotCommentRequest": {
         "type": "object",
         "required": [
@@ -4800,6 +4847,10 @@
             "type": "string",
             "description": "The PR's head branch name (e.g. `feature/foo`). Used to push any\nedits the agent makes back to the PR."
           },
+          "is_pr": {
+            "type": "boolean",
+            "description": "`false` when the mention came from a plain issue (no PR head ref).\nDefaults to `true` so older switchboard payloads keep PR-only\nsemantics until they redeploy."
+          },
           "pr_number": {
             "type": "integer",
             "format": "int64",
@@ -4824,16 +4875,14 @@
             "type": "boolean"
           },
           "allow_open_new_prs": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "When `true` and the mention came from an issue, goosed pushes the\nagent's edits to a fresh branch and opens a PR linked to the issue.\nIgnored on PR mentions (they push to the existing PR branch)."
           },
           "auto_review_on_pr_open": {
             "type": "boolean"
           },
           "custom_instructions": {
             "type": "string"
-          },
-          "exhaustive_review": {
-            "type": "boolean"
           },
           "review_model": {
             "type": "string",
@@ -4851,11 +4900,21 @@
             "description": "Provider name (e.g. \"openai\", \"anthropic\") used when\n`review_model_choice` is `Custom`. Ignored when `Default`.",
             "nullable": true
           },
+          "review_severity": {
+            "$ref": "#/components/schemas/ReviewSeverity"
+          },
           "schema_version": {
             "type": "integer",
             "format": "int32",
             "description": "Set on the client; rejected if higher than the server understands.",
             "minimum": 0
+          },
+          "specific_users_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "GitHub usernames allowed to trigger the bot when `trigger_permission`\nis `SpecificUsers`. Case-insensitive on lookup; stored as user typed."
           },
           "trigger_permission": {
             "$ref": "#/components/schemas/TriggerPermission"
@@ -8162,6 +8221,15 @@
           "both"
         ]
       },
+      "ReviewSeverity": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ]
+      },
       "Role": {
         "oneOf": [
           {
@@ -8199,6 +8267,12 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "specific_users_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "trigger_permission": {
             "$ref": "#/components/schemas/TriggerPermission"
