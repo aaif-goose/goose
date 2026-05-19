@@ -291,12 +291,6 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     sources
 }
 
-/// Build the system-prompt blurb that tells the model what subagents are
-/// available in this session and what `@-mentions` mean.
-///
-/// Mirrors the shape of `SkillsClient`'s instructions: lists each agent /
-/// recipe by name + short description and explains the affordance. Empty
-/// when there are no subagents or no session.
 fn build_subagent_instructions(session: Option<&crate::session::Session>) -> String {
     let Some(session) = session else {
         return String::new();
@@ -318,7 +312,6 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
         return String::new();
     }
 
-    // Group by kind for clarity, matching `handle_load_discovery`'s layout.
     subagents.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
 
     let names: Vec<&str> = subagents.iter().map(|s| s.name.as_str()).collect();
@@ -331,42 +324,33 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
          the `load` tool (read their instructions into your own context):\n",
     );
 
-    for kind in [SourceType::Agent, SourceType::Recipe, SourceType::Subrecipe] {
-        let items: Vec<&&SourceEntry> =
-            subagents.iter().filter(|s| s.source_type == kind).collect();
-        if items.is_empty() {
-            continue;
+    let mut current_kind: Option<SourceType> = None;
+    for s in &subagents {
+        if current_kind != Some(s.source_type) {
+            out.push_str(&format!("\n{}:", kind_plural(s.source_type)));
+            current_kind = Some(s.source_type);
         }
-        out.push_str(&format!("\n{}:", kind_plural(kind)));
-        for s in items {
-            out.push_str(&format!(
-                "\n• {} — {}",
-                s.name,
-                truncate(&s.description, 200)
-            ));
-        }
+        out.push_str(&format!(
+            "\n• {} — {}",
+            s.name,
+            truncate(&s.description, 200)
+        ));
     }
 
     out.push_str(&format!(
-        "\n\n@-mentions are a hard signal from the user.\n\
-         If the user's message contains `@<name>` where `<name>` is one of \
-         [{names_joined}], you MUST delegate that request to that subagent by \
-         calling `delegate` with `source: \"<name>\"` and `instructions` set \
-         to the rest of the user's message (everything other than the \
-         `@<name>` token itself). Do not attempt the task yourself first, do \
-         not ask the user to confirm, and do not substitute a different \
-         subagent. If multiple `@<name>` tokens appear, delegate to each in \
-         turn (use `async: true` and later `load(taskId)` to collect results \
-         in parallel).\n\n\
-         You should also delegate — without an explicit `@` — when the user \
-         refers to one of the subagents above by name, or when the user's \
-         task clearly matches a subagent's description. In those cases pick \
-         the best-matching subagent and call `delegate` the same way.\n\n\
-         Use `load(source: \"<name>\")` instead of `delegate` only when you \
-         want to absorb the subagent's instructions into your own context \
-         (e.g. to follow a checklist) rather than hand off the task.\n\n\
-         Do not invent subagent names. Only the names listed above are \
-         valid sources for `delegate` and `load`.",
+        "\n\nWhen to call a subagent (one of [{names_joined}]):\n\
+         • `@<name>` in the user's message — always call that subagent.\n\
+         • The user mentions a subagent by name without `@` — infer from \
+         context whether they want it invoked, and if so, call it.\n\
+         • The user's request strongly matches a subagent's description — \
+         call it.\n\n\
+         Calling a subagent normally means `delegate(source: \"<name>\", \
+         instructions: ...)`, which runs it as an isolated subagent and \
+         returns its result. Use `load(source: \"<name>\")` instead if you \
+         only want to read the subagent's instructions into your own \
+         context. For long-running work, pass `async: true` to `delegate` — \
+         it returns a task id immediately, and you collect the result later \
+         with `load(source: \"<task_id>\")`, which waits for completion.",
     ));
 
     out
