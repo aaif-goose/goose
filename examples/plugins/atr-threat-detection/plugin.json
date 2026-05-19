@@ -1,0 +1,5 @@
+{
+  "name": "atr-threat-detection",
+  "version": "0.1.0",
+  "description": "Blocks tool calls that match Agent Threat Rules (ATR) — prompt injection, tool poisoning, credential exfiltration, and 9 other AI agent attack categories. Requires pyatr >= 0.2.0 (pip install pyatr)."
+}
