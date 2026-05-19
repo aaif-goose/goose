@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom';
 import { openSharedSessionFromDeepLink, importNostrSessionFromDeepLink } from './sessionLinks';
 import { type SharedSessionDetails } from './sharedSessions';
+import { setRecipeParametersForSession } from './utils/recipeParametersStore';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import { toast, ToastContainer } from 'react-toastify';
@@ -439,6 +440,7 @@ export function AppInner() {
           recipeDeeplink,
           allExtensions: extensionsList,
         });
+        setRecipeParametersForSession(newSession.id, payload?.recipeParameters);
         window.dispatchEvent(
           new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
             detail: {

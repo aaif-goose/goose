@@ -33,6 +33,7 @@ import { useToolCount } from './alerts/useToolCount';
 import { getThinkingMessage, getTextAndImageContent } from '../types/message';
 import ParameterInputModal from './ParameterInputModal';
 import { substituteParameters } from '../utils/parameterSubstitution';
+import { takeRecipeParametersForSession } from '../utils/recipeParametersStore';
 import CreateRecipeFromSessionModal from './recipes/CreateRecipeFromSessionModal';
 import { toastSuccess } from '../toasts';
 import { Recipe } from '../recipe';
@@ -542,6 +543,7 @@ export default function BaseChat({
           onSubmit={setRecipeUserParams}
           onClose={() => setView('chat')}
           initialValues={
+            takeRecipeParametersForSession(chat.sessionId) ||
             (window.appConfig?.get('recipeParameters') as Record<string, string> | undefined) ||
             undefined
           }

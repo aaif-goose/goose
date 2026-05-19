@@ -496,11 +496,15 @@ async function openRecipeDeeplink(url: string, openDir: string | null) {
       targetWindow.restore();
     }
     targetWindow.focus();
-    targetWindow.webContents.send('open-recipe-deeplink', {
-      recipeDeeplink: deeplinkData?.config,
-      recipeParameters: deeplinkData?.parameters,
-      scheduledJobId: scheduledJobId || undefined,
-    });
+    if (targetWindow.webContents.isLoadingMainFrame()) {
+      pendingDeepLinks.set(targetWindow.id, url);
+    } else {
+      targetWindow.webContents.send('open-recipe-deeplink', {
+        recipeDeeplink: deeplinkData?.config,
+        recipeParameters: deeplinkData?.parameters,
+        scheduledJobId: scheduledJobId || undefined,
+      });
+    }
     return;
   }
 
@@ -1536,6 +1540,14 @@ ipcMain.on('react-ready', (event) => {
         window.webContents.send('add-extension', deepLinkUrl);
       } else if (parsedUrl.hostname === 'sessions') {
         window.webContents.send('open-shared-session', deepLinkUrl);
+      } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
+        const deeplinkData = parseRecipeDeeplink(deepLinkUrl);
+        const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
+        window.webContents.send('open-recipe-deeplink', {
+          recipeDeeplink: deeplinkData?.config,
+          recipeParameters: deeplinkData?.parameters,
+          scheduledJobId: scheduledJobId || undefined,
+        });
       }
     } catch (error) {
       log.error('Error processing pending deep link:', error);
