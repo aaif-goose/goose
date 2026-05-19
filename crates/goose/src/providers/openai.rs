@@ -858,12 +858,32 @@ impl Provider for OpenAiProvider {
 }
 
 fn parse_custom_headers(s: String) -> HashMap<String, String> {
-    s.split(',')
-        .filter_map(|header| {
-            let mut parts = header.splitn(2, '=');
-            let key = parts.next().map(|s| s.trim().to_string())?;
-            let value = parts.next().map(|s| s.trim().to_string())?;
-            Some((key, value))
+    let swapped: String = s
+        .chars()
+        .map(|c| match c {
+            ',' => ' ',
+            ' ' => ',',
+            c => c,
+        })
+        .collect();
+    shlex::split(&swapped)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|token| {
+            let restored: String = token
+                .chars()
+                .map(|c| match c {
+                    ',' => ' ',
+                    ' ' => ',',
+                    c => c,
+                })
+                .collect();
+            let (key, value) = restored.split_once('=')?;
+            let key = key.trim();
+            if key.is_empty() {
+                return None;
+            }
+            Some((key.to_string(), value.trim().to_string()))
         })
         .collect()
 }
@@ -1241,6 +1261,16 @@ mod tests {
 
         let models = provider.fetch_supported_models().await.unwrap();
         assert_eq!(models, vec!["m1".to_string(), "m2".to_string()]);
+    }
+
+    #[test]
+    fn parse_custom_headers_with_commas_in_quoted_values() {
+        let headers = parse_custom_headers(
+            r#"Authorization=Bearer token,x-tags="a,b,c",x-plain=hello"#.to_string(),
+        );
+        assert_eq!(headers.get("Authorization").unwrap(), "Bearer token");
+        assert_eq!(headers.get("x-tags").unwrap(), "a,b,c");
+        assert_eq!(headers.get("x-plain").unwrap(), "hello");
     }
 
     #[test]

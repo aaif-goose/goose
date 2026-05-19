@@ -47,15 +47,13 @@ The first time you run it, goose will open a browser window for you to sign in w
 
 The recommended model is `gpt-5.3-codex`, which is the default. You can also select `gpt-5.4` (OpenAI's latest omni model) or `gpt-5.2-codex` from the model picker.
 
-## Gemini — via OAuth
+## Gemini — via ACP
 
-If you have a Google account with Gemini access, the `Gemini` (`gemini_oauth`) provider lets you use goose with your existing account. Just pick Gemini when setting up goose for the first time (or changing providers).
-
-The first time you run it, goose will open a browser window for you to sign in with your Google account. After that, your session is cached locally.
+If you have a Google account with Gemini access, the `Gemini CLI (ACP)` (`gemini-acp`) provider lets you use goose with your existing account via the Gemini CLI's ACP mode. Install the Gemini CLI (`npm install -g @google/gemini-cli`), run `gemini` once to authenticate, then select `gemini-acp` as your provider.
 
 ## What about the old CLI providers?
 
-Goose previously supported `claude-code`, `codex`, and `gemini-cli` as "pass-through" CLI providers. These will be removed soon as ACP is the future! 
+goose previously supported `claude-code`, `codex`, and `gemini-cli` as "pass-through" CLI providers. These will be removed soon as ACP is the future! 
 
 ## Quick reference
 
@@ -63,6 +61,6 @@ Goose previously supported `claude-code`, `codex`, and `gemini-cli` as "pass-thr
 |---|---|---|---|
 | Claude Code | `claude-acp` | `npm install -g @zed-industries/claude-agent-acp` | ✅ via MCP |
 | ChatGPT Plus/Pro | `chatgpt_codex` | Nothing — OAuth sign-in | ✅ via MCP |
-| Gemini | `gemini_oauth` | Nothing — OAuth sign-in | ✅ native |
+| Gemini | `gemini-acp` | `npm install -g @google/gemini-cli` | ✅ via MCP |
 
 Pick the one that matches what you're already paying for, and you're good to go.

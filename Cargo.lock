@@ -4642,6 +4642,7 @@ dependencies = [
  "sha2 0.10.9",
  "shell-words",
  "shellexpand",
+ "shlex",
  "sqlx",
  "strum 0.27.2",
  "symphonia",

@@ -22,8 +22,8 @@ use super::{
     cursor_agent::CursorAgentProvider,
     databricks::DatabricksProvider,
     gcpvertexai::GcpVertexAIProvider,
+    gemini_acp::GeminiAcpProvider,
     gemini_cli::GeminiCliProvider,
-    gemini_oauth::GeminiOAuthProvider,
     githubcopilot::GithubCopilotProvider,
     google::GoogleProvider,
     kimicode::KimiCodeProvider,
@@ -69,8 +69,8 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<CursorAgentProvider>(false);
         registry.register::<DatabricksProvider>(true);
         registry.register::<GcpVertexAIProvider>(false);
+        registry.register::<GeminiAcpProvider>(false);
         registry.register::<GeminiCliProvider>(false);
-        registry.register::<GeminiOAuthProvider>(true);
         registry.register::<GithubCopilotProvider>(false);
         registry.register::<GoogleProvider>(true);
         registry.register::<KimiCodeProvider>(true);

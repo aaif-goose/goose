@@ -46,7 +46,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "azure_openai" => "azure",
         "aws_bedrock" => "amazon-bedrock",
         "gcp_vertex_ai" => "google-vertex",
-        "gemini_oauth" => "google",
+        "gemini_acp" => "google",
         "zhipu" => "zhipuai",
         "novita" => "novita-ai",
         "opencode_go" => "opencode-go",
