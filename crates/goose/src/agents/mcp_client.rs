@@ -109,6 +109,28 @@ pub trait McpClientTrait: Send + Sync {
         Err(Error::TransportClosed)
     }
 
+    /// Validate or complete a resource-template argument against the
+    /// server's `completion/complete` endpoint (SEP MCP-1319). Used by
+    /// the skills platform extension when instantiating
+    /// `mcp-resource-template` skill catalogs — if the server supports
+    /// completion, the host can check that user-supplied placeholder
+    /// values are in the server's known set before resolving the URI.
+    ///
+    /// Default impl returns `TransportClosed` so test stubs and clients
+    /// that don't implement completion don't need to override; callers
+    /// MUST treat this as "completion unsupported" rather than a hard
+    /// failure (per the SEP, completion is SHOULD, not MUST).
+    async fn complete_resource_argument(
+        &self,
+        _session_id: &str,
+        _uri_template: &str,
+        _argument_name: &str,
+        _current_value: &str,
+        _cancel_token: CancellationToken,
+    ) -> Result<rmcp::model::CompletionInfo, Error> {
+        Err(Error::TransportClosed)
+    }
+
     async fn list_prompts(
         &self,
         _session_id: &str,
@@ -133,6 +155,15 @@ pub trait McpClientTrait: Send + Sync {
     }
 
     async fn get_moim(&self, _session_id: &str) -> Option<String> {
+        None
+    }
+
+    /// Optional per-turn dynamic addition to the extension's instructions.
+    /// Returned text is appended to the static `InitializeResult.instructions`
+    /// when `ExtensionManager::get_extensions_info` assembles the system
+    /// prompt. Called on every reply, so implementations MUST NOT do network
+    /// I/O inline — read from caches instead. Default: no dynamic contribution.
+    async fn get_dynamic_instructions(&self, _session_id: &str) -> Option<String> {
         None
     }
 
@@ -409,7 +440,17 @@ impl ClientHandler for GooseClient {
     }
 
     fn get_info(&self) -> ClientInfo {
-        let extensions = self.resolved_extensions();
+        let mut extensions = self.resolved_extensions();
+
+        // Advertise host-side support for the skills-over-MCP SEP
+        // (`io.modelcontextprotocol/skills`). The SEP does not require
+        // clients to declare this; we do so informationally so servers
+        // can branch on "client understands skills" if they ever need
+        // to. Empty object per SEP §Capability Declaration.
+        extensions.insert(
+            crate::skills::mcp_client::SKILLS_EXTENSION_ID.to_string(),
+            JsonObject::new(),
+        );
 
         InitializeRequestParams::new(
             ClientCapabilities::builder()
@@ -616,6 +657,39 @@ impl McpClientTrait for McpClient {
 
         match res {
             ServerResult::ReadResourceResult(result) => Ok(result),
+            _ => Err(ServiceError::UnexpectedResponse),
+        }
+    }
+
+    async fn complete_resource_argument(
+        &self,
+        session_id: &str,
+        uri_template: &str,
+        argument_name: &str,
+        current_value: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<rmcp::model::CompletionInfo, Error> {
+        use rmcp::model::{ArgumentInfo, CompleteRequestParams, Reference};
+
+        let params = CompleteRequestParams::new(
+            Reference::for_resource(uri_template),
+            ArgumentInfo {
+                name: argument_name.to_string(),
+                value: current_value.to_string(),
+            },
+        );
+
+        let res = self
+            .send_request_with_context(
+                session_id,
+                None,
+                ClientRequest::CompleteRequest(Request::new(params)),
+                cancel_token,
+            )
+            .await?;
+
+        match res {
+            ServerResult::CompleteResult(result) => Ok(result.completion),
             _ => Err(ServiceError::UnexpectedResponse),
         }
     }
@@ -1143,6 +1217,26 @@ mod tests {
 
         assert!(extensions.contains_key(MCP_APPS_UI_EXTENSION_ID));
         assert_eq!(info.client_info.name, "goose2");
+    }
+
+    #[test]
+    fn test_client_capabilities_advertise_skills_extension() {
+        // Both CLI and Desktop platforms should advertise the skills SEP
+        // extension — it's a host-level capability, not platform-specific.
+        for platform in [GoosePlatform::GooseCli, GoosePlatform::GooseDesktop] {
+            let client = new_client(platform.clone());
+            let info = ClientHandler::get_info(&client);
+            let extensions = info
+                .capabilities
+                .extensions
+                .as_ref()
+                .expect("client capabilities should include an extensions map");
+            assert!(
+                extensions.contains_key(crate::skills::mcp_client::SKILLS_EXTENSION_ID),
+                "client ({:?}) should advertise io.modelcontextprotocol/skills",
+                platform
+            );
+        }
     }
 
     #[test]

@@ -79,6 +79,23 @@ struct Extension {
     client: McpClientBox,
     server_info: Option<ServerInfo>,
     _temp_dir: Option<tempfile::TempDir>,
+    /// Cache of MCP-served skills (both concrete and templated)
+    /// discovered from this extension's `skill://index.json` at connect
+    /// time, and refreshed in place on
+    /// `notifications/resources/list_changed`. The `Arc<RwLock<…>>` lets
+    /// a background subscriber task (spawned in `add_extension` /
+    /// `add_client`) update the cache without holding `&mut Extension`.
+    mcp_skills: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+    /// Set once when this Extension's `list_changed` watcher task is
+    /// spawned. Used by `spawn_skill_list_changed_watcher` to stay
+    /// idempotent across multiple registration paths — the repopulate
+    /// fast-path in `add_extension` calls spawn too, so we don't end up
+    /// with two watcher tasks both refetching on each notification.
+    watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Cancelled by `remove_extension` before the entry is dropped so
+    /// the watcher task ends instead of holding the client Arc alive
+    /// indefinitely. Cloned into the spawned task.
+    cancel: CancellationToken,
 }
 
 impl Extension {
@@ -88,6 +105,9 @@ impl Extension {
         client: McpClientBox,
         server_info: Option<ServerInfo>,
         temp_dir: Option<tempfile::TempDir>,
+        mcp_skills: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+        watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cancel: CancellationToken,
     ) -> Self {
         Self {
             client,
@@ -95,6 +115,9 @@ impl Extension {
             resolved_config,
             server_info,
             _temp_dir: temp_dir,
+            mcp_skills,
+            watcher_spawned,
+            cancel,
         }
     }
 
@@ -728,6 +751,108 @@ async fn create_unix_socket_http_client(
     Ok(Box::new(client_res?))
 }
 
+/// Fetches the MCP skills cache for a newly-connected extension, bounded by
+/// `INDEX_FETCH_TIMEOUT`. On timeout or error the cache is empty and
+/// extension registration still succeeds.
+///
+/// Requires a real session id: `McpClient::set_session_id` asserts a single
+/// session per client lifetime, so passing `""` would lock the client and
+/// panic on the first real-session request. Callers without a session (ACP
+/// bootstrap, CLI scenario tests) pass `None` and get an empty cache; a
+/// later reconnect with a real session populates it.
+async fn populate_mcp_skills_cache(
+    server_name: &str,
+    client: &dyn McpClientTrait,
+    session_id: Option<&str>,
+) -> crate::skills::mcp_client::ServerSkills {
+    match session_id {
+        Some(sid) => {
+            crate::skills::mcp_client::fetch_server_skills(
+                server_name,
+                client,
+                sid,
+                CancellationToken::new(),
+            )
+            .await
+        }
+        None => {
+            tracing::debug!(
+                server = %server_name,
+                "skipping skill index fetch: no session id at registration time"
+            );
+            crate::skills::mcp_client::ServerSkills::default()
+        }
+    }
+}
+
+/// Spawn a background task that watches the extension's server-notification
+/// stream and, on `notifications/resources/list_changed`, refetches the
+/// skill index and writes it into the shared cache. The task ends naturally
+/// when the client drops its notification senders on disconnect.
+///
+/// Idempotent per Extension via `watcher_spawned`: callers may invoke this
+/// from both the first-registration path and the repopulate fast-path
+/// without ending up with two tasks. The first invocation that has a
+/// `session_id` flips the bool and spawns; subsequent calls are no-ops.
+///
+/// Returns early without flipping the bool when `session_id` is `None` —
+/// without a session id the host cannot dispatch `resources/read` for
+/// `skill://index.json`, so there's nothing for the watcher to do. A
+/// later call carrying a real session id will then spawn correctly.
+fn spawn_skill_list_changed_watcher(
+    server_name: String,
+    client: McpClientBox,
+    cache: std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+    watcher_spawned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cancel: CancellationToken,
+    session_id: Option<&str>,
+) {
+    let Some(sid) = session_id.map(str::to_owned) else {
+        return;
+    };
+    // CAS-once: if the bool was already true, another path already
+    // spawned. The atomic swap here also guards against two concurrent
+    // calls racing on the same Extension.
+    if watcher_spawned.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut rx = client.subscribe().await;
+        loop {
+            // Select on cancellation so `remove_extension` can end the
+            // task. Without this, the task holds an Arc clone of the
+            // client and `rx.recv()` only yields None when the client's
+            // notification senders drop — which never happens while
+            // we ourselves keep the client alive.
+            let notif = tokio::select! {
+                _ = cancel.cancelled() => return,
+                n = rx.recv() => match n {
+                    Some(n) => n,
+                    None => return,
+                },
+            };
+            if !matches!(
+                notif,
+                rmcp::model::ServerNotification::ResourceListChangedNotification(_)
+            ) {
+                continue;
+            }
+            let fresh = crate::skills::mcp_client::fetch_server_skills(
+                &server_name,
+                client.as_ref(),
+                &sid,
+                cancel.clone(),
+            )
+            .await;
+            *cache.write().await = fresh;
+            tracing::debug!(
+                server = %server_name,
+                "refreshed mcp skill cache after notifications/resources/list_changed"
+            );
+        }
+    });
+}
+
 impl ExtensionManager {
     fn mcp_client_capabilities(&self) -> GooseMcpClientCapabilities {
         GooseMcpClientCapabilities {
@@ -807,14 +932,75 @@ impl ExtensionManager {
         // restart if both match.
         let resolved_config = config.clone().resolve(Config::global()).await?;
 
-        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
-            if existing.config == config && existing.resolved_config == resolved_config {
-                return Ok(());
+        // Fast path: if the extension is already registered with an identical
+        // config, skip the restart. Two wrinkles:
+        //  1. If the skill cache is empty and we now have a session id, the
+        //     earlier registration likely passed `session_id=None` (e.g. the
+        //     `extensionmanager.add_extension` tool path) and never fetched
+        //     `skill://index.json`. Repopulate in place rather than forcing
+        //     the user to reconnect.
+        //  2. Otherwise it's a true no-op.
+        //
+        // The `list_changed` watcher spawned at first registration already
+        // owns the cache Arc, so an in-place repopulate here keeps it
+        // pointed at the same shared `RwLock`. If the original
+        // registration ran with `session_id=None`, no watcher was
+        // spawned at that point — this is the path that fixes that
+        // case: we now have a session id, so we spawn (idempotent via
+        // `watcher_spawned`).
+        let fast_path: Option<(
+            McpClientBox,
+            std::sync::Arc<tokio::sync::RwLock<crate::skills::mcp_client::ServerSkills>>,
+            std::sync::Arc<std::sync::atomic::AtomicBool>,
+            CancellationToken,
+        )> = {
+            let extensions = self.extensions.lock().await;
+            match extensions.get(&sanitized_name) {
+                Some(existing)
+                    if existing.config == config && existing.resolved_config == resolved_config =>
+                {
+                    Some((
+                        existing.client.clone(),
+                        existing.mcp_skills.clone(),
+                        existing.watcher_spawned.clone(),
+                        existing.cancel.clone(),
+                    ))
+                }
+                Some(_) => {
+                    tracing::debug!(
+                        name = sanitized_name,
+                        "extension config changed, restarting with updated config"
+                    );
+                    None
+                }
+                None => None,
             }
-            tracing::debug!(
-                name = sanitized_name,
-                "extension config changed, restarting with updated config"
-            );
+        };
+
+        if let Some((client, cache, watcher_spawned, cancel)) = fast_path {
+            // True no-op unless we both have a session id AND the cache is
+            // empty (meaning the earlier registration never fetched the
+            // index). Reading through the Arc lets us check without
+            // holding the extensions mutex.
+            let needs_refresh = session_id.is_some() && cache.read().await.is_empty();
+            if needs_refresh {
+                let refreshed =
+                    populate_mcp_skills_cache(&sanitized_name, client.as_ref(), session_id).await;
+                *cache.write().await = refreshed;
+                // If the original registration didn't have a session id,
+                // its watcher was never spawned. Now that we do, ensure
+                // one is running so future `list_changed` notifications
+                // refresh the cache. Idempotent — no-op if already spawned.
+                spawn_skill_list_changed_watcher(
+                    sanitized_name.clone(),
+                    client.clone(),
+                    cache.clone(),
+                    watcher_spawned,
+                    cancel,
+                    session_id,
+                );
+            }
+            return Ok(());
         }
 
         let mut temp_dir = None;
@@ -1032,6 +1218,28 @@ impl ExtensionManager {
         };
 
         let server_info = client.get_info().cloned();
+        let client_arc: McpClientBox = Arc::from(client);
+
+        let mcp_skills =
+            populate_mcp_skills_cache(&sanitized_name, client_arc.as_ref(), session_id).await;
+        let cache = std::sync::Arc::new(tokio::sync::RwLock::new(mcp_skills));
+        let watcher_spawned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+
+        // Subscribe-and-refresh task. Spawned BEFORE insert so the task
+        // is live the moment the extension is reachable through the
+        // manager; ends on `remove_extension` (via cancel) or when the
+        // client's notification channel closes on disconnect. Idempotent
+        // per Extension — the repopulate fast-path may also call this
+        // if the first registration ran with session_id=None.
+        spawn_skill_list_changed_watcher(
+            sanitized_name.clone(),
+            client_arc.clone(),
+            cache.clone(),
+            watcher_spawned.clone(),
+            cancel.clone(),
+            session_id,
+        );
 
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
@@ -1039,9 +1247,12 @@ impl ExtensionManager {
             Extension::new(
                 config,
                 resolved_config,
-                Arc::from(client),
+                client_arc,
                 server_info,
                 temp_dir,
+                cache,
+                watcher_spawned,
+                cancel,
             ),
         );
         drop(extensions);
@@ -1057,34 +1268,94 @@ impl ExtensionManager {
         client: McpClientBox,
         info: Option<ServerInfo>,
         temp_dir: Option<TempDir>,
+        session_id: Option<&str>,
     ) {
         let normalized = name_to_key(&name);
+
+        let mcp_skills = populate_mcp_skills_cache(&normalized, client.as_ref(), session_id).await;
+        let cache = std::sync::Arc::new(tokio::sync::RwLock::new(mcp_skills));
+        let watcher_spawned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+
+        spawn_skill_list_changed_watcher(
+            normalized.clone(),
+            client.clone(),
+            cache.clone(),
+            watcher_spawned.clone(),
+            cancel.clone(),
+            session_id,
+        );
+
         self.extensions.lock().await.insert(
             normalized,
-            Extension::new(config.clone(), config.clone(), client, info, temp_dir),
+            Extension::new(
+                config.clone(),
+                config.clone(),
+                client,
+                info,
+                temp_dir,
+                cache,
+                watcher_spawned,
+                cancel,
+            ),
         );
         self.invalidate_tools_cache_and_bump_version().await;
     }
 
-    /// Get extensions info for building the system prompt
-    pub async fn get_extensions_info(&self, working_dir: &std::path::Path) -> Vec<ExtensionInfo> {
+    /// Get extensions info for building the system prompt. Combines each
+    /// extension's static `InitializeResult.instructions` with any per-turn
+    /// dynamic contribution via `McpClientTrait::get_dynamic_instructions`.
+    pub async fn get_extensions_info(
+        &self,
+        session_id: &str,
+        working_dir: &std::path::Path,
+    ) -> Vec<ExtensionInfo> {
         let working_dir_str = working_dir.to_string_lossy();
-        self.extensions
-            .lock()
-            .await
-            .iter()
-            .map(|(name, ext)| {
-                let instructions = ext.get_instructions().unwrap_or_default();
-                let instructions = instructions.replace("{{WORKING_DIR}}", &working_dir_str);
-                ExtensionInfo::new(name, &instructions, ext.supports_resources())
-            })
-            .collect()
+
+        let snapshots: Vec<(String, String, McpClientBox, bool)> = {
+            let extensions = self.extensions.lock().await;
+            extensions
+                .iter()
+                .map(|(name, ext)| {
+                    (
+                        name.clone(),
+                        ext.get_instructions().unwrap_or_default(),
+                        ext.client.clone(),
+                        ext.supports_resources(),
+                    )
+                })
+                .collect()
+        };
+
+        let mut infos = Vec::with_capacity(snapshots.len());
+        for (name, static_instructions, client, supports_resources) in snapshots {
+            let dynamic = client
+                .get_dynamic_instructions(session_id)
+                .await
+                .unwrap_or_default();
+
+            let combined = if dynamic.is_empty() {
+                static_instructions
+            } else if static_instructions.is_empty() {
+                dynamic
+            } else {
+                format!("{}\n{}", static_instructions, dynamic)
+            };
+
+            let combined = combined.replace("{{WORKING_DIR}}", &working_dir_str);
+            infos.push(ExtensionInfo::new(&name, &combined, supports_resources));
+        }
+        infos
     }
 
     /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
-        self.extensions.lock().await.remove(&sanitized_name);
+        // Cancel the skill-cache watcher before dropping the Extension so
+        // its spawned task ends instead of holding the client Arc alive.
+        if let Some(removed) = self.extensions.lock().await.remove(&sanitized_name) {
+            removed.cancel.cancel();
+        }
         self.invalidate_tools_cache_and_bump_version().await;
         Ok(())
     }
@@ -1112,6 +1383,51 @@ impl ExtensionManager {
 
     pub async fn list_extensions(&self) -> ExtensionResult<Vec<String>> {
         Ok(self.extensions.lock().await.keys().cloned().collect())
+    }
+
+    /// Snapshot every connected extension's cached **concrete** MCP skill
+    /// entries. Read path for the skills platform extension's per-turn
+    /// system-prompt assembly — no network I/O. Templates are surfaced
+    /// separately via [`aggregated_mcp_skill_templates`].
+    pub async fn aggregated_mcp_skills(&self) -> Vec<crate::skills::mcp_client::McpSkillEntry> {
+        // Clone the cache Arcs out of the extensions map first, then
+        // release the extensions mutex before taking the per-extension
+        // RwLock reads — avoids holding the extensions mutex across an
+        // async wait.
+        let caches: Vec<_> = self
+            .extensions
+            .lock()
+            .await
+            .values()
+            .map(|ext| ext.mcp_skills.clone())
+            .collect();
+
+        let mut out = Vec::new();
+        for cache in &caches {
+            out.extend(cache.read().await.concrete.iter().cloned());
+        }
+        out
+    }
+
+    /// Snapshot every connected extension's cached MCP skill **template**
+    /// entries. Drives the templated-catalog section of the system prompt
+    /// and the `load_skill_template` resolution path.
+    pub async fn aggregated_mcp_skill_templates(
+        &self,
+    ) -> Vec<crate::skills::mcp_client::McpSkillTemplate> {
+        let caches: Vec<_> = self
+            .extensions
+            .lock()
+            .await
+            .values()
+            .map(|ext| ext.mcp_skills.clone())
+            .collect();
+
+        let mut out = Vec::new();
+        for cache in &caches {
+            out.extend(cache.read().await.templates.iter().cloned());
+        }
+        out
     }
 
     pub async fn is_extension_enabled(&self, name: &str) -> bool {
@@ -1374,6 +1690,84 @@ impl ExtensionManager {
             }
         }
         Ok(result)
+    }
+
+    /// Returns the raw `resources/list` result for a single extension. Used
+    /// by the skills platform extension to enumerate supporting resources
+    /// for an MCP-served skill without having to re-pack through the
+    /// stringified form in `list_resources_from_extension`.
+    pub async fn list_resources_for_server(
+        &self,
+        session_id: &str,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::ListResourcesResult, ErrorData> {
+        let client = self
+            .get_server_client(extension_name)
+            .await
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("Extension '{}' not found", extension_name),
+                    None,
+                )
+            })?;
+
+        client
+            .list_resources(session_id, None, cancellation_token)
+            .await
+            .map_err(|e| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Unable to list resources for {}: {:?}", extension_name, e),
+                    None,
+                )
+            })
+    }
+
+    /// Forward a `completion/complete` request for a resource-template
+    /// argument to a specific extension. Used by the skills platform
+    /// extension to validate placeholder values before instantiating an
+    /// `mcp-resource-template` skill catalog. Returns `TransportClosed`
+    /// (and similar) when the server doesn't implement completion —
+    /// callers MUST treat that as "completion unsupported" rather than a
+    /// hard failure (per the SEP, completion is SHOULD, not MUST).
+    pub async fn complete_resource_for_server(
+        &self,
+        session_id: &str,
+        extension_name: &str,
+        uri_template: &str,
+        argument_name: &str,
+        current_value: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::CompletionInfo, ErrorData> {
+        let client = self
+            .get_server_client(extension_name)
+            .await
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("Extension '{}' not found", extension_name),
+                    None,
+                )
+            })?;
+
+        client
+            .complete_resource_argument(
+                session_id,
+                uri_template,
+                argument_name,
+                current_value,
+                cancellation_token,
+            )
+            .await
+            .map_err(|e| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("completion/complete failed for {}: {:?}", extension_name, e),
+                    None,
+                )
+            })
     }
 
     pub async fn read_resource(
@@ -2002,7 +2396,18 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension = Extension::new(config.clone(), config.clone(), client, None, None);
+            let extension = Extension::new(
+                config.clone(),
+                config.clone(),
+                client,
+                None,
+                None,
+                std::sync::Arc::new(tokio::sync::RwLock::new(
+                    crate::skills::mcp_client::ServerSkills::default(),
+                )),
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                CancellationToken::new(),
+            );
             self.extensions
                 .lock()
                 .await
@@ -2611,6 +3016,7 @@ mod tests {
             Arc::new(MockClient {}),
             None,
             None,
+            None,
         )
         .await;
         assert_eq!(em.extensions.lock().await.len(), 1);
@@ -2655,6 +3061,7 @@ mod tests {
             "test-ext".to_string(),
             config_a,
             Arc::new(MockClient {}),
+            None,
             None,
             None,
         )

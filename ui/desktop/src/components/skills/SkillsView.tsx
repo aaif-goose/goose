@@ -63,6 +63,7 @@ const i18n = defineMessages({
 interface SkillEntry {
   name: string;
   description: string;
+  origin?: string;
 }
 
 function SkillItem({ skill }: { skill: SkillEntry }) {
@@ -72,6 +73,11 @@ function SkillItem({ skill }: { skill: SkillEntry }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-base truncate">{skill.name}</h3>
+            {skill.origin ? (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-background-secondary text-text-secondary">
+                MCP · {skill.origin}
+              </span>
+            ) : null}
           </div>
           <p className="text-text-secondary text-sm line-clamp-2">{skill.description}</p>
         </div>
@@ -93,7 +99,11 @@ function SkillSkeleton() {
   );
 }
 
-export default function SkillsView() {
+interface SkillsViewProps {
+  sessionId?: string;
+}
+
+export default function SkillsView({ sessionId }: SkillsViewProps = {}) {
   const intl = useIntl();
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +129,7 @@ export default function SkillsView() {
       setShowContent(false);
       setError(null);
       const response = await getSlashCommands({
-        query: { working_dir: getInitialWorkingDir() },
+        query: { working_dir: getInitialWorkingDir(), session_id: sessionId },
         throwOnError: true,
       });
       const skillEntries: SkillEntry[] = (response.data?.commands ?? [])
@@ -127,6 +137,7 @@ export default function SkillsView() {
         .map((cmd) => ({
           name: cmd.command,
           description: cmd.help,
+          origin: cmd.origin ?? undefined,
         }));
       setSkills(skillEntries);
     } catch (err) {
@@ -134,7 +145,7 @@ export default function SkillsView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     loadSkills();

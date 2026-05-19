@@ -1390,6 +1390,11 @@ export type SlashCommand = {
     command: string;
     command_type: CommandType;
     help: string;
+    /**
+     * For MCP-sourced skills, the name of the originating MCP extension
+     * (e.g. "github"). `None` for filesystem skills and non-skill commands.
+     */
+    origin?: string | null;
 };
 
 export type SlashCommandsResponse = {
@@ -2853,6 +2858,11 @@ export type GetSlashCommandsData = {
          * Optional working directory to discover local skills from
          */
         working_dir?: string | null;
+        /**
+         * Optional session id; when provided, the endpoint also includes
+         * MCP-served skills from the corresponding agent's connected extensions.
+         */
+        session_id?: string | null;
     };
     url: '/config/slash_commands';
 };

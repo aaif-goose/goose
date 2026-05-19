@@ -1838,6 +1838,7 @@ export default function ChatInput({
             setMentionPopover((prev) => ({ ...prev, selectedIndex: index }))
           }
           workingDir={sessionWorkingDir ?? getInitialWorkingDir()}
+          sessionId={sessionId ?? undefined}
         />
 
         {sessionId && showCreateRecipeModal && (

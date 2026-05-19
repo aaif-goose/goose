@@ -4,6 +4,7 @@
 
 mod builtin;
 pub mod client;
+pub mod mcp_client;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
 

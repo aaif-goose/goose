@@ -209,8 +209,8 @@ const RecipesRoute = () => {
   return <RecipesView />;
 };
 
-const SkillsRoute = () => {
-  return <SkillsView />;
+const SkillsRoute = ({ activeSessionId }: { activeSessionId?: string }) => {
+  return <SkillsView sessionId={activeSessionId} />;
 };
 
 const PermissionRoute = () => {
@@ -690,7 +690,14 @@ export function AppInner() {
               <Route path="sessions" element={<SessionsRoute />} />
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
-              <Route path="skills" element={<SkillsRoute />} />
+              <Route
+                path="skills"
+                element={
+                  <SkillsRoute
+                    activeSessionId={activeSessions[activeSessions.length - 1]?.sessionId}
+                  />
+                }
+              />
               <Route
                 path="shared-session"
                 element={

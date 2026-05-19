@@ -301,7 +301,7 @@ impl ProviderFixture {
         let info = self
             .agent
             .extension_manager
-            .get_extensions_info(std::path::Path::new("."))
+            .get_extensions_info(&self.session_id, std::path::Path::new("."))
             .await;
         let system = PromptManager::new()
             .builder()
