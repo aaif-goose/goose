@@ -916,8 +916,11 @@ impl Agent {
                 return (
                     request_id,
                     Err(ErrorData::new(
-                        ErrorCode::INVALID_REQUEST,
-                        format!("Tool call blocked by plugin `{plugin}`: {reason}"),
+                        ErrorCode::INTERNAL_ERROR,
+                        format!(
+                            "Tool call denied by policy hook `{plugin}`: {reason}. \
+                             Do not retry; this is a policy denial, not a transient failure."
+                        ),
                         None,
                     )),
                 );
