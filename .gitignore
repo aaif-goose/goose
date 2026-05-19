@@ -36,7 +36,6 @@ ui/desktop/src/bin/goose_llm.dll
 
 # Claude
 .claude/settings.local.json
-.claude/scheduled_tasks.lock
 
 debug_*.txt
 
