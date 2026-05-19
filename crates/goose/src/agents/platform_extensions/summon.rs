@@ -314,8 +314,7 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
 
     subagents.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
 
-    let names: Vec<&str> = subagents.iter().map(|s| s.name.as_str()).collect();
-    let names_joined = names.join(", ");
+    let names = subagents.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ");
 
     let mut out = String::new();
     out.push_str(
@@ -338,7 +337,7 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
     }
 
     out.push_str(&format!(
-        "\n\nWhen to call a subagent (one of [{names_joined}]):\n\
+        "\n\nWhen to call a subagent (one of [{names}]):\n\
          • `@<name>` in the user's message — always call that subagent.\n\
          • The user mentions a subagent by name without `@` — infer from \
          context whether they want it invoked, and if so, call it.\n\
