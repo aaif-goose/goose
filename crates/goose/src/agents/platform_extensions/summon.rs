@@ -35,12 +35,8 @@ use tracing::{info, warn};
 
 pub static EXTENSION_NAME: &str = "summon";
 
-/// Max characters when rendering a subagent's description in a list shown
-/// to the model (system-prompt blurb, `load` discovery output, etc.).
 const SUBAGENT_DESCRIPTION_BUDGET: usize = 160;
 
-/// Max characters for a human-readable label of a running or completed
-/// task. Used for progress display and bookkeeping, not sent to the model.
 const TASK_LABEL_BUDGET: usize = 60;
 
 fn kind_plural(kind: SourceType) -> &'static str {
@@ -294,10 +290,7 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
         return String::new();
     };
 
-    // Only Agent / Recipe / Subrecipe are valid `delegate` targets — see
-    // `build_source_recipe`. Filter the filesystem scan to those, so that
-    // if discovery ever grows to return other source types (skills,
-    // projects, ...) we don't accidentally advertise them here.
+    // filter the sources down to what we want even though currently that is what we get
     let mut sources: Vec<SourceEntry> = discover_filesystem_sources(&session.working_dir)
         .into_iter()
         .filter(|s| {
@@ -308,16 +301,14 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
         })
         .collect();
 
-    // Subrecipes attached to the active session recipe are valid `delegate`
-    // targets but live in the session, not on disk, so the filesystem scan
-    // does not see them. Synthesize a light SourceEntry from the SubRecipe
-    // metadata — enough for the listing, without loading the recipe file.
+    // If the session is started from a recipe, also use the subrecipes for
+    // that recipe as delegate targets
     if let Some(recipe) = session.recipe.as_ref() {
         if let Some(subs) = recipe.sub_recipes.as_ref() {
-            let mut seen: std::collections::HashSet<&str> =
-                sources.iter().map(|s| s.name.as_str()).collect();
+            let mut seen: std::collections::HashSet<String> =
+                sources.iter().map(|s| s.name.clone()).collect();
             for sr in subs {
-                if !seen.insert(sr.name.as_str()) {
+                if !seen.insert(sr.name.clone()) {
                     continue;
                 }
                 sources.push(SourceEntry {
