@@ -1791,9 +1791,9 @@ fn handle_recipe_subcommand(command: RecipeCommand) -> Result<()> {
     }
 }
 
-fn handle_skills_subcommand(command: SkillsCommand) -> Result<()> {
+async fn handle_skills_subcommand(command: SkillsCommand) -> Result<()> {
     match command {
-        SkillsCommand::List => handle_skills_list(),
+        SkillsCommand::List => handle_skills_list().await,
     }
 }
 
@@ -2107,7 +2107,7 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
-        Some(Command::Skills { command }) => handle_skills_subcommand(command),
+        Some(Command::Skills { command }) => handle_skills_subcommand(command).await,
         Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
