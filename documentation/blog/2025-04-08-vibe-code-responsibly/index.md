@@ -65,7 +65,7 @@ This is especially useful for tasks that span multiple files, involve side effec
 
 ### 3. Choose the Right Mode for the Job
 
-While letting your AI agent take the lead is fun, not every moment calls for full autonomy. Sometimes, you need to pause, review, or plan before any code changes. Goose offers several [modes](https://goose-docs.ai/docs/guides/goose-permissions) that help you stay in control without breaking your momentum. Here's how to use them intentionally during your sessions:
+While letting your AI agent take the lead is fun, not every moment calls for full autonomy. Sometimes, you need to pause, review, or plan before any code changes. Goose offers several [modes](https://goose-docs.ai/docs/guides/managing-tools/goose-permissions) that help you stay in control without breaking your momentum. Here's how to use them intentionally during your sessions:
 
 * **Chat Mode**  
   Goose will only respond with text so that you can brainstorm together.

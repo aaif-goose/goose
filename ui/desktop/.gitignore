@@ -5,6 +5,8 @@ src/bin/goosed
 src/bin/goose-npm/
 /src/bin/*.exe
 /src/bin/*.cmd
+/src/platform/windows/bin/*.dll
+/src/platform/windows/bin/*.exe
 /playwright-report/
 /test-results/
 /src/bin/temporal-service

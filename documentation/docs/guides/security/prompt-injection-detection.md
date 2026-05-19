@@ -128,5 +128,5 @@ If you want to run your own classification endpoint, see the [Classification API
 
 ## See Also
 
-- [goose Permission Modes](/docs/guides/goose-permissions) - Control goose's autonomy level
+- [goose Permission Modes](/docs/guides/managing-tools/goose-permissions) - Control goose's autonomy level
 - [Managing Tool Permissions](/docs/guides/managing-tools/tool-permissions) - Fine-grained tool control

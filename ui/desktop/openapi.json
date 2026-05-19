@@ -6897,6 +6897,10 @@
           },
           "provider_type": {
             "$ref": "#/components/schemas/ProviderType"
+          },
+          "saved_model": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

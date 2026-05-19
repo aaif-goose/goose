@@ -10,7 +10,6 @@ import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
-import PopularChatTopics from './PopularChatTopics';
 import ProgressiveMessageList from './ProgressiveMessageList';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
@@ -71,7 +70,6 @@ interface BaseChatProps {
   customMainLayoutProps?: Record<string, unknown>;
   contentClassName?: string;
   disableSearch?: boolean;
-  showPopularTopics?: boolean;
   suppressEmptyState: boolean;
   sessionId: string;
   isActiveSession: boolean;
@@ -320,9 +318,6 @@ export default function BaseChat({
     });
   };
 
-  const showPopularTopics =
-    messages.length === 0 && !initialMessage && chatState === ChatState.Idle;
-
   const chat: ChatType = {
     messages,
     recipe,
@@ -461,10 +456,6 @@ export default function BaseChat({
 
                 <div className="block h-8" />
               </>
-            ) : !recipe && showPopularTopics ? (
-              <PopularChatTopics
-                append={(text: string) => handleSubmit({ msg: text, images: [] })}
-              />
             ) : null}
           </ScrollArea>
 

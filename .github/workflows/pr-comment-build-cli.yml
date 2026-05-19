@@ -138,6 +138,8 @@ jobs:
             Download CLI builds for different platforms:
             - [📦 Linux (x86_64, Ubuntu 22.04-compatible)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-unknown-linux-gnu.zip)
             - [📦 Linux (aarch64, Ubuntu 22.04-compatible)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-gnu.zip)
+            - [📦 Linux musl (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-unknown-linux-musl.zip)
+            - [📦 Linux musl (aarch64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-musl.zip)
             - [📦 Linux Vulkan (x86_64, Ubuntu 24.04+)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-unknown-linux-gnu-vulkan.zip)
             - [📦 Linux Vulkan (aarch64, Ubuntu 24.04+)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-aarch64-unknown-linux-gnu-vulkan.zip)
             - [📦 macOS (x86_64)](https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/goose-x86_64-apple-darwin.zip)

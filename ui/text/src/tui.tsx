@@ -20,6 +20,7 @@ import { resolveGooseBinary } from "@aaif/goose-sdk/node";
 import Onboarding from "./onboarding.js";
 import ConfigureScreen, { ConfigureIntent } from "./configure.js";
 import ExtensionsManager from "./extensions.js";
+import { DiffViewer } from "./components/DiffViewer.js";
 import type { Turn } from "./types.js";
 import {
   emptyLine,
@@ -53,6 +54,7 @@ import {
   SCROLL_STEP,
   SCROLL_FAST_MULTIPLIER,
 } from "./constants.js";
+import { tryRunSlashCommand } from "./slashCommands.js";
 
 const InputBar = React.memo(function InputBar({
   width,
@@ -512,11 +514,13 @@ function App({
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   type Overlay =
     | { screen: "configure"; intent: ConfigureIntent }
-    | { screen: "extensions" };
+    | { screen: "extensions" }
+    | { screen: "diff"; content: string; truncated: boolean };
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   const clientRef = useRef<GooseClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const sessionCwdRef = useRef<string>(process.cwd());
   const streamBuf = useRef("");
   const sentInitialPrompt = useRef(false);
   const queueRef = useRef<string[]>([]);
@@ -707,8 +711,10 @@ function App({
       setStatus("creating session…");
       setLoading(true);
       try {
+        const cwd = process.cwd();
+        sessionCwdRef.current = cwd;
         const session = await client.newSession({
-          cwd: process.cwd(),
+          cwd,
           mcpServers: [],
         });
         sessionIdRef.current = session.sessionId;
@@ -825,6 +831,52 @@ function App({
     exit,
   ]);
 
+  const addLocalTurn = useCallback(
+    (userText: string, message?: string) => {
+      setTurns((prev) => [
+        ...prev,
+        {
+          userText,
+          responseItems: message
+            ? [
+                {
+                  itemType: "content_chunk",
+                  content: { type: "text", text: message },
+                },
+              ]
+            : [],
+          toolCallsById: new Map(),
+        },
+      ]);
+      setViewTurnIdx(-1);
+      setSelectedToolCallIdx(null);
+      setToolCallExpanded(false);
+      setToolCallExpandedScroll(0);
+      setScrollOffset(0);
+    },
+    [],
+  );
+
+  const runSlashCommand = useCallback(
+    (raw: string): boolean => {
+      const result = tryRunSlashCommand(raw, {
+        cwd: sessionCwdRef.current,
+      });
+      if (!result.handled) return false;
+      if ("overlay" in result && result.overlay === "diff") {
+        setOverlay({
+          screen: "diff",
+          content: result.content,
+          truncated: result.truncated,
+        });
+        return true;
+      }
+      addLocalTurn(raw, "message" in result ? result.message : undefined);
+      return true;
+    },
+    [addLocalTurn],
+  );
+
   const handleSubmit = useCallback(
     (value: string) => {
       const trimmed = value.trim();
@@ -837,6 +889,8 @@ function App({
       setToolCallExpandedScroll(0);
       setScrollOffset(0);
 
+      if (trimmed.startsWith("/") && runSlashCommand(trimmed)) return;
+
       if (loading || isProcessingRef.current) {
         queueRef.current.push(trimmed);
         setQueuedMessages([...queueRef.current]);
@@ -844,7 +898,7 @@ function App({
         sendPrompt(trimmed);
       }
     },
-    [loading, sendPrompt],
+    [loading, sendPrompt, runSlashCommand],
   );
 
   const PAD_X = 2;
@@ -1084,6 +1138,18 @@ function App({
           onComplete={handleOnboardingComplete}
         />
       </Box>
+    );
+  }
+
+  if (overlay && overlay.screen === "diff") {
+    return (
+      <DiffViewer
+        content={overlay.content}
+        truncated={overlay.truncated}
+        width={safeTermWidth}
+        height={safeTermHeight}
+        onClose={() => setOverlay(null)}
+      />
     );
   }
 

@@ -35,7 +35,7 @@ impl ProviderDef for PiAcpProvider {
         .with_setup_steps(vec![
             "Install the Pi CLI and the pi-acp adapter",
             "Ensure your Pi CLI is authenticated (run `pi` to verify)",
-            "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: pi-acp\n  GOOSE_MODEL: current",
+            "Add to your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: pi-acp\n  GOOSE_MODEL: current\n  pi-acp_configured: true",
             "Restart goose for changes to take effect",
         ])
         .with_model_selection_hint("Use the Pi CLI to configure models")

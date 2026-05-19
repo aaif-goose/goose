@@ -31,6 +31,7 @@
 //!
 
 use super::errors::ProviderError;
+#[cfg(feature = "local-inference")]
 use super::local_inference::LOCAL_LLM_MODEL_CONFIG_KEY;
 use super::ollama::OLLAMA_DEFAULT_PORT;
 use super::ollama::OLLAMA_HOST;
@@ -52,6 +53,8 @@ use uuid::Uuid;
 pub const DEFAULT_INTERPRETER_MODEL_OLLAMA: &str = "mistral-nemo";
 pub const TOOLSHIM_BACKEND_ENV_VAR: &str = "GOOSE_TOOLSHIM_BACKEND";
 pub const TOOLSHIM_LOCAL_MODEL_ENV_VAR: &str = "GOOSE_TOOLSHIM_MODEL";
+#[cfg(not(feature = "local-inference"))]
+const LOCAL_LLM_MODEL_CONFIG_KEY: &str = "LOCAL_LLM_MODEL";
 
 const TOOL_CALLS_SECTION_BEGIN: &str = "<|tool_calls_section_begin|>";
 const TOOL_CALLS_SECTION_END: &str = "<|tool_calls_section_end|>";

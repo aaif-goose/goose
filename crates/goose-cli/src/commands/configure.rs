@@ -853,8 +853,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     match test_provider_configuration(provider_name, &model, toolshim_enabled, toolshim_model).await
     {
         Ok(()) => {
-            config.set_goose_provider(provider_name)?;
-            config.set_goose_model(&model)?;
+            goose::config::set_active_provider(config, provider_name, &model)?;
             print_config_file_saved()?;
             Ok(true)
         }
@@ -2013,6 +2012,7 @@ fn collect_custom_headers() -> anyhow::Result<Option<std::collections::HashMap<S
 }
 
 fn add_provider() -> anyhow::Result<()> {
+    let config = Config::global();
     let provider_type = cliclack::select("What type of API is this?")
         .item(
             "openai_compatible",
@@ -2097,7 +2097,7 @@ fn add_provider() -> anyhow::Result<()> {
 
     let headers = collect_custom_headers()?;
 
-    create_custom_provider(CreateCustomProviderParams {
+    let provider_config = create_custom_provider(CreateCustomProviderParams {
         engine: provider_type.to_string(),
         display_name: display_name.clone(),
         api_url,
@@ -2110,6 +2110,21 @@ fn add_provider() -> anyhow::Result<()> {
         base_path,
         preserves_thinking: None,
     })?;
+
+    if !provider_config.models.is_empty() {
+        let model_items: Vec<_> = provider_config
+            .models
+            .iter()
+            .map(|m| (m.name.as_str(), m.name.as_str(), ""))
+            .collect();
+        if let Ok(model) = cliclack::select("Which model should be the default?")
+            .items(&model_items)
+            .interact()
+        {
+            config.set_goose_provider(&provider_config.name)?;
+            config.set_goose_model(model)?;
+        }
+    }
 
     cliclack::outro(format!("Custom provider added: {}", display_name))?;
     Ok(())
