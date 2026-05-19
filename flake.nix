@@ -42,8 +42,14 @@
           version = workspaceToml.workspace.package.version;
           src = self;
 
-          cargoLock.lockFile = ./Cargo.lock;
-
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes = {
+              "cudaforge-0.1.6" = "sha256-w0e/mfx08BkphDEFEWxuyxyZu/gHiG0m6RHx+3BLzDY=";
+              "opentelemetry-0.31.0" = "sha256-3uayFFBnM9LHnWpDdbKv+qjMvaqowrODAcZuK20/cdA=";
+            };
+          };
+          
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
 
           # Pre-fetch rusty_v8 binary to avoid network access during build
