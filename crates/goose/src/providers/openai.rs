@@ -1261,27 +1261,10 @@ mod tests {
     // ── resolve_api_key tests ──────────────────────────────────────────────
 
     fn config_with_key(api_key_env: &str, requires_auth: bool) -> DeclarativeProviderConfig {
-        DeclarativeProviderConfig {
-            name: "custom_test".to_string(),
-            engine: ProviderEngine::OpenAI,
-            display_name: "Custom Test".to_string(),
-            description: None,
-            api_key_env: api_key_env.to_string(),
-            base_url: "http://localhost:1".to_string(),
-            models: vec![],
-            headers: None,
-            timeout_seconds: None,
-            supports_streaming: Some(true),
-            requires_auth,
-            catalog_provider_id: None,
-            base_path: None,
-            env_vars: None,
-            dynamic_models: None,
-            skip_canonical_filtering: false,
-            model_doc_link: None,
-            setup_steps: vec![],
-            fast_model: None,
-        }
+        let mut config = base_declarative_config(vec![], None);
+        config.api_key_env = api_key_env.to_string();
+        config.requires_auth = requires_auth;
+        config
     }
 
     #[test]
