@@ -4,7 +4,9 @@ use super::base::{
 };
 use super::embedding::{EmbeddingCapable, EmbeddingRequest, EmbeddingResponse};
 use super::errors::ProviderError;
-use super::formats::openai::{create_request, get_usage, response_to_message};
+use super::formats::openai::{
+    create_request_with_options, get_usage, response_to_message, OpenAiFormatOptions,
+};
 use super::formats::openai_responses::{
     create_responses_request, get_responses_usage, responses_api_to_message, ResponsesApiResponse,
 };
@@ -120,6 +122,7 @@ pub struct OpenAiProvider {
     custom_models: Option<Vec<String>>,
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
+    preserve_thinking_context: bool,
 }
 
 impl OpenAiProvider {
@@ -273,6 +276,7 @@ impl OpenAiProvider {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            preserve_thinking_context: !is_openai,
         })
     }
 
@@ -290,6 +294,54 @@ impl OpenAiProvider {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
+        }
+    }
+
+    /// Resolve the API key from a declarative provider config.
+    ///
+    /// Returns `Some(key)` if a key is found, `None` if the key is optional/missing,
+    /// or an error if the key is required but missing/unreadable.
+    ///
+    /// The `get_secret` closure is used to look up the secret by key name. This allows
+    /// testing without depending on `Config::global()`.
+    pub fn resolve_api_key(
+        config: &DeclarativeProviderConfig,
+        get_secret: &dyn Fn(&str) -> Result<String, crate::config::ConfigError>,
+    ) -> Result<Option<String>> {
+        if config.api_key_env.is_empty() {
+            return Ok(None);
+        }
+
+        match get_secret(&config.api_key_env) {
+            Ok(key) => Ok(Some(key)),
+            Err(e) => {
+                use crate::config::ConfigError;
+                match e {
+                    ConfigError::NotFound(_) => {
+                        if config.requires_auth {
+                            anyhow::bail!(
+                                "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
+                                config.api_key_env,
+                                config.api_key_env
+                            );
+                        }
+                        Ok(None)
+                    }
+                    other => {
+                        if config.requires_auth {
+                            anyhow::bail!("Failed to read {}: {}", config.api_key_env, other);
+                        } else {
+                            tracing::warn!(
+                                "Failed to read optional API key {}: {}. Proceeding without authentication.",
+                                config.api_key_env,
+                                other
+                            );
+                            Ok(None)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -318,22 +370,7 @@ impl OpenAiProvider {
         }
 
         let global_config = crate::config::Config::global();
-
-        let api_key: Option<String> = if config.requires_auth && !config.api_key_env.is_empty() {
-            Some(global_config.get_secret::<String>(&config.api_key_env).map_err(|e| {
-                use crate::config::ConfigError;
-                match e {
-                    ConfigError::NotFound(_) => anyhow::anyhow!(
-                        "Required API key {} is not set. Configure it via `goose configure` or set the {} environment variable.",
-                        config.api_key_env,
-                        config.api_key_env
-                    ),
-                    other => anyhow::anyhow!("Failed to read {}: {}", config.api_key_env, other),
-                }
-            })?)
-        } else {
-            None
-        };
+        let api_key = Self::resolve_api_key(&config, &|key| global_config.get_secret(key))?;
 
         let url = url::Url::parse(&config.base_url)
             .map_err(|e| anyhow::anyhow!("Invalid base URL '{}': {}", config.base_url, e))?;
@@ -394,6 +431,7 @@ impl OpenAiProvider {
             custom_models,
             dynamic_models: config.dynamic_models,
             skip_canonical_filtering: config.skip_canonical_filtering,
+            preserve_thinking_context: config.preserves_thinking,
         })
     }
 
@@ -766,13 +804,16 @@ impl Provider for OpenAiProvider {
                 Ok(super::base::stream_from_single_message(message, usage))
             }
         } else {
-            let payload = create_request(
+            let payload = create_request_with_options(
                 model_config,
                 system,
                 messages,
                 tools,
                 &ImageFormat::OpenAi,
                 self.supports_streaming,
+                OpenAiFormatOptions {
+                    preserve_thinking_context: self.preserve_thinking_context,
+                },
             )?;
             let payload = self.sanitize_request_for_compat(payload);
             let mut log = RequestLog::start(model_config, &payload)?;
@@ -907,6 +948,7 @@ mod tests {
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
         }
     }
 
@@ -1150,6 +1192,7 @@ mod tests {
             custom_models,
             dynamic_models,
             skip_canonical_filtering: false,
+            preserve_thinking_context: false,
         }
     }
 
@@ -1177,6 +1220,7 @@ mod tests {
             model_doc_link: None,
             setup_steps: vec![],
             fast_model: None,
+            preserves_thinking: false,
         }
     }
 
@@ -1211,6 +1255,85 @@ mod tests {
         assert!(
             msg.contains("dynamic_models: false"),
             "error message should mention dynamic_models: false; got: {msg}"
+        );
+    }
+
+    // ── resolve_api_key tests ──────────────────────────────────────────────
+
+    fn config_with_key(api_key_env: &str, requires_auth: bool) -> DeclarativeProviderConfig {
+        let mut config = base_declarative_config(vec![], None);
+        config.api_key_env = api_key_env.to_string();
+        config.requires_auth = requires_auth;
+        config
+    }
+
+    #[test]
+    fn resolve_api_key_empty_env_returns_none() {
+        let config = config_with_key("", true);
+        assert_eq!(
+            OpenAiProvider::resolve_api_key(&config, &|_| unreachable!()).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_missing_with_requires_auth_bails() {
+        let config = config_with_key("MY_KEY", true);
+        let err = OpenAiProvider::resolve_api_key(&config, &|_| {
+            Err(crate::config::ConfigError::NotFound("x".into()))
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("MY_KEY"),
+            "error should mention the key name; got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_missing_without_requires_auth_returns_none() {
+        let config = config_with_key("MY_KEY", false);
+        assert_eq!(
+            OpenAiProvider::resolve_api_key(&config, &|_| Err(
+                crate::config::ConfigError::NotFound("x".into())
+            ))
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_present_returns_value() {
+        let config = config_with_key("MY_KEY", true);
+        assert_eq!(
+            OpenAiProvider::resolve_api_key(&config, &|_| Ok("secret".into())).unwrap(),
+            Some("secret".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_other_error_bails_when_required() {
+        let config = config_with_key("MY_KEY", true);
+        let err = OpenAiProvider::resolve_api_key(&config, &|_| {
+            Err(crate::config::ConfigError::KeyringError("ring fail".into()))
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("MY_KEY"),
+            "error should mention the key name; got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_other_error_warns_and_returns_none_when_optional() {
+        let config = config_with_key("MY_KEY", false);
+        assert_eq!(
+            OpenAiProvider::resolve_api_key(&config, &|_| Err(
+                crate::config::ConfigError::KeyringError("ring fail".into())
+            ))
+            .unwrap(),
+            None
         );
     }
 }

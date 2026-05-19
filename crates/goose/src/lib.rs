@@ -9,6 +9,7 @@ pub use goose_sdk::custom_requests;
 pub mod action_required_manager;
 pub mod agents;
 pub mod builtin_extension;
+pub mod checks;
 pub mod config;
 pub mod context_mgmt;
 pub mod conversation;

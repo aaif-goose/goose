@@ -355,10 +355,10 @@ async fn send_error_event(
     }
 
     let config = Config::global();
-    if let Ok(provider) = config.get_param::<String>("GOOSE_PROVIDER") {
+    if let Ok(provider) = config.get_goose_provider() {
         insert(&mut props, "provider", provider);
     }
-    if let Ok(model) = config.get_param::<String>("GOOSE_MODEL") {
+    if let Ok(model) = config.get_goose_model() {
         insert(&mut props, "model", model);
     }
 
@@ -407,10 +407,10 @@ async fn send_session_event(installation: &InstallationData) -> Result<(), Strin
     insert(&mut props, "days_since_install", days_since_install);
 
     let config = Config::global();
-    if let Ok(provider) = config.get_param::<String>("GOOSE_PROVIDER") {
+    if let Ok(provider) = config.get_goose_provider() {
         insert(&mut props, "provider", provider);
     }
-    if let Ok(model) = config.get_param::<String>("GOOSE_MODEL") {
+    if let Ok(model) = config.get_goose_model() {
         insert(&mut props, "model", model);
     }
 

@@ -35,7 +35,7 @@ Test various ways to start a conversation:
   - [ ] Ask "what is your working directory?"
   - [ ] Response should match the new directory
 - [ ] Open a new window, click chat in left side for new chat
-- [ ] Click "create a tamagotchi game" in popular chat topics to test developer extension
+- [ ] Type "create a tamagotchi game" in the chat input to test developer extension
 
 ### Recipes
 

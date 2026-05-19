@@ -1,0 +1,25 @@
+{
+  "name": "venice",
+  "engine": "openai",
+  "display_name": "Venice.ai",
+  "description": "Venice.ai models (Llama, DeepSeek, Mistral) with function calling",
+  "api_key_env": "VENICE_API_KEY",
+  "base_url": "https://api.venice.ai/api/v1/chat/completions",
+  "models": [
+    {
+      "name": "llama-3.3-70b",
+      "context_limit": 131072
+    },
+    {
+      "name": "llama-3.2-3b",
+      "context_limit": 131072
+    },
+    {
+      "name": "mistral-31-24b",
+      "context_limit": 131072
+    }
+  ],
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://docs.venice.ai/"
+}

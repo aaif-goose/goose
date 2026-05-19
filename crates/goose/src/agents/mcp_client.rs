@@ -84,6 +84,13 @@ pub trait McpClientTrait: Send + Sync {
 
     fn get_info(&self) -> Option<&InitializeResult>;
 
+    /// Return the extension's current instructions. The default reads from
+    /// `get_info()`, but platform extensions can override this to provide
+    /// dynamically computed instructions (e.g. freshly discovered skills).
+    fn get_instructions(&self) -> Option<String> {
+        self.get_info().and_then(|info| info.instructions.clone())
+    }
+
     async fn list_resources(
         &self,
         _session_id: &str,

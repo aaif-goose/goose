@@ -1,0 +1,48 @@
+{
+  "name": "saladcloud",
+  "engine": "openai",
+  "display_name": "SaladCloud AI Gateway",
+  "description": "OpenAI-compatible access to SaladCloud-hosted Qwen and Gemma models",
+  "api_key_env": "SALAD_CLOUD_API_KEY",
+  "base_url": "https://ai.salad.cloud/v1/chat/completions",
+  "models": [
+    {
+      "name": "qwen3.6-35b-a3b",
+      "context_limit": 262144,
+      "input_token_cost": 0.00000009,
+      "output_token_cost": 0.0000006,
+      "currency": "USD"
+    },
+    {
+      "name": "qwen3.6-27b",
+      "context_limit": 262144,
+      "input_token_cost": 0.0000003,
+      "output_token_cost": 0.0000012,
+      "currency": "USD"
+    },
+    {
+      "name": "qwen3.5-9b",
+      "context_limit": 262144,
+      "input_token_cost": 0.00000006,
+      "output_token_cost": 0.00000009,
+      "currency": "USD"
+    },
+    {
+      "name": "gemma-4-26b-a4b-instruct",
+      "context_limit": 262144,
+      "input_token_cost": 0.00000004,
+      "output_token_cost": 0.0000002,
+      "currency": "USD"
+    }
+  ],
+  "supports_streaming": true,
+  "dynamic_models": true,
+  "skip_canonical_filtering": true,
+  "model_doc_link": "https://docs.salad.com/ai-gateway/explanation/overview",
+  "setup_steps": [
+    "Register at portal.salad.com and enable access to the AI Gateway.",
+    "Copy your API key from https://portal.salad.com/api-key and paste it above as SALAD_CLOUD_API_KEY.",
+    "Select a supported model such as qwen3.6-35b-a3b."
+  ],
+  "fast_model": "qwen3.5-9b"
+}

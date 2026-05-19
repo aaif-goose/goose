@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { IpcRendererEvent } from 'electron';
 import { Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Menu } from 'lucide-react';
@@ -36,6 +37,21 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
   const safeIsMacOS = (window?.electron?.platform || 'darwin') === 'darwin';
   const chatContext = useChatContext();
   const isOnPairRoute = location.pathname === '/pair';
+
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (!safeIsMacOS) return;
+    window.electron
+      .getIsFullScreen()
+      .then(setIsFullScreen)
+      .catch(() => {});
+    const handler = (_event: IpcRendererEvent, ...args: unknown[]) => {
+      setIsFullScreen(Boolean(args[0]));
+    };
+    window.electron.on('fullscreen-change', handler);
+    return () => window.electron.off('fullscreen-change', handler);
+  }, [safeIsMacOS]);
 
   const {
     isNavExpanded,
@@ -146,8 +162,9 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
     };
   }, [isPushTopNav]);
 
-  const headerPadding = safeIsMacOS ? 'pl-[96px]' : 'pl-4';
-  const headerTop = safeIsMacOS ? 'top-[15px]' : 'top-[11px]';
+  const needsTrafficLightInset = safeIsMacOS && !isFullScreen;
+  const headerPadding = needsTrafficLightInset ? 'pl-[96px]' : 'pl-4';
+  const headerTop = needsTrafficLightInset ? 'top-[15px]' : 'top-[11px]';
 
   // Determine flex direction based on navigation position (for push mode)
   const getLayoutClass = () => {

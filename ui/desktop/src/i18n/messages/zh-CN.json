@@ -2597,21 +2597,6 @@
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "传给提供商的隐藏指令，用于引导并为回复补充上下文。"
   },
-  "popularChatTopics.governmentForms": {
-    "defaultMessage": "详细介绍各种政府形式的运作方式，并按“鹅”的单位对每种进行排名"
-  },
-  "popularChatTopics.heading": {
-    "defaultMessage": "热门聊天话题"
-  },
-  "popularChatTopics.organizePhotos": {
-    "defaultMessage": "按主题把我桌面上的照片整理成一些整洁的小文件夹"
-  },
-  "popularChatTopics.start": {
-    "defaultMessage": "开始"
-  },
-  "popularChatTopics.tamagotchiGame": {
-    "defaultMessage": "开发一个住在我电脑里、像素风的电子宠物游戏"
-  },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "错误类型（例如“rate_limit”“auth”——不含详情）"
   },
@@ -4520,11 +4505,11 @@
   "toolCallWithResponse.viewSubagentSession": {
     "defaultMessage": "查看子 agent 会话"
   },
-  "toolConfirmation.allowToolCall": {
-    "defaultMessage": "允许此次工具调用吗？"
+  "toolConfirmation.allowToolCallWithName": {
+    "defaultMessage": "允许 {toolName} 吗？"
   },
-  "toolConfirmation.gooseWouldLikeToCall": {
-    "defaultMessage": "Goose 想调用上述工具，允许吗？"
+  "toolConfirmation.gooseWouldLikeToCallWithName": {
+    "defaultMessage": "Goose 想调用 {toolName}，允许吗？"
   },
   "tunnelSection.appStoreQrInstructions": {
     "defaultMessage": "用 iPhone 相机扫描此二维码，从 App Store 安装 goose 手机应用"

@@ -18,7 +18,7 @@ use crate::providers::formats::openai::create_request;
 use rmcp::model::Tool;
 use serde_json::Value;
 
-const TETRATE_PROVIDER_NAME: &str = "tetrate";
+pub const TETRATE_PROVIDER_NAME: &str = "tetrate";
 pub const TETRATE_DOC_URL: &str = "https://router.tetrate.ai";
 pub const TETRATE_BILLING_URL: &str = "https://router.tetrate.ai/billing";
 

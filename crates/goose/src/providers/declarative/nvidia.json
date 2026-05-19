@@ -13,6 +13,7 @@
       "context_limit": 131072
     }
   ],
+  "preserves_thinking": true,
   "supports_streaming": true,
   "model_doc_link": "https://build.nvidia.com/models",
   "setup_steps": [

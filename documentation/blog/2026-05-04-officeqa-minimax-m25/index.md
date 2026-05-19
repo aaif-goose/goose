@@ -7,6 +7,8 @@ authors:
 
 Quick highlight: [Sentient AGI](https://x.com/SentientAGI/status/2046967422004154739) recently shared with us some results with a challenge called "Grounded Reasoning" where teams tackled the Databricks OfficeQA benchmark using the MiniMax (2.5) open model.
 
+<!-- truncate -->
+
 Highlights from the linked article:
 
 > * Using goose with [MiniMax M2.5](https://www.minimax.io/) on the [OfficeQA benchmark from Databricks](https://www.databricks.com/blog/officeqa), we're seeing results approaching frontier model performance for **1/30th of the cost**.

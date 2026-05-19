@@ -1,5 +1,4 @@
 ---
-sidebar_position: 16
 title: Customizing the Sidebar
 sidebar_label: Customizing the Sidebar
 description: Personalize how you navigate goose Desktop by changing the sidebar's look, position, and behavior

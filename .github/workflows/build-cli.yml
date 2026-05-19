@@ -4,7 +4,9 @@
 #  - canary.yml
 #
 # Platform Build Strategy:
-#  - Linux: Uses native Ubuntu runners, including arm64 hosted runners
+#  - Linux standard: Uses native Ubuntu 22.04 runners to keep glibc compatibility with Ubuntu 22.04 LTS
+#  - Linux Vulkan: Uses native Ubuntu 24.04 runners for newer Vulkan headers/tooling
+#  - Linux musl: Uses native Ubuntu 22.04 runners with reduced features for musl compatibility
 #  - macOS: Uses native macOS runners for each architecture
 #  - Windows: Uses Windows runner with native MSVC build
 on:
@@ -34,13 +36,33 @@ jobs:
           - platform: linux
             architecture: x86_64
             target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04
+            build-on: ubuntu-22.04
             variant: standard
           - platform: linux
             architecture: aarch64
             target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04-arm
+            build-on: ubuntu-22.04-arm
             variant: standard
+          - platform: linux
+            architecture: x86_64
+            target-suffix: unknown-linux-musl
+            build-on: ubuntu-22.04
+            variant: musl
+          - platform: linux
+            architecture: aarch64
+            target-suffix: unknown-linux-musl
+            build-on: ubuntu-22.04-arm
+            variant: musl
+          - platform: linux
+            architecture: x86_64
+            target-suffix: unknown-linux-gnu
+            build-on: ubuntu-24.04
+            variant: vulkan
+          - platform: linux
+            architecture: aarch64
+            target-suffix: unknown-linux-gnu
+            build-on: ubuntu-24.04-arm
+            variant: vulkan
           - platform: macos
             architecture: x86_64
             target-suffix: apple-darwin
@@ -64,7 +86,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -84,16 +106,24 @@ jobs:
             pkg-config \
             libssl-dev \
             libdbus-1-dev \
-            libxcb1-dev \
-            libvulkan-dev \
-            libvulkan1 \
-            glslc
+            libxcb1-dev
+
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            sudo apt-get install -y \
+              libvulkan-dev \
+              libvulkan1 \
+              glslc
+          fi
+
+          if [ "${{ matrix.variant }}" = "musl" ]; then
+            sudo apt-get install -y musl-tools
+          fi
 
       - name: Cache Cargo artifacts (Linux/macOS)
         if: matrix.platform != 'windows'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
-          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-native-macos-deployment-target-12
+          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-${{ matrix.build-on }}-native-macos-deployment-target-12
 
       - name: Cache Cargo artifacts (Windows)
         if: matrix.platform == 'windows'
@@ -115,10 +145,17 @@ jobs:
           rustup show
 
           FEATURE_ARGS=()
-          if [[ "${TARGET}" == *-unknown-linux-gnu ]]; then
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
             FEATURE_ARGS=(--features vulkan)
           fi
-          cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+
+          if [ "${{ matrix.variant }}" = "musl" ]; then
+            cargo build --release --target ${TARGET} -p goose-cli --bin goose \
+              --no-default-features \
+              --features portable-default
+          else
+            cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+          fi
 
       - name: Setup Rust (Windows)
         if: matrix.platform == 'windows'
@@ -180,6 +217,10 @@ jobs:
         run: |
           source ./bin/activate-hermit
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
+          export VARIANT_SUFFIX=""
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            VARIANT_SUFFIX="-vulkan"
+          fi
 
           # Create a directory for the package contents
           mkdir -p "target/${TARGET}/release/goose-package"
@@ -188,10 +229,10 @@ jobs:
           cp "target/${TARGET}/release/goose" "target/${TARGET}/release/goose-package/"
 
           cd "target/${TARGET}/release"
-          tar -cjf "goose-${TARGET}.tar.bz2" -C goose-package .
-          tar -czf "goose-${TARGET}.tar.gz" -C goose-package .
-          echo "ARTIFACT_BZ2=target/${TARGET}/release/goose-${TARGET}.tar.bz2" >> $GITHUB_ENV
-          echo "ARTIFACT_GZ=target/${TARGET}/release/goose-${TARGET}.tar.gz" >> $GITHUB_ENV
+          tar -cjf "goose-${TARGET}${VARIANT_SUFFIX}.tar.bz2" -C goose-package .
+          tar -czf "goose-${TARGET}${VARIANT_SUFFIX}.tar.gz" -C goose-package .
+          echo "ARTIFACT_BZ2=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.tar.bz2" >> $GITHUB_ENV
+          echo "ARTIFACT_GZ=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.tar.gz" >> $GITHUB_ENV
 
       - name: Package CLI (Windows)
         if: matrix.platform == 'windows'
@@ -214,7 +255,7 @@ jobs:
       - name: Upload CLI artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant == 'cuda' && '-cuda' || '' }}
+          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant != 'standard' && matrix.variant != 'musl' && format('-{0}', matrix.variant) || '' }}
           path: |
             ${{ env.ARTIFACT_BZ2 }}
             ${{ env.ARTIFACT_GZ }}

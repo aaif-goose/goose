@@ -333,7 +333,7 @@ You can change some settings during a session and they will take effect immediat
   | **Working Directory** | <FolderDot className="inline" size={16} /> directory switcher | New sessions (after restart) |
   | [**Enabled Extensions**](/docs/getting-started/using-extensions#change-extensions-mid-session) | <Puzzle className="inline" size={16} /> icon | Current session only |
   | [**Model**](/docs/getting-started/providers#configure-provider-and-model) | <Bot className="inline" size={16} /> model switcher | New sessions |
-  | [**goose Mode**](/docs/guides/goose-permissions#configuring-goose-mode) | <Tornado className="inline" size={16} /> mode switcher | New sessions |
+  | [**goose Mode**](/docs/guides/managing-tools/goose-permissions#configuring-goose-mode) | <Tornado className="inline" size={16} /> mode switcher | New sessions |
 
   </TabItem>
   <TabItem value="cli" label="goose CLI">
@@ -343,7 +343,7 @@ You can change some settings during a session and they will take effect immediat
   | Setting | Slash Command | Persistence* |
   |---------|--------------|-------------|
   | [**Enabled Extensions**](/docs/getting-started/using-extensions#change-extensions-mid-session) | `/extension` or `/builtin` | Current session only |
-  | [**goose Mode**](/docs/guides/goose-permissions#configuring-goose-mode) | `/mode [options]` | New sessions |
+  | [**goose Mode**](/docs/guides/managing-tools/goose-permissions#configuring-goose-mode) | `/mode [options]` | New sessions |
 
   :::info
   The CLI supports [additional slash commands](/docs/guides/goose-cli-commands#slash-commands) but doesn't support mid-session changes to the working directory or model.

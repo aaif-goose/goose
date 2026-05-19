@@ -49,6 +49,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "gemini_oauth" => "google",
         "zhipu" => "zhipuai",
         "novita" => "novita-ai",
+        "opencode_go" => "opencode-go",
         _ => provider,
     }
 }
@@ -319,6 +320,10 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("openai", "gpt-4-turbo-2024-04-09", r),
             Some("openai/gpt-4-turbo".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("opencode_go", "kimi-k2.6", r),
+            Some("opencode-go/kimi-k2.6".to_string())
         );
 
         // === OpenRouter ===

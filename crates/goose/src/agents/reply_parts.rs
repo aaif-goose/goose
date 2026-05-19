@@ -527,6 +527,12 @@ impl Agent {
         let accumulated_output =
             accumulate(session.accumulated_output_tokens, usage.usage.output_tokens);
 
+        let accumulated_cost = session
+            .provider_name
+            .as_deref()
+            .and_then(|pn| self.accumulate_cost(session.accumulated_cost, usage, pn))
+            .or(session.accumulated_cost);
+
         let (current_total, current_input, current_output) = if is_compaction_usage {
             // After compaction: summary output becomes new input context
             let new_input = usage.usage.output_tokens;
@@ -548,10 +554,31 @@ impl Agent {
             .accumulated_total_tokens(accumulated_total)
             .accumulated_input_tokens(accumulated_input)
             .accumulated_output_tokens(accumulated_output)
+            .accumulated_cost(accumulated_cost)
             .apply()
             .await?;
 
         Ok(())
+    }
+
+    fn accumulate_cost(
+        &self,
+        existing: Option<f64>,
+        usage: &ProviderUsage,
+        provider_name: &str,
+    ) -> Option<f64> {
+        let canonical =
+            crate::providers::canonical::maybe_get_canonical_model(provider_name, &usage.model)?;
+
+        let input_price = canonical.cost.input?;
+        let output_price = canonical.cost.output?;
+
+        let input_tokens = usage.usage.input_tokens.unwrap_or(0) as f64;
+        let output_tokens = usage.usage.output_tokens.unwrap_or(0) as f64;
+
+        let chunk_cost = (input_tokens * input_price + output_tokens * output_price) / 1_000_000.0;
+
+        Some(existing.unwrap_or(0.0) + chunk_cost)
     }
 }
 

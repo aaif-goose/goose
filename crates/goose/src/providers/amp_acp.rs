@@ -10,7 +10,7 @@ use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::model::ModelConfig;
 use crate::providers::acp_tooling::{acp_adapter_installed, acp_inventory_identity};
-use crate::providers::base::{ProviderDef, ProviderMetadata};
+use crate::providers::base::{current_working_dir, ProviderDef, ProviderMetadata};
 use crate::providers::inventory::InventoryIdentityInput;
 
 const AMP_ACP_PROVIDER_NAME: &str = "amp-acp";
@@ -36,7 +36,7 @@ impl ProviderDef for AmpAcpProvider {
             "Install the Amp CLI: `curl -fsSL https://ampcode.com/install.sh | bash`",
             "Install the ACP adapter: `npm install -g amp-acp`",
             "Ensure your Amp CLI is authenticated (run `amp` to verify)",
-            "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: amp-acp\n  GOOSE_MODEL: current",
+            "Add to your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: amp-acp\n  GOOSE_MODEL: current\n  amp-acp_configured: true",
             "Restart goose for changes to take effect",
         ])
         .with_model_selection_hint("Use the Amp CLI to configure models")
@@ -45,6 +45,14 @@ impl ProviderDef for AmpAcpProvider {
     fn from_env(
         model: ModelConfig,
         extensions: Vec<crate::config::ExtensionConfig>,
+    ) -> BoxFuture<'static, Result<AcpProvider>> {
+        Self::from_env_with_working_dir(model, extensions, current_working_dir())
+    }
+
+    fn from_env_with_working_dir(
+        model: ModelConfig,
+        extensions: Vec<crate::config::ExtensionConfig>,
+        working_dir: PathBuf,
     ) -> BoxFuture<'static, Result<AcpProvider>> {
         Box::pin(async move {
             let config = Config::global();
@@ -65,7 +73,7 @@ impl ProviderDef for AmpAcpProvider {
                 args: vec![],
                 env: vec![],
                 env_remove: vec![],
-                work_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                work_dir: working_dir,
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&goose_mode].clone()),
                 mode_mapping,
