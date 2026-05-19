@@ -27,6 +27,13 @@ use std::sync::LazyLock;
 const DEFAULT_MAX_CODE_BLOCK_LINES: usize = 50;
 const DEFAULT_TRUNCATED_SHOW_LINES: usize = 20;
 
+/// Parse a line-count env value, rejecting anything that isn't a positive
+/// integer. Zero is invalid because it would hide every non-empty code block
+/// behind a temp-file pointer.
+fn parse_positive_lines(value: &str) -> Option<usize> {
+    value.parse::<usize>().ok().filter(|&n| n > 0)
+}
+
 fn max_code_block_lines() -> Option<usize> {
     static VALUE: LazyLock<Option<usize>> = LazyLock::new(|| {
         if std::env::var("GOOSE_NO_CODE_TRUNCATION")
@@ -38,7 +45,7 @@ fn max_code_block_lines() -> Option<usize> {
         Some(
             std::env::var("GOOSE_MAX_CODE_BLOCK_LINES")
                 .ok()
-                .and_then(|v| v.parse().ok())
+                .and_then(|v| parse_positive_lines(&v))
                 .unwrap_or(DEFAULT_MAX_CODE_BLOCK_LINES),
         )
     });
@@ -49,7 +56,7 @@ fn truncated_show_lines() -> usize {
     static VALUE: LazyLock<usize> = LazyLock::new(|| {
         std::env::var("GOOSE_TRUNCATED_SHOW_LINES")
             .ok()
-            .and_then(|v| v.parse().ok())
+            .and_then(|v| parse_positive_lines(&v))
             .unwrap_or(DEFAULT_TRUNCATED_SHOW_LINES)
     });
     *VALUE
@@ -806,5 +813,16 @@ mod tests {
         let content = "```\nline1\nline2\n```\n";
         let out = truncate_code_blocks_with(content, 10, 5);
         assert_eq!(out, content);
+    }
+
+    #[test]
+    fn parse_positive_lines_rejects_invalid_inputs() {
+        assert_eq!(parse_positive_lines("50"), Some(50));
+        assert_eq!(parse_positive_lines("1"), Some(1));
+        assert_eq!(parse_positive_lines("0"), None);
+        assert_eq!(parse_positive_lines("-1"), None);
+        assert_eq!(parse_positive_lines(""), None);
+        assert_eq!(parse_positive_lines("not-a-number"), None);
+        assert_eq!(parse_positive_lines("3.14"), None);
     }
 }
