@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -848,7 +848,7 @@
   {
     "id": "cash-app",
     "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",
