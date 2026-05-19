@@ -165,7 +165,7 @@ jobs:
           pnpm run make --platform=linux --arch=x64
 
           if [ "${{ matrix.variant }}" = "vulkan" ]; then
-            for package in out/make/deb/x64/*.deb out/make/flatpak/x86_64/*.flatpak; do
+            for package in out/make/deb/x64/*.deb out/make/rpm/x64/*.rpm out/make/flatpak/x86_64/*.flatpak; do
               [ -e "$package" ] || continue
               extension="${package##*.}"
               base="${package%.*}"
@@ -210,6 +210,14 @@ jobs:
         with:
           name: Goose-linux-x64-rpm
           path: ui/desktop/out/make/rpm/x64/*.rpm
+          if-no-files-found: error
+
+      - name: Upload .rpm package (Vulkan)
+        if: matrix.variant == 'vulkan'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-linux-x64-vulkan-rpm
+          path: ui/desktop/out/make/rpm/x64/*-vulkan.rpm
           if-no-files-found: error
 
       - name: Upload .flatpak package
