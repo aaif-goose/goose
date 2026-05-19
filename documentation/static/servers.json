@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -85,6 +85,17 @@
     "command": "uvx beads-mcp",
     "link": "https://github.com/steveyegge/beads",
     "installation_notes": "Install using uvx package manager. Requires uv to be installed.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
+    "id": "bilig-workpaper",
+    "name": "Bilig WorkPaper",
+    "description": "Formula WorkPaper runtime for Node services and agents: edit cells, recalculate, verify readback, and persist JSON without spreadsheet UI automation",
+    "command": "npx -y --package @bilig/headless@0.24.2 -- bilig-workpaper-mcp --workpaper ./pricing.workpaper.json --init-demo-workpaper --writable",
+    "link": "https://github.com/proompteng/bilig",
+    "installation_notes": "Install using npx package manager. The command creates a demo WorkPaper JSON only when the file is missing and persists edits when --writable is set.",
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": []
@@ -837,7 +848,7 @@
   {
     "id": "cash-app",
     "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",
