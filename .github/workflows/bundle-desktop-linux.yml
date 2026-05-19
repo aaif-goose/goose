@@ -162,6 +162,8 @@ jobs:
           ls -la node_modules/.bin/ | head -5
 
       - name: Build Linux packages
+        env:
+          GOOSE_DESKTOP_LINUX_VARIANT: ${{ matrix.variant }}
         run: |
           source ./bin/activate-hermit
           cd ui/desktop
