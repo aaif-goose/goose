@@ -59,28 +59,27 @@ fn truncate_code_blocks(content: &str) -> String {
     let Some(max_lines) = max_code_block_lines() else {
         return content.to_string();
     };
+    truncate_code_blocks_with(content, max_lines, truncated_show_lines())
+}
 
-    let (open_pos, fence) = match (content.find("```"), content.find("~~~")) {
-        (Some(a), Some(b)) if a <= b => (a, "```"),
-        (Some(a), None) => (a, "```"),
-        (None, Some(b)) => (b, "~~~"),
-        (Some(_), Some(b)) => (b, "~~~"),
-        (None, None) => return content.to_string(),
+fn truncate_code_blocks_with(content: &str, max_lines: usize, show_lines: usize) -> String {
+    let Some((open_pos, fence_char, fence_len)) = find_opening_fence(content) else {
+        return content.to_string();
     };
 
-    let Some(after_open) = content.get(open_pos + 3..) else {
+    let after_fence = open_pos + fence_len;
+    let Some(after_open) = content.get(after_fence..) else {
         return content.to_string();
     };
     let Some(newline_pos) = after_open.find('\n') else {
         return content.to_string();
     };
-    let code_start = open_pos + 3 + newline_pos + 1;
+    let code_start = after_fence + newline_pos + 1;
 
     let Some(code_region) = content.get(code_start..) else {
         return content.to_string();
     };
-    let close_pattern = format!("\n{}", fence);
-    let Some(close_offset) = code_region.find(&close_pattern) else {
+    let Some(close_offset) = find_closing_fence(code_region, fence_char, fence_len) else {
         return content.to_string();
     };
 
@@ -93,7 +92,7 @@ fn truncate_code_blocks(content: &str) -> String {
         return content.to_string();
     }
 
-    let show_lines = truncated_show_lines().min(max_lines).min(lines.len());
+    let show_lines = show_lines.min(max_lines).min(lines.len());
     let truncated: String = lines
         .iter()
         .take(show_lines)
@@ -113,6 +112,61 @@ fn truncate_code_blocks(content: &str) -> String {
         "{}{}\n... ({} more lines{})\n{}",
         prefix, truncated, remaining, file_msg, suffix
     )
+}
+
+/// Find the first opening code fence in `content`.
+///
+/// Returns the byte offset of the fence, the fence character (`` ` `` or `~`),
+/// and the actual run length (≥ 3 consecutive characters). The run length is
+/// needed so the matching closing fence can be located even when an inner
+/// fence of a shorter length appears inside the block.
+// SAFETY: `pos` comes from `str::find`, which returns a char-boundary byte
+// offset. Fence chars (`` ` `` and `~`) are ASCII, so the slice always starts
+// on a char boundary.
+#[allow(clippy::string_slice)]
+fn find_opening_fence(content: &str) -> Option<(usize, char, usize)> {
+    let (pos, ch) = match (content.find("```"), content.find("~~~")) {
+        (Some(a), Some(b)) if a <= b => (a, '`'),
+        (Some(a), None) => (a, '`'),
+        (None, Some(b)) => (b, '~'),
+        (Some(_), Some(b)) => (b, '~'),
+        (None, None) => return None,
+    };
+    let len = content[pos..].chars().take_while(|&c| c == ch).count();
+    Some((pos, ch, len))
+}
+
+/// Find the closing fence for a block opened with `min_len` `fence_char`
+/// characters. A closing fence is a line whose only non-whitespace content
+/// is a run of at least `min_len` matching fence characters.
+///
+/// Returns the offset (within `region`) of the newline preceding the closing
+/// fence line, matching the offset semantics that the rest of
+/// `truncate_code_blocks_with` expects.
+// SAFETY: All slice indices are at char boundaries:
+// - `search_from` starts at 0 and only advances to `line_start = nl_pos + 1`,
+//   where `nl_pos` is a `\n` byte (ASCII, single byte).
+// - `fence_count` is `chars().take_while(== fence_char).count()`; fence chars
+//   are ASCII, so the char count equals the byte length.
+// - `line_end` comes from `find('\n')` (ASCII boundary) or `after_fence.len()`.
+#[allow(clippy::string_slice)]
+fn find_closing_fence(region: &str, fence_char: char, min_len: usize) -> Option<usize> {
+    let mut search_from = 0;
+    while let Some(nl_rel) = region[search_from..].find('\n') {
+        let nl_pos = search_from + nl_rel;
+        let line_start = nl_pos + 1;
+        let line = region.get(line_start..)?;
+        let fence_count = line.chars().take_while(|&c| c == fence_char).count();
+        if fence_count >= min_len {
+            let after_fence = &line[fence_count..];
+            let line_end = after_fence.find('\n').unwrap_or(after_fence.len());
+            if after_fence[..line_end].trim().is_empty() {
+                return Some(nl_pos);
+            }
+        }
+        search_from = line_start;
+    }
+    None
 }
 
 fn save_to_temp_file(content: &str) -> Option<String> {
@@ -700,5 +754,57 @@ mod tests {
     )]
     fn test_incomplete_constructs(chunks: &[&str], expected: &[&str]) {
         assert_eq!(stream(chunks), expected);
+    }
+
+    // ===========================================
+    // Code-block truncation
+    // ===========================================
+
+    #[test]
+    fn truncation_preserves_longer_outer_backtick_fence() {
+        let content = "````md\n```\nline1\nline2\nline3\n```\n````\n";
+        let out = truncate_code_blocks_with(content, 2, 1);
+
+        assert!(
+            out.starts_with("````md\n"),
+            "outer fence should be preserved at the open: {out:?}"
+        );
+        assert!(
+            out.contains("\n````\n"),
+            "outer fence should still close the block: {out:?}"
+        );
+        assert!(
+            out.contains("... (4 more lines"),
+            "all 4 inner lines (including the inner ``` fences) should count toward truncation: {out:?}"
+        );
+    }
+
+    #[test]
+    fn truncation_preserves_longer_outer_tilde_fence() {
+        let content = "~~~~md\n~~~\nline1\nline2\nline3\n~~~\n~~~~\n";
+        let out = truncate_code_blocks_with(content, 2, 1);
+
+        assert!(out.starts_with("~~~~md\n"), "{out:?}");
+        assert!(out.contains("\n~~~~\n"), "{out:?}");
+        assert!(out.contains("... (4 more lines"), "{out:?}");
+    }
+
+    #[test]
+    fn truncation_ignores_non_fence_lines_containing_backticks() {
+        // A code line that begins with `````` but also has trailing text should
+        // not be treated as a closing fence.
+        let content = "````\nline1\n``` not a fence\nline3\nline4\nline5\n````\n";
+        let out = truncate_code_blocks_with(content, 2, 1);
+
+        assert!(out.starts_with("````\n"), "{out:?}");
+        assert!(out.contains("\n````\n"), "{out:?}");
+        assert!(out.contains("... (4 more lines"), "{out:?}");
+    }
+
+    #[test]
+    fn truncation_skips_when_block_is_within_limit() {
+        let content = "```\nline1\nline2\n```\n";
+        let out = truncate_code_blocks_with(content, 10, 5);
+        assert_eq!(out, content);
     }
 }
