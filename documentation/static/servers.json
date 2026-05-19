@@ -93,7 +93,7 @@
     "id": "bilig-workpaper",
     "name": "Bilig WorkPaper",
     "description": "Formula WorkPaper runtime for Node services and agents: edit cells, recalculate, verify readback, and persist JSON without spreadsheet UI automation",
-    "command": "npx -y --package @bilig/headless@0.25.6 -- bilig-workpaper-mcp --workpaper ./pricing.workpaper.json --init-demo-workpaper --writable",
+    "command": "npx -y --package @bilig/headless@0.25.7 -- bilig-workpaper-mcp --workpaper ./pricing.workpaper.json --init-demo-workpaper --writable",
     "link": "https://github.com/proompteng/bilig",
     "installation_notes": "Install using npx. The command creates a demo WorkPaper JSON only when the file is missing and persists edits when --writable is set. For hosted discovery, Smithery also lists gkonushev/bilig-workpaper.",
     "is_builtin": false,
