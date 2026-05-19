@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "aws-providers")]
@@ -35,7 +36,6 @@ use super::{
     provider_registry::ProviderRegistry,
     snowflake::SnowflakeProvider,
     tetrate::TetrateProvider,
-    venice::VeniceProvider,
     xai::XaiProvider,
 };
 use crate::config::ExtensionConfig;
@@ -84,7 +84,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<SageMakerTgiProvider>(false);
         registry.register::<SnowflakeProvider>(false);
         registry.register::<TetrateProvider>(true);
-        registry.register::<VeniceProvider>(false);
         registry.register::<XaiProvider>(false);
     });
     // Register cleanup functions for providers with cached state
@@ -160,6 +159,18 @@ pub async fn create(
 ) -> Result<Arc<dyn Provider>> {
     let entry = get_from_registry(name).await?;
     entry.create(model, extensions).await
+}
+
+pub async fn create_with_working_dir(
+    name: &str,
+    model: ModelConfig,
+    extensions: Vec<ExtensionConfig>,
+    working_dir: PathBuf,
+) -> Result<Arc<dyn Provider>> {
+    let entry = get_from_registry(name).await?;
+    entry
+        .create_with_working_dir(model, extensions, working_dir)
+        .await
 }
 
 pub async fn create_with_default_model(

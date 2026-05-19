@@ -164,6 +164,7 @@ pub async fn get_token_state(session_manager: &SessionManager, session_id: &str)
             accumulated_input_tokens: session.accumulated_input_tokens.unwrap_or(0),
             accumulated_output_tokens: session.accumulated_output_tokens.unwrap_or(0),
             accumulated_total_tokens: session.accumulated_total_tokens.unwrap_or(0),
+            accumulated_cost: session.accumulated_cost,
         })
         .inspect_err(|e| {
             tracing::warn!(

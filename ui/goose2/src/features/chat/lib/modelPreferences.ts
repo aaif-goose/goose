@@ -63,6 +63,11 @@ export function getStoredModelPreference(
 export function getStoredModelPreferenceForProvider(
   providerId: string,
 ): StoredModelPreference | null {
+  const exactPreference = getStoredModelPreference(providerId);
+  if (exactPreference) {
+    return exactPreference;
+  }
+
   const agentId = resolveAgentProviderCatalogIdStrict(providerId) ?? "goose";
   return getStoredModelPreference(agentId);
 }

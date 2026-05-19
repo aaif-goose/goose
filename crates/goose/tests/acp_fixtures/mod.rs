@@ -10,7 +10,7 @@ use agent_client_protocol::schema::{
 };
 use async_trait::async_trait;
 use fs_err as fs;
-use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
+use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent, GooseAcpAgentOptions};
 pub use goose::acp::{map_permission_response, PermissionDecision};
 use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
@@ -173,28 +173,33 @@ pub async fn spawn_acp_server_in_process(
     }
     let provider_factory = provider_factory.unwrap_or_else(|| {
         let base_url = openai_base_url.to_string();
-        Arc::new(move |_provider_name, model_config, _extensions| {
-            let base_url = base_url.clone();
-            Box::pin(async move {
-                let api_client =
-                    ApiClient::new(base_url, ApiAuthMethod::BearerToken("test-key".to_string()))
-                        .unwrap();
-                let provider: Arc<dyn Provider> =
-                    Arc::new(OpenAiProvider::new(api_client, model_config));
-                Ok(provider)
-            })
-        })
+        Arc::new(
+            move |_provider_name, model_config, _extensions, _working_dir| {
+                let base_url = base_url.clone();
+                Box::pin(async move {
+                    let api_client = ApiClient::new(
+                        base_url,
+                        ApiAuthMethod::BearerToken("test-key".to_string()),
+                    )
+                    .unwrap();
+                    let provider: Arc<dyn Provider> =
+                        Arc::new(OpenAiProvider::new(api_client, model_config));
+                    Ok(provider)
+                })
+            },
+        )
     });
 
-    let agent = GooseAcpAgent::new(
+    let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
         provider_factory,
-        builtins.to_vec(),
-        data_root.to_path_buf(),
-        data_root.to_path_buf(),
+        builtins: builtins.to_vec(),
+        data_dir: data_root.to_path_buf(),
+        config_dir: data_root.to_path_buf(),
         goose_mode,
         disable_session_naming,
-        GoosePlatform::GooseCli,
-    )
+        goose_platform: GoosePlatform::GooseCli,
+        additional_source_roots: Vec::new(),
+    })
     .await
     .unwrap();
     let agent = Arc::new(agent);

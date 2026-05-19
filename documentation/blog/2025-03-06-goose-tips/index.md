@@ -50,11 +50,11 @@ Beyond projects, global .goosehints files (`~/.config/goose/.goosehints`) apply 
 
 ## 4. Choose the Right Mode for Your Workflow
 
-goose offers [different modes](/docs/guides/goose-permissions) that determine how much autonomy it has when modifying files, using extensions, and performing automated actions. 
+goose offers [different modes](/docs/guides/managing-tools/goose-permissions) that determine how much autonomy it has when modifying files, using extensions, and performing automated actions. 
 
 * ⚡️ **Auto Mode (Default):** goose can modify, create, and delete files, as well as use extensions, without requiring approval. Best for users who want seamless automation.
 
-* ✅ **Approve Mode:** goose asks for confirmation before making changes. With [Smart Approve](/docs/guides/goose-permissions#permission-modes) enabled, it evaluates risk levels and prompts for high-risk actions while executing safe ones automatically.
+* ✅ **Approve Mode:** goose asks for confirmation before making changes. With [Smart Approve](/docs/guides/managing-tools/goose-permissions#permission-modes) enabled, it evaluates risk levels and prompts for high-risk actions while executing safe ones automatically.
 
 * 💬 **Chat Mode:** goose operates in chat-only mode, without modifying files or using extensions. Ideal for users who want AI assistance without automation.
 

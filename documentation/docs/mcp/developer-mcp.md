@@ -193,7 +193,7 @@ The Developer extension provides these tools:
 
 You can layer multiple controls to match your risk tolerance and workflow:
 
-- **[goose Permission Modes](/docs/guides/goose-permissions)** control when goose asks for approval:
+- **[goose Permission Modes](/docs/guides/managing-tools/goose-permissions)** control when goose asks for approval:
 
   | Mode | Description | Use Cases |
   |------|-------------|-----------|
@@ -204,7 +204,7 @@ You can layer multiple controls to match your risk tolerance and workflow:
 
 - **[Tool Permissions](/docs/guides/managing-tools/tool-permissions)** let you set `Always allow`, `Ask before`, and `Never allow` permissions for individual extension tools when in Manual Approval or Smart Approval modes
 
-- **[.gooseignore files](/docs/guides/using-gooseignore)** restrict which files and directories goose can access (`.gitignore` files are fallback)
+- **[.gooseignore files](/docs/guides/context-engineering/using-gooseignore)** restrict which files and directories goose can access (`.gitignore` files are fallback)
 
 :::tip Changing Modes In-Session
 You can change goose permission modes during a session without restarting:
@@ -218,13 +218,13 @@ You might want more control over goose's operations when working with sensitive 
 
 Here's an example configuration that enables oversight:
 
-1. **Set the [permission mode](/docs/guides/goose-permissions)** to Smart Approval or Manual Approval:
+1. **Set the [permission mode](/docs/guides/managing-tools/goose-permissions)** to Smart Approval or Manual Approval:
    ```yaml
    # ~/.config/goose/config.yaml
    GOOSE_MODE: smart_approve  # or approve
    ```
 
-2. **Create a [`.gooseignore` file](/docs/guides/using-gooseignore)** in your project to protect sensitive files:
+2. **Create a [`.gooseignore` file](/docs/guides/context-engineering/using-gooseignore)** in your project to protect sensitive files:
    ```
    .env*
    secrets.*

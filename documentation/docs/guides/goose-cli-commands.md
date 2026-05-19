@@ -1,5 +1,5 @@
 ---
-sidebar_position: 35
+sidebar_position: 7
 title: CLI Commands
 sidebar_label: CLI Commands
 toc_max_heading_level: 4
@@ -104,7 +104,7 @@ Once installed, you can:
 - Discover options without checking `--help`
 
 **Arguments:**
-- **`<SHELL>`**: The shell to generate completions for. Supported shells: `bash`, `elvish`, `fish`, `powershell`, `zsh`
+- **`<SHELL>`**: The shell to generate completions for. Supported shells: `bash`, `elvish`, `fish`, `nu`, `powershell`, `zsh`
 
 **Usage:**
 ```bash
@@ -112,6 +112,7 @@ Once installed, you can:
 goose completion bash
 goose completion zsh
 goose completion fish
+goose completion nu
 ```
 
 **Installation by Shell:**
@@ -152,6 +153,20 @@ goose completion fish > ~/.config/fish/completions/goose.fish
 ```
 
 Then restart your terminal or run `exec fish`.
+
+</TabItem>
+<TabItem value="nu" label="Nushell">
+
+```nu
+let autoload_dir = ($nu.user-autoload-dirs | first)
+mkdir $autoload_dir
+goose completion nu | save --force ($autoload_dir | path join "goose.nu")
+```
+
+Then restart Nushell or run:
+```nu
+source (($nu.user-autoload-dirs | first) | path join "goose.nu")
+```
 
 </TabItem>
 <TabItem value="powershell" label="PowerShell">
@@ -444,16 +459,6 @@ goose run --recipe recipe.yaml --max-turns 10
 
 ---
 
-#### bench
-Used to evaluate system-configuration across a range of practical tasks. See the [detailed guide](/docs/tutorials/benchmarking) for more information.
-
-**Usage:**
-```bash
-goose bench ...etc.
-```
-
----
-
 #### recipe
 Used to validate recipe files, manage recipe sharing, list available recipes, and open recipes in goose desktop.
 
@@ -499,6 +504,30 @@ goose recipe validate my-recipe.yaml
 # Get help about recipe commands
 goose recipe help
 ```
+
+---
+
+#### plugin
+Install and update git-backed plugins that provide skills or other Open Plugins components.
+
+**Commands:**
+- **`install [OPTIONS] <URL>`**: Install a plugin from a git repository URL
+  - **`--auto-update`**: Automatically check for updates before plugin skills are loaded
+- **`update <NAME>`**: Update an installed git-backed plugin by name
+
+**Usage:**
+```bash
+# Install a plugin from a git repository
+goose plugin install https://github.com/example/my-goose-plugin.git
+
+# Install a plugin and enable automatic update checks
+goose plugin install --auto-update https://github.com/example/my-goose-plugin.git
+
+# Update an installed plugin manually
+goose plugin update my-plugin
+```
+
+Installed plugins are stored under `~/.agents/plugins/<plugin-name>/`. For more about plugin-provided skills, hooks, and update behavior, see the [Plugins guide](/docs/guides/context-engineering/plugins).
 
 ---
 

@@ -85,4 +85,4 @@ Some tool names you might want to add:
 ## See Also
 
 - [Prompt Injection Detection](/docs/guides/security/prompt-injection-detection) — pattern-based detection (complementary, always-on when enabled)
-- [goose Permission Modes](/docs/guides/goose-permissions) — control goose's autonomy level
+- [goose Permission Modes](/docs/guides/managing-tools/goose-permissions) — control goose's autonomy level

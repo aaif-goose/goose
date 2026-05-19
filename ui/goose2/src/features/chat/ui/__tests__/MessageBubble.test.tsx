@@ -349,7 +349,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: { path: "/tmp/demo.txt" },
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -374,7 +374,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: {},
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",
@@ -410,7 +410,7 @@ describe("MessageBubble", () => {
         id: "tool-1",
         name: "readFile",
         arguments: {},
-        status: "executing",
+        status: "in_progress",
       },
       {
         type: "toolResponse",

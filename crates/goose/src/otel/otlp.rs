@@ -359,28 +359,39 @@ fn create_otlp_logs_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
     })
 }
 
-/// Shutdown OTLP providers gracefully
 pub fn shutdown_otlp() {
+    let timeout = std::time::Duration::from_millis(
+        crate::config::Config::global()
+            .get_param::<u64>("otel_shutdown_timeout_ms")
+            .unwrap_or(5000),
+    );
+
     if let Some(provider) = TRACER_PROVIDER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take()
     {
-        let _ = provider.shutdown();
+        if let Err(e) = provider.shutdown_with_timeout(timeout) {
+            tracing::warn!("OTLP tracer provider shutdown error: {e}");
+        }
     }
     if let Some(provider) = METER_PROVIDER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take()
     {
-        let _ = provider.shutdown();
+        if let Err(e) = provider.shutdown_with_timeout(timeout) {
+            tracing::warn!("OTLP meter provider shutdown error: {e}");
+        }
     }
     if let Some(provider) = LOGGER_PROVIDER
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take()
     {
-        let _ = provider.shutdown();
+        if let Err(e) = provider.shutdown_with_timeout(timeout) {
+            tracing::warn!("OTLP logger provider shutdown error: {e}");
+        }
     }
 }
 

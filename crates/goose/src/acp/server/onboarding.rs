@@ -324,20 +324,15 @@ fn apply_goose_config_candidate(
 
     let provider = yaml_string(&source, "GOOSE_PROVIDER");
     let model = yaml_string(&source, "GOOSE_MODEL");
-    if provider.is_some() || model.is_some() {
-        let mut updates = Vec::new();
-        if let Some(provider) = provider.clone() {
-            updates.push((
-                "GOOSE_PROVIDER".to_string(),
-                serde_json::Value::String(provider),
-            ));
-        }
-        if let Some(model) = model.clone() {
-            updates.push(("GOOSE_MODEL".to_string(), serde_json::Value::String(model)));
-        }
-        target_config.set_param_values(&updates)?;
+    if let Some(ref p) = provider {
+        let m = model.clone().unwrap_or_else(|| {
+            crate::config::get_provider_entry(target_config, p)
+                .map(|e| e.model)
+                .unwrap_or_default()
+        });
+        crate::config::set_active_provider(target_config, p, &m)?;
         result.provider_defaults = DefaultsReadResponse {
-            provider_id: provider,
+            provider_id: provider.clone(),
             model_id: model,
         };
         result.imported.providers = 1;
@@ -669,11 +664,28 @@ extensions:
         assert_eq!(result.imported.providers, 1);
         assert_eq!(result.imported.extensions, 1);
         assert_eq!(result.imported.skills, 1);
-        assert_eq!(
-            target_config.get_param::<String>("GOOSE_PROVIDER").unwrap(),
-            "openai"
-        );
+        assert_eq!(target_config.get_goose_provider().unwrap(), "openai");
         assert!(target.path().join("skills").join("reviewer").exists());
+    }
+
+    #[test]
+    fn apply_goose_config_model_only_skips_provider_activation() {
+        let source = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+        let source_config = source.path().join(CONFIG_YAML_NAME);
+        fs::write(&source_config, "GOOSE_MODEL: gpt-5.1\n").unwrap();
+
+        let target_config = Config::new_with_file_secrets(
+            target.path().join(CONFIG_YAML_NAME),
+            target.path().join("secrets.yaml"),
+        )
+        .unwrap();
+
+        let result =
+            apply_goose_config_candidate(&target_config, target.path(), &source_config).unwrap();
+
+        assert_eq!(result.imported.providers, 0);
+        assert!(target_config.get_goose_provider().is_err());
     }
 
     #[cfg(unix)]

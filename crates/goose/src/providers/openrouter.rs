@@ -15,7 +15,7 @@ use crate::providers::formats::openai::create_request;
 use crate::providers::formats::openrouter as openrouter_format;
 use rmcp::model::Tool;
 
-const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
+pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4";
 pub const OPENROUTER_DEFAULT_FAST_MODEL: &str = "google/gemini-2.5-flash";
 pub const OPENROUTER_MODEL_PREFIX_ANTHROPIC: &str = "anthropic";

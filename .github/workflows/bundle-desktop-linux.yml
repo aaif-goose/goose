@@ -21,11 +21,11 @@ name: "Bundle Desktop (Linux)"
 jobs:
   build-desktop-linux:
     name: Build Desktop (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -72,7 +72,7 @@ jobs:
             libxrandr2 \
             libgbm1 \
             libxss1 \
-            libasound2t64 \
+            libasound2 \
             rpm \
             fakeroot \
             dpkg-dev \
@@ -91,26 +91,20 @@ jobs:
           echo "CARGO_HOME=$CARGO_HOME" >> $GITHUB_ENV
           echo "RUSTUP_HOME=$RUSTUP_HOME" >> $GITHUB_ENV
 
-      - name: Install cross
-        run: source ./bin/activate-hermit && cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: linux
 
       - name: Build goosed binary
         env:
-          CROSS_NO_WARNINGS: 0
           RUST_LOG: debug
           RUST_BACKTRACE: 1
-          CROSS_VERBOSE: 1
-          CC: gcc-10
         run: |
           source ./bin/activate-hermit
           export TARGET="x86_64-unknown-linux-gnu"
           rustup target add "${TARGET}"
-          cross build --release --target ${TARGET} -p goose-server
+          cargo build --release --target ${TARGET} -p goose-server
 
       - name: Copy binaries into Electron folder
         run: |

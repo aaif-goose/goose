@@ -129,14 +129,35 @@ pub fn ensure_gh_authenticated() -> Result<()> {
     }
 }
 
+fn temp_child_name(name: &str) -> String {
+    let mut child = String::with_capacity(name.len());
+    for ch in name.chars() {
+        match ch {
+            '/' | '\\' => child.push_str("__"),
+            ch if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' => {
+                child.push(ch)
+            }
+            _ => child.push('_'),
+        }
+    }
+
+    if child.is_empty() {
+        "_".to_string()
+    } else {
+        child
+    }
+}
+
 fn get_local_repo_path(
     local_repo_parent_path: &Path,
     recipe_repo_full_name: &str,
 ) -> Result<PathBuf> {
-    let (_, repo_name) = recipe_repo_full_name
+    let (owner, repo_name) = recipe_repo_full_name
         .split_once('/')
         .ok_or_else(|| anyhow::anyhow!("Invalid repository name format"))?;
-    let local_repo_path = local_repo_parent_path.to_path_buf().join(repo_name);
+    let local_repo_path = local_repo_parent_path
+        .to_path_buf()
+        .join(temp_child_name(&format!("{owner}/{repo_name}")));
     Ok(local_repo_path)
 }
 
@@ -153,6 +174,7 @@ fn ensure_repo_cloned(recipe_repo_full_name: &str) -> Result<PathBuf> {
         let error_message: String = format!("Failed to clone repo: {}", recipe_repo_full_name);
         let status = Command::new("gh")
             .args(["repo", "clone", recipe_repo_full_name])
+            .arg(&local_repo_path)
             .current_dir(local_repo_parent_path.clone())
             .set_no_window()
             .status()
@@ -184,7 +206,7 @@ fn fetch_origin(local_repo_path: &Path) -> Result<()> {
 
 fn get_folder_from_github(local_repo_path: &Path, recipe_name: &str) -> Result<PathBuf> {
     let ref_and_path = format!("origin/main:{}", recipe_name);
-    let output_dir = env::temp_dir().join(recipe_name);
+    let output_dir = env::temp_dir().join(temp_child_name(recipe_name));
 
     if output_dir.exists() {
         fs::remove_dir_all(&output_dir)?;
@@ -352,4 +374,31 @@ fn get_github_recipe_info(repo: &str, dir_name: &str, recipe_filename: &str) -> 
     }
 
     Err(anyhow!("Failed to get recipe content from GitHub"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn local_repo_path_includes_owner_to_avoid_collisions() {
+        let parent = Path::new("goose-recipes");
+        let first = get_local_repo_path(parent, "owner-one/shared").unwrap();
+        let second = get_local_repo_path(parent, "owner-two/shared").unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(first, parent.join("owner-one__shared"));
+        assert_eq!(second, parent.join("owner-two__shared"));
+    }
+
+    #[test]
+    fn temp_child_name_keeps_recipe_downloads_under_temp_dir() {
+        let parent = Path::new("goose-recipes");
+        let child = temp_child_name("../outside");
+        let output_dir = parent.join(&child);
+
+        assert_eq!(child, "..__outside");
+        assert!(output_dir.starts_with(parent));
+    }
 }

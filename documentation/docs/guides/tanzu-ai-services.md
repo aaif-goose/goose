@@ -1,5 +1,4 @@
 ---
-sidebar_position: 15
 title: VMware Tanzu Platform
 description: Connect goose to VMware Tanzu Platform AI Services
 ---

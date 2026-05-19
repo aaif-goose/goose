@@ -7,6 +7,7 @@ describe('buildConnectSrc', () => {
     const result = buildConnectSrc(undefined);
     expect(result).toContain("'self'");
     expect(result).toContain('http://127.0.0.1:*');
+    expect(result).toContain('wss://127.0.0.1:*');
   });
 
   it('includes external backend origin when enabled', () => {
@@ -17,6 +18,18 @@ describe('buildConnectSrc', () => {
     };
     const result = buildConnectSrc(config);
     expect(result).toContain('http://dev.company.net:12604');
+    expect(result).toContain('ws://dev.company.net:12604');
+  });
+
+  it('includes external secure WebSocket origin for HTTPS backends', () => {
+    const config: ExternalGoosedConfig = {
+      enabled: true,
+      url: 'https://secure.company.net:12604',
+      secret: 'test',
+    };
+    const result = buildConnectSrc(config);
+    expect(result).toContain('https://secure.company.net:12604');
+    expect(result).toContain('wss://secure.company.net:12604');
   });
 
   it('does not include external origin when disabled', () => {

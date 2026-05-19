@@ -239,7 +239,7 @@ describe("acpNotificationHandler", () => {
       type: "toolRequest",
       id: "tool-b",
       name: "grep",
-      status: "executing",
+      status: "in_progress",
     });
     expect(message.content[2]).toMatchObject({
       type: "toolResponse",

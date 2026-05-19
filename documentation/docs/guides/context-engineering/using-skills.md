@@ -1,7 +1,7 @@
 ---
-title: Using Skills
-sidebar_position: 2
-sidebar_label: Using Skills
+title: Agent Skills
+sidebar_position: 3
+sidebar_label: Agent Skills
 ---
 
 Skills are reusable sets of instructions and resources that teach goose how to perform specific tasks. A skill can range from a simple checklist to a detailed workflow with domain expertise, and can include supporting files like scripts or templates. Example use cases include deployment procedures, code review checklists, and API integration guides.
@@ -25,10 +25,11 @@ goose skills are compatible with Claude Desktop and other [agents that support A
 
 ## Skill Locations
 
-Skills can be stored globally or per-project:
+Skills can be stored globally, per-project, or in installed plugins:
 
 1. `~/.agents/skills/` — Global skills, available in all sessions
 2. `.agents/skills/` — Project-level skills, scoped to the current project
+3. `~/.agents/plugins/<plugin-name>/` — Skills provided by installed [plugins](/docs/guides/context-engineering/plugins)
 
 Place a `SKILL.md` file inside a named subdirectory. For example, a global skill called
 `code-review` goes in `~/.agents/skills/code-review/SKILL.md`.
@@ -84,7 +85,11 @@ When reviewing code, check each of these areas:
 - [ ] SQL queries are parameterized
 ```
 
-### Supporting Files
+## Skills from Plugins
+
+Skills can also come from installed [plugins](/docs/guides/context-engineering/plugins). Plugin-provided skills are discovered at session startup and work like other skills. For Open Plugins, skill names are namespaced with the plugin name, such as `my-plugin:review`. Use that full name when explicitly loading a plugin-provided skill.
+
+## Supporting Files
 
 Skills can include supporting files like scripts, templates, or configuration files. Place them in the skill directory:
 

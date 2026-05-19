@@ -1,5 +1,5 @@
 ---
-sidebar_position: 95
+sidebar_position: 11
 title: Environment Variables
 sidebar_label: Environment Variables
 ---
@@ -164,7 +164,7 @@ To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_
 
 ### Planning Mode Configuration
 
-These variables control goose's [planning functionality](/docs/guides/creating-plans).
+These variables control goose's [planning functionality](/docs/guides/context-engineering/creating-plans).
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
@@ -228,10 +228,11 @@ These variables control how goose manages conversation sessions and context.
 |----------|---------|---------|---------|
 | `GOOSE_CONTEXT_STRATEGY` | Controls how goose handles context limit exceeded situations | "summarize", "truncate", "clear", "prompt" | "prompt" (interactive), "summarize" (headless) |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 |
-| `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/subagents) to complete before timeout. Can be overridden by [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) in recipes or subagent tool calls. | Integer (e.g., 25) | 25 |
-| `GOOSE_MAX_BACKGROUND_TASKS` | Sets the maximum number of concurrent background [subagent](/docs/guides/subagents) tasks goose can run at once | Integer (e.g., 1, 5, 10) | 5 |
+| `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/context-engineering/subagents) to complete before timeout. Can be overridden by [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) in recipes or subagent tool calls. | Integer (e.g., 25) | 25 |
+| `GOOSE_MAX_BACKGROUND_TASKS` | Sets the maximum number of concurrent background [subagent](/docs/guides/context-engineering/subagents) tasks goose can run at once | Integer (e.g., 1, 5, 10) | 5 |
 | `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goosehints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goosehints"]`) | `[".goosehints"]` |
 | `GOOSE_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (goose CLI) or "New Chat" (goose Desktop) | "1", "true" (case-insensitive) to enable | false |
+| `GOOSE_DISABLE_TOOL_CALL_SUMMARY` | Disables the per-tool-call AI-generated summary title, keeping the fallback title instead. Saves one provider call per tool invocation. | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_PROMPT_EDITOR` | [External editor](/docs/guides/goose-cli-commands#external-editor-mode) to use for composing prompts instead of CLI input | Editor command (e.g., "vim", "code --wait") | Unset (uses CLI input) |
 | `GOOSE_CLI_THEME` | [Theme](/docs/guides/goose-cli-commands#themes) for CLI response  markdown | "light", "dark", "ansi" | "dark" |
 | `GOOSE_CLI_LIGHT_THEME` | Custom [bat theme](https://github.com/sharkdp/bat#adding-new-themes) for syntax highlighting when using light mode | bat theme name (e.g., "Solarized (light)", "OneHalfLight") | "GitHub" |
@@ -242,8 +243,8 @@ These variables control how goose manages conversation sessions and context.
 | `GOOSE_CLI_SHOW_COST` | Toggles display of model cost estimates in CLI output | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically summarizes your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0) | 0.8 |
 | `GOOSE_TOOL_CALL_CUTOFF` | Number of tool calls to keep in full detail before summarizing older tool outputs to help maintain efficient context usage  | Integer (e.g., 5, 10, 20) | 10 |
-| `GOOSE_MOIM_MESSAGE_TEXT` | Injects persistent text into goose's [working memory](/docs/guides/using-persistent-instructions) every turn. Useful for behavioral guardrails or persistent reminders. | Any text string | Not set |
-| `GOOSE_MOIM_MESSAGE_FILE` | Path to a file whose contents are injected into goose's [working memory](/docs/guides/using-persistent-instructions) every turn. Supports `~/`. Max 64 KB per file. | File path | Not set |
+| `GOOSE_MOIM_MESSAGE_TEXT` | Injects persistent text into goose's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Useful for behavioral guardrails or persistent reminders. | Any text string | Not set |
+| `GOOSE_MOIM_MESSAGE_FILE` | Path to a file whose contents are injected into goose's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Supports `~/`. Max 64 KB per file. | File path | Not set |
 
 **Examples**
 
@@ -316,7 +317,7 @@ These variables allow you to override the default context window size (token lim
 |----------|---------|---------|---------|
 | `GOOSE_CONTEXT_LIMIT` | Override context limit for the main model | Integer (number of tokens) | Model-specific default or 128,000 |
 | `GOOSE_INPUT_LIMIT` | Override input prompt limit for ollama requests (maps to `num_ctx`) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
-| `GOOSE_PLANNER_CONTEXT_LIMIT` | Override context limit for the [planner model](/docs/guides/creating-plans) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
+| `GOOSE_PLANNER_CONTEXT_LIMIT` | Override context limit for the [planner model](/docs/guides/context-engineering/creating-plans) | Integer (number of tokens) | Falls back to `GOOSE_CONTEXT_LIMIT` or model default |
 
 **Examples**
 
@@ -334,7 +335,7 @@ For more details and examples, see [Model Context Limit Overrides](/docs/guides/
 
 ## Tool Configuration
 
-These variables control how goose handles [tool execution](/docs/guides/goose-permissions) and [tool management](/docs/guides/managing-tools/).
+These variables control how goose handles [tool execution](/docs/guides/managing-tools/goose-permissions) and [tool management](/docs/guides/managing-tools/).
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
@@ -455,6 +456,25 @@ Optional [macOS sandbox](/docs/guides/sandbox) for goose Desktop that restricts 
 
 These variables configure network proxy settings for goose.
 
+### OAuth Callback Port
+
+By default, goose starts a temporary local server on a random port to receive OAuth callbacks. Enterprise identity providers that require exact `redirect_uri` matching (and forbid wildcard ports) will reject the callback. Set this variable to use a fixed port instead.
+
+| Variable | Purpose | Values | Default |
+|----------|---------|---------|---------|
+| `GOOSE_OAUTH_CALLBACK_PORT` | Fixed port for the local OAuth callback server | Port number (e.g., 8080, 9999) | Random (OS-assigned) |
+
+**Examples**
+
+```bash
+# Use a fixed port so your IdP's redirect_uri whitelist can match exactly
+export GOOSE_OAUTH_CALLBACK_PORT=8080
+```
+
+Then register the appropriate redirect URI in your identity provider:
+- For MCP server OAuth: `http://127.0.0.1:8080/oauth_callback`
+- For Databricks OAuth: `http://localhost:8080`
+
 ### HTTP Proxy
 
 goose supports standard HTTP proxy environment variables for users behind corporate firewalls or proxy servers.
@@ -538,6 +558,30 @@ These variables configure the [Langfuse integration for observability](/docs/tut
 | `LANGFUSE_URL` | Custom URL for Langfuse service | URL String | Default Langfuse URL |
 | `LANGFUSE_INIT_PROJECT_PUBLIC_KEY` | Alternative public key for Langfuse | String | None |
 | `LANGFUSE_INIT_PROJECT_SECRET_KEY` | Alternative secret key for Langfuse | String | None |
+
+## goose Server
+
+These variables configure the `goosed` server process. They are most often used when [running `goosed` on a remote machine](/docs/guides/remote-goose-server) and connecting goose Desktop to it, but they apply to any `goosed` invocation.
+
+| Variable | Purpose | Values | Default |
+|----------|---------|---------|---------|
+| `GOOSE_HOST` | Interface the server binds to. Use `0.0.0.0` to accept connections from other machines; `localhost` or `127.0.0.1` restricts to the local machine. | Hostname or IP | `127.0.0.1` |
+| `GOOSE_PORT` | TCP port the server listens on | Port number | `3000` |
+| `GOOSE_TLS` | Enable TLS with a self-signed certificate. Required when connecting goose Desktop to a remote `goosed`. | `true`, `false` | `true` |
+| `GOOSE_SERVER__SECRET_KEY` | Shared secret required in the `X-Secret-Key` header on all client requests | Secret string | Random (auto-generated) |
+
+**Examples**
+
+```bash
+# Start a goosed server reachable on the local network over TLS
+export GOOSE_HOST=0.0.0.0
+export GOOSE_PORT=3000
+export GOOSE_TLS=true
+export GOOSE_SERVER__SECRET_KEY='a-long-random-secret'
+goosed agent
+```
+
+When TLS is enabled, `goosed` prints a `GOOSED_CERT_FINGERPRINT=...` line on startup. Clients (such as goose Desktop) need this fingerprint to verify the self-signed certificate. See [Running a Remote goose Server](/docs/guides/remote-goose-server) for the full setup.
 
 ## Recipe Configuration
 

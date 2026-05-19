@@ -55,4 +55,28 @@ describe("resolveSupportedSessionModelPreference", () => {
       providerId: "openai",
     });
   });
+
+  it("preserves an exact stored provider model while inventory is unavailable", async () => {
+    window.localStorage.setItem(
+      "goose:preferredModelsByAgent",
+      JSON.stringify({
+        "claude-acp": {
+          modelId: "opus",
+          modelName: "Claude Opus",
+          providerId: "claude-acp",
+        },
+      }),
+    );
+    mockGetProviderInventory.mockRejectedValue(
+      new Error("inventory unavailable"),
+    );
+
+    await expect(
+      resolveSupportedSessionModelPreference("claude-acp", new Map()),
+    ).resolves.toEqual({
+      providerId: "claude-acp",
+      modelId: "opus",
+      modelName: "Claude Opus",
+    });
+  });
 });

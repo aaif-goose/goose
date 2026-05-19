@@ -11,6 +11,13 @@ const inkeepApiKey = process.env.INKEEP_API_KEY;
 const inkeepIntegrationId = process.env.INKEEP_INTEGRATION_ID;
 const inkeepOrgId = process.env.INKEEP_ORG_ID;
 
+type SidebarItem = {
+  type?: string;
+  label?: string;
+  items?: SidebarItem[];
+  [key: string]: unknown;
+};
+
 const config: Config = {
   title: "goose | Your open source AI agent",
   tagline: "your local AI agent, automating engineering tasks seamlessly",
@@ -61,6 +68,48 @@ const config: Config = {
       {
         docs: {
           sidebarPath: "./sidebars.ts",
+          async sidebarItemsGenerator(args) {
+            const items = await args.defaultSidebarItemsGenerator(args);
+
+            const contextEngineeringItems = [
+              {
+                type: "doc" as const,
+                id: "mcp/memory-mcp",
+                label: "Memory Extension",
+              },
+              {
+                type: "doc" as const,
+                id: "tutorials/rpi",
+                label: "Research → Plan → Implement",
+              },
+            ];
+
+            const addItemsToCategory = (
+              sidebarItems: SidebarItem[],
+              categoryLabel: string,
+              extraItems: SidebarItem[],
+            ) => {
+              for (const item of sidebarItems) {
+                if (item.type === "category" && item.label === categoryLabel) {
+                  item.items.push(...extraItems);
+                  return true;
+                }
+
+                if (
+                  item.type === "category" &&
+                  addItemsToCategory(item.items, categoryLabel, extraItems)
+                ) {
+                  return true;
+                }
+              }
+
+              return false;
+            };
+
+            addItemsToCategory(items, "Context Engineering", contextEngineeringItems);
+
+            return items;
+          },
         },
         blog: {
           showReadingTime: true,
@@ -173,24 +222,52 @@ const config: Config = {
             to: "/docs/guides/managing-tools/adjust-tool-output",
           },
           {
-            from: "/docs/guides/benchmarking",
-            to: "/docs/tutorials/benchmarking",
-          },
-          {
             from: "/docs/guides/goose-in-docker",
             to: "/docs/tutorials/goose-in-docker",
           },
           {
             from: "/docs/guides/multi-model/creating-plans",
-            to: "/docs/guides/creating-plans",
+            to: "/docs/guides/context-engineering/creating-plans",
+          },
+          {
+            from: "/docs/guides/creating-plans",
+            to: "/docs/guides/context-engineering/creating-plans",
+          },
+          {
+            from: "/docs/guides/using-gooseignore",
+            to: "/docs/guides/context-engineering/using-gooseignore",
           },
           {
             from: "/docs/guides/config-file",
             to: "/docs/guides/config-files",
           },
           {
+            from: "/docs/guides/using-persistent-instructions",
+            to: "/docs/guides/context-engineering/using-persistent-instructions",
+          },
+          {
+            from: "/docs/guides/subagents",
+            to: "/docs/guides/context-engineering/subagents",
+          },
+          {
+            from: "/docs/guides/prompt-templates",
+            to: "/docs/guides/context-engineering/prompt-templates",
+          },
+          {
+            from: "/docs/guides/goose-permissions",
+            to: "/docs/guides/managing-tools/goose-permissions",
+          },
+          {
             from: "/docs/guides/using-goosehints",
             to: "/docs/guides/context-engineering/using-goosehints",
+          },
+          {
+            from: "/docs/guides/managing-tools/hooks",
+            to: "/docs/guides/context-engineering/hooks",
+          },
+          {
+            from: "/docs/guides/managing-tools/plugins",
+            to: "/docs/guides/context-engineering/plugins",
           },
           // MCP tutorial redirects - moved from /docs/tutorials/ to /docs/mcp/
           {
@@ -238,8 +315,8 @@ const config: Config = {
             to: "/docs/mcp/figma-mcp",
           },
           {
-            from: "/docs/tutorials/filesystem-mcp",
-            to: "/docs/mcp/filesystem-mcp",
+            from: ["/docs/tutorials/filesystem-mcp", "/docs/mcp/filesystem-mcp"],
+            to: "/docs/getting-started/using-extensions",
           },
           {
             from: "/docs/tutorials/github-mcp",
@@ -335,11 +412,11 @@ const config: Config = {
           },
           {
             from: "/docs/experimental/subagents",
-            to: "/docs/guides/subagents",
+            to: "/docs/guides/context-engineering/subagents",
           },
           {
             from: "/docs/tutorials/lead-worker",
-            to: "/docs/guides/creating-plans",
+            to: "/docs/guides/context-engineering/creating-plans",
           },
         ],
       },

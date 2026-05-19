@@ -4,8 +4,10 @@
 #  - canary.yml
 #
 # Platform Build Strategy:
-#  - Linux: Uses Ubuntu runner with cross-compilation
-#  - macOS: Uses macOS runner with cross-compilation
+#  - Linux standard: Uses native Ubuntu 22.04 runners to keep glibc compatibility with Ubuntu 22.04 LTS
+#  - Linux Vulkan: Uses native Ubuntu 24.04 runners for newer Vulkan headers/tooling
+#  - Linux musl: Uses native Ubuntu 22.04 runners with reduced features for musl compatibility
+#  - macOS: Uses native macOS runners for each architecture
 #  - Windows: Uses Windows runner with native MSVC build
 on:
   workflow_call:
@@ -31,48 +33,60 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - platform: linux
             architecture: x86_64
             target-suffix: unknown-linux-gnu
-            build-on: ubuntu-latest
-            use-cross: true
-            cc: gcc-10
+            build-on: ubuntu-22.04
             variant: standard
-          - os: ubuntu-latest
+          - platform: linux
             architecture: aarch64
             target-suffix: unknown-linux-gnu
-            build-on: ubuntu-latest
-            use-cross: true
-            cc: gcc-10
+            build-on: ubuntu-22.04-arm
             variant: standard
-          - os: macos-latest
+          - platform: linux
+            architecture: x86_64
+            target-suffix: unknown-linux-musl
+            build-on: ubuntu-22.04
+            variant: musl
+          - platform: linux
+            architecture: aarch64
+            target-suffix: unknown-linux-musl
+            build-on: ubuntu-22.04-arm
+            variant: musl
+          - platform: linux
+            architecture: x86_64
+            target-suffix: unknown-linux-gnu
+            build-on: ubuntu-24.04
+            variant: vulkan
+          - platform: linux
+            architecture: aarch64
+            target-suffix: unknown-linux-gnu
+            build-on: ubuntu-24.04-arm
+            variant: vulkan
+          - platform: macos
             architecture: x86_64
             target-suffix: apple-darwin
-            build-on: macos-latest
-            use-cross: true
+            build-on: macos-15-intel
             variant: standard
-          - os: macos-latest
+          - platform: macos
             architecture: aarch64
             target-suffix: apple-darwin
             build-on: macos-latest
-            use-cross: true
             variant: standard
-          - os: windows
+          - platform: windows
             architecture: x86_64
             target-suffix: pc-windows-msvc
             build-on: windows-latest
-            use-cross: false
             variant: standard
-          - os: windows
+          - platform: windows
             architecture: x86_64
             target-suffix: pc-windows-msvc
             build-on: windows-latest
-            use-cross: false
             variant: cuda
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.ref }}
 
@@ -83,29 +97,45 @@ jobs:
           sed -i.bak 's/^version = ".*"/version = "'${{ inputs.version }}'"/' Cargo.toml
           rm -f Cargo.toml.bak
 
-      - name: Install cross
-        if: matrix.use-cross
-        run: source ./bin/activate-hermit && cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libdbus-1-dev \
+            libxcb1-dev
+
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            sudo apt-get install -y \
+              libvulkan-dev \
+              libvulkan1 \
+              glslc
+          fi
+
+          if [ "${{ matrix.variant }}" = "musl" ]; then
+            sudo apt-get install -y musl-tools
+          fi
 
       - name: Cache Cargo artifacts (Linux/macOS)
-        if: matrix.use-cross
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
+        if: matrix.platform != 'windows'
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
-          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-macos-deployment-target-12
+          key: ${{ matrix.architecture }}-${{ matrix.target-suffix }}-${{ matrix.build-on }}-native-macos-deployment-target-12
 
       - name: Cache Cargo artifacts (Windows)
-        if: matrix.os == 'windows'
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2.8.2
+        if: matrix.platform == 'windows'
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: windows-msvc-cli-${{ matrix.variant }}
 
       - name: Build CLI (Linux/macOS)
-        if: matrix.use-cross
+        if: matrix.platform != 'windows'
         env:
-          CROSS_NO_WARNINGS: 0
           RUST_LOG: debug
           RUST_BACKTRACE: 1
-          CROSS_VERBOSE: 1
         run: |
           source ./bin/activate-hermit
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
@@ -113,21 +143,29 @@ jobs:
           echo "Building for target: ${TARGET}"
           echo "Rust toolchain info:"
           rustup show
-          echo "Cross version:"
-          cross --version
 
-          export CC="${{ matrix.cc || ''}}"
-          cross build --release --target ${TARGET} -p goose-cli
+          FEATURE_ARGS=()
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            FEATURE_ARGS=(--features vulkan)
+          fi
+
+          if [ "${{ matrix.variant }}" = "musl" ]; then
+            cargo build --release --target ${TARGET} -p goose-cli --bin goose \
+              --no-default-features \
+              --features portable-default
+          else
+            cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+          fi
 
       - name: Setup Rust (Windows)
-        if: matrix.os == 'windows'
+        if: matrix.platform == 'windows'
         shell: bash
         run: |
           rustup show
           rustup target add x86_64-pc-windows-msvc
 
       - name: Install CUDA toolkit (Windows CUDA)
-        if: ${{ matrix.os == 'windows' && matrix.variant == 'cuda' }}
+        if: ${{ matrix.platform == 'windows' && matrix.variant == 'cuda' }}
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: '12.9.1'
@@ -135,13 +173,13 @@ jobs:
           log-file-suffix: 'build-cli-windows-cuda.txt'
 
       - name: Set up MSVC developer environment (Windows CUDA)
-        if: ${{ matrix.os == 'windows' && matrix.variant == 'cuda' }}
+        if: ${{ matrix.platform == 'windows' && matrix.variant == 'cuda' }}
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: amd64
 
       - name: Verify CUDA toolchain (Windows CUDA)
-        if: ${{ matrix.os == 'windows' && matrix.variant == 'cuda' }}
+        if: ${{ matrix.platform == 'windows' && matrix.variant == 'cuda' }}
         shell: pwsh
         env:
           CUDA_COMPUTE_CAP: "80"
@@ -153,7 +191,7 @@ jobs:
           nvcc -V
 
       - name: Build CLI (Windows)
-        if: matrix.os == 'windows'
+        if: matrix.platform == 'windows'
         shell: pwsh
         env:
           CUDA_COMPUTE_CAP: ${{ matrix.variant == 'cuda' && '80' || '' }}
@@ -175,10 +213,14 @@ jobs:
           Get-Item ./target/x86_64-pc-windows-msvc/release/goose.exe
 
       - name: Package CLI (Linux/macOS)
-        if: matrix.use-cross
+        if: matrix.platform != 'windows'
         run: |
           source ./bin/activate-hermit
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
+          export VARIANT_SUFFIX=""
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            VARIANT_SUFFIX="-vulkan"
+          fi
 
           # Create a directory for the package contents
           mkdir -p "target/${TARGET}/release/goose-package"
@@ -187,13 +229,13 @@ jobs:
           cp "target/${TARGET}/release/goose" "target/${TARGET}/release/goose-package/"
 
           cd "target/${TARGET}/release"
-          tar -cjf "goose-${TARGET}.tar.bz2" -C goose-package .
-          tar -czf "goose-${TARGET}.tar.gz" -C goose-package .
-          echo "ARTIFACT_BZ2=target/${TARGET}/release/goose-${TARGET}.tar.bz2" >> $GITHUB_ENV
-          echo "ARTIFACT_GZ=target/${TARGET}/release/goose-${TARGET}.tar.gz" >> $GITHUB_ENV
+          tar -cjf "goose-${TARGET}${VARIANT_SUFFIX}.tar.bz2" -C goose-package .
+          tar -czf "goose-${TARGET}${VARIANT_SUFFIX}.tar.gz" -C goose-package .
+          echo "ARTIFACT_BZ2=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.tar.bz2" >> $GITHUB_ENV
+          echo "ARTIFACT_GZ=target/${TARGET}/release/goose-${TARGET}${VARIANT_SUFFIX}.tar.gz" >> $GITHUB_ENV
 
       - name: Package CLI (Windows)
-        if: matrix.os == 'windows'
+        if: matrix.platform == 'windows'
         shell: bash
         run: |
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
@@ -213,7 +255,7 @@ jobs:
       - name: Upload CLI artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant == 'cuda' && '-cuda' || '' }}
+          name: goose-${{ matrix.architecture }}-${{ matrix.target-suffix }}${{ matrix.variant != 'standard' && matrix.variant != 'musl' && format('-{0}', matrix.variant) || '' }}
           path: |
             ${{ env.ARTIFACT_BZ2 }}
             ${{ env.ARTIFACT_GZ }}

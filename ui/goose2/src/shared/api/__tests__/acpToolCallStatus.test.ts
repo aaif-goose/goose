@@ -65,7 +65,7 @@ describe("ACP tool call status handling", () => {
     expect(assistant?.content[0]).toMatchObject({
       type: "toolRequest",
       id: "tool-1",
-      status: "error",
+      status: "failed",
     });
     expect(assistant?.content[1]).toMatchObject({
       type: "toolResponse",
@@ -114,7 +114,7 @@ describe("ACP tool call status handling", () => {
     expect(message.content[0]).toMatchObject({
       type: "toolRequest",
       id: "tool-1",
-      status: "error",
+      status: "failed",
     });
     expect(message.content[1]).toMatchObject({
       type: "toolResponse",

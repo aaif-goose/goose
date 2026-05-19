@@ -5,7 +5,10 @@ import { Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { DropdownMenu, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { ChatSessionsDropdown } from './navigation';
+import { ChatHistorySearch } from '../conversation/ChatHistorySearch';
 import type { NavigationRendererProps } from './navigation/types';
+import { useIntl } from '../../i18n';
+import { getNavItemLabel } from '../../hooks/useNavigationItems';
 
 export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
   isNavExpanded,
@@ -25,6 +28,7 @@ export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
   drag,
   navFocusRef,
 }) => {
+  const intl = useIntl();
   const [chatDropdownOpen, setChatDropdownOpen] = useState(false);
   const [gridColumns, setGridColumns] = useState(2);
   const [gridMeasured, setGridMeasured] = useState(false);
@@ -141,6 +145,19 @@ export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
             alignContent: 'start',
           }}
         >
+          {/* Search bar spanning full width */}
+          <div
+            className="col-span-full p-2"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            <ChatHistorySearch
+              onSessionClick={onSessionClick}
+              getSessionStatus={getSessionStatus}
+              clearUnread={clearUnread}
+              activeSessionId={activeSessionId}
+            />
+          </div>
+
           {visibleItems.map((item, index) => {
             const Icon = item.icon;
             const active = isActive(item.path);
@@ -199,7 +216,7 @@ export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
                             )}
                             <div className="mt-auto w-full">
                               <Icon className="w-6 h-6 mb-2" />
-                              <h2 className="font-light text-left text-xl">{item.label}</h2>
+                              <h2 className="font-light text-left text-xl">{getNavItemLabel(item, intl)}</h2>
                             </div>
                           </div>
                         </motion.div>
@@ -268,7 +285,7 @@ export const ExpandedRenderer: React.FC<NavigationRendererProps> = ({
                     )}
                     <div className="mt-auto w-full">
                       <Icon className="w-6 h-6 mb-2" />
-                      <h2 className="font-light text-left text-xl">{item.label}</h2>
+                      <h2 className="font-light text-left text-xl">{getNavItemLabel(item, intl)}</h2>
                     </div>
                   </button>
                 </motion.div>

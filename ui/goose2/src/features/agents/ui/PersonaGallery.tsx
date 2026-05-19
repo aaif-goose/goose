@@ -60,10 +60,10 @@ export function PersonaGallery({
     });
   const sorted = useMemo(() => {
     const builtins = personas
-      .filter((p) => p.isBuiltin)
+      .filter((p) => p.isBuiltin || p.writable === false)
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
     const custom = personas
-      .filter((p) => !p.isBuiltin)
+      .filter((p) => !p.isBuiltin && p.writable !== false)
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
     return [...builtins, ...custom];
   }, [personas]);

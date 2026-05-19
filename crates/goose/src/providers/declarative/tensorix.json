@@ -49,5 +49,6 @@
   ],
   "headers": null,
   "timeout_seconds": null,
+  "preserves_thinking": true,
   "supports_streaming": true
 }

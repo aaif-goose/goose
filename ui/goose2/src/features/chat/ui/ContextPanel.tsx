@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FilesList } from "./FilesList";
 import { useGitState } from "@/shared/hooks/useGitState";
@@ -29,6 +29,35 @@ interface ContextPanelProps {
 }
 
 type ContextPanelTab = "details" | "files";
+type ContextPanelSection = "workspace" | "changes" | "artifacts";
+type ContextPanelSectionVisibility = Record<ContextPanelSection, boolean>;
+
+const SECTION_VISIBILITY_STORAGE_KEY = "goose:context-panel:section-visibility";
+
+function getStoredSectionVisibility(): ContextPanelSectionVisibility {
+  const defaults = { workspace: true, changes: true, artifacts: true };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const stored = window.localStorage.getItem(SECTION_VISIBILITY_STORAGE_KEY);
+    if (!stored) return defaults;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return defaults;
+    return {
+      workspace:
+        typeof parsed.workspace === "boolean"
+          ? parsed.workspace
+          : defaults.workspace,
+      changes:
+        typeof parsed.changes === "boolean" ? parsed.changes : defaults.changes,
+      artifacts:
+        typeof parsed.artifacts === "boolean"
+          ? parsed.artifacts
+          : defaults.artifacts,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 export function ContextPanel({
   sessionId,
@@ -38,6 +67,9 @@ export function ContextPanel({
 }: ContextPanelProps) {
   const { t } = useTranslation("chat");
   const [activeTab, setActiveTab] = useState<ContextPanelTab>("details");
+  const [sectionVisibility, setSectionVisibility] = useState(
+    getStoredSectionVisibility,
+  );
   const primaryWorkspaceRoot = projectWorkingDirs[0] ?? null;
 
   const activeContext = useChatSessionStore(
@@ -157,13 +189,31 @@ export function ContextPanel({
     void refetchAll();
   }, [refetchAll]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SECTION_VISIBILITY_STORAGE_KEY,
+        JSON.stringify(sectionVisibility),
+      );
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, [sectionVisibility]);
+
+  const toggleSection = useCallback((section: ContextPanelSection) => {
+    setSectionVisibility((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  }, []);
+
   return (
     <Tabs
       value={activeTab}
       onValueChange={(value) => setActiveTab(value as ContextPanelTab)}
-      className="flex h-full min-w-0 flex-1 flex-col"
+      className="flex h-full min-w-0 flex-1 flex-col gap-0"
     >
-      <div className="shrink-0 border-b border-border px-3 pb-2 pt-2.5">
+      <div className="shrink-0 border-b border-border px-4 pb-2 pt-2.5">
         <TabsList variant="buttons">
           <TabsTrigger value="details" variant="buttons">
             {t("contextPanel.tabs.details")}
@@ -175,7 +225,7 @@ export function ContextPanel({
       </div>
 
       <TabsContent value="details" className="flex-1 overflow-y-auto">
-        <div className="space-y-2.5 px-3 pb-3 pt-2">
+        <div className="pb-3">
           <WorkspaceWidget
             projectName={projectName}
             projectColor={projectColor}
@@ -194,6 +244,8 @@ export function ContextPanel({
             onCreateBranch={handleCreateBranch}
             onCreateWorktree={handleCreateWorktree}
             onRefresh={handleRefresh}
+            isOpen={sectionVisibility.workspace}
+            onToggleOpen={() => toggleSection("workspace")}
           />
           <ChangesWidget
             files={changedFiles}
@@ -201,8 +253,13 @@ export function ContextPanel({
             currentBranch={gitState?.currentBranch ?? null}
             repoPath={gitTargetPath ?? ""}
             onOpenFile={handleOpenChangedFile}
+            isOpen={sectionVisibility.changes}
+            onToggleOpen={() => toggleSection("changes")}
           />
-          <ArtifactsWidget />
+          <ArtifactsWidget
+            isOpen={sectionVisibility.artifacts}
+            onToggleOpen={() => toggleSection("artifacts")}
+          />
         </div>
       </TabsContent>
 

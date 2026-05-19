@@ -84,7 +84,7 @@ jobs:
           df -h
 
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
 
@@ -130,7 +130,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-arm64
 
@@ -244,7 +244,7 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-macos-intel:
     name: "macOS x86_64"
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     environment: ${{ inputs.environment || '' }}
     timeout-minutes: 60
     env:
@@ -255,7 +255,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
 
@@ -294,7 +294,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-macos-x86_64
 
@@ -360,7 +360,7 @@ jobs:
           certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      # ── Tauri bundle (cross-compile for Intel) ──
+      # ── Tauri bundle ──
       - name: Bundle Goose 2 for Intel
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
@@ -423,14 +423,14 @@ jobs:
   # ───────────────────────────────────────────────
   bundle-linux:
     name: "Linux x86_64"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
       actions: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
 
@@ -444,7 +444,10 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            protobuf-compiler
+            protobuf-compiler \
+            libvulkan-dev \
+            libvulkan1 \
+            glslc
 
       - name: Update versions
         if: inputs.version != ''
@@ -481,7 +484,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-linux-x86_64
 
@@ -489,7 +492,7 @@ jobs:
         if: inputs.cli-run-id == ''
         run: |
           source ./bin/activate-hermit
-          cargo build --release -p goose-cli --bin goose
+          cargo build --release -p goose-cli --bin goose --features vulkan
 
       - name: Prepare goose binary with target triple
         if: inputs.cli-run-id == ''
@@ -573,7 +576,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || '' }}
 
@@ -626,7 +629,7 @@ jobs:
 
       - name: Cache Rust dependencies
         if: inputs.cli-run-id == ''
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           key: goose2-windows-x86_64
 
@@ -734,7 +737,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows installers with Azure Trusted Signing
-        uses: azure/trusted-signing-action@db7a3a6bd3912025c705162fb7475389f5b69ec6 # v1
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v1
         with:
           endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}

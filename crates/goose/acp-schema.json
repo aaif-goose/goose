@@ -920,6 +920,12 @@
             "string",
             "null"
           ]
+        },
+        "preservesThinking": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1111,6 +1117,9 @@
         },
         "apiKeySet": {
           "type": "boolean"
+        },
+        "preservesThinking": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1119,7 +1128,8 @@
         "displayName",
         "apiUrl",
         "requiresAuth",
-        "apiKeySet"
+        "apiKeySet",
+        "preservesThinking"
       ]
     },
     "CustomProviderUpdateRequest": {
@@ -1175,6 +1185,12 @@
         "basePath": {
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "preservesThinking": {
+          "type": [
+            "boolean",
             "null"
           ]
         }
@@ -1884,6 +1900,18 @@
             "null"
           ],
           "description": "Absolute path to the project root. Required when `global` is false."
+        },
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Project source ID. When set with `global: false`, the backend resolves\nthe project's first working directory automatically. Takes precedence\nover `project_dir`."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value metadata."
         }
       },
       "required": [
@@ -1904,7 +1932,8 @@
         "builtinSkill",
         "recipe",
         "subrecipe",
-        "agent"
+        "agent",
+        "project"
       ],
       "description": "The type of source entity."
     },
@@ -1936,13 +1965,18 @@
         "content": {
           "type": "string"
         },
-        "directory": {
+        "path": {
           "type": "string",
-          "description": "Absolute path to the source on disk. A directory for skills, a file for\nrecipes and agents. Built-in skills use read-only synthetic\n`builtin://skills/<name>` paths."
+          "description": "Stable on-disk path identifying this source. Pass it back to\nupdate/delete/export to operate on this entry. Skills use the directory\ncontaining `SKILL.md`; projects use the project file path; built-in\nskills use `builtin://skills/<name>` synthetic paths."
         },
         "global": {
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
+        },
+        "writable": {
+          "type": "boolean",
+          "description": "True when this source can be modified through source CRUD methods.\nClient-provided bundled sources are returned as read-only.",
+          "default": false
         },
         "supportingFiles": {
           "type": "array",
@@ -1950,6 +1984,11 @@
             "type": "string"
           },
           "description": "Paths (absolute) of additional files that live alongside the source.\nOnly skills currently populate this; empty for other source types."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value pairs for type-specific metadata (e.g. icon, color,\npreferredProvider for projects). Stored in the frontmatter."
         }
       },
       "required": [
@@ -1957,7 +1996,7 @@
         "name",
         "description",
         "content",
-        "directory",
+        "path",
         "global"
       ],
       "description": "A source discovered by Goose. Filesystem sources use an on-disk path;\nbuilt-in sources use a stable synthetic path. Sources may be either\n`global` (shared across all projects) or project-specific."
@@ -1980,6 +2019,11 @@
             "string",
             "null"
           ]
+        },
+        "includeProjectSources": {
+          "type": "boolean",
+          "description": "When true, also scan the working directories of all known projects for\nproject-scoped sources (e.g. skills stored under `{workingDir}/.agents/skills/`).",
+          "default": false
         }
       },
       "description": "List discovered sources.\n\nIf `type` is omitted or `skill`, this lists filesystem/plugin skills only.\nBoth global and project-scoped skills are included when `project_dir` is\nset. If `type` is `builtinSkill`, this lists shipped read-only built-in\nskills.",
@@ -2019,6 +2063,14 @@
         },
         "content": {
           "type": "string"
+        },
+        "properties": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {},
+          "description": "When `Some`, replaces all stored properties on the source. When\n`None` (or omitted), the source's existing properties are\npreserved. Callers that don't model the full property bag (e.g.\nthe skills editor, which only edits name/description/content)\nshould omit this so per-skill metadata isn't silently erased."
         }
       },
       "required": [

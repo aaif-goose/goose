@@ -11,7 +11,7 @@ function HeroSection() {
     <header className={styles.hero}>
       <div className={styles.heroInner}>
         <div className={styles.heroBadge}>
-          Open Source · Apache 2.0 · Linux Foundation
+          Open Source · Apache 2.0 · Agentic AI Foundation
         </div>
         <div className={styles.heroLogo}>
           <GooseLogo />
@@ -170,7 +170,7 @@ function FeaturesSection() {
             description={
               <p>
                 Spawn independent{" "}
-                <Link to="/docs/guides/subagents">subagents</Link> to handle
+                <Link to="/docs/guides/context-engineering/subagents">subagents</Link> to handle
                 tasks in parallel — code review, research, file processing —
                 keeping the main conversation clean.
               </p>

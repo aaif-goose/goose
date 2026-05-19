@@ -1,5 +1,5 @@
 ---
-sidebar_position: 45
+sidebar_position: 8
 title: CLI Providers
 sidebar_label: CLI Providers
 description: Use Claude Code, Codex, Cursor Agent, or Gemini CLI subscriptions in goose
@@ -25,7 +25,7 @@ CLI providers are useful if you:
 - need session persistence to save, resume, and export conversation history
 - want to use goose recipes and scheduled tasks to create repeatable workflows
 - prefer unified commands across different AI providers
-- want to [use multiple models together](#combining-with-other-models) in your tasks 
+- want to [use multiple models together](#combining-with-planner-models) in your tasks
 
 ### Benefits
 

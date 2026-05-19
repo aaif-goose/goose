@@ -12,8 +12,6 @@ import {
 import {
   archiveSession as acpArchiveSession,
   unarchiveSession as acpUnarchiveSession,
-  renameSession as acpRenameSession,
-  updateSessionProject,
 } from "@/shared/api/acpApi";
 
 export interface ChatSession {
@@ -21,7 +19,7 @@ export interface ChatSession {
   title: string;
   projectId?: string | null;
   providerId?: string;
-  personaId?: string;
+  agentId?: string;
   modelId?: string;
   modelName?: string;
   workingDir?: string | null;
@@ -68,7 +66,7 @@ interface CreateSessionOpts {
   title?: string;
   projectId?: string;
   providerId?: string;
-  personaId?: string;
+  agentId?: string;
   workingDir?: string;
   modelId?: string;
   modelName?: string;
@@ -77,7 +75,7 @@ interface CreateSessionOpts {
 interface ChatSessionStoreActions {
   createSession: (opts?: CreateSessionOpts) => Promise<ChatSession>;
   loadSessions: () => Promise<void>;
-  updateSession: (id: string, patch: Partial<ChatSession>) => void;
+  patchSession: (id: string, patch: Partial<ChatSession>) => void;
   addSession: (session: ChatSession) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
@@ -102,7 +100,6 @@ function acpSessionToChatSession(session: AcpSessionInfo): ChatSession {
     title: normalizeAcpTitle(session.title) ?? "Untitled",
     projectId: session.projectId ?? undefined,
     providerId: session.providerId ?? undefined,
-    personaId: session.personaId ?? undefined,
     modelId: session.modelId ?? undefined,
     workingDir: session.workingDir ?? undefined,
     createdAt: session.createdAt ?? session.updatedAt ?? now,
@@ -125,7 +122,6 @@ export function sessionToChatSession(session: Session): ChatSession {
     title: session.title,
     projectId: session.projectId,
     providerId: session.providerId,
-    personaId: session.personaId,
     modelId: session.modelId,
     modelName: session.modelName,
     workingDir: session.workingDir,
@@ -152,7 +148,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const now = new Date().toISOString();
     const providerId = opts.providerId ?? "goose";
     const { sessionId } = await acpCreateSession(providerId, opts.workingDir, {
-      personaId: opts.personaId,
       modelId: opts.modelId,
       projectId: opts.projectId,
     });
@@ -161,7 +156,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       title: opts.title ?? DEFAULT_CHAT_TITLE,
       projectId: opts.projectId,
       providerId,
-      personaId: opts.personaId,
+      agentId: opts.agentId,
       modelId: opts.modelId,
       modelName: opts.modelName,
       workingDir: opts.workingDir,
@@ -195,7 +190,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }
   },
 
-  updateSession: (id, patch) => {
+  patchSession: (id, patch) => {
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id
@@ -207,29 +202,6 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
           : session,
       ),
     }));
-
-    const updatedSession = get().sessions.find((session) => session.id === id);
-
-    // Persist title rename to backend
-    if (
-      "title" in patch &&
-      "userSetName" in patch &&
-      patch.userSetName &&
-      updatedSession &&
-      patch.title
-    ) {
-      acpRenameSession(updatedSession.id, patch.title).catch((err: unknown) =>
-        console.error("Failed to rename session in backend:", err),
-      );
-    }
-
-    // Persist projectId change to backend
-    if ("projectId" in patch && updatedSession) {
-      updateSessionProject(updatedSession.id, patch.projectId ?? null).catch(
-        (err: unknown) =>
-          console.error("Failed to update session project in backend:", err),
-      );
-    }
   },
 
   addSession: (session) => {
