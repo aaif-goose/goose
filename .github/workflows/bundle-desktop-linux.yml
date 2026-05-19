@@ -4,6 +4,12 @@
 #  - canary.yml (when added)
 #  - pr-comment-bundle-desktop.yml (when added)
 on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch name to bundle app from'
+        required: true
+        type: string
   workflow_call:
     inputs:
       version:
@@ -35,7 +41,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || inputs.branch }}
 
       - name: Update versions
         if: ${{ inputs.version != '' }}
