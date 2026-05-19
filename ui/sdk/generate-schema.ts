@@ -62,7 +62,10 @@ async function postProcessTypes() {
   await fs.writeFile(tsPath, src);
 }
 
-async function postProcessIndex(meta: { methods: unknown[] }) {
+async function postProcessIndex(meta: {
+  methods: unknown[];
+  notifications?: unknown[];
+}) {
   const indexPath = resolve(OUTPUT_DIR, "index.ts");
   let src = await fs.readFile(indexPath, "utf8");
 
@@ -79,6 +82,10 @@ async function postProcessIndex(meta: { methods: unknown[] }) {
 export const GOOSE_EXT_METHODS = ${JSON.stringify(meta.methods, null, 2)} as const;
 
 export type GooseExtMethod = (typeof GOOSE_EXT_METHODS)[number];
+
+export const GOOSE_EXT_NOTIFICATIONS = ${JSON.stringify(meta.notifications ?? [], null, 2)} as const;
+
+export type GooseExtNotification = (typeof GOOSE_EXT_NOTIFICATIONS)[number];
 `,
     { parser: "typescript" },
   );

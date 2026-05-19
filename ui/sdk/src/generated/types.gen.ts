@@ -1054,6 +1054,38 @@ export type DictationModelSelectRequest = {
     modelId: string;
 };
 
+/**
+ * Goose-custom session update notification — a parallel to ACP's
+ * `session/update` carrying goose-specific update variants.
+ */
+export type GooseSessionNotification = {
+    sessionId: string;
+    update: GooseSessionUpdate;
+};
+
+/**
+ * Discriminated union of goose-specific session update payloads.
+ * Variant tag matches ACP's convention (`sessionUpdate: "<snake_case>"`).
+ *
+ * `discriminator.mapping` is what makes TS codegen (`@hey-api/openapi-ts`)
+ * emit the correct snake_case tag value even when this enum has a single
+ * variant. Add a mapping entry per variant.
+ */
+export type GooseSessionUpdate = {
+    sessionUpdate: 'usage_update';
+} & SessionUsageUpdate;
+
+/**
+ * Streaming context-window usage update for a session.
+ */
+export type SessionUsageUpdate = {
+    used: number;
+    contextLimit: number;
+    accumulatedInputTokens: number;
+    accumulatedOutputTokens: number;
+    accumulatedCost?: number | null;
+};
+
 export type ExtRequest = {
     id: string;
     method: string;
@@ -1072,4 +1104,11 @@ export type ExtResponse = {
         data?: unknown;
     };
     id: string;
+};
+
+export type ExtNotification = {
+    method: string;
+    params?: GooseSessionNotification | {
+        [key: string]: unknown;
+    } | null;
 };

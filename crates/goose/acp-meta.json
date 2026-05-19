@@ -275,5 +275,11 @@
       "requestType": "DictationModelSelectRequest",
       "responseType": "EmptyResponse"
     }
+  ],
+  "notifications": [
+    {
+      "method": "_goose/session/update",
+      "paramsType": "GooseSessionNotification"
+    }
   ]
 }

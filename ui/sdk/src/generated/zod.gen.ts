@@ -1046,6 +1046,41 @@ export const zDictationModelSelectRequest = z.object({
     modelId: z.string()
 });
 
+/**
+ * Streaming context-window usage update for a session.
+ */
+export const zSessionUsageUpdate = z.object({
+    used: z.number().int().gte(0),
+    contextLimit: z.number().int().gte(0),
+    accumulatedInputTokens: z.number().int().gte(0),
+    accumulatedOutputTokens: z.number().int().gte(0),
+    accumulatedCost: z.union([
+        z.number(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Discriminated union of goose-specific session update payloads.
+ * Variant tag matches ACP's convention (`sessionUpdate: "<snake_case>"`).
+ *
+ * `discriminator.mapping` is what makes TS codegen (`@hey-api/openapi-ts`)
+ * emit the correct snake_case tag value even when this enum has a single
+ * variant. Add a mapping entry per variant.
+ */
+export const zGooseSessionUpdate = z.object({
+    sessionUpdate: z.literal('usage_update')
+}).and(zSessionUsageUpdate);
+
+/**
+ * Goose-custom session update notification — a parallel to ACP's
+ * `session/update` carrying goose-specific update variants.
+ */
+export const zGooseSessionNotification = z.object({
+    sessionId: z.string(),
+    update: zGooseSessionUpdate
+});
+
 export const zExtRequest = z.object({
     id: z.string(),
     method: z.string(),
@@ -1165,3 +1200,14 @@ export const zExtResponse = z.union([
         id: z.string()
     })
 ]);
+
+export const zExtNotification = z.object({
+    method: z.string(),
+    params: z.union([
+        zGooseSessionNotification,
+        z.union([
+            z.record(z.unknown()),
+            z.null()
+        ])
+    ]).optional()
+});

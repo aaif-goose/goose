@@ -2545,6 +2545,83 @@
       "x-side": "agent",
       "x-method": "_goose/dictation/model/select"
     },
+    "GooseSessionNotification": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "update": {
+          "$ref": "#/$defs/GooseSessionUpdate"
+        }
+      },
+      "required": [
+        "sessionId",
+        "update"
+      ],
+      "description": "Goose-custom session update notification — a parallel to ACP's\n`session/update` carrying goose-specific update variants.",
+      "x-side": "agent",
+      "x-method": "_goose/session/update"
+    },
+    "GooseSessionUpdate": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SessionUsageUpdate",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "usage_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ]
+        }
+      ],
+      "description": "Discriminated union of goose-specific session update payloads.\nVariant tag matches ACP's convention (`sessionUpdate: \"<snake_case>\"`).\n\n`discriminator.mapping` is what makes TS codegen (`@hey-api/openapi-ts`)\nemit the correct snake_case tag value even when this enum has a single\nvariant. Add a mapping entry per variant.",
+      "discriminator": {
+        "propertyName": "sessionUpdate",
+        "mapping": {
+          "usage_update": "#/$defs/SessionUsageUpdate"
+        }
+      }
+    },
+    "SessionUsageUpdate": {
+      "type": "object",
+      "properties": {
+        "used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accumulatedInputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accumulatedOutputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accumulatedCost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "used",
+        "contextLimit",
+        "accumulatedInputTokens",
+        "accumulatedOutputTokens"
+      ],
+      "description": "Streaming context-window usage update for a session."
+    },
     "ExtRequest": {
       "properties": {
         "id": {
@@ -3391,6 +3468,42 @@
         }
       ],
       "x-docs-ignore": true
+    },
+    "ExtNotification": {
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GooseSessionNotification"
+                    }
+                  ],
+                  "description": "Params for _goose/session/update",
+                  "title": "GooseSessionNotification"
+                }
+              ]
+            },
+            {
+              "description": "Untyped params",
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "type": "object",
+      "x-docs-ignore": true
     }
   },
   "anyOf": [
@@ -3411,6 +3524,15 @@
       ],
       "description": "Extension response (agent → client)",
       "title": "Response"
+    },
+    {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExtNotification"
+        }
+      ],
+      "description": "Extension notification (agent → client, fire-and-forget)",
+      "title": "Notification"
     }
   ]
 }

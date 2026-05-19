@@ -1,3 +1,4 @@
+use crate::acp::custom_notifications::*;
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
 use crate::acp::tools::AcpAwareToolMeta;
@@ -1039,9 +1040,35 @@ fn build_prompt_usage(session: &Session) -> Option<Usage> {
     Some(Usage::new(total, input, output))
 }
 
-fn build_usage_update(session: &Session, context_limit: usize) -> UsageUpdate {
+struct UsageUpdates {
+    custom: GooseSessionNotification,
+    legacy: UsageUpdate,
+}
+
+fn build_usage_updates(
+    session_id: &SessionId,
+    session: &Session,
+    context_limit: usize,
+) -> UsageUpdates {
     let used = session.total_tokens.unwrap_or(0).max(0) as u64;
-    UsageUpdate::new(used, context_limit as u64)
+    let ctx_limit = context_limit as u64;
+    let accumulated_input_tokens =
+        to_nonnegative_u64(session.accumulated_input_tokens).unwrap_or(0);
+    let accumulated_output_tokens =
+        to_nonnegative_u64(session.accumulated_output_tokens).unwrap_or(0);
+    UsageUpdates {
+        custom: GooseSessionNotification {
+            session_id: session_id.0.to_string(),
+            update: GooseSessionUpdate::UsageUpdate(SessionUsageUpdate {
+                used,
+                context_limit: ctx_limit,
+                accumulated_input_tokens,
+                accumulated_output_tokens,
+                accumulated_cost: session.accumulated_cost,
+            }),
+        },
+        legacy: UsageUpdate::new(used, ctx_limit),
+    }
 }
 
 impl GooseAcpAgent {
@@ -2493,11 +2520,10 @@ impl GooseAcpAgent {
         let mode_state = build_mode_state(self.goose_mode)?;
 
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
-        let initial_usage_update = resolved
-            .as_ref()
-            .ok()
-            .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()));
         let acp_session_id = SessionId::new(session_id_str);
+        let initial_usage_updates = resolved.as_ref().ok().map(|(_, mc)| {
+            build_usage_updates(&acp_session_id, &goose_session, mc.context_limit())
+        });
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
             .await;
@@ -2521,10 +2547,14 @@ impl GooseAcpAgent {
         if let Some(co) = config_options {
             response = response.config_options(co);
         }
-        if let Some(usage_update) = initial_usage_update {
+        if let Some(updates) = initial_usage_updates {
+            cx.send_notification(updates.custom)?;
+            // Legacy ACP notification — emitted alongside the custom one for
+            // backwards compatibility. Remove once all known clients have
+            // migrated to `_goose/session/update`.
             cx.send_notification(SessionNotification::new(
                 acp_session_id.clone(),
-                SessionUpdate::UsageUpdate(usage_update),
+                SessionUpdate::UsageUpdate(updates.legacy),
             ))?;
         }
 
@@ -2856,15 +2886,16 @@ impl GooseAcpAgent {
         let mode_state = build_mode_state(loaded_mode)?;
 
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
-        let initial_usage_update = resolved
+        let initial_usage_updates = resolved
             .as_ref()
             .ok()
-            .map(|(_, mc)| build_usage_update(&goose_session, mc.context_limit()))
+            .map(|(_, mc)| {
+                build_usage_updates(&args.session_id, &goose_session, mc.context_limit())
+            })
             .or_else(|| {
-                goose_session
-                    .model_config
-                    .as_ref()
-                    .map(|mc| build_usage_update(&goose_session, mc.context_limit()))
+                goose_session.model_config.as_ref().map(|mc| {
+                    build_usage_updates(&args.session_id, &goose_session, mc.context_limit())
+                })
             });
         let (model_state, config_options, prebuilt_provider) = self
             .prepare_session_init_config(&resolved, &mode_state, &goose_session)
@@ -2889,10 +2920,14 @@ impl GooseAcpAgent {
         if let Some(co) = config_options {
             response = response.config_options(co);
         }
-        if let Some(usage_update) = initial_usage_update {
+        if let Some(updates) = initial_usage_updates {
+            cx.send_notification(updates.custom)?;
+            // Legacy ACP notification — emitted alongside the custom one for
+            // backwards compatibility. Remove once all known clients have
+            // migrated to `_goose/session/update`.
             cx.send_notification(SessionNotification::new(
                 args.session_id.clone(),
-                SessionUpdate::UsageUpdate(usage_update),
+                SessionUpdate::UsageUpdate(updates.legacy),
             ))?;
         }
 
@@ -3071,11 +3106,18 @@ impl GooseAcpAgent {
             .provider()
             .await
             .internal_err_ctx("Failed to get provider")?;
-        let usage_update =
-            build_usage_update(&session, provider.get_model_config().context_limit());
+        let updates = build_usage_updates(
+            &args.session_id,
+            &session,
+            provider.get_model_config().context_limit(),
+        );
+        cx.send_notification(updates.custom)?;
+        // Legacy ACP notification — emitted alongside the custom one for
+        // backwards compatibility. Remove once all known clients have
+        // migrated to `_goose/session/update`.
         cx.send_notification(SessionNotification::new(
             args.session_id.clone(),
-            SessionUpdate::UsageUpdate(usage_update),
+            SessionUpdate::UsageUpdate(updates.legacy),
         ))?;
 
         debug!(
@@ -4341,9 +4383,14 @@ print(\"hello, world\")
     #[test]
     fn test_build_usage_update_clamps_negative_used_to_zero() {
         let session = make_session_with_usage(Some(-7), Some(0), Some(0), None, None, None);
-        let usage = build_usage_update(&session, 258_000);
+        let updates =
+            build_usage_updates(&SessionId::new("session-1".to_string()), &session, 258_000);
+        assert_eq!(updates.custom.session_id, "session-1");
+        let GooseSessionUpdate::UsageUpdate(usage) = updates.custom.update;
         assert_eq!(usage.used, 0);
-        assert_eq!(usage.size, 258_000);
+        assert_eq!(usage.context_limit, 258_000);
+        assert_eq!(updates.legacy.used, 0);
+        assert_eq!(updates.legacy.size, 258_000);
     }
 
     #[test_case(

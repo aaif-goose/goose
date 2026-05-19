@@ -1,3 +1,4 @@
+use goose::acp::custom_notifications::custom_notification_schemas;
 use goose::acp::server::GooseAcpAgent;
 use schemars::SchemaGenerator;
 use serde_json::{json, Map, Value};
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 fn main() {
     let mut generator = SchemaGenerator::default();
     let methods = GooseAcpAgent::custom_method_schemas(&mut generator);
+    let notifications = custom_notification_schemas(&mut generator);
 
     // Collect $defs from the generator (all types referenced via subschema_for).
     let mut defs: Map<String, Value> = generator
@@ -19,7 +21,7 @@ fn main() {
 
     // Track which types map to which methods so we can detect shared types.
     let mut type_methods: HashMap<String, Vec<String>> = HashMap::new();
-    for m in &methods {
+    for m in methods.iter().chain(notifications.iter()) {
         let method = m.method.clone();
         if let Some(name) = &m.params_type_name {
             type_methods
@@ -63,6 +65,7 @@ fn main() {
     // deduplicating response variants (e.g. EmptyResponse appears once).
     let mut request_variants: Vec<Value> = Vec::new();
     let mut response_variants: Vec<Value> = Vec::new();
+    let mut notification_variants: Vec<Value> = Vec::new();
     let mut seen_response_types: BTreeSet<String> = BTreeSet::new();
 
     for m in &methods {
@@ -81,6 +84,16 @@ fn main() {
                     "title": name,
                 }));
             }
+        }
+    }
+
+    for n in &notifications {
+        if let Some(name) = &n.params_type_name {
+            notification_variants.push(json!({
+                "allOf": [{ "$ref": format!("#/$defs/{name}") }],
+                "description": format!("Params for {}", n.method),
+                "title": name,
+            }));
         }
     }
 
@@ -145,6 +158,25 @@ fn main() {
         }),
     );
 
+    // Build ExtNotification — fire-and-forget message with no `id` and no response.
+    defs.insert(
+        "ExtNotification".into(),
+        json!({
+            "properties": {
+                "method": { "type": "string" },
+                "params": {
+                    "anyOf": [
+                        { "anyOf": notification_variants },
+                        { "description": "Untyped params", "type": ["object", "null"] },
+                    ]
+                }
+            },
+            "required": ["method"],
+            "type": "object",
+            "x-docs-ignore": true,
+        }),
+    );
+
     // Assemble the root schema document.
     let root = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -160,6 +192,11 @@ fn main() {
                 "allOf": [{ "$ref": "#/$defs/ExtResponse" }],
                 "description": "Extension response (agent → client)",
                 "title": "Response",
+            },
+            {
+                "allOf": [{ "$ref": "#/$defs/ExtNotification" }],
+                "description": "Extension notification (agent → client, fire-and-forget)",
+                "title": "Notification",
             }
         ],
     });
@@ -184,7 +221,19 @@ fn main() {
             })
         })
         .collect();
-    let meta = json!({ "methods": method_entries });
+    let notification_entries: Vec<Value> = notifications
+        .iter()
+        .map(|n| {
+            json!({
+                "method": &n.method,
+                "paramsType": n.params_type_name,
+            })
+        })
+        .collect();
+    let meta = json!({
+        "methods": method_entries,
+        "notifications": notification_entries,
+    });
     let meta_str = serde_json::to_string_pretty(&meta).expect("failed to serialize meta");
     let meta_path = package_path.join("acp-meta.json");
     fs::write(&meta_path, format!("{meta_str}\n")).expect("failed to write meta file");
