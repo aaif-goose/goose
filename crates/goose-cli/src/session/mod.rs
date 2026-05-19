@@ -638,6 +638,10 @@ impl CliSession {
                 history.save(editor);
                 self.handle_goose_mode(&mode).await?;
             }
+            InputResult::Model(model) => {
+                history.save(editor);
+                self.handle_model(model.as_deref()).await?;
+            }
             InputResult::Plan(options) => {
                 self.handle_plan_mode(options).await?;
             }
@@ -822,6 +826,71 @@ impl CliSession {
         self.agent.update_goose_mode(mode, &self.session_id).await?;
         config.set_goose_mode(mode)?;
         output::goose_mode_message(&format!("Goose mode set to '{mode}'"));
+        Ok(())
+    }
+
+    async fn handle_model(&self, model: Option<&str>) -> Result<()> {
+        let provider = self.agent.provider().await?;
+        let current_provider_name = provider.get_name().to_string();
+        let current_model_config = provider.get_model_config();
+        let current_model_name = current_model_config.model_name.clone();
+
+        if model.is_none() {
+            output::goose_mode_message(&format!(
+                "Current session model: '{}' (provider '{}')",
+                current_model_name, current_provider_name
+            ));
+            return Ok(());
+        }
+
+        let model_name = model.unwrap_or_default().trim();
+        if model_name.is_empty() {
+            output::render_error("Model name cannot be empty");
+            return Ok(());
+        }
+
+        if current_provider_name.ends_with("-acp") {
+            output::render_error(
+                "Session model switching is not supported for ACP providers in the CLI.",
+            );
+            return Ok(());
+        }
+
+        if provider.manages_own_context() {
+            output::render_error(&format!(
+                "Session model switching is not supported for provider '{}' because it manages its own conversation context.",
+                current_provider_name
+            ));
+            return Ok(());
+        }
+
+        if model_name == current_model_name {
+            output::goose_mode_message(&format!(
+                "Session already using model '{}' for provider '{}'",
+                current_model_name, current_provider_name
+            ));
+            return Ok(());
+        }
+
+        let new_model_config =
+            build_switched_model_config(&current_provider_name, model_name, &current_model_config)?;
+
+        let extensions = self.agent.get_extension_configs().await;
+        let new_provider =
+            goose::providers::create(&current_provider_name, new_model_config, extensions)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create provider: {e}"))?;
+
+        self.agent
+            .update_provider(new_provider, &self.session_id)
+            .await?;
+
+        let mode = self.agent.goose_mode().await;
+        self.agent.update_goose_mode(mode, &self.session_id).await?;
+        output::goose_mode_message(&format!(
+            "Session model switched from '{}' to '{}' for provider '{}'",
+            current_model_name, model_name, current_provider_name
+        ));
         Ok(())
     }
 
@@ -2121,11 +2190,28 @@ fn format_elapsed_time(duration: std::time::Duration) -> String {
     }
 }
 
+fn build_switched_model_config(
+    provider_name: &str,
+    model_name: &str,
+    current_model_config: &goose::model::ModelConfig,
+) -> Result<goose::model::ModelConfig> {
+    goose::model::ModelConfig::new(model_name)
+        .map(|config| {
+            config
+                .with_canonical_limits(provider_name)
+                .with_temperature(current_model_config.temperature)
+                .with_toolshim(current_model_config.toolshim)
+                .with_toolshim_model(current_model_config.toolshim_model.clone())
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to create model configuration: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use goose::agents::extension::Envs;
     use goose::config::ExtensionConfig;
+    use std::collections::HashMap;
     use std::time::Duration;
     use test_case::test_case;
 
@@ -2247,6 +2333,49 @@ mod tests {
     #[test]
     fn test_parse_stdio_extension_no_command() {
         assert!(CliSession::parse_stdio_extension("").is_err());
+    }
+
+    #[test]
+    fn test_build_switched_model_config_rebuilds_target_model_settings() {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_TEMPERATURE", None::<&str>),
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_TOOLSHIM", None::<&str>),
+            ("GOOSE_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+        ]);
+
+        let current_model_config = goose::model::ModelConfig {
+            model_name: "gpt-4o".to_string(),
+            context_limit: Some(128_000),
+            temperature: Some(0.25),
+            max_tokens: Some(16_384),
+            toolshim: true,
+            toolshim_model: Some("qwen2.5-coder".to_string()),
+            fast_model_config: None,
+            request_params: Some(HashMap::from([(
+                "anthropic_beta".to_string(),
+                serde_json::json!(["output-128k-2025-02-19"]),
+            )])),
+            reasoning: Some(false),
+        };
+
+        let switched =
+            build_switched_model_config("openai", "gpt-5.4", &current_model_config).unwrap();
+        let expected = goose::model::ModelConfig::new_or_fail("gpt-5.4")
+            .with_canonical_limits("openai")
+            .with_temperature(Some(0.25))
+            .with_toolshim(true)
+            .with_toolshim_model(Some("qwen2.5-coder".to_string()));
+
+        assert_eq!(switched.model_name, expected.model_name);
+        assert_eq!(switched.context_limit, expected.context_limit);
+        assert_eq!(switched.max_tokens, expected.max_tokens);
+        assert_eq!(switched.request_params, expected.request_params);
+        assert_eq!(switched.reasoning, expected.reasoning);
+        assert_eq!(switched.temperature, Some(0.25));
+        assert!(switched.toolshim);
+        assert_eq!(switched.toolshim_model.as_deref(), Some("qwen2.5-coder"));
     }
 
     #[test]
