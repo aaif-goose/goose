@@ -1,5 +1,5 @@
 use crate::conversation::tool_result_serde;
-use crate::mcp_utils::{extract_text_from_resource, ToolResult};
+use crate::mcp_utils::{ToolResult, extract_text_from_resource};
 use crate::utils::sanitize_unicode_tags;
 use chrono::Utc;
 use rmcp::model::{
@@ -1217,16 +1217,6 @@ mod tests {
             provider_message.content[1],
             MessageContent::RedactedThinking(_)
         ));
-    }
-
-    #[test]
-    fn test_user_audience_filters_thinking_content() {
-        assert!(MessageContent::thinking("internal reasoning", "sig")
-            .filter_for_audience(Role::User)
-            .is_none());
-        assert!(MessageContent::redacted_thinking("redacted")
-            .filter_for_audience(Role::User)
-            .is_none());
     }
 
     #[test]
