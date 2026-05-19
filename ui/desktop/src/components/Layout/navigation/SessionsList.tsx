@@ -4,8 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SessionIndicators } from '../../SessionIndicators';
 import { InlineEditText } from '../../common/InlineEditText';
 import { cn } from '../../../utils';
-import { updateSessionName } from '../../../api';
-import type { SessionListItem } from '../../../acp/sessions';
+import { acpRenameSession, type SessionListItem } from '../../../acp/sessions';
 import type { SessionStatus } from './types';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -52,10 +51,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
 
   const handleSaveSessionName = useCallback(
     async (sessionId: string, newName: string) => {
-      await updateSessionName({
-        path: { session_id: sessionId },
-        body: { name: newName },
-      });
+      await acpRenameSession(sessionId, newName);
       onSessionRenamed?.();
     },
     [onSessionRenamed]

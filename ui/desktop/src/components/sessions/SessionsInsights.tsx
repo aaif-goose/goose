@@ -14,7 +14,7 @@ import {
   SessionInsights as ApiSessionInsights,
 } from '../../api';
 import {
-  listAcpSessions,
+  acpListSessions,
   sessionInfoToListItem,
   type SessionListItem,
 } from '../../acp/sessions';
@@ -80,7 +80,7 @@ export function SessionInsights() {
 
     const loadRecentSessions = async () => {
       try {
-        const response = await listAcpSessions();
+        const response = await acpListSessions();
         setRecentSessions(response.sessions.slice(0, 3).map(sessionInfoToListItem));
       } finally {
         setIsLoadingSessions(false);

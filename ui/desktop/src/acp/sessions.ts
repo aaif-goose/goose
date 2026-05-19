@@ -6,7 +6,7 @@ import type {
 import { getAcpClient } from './acpConnection';
 import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 
-export async function loadAcpSession(
+export async function acpLoadSession(
   sessionId: string,
   workingDir: string
 ): Promise<LoadSessionResponse> {
@@ -18,9 +18,35 @@ export async function loadAcpSession(
   });
 }
 
-export async function listAcpSessions(): Promise<ListSessionsResponse> {
+export async function acpListSessions(): Promise<ListSessionsResponse> {
   const client = await getAcpClient();
   return client.listSessions({});
+}
+
+export async function acpRenameSession(sessionId: string, title: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.GooseSessionRename({ sessionId, title });
+}
+
+export async function acpDeleteSession(sessionId: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.sessionDelete({ sessionId });
+}
+
+export async function acpForkSession(sessionId: string, cwd: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.unstable_forkSession({ sessionId, cwd, mcpServers: [] });
+}
+
+export async function acpExportSession(sessionId: string): Promise<string> {
+  const client = await getAcpClient();
+  const result = await client.goose.GooseSessionExport({ sessionId });
+  return result.data;
+}
+
+export async function acpImportSession(data: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.GooseSessionImport({ data });
 }
 
 interface GooseSessionInfoMeta {

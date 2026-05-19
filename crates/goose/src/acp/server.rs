@@ -3397,9 +3397,20 @@ impl GooseAcpAgent {
     ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
         let source_session_id = &*args.session_id.0;
 
+        let source = self
+            .session_manager
+            .get_session(source_session_id, false)
+            .await
+            .internal_err()?;
+        let fork_name = if source.name.trim().is_empty() {
+            "(copy)".to_string()
+        } else {
+            format!("{} (copy)", source.name)
+        };
+
         let new_session = self
             .session_manager
-            .copy_session(source_session_id, "Fork".to_string())
+            .copy_session(source_session_id, fork_name)
             .await
             .internal_err()?;
         let new_session_id = new_session.id.clone();

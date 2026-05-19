@@ -36,20 +36,20 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import {
-  deleteSession,
-  exportSession,
-  forkSession,
-  importSession,
   importSessionNostr,
   searchSessions,
   shareSessionNostr,
-  updateSessionName,
 } from '../../api';
 import { getTunnelStatus } from '../../api/sdk.gen';
 import {
-  listAcpSessions,
+  acpDeleteSession,
+  acpExportSession,
+  acpForkSession,
+  acpImportSession,
+  acpListSessions,
+  acpRenameSession,
   sessionInfoToListItem,
-  type SessionListItem,
+  SessionListItem,
 } from '../../acp/sessions';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 
@@ -134,11 +134,7 @@ const EditSessionModal = React.memo<EditSessionModalProps>(
 
       setIsUpdating(true);
       try {
-        await updateSessionName({
-          path: { session_id: session.id },
-          body: { name: trimmedDescription },
-          throwOnError: true,
-        });
+        await acpRenameSession(session.id, trimmedDescription);
         await onSave(session.id, trimmedDescription);
         onClose();
         setTimeout(() => {
@@ -331,7 +327,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       setShowContent(false);
       setError(null);
       try {
-        const resp = await listAcpSessions();
+        const resp = await acpListSessions();
         const sessions = resp.sessions.map(sessionInfoToListItem);
         // Use startTransition to make state updates non-blocking
         startTransition(() => {
@@ -502,11 +498,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     const handleDuplicateSession = useCallback(
       async (session: SessionListItem) => {
         try {
-          await forkSession({
-            path: { session_id: session.id },
-            body: { truncate: false, copy: true },
-            throwOnError: true,
-          });
+          await acpForkSession(session.id, session.workingDir);
           toast.success(intl.formatMessage(i18n.duplicateSuccess, { name: session.name }));
           await loadSessions();
         } catch (error) {
@@ -526,10 +518,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       setSessionToDelete(null);
 
       try {
-        await deleteSession({
-          path: { session_id: sessionToDeleteId },
-          throwOnError: true,
-        });
+        await acpDeleteSession(sessionToDeleteId);
         toast.success(intl.formatMessage(i18n.deleteSuccess));
         window.dispatchEvent(
           new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: sessionToDeleteId } })
@@ -549,12 +538,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     const handleExportSession = useCallback(async (session: SessionListItem, e: React.MouseEvent) => {
       e.stopPropagation();
 
-      const response = await exportSession({
-        path: { session_id: session.id },
-        throwOnError: true,
-      });
-
-      const json = response.data;
+      const json = await acpExportSession(session.id);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -630,10 +614,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
 
         try {
           const json = await file.text();
-          await importSession({
-            body: { json },
-            throwOnError: true,
-          });
+          await acpImportSession(json);
 
           toast.success(intl.formatMessage(i18n.importSuccess));
           await loadSessions();

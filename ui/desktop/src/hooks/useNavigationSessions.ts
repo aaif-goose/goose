@@ -9,9 +9,9 @@ import { getInitialWorkingDir } from '../utils/workingDir';
 import { AppEvents } from '../constants/events';
 import type { Session } from '../api';
 import {
-  listAcpSessions,
+  acpListSessions,
   sessionInfoToListItem,
-  type SessionListItem,
+  SessionListItem,
 } from '../acp/sessions';
 import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 
@@ -88,7 +88,7 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
 
   const fetchSessions = useCallback(async () => {
     try {
-      const response = await listAcpSessions();
+      const response = await acpListSessions();
       setRecentSessions(sortAndTrim(response.sessions.map(sessionInfoToListItem)));
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
@@ -140,7 +140,7 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
       const pollForUpdates = async () => {
         pollCount++;
         try {
-          const response = await listAcpSessions();
+          const response = await acpListSessions();
           const apiSessions = response.sessions
             .slice(0, MAX_RECENT_SESSIONS)
             .map(sessionInfoToListItem);
@@ -209,7 +209,7 @@ export function useNavigationSessions(options: UseNavigationSessionsOptions = {}
   const handleNewChat = useCallback(async () => {
     if (isCreatingSessionRef.current) return;
 
-    // Empty placeholder sessions are filtered out of listAcpSessions, so the
+    // Empty placeholder sessions are filtered out of acpListSessions, so the
     // active one isn't in sessionsRef. Fetch it directly to check reusability.
     if (activeSessionId) {
       const resp = await getSession({
