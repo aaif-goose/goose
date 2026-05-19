@@ -294,10 +294,12 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
         return String::new();
     };
 
-    let sources = discover_filesystem_sources(&session.working_dir);
-
-    let mut subagents: Vec<&SourceEntry> = sources
-        .iter()
+    // Only Agent / Recipe / Subrecipe are valid `delegate` targets — see
+    // `build_source_recipe`. Filter the filesystem scan to those, so that
+    // if discovery ever grows to return other source types (skills,
+    // projects, ...) we don't accidentally advertise them here.
+    let mut sources: Vec<SourceEntry> = discover_filesystem_sources(&session.working_dir)
+        .into_iter()
         .filter(|s| {
             matches!(
                 s.source_type,
@@ -306,13 +308,45 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
         })
         .collect();
 
-    if subagents.is_empty() {
+    // Subrecipes attached to the active session recipe are valid `delegate`
+    // targets but live in the session, not on disk, so the filesystem scan
+    // does not see them. Synthesize a light SourceEntry from the SubRecipe
+    // metadata — enough for the listing, without loading the recipe file.
+    if let Some(recipe) = session.recipe.as_ref() {
+        if let Some(subs) = recipe.sub_recipes.as_ref() {
+            let mut seen: std::collections::HashSet<&str> =
+                sources.iter().map(|s| s.name.as_str()).collect();
+            for sr in subs {
+                if !seen.insert(sr.name.as_str()) {
+                    continue;
+                }
+                sources.push(SourceEntry {
+                    source_type: SourceType::Subrecipe,
+                    name: sr.name.clone(),
+                    description: sr.description.clone().unwrap_or_default(),
+                    content: String::new(),
+                    path: sr.path.clone(),
+                    global: false,
+                    writable: false,
+                    supporting_files: Vec::new(),
+                    properties: std::collections::HashMap::new(),
+                });
+            }
+        }
+    }
+
+    if sources.is_empty() {
         return String::new();
     }
 
-    subagents.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
+    sources.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
+    let subagents: Vec<&SourceEntry> = sources.iter().collect();
 
-    let names = subagents.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ");
+    let names = subagents
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let mut out = String::new();
     out.push_str(
