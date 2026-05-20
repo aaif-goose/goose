@@ -213,6 +213,8 @@ pub struct Agent {
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
     container: Mutex<Option<Container>>,
+    goal: Mutex<Option<String>>,
+    grind: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -330,6 +332,8 @@ impl Agent {
             ),
             hook_manager: crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref()),
             container: Mutex::new(None),
+            goal: Mutex::new(None),
+            grind: Mutex::new(None),
         }
     }
 
@@ -1625,6 +1629,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut goal_check_pending = false;
             let mut tool_pair_summarization_done = false;
 
             loop {
@@ -1975,6 +1980,8 @@ impl Agent {
                                 }
 
                                 no_tools_called = false;
+                                // Agent is actively working — re-check goal when it next finishes
+                                goal_check_pending = false;
                             }
                         }
                         #[allow(unused_variables)]
@@ -2125,7 +2132,46 @@ impl Agent {
                         None if did_recovery_compact_this_iteration => {
                             // continue from last user message after recovery compact
                         }
+                        None if self.goal.lock().await.is_some() && !goal_check_pending => {
+                            goal_check_pending = true;
+                            let goal = self.goal.lock().await.clone().unwrap();
+                            let nudge = format!(
+                                "Before finishing, check whether the following goal has been fully met:\n\n\
+                                 **Goal:** {goal}\n\n\
+                                 If not, continue working toward it."
+                            );
+                            let message = Message::user().with_text(&nudge)
+                                .with_visibility(false, true);
+                            messages_to_add.push(message);
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    format!("Goal: {goal}"),
+                                )
+                            );
+                        }
+
+                        None if self.grind.lock().await.is_some() => {
+                            let grind = self.grind.lock().await.clone().unwrap();
+                            let nudge = format!(
+                                "Keep working. The grind goal is not yet complete:\n\n\
+                                 **Goal:** {grind}\n\n\
+                                 Continue until it is fully done."
+                            );
+                            let message = Message::user().with_text(&nudge)
+                                .with_visibility(false, true);
+                            messages_to_add.push(message);
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    format!("Grind: {grind}"),
+                                )
+                            );
+                        }
+
                         None => {
+                            self.set_goal(None).await;
+                            self.set_grind(None).await;
                             match self.handle_retry_logic(&mut conversation, &session_config, &initial_messages).await {
                                 Ok(should_retry) => {
                                     if should_retry {
@@ -2211,6 +2257,22 @@ impl Agent {
     pub async fn extend_system_prompt(&self, key: String, instruction: String) {
         let mut prompt_manager = self.prompt_manager.lock().await;
         prompt_manager.add_system_prompt_extra(key, instruction);
+    }
+
+    pub async fn set_goal(&self, goal: Option<String>) {
+        *self.goal.lock().await = goal;
+    }
+
+    pub async fn get_goal(&self) -> Option<String> {
+        self.goal.lock().await.clone()
+    }
+
+    pub async fn set_grind(&self, goal: Option<String>) {
+        *self.grind.lock().await = goal;
+    }
+
+    pub async fn get_grind(&self) -> Option<String> {
+        self.grind.lock().await.clone()
     }
 
     pub async fn update_provider(
