@@ -1,21 +1,20 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use super::api_client::{ApiClient, AuthMethod, AuthProvider};
+use super::api_client::{ApiClient, AuthMethod};
 use super::base::{
     ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
     DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
+use super::databricks_auth::{DatabricksAuth, DatabricksAuthProvider};
 use super::embedding::EmbeddingCapable;
 use super::errors::ProviderError;
 use super::formats::databricks::create_request;
 use super::formats::openai_responses::create_responses_request;
-use super::oauth;
 use super::openai_compatible::{
     handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
     stream_openai_compat, stream_responses_compat,
@@ -33,10 +32,6 @@ use crate::providers::retry::{
 use rmcp::model::Tool;
 use serde_json::json;
 
-const DEFAULT_CLIENT_ID: &str = "databricks-cli";
-const DEFAULT_REDIRECT_URL: &str = "http://localhost";
-const DEFAULT_SCOPES: &[&str] = &["all-apis", "offline_access"];
-
 const DATABRICKS_PROVIDER_NAME: &str = "databricks";
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
 const DATABRICKS_DEFAULT_FAST_MODEL: &str = "databricks-claude-haiku-4-5";
@@ -48,69 +43,6 @@ pub const DATABRICKS_KNOWN_MODELS: &[&str] = &[
 
 pub const DATABRICKS_DOC_URL: &str =
     "https://docs.databricks.com/en/generative-ai/external-models/index.html";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DatabricksAuth {
-    Token(String),
-    OAuth {
-        host: String,
-        client_id: String,
-        redirect_url: String,
-        scopes: Vec<String>,
-    },
-}
-
-impl DatabricksAuth {
-    pub fn oauth(host: String) -> Self {
-        Self::OAuth {
-            host,
-            client_id: DEFAULT_CLIENT_ID.to_string(),
-            redirect_url: DEFAULT_REDIRECT_URL.to_string(),
-            scopes: DEFAULT_SCOPES.iter().map(|s| s.to_string()).collect(),
-        }
-    }
-
-    pub fn token(token: String) -> Self {
-        Self::Token(token)
-    }
-}
-
-struct DatabricksAuthProvider {
-    auth: DatabricksAuth,
-    token_cache: Arc<Mutex<Option<String>>>,
-}
-
-#[async_trait]
-impl AuthProvider for DatabricksAuthProvider {
-    async fn get_auth_header(&self) -> Result<(String, String)> {
-        let token = match &self.auth {
-            DatabricksAuth::Token(original) => {
-                let cached = self.token_cache.lock().unwrap().clone();
-                match cached {
-                    Some(t) => t,
-                    None => {
-                        // Cache was cleared by refresh_credentials(); re-read
-                        // from config which may have a sidecar-rotated token.
-                        // Fall back to the constructor-provided token if config
-                        // lookup fails (e.g. from_params usage).
-                        let fresh = crate::config::Config::global()
-                            .get_secret::<String>("DATABRICKS_TOKEN")
-                            .unwrap_or_else(|_| original.clone());
-                        *self.token_cache.lock().unwrap() = Some(fresh.clone());
-                        fresh
-                    }
-                }
-            }
-            DatabricksAuth::OAuth {
-                host,
-                client_id,
-                redirect_url,
-                scopes,
-            } => oauth::get_oauth_token_async(host, client_id, redirect_url, scopes).await?,
-        };
-        Ok(("Authorization".to_string(), format!("Bearer {}", token)))
-    }
-}
 
 #[derive(Debug, serde::Serialize)]
 pub struct DatabricksProvider {

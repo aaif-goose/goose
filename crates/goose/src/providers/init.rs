@@ -21,6 +21,7 @@ use super::{
     copilot_acp::CopilotAcpProvider,
     cursor_agent::CursorAgentProvider,
     databricks::DatabricksProvider,
+    databricks_v2::DatabricksV2Provider,
     gcpvertexai::GcpVertexAIProvider,
     gemini_cli::GeminiCliProvider,
     gemini_oauth::GeminiOAuthProvider,
@@ -68,6 +69,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<CodexProvider>(true);
         registry.register::<CursorAgentProvider>(false);
         registry.register::<DatabricksProvider>(true);
+        registry.register::<DatabricksV2Provider>(false);
         registry.register::<GcpVertexAIProvider>(false);
         registry.register::<GeminiCliProvider>(false);
         registry.register::<GeminiOAuthProvider>(true);
@@ -94,6 +96,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "databricks",
         Arc::new(|| Box::pin(DatabricksProvider::cleanup())),
+    );
+    registry.set_cleanup(
+        "databricks_v2",
+        Arc::new(|| Box::pin(DatabricksV2Provider::cleanup())),
     );
     registry.set_cleanup(
         "kimi_code",

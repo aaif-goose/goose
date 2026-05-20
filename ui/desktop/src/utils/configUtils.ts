@@ -79,6 +79,7 @@ export const providerPrefixes: Record<string, string[]> = {
   google: ['GOOGLE_'],
   groq: ['GROQ_'],
   databricks: ['DATABRICKS_'],
+  databricks_v2: ['DATABRICKS_'],
   openrouter: ['OPENROUTER_'],
   ollama: ['OLLAMA_'],
   azure_openai: ['AZURE_'],

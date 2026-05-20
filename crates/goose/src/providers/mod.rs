@@ -19,6 +19,8 @@ pub mod codex_acp;
 pub mod copilot_acp;
 pub mod cursor_agent;
 pub mod databricks;
+pub mod databricks_auth;
+pub mod databricks_v2;
 pub mod embedding;
 pub mod errors;
 pub mod formats;
