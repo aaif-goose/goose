@@ -279,6 +279,31 @@ function createEventProcessor(
     }
   };
 
+  const flushPendingInference = () => {
+    if (!pendingInference) {
+      return;
+    }
+
+    for (let i = currentMessages.length - 1; i >= 0; i--) {
+      const message = currentMessages[i];
+      if (message.role === 'assistant' && message.metadata.userVisible) {
+        currentMessages = [
+          ...currentMessages.slice(0, i),
+          {
+            ...message,
+            metadata: {
+              ...message.metadata,
+              inference: message.metadata.inference ?? pendingInference,
+            },
+          },
+          ...currentMessages.slice(i + 1),
+        ];
+        break;
+      }
+    }
+    pendingInference = undefined;
+  };
+
   // Returns true if the event is terminal (Finish or Error)
   const processEvent = (event: SessionEvent): boolean => {
     switch (event.type) {
@@ -326,7 +351,9 @@ function createEventProcessor(
         return false;
       }
       case 'Error': {
+        flushPendingInference();
         flushBatchedUpdates();
+        dispatch({ type: 'SET_MESSAGES', payload: currentMessages });
         const errorMsg = String((event as Record<string, unknown>).error ?? '');
         if (errorMsg.includes('too far behind') && onReloadNeeded) {
           // Server indicated we missed events — end streaming without setting
@@ -340,7 +367,9 @@ function createEventProcessor(
         return true;
       }
       case 'Finish': {
+        flushPendingInference();
         flushBatchedUpdates();
+        dispatch({ type: 'SET_MESSAGES', payload: currentMessages });
         onFinish();
         return true;
       }
