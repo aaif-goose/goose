@@ -562,8 +562,7 @@ app.on('open-url', async (_event, url) => {
 
     if (parsedUrl.hostname === 'resume') {
       log.info('[Main] Detected resume URL, creating session resume window');
-      openUrlHandledLaunch = true;
-      await createResumeChatWindow(parsedUrl, openDir || undefined);
+      openUrlHandledLaunch = await createResumeChatWindow(parsedUrl, openDir || undefined);
       return;
     }
 
