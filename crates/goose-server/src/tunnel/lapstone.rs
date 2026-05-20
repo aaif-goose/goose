@@ -22,20 +22,21 @@ struct ProxyContext {
     http_client: reqwest::Client,
 }
 
-/// Constant-time comparison using hash to prevent timing attacks
 fn secure_compare(a: &str, b: &str) -> bool {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use subtle::ConstantTimeEq;
+    a.as_bytes().ct_eq(b.as_bytes()).into()
+}
 
-    let mut hasher_a = DefaultHasher::new();
-    a.hash(&mut hasher_a);
-    let hash_a = hasher_a.finish();
-
-    let mut hasher_b = DefaultHasher::new();
-    b.hash(&mut hasher_b);
-    let hash_b = hasher_b.finish();
-
-    hash_a == hash_b
+/// Only Copilot endpoints may be reached through the public tunnel.
+fn tunnel_path_allowed(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or(path);
+    if path.contains("..") {
+        return false;
+    }
+    matches!(
+        path,
+        "/copilot/review" | "/copilot/comment" | "/copilot/status"
+    )
 }
 
 const WORKER_URL: &str = "https://cloudflare-tunnel-proxy.michael-neale.workers.dev";
@@ -268,6 +269,25 @@ async fn handle_request(
 ) -> Result<()> {
     let request_id = message.request_id.clone();
     let client = &ctx.http_client;
+
+    if !tunnel_path_allowed(&message.path) {
+        warn!("✗ Blocked tunnel path [{}]: {}", request_id, message.path);
+        let error_response = TunnelResponse {
+            request_id,
+            status: 403,
+            headers: None,
+            body: None,
+            error: Some("tunnel path not allowed".to_string()),
+            chunk_index: None,
+            total_chunks: None,
+            is_chunked: false,
+            is_streaming: false,
+            is_first_chunk: false,
+            is_last_chunk: false,
+        };
+        send_response(ws_tx, error_response).await?;
+        return Ok(());
+    }
 
     let url = format!("{}://127.0.0.1:{}{}", scheme, ctx.port, message.path);
 
@@ -631,5 +651,32 @@ pub async fn stop(handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>) {
     if let Some(task) = handle.write().await.take() {
         task.abort();
         info!("Lapstone tunnel stopped");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tunnel_path_allowed_accepts_copilot_routes() {
+        assert!(tunnel_path_allowed("/copilot/review"));
+        assert!(tunnel_path_allowed("/copilot/comment"));
+        assert!(tunnel_path_allowed("/copilot/status"));
+        assert!(tunnel_path_allowed("/copilot/status?x=1"));
+    }
+
+    #[test]
+    fn tunnel_path_allowed_rejects_other_paths() {
+        assert!(!tunnel_path_allowed("/config"));
+        assert!(!tunnel_path_allowed("/agent/start"));
+        assert!(!tunnel_path_allowed("/copilot/../config"));
+        assert!(!tunnel_path_allowed("/copilot/setup"));
+    }
+
+    #[test]
+    fn secure_compare_matches_equal_secrets() {
+        assert!(secure_compare("abc", "abc"));
+        assert!(!secure_compare("abc", "abd"));
     }
 }
