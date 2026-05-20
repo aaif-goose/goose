@@ -1,5 +1,8 @@
 pub mod server;
 
+#[cfg(test)]
+mod tests;
+
 use anyhow::{anyhow, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Deserialize;
@@ -19,9 +22,6 @@ pub struct InstallCallback {
 pub struct CopilotInstallFlow {
     state: String,
     server_shutdown_tx: Option<oneshot::Sender<()>>,
-    /// Public GitHub OAuth client ID. When set, the flow uses the
-    /// /login/oauth/authorize endpoint instead of /apps/.../installations/new,
-    /// which works whether the app is already installed for the user or not.
     oauth_client_id: Option<String>,
 }
 
@@ -45,8 +45,6 @@ impl CopilotInstallFlow {
     }
 
     pub fn install_url(&self) -> String {
-        // OAuth authorize URL: always redirects to redirect_uri with
-        // (code, state, installation_id) regardless of install state.
         if let Some(client_id) = &self.oauth_client_id {
             return format!(
                 "https://github.com/login/oauth/authorize?client_id={}&state={}&redirect_uri={}",
@@ -67,11 +65,7 @@ impl CopilotInstallFlow {
     }
 
     pub async fn complete_flow(&mut self) -> Result<InstallCallback> {
-        let url = self.install_url();
-        tracing::info!("[copilot-install] opening browser to {}", url);
-        if let Err(e) = webbrowser::open(&url) {
-            tracing::warn!("[copilot-install] failed to open browser: {}", e);
-        }
+        let _ = webbrowser::open(&self.install_url());
         self.await_callback().await
     }
 

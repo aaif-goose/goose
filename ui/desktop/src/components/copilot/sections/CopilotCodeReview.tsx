@@ -145,15 +145,11 @@ const i18n = defineMessages({
   },
   allowlistPlaceholder: {
     id: 'copilotCodeReview.allowlistPlaceholder',
-    defaultMessage: 'octocat\nabhi-jay',
+    defaultMessage: 'octocat',
   },
   repoPrefsTitle: {
     id: 'copilotCodeReview.repoPrefsTitle',
     defaultMessage: 'Repository preferences',
-  },
-  repoPrefsDescription: {
-    id: 'copilotCodeReview.repoPrefsDescription',
-    defaultMessage: 'Override the personal defaults above on a per-repo basis.',
   },
   repoSearchPlaceholder: {
     id: 'copilotCodeReview.repoSearchPlaceholder',
@@ -220,9 +216,7 @@ interface Props {
 export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
   const intl = useIntl();
   const [repoQuery, setRepoQuery] = useState('');
-  // Local-only UI pref; not part of the synced backend state.
   const [hideArchivedRepos, setHideArchivedRepos] = useState(true);
-  // Only fetch repos once a successful install is in place (prefs is loaded).
   const { state: reposState, refresh: refreshRepos } = useCopilotRepos(prefs !== null);
 
   const triggerOptions = useMemo<RichOption<TriggerPreference>[]>(
@@ -329,7 +323,8 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
       {
         value: 'specific-users',
         label: 'Specific users',
-        description: 'Allowlist a set of GitHub usernames (coming soon).',
+        description:
+          'Only usernames listed below can mention the bot. Add one GitHub login per line in the allowlist field.',
       },
     ],
     []
@@ -358,7 +353,7 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
             control={
               <Switch
                 disabled={disabled}
-                checked={prefs?.auto_review_on_pr_open ?? true}
+                checked={prefs?.auto_review_on_pr_open ?? false}
                 onCheckedChange={(checked) => onUpdate({ auto_review_on_pr_open: checked })}
                 variant="mono"
               />
@@ -521,7 +516,6 @@ export default function CopilotCodeReview({ prefs, onUpdate }: Props) {
       <Card className="rounded-lg">
         <CardHeader className="pb-0">
           <CardTitle className="mb-1">{intl.formatMessage(i18n.repoPrefsTitle)}</CardTitle>
-          <CardDescription>{intl.formatMessage(i18n.repoPrefsDescription)}</CardDescription>
         </CardHeader>
         <CardContent className="pt-4 px-4 space-y-4">
           <div className="flex items-center gap-3">

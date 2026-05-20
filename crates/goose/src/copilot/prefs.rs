@@ -2,54 +2,36 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Bump on every schema change. Older payloads with a missing/lower
-/// `schema_version` still deserialize via field-level defaults; an explicit
-/// *higher* version from the client is rejected by `validate`.
+// Bump when the schema changes; reject client versions above SCHEMA_VERSION.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// Soft cap on custom_instructions length so users can't blow up the model's
-/// context budget by accident. 16 KiB is generous (~4k tokens).
 pub const MAX_CUSTOM_INSTRUCTIONS_BYTES: usize = 16 * 1024;
-
-/// Hard cap on the specific-users allowlist so a single user can't push
-/// thousands of entries into KV.
 pub const MAX_ALLOWLIST_ENTRIES: usize = 256;
-
-/// GitHub username max length (per GitHub's docs) plus a small margin.
 pub const MAX_GITHUB_USERNAME_LEN: usize = 39;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerPreference {
-    /// Run a review when a pull request is opened.
     #[default]
     PrOpen,
-    /// Re-run on every push (PR opened + synchronize).
     OnEveryPush,
-    /// Only run when someone explicitly mentions `@goose-copilot review`.
     ManualOnly,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerPermission {
-    /// Any GitHub user who can see the PR can mention the bot.
     #[default]
     Anyone,
-    /// Only repository collaborators with `write` access or higher.
     WriteAccess,
-    /// A user-defined allowlist (allowlist storage not yet wired).
     SpecificUsers,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReviewOutputStyle {
-    /// Inline review comments with GitHub `suggestion` blocks where possible.
     Inline,
-    /// One summary comment listing all findings, no inline annotations.
     Summary,
-    /// Inline annotations + summary comment at the top of the review.
     #[default]
     Both,
 }
@@ -57,14 +39,10 @@ pub enum ReviewOutputStyle {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ReviewSeverity {
-    /// Surface every finding the model produces. Highest signal *and* noise.
     Low,
-    /// Drop low-severity findings; surface medium and above.
     #[default]
     Medium,
-    /// Only high and critical findings.
     High,
-    /// Only the most severe blocking issues.
     Critical,
 }
 
@@ -82,20 +60,14 @@ impl ReviewSeverity {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReviewModelChoice {
-    /// Reuse whatever model `goose` is globally configured with.
     #[default]
     Default,
-    /// A separate review-specific model. Picker not yet wired.
     Custom,
 }
 
-/// Full Copilot preference set. The user sees this as one object in Desktop;
-/// the backend splits it into "routing prefs" (shipped to the switchboard for
-/// fast webhook decisions) and "execution prefs" (kept local on goosed).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CopilotPrefs {
-    /// Set on the client; rejected if higher than the server understands.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 
@@ -107,16 +79,11 @@ pub struct CopilotPrefs {
     pub trigger_permission: TriggerPermission,
     #[serde(default)]
     pub allow_act_on_issues: bool,
-    /// GitHub usernames allowed to trigger the bot when `trigger_permission`
-    /// is `SpecificUsers`. Case-insensitive on lookup; stored as user typed.
     #[serde(default)]
     pub specific_users_allowlist: Vec<String>,
 
     #[serde(default)]
     pub allow_commit_on_fix: bool,
-    /// When `true` and the mention came from an issue, goosed pushes the
-    /// agent's edits to a fresh branch and opens a PR linked to the issue.
-    /// Ignored on PR mentions (they push to the existing PR branch).
     #[serde(default)]
     pub allow_open_new_prs: bool,
     #[serde(default)]
@@ -127,12 +94,8 @@ pub struct CopilotPrefs {
     pub review_output_style: ReviewOutputStyle,
     #[serde(default)]
     pub review_model_choice: ReviewModelChoice,
-    /// Provider name (e.g. "openai", "anthropic") used when
-    /// `review_model_choice` is `Custom`. Ignored when `Default`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_provider: Option<String>,
-    /// Model name used when `review_model_choice` is `Custom`.
-    /// Ignored when `Default`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_model: Option<String>,
 }
@@ -167,8 +130,6 @@ impl Default for CopilotPrefs {
 }
 
 impl CopilotPrefs {
-    /// Validate domain rules. Field-level type errors are caught by serde
-    /// before this is called.
     pub fn validate(&self) -> Result<()> {
         if self.schema_version > SCHEMA_VERSION {
             bail!(
@@ -211,9 +172,6 @@ impl CopilotPrefs {
         Ok(())
     }
 
-    /// The subset the switchboard needs for routing decisions. Kept narrow
-    /// so we never leak execution prefs (custom instructions, model choice,
-    /// etc.) to the Worker.
     pub fn routing_subset(&self) -> RoutingPrefs {
         RoutingPrefs {
             schema_version: self.schema_version,
@@ -226,7 +184,6 @@ impl CopilotPrefs {
     }
 }
 
-/// GitHub usernames: alphanumeric and single hyphens, no leading/trailing hyphen.
 fn is_valid_github_username(s: &str) -> bool {
     if s.is_empty() || s.starts_with('-') || s.ends_with('-') {
         return false;
@@ -237,8 +194,6 @@ fn is_valid_github_username(s: &str) -> bool {
     s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-/// The strict subset of `CopilotPrefs` shipped to the switchboard. Nothing
-/// here is sensitive — it's behavior-shaping for webhook routing only.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct RoutingPrefs {

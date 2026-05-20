@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import type { TunnelInfo } from '../../../api/types.gen';
+import { disconnectCopilot, startCopilotSetup } from '../../../utils/copilotSetup';
 import { errorMessage } from '../../../utils/conversionUtils';
 import { defineMessages, useIntl } from '../../../i18n';
 import type { StoredInstall } from '../CopilotView';
@@ -110,22 +111,7 @@ export default function CopilotConnectors({
     setError(null);
     setBusy(true);
     try {
-      const host = await window.electron.getGoosedHostPort();
-      const secret = await window.electron.getSecretKey();
-      if (!host) throw new Error('goosed is not running');
-
-      const res = await fetch(`${host}/copilot/setup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Secret-Key': secret,
-        },
-      });
-      if (!res.ok) {
-        const detail = await res.text();
-        throw new Error(`${res.status}: ${detail}`);
-      }
-      const body = (await res.json()) as { installation_id: number };
+      const body = await startCopilotSetup();
       onInstallSaved({
         installationId: body.installation_id,
         enabledAt: new Date().toISOString(),
@@ -138,12 +124,21 @@ export default function CopilotConnectors({
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     if (!stored) return;
-    window.electron.openExternal(
-      `https://github.com/settings/installations/${stored.installationId}`
-    );
-    onInstallCleared();
+    setError(null);
+    setBusy(true);
+    try {
+      await disconnectCopilot();
+      onInstallCleared();
+      window.electron.openExternal(
+        `https://github.com/settings/installations/${stored.installationId}`
+      );
+    } catch (err) {
+      setError(errorMessage(err, intl.formatMessage(i18n.setupFailed)));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

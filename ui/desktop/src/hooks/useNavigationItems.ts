@@ -66,6 +66,10 @@ const navItemMessages = defineMessages({
     id: 'navigationCustomization.itemExtensions',
     defaultMessage: 'Extensions',
   },
+  copilot: {
+    id: 'navigationCustomization.itemCopilot',
+    defaultMessage: 'Copilot',
+  },
   settings: {
     id: 'navigationCustomization.itemSettings',
     defaultMessage: 'Settings',

@@ -16,10 +16,9 @@ export type SyncState =
 
 export interface UseCopilotPrefs {
   prefs: CopilotPrefs | null;
-  /** Apply a patch optimistically and queue a sync. */
   update: (patch: Partial<CopilotPrefs>) => void;
-  /** Force-flush the pending sync now (e.g. user pressed Retry). */
   retry: () => void;
+  clearInstall: () => void;
   syncState: SyncState;
 }
 
@@ -50,7 +49,7 @@ function legacyPrefsFromLocalStorage(): CopilotPrefs | null {
   return {
     schema_version: 1,
     auto_review_on_pr_open:
-      typeof parsed.autoReviewOnPrOpen === 'boolean' ? parsed.autoReviewOnPrOpen : true,
+      typeof parsed.autoReviewOnPrOpen === 'boolean' ? parsed.autoReviewOnPrOpen : false,
     trigger_preference: (parsed.triggerPreference as CopilotPrefs['trigger_preference']) ?? 'pr-open',
     trigger_permission: (parsed.triggerPermission as CopilotPrefs['trigger_permission']) ?? 'anyone',
     allow_act_on_issues:
@@ -59,8 +58,11 @@ function legacyPrefsFromLocalStorage(): CopilotPrefs | null {
       typeof parsed.allowCommitOnFix === 'boolean' ? parsed.allowCommitOnFix : false,
     allow_open_new_prs:
       typeof parsed.allowOpenNewPrs === 'boolean' ? parsed.allowOpenNewPrs : false,
-    exhaustive_review:
-      typeof parsed.exhaustiveReview === 'boolean' ? parsed.exhaustiveReview : false,
+    specific_users_allowlist: Array.isArray(parsed.specificUsersAllowlist)
+      ? (parsed.specificUsersAllowlist as string[])
+      : [],
+    review_severity:
+      parsed.exhaustiveReview === true ? 'low' : 'medium',
     custom_instructions: instructions ?? '',
     review_output_style:
       (parsed.reviewOutputStyle as CopilotPrefs['review_output_style']) ?? 'both',
@@ -76,6 +78,11 @@ function clearLegacyKeys() {
 
 function cachePrefs(prefs: CopilotPrefs) {
   localStorage.setItem(CACHE_KEY, JSON.stringify(prefs));
+}
+
+export function clearCopilotLocalState() {
+  localStorage.removeItem(CACHE_KEY);
+  clearLegacyKeys();
 }
 
 export function useCopilotPrefs(): UseCopilotPrefs {
@@ -96,8 +103,6 @@ export function useCopilotPrefs(): UseCopilotPrefs {
         setSyncState({ kind: 'idle' });
       } catch (e) {
         if (cancelled) return;
-        // Keep whatever localStorage gave us; mark sync as failed so the
-        // user knows we couldn't refresh from the server.
         const msg = e instanceof Error ? e.message : String(e);
         setSyncState({ kind: 'failed', error: msg });
       }
@@ -116,7 +121,6 @@ export function useCopilotPrefs(): UseCopilotPrefs {
       if (error || !data) {
         throw new Error('PUT /copilot/prefs failed');
       }
-      // Server may normalize the payload; trust its echo.
       cachePrefs(data.prefs);
       setPrefs(data.prefs);
       setSyncState({
@@ -148,6 +152,17 @@ export function useCopilotPrefs(): UseCopilotPrefs {
     [flush]
   );
 
+  const clearInstall = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    pendingRef.current = null;
+    clearCopilotLocalState();
+    setPrefs(null);
+    setSyncState({ kind: 'idle' });
+  }, []);
+
   const retry = useCallback(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -161,18 +176,16 @@ export function useCopilotPrefs(): UseCopilotPrefs {
     }
   }, [flush, prefs]);
 
-  // Flush on unmount so quick toggles + close don't lose the last update.
   useEffect(() => {
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         if (pendingRef.current) {
-          // Fire-and-forget; component is unmounting either way.
           void flush();
         }
       }
     };
   }, [flush]);
 
-  return { prefs, update, retry, syncState };
+  return { prefs, update, retry, clearInstall, syncState };
 }

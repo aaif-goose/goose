@@ -20,6 +20,7 @@ import CopilotAnalytics from './sections/CopilotAnalytics';
 import CopilotConnectors from './sections/CopilotConnectors';
 import { SaveIndicator } from './SaveIndicator';
 import { useCopilotPrefs } from './useCopilotPrefs';
+import { fetchCopilotInstallId } from '../../utils/copilotSetup';
 
 const STORAGE_KEY = 'goose-copilot:installation';
 
@@ -84,7 +85,13 @@ export default function CopilotView() {
     secret: '',
   });
   const [stored, setStored] = useState<StoredInstall | null>(loadStoredInstall);
-  const { prefs, update: updatePrefs, retry: retryPrefs, syncState } = useCopilotPrefs();
+  const {
+    prefs,
+    update: updatePrefs,
+    retry: retryPrefs,
+    clearInstall: clearCopilotInstall,
+    syncState,
+  } = useCopilotPrefs();
 
   const refreshTunnel = useCallback(async () => {
     try {
@@ -99,6 +106,33 @@ export default function CopilotView() {
     refreshTunnel();
   }, [refreshTunnel]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const installationId = await fetchCopilotInstallId();
+        if (cancelled) return;
+        if (installationId != null) {
+          const record: StoredInstall = {
+            installationId,
+            enabledAt: stored?.enabledAt ?? new Date().toISOString(),
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+          setStored(record);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+          setStored(null);
+        }
+      } catch {
+        // goosed unreachable — keep existing localStorage hint
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync once on mount
+  }, []);
+
   const handleInstallSaved = (record: StoredInstall) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
     setStored(record);
@@ -107,6 +141,7 @@ export default function CopilotView() {
 
   const handleInstallCleared = () => {
     localStorage.removeItem(STORAGE_KEY);
+    clearCopilotInstall();
     setStored(null);
   };
 

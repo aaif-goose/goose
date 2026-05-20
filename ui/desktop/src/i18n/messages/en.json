@@ -305,62 +305,239 @@
   "conversationLimitsDropdown.maxTurnsDescription": {
     "defaultMessage": "Maximum agent turns before Goose asks for user input"
   },
-  "copilotView.activeMessage": {
-    "defaultMessage": "Goose Copilot is active. Open a PR to try it."
+  "copilotAnalytics.commitsPushed": {
+    "defaultMessage": "Commits pushed"
   },
-  "copilotView.awaitingInstall": {
+  "copilotAnalytics.issuesHandled": {
+    "defaultMessage": "Issues handled"
+  },
+  "copilotAnalytics.loadFailed": {
+    "defaultMessage": "Could not load analytics"
+  },
+  "copilotAnalytics.prsReviewed": {
+    "defaultMessage": "PRs reviewed"
+  },
+  "copilotAnalytics.retry": {
+    "defaultMessage": "Retry"
+  },
+  "copilotCodeReview.allowCommitHelper": {
+    "defaultMessage": "When someone asks @goose-copilot to fix issues, push the resulting changes to the PR branch as goose-copilot[bot]."
+  },
+  "copilotCodeReview.allowCommitLabel": {
+    "defaultMessage": "Allow pushing commits to PR branches"
+  },
+  "copilotCodeReview.allowIssuesHelper": {
+    "defaultMessage": "Let @goose-copilot answer questions and draft PRs from issue comments, not just from inside pull requests."
+  },
+  "copilotCodeReview.allowIssuesLabel": {
+    "defaultMessage": "Respond to mentions on issues"
+  },
+  "copilotCodeReview.allowNewPrsHelper": {
+    "defaultMessage": "When someone @-mentions the bot on a plain issue and asks for a fix, push the changes on a fresh branch and open a PR linked back to the issue."
+  },
+  "copilotCodeReview.allowNewPrsLabel": {
+    "defaultMessage": "Open new pull requests for issue fixes"
+  },
+  "copilotCodeReview.allowlistHelper": {
+    "defaultMessage": "One GitHub username per line. Only listed users can mention the bot."
+  },
+  "copilotCodeReview.allowlistLabel": {
+    "defaultMessage": "Allowlist"
+  },
+  "copilotCodeReview.allowlistPlaceholder": {
+    "defaultMessage": "octocat"
+  },
+  "copilotCodeReview.autoReviewHelper": {
+    "defaultMessage": "All your pull requests in a Goose Copilot-enabled repository will be automatically reviewed."
+  },
+  "copilotCodeReview.autoReviewLabel": {
+    "defaultMessage": "Personal auto review preferences"
+  },
+  "copilotCodeReview.hideArchived": {
+    "defaultMessage": "Hide archived repositories"
+  },
+  "copilotCodeReview.outputStyleHelper": {
+    "defaultMessage": "How findings are posted back to the pull request."
+  },
+  "copilotCodeReview.outputStyleLabel": {
+    "defaultMessage": "Review output style"
+  },
+  "copilotCodeReview.permissionsDescription": {
+    "defaultMessage": "Control who can interact with @goose-copilot and what it is allowed to do."
+  },
+  "copilotCodeReview.permissionsTitle": {
+    "defaultMessage": "Permissions"
+  },
+  "copilotCodeReview.repoColBranch": {
+    "defaultMessage": "Default branch"
+  },
+  "copilotCodeReview.repoColRepo": {
+    "defaultMessage": "Repository"
+  },
+  "copilotCodeReview.repoColVisibility": {
+    "defaultMessage": "Visibility"
+  },
+  "copilotCodeReview.repoCount": {
+    "defaultMessage": "{shown,plural,one{# repository accessible} other{# repositories accessible}}"
+  },
+  "copilotCodeReview.repoEmptyConnected": {
+    "defaultMessage": "Per-repo overrides are coming soon — the bot uses your personal defaults for every connected repo for now."
+  },
+  "copilotCodeReview.repoError": {
+    "defaultMessage": "Could not load repositories"
+  },
+  "copilotCodeReview.repoLoading": {
+    "defaultMessage": "Loading repositories…"
+  },
+  "copilotCodeReview.repoNoMatch": {
+    "defaultMessage": "No repositories match your search."
+  },
+  "copilotCodeReview.repoPrefsTitle": {
+    "defaultMessage": "Repository preferences"
+  },
+  "copilotCodeReview.repoRetry": {
+    "defaultMessage": "Retry"
+  },
+  "copilotCodeReview.repoSearchPlaceholder": {
+    "defaultMessage": "Search repos or enter a GitHub org/repo"
+  },
+  "copilotCodeReview.repoTruncated": {
+    "defaultMessage": "Showing first {shown} of {total} — others omitted."
+  },
+  "copilotCodeReview.reviewDescription": {
+    "defaultMessage": "Configure when and how Goose Copilot reviews pull requests."
+  },
+  "copilotCodeReview.reviewModelHelper": {
+    "defaultMessage": "Which model the review orchestrator uses. Defaults to the model goose is configured with."
+  },
+  "copilotCodeReview.reviewModelLabel": {
+    "defaultMessage": "Review model"
+  },
+  "copilotCodeReview.reviewTitle": {
+    "defaultMessage": "Code review"
+  },
+  "copilotCodeReview.setupBlurb": {
+    "defaultMessage": "When code review is on, Goose Copilot automatically reviews pull requests and leaves inline suggestions. Mention @goose-copilot in any PR comment to ask a question, request a manual review, or apply fixes."
+  },
+  "copilotCodeReview.severityHelper": {
+    "defaultMessage": "Findings below this rank are dropped from the review. Higher = quieter."
+  },
+  "copilotCodeReview.severityLabel": {
+    "defaultMessage": "Minimum severity to surface"
+  },
+  "copilotCodeReview.triggerHelper": {
+    "defaultMessage": "Choose when Goose Copilot should automatically review your pull requests."
+  },
+  "copilotCodeReview.triggerLabel": {
+    "defaultMessage": "Personal review trigger preference"
+  },
+  "copilotCodeReview.triggerPermissionHelper": {
+    "defaultMessage": "Restrict who can @mention the bot to request reviews, fixes, or replies."
+  },
+  "copilotCodeReview.triggerPermissionLabel": {
+    "defaultMessage": "Who can trigger Goose Copilot"
+  },
+  "copilotConnectors.awaitingInstall": {
     "defaultMessage": "Finish installing on GitHub in your browser…"
   },
-  "copilotView.awaitingInstallHint": {
-    "defaultMessage": "A browser tab just opened to GitHub. Pick the repos you want reviewed and click Install & Authorize. This page will pick it up automatically."
+  "copilotConnectors.awaitingInstallHint": {
+    "defaultMessage": "A browser tab just opened to GitHub. Pick the repos you want reviewed and click Install & Authorize."
   },
-  "copilotView.cardDescription": {
-    "defaultMessage": "When enabled, every PR opened on a connected repository triggers a review on your local goose. The review is posted as inline comments on the PR."
+  "copilotConnectors.comingSoon": {
+    "defaultMessage": "Coming soon"
   },
-  "copilotView.cardTitle": {
-    "defaultMessage": "Code review on pull requests"
+  "copilotConnectors.connectedLabel": {
+    "defaultMessage": "Connected — installation {id}"
   },
-  "copilotView.disconnectAction": {
+  "copilotConnectors.disconnectAction": {
     "defaultMessage": "Disconnect"
   },
-  "copilotView.disconnectHint": {
+  "copilotConnectors.disconnectHint": {
     "defaultMessage": "Opens the GitHub App settings so you can uninstall. After you uninstall on GitHub, this side disconnects automatically."
   },
-  "copilotView.installAction": {
+  "copilotConnectors.githubDescription": {
+    "defaultMessage": "Install the Goose Copilot GitHub App on the repos you want auto-reviewed."
+  },
+  "copilotConnectors.githubTitle": {
+    "defaultMessage": "GitHub"
+  },
+  "copilotConnectors.installAction": {
     "defaultMessage": "Connect GitHub"
   },
-  "copilotView.installationLabel": {
-    "defaultMessage": "Installation {id}"
+  "copilotConnectors.linearDescription": {
+    "defaultMessage": "Mention @goose-copilot on issues and let it open PRs to address them."
   },
-  "copilotView.notConnected": {
+  "copilotConnectors.linearTitle": {
+    "defaultMessage": "Linear"
+  },
+  "copilotConnectors.manageAction": {
+    "defaultMessage": "Manage on GitHub"
+  },
+  "copilotConnectors.notConnected": {
     "defaultMessage": "Not connected"
   },
-  "copilotView.pageDescription": {
-    "defaultMessage": "Auto-review pull requests using your local goose. Your code and API keys never leave your machine."
+  "copilotConnectors.setupFailed": {
+    "defaultMessage": "Failed to connect Goose Copilot"
+  },
+  "copilotConnectors.slackDescription": {
+    "defaultMessage": "Ask @goose-copilot questions or trigger reviews from a Slack channel."
+  },
+  "copilotConnectors.slackTitle": {
+    "defaultMessage": "Slack"
+  },
+  "copilotGeneral.customInstructionsDescription": {
+    "defaultMessage": "Free-form rules appended to every review prompt. Use them to nudge the bot toward what your team actually cares about."
+  },
+  "copilotGeneral.customInstructionsHelper": {
+    "defaultMessage": "These instructions are appended verbatim to the system prompt the review orchestrator sends to the model."
+  },
+  "copilotGeneral.customInstructionsPlaceholder": {
+    "defaultMessage": "Example: Don't flag TODO comments. Be strict on missing tests. Treat any change under crates/goose/src/security/ as critical."
+  },
+  "copilotGeneral.customInstructionsTitle": {
+    "defaultMessage": "Custom instructions"
+  },
+  "copilotSaveIndicator.failed": {
+    "defaultMessage": "Couldn't save"
+  },
+  "copilotSaveIndicator.loading": {
+    "defaultMessage": "Loading…"
+  },
+  "copilotSaveIndicator.retry": {
+    "defaultMessage": "Retry"
+  },
+  "copilotSaveIndicator.saved": {
+    "defaultMessage": "Saved"
+  },
+  "copilotSaveIndicator.savedPending": {
+    "defaultMessage": "Saved locally — webhook sync pending"
+  },
+  "copilotSaveIndicator.syncing": {
+    "defaultMessage": "Saving…"
+  },
+  "copilotView.notConnectedBannerBody": {
+    "defaultMessage": "Connect the GitHub App in the Connectors tab to start receiving automated PR reviews."
+  },
+  "copilotView.notConnectedBannerCta": {
+    "defaultMessage": "Go to Connectors"
+  },
+  "copilotView.notConnectedBannerTitle": {
+    "defaultMessage": "Goose Copilot is not connected yet"
   },
   "copilotView.pageTitle": {
     "defaultMessage": "Goose Copilot"
   },
-  "copilotView.setupFailed": {
-    "defaultMessage": "Failed to connect Goose Copilot"
+  "copilotView.tabAnalytics": {
+    "defaultMessage": "Analytics"
   },
-  "copilotView.statusGithubApp": {
-    "defaultMessage": "GitHub App"
+  "copilotView.tabCodeReview": {
+    "defaultMessage": "Code review"
   },
-  "copilotView.statusLocalTunnel": {
-    "defaultMessage": "Local tunnel"
+  "copilotView.tabConnectors": {
+    "defaultMessage": "Connectors"
   },
-  "copilotView.tunnelError": {
-    "defaultMessage": "Error"
-  },
-  "copilotView.tunnelIdle": {
-    "defaultMessage": "Idle"
-  },
-  "copilotView.tunnelRunning": {
-    "defaultMessage": "Running"
-  },
-  "copilotView.tunnelStarting": {
-    "defaultMessage": "Starting…"
+  "copilotView.tabGeneral": {
+    "defaultMessage": "General"
   },
   "costTracker.costUnavailable": {
     "defaultMessage": "Cost data not available for {model} ({inputTokens} input, {outputTokens} output tokens)"
@@ -2470,6 +2647,9 @@
   },
   "navigationCustomization.itemChat": {
     "defaultMessage": "Chat"
+  },
+  "navigationCustomization.itemCopilot": {
+    "defaultMessage": "Copilot"
   },
   "navigationCustomization.itemExtensions": {
     "defaultMessage": "Extensions"

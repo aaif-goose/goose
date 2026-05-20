@@ -163,43 +163,20 @@ export type ContentBlock = ({
 
 export type Conversation = Array<Message>;
 
-/**
- * Per-install rollups the switchboard stores in KV and Desktop renders in
- * the Analytics tab. Counts only — no per-event timestamps, no PII.
- */
 export type CopilotAnalytics = {
-    /**
-     * Commits goose-copilot has pushed (existing branch or fresh PR).
-     */
     commits_pushed?: number;
-    /**
-     * GitHub issues goose-copilot has responded to.
-     */
     issues_handled?: number;
-    /**
-     * Pull requests goose-copilot has reviewed.
-     */
     prs_reviewed?: number;
 };
 
 export type CopilotCommentRequest = {
     comment_body: string;
-    /**
-     * Issue-comment id we're replying to. goosed reacts on this comment
-     * (`+1` on success, `confused` on failure) when done.
-     */
     comment_id?: number | null;
     commenter: string;
     github_token: string;
-    /**
-     * The PR's head branch name (e.g. `feature/foo`). Used to push any
-     * edits the agent makes back to the PR.
-     */
     head_ref?: string;
     /**
-     * `false` when the mention came from a plain issue (no PR head ref).
-     * Defaults to `true` so older switchboard payloads keep PR-only
-     * semantics until they redeploy.
+     * Omitted in older switchboard payloads (treated as PR); current switchboard always sends this.
      */
     is_pr?: boolean;
     pr_number: number;
@@ -207,43 +184,22 @@ export type CopilotCommentRequest = {
     repo: string;
 };
 
-/**
- * Full Copilot preference set. The user sees this as one object in Desktop;
- * the backend splits it into "routing prefs" (shipped to the switchboard for
- * fast webhook decisions) and "execution prefs" (kept local on goosed).
- */
+export type CopilotDisconnectResponse = {
+    disconnected: boolean;
+};
+
 export type CopilotPrefs = {
     allow_act_on_issues?: boolean;
     allow_commit_on_fix?: boolean;
-    /**
-     * When `true` and the mention came from an issue, goosed pushes the
-     * agent's edits to a fresh branch and opens a PR linked to the issue.
-     * Ignored on PR mentions (they push to the existing PR branch).
-     */
     allow_open_new_prs?: boolean;
     auto_review_on_pr_open?: boolean;
     custom_instructions?: string;
-    /**
-     * Model name used when `review_model_choice` is `Custom`.
-     * Ignored when `Default`.
-     */
     review_model?: string | null;
     review_model_choice?: ReviewModelChoice;
     review_output_style?: ReviewOutputStyle;
-    /**
-     * Provider name (e.g. "openai", "anthropic") used when
-     * `review_model_choice` is `Custom`. Ignored when `Default`.
-     */
     review_provider?: string | null;
     review_severity?: ReviewSeverity;
-    /**
-     * Set on the client; rejected if higher than the server understands.
-     */
     schema_version?: number;
-    /**
-     * GitHub usernames allowed to trigger the bot when `trigger_permission`
-     * is `SpecificUsers`. Case-insensitive on lookup; stored as user typed.
-     */
     specific_users_allowlist?: Array<string>;
     trigger_permission?: TriggerPermission;
     trigger_preference?: TriggerPreference;
@@ -255,15 +211,7 @@ export type CopilotPrefsRequest = {
 
 export type CopilotPrefsResponse = {
     prefs: CopilotPrefs;
-    /**
-     * Populated when `switchboard_synced` is `false`. Surface in UI.
-     */
     switchboard_error?: string | null;
-    /**
-     * `true` when the routing subset reached the switchboard. `false` is
-     * non-fatal — local persistence still succeeded and the bot will use
-     * the saved values once Desktop manages to push them.
-     */
     switchboard_synced: boolean;
 };
 
@@ -280,38 +228,17 @@ export type CopilotRepo = {
 
 export type CopilotReposResponse = {
     repos: Array<CopilotRepo>;
-    /**
-     * Total repos accessible to the installation. May be larger than
-     * `repos.len()` if pagination cut the list off.
-     */
     total_count: number;
-    /**
-     * `true` when GitHub had more pages than we fetched. Desktop can show a
-     * "showing first N" notice.
-     */
     truncated?: boolean;
 };
 
 export type CopilotReviewRequest = {
-    /**
-     * The endpoint updates this Check Run on completion.
-     */
     check_run_id?: number | null;
-    /**
-     * Issue-comment id when the review was triggered via `@goose-copilot review`.
-     * goosed reacts on this comment when done.
-     */
     comment_id?: number | null;
-    /**
-     * Short-lived GitHub App installation token, scoped to the user's repos.
-     */
     github_token: string;
     head_sha: string;
     pr_number: number;
     pr_url: string;
-    /**
-     * `owner/repo` form, e.g. `block/goose`.
-     */
     repo: string;
 };
 
@@ -321,6 +248,10 @@ export type CopilotReviewResponse = {
 
 export type CopilotSetupResponse = {
     installation_id: number;
+};
+
+export type CopilotStatusResponse = {
+    installation_id?: number | null;
 };
 
 export type CreateCustomProviderResponse = {
@@ -1395,10 +1326,6 @@ export type ReviewSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export type Role = 'user' | 'assistant';
 
-/**
- * The strict subset of `CopilotPrefs` shipped to the switchboard. Nothing
- * here is sensitive — it's behavior-shaping for webhook routing only.
- */
 export type RoutingPrefs = {
     allow_act_on_issues: boolean;
     auto_review_on_pr_open: boolean;
@@ -3301,6 +3228,29 @@ export type ReviewResponses = {
 
 export type ReviewResponse = ReviewResponses[keyof ReviewResponses];
 
+export type DisconnectData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/copilot/setup';
+};
+
+export type DisconnectErrors = {
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type DisconnectResponses = {
+    /**
+     * Local install cleared and switchboard registration removed
+     */
+    200: CopilotDisconnectResponse;
+};
+
+export type DisconnectResponse = DisconnectResponses[keyof DisconnectResponses];
+
 export type SetupData = {
     body?: never;
     path?: never;
@@ -3327,6 +3277,22 @@ export type SetupResponses = {
 };
 
 export type SetupResponse2 = SetupResponses[keyof SetupResponses];
+
+export type GetStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/copilot/status';
+};
+
+export type GetStatusResponses = {
+    /**
+     * Cached GitHub App installation id
+     */
+    200: CopilotStatusResponse;
+};
+
+export type GetStatusResponse = GetStatusResponses[keyof GetStatusResponses];
 
 export type DiagnosticsData = {
     body?: never;

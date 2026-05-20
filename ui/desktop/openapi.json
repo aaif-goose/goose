@@ -1859,6 +1859,47 @@
             "description": "Internal error"
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "disconnect",
+        "responses": {
+          "200": {
+            "description": "Local install cleared and switchboard registration removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotDisconnectResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/status": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "description": "Cached GitHub App installation id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotStatusResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/diagnostics/{session_id}": {
@@ -4794,24 +4835,20 @@
       },
       "CopilotAnalytics": {
         "type": "object",
-        "description": "Per-install rollups the switchboard stores in KV and Desktop renders in\nthe Analytics tab. Counts only — no per-event timestamps, no PII.",
         "properties": {
           "commits_pushed": {
             "type": "integer",
             "format": "int64",
-            "description": "Commits goose-copilot has pushed (existing branch or fresh PR).",
             "minimum": 0
           },
           "issues_handled": {
             "type": "integer",
             "format": "int64",
-            "description": "GitHub issues goose-copilot has responded to.",
             "minimum": 0
           },
           "prs_reviewed": {
             "type": "integer",
             "format": "int64",
-            "description": "Pull requests goose-copilot has reviewed.",
             "minimum": 0
           }
         }
@@ -4833,7 +4870,6 @@
           "comment_id": {
             "type": "integer",
             "format": "int64",
-            "description": "Issue-comment id we're replying to. goosed reacts on this comment\n(`+1` on success, `confused` on failure) when done.",
             "nullable": true,
             "minimum": 0
           },
@@ -4844,12 +4880,11 @@
             "type": "string"
           },
           "head_ref": {
-            "type": "string",
-            "description": "The PR's head branch name (e.g. `feature/foo`). Used to push any\nedits the agent makes back to the PR."
+            "type": "string"
           },
           "is_pr": {
             "type": "boolean",
-            "description": "`false` when the mention came from a plain issue (no PR head ref).\nDefaults to `true` so older switchboard payloads keep PR-only\nsemantics until they redeploy."
+            "description": "Omitted in older switchboard payloads (treated as PR); current switchboard always sends this."
           },
           "pr_number": {
             "type": "integer",
@@ -4864,9 +4899,19 @@
           }
         }
       },
+      "CopilotDisconnectResponse": {
+        "type": "object",
+        "required": [
+          "disconnected"
+        ],
+        "properties": {
+          "disconnected": {
+            "type": "boolean"
+          }
+        }
+      },
       "CopilotPrefs": {
         "type": "object",
-        "description": "Full Copilot preference set. The user sees this as one object in Desktop;\nthe backend splits it into \"routing prefs\" (shipped to the switchboard for\nfast webhook decisions) and \"execution prefs\" (kept local on goosed).",
         "properties": {
           "allow_act_on_issues": {
             "type": "boolean"
@@ -4875,8 +4920,7 @@
             "type": "boolean"
           },
           "allow_open_new_prs": {
-            "type": "boolean",
-            "description": "When `true` and the mention came from an issue, goosed pushes the\nagent's edits to a fresh branch and opens a PR linked to the issue.\nIgnored on PR mentions (they push to the existing PR branch)."
+            "type": "boolean"
           },
           "auto_review_on_pr_open": {
             "type": "boolean"
@@ -4886,7 +4930,6 @@
           },
           "review_model": {
             "type": "string",
-            "description": "Model name used when `review_model_choice` is `Custom`.\nIgnored when `Default`.",
             "nullable": true
           },
           "review_model_choice": {
@@ -4897,7 +4940,6 @@
           },
           "review_provider": {
             "type": "string",
-            "description": "Provider name (e.g. \"openai\", \"anthropic\") used when\n`review_model_choice` is `Custom`. Ignored when `Default`.",
             "nullable": true
           },
           "review_severity": {
@@ -4906,15 +4948,13 @@
           "schema_version": {
             "type": "integer",
             "format": "int32",
-            "description": "Set on the client; rejected if higher than the server understands.",
             "minimum": 0
           },
           "specific_users_allowlist": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "GitHub usernames allowed to trigger the bot when `trigger_permission`\nis `SpecificUsers`. Case-insensitive on lookup; stored as user typed."
+            }
           },
           "trigger_permission": {
             "$ref": "#/components/schemas/TriggerPermission"
@@ -4947,12 +4987,10 @@
           },
           "switchboard_error": {
             "type": "string",
-            "description": "Populated when `switchboard_synced` is `false`. Surface in UI.",
             "nullable": true
           },
           "switchboard_synced": {
-            "type": "boolean",
-            "description": "`true` when the routing subset reached the switchboard. `false` is\nnon-fatal — local persistence still succeeded and the bot will use\nthe saved values once Desktop manages to push them."
+            "type": "boolean"
           }
         }
       },
@@ -5009,12 +5047,10 @@
           "total_count": {
             "type": "integer",
             "format": "int64",
-            "description": "Total repos accessible to the installation. May be larger than\n`repos.len()` if pagination cut the list off.",
             "minimum": 0
           },
           "truncated": {
-            "type": "boolean",
-            "description": "`true` when GitHub had more pages than we fetched. Desktop can show a\n\"showing first N\" notice."
+            "type": "boolean"
           }
         }
       },
@@ -5031,20 +5067,17 @@
           "check_run_id": {
             "type": "integer",
             "format": "int64",
-            "description": "The endpoint updates this Check Run on completion.",
             "nullable": true,
             "minimum": 0
           },
           "comment_id": {
             "type": "integer",
             "format": "int64",
-            "description": "Issue-comment id when the review was triggered via `@goose-copilot review`.\ngoosed reacts on this comment when done.",
             "nullable": true,
             "minimum": 0
           },
           "github_token": {
-            "type": "string",
-            "description": "Short-lived GitHub App installation token, scoped to the user's repos."
+            "type": "string"
           },
           "head_sha": {
             "type": "string"
@@ -5058,8 +5091,7 @@
             "type": "string"
           },
           "repo": {
-            "type": "string",
-            "description": "`owner/repo` form, e.g. `block/goose`."
+            "type": "string"
           }
         }
       },
@@ -5083,6 +5115,17 @@
           "installation_id": {
             "type": "integer",
             "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CopilotStatusResponse": {
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
             "minimum": 0
           }
         }
@@ -8248,7 +8291,6 @@
       },
       "RoutingPrefs": {
         "type": "object",
-        "description": "The strict subset of `CopilotPrefs` shipped to the switchboard. Nothing\nhere is sensitive — it's behavior-shaping for webhook routing only.",
         "required": [
           "schema_version",
           "auto_review_on_pr_open",

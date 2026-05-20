@@ -37,6 +37,10 @@ const i18n = defineMessages({
     id: 'navigationCustomization.itemRecipes',
     defaultMessage: 'Recipes',
   },
+  itemSkills: {
+    id: 'navigationCustomization.itemSkills',
+    defaultMessage: 'Skills',
+  },
   itemApps: {
     id: 'navigationCustomization.itemApps',
     defaultMessage: 'Apps',
@@ -49,6 +53,10 @@ const i18n = defineMessages({
     id: 'navigationCustomization.itemExtensions',
     defaultMessage: 'Extensions',
   },
+  itemCopilot: {
+    id: 'navigationCustomization.itemCopilot',
+    defaultMessage: 'Copilot',
+  },
   itemSettings: {
     id: 'navigationCustomization.itemSettings',
     defaultMessage: 'Settings',
@@ -59,9 +67,11 @@ const ITEM_LABEL_KEYS: Record<string, keyof typeof i18n> = {
   home: 'itemHome',
   chat: 'itemChat',
   recipes: 'itemRecipes',
+  skills: 'itemSkills',
   apps: 'itemApps',
   scheduler: 'itemScheduler',
   extensions: 'itemExtensions',
+  copilot: 'itemCopilot',
   settings: 'itemSettings',
 };
 
