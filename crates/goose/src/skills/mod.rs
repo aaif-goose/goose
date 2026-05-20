@@ -123,7 +123,6 @@ fn loaded_skill_context(skill: &SourceEntry, content: &str) -> String {
         }
     }
 
-    output.push_str("\n---\nThis knowledge is now available in your context.");
     output
 }
 

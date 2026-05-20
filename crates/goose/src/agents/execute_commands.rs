@@ -106,6 +106,8 @@ impl Agent {
                     .handle_recipe_command(command, params_str, session_id)
                     .await?
                 {
+                    #[cfg(feature = "telemetry")]
+                    crate::posthog::emit_custom_slash_command_used();
                     return Ok(Some(message));
                 }
 
