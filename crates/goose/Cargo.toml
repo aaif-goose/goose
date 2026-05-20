@@ -228,7 +228,7 @@ libc = "0.2.186"
 
 [dev-dependencies]
 serial_test = { workspace = true }
-mockall = "0.13.1"
+mockall = "0.14.0"
 wiremock = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
