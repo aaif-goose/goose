@@ -502,7 +502,7 @@ mod tests {
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
             let config =
-                ModelConfig::new_or_fail("moonshotai/kimi-k2.5").with_canonical_limits("nvidia");
+                ModelConfig::new_or_fail("moonshotai/kimi-k2.6").with_canonical_limits("nvidia");
 
             assert_eq!(config.context_limit, Some(262_144));
             assert_eq!(config.max_tokens, None);

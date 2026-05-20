@@ -448,16 +448,16 @@ mod tests {
 
         // === Grok (X.AI) ===
         assert_eq!(
-            map_to_canonical_model("databricks", "grok-3", r),
-            Some("x-ai/grok-3".to_string())
+            map_to_canonical_model("databricks", "grok-4.20", r),
+            Some("x-ai/grok-4.20".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("databricks", "databricks-grok-4-fast", r),
-            Some("x-ai/grok-4-fast".to_string())
+            map_to_canonical_model("databricks", "databricks-grok-4.20", r),
+            Some("x-ai/grok-4.20".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("databricks", "kgoose-grok-4-fast", r),
-            Some("x-ai/grok-4-fast".to_string())
+            map_to_canonical_model("databricks", "kgoose-grok-4.20", r),
+            Some("x-ai/grok-4.20".to_string())
         );
 
         // === Cohere Command ===
@@ -493,8 +493,8 @@ mod tests {
             Some("deepseek/deepseek-chat".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("databricks", "x-ai-grok-3", r),
-            Some("x-ai/grok-3".to_string())
+            map_to_canonical_model("databricks", "x-ai-grok-4.20", r),
+            Some("x-ai/grok-4.20".to_string())
         );
 
         // === Zhipu AI ===
@@ -518,27 +518,27 @@ mod tests {
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-3-5-sonnet", r),
-            Some("anthropic/claude-3.5-sonnet".to_string())
+            Some("google-vertex/claude-3.5-sonnet".to_string())
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-sonnet-4@20250514", r),
-            Some("anthropic/claude-sonnet-4".to_string())
+            Some("google-vertex/claude-sonnet-4".to_string())
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-3-5-haiku@20241022", r),
-            Some("anthropic/claude-3.5-haiku".to_string())
+            Some("google-vertex/claude-3.5-haiku".to_string())
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-sonnet-4-5@20250929", r),
-            Some("anthropic/claude-sonnet-4.5".to_string())
+            Some("google-vertex/claude-sonnet-4.5".to_string())
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-opus-4-5@20251101", r),
-            Some("anthropic/claude-opus-4.5".to_string())
+            Some("google-vertex/claude-opus-4.5".to_string())
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-haiku-4-5@20251001", r),
-            Some("anthropic/claude-haiku-4.5".to_string())
+            Some("google-vertex/claude-haiku-4.5".to_string())
         );
     }
 }
