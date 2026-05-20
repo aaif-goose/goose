@@ -1,7 +1,11 @@
+use crate::config::paths::Paths;
 use chrono::Utc;
 use rmcp::model::{CallToolResult, Content, ErrorData};
-use std::fs::File;
-use std::io::Write;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
 const LARGE_TEXT_THRESHOLD: usize = 200_000;
 
@@ -16,21 +20,18 @@ pub fn process_tool_response(
             for content in result.content {
                 match content.as_text() {
                     Some(text_content) => {
-                        // Check if text exceeds threshold
-                        if text_content.text.chars().count() > LARGE_TEXT_THRESHOLD {
-                            // Write to temp file
+                        let text_len = text_content.text.chars().count();
+                        if text_len > LARGE_TEXT_THRESHOLD {
                             match write_large_text_to_file(&text_content.text) {
                                 Ok(file_path) => {
-                                    // Create a new text content with reference to the file
                                     let message = format!(
-                                        "The response returned from the tool call was larger ({} characters) and is stored in the file which you can use other tools to examine or search in: {}",
-                                        text_content.text.chars().count(),
+                                        "The response returned from the tool call was larger ({} characters) and is stored in the file: {}\nYou can use other tools to examine or search it.",
+                                        text_len,
                                         file_path
                                     );
                                     processed_contents.push(Content::text(message));
                                 }
                                 Err(e) => {
-                                    // If file writing fails, include original content with warning
                                     let warning = format!(
                                         "Warning: Failed to write large response to file: {}. Showing full content instead.\n\n{}",
                                         e,
@@ -40,14 +41,10 @@ pub fn process_tool_response(
                                 }
                             }
                         } else {
-                            // Keep original content for smaller texts
                             processed_contents.push(content);
                         }
                     }
-                    None => {
-                        // Pass through other content types unchanged
-                        processed_contents.push(content);
-                    }
+                    None => processed_contents.push(content),
                 }
             }
 
@@ -58,22 +55,59 @@ pub fn process_tool_response(
     }
 }
 
-/// Write large text content to a temporary file
-fn write_large_text_to_file(content: &str) -> Result<String, std::io::Error> {
-    // Create temp directory if it doesn't exist
-    let temp_dir = std::env::temp_dir().join("goose_mcp_responses");
-    std::fs::create_dir_all(&temp_dir)?;
+fn write_large_text_to_file(content: &str) -> Result<String, io::Error> {
+    let spill_dir = response_spill_dir()?;
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S%.6f").to_string();
+    let mut file = tempfile::Builder::new()
+        .prefix(&format!("mcp_response_{timestamp}_"))
+        .suffix(".txt")
+        .tempfile_in(&spill_dir)?;
 
-    // Generate a unique filename with timestamp
-    let timestamp = Utc::now().format("%Y%m%d_%H%M%S%.6f");
-    let filename = format!("mcp_response_{}.txt", timestamp);
-    let file_path = temp_dir.join(&filename);
-
-    // Write content to file
-    let mut file = File::create(&file_path)?;
     file.write_all(content.as_bytes())?;
+    let (_file, file_path) = file.keep().map_err(|err| err.error)?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+fn response_spill_dir() -> Result<PathBuf, io::Error> {
+    let spill_dir = Paths::in_data_dir("mcp_responses");
+    ensure_private_response_spill_dir(&spill_dir)?;
+    Ok(spill_dir)
+}
+
+#[cfg(unix)]
+fn ensure_private_response_spill_dir(spill_dir: &Path) -> Result<(), io::Error> {
+    match std::fs::symlink_metadata(spill_dir) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("{} is not a directory", spill_dir.display()),
+                ));
+            }
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            let mut builder = std::fs::DirBuilder::new();
+            if let Some(parent) = spill_dir.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            match builder.mode(0o700).create(spill_dir) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+                    return ensure_private_response_spill_dir(spill_dir);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        Err(err) => return Err(err),
+    };
+
+    std::fs::set_permissions(spill_dir, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn ensure_private_response_spill_dir(spill_dir: &Path) -> Result<(), io::Error> {
+    std::fs::create_dir_all(spill_dir)
 }
 
 #[cfg(test)]
@@ -123,23 +157,75 @@ mod tests {
                 .contains("The response returned from the tool call was larger"));
             assert!(text_content.text.contains("characters"));
 
-            // Extract the file path from the message
-            if let Some(file_path) = text_content.text.split("stored in the file: ").nth(1) {
-                // Verify the file exists and contains the original text
-                let path = Path::new(file_path.trim());
-                if path.exists() {
-                    // Only check content if file exists (may not exist in CI environments)
-                    if let Ok(file_content) = fs::read_to_string(path) {
-                        assert_eq!(file_content, large_text);
-                    }
-
-                    // Clean up the file
-                    let _ = fs::remove_file(path); // Ignore errors on cleanup
-                }
-            }
+            let path = large_response_file_path(&text_content.text);
+            let file_content = fs::read_to_string(path).unwrap();
+            assert_eq!(file_content, large_text);
+            let _ = fs::remove_file(path);
         } else {
             panic!("Expected text content");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_large_text_response_file_permissions_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let large_text = "a".repeat(LARGE_TEXT_THRESHOLD + 1000);
+        let response = Ok(CallToolResult::success(vec![Content::text(large_text)]));
+        let processed = process_tool_response(response).unwrap();
+        let text = processed.content[0].as_text().unwrap();
+        let path = large_response_file_path(&text.text);
+        let metadata = fs::metadata(path).unwrap();
+        let parent_metadata = fs::metadata(path.parent().unwrap()).unwrap();
+
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert_eq!(parent_metadata.permissions().mode() & 0o777, 0o700);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_response_spill_dir_rejects_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("target");
+        let link = parent.path().join("mcp_responses");
+        fs::create_dir(&target).unwrap();
+        symlink(&target, &link).unwrap();
+
+        let err = ensure_private_response_spill_dir(&link).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+    }
+
+    #[test]
+    fn test_large_text_response_uses_data_dir_for_spill_file() {
+        let temp_root = tempfile::tempdir().unwrap();
+        let _guard =
+            env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.path().to_str().unwrap()))]);
+        let large_text = "a".repeat(LARGE_TEXT_THRESHOLD + 1000);
+        let processed =
+            process_tool_response(Ok(CallToolResult::success(vec![Content::text(large_text)])))
+                .unwrap();
+        let text = processed.content[0].as_text().unwrap();
+        let path = large_response_file_path(&text.text);
+
+        assert!(path.starts_with(temp_root.path().join("data").join("mcp_responses")));
+
+        let _ = fs::remove_file(path);
+    }
+
+    fn large_response_file_path(message: &str) -> &Path {
+        let file_path = message
+            .split("stored in the file: ")
+            .nth(1)
+            .expect("response should include file path")
+            .lines()
+            .next()
+            .expect("file path should be on its own line");
+        Path::new(file_path.trim())
     }
 
     #[test]
