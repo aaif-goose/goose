@@ -112,16 +112,19 @@ export default function ProgressiveMessageList({
     [getResolvedModel, messages]
   );
 
-  const renderModelChangeDisclosure = (previousModel: string, currentModel: string) => (
-    <SystemNotificationInline
-      notification={{
-        msg: intl.formatMessage(i18n.modelChanged, {
-          previousModel: getModelDisplayName(previousModel),
-          currentModel: getModelDisplayName(currentModel),
-        }),
-        notificationType: 'inlineMessage',
-      }}
-    />
+  const renderModelChangeDisclosure = useCallback(
+    (previousModel: string, currentModel: string) => (
+      <SystemNotificationInline
+        notification={{
+          msg: intl.formatMessage(i18n.modelChanged, {
+            previousModel: getModelDisplayName(previousModel),
+            currentModel: getModelDisplayName(currentModel),
+          }),
+          notificationType: 'inlineMessage',
+        }}
+      />
+    ),
+    [intl]
   );
 
   const getSystemNotification = (message: Message): SystemNotificationContent | undefined => {
@@ -321,6 +324,7 @@ export default function ProgressiveMessageList({
     submitElicitationResponse,
     getPreviousResolvedModel,
     getResolvedModel,
+    renderModelChangeDisclosure,
   ]);
 
   return (
