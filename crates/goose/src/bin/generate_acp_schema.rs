@@ -35,6 +35,32 @@ fn main() {
         }
     }
 
+    let unstable_type_names: BTreeSet<String> = type_methods
+        .iter()
+        .filter_map(|(name, methods_list)| {
+            if methods_list.iter().all(|method| is_unstable_method(method)) {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for def in defs.values_mut() {
+        rewrite_unstable_schema_refs(def, &unstable_type_names);
+    }
+
+    let mut renamed_defs = Map::new();
+    for (name, def) in defs {
+        let generated_name = generated_type_name(&name, &unstable_type_names);
+        let previous = renamed_defs.insert(generated_name.clone(), def);
+        assert!(
+            previous.is_none(),
+            "duplicate schema definition name after unstable suffix: {generated_name}"
+        );
+    }
+    let mut defs = renamed_defs;
+
     // Replace `true` with `{}` throughout $defs. Both mean "accept any value" in
     // JSON Schema, but many TS codegen tools (e.g. @hey-api/openapi-ts Zod plugin)
     // silently drop properties whose schema is the bare `true` literal.
@@ -49,7 +75,8 @@ fn main() {
     // Annotate $defs entries with x-method/x-side. Only set x-method for types
     // used by exactly one method (shared types like EmptyResponse skip x-method).
     for (name, methods_list) in &type_methods {
-        if let Some(def) = defs.get_mut(name) {
+        let generated_name = generated_type_name(name, &unstable_type_names);
+        if let Some(def) = defs.get_mut(&generated_name) {
             if let Some(obj) = def.as_object_mut() {
                 obj.insert("x-side".into(), json!("agent"));
                 if methods_list.len() == 1 {
@@ -67,18 +94,20 @@ fn main() {
 
     for m in &methods {
         if let Some(name) = &m.params_type_name {
+            let generated_name = generated_type_name(name, &unstable_type_names);
             request_variants.push(json!({
-                "allOf": [{ "$ref": format!("#/$defs/{name}") }],
+                "allOf": [{ "$ref": format!("#/$defs/{generated_name}") }],
                 "description": format!("Params for {}", m.method),
-                "title": name,
+                "title": generated_name,
             }));
         }
 
         if let Some(name) = &m.response_type_name {
-            if seen_response_types.insert(name.clone()) {
+            let generated_name = generated_type_name(name, &unstable_type_names);
+            if seen_response_types.insert(generated_name.clone()) {
                 response_variants.push(json!({
-                    "allOf": [{ "$ref": format!("#/$defs/{name}") }],
-                    "title": name,
+                    "allOf": [{ "$ref": format!("#/$defs/{generated_name}") }],
+                    "title": generated_name,
                 }));
             }
         }
@@ -179,8 +208,14 @@ fn main() {
         .map(|m| {
             json!({
                 "method": &m.method,
-                "requestType": m.params_type_name,
-                "responseType": m.response_type_name,
+                "requestType": m
+                    .params_type_name
+                    .as_ref()
+                    .map(|name| generated_type_name(name, &unstable_type_names)),
+                "responseType": m
+                    .response_type_name
+                    .as_ref()
+                    .map(|name| generated_type_name(name, &unstable_type_names)),
             })
         })
         .collect();
@@ -191,6 +226,41 @@ fn main() {
     eprintln!("Generated ACP meta at {}", meta_path.display());
 
     println!("{json_str}");
+}
+
+fn is_unstable_method(method: &str) -> bool {
+    method.contains("_goose/unstable")
+}
+
+fn generated_type_name(name: &str, unstable_type_names: &BTreeSet<String>) -> String {
+    if unstable_type_names.contains(name) {
+        format!("{name}_unstable")
+    } else {
+        name.to_string()
+    }
+}
+
+fn rewrite_unstable_schema_refs(value: &mut Value, unstable_type_names: &BTreeSet<String>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(Value::String(reference)) = map.get_mut("$ref") {
+                if let Some(name) = reference.strip_prefix("#/$defs/") {
+                    if unstable_type_names.contains(name) {
+                        *reference = format!("#/$defs/{name}_unstable");
+                    }
+                }
+            }
+            for v in map.values_mut() {
+                rewrite_unstable_schema_refs(v, unstable_type_names);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                rewrite_unstable_schema_refs(v, unstable_type_names);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Recursively strip `"format"` from integer-typed schemas.
