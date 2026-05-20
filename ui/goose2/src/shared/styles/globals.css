@@ -813,31 +813,85 @@ body,
 }
 
 [data-streamdown="table-wrapper"],
-[data-streamdown="code-block"],
 [data-streamdown="mermaid-block"] {
   border: none;
 }
 
-/* Doubled attribute selector bumps specificity above Tailwind's `flex` class
-   (0,2,0 vs 0,1,0) so grid wins regardless of source order. */
 [data-streamdown="code-block"][data-streamdown] {
   display: grid;
   grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.5rem;
+  padding: 0.125rem;
+  overflow: visible;
+  border: none;
+  background: transparent;
+  contain: none !important;
+  contain-intrinsic-size: none !important;
+  content-visibility: visible !important;
 }
 
 [data-streamdown="code-block"] > [data-streamdown="code-block-header"] {
   grid-column: 1;
+  align-items: flex-end;
+  min-height: 1.75rem;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1rem;
 }
 
 [data-streamdown="code-block"]
   > [data-streamdown="code-block-header"]
   + div:has([data-streamdown="code-block-actions"]) {
+  position: static;
+  top: auto;
+  z-index: auto;
   grid-column: 2;
+  align-items: flex-end;
+  height: auto;
+  min-height: 1.75rem;
   margin-top: 0;
+  pointer-events: auto;
 }
 
-[data-streamdown="code-block"] > :last-child {
+[data-streamdown="code-block-actions"] {
+  gap: 0.25rem;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+[data-streamdown="code-block-actions"] button {
+  padding: 0.1875rem;
+}
+
+[data-streamdown="code-block-actions"] svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+[data-streamdown="code-block"] > [data-streamdown="code-block-body"] {
   grid-column: 1 / -1;
+  padding: 0.75rem;
+  border-color: var(--border-soft);
+  border-radius: 0.625rem;
+  background: var(--background-default);
+  font-size: 13px;
+  line-height: 1.25rem;
+}
+
+[data-streamdown="code-block"] > [data-streamdown="code-block-body"] pre {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+[data-streamdown="code-block"]
+  > [data-streamdown="code-block-body"]
+  code
+  > span::before {
+  width: 1rem;
+  margin-right: 0.5rem;
+  font-size: 12px;
+  text-align: left;
 }
 
 code[data-streamdown="inline-code"],
