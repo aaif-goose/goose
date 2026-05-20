@@ -293,10 +293,17 @@ async fn start_oauth_callback(
             let tx = tx.clone();
             let expected_state = expected_state.clone();
             async move {
+                // Ignore callbacks that don't carry our state (e.g. a stale
+                // tab from a prior attempt) so the real redirect still wins.
+                if params.state.as_deref() != Some(expected_state.as_str()) {
+                    return Html(
+                        "<h2>xAI OAuth</h2><p>Unexpected callback; you can close this window.</p>"
+                            .to_string(),
+                    );
+                }
+
                 let result = if let Some(error) = params.error {
                     Err(format!("xAI OAuth failed: {error}"))
-                } else if params.state.as_deref() != Some(expected_state.as_str()) {
-                    Err("xAI OAuth state mismatch".to_string())
                 } else if let Some(code) = params.code {
                     Ok(code)
                 } else {
