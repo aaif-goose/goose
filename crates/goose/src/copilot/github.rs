@@ -116,12 +116,28 @@ pub async fn post_review(
 
     let status = res.status();
     let detail = res.text().await.unwrap_or_default();
-    tracing::debug!(
-        "[copilot] inline review rejected ({status}): {} — falling back to summary-only",
-        detail.chars().take(300).collect::<String>()
+    let detail_short: String = detail.chars().take(300).collect();
+
+    if matches!(style, ReviewOutputStyle::Summary) {
+        bail!("post review ({status}): {detail_short}");
+    }
+
+    tracing::warn!(
+        "[copilot] inline review rejected ({status}): {detail_short} — falling back to summary-only"
     );
 
-    let fallback = build_review_payload(ctx, findings, &ReviewOutputStyle::Summary);
+    let mut fallback = build_review_payload(ctx, findings, &ReviewOutputStyle::Summary);
+    if let Some(body) = fallback
+        .get_mut("body")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+    {
+        let note = format!(
+            "\n\n_Inline annotations were rejected by GitHub ({status}). Showing summary only._\n_GitHub said:_ `{}`",
+            detail_short.replace('`', "'")
+        );
+        fallback["body"] = serde_json::Value::String(format!("{body}{note}"));
+    }
     client()
         .post(&url)
         .header("Authorization", format!("token {}", req.github_token))

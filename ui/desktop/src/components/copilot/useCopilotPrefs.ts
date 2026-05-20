@@ -122,13 +122,15 @@ export function useCopilotPrefs(): UseCopilotPrefs {
         throw new Error('PUT /copilot/prefs failed');
       }
       cachePrefs(data.prefs);
-      setPrefs(data.prefs);
+      if (pendingRef.current === target) {
+        setPrefs(data.prefs);
+        pendingRef.current = null;
+      }
       setSyncState({
         kind: 'synced',
         switchboardSynced: data.switchboard_synced ?? false,
       });
       clearLegacyKeys();
-      pendingRef.current = null;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setSyncState({ kind: 'failed', error: msg });
