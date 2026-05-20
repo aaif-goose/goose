@@ -500,7 +500,9 @@ pub struct XaiProvider {
 
 impl XaiProvider {
     pub async fn cleanup() -> Result<()> {
-        TokenCache::new().clear().await
+        TokenCache::new().clear().await?;
+        let _ = Config::global().delete(XAI_CONFIGURED_MARKER);
+        Ok(())
     }
 
     async fn from_env(model: ModelConfig) -> Result<Self> {
@@ -591,10 +593,7 @@ impl ProviderDef for XaiProvider {
     }
 
     fn inventory_configured() -> bool {
-        let config = Config::global();
-        matches!(config.get_param::<bool>(XAI_CONFIGURED_MARKER), Ok(true))
-            || TokenCache::exists()
-            || config.get_secret::<String>("XAI_API_KEY").is_ok()
+        TokenCache::exists() || Config::global().get_secret::<String>("XAI_API_KEY").is_ok()
     }
 }
 

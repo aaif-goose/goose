@@ -225,10 +225,47 @@ interface ProviderConfigFormProps {
 export default function ProviderConfigForm({ provider, onConfigured }: ProviderConfigFormProps) {
   const [error, setError] = useState<string | null>(null);
 
-  const isOAuthProvider = provider.metadata.config_keys.some((key) => key.oauth_flow);
+  const hasOAuth = provider.metadata.config_keys.some((key) => key.oauth_flow);
+  const hasApiKey = provider.metadata.config_keys.some((key) => !key.oauth_flow && key.secret);
+  const [authMode, setAuthMode] = useState<'oauth' | 'api_key'>(hasOAuth ? 'oauth' : 'api_key');
 
   const renderForm = () => {
-    if (isOAuthProvider) {
+    if (hasOAuth && hasApiKey) {
+      return (
+        <div>
+          <div className="flex gap-2 mb-4 border-b border-borderSubtle">
+            <button
+              type="button"
+              onClick={() => setAuthMode('oauth')}
+              className={`px-3 py-2 text-sm transition-colors border-b-2 ${
+                authMode === 'oauth'
+                  ? 'border-text-default text-text-default'
+                  : 'border-transparent text-text-muted hover:text-text-default'
+              }`}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthMode('api_key')}
+              className={`px-3 py-2 text-sm transition-colors border-b-2 ${
+                authMode === 'api_key'
+                  ? 'border-text-default text-text-default'
+                  : 'border-transparent text-text-muted hover:text-text-default'
+              }`}
+            >
+              Use API key
+            </button>
+          </div>
+          {authMode === 'oauth' ? (
+            <OAuthForm provider={provider} onConfigured={onConfigured} onError={setError} />
+          ) : (
+            <ApiKeyForm provider={provider} onConfigured={onConfigured} onError={setError} />
+          )}
+        </div>
+      );
+    }
+    if (hasOAuth) {
       return <OAuthForm provider={provider} onConfigured={onConfigured} onError={setError} />;
     }
     return <ApiKeyForm provider={provider} onConfigured={onConfigured} onError={setError} />;
