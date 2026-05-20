@@ -292,8 +292,12 @@ impl ModelConfig {
         fast_model_name: &str,
         provider_name: &str,
     ) -> Result<Self, ConfigError> {
-        // Create a full ModelConfig for the fast model with proper canonical lookup
-        let fast_config = ModelConfig::new(fast_model_name)?.with_canonical_limits(provider_name);
+        let name = std::env::var("GOOSE_FAST_MODEL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| fast_model_name.to_string());
+        let fast_config = ModelConfig::new(&name)?.with_canonical_limits(provider_name);
         self.fast_model_config = Some(Box::new(fast_config));
         Ok(self)
     }
