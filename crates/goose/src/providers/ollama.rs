@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
+    ConfigKey, DEFAULT_PROVIDER_TIMEOUT_SECS, MessageStream, Provider, ProviderDef,
+    ProviderMetadata,
 };
 use super::errors::ProviderError;
 use super::inventory::InventoryIdentityInput;
@@ -15,11 +15,11 @@ use crate::providers::formats::ollama::{create_request, response_to_streaming_me
 use anyhow::{Error, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
-use futures::future::BoxFuture;
 use futures::TryStreamExt;
+use futures::future::BoxFuture;
 use reqwest::Response;
 use rmcp::model::Tool;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::pin;
 use tokio_stream::StreamExt;
@@ -435,7 +435,9 @@ fn with_line_timeout(
                     Err::<(), anyhow::Error>(anyhow::anyhow!(
                         "Ollama stream stalled: no data received for {}s. \
                          This may indicate the model is overwhelmed by the request payload. \
-                         Try a smaller model or reduce the number of tools.",
+                         Try a smaller model, reduce the number of tools, or increase the \
+                         timeout via OLLAMA_STREAM_TIMEOUT, GOOSE_STREAM_TIMEOUT, or \
+                         OLLAMA_TIMEOUT in your config.",
                         timeout_secs
                     ))?;
                 }
