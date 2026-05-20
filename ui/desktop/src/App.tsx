@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom';
 import { openSharedSessionFromDeepLink, importNostrSessionFromDeepLink } from './sessionLinks';
 import { type SharedSessionDetails } from './sharedSessions';
+import { setRecipeParametersForSession } from './utils/recipeParametersStore';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import { toast, ToastContainer } from 'react-toastify';
@@ -410,7 +411,7 @@ export function AppInner() {
     };
   }, []);
 
-  const { addExtension } = useConfig();
+  const { addExtension, extensionsList } = useConfig();
 
   useEffect(() => {
     try {
@@ -420,6 +421,52 @@ export function AppInner() {
       setFatalError(`React ready notification failed: ${errorMessage(error, 'Unknown error')}`);
     }
   }, []);
+
+  useEffect(() => {
+    const handleOpenRecipeDeeplink = async (_event: IpcRendererEvent, ...args: unknown[]) => {
+      const payload = args[0] as
+        | {
+            recipeDeeplink?: string;
+            recipeParameters?: Record<string, string>;
+            scheduledJobId?: string;
+          }
+        | undefined;
+      const recipeDeeplink = payload?.recipeDeeplink;
+      if (!recipeDeeplink) {
+        return;
+      }
+      try {
+        const newSession = await createSession(getInitialWorkingDir(), {
+          recipeDeeplink,
+          allExtensions: extensionsList,
+        });
+        setRecipeParametersForSession(newSession.id, payload?.recipeParameters);
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+            detail: {
+              sessionId: newSession.id,
+              initialMessage: newSession.recipe?.prompt
+                ? { msg: newSession.recipe.prompt, images: [] }
+                : undefined,
+            },
+          })
+        );
+        navigate(`/pair?resumeSessionId=${encodeURIComponent(newSession.id)}`);
+      } catch (error) {
+        console.error('Failed to open recipe deeplink in existing window:', error);
+        trackErrorWithContext(error, {
+          component: 'AppInner',
+          action: 'open_recipe_deeplink',
+          recoverable: true,
+        });
+        toast.error(`Failed to open recipe: ${errorMessage(error, 'Unknown error')}`);
+      }
+    };
+    window.electron.on('open-recipe-deeplink', handleOpenRecipeDeeplink);
+    return () => {
+      window.electron.off('open-recipe-deeplink', handleOpenRecipeDeeplink);
+    };
+  }, [navigate, extensionsList]);
 
   useEffect(() => {
     const handleOpenSharedSession = async (_event: IpcRendererEvent, ...args: unknown[]) => {
@@ -486,13 +533,18 @@ export function AppInner() {
   // Show a toast if mesh is the configured provider but isn't running.
   useEffect(() => {
     const handler = () => {
-      toast.warn('Inference Mesh is set as your provider but isn\'t running. Open Settings → Mesh to start it. Keep goose running to stay connected.', {
-        autoClose: false,
-        toastId: 'mesh-not-running',
-      });
+      toast.warn(
+        "Inference Mesh is set as your provider but isn't running. Open Settings → Mesh to start it. Keep goose running to stay connected.",
+        {
+          autoClose: false,
+          toastId: 'mesh-not-running',
+        }
+      );
     };
     window.electron.on('mesh-not-running', handler);
-    return () => { window.electron.off('mesh-not-running', handler); };
+    return () => {
+      window.electron.off('mesh-not-running', handler);
+    };
   }, []);
 
   // Prevent default drag and drop behavior globally to avoid opening files in new windows

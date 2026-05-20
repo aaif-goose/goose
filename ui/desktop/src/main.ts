@@ -396,16 +396,7 @@ if (process.platform !== 'darwin') {
           app.whenReady().then(async () => {
             const recentDirs = loadRecentDirs();
             const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-
-            const deeplinkData = parseRecipeDeeplink(protocolUrl);
-            const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
-            await createChat(app, {
-              dir: openDir || undefined,
-              recipeDeeplink: deeplinkData?.config,
-              scheduledJobId: scheduledJobId || undefined,
-              recipeParameters: deeplinkData?.parameters,
-            });
+            await openRecipeDeeplink(protocolUrl, openDir);
           });
           return; // Skip the rest of the handler
         }
@@ -486,6 +477,52 @@ async function handleProtocolUrl(url: string) {
   }
 }
 
+let windowDeeplinkURL: string | null = null;
+
+async function openRecipeDeeplink(url: string, openDir: string | null) {
+  const deeplinkData = parseRecipeDeeplink(url);
+  const parsedUrl = new URL(url);
+  const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
+
+  const existingWindows = BrowserWindow.getAllWindows();
+  const targetWindow =
+    BrowserWindow.getFocusedWindow() ??
+    existingWindows[existingWindows.length - 1] ??
+    existingWindows[0] ??
+    null;
+
+  if (targetWindow && !targetWindow.isDestroyed() && targetWindow.webContents) {
+    if (targetWindow.isMinimized()) {
+      targetWindow.restore();
+    }
+    targetWindow.focus();
+    if (targetWindow.webContents.isLoadingMainFrame()) {
+      pendingDeepLinks.set(targetWindow.id, url);
+    } else {
+      targetWindow.webContents.send('open-recipe-deeplink', {
+        recipeDeeplink: deeplinkData?.config,
+        recipeParameters: deeplinkData?.parameters,
+        scheduledJobId: scheduledJobId || undefined,
+      });
+    }
+    return;
+  }
+
+  if (deeplinkData) {
+    windowDeeplinkURL = url;
+  }
+  try {
+    await createChat(app, {
+      dir: openDir || undefined,
+      recipeDeeplink: deeplinkData?.config,
+      scheduledJobId: scheduledJobId || undefined,
+      recipeParameters: deeplinkData?.parameters,
+    });
+  } finally {
+    windowDeeplinkURL = null;
+  }
+}
+
 async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
@@ -495,25 +532,18 @@ async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWi
   } else if (parsedUrl.hostname === 'sessions') {
     window.webContents.send('open-shared-session', url);
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    const deeplinkData = parseRecipeDeeplink(url);
-    const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
-    await createChat(app, {
-      dir: openDir || undefined,
-      recipeDeeplink: deeplinkData?.config,
-      scheduledJobId: scheduledJobId || undefined,
-      recipeParameters: deeplinkData?.parameters,
-    });
+    await openRecipeDeeplink(url, openDir);
   }
 }
-
-let windowDeeplinkURL: string | null = null;
 
 app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
     const parsedUrl = new URL(url);
 
-    log.info('[Main] Received open-url event:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
+    log.info(
+      '[Main] Received open-url event:',
+      url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url
+    );
 
     await app.whenReady();
 
@@ -528,23 +558,11 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    // Handle bot/recipe URLs by directly creating a new window
+    // Handle bot/recipe URLs by reusing an existing window when available
     if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-      log.info('[Main] Detected bot/recipe URL, creating new chat window');
+      log.info('[Main] Detected bot/recipe URL');
       openUrlHandledLaunch = true;
-      const deeplinkData = parseRecipeDeeplink(url);
-      if (deeplinkData) {
-        windowDeeplinkURL = url;
-      }
-      const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
-      await createChat(app, {
-        dir: openDir || undefined,
-        recipeDeeplink: deeplinkData?.config,
-        scheduledJobId: scheduledJobId || undefined,
-        recipeParameters: deeplinkData?.parameters,
-      });
-      windowDeeplinkURL = null;
+      await openRecipeDeeplink(url, openDir);
       return;
     }
 
@@ -892,7 +910,9 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     const stderrTail = diagnostics?.stderrTail ?? [];
     const failureDetailParts = [
       diagnostics?.childExitCode !== null || diagnostics?.childExitSignal
-        ? `Child exit: code=${diagnostics?.childExitCode ?? 'null'} signal=${diagnostics?.childExitSignal ?? 'null'}`
+        ? `Child exit: code=${diagnostics?.childExitCode ?? 'null'} signal=${
+            diagnostics?.childExitSignal ?? 'null'
+          }`
         : 'Child exit: unavailable',
       diagnostics?.certFingerprintSeen
         ? 'TLS fingerprint observed: yes'
@@ -1516,6 +1536,14 @@ ipcMain.on('react-ready', (event) => {
         window.webContents.send('add-extension', deepLinkUrl);
       } else if (parsedUrl.hostname === 'sessions') {
         window.webContents.send('open-shared-session', deepLinkUrl);
+      } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
+        const deeplinkData = parseRecipeDeeplink(deepLinkUrl);
+        const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
+        window.webContents.send('open-recipe-deeplink', {
+          recipeDeeplink: deeplinkData?.config,
+          recipeParameters: deeplinkData?.parameters,
+          scheduledJobId: scheduledJobId || undefined,
+        });
       }
     } catch (error) {
       log.error('Error processing pending deep link:', error);
