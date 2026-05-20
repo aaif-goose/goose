@@ -44,7 +44,16 @@ export default async function main() {
     output: {
       path: OUTPUT_DIR,
     },
-    plugins: ["zod", "@hey-api/typescript"],
+    plugins: [
+      {
+        case: "preserve",
+        name: "zod",
+      },
+      {
+        case: "preserve",
+        name: "@hey-api/typescript",
+      },
+    ],
   });
 
   await postProcessTypes();
