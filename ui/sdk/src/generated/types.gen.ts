@@ -891,7 +891,7 @@ export type ExportSourceResponse = {
 };
 
 /**
- * Import a source from a JSON export payload produced by `_goose/v1/sources/export`.
+ * Import a source from a JSON export payload produced by `_goose/unstable/sources/export`.
  * The imported source is written into the explicit target scope; on name
  * collisions a `-imported` suffix is appended.
  */

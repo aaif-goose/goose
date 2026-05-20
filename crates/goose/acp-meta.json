@@ -1,32 +1,32 @@
 {
   "methods": [
     {
-      "method": "_goose/v1/session/extensions/add",
+      "method": "_goose/unstable/session/extensions/add",
       "requestType": "AddExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/session/extensions/remove",
+      "method": "_goose/unstable/session/extensions/remove",
       "requestType": "RemoveExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/tools/list",
+      "method": "_goose/unstable/tools/list",
       "requestType": "GetToolsRequest",
       "responseType": "GetToolsResponse"
     },
     {
-      "method": "_goose/v1/tools/call",
+      "method": "_goose/unstable/tools/call",
       "requestType": "GooseToolCallRequest",
       "responseType": "GooseToolCallResponse"
     },
     {
-      "method": "_goose/v1/resources/read",
+      "method": "_goose/unstable/resources/read",
       "requestType": "ReadResourceRequest",
       "responseType": "ReadResourceResponse"
     },
     {
-      "method": "_goose/v1/session/working-dir/update",
+      "method": "_goose/unstable/session/working-dir/update",
       "requestType": "UpdateWorkingDirRequest",
       "responseType": "EmptyResponse"
     },
@@ -36,242 +36,242 @@
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/config/extensions/list",
+      "method": "_goose/unstable/config/extensions/list",
       "requestType": "GetExtensionsRequest",
       "responseType": "GetExtensionsResponse"
     },
     {
-      "method": "_goose/v1/config/extensions/add",
+      "method": "_goose/unstable/config/extensions/add",
       "requestType": "AddConfigExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/config/extensions/remove",
+      "method": "_goose/unstable/config/extensions/remove",
       "requestType": "RemoveConfigExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/config/extensions/toggle",
+      "method": "_goose/unstable/config/extensions/toggle",
       "requestType": "ToggleConfigExtensionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/session/extensions/list",
+      "method": "_goose/unstable/session/extensions/list",
       "requestType": "GetSessionExtensionsRequest",
       "responseType": "GetSessionExtensionsResponse"
     },
     {
-      "method": "_goose/v1/providers/list",
+      "method": "_goose/unstable/providers/list",
       "requestType": "ListProvidersRequest",
       "responseType": "ListProvidersResponse"
     },
     {
-      "method": "_goose/v1/providers/catalog/list",
+      "method": "_goose/unstable/providers/catalog/list",
       "requestType": "ProviderCatalogListRequest",
       "responseType": "ProviderCatalogListResponse"
     },
     {
-      "method": "_goose/v1/providers/setup/catalog/list",
+      "method": "_goose/unstable/providers/setup/catalog/list",
       "requestType": "ProviderSetupCatalogListRequest",
       "responseType": "ProviderSetupCatalogListResponse"
     },
     {
-      "method": "_goose/v1/providers/catalog/template",
+      "method": "_goose/unstable/providers/catalog/template",
       "requestType": "ProviderCatalogTemplateRequest",
       "responseType": "ProviderCatalogTemplateResponse"
     },
     {
-      "method": "_goose/v1/providers/custom/create",
+      "method": "_goose/unstable/providers/custom/create",
       "requestType": "CustomProviderCreateRequest",
       "responseType": "CustomProviderCreateResponse"
     },
     {
-      "method": "_goose/v1/providers/custom/read",
+      "method": "_goose/unstable/providers/custom/read",
       "requestType": "CustomProviderReadRequest",
       "responseType": "CustomProviderReadResponse"
     },
     {
-      "method": "_goose/v1/providers/custom/update",
+      "method": "_goose/unstable/providers/custom/update",
       "requestType": "CustomProviderUpdateRequest",
       "responseType": "CustomProviderUpdateResponse"
     },
     {
-      "method": "_goose/v1/providers/custom/delete",
+      "method": "_goose/unstable/providers/custom/delete",
       "requestType": "CustomProviderDeleteRequest",
       "responseType": "CustomProviderDeleteResponse"
     },
     {
-      "method": "_goose/v1/providers/inventory/refresh",
+      "method": "_goose/unstable/providers/inventory/refresh",
       "requestType": "RefreshProviderInventoryRequest",
       "responseType": "RefreshProviderInventoryResponse"
     },
     {
-      "method": "_goose/v1/providers/config/read",
+      "method": "_goose/unstable/providers/config/read",
       "requestType": "ProviderConfigReadRequest",
       "responseType": "ProviderConfigReadResponse"
     },
     {
-      "method": "_goose/v1/providers/config/status",
+      "method": "_goose/unstable/providers/config/status",
       "requestType": "ProviderConfigStatusRequest",
       "responseType": "ProviderConfigStatusResponse"
     },
     {
-      "method": "_goose/v1/providers/config/save",
+      "method": "_goose/unstable/providers/config/save",
       "requestType": "ProviderConfigSaveRequest",
       "responseType": "ProviderConfigChangeResponse"
     },
     {
-      "method": "_goose/v1/providers/config/delete",
+      "method": "_goose/unstable/providers/config/delete",
       "requestType": "ProviderConfigDeleteRequest",
       "responseType": "ProviderConfigChangeResponse"
     },
     {
-      "method": "_goose/v1/providers/config/authenticate",
+      "method": "_goose/unstable/providers/config/authenticate",
       "requestType": "ProviderConfigAuthenticateRequest",
       "responseType": "ProviderConfigChangeResponse"
     },
     {
-      "method": "_goose/v1/preferences/read",
+      "method": "_goose/unstable/preferences/read",
       "requestType": "PreferencesReadRequest",
       "responseType": "PreferencesReadResponse"
     },
     {
-      "method": "_goose/v1/preferences/save",
+      "method": "_goose/unstable/preferences/save",
       "requestType": "PreferencesSaveRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/preferences/remove",
+      "method": "_goose/unstable/preferences/remove",
       "requestType": "PreferencesRemoveRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/defaults/read",
+      "method": "_goose/unstable/defaults/read",
       "requestType": "DefaultsReadRequest",
       "responseType": "DefaultsReadResponse"
     },
     {
-      "method": "_goose/v1/defaults/save",
+      "method": "_goose/unstable/defaults/save",
       "requestType": "DefaultsSaveRequest",
       "responseType": "DefaultsReadResponse"
     },
     {
-      "method": "_goose/v1/onboarding/import/scan",
+      "method": "_goose/unstable/onboarding/import/scan",
       "requestType": "OnboardingImportScanRequest",
       "responseType": "OnboardingImportScanResponse"
     },
     {
-      "method": "_goose/v1/onboarding/import/apply",
+      "method": "_goose/unstable/onboarding/import/apply",
       "requestType": "OnboardingImportApplyRequest",
       "responseType": "OnboardingImportApplyResponse"
     },
     {
-      "method": "_goose/v1/session/export",
+      "method": "_goose/unstable/session/export",
       "requestType": "ExportSessionRequest",
       "responseType": "ExportSessionResponse"
     },
     {
-      "method": "_goose/v1/session/import",
+      "method": "_goose/unstable/session/import",
       "requestType": "ImportSessionRequest",
       "responseType": "ImportSessionResponse"
     },
     {
-      "method": "_goose/v1/session/project/update",
+      "method": "_goose/unstable/session/project/update",
       "requestType": "UpdateSessionProjectRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/session/rename",
+      "method": "_goose/unstable/session/rename",
       "requestType": "RenameSessionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/session/archive",
+      "method": "_goose/unstable/session/archive",
       "requestType": "ArchiveSessionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/session/unarchive",
+      "method": "_goose/unstable/session/unarchive",
       "requestType": "UnarchiveSessionRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/sources/create",
+      "method": "_goose/unstable/sources/create",
       "requestType": "CreateSourceRequest",
       "responseType": "CreateSourceResponse"
     },
     {
-      "method": "_goose/v1/sources/list",
+      "method": "_goose/unstable/sources/list",
       "requestType": "ListSourcesRequest",
       "responseType": "ListSourcesResponse"
     },
     {
-      "method": "_goose/v1/sources/update",
+      "method": "_goose/unstable/sources/update",
       "requestType": "UpdateSourceRequest",
       "responseType": "UpdateSourceResponse"
     },
     {
-      "method": "_goose/v1/sources/delete",
+      "method": "_goose/unstable/sources/delete",
       "requestType": "DeleteSourceRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/sources/export",
+      "method": "_goose/unstable/sources/export",
       "requestType": "ExportSourceRequest",
       "responseType": "ExportSourceResponse"
     },
     {
-      "method": "_goose/v1/sources/import",
+      "method": "_goose/unstable/sources/import",
       "requestType": "ImportSourcesRequest",
       "responseType": "ImportSourcesResponse"
     },
     {
-      "method": "_goose/v1/dictation/transcribe",
+      "method": "_goose/unstable/dictation/transcribe",
       "requestType": "DictationTranscribeRequest",
       "responseType": "DictationTranscribeResponse"
     },
     {
-      "method": "_goose/v1/dictation/config",
+      "method": "_goose/unstable/dictation/config",
       "requestType": "DictationConfigRequest",
       "responseType": "DictationConfigResponse"
     },
     {
-      "method": "_goose/v1/dictation/secret/save",
+      "method": "_goose/unstable/dictation/secret/save",
       "requestType": "DictationSecretSaveRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/dictation/secret/delete",
+      "method": "_goose/unstable/dictation/secret/delete",
       "requestType": "DictationSecretDeleteRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/dictation/models/list",
+      "method": "_goose/unstable/dictation/models/list",
       "requestType": "DictationModelsListRequest",
       "responseType": "DictationModelsListResponse"
     },
     {
-      "method": "_goose/v1/dictation/models/download",
+      "method": "_goose/unstable/dictation/models/download",
       "requestType": "DictationModelDownloadRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/dictation/models/download/progress",
+      "method": "_goose/unstable/dictation/models/download/progress",
       "requestType": "DictationModelDownloadProgressRequest",
       "responseType": "DictationModelDownloadProgressResponse"
     },
     {
-      "method": "_goose/v1/dictation/models/cancel",
+      "method": "_goose/unstable/dictation/models/cancel",
       "requestType": "DictationModelCancelRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/dictation/models/delete",
+      "method": "_goose/unstable/dictation/models/delete",
       "requestType": "DictationModelDeleteRequest",
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/v1/dictation/models/select",
+      "method": "_goose/unstable/dictation/models/select",
       "requestType": "DictationModelSelectRequest",
       "responseType": "EmptyResponse"
     }

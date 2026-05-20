@@ -18,7 +18,7 @@
       ],
       "description": "Add an extension to an active session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/extensions/add"
+      "x-method": "_goose/unstable/session/extensions/add"
     },
     "EmptyResponse": {
       "type": "object",
@@ -41,7 +41,7 @@
       ],
       "description": "Remove an extension from an active session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/extensions/remove"
+      "x-method": "_goose/unstable/session/extensions/remove"
     },
     "GetToolsRequest": {
       "type": "object",
@@ -55,7 +55,7 @@
       ],
       "description": "List all tools available in a session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/tools/list"
+      "x-method": "_goose/unstable/tools/list"
     },
     "GetToolsResponse": {
       "type": "object",
@@ -71,7 +71,7 @@
       ],
       "description": "Tools response.",
       "x-side": "agent",
-      "x-method": "_goose/v1/tools/list"
+      "x-method": "_goose/unstable/tools/list"
     },
     "GooseToolCallRequest": {
       "type": "object",
@@ -92,7 +92,7 @@
       ],
       "description": "Call a tool from an extension.",
       "x-side": "agent",
-      "x-method": "_goose/v1/tools/call"
+      "x-method": "_goose/unstable/tools/call"
     },
     "GooseToolCallResponse": {
       "type": "object",
@@ -113,7 +113,7 @@
       ],
       "description": "Tool call response.",
       "x-side": "agent",
-      "x-method": "_goose/v1/tools/call"
+      "x-method": "_goose/unstable/tools/call"
     },
     "ReadResourceRequest": {
       "type": "object",
@@ -135,7 +135,7 @@
       ],
       "description": "Read a resource from an extension.",
       "x-side": "agent",
-      "x-method": "_goose/v1/resources/read"
+      "x-method": "_goose/unstable/resources/read"
     },
     "ReadResourceResponse": {
       "type": "object",
@@ -147,7 +147,7 @@
       },
       "description": "Resource read response.",
       "x-side": "agent",
-      "x-method": "_goose/v1/resources/read"
+      "x-method": "_goose/unstable/resources/read"
     },
     "UpdateWorkingDirRequest": {
       "type": "object",
@@ -165,7 +165,7 @@
       ],
       "description": "Update the working directory for a session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/working-dir/update"
+      "x-method": "_goose/unstable/session/working-dir/update"
     },
     "DeleteSessionRequest": {
       "type": "object",
@@ -185,7 +185,7 @@
       "type": "object",
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
-      "x-method": "_goose/v1/config/extensions/list"
+      "x-method": "_goose/unstable/config/extensions/list"
     },
     "GetExtensionsResponse": {
       "type": "object",
@@ -208,7 +208,7 @@
       ],
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
-      "x-method": "_goose/v1/config/extensions/list"
+      "x-method": "_goose/unstable/config/extensions/list"
     },
     "AddConfigExtensionRequest": {
       "type": "object",
@@ -230,7 +230,7 @@
       ],
       "description": "Persist a new extension to the user's global goose config.",
       "x-side": "agent",
-      "x-method": "_goose/v1/config/extensions/add"
+      "x-method": "_goose/unstable/config/extensions/add"
     },
     "RemoveConfigExtensionRequest": {
       "type": "object",
@@ -244,7 +244,7 @@
       ],
       "description": "Remove a persisted extension from the user's global goose config.",
       "x-side": "agent",
-      "x-method": "_goose/v1/config/extensions/remove"
+      "x-method": "_goose/unstable/config/extensions/remove"
     },
     "ToggleConfigExtensionRequest": {
       "type": "object",
@@ -262,7 +262,7 @@
       ],
       "description": "Toggle the `enabled` flag for a persisted extension in the user's global goose config.",
       "x-side": "agent",
-      "x-method": "_goose/v1/config/extensions/toggle"
+      "x-method": "_goose/unstable/config/extensions/toggle"
     },
     "GetSessionExtensionsRequest": {
       "type": "object",
@@ -275,7 +275,7 @@
         "sessionId"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/session/extensions/list"
+      "x-method": "_goose/unstable/session/extensions/list"
     },
     "GetSessionExtensionsResponse": {
       "type": "object",
@@ -289,7 +289,7 @@
         "extensions"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/session/extensions/list"
+      "x-method": "_goose/unstable/session/extensions/list"
     },
     "ListProvidersRequest": {
       "type": "object",
@@ -305,7 +305,7 @@
       },
       "description": "List providers with setup metadata and the current model inventory snapshot.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/list"
+      "x-method": "_goose/unstable/providers/list"
     },
     "ListProvidersResponse": {
       "type": "object",
@@ -322,7 +322,7 @@
       ],
       "description": "Provider list response.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/list"
+      "x-method": "_goose/unstable/providers/list"
     },
     "ProviderInventoryEntryDto": {
       "type": "object",
@@ -537,7 +537,7 @@
       },
       "description": "List custom-provider catalog entries. Omit `format` to list all formats.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/catalog/list"
+      "x-method": "_goose/unstable/providers/catalog/list"
     },
     "ProviderCatalogListResponse": {
       "type": "object",
@@ -553,7 +553,7 @@
         "providers"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/catalog/list"
+      "x-method": "_goose/unstable/providers/catalog/list"
     },
     "ProviderTemplateCatalogEntryDto": {
       "type": "object",
@@ -595,7 +595,7 @@
       "type": "object",
       "description": "List provider setup catalog entries",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/setup/catalog/list"
+      "x-method": "_goose/unstable/providers/setup/catalog/list"
     },
     "ProviderSetupCatalogListResponse": {
       "type": "object",
@@ -611,7 +611,7 @@
         "providers"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/setup/catalog/list"
+      "x-method": "_goose/unstable/providers/setup/catalog/list"
     },
     "ProviderSetupCatalogEntryDto": {
       "type": "object",
@@ -760,7 +760,7 @@
       ],
       "description": "Return the editable template for one catalog provider.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/catalog/template"
+      "x-method": "_goose/unstable/providers/catalog/template"
     },
     "ProviderCatalogTemplateResponse": {
       "type": "object",
@@ -773,7 +773,7 @@
         "template"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/catalog/template"
+      "x-method": "_goose/unstable/providers/catalog/template"
     },
     "ProviderTemplateDto": {
       "type": "object",
@@ -936,7 +936,7 @@
       ],
       "description": "Create a custom provider backed by Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/create"
+      "x-method": "_goose/unstable/providers/custom/create"
     },
     "CustomProviderCreateResponse": {
       "type": "object",
@@ -957,7 +957,7 @@
         "refresh"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/create"
+      "x-method": "_goose/unstable/providers/custom/create"
     },
     "ProviderConfigStatusDto": {
       "type": "object",
@@ -998,7 +998,7 @@
       ],
       "description": "Refresh acknowledgement.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/inventory/refresh"
+      "x-method": "_goose/unstable/providers/inventory/refresh"
     },
     "RefreshProviderInventorySkipDto": {
       "type": "object",
@@ -1036,7 +1036,7 @@
       ],
       "description": "Read a declarative provider config. Custom configs are editable; bundled configs are read-only.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/read"
+      "x-method": "_goose/unstable/providers/custom/read"
     },
     "CustomProviderReadResponse": {
       "type": "object",
@@ -1057,7 +1057,7 @@
         "status"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/read"
+      "x-method": "_goose/unstable/providers/custom/read"
     },
     "CustomProviderConfigDto": {
       "type": "object",
@@ -1204,7 +1204,7 @@
       ],
       "description": "Update a custom provider backed by Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/update"
+      "x-method": "_goose/unstable/providers/custom/update"
     },
     "CustomProviderUpdateResponse": {
       "type": "object",
@@ -1225,7 +1225,7 @@
         "refresh"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/update"
+      "x-method": "_goose/unstable/providers/custom/update"
     },
     "CustomProviderDeleteRequest": {
       "type": "object",
@@ -1239,7 +1239,7 @@
       ],
       "description": "Delete a custom provider from Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/delete"
+      "x-method": "_goose/unstable/providers/custom/delete"
     },
     "CustomProviderDeleteResponse": {
       "type": "object",
@@ -1256,7 +1256,7 @@
         "refresh"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/custom/delete"
+      "x-method": "_goose/unstable/providers/custom/delete"
     },
     "RefreshProviderInventoryRequest": {
       "type": "object",
@@ -1272,7 +1272,7 @@
       },
       "description": "Trigger a background refresh of provider inventories.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/inventory/refresh"
+      "x-method": "_goose/unstable/providers/inventory/refresh"
     },
     "ProviderConfigReadRequest": {
       "type": "object",
@@ -1286,7 +1286,7 @@
       ],
       "description": "Read saved configuration field values for one provider.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/read"
+      "x-method": "_goose/unstable/providers/config/read"
     },
     "ProviderConfigReadResponse": {
       "type": "object",
@@ -1302,7 +1302,7 @@
         "fields"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/read"
+      "x-method": "_goose/unstable/providers/config/read"
     },
     "ProviderConfigFieldValueDto": {
       "type": "object",
@@ -1347,7 +1347,7 @@
       },
       "description": "Return provider configured statuses. Empty provider_ids means all providers.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/status"
+      "x-method": "_goose/unstable/providers/config/status"
     },
     "ProviderConfigStatusResponse": {
       "type": "object",
@@ -1363,7 +1363,7 @@
         "statuses"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/status"
+      "x-method": "_goose/unstable/providers/config/status"
     },
     "ProviderConfigSaveRequest": {
       "type": "object",
@@ -1384,7 +1384,7 @@
       ],
       "description": "Save provider configuration fields and start an inventory refresh when supported.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/save"
+      "x-method": "_goose/unstable/providers/config/save"
     },
     "ProviderConfigFieldUpdate": {
       "type": "object",
@@ -1429,7 +1429,7 @@
       ],
       "description": "Delete provider configuration fields and start an inventory refresh when supported.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/delete"
+      "x-method": "_goose/unstable/providers/config/delete"
     },
     "ProviderConfigAuthenticateRequest": {
       "type": "object",
@@ -1443,7 +1443,7 @@
       ],
       "description": "Run a provider-owned native authentication flow and start an inventory refresh when supported.",
       "x-side": "agent",
-      "x-method": "_goose/v1/providers/config/authenticate"
+      "x-method": "_goose/unstable/providers/config/authenticate"
     },
     "PreferencesReadRequest": {
       "type": "object",
@@ -1458,7 +1458,7 @@
       },
       "description": "Read allowlisted user preferences. Empty `keys` means all supported preferences.",
       "x-side": "agent",
-      "x-method": "_goose/v1/preferences/read"
+      "x-method": "_goose/unstable/preferences/read"
     },
     "PreferenceKey": {
       "type": "string",
@@ -1483,7 +1483,7 @@
         "values"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/preferences/read"
+      "x-method": "_goose/unstable/preferences/read"
     },
     "PreferenceValue": {
       "type": "object",
@@ -1512,7 +1512,7 @@
       },
       "description": "Save allowlisted user preferences.",
       "x-side": "agent",
-      "x-method": "_goose/v1/preferences/save"
+      "x-method": "_goose/unstable/preferences/save"
     },
     "PreferencesRemoveRequest": {
       "type": "object",
@@ -1527,13 +1527,13 @@
       },
       "description": "Remove allowlisted user preferences.",
       "x-side": "agent",
-      "x-method": "_goose/v1/preferences/remove"
+      "x-method": "_goose/unstable/preferences/remove"
     },
     "DefaultsReadRequest": {
       "type": "object",
       "description": "Read Goose default provider and model configuration.",
       "x-side": "agent",
-      "x-method": "_goose/v1/defaults/read"
+      "x-method": "_goose/unstable/defaults/read"
     },
     "DefaultsReadResponse": {
       "type": "object",
@@ -1571,7 +1571,7 @@
       ],
       "description": "Save Goose default provider and model configuration.",
       "x-side": "agent",
-      "x-method": "_goose/v1/defaults/save"
+      "x-method": "_goose/unstable/defaults/save"
     },
     "OnboardingImportScanRequest": {
       "type": "object",
@@ -1587,7 +1587,7 @@
       },
       "description": "Scan for existing Goose and compatible app data that onboarding can import.",
       "x-side": "agent",
-      "x-method": "_goose/v1/onboarding/import/scan"
+      "x-method": "_goose/unstable/onboarding/import/scan"
     },
     "OnboardingImportSourceKind": {
       "type": "string",
@@ -1611,7 +1611,7 @@
         "candidates"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/onboarding/import/scan"
+      "x-method": "_goose/unstable/onboarding/import/scan"
     },
     "OnboardingImportCandidate": {
       "type": "object",
@@ -1701,7 +1701,7 @@
       },
       "description": "Import selected onboarding candidates.",
       "x-side": "agent",
-      "x-method": "_goose/v1/onboarding/import/apply"
+      "x-method": "_goose/unstable/onboarding/import/apply"
     },
     "OnboardingImportApplyResponse": {
       "type": "object",
@@ -1735,7 +1735,7 @@
         "skipped"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/onboarding/import/apply"
+      "x-method": "_goose/unstable/onboarding/import/apply"
     },
     "ExportSessionRequest": {
       "type": "object",
@@ -1749,7 +1749,7 @@
       ],
       "description": "Export a session as a JSON string.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/export"
+      "x-method": "_goose/unstable/session/export"
     },
     "ExportSessionResponse": {
       "type": "object",
@@ -1763,7 +1763,7 @@
       ],
       "description": "Export session response — raw JSON of the goose session with `conversation`.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/export"
+      "x-method": "_goose/unstable/session/export"
     },
     "ImportSessionRequest": {
       "type": "object",
@@ -1777,7 +1777,7 @@
       ],
       "description": "Import a session from a JSON string.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/import"
+      "x-method": "_goose/unstable/session/import"
     },
     "ImportSessionResponse": {
       "type": "object",
@@ -1808,7 +1808,7 @@
       ],
       "description": "Import session response — metadata about the newly created session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/import"
+      "x-method": "_goose/unstable/session/import"
     },
     "UpdateSessionProjectRequest": {
       "type": "object",
@@ -1828,7 +1828,7 @@
       ],
       "description": "Update the project association for a session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/project/update"
+      "x-method": "_goose/unstable/session/project/update"
     },
     "RenameSessionRequest": {
       "type": "object",
@@ -1846,7 +1846,7 @@
       ],
       "description": "Rename a session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/rename"
+      "x-method": "_goose/unstable/session/rename"
     },
     "ArchiveSessionRequest": {
       "type": "object",
@@ -1860,7 +1860,7 @@
       ],
       "description": "Archive a session (soft delete).",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/archive"
+      "x-method": "_goose/unstable/session/archive"
     },
     "UnarchiveSessionRequest": {
       "type": "object",
@@ -1874,7 +1874,7 @@
       ],
       "description": "Unarchive a previously archived session.",
       "x-side": "agent",
-      "x-method": "_goose/v1/session/unarchive"
+      "x-method": "_goose/unstable/session/unarchive"
     },
     "CreateSourceRequest": {
       "type": "object",
@@ -1909,7 +1909,7 @@
       ],
       "description": "Create a new source in an explicit target scope (global or project-scoped).",
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/create"
+      "x-method": "_goose/unstable/sources/create"
     },
     "SourceType": {
       "type": "string",
@@ -1983,7 +1983,7 @@
         "source"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/create"
+      "x-method": "_goose/unstable/sources/create"
     },
     "SourceEntry": {
       "type": "object",
@@ -2063,7 +2063,7 @@
       },
       "description": "List discovered sources.\n\nIf `type` is omitted or `skill`, this lists filesystem/plugin skills only.\nBoth global and project-scoped skills are included when `project_dir` is\nset. If `type` is `builtinSkill`, this lists shipped read-only built-in\nskills.",
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/list"
+      "x-method": "_goose/unstable/sources/list"
     },
     "ListSourcesResponse": {
       "type": "object",
@@ -2079,7 +2079,7 @@
         "sources"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/list"
+      "x-method": "_goose/unstable/sources/list"
     },
     "UpdateSourceRequest": {
       "type": "object",
@@ -2117,7 +2117,7 @@
       ],
       "description": "Update an existing source's name, description, and content by absolute path.",
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/update"
+      "x-method": "_goose/unstable/sources/update"
     },
     "UpdateSourceResponse": {
       "type": "object",
@@ -2130,7 +2130,7 @@
         "source"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/update"
+      "x-method": "_goose/unstable/sources/update"
     },
     "DeleteSourceRequest": {
       "type": "object",
@@ -2148,7 +2148,7 @@
       ],
       "description": "Delete a source and its on-disk directory by absolute path.",
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/delete"
+      "x-method": "_goose/unstable/sources/delete"
     },
     "ExportSourceRequest": {
       "type": "object",
@@ -2166,7 +2166,7 @@
       ],
       "description": "Export a source at an absolute path as a portable JSON payload.",
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/export"
+      "x-method": "_goose/unstable/sources/export"
     },
     "ExportSourceResponse": {
       "type": "object",
@@ -2183,7 +2183,7 @@
         "filename"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/export"
+      "x-method": "_goose/unstable/sources/export"
     },
     "ImportSourcesRequest": {
       "type": "object",
@@ -2199,9 +2199,9 @@
         "data",
         "target"
       ],
-      "description": "Import a source from a JSON export payload produced by `_goose/v1/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
+      "description": "Import a source from a JSON export payload produced by `_goose/unstable/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/import"
+      "x-method": "_goose/unstable/sources/import"
     },
     "ImportSourcesResponse": {
       "type": "object",
@@ -2217,7 +2217,7 @@
         "sources"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/sources/import"
+      "x-method": "_goose/unstable/sources/import"
     },
     "DictationTranscribeRequest": {
       "type": "object",
@@ -2242,7 +2242,7 @@
       ],
       "description": "Transcribe audio via a dictation provider.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/transcribe"
+      "x-method": "_goose/unstable/dictation/transcribe"
     },
     "DictationTranscribeResponse": {
       "type": "object",
@@ -2256,13 +2256,13 @@
       ],
       "description": "Transcription result.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/transcribe"
+      "x-method": "_goose/unstable/dictation/transcribe"
     },
     "DictationConfigRequest": {
       "type": "object",
       "description": "Get the configuration status of all dictation providers.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/config"
+      "x-method": "_goose/unstable/dictation/config"
     },
     "DictationConfigResponse": {
       "type": "object",
@@ -2279,7 +2279,7 @@
       ],
       "description": "Dictation config response — map of provider name to status.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/config"
+      "x-method": "_goose/unstable/dictation/config"
     },
     "DictationProviderStatusEntry": {
       "type": "object",
@@ -2379,7 +2379,7 @@
       ],
       "description": "Set a dictation provider secret value.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/secret/save"
+      "x-method": "_goose/unstable/dictation/secret/save"
     },
     "DictationSecretDeleteRequest": {
       "type": "object",
@@ -2393,13 +2393,13 @@
       ],
       "description": "Remove a dictation provider secret value.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/secret/delete"
+      "x-method": "_goose/unstable/dictation/secret/delete"
     },
     "DictationModelsListRequest": {
       "type": "object",
       "description": "List available local Whisper models with their download status.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/list"
+      "x-method": "_goose/unstable/dictation/models/list"
     },
     "DictationModelsListResponse": {
       "type": "object",
@@ -2415,7 +2415,7 @@
         "models"
       ],
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/list"
+      "x-method": "_goose/unstable/dictation/models/list"
     },
     "DictationLocalModelStatus": {
       "type": "object",
@@ -2461,7 +2461,7 @@
       ],
       "description": "Kick off a background download of a local Whisper model.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/download"
+      "x-method": "_goose/unstable/dictation/models/download"
     },
     "DictationModelDownloadProgressRequest": {
       "type": "object",
@@ -2475,7 +2475,7 @@
       ],
       "description": "Poll the progress of an in-flight download.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/download/progress"
+      "x-method": "_goose/unstable/dictation/models/download/progress"
     },
     "DictationModelDownloadProgressResponse": {
       "type": "object",
@@ -2493,7 +2493,7 @@
         }
       },
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/download/progress"
+      "x-method": "_goose/unstable/dictation/models/download/progress"
     },
     "DictationDownloadProgress": {
       "type": "object",
@@ -2540,7 +2540,7 @@
       ],
       "description": "Cancel an in-flight download.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/cancel"
+      "x-method": "_goose/unstable/dictation/models/cancel"
     },
     "DictationModelDeleteRequest": {
       "type": "object",
@@ -2554,7 +2554,7 @@
       ],
       "description": "Delete a downloaded local Whisper model from disk.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/delete"
+      "x-method": "_goose/unstable/dictation/models/delete"
     },
     "DictationModelSelectRequest": {
       "type": "object",
@@ -2572,7 +2572,7 @@
       ],
       "description": "Persist the user's model selection for a given provider.",
       "x-side": "agent",
-      "x-method": "_goose/v1/dictation/models/select"
+      "x-method": "_goose/unstable/dictation/models/select"
     },
     "ExtRequest": {
       "properties": {
@@ -2592,7 +2592,7 @@
                       "$ref": "#/$defs/AddExtensionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/extensions/add",
+                  "description": "Params for _goose/unstable/session/extensions/add",
                   "title": "AddExtensionRequest"
                 },
                 {
@@ -2601,7 +2601,7 @@
                       "$ref": "#/$defs/RemoveExtensionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/extensions/remove",
+                  "description": "Params for _goose/unstable/session/extensions/remove",
                   "title": "RemoveExtensionRequest"
                 },
                 {
@@ -2610,7 +2610,7 @@
                       "$ref": "#/$defs/GetToolsRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/tools/list",
+                  "description": "Params for _goose/unstable/tools/list",
                   "title": "GetToolsRequest"
                 },
                 {
@@ -2619,7 +2619,7 @@
                       "$ref": "#/$defs/GooseToolCallRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/tools/call",
+                  "description": "Params for _goose/unstable/tools/call",
                   "title": "GooseToolCallRequest"
                 },
                 {
@@ -2628,7 +2628,7 @@
                       "$ref": "#/$defs/ReadResourceRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/resources/read",
+                  "description": "Params for _goose/unstable/resources/read",
                   "title": "ReadResourceRequest"
                 },
                 {
@@ -2637,7 +2637,7 @@
                       "$ref": "#/$defs/UpdateWorkingDirRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/working-dir/update",
+                  "description": "Params for _goose/unstable/session/working-dir/update",
                   "title": "UpdateWorkingDirRequest"
                 },
                 {
@@ -2655,7 +2655,7 @@
                       "$ref": "#/$defs/GetExtensionsRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/config/extensions/list",
+                  "description": "Params for _goose/unstable/config/extensions/list",
                   "title": "GetExtensionsRequest"
                 },
                 {
@@ -2664,7 +2664,7 @@
                       "$ref": "#/$defs/AddConfigExtensionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/config/extensions/add",
+                  "description": "Params for _goose/unstable/config/extensions/add",
                   "title": "AddConfigExtensionRequest"
                 },
                 {
@@ -2673,7 +2673,7 @@
                       "$ref": "#/$defs/RemoveConfigExtensionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/config/extensions/remove",
+                  "description": "Params for _goose/unstable/config/extensions/remove",
                   "title": "RemoveConfigExtensionRequest"
                 },
                 {
@@ -2682,7 +2682,7 @@
                       "$ref": "#/$defs/ToggleConfigExtensionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/config/extensions/toggle",
+                  "description": "Params for _goose/unstable/config/extensions/toggle",
                   "title": "ToggleConfigExtensionRequest"
                 },
                 {
@@ -2691,7 +2691,7 @@
                       "$ref": "#/$defs/GetSessionExtensionsRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/extensions/list",
+                  "description": "Params for _goose/unstable/session/extensions/list",
                   "title": "GetSessionExtensionsRequest"
                 },
                 {
@@ -2700,7 +2700,7 @@
                       "$ref": "#/$defs/ListProvidersRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/list",
+                  "description": "Params for _goose/unstable/providers/list",
                   "title": "ListProvidersRequest"
                 },
                 {
@@ -2709,7 +2709,7 @@
                       "$ref": "#/$defs/ProviderCatalogListRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/catalog/list",
+                  "description": "Params for _goose/unstable/providers/catalog/list",
                   "title": "ProviderCatalogListRequest"
                 },
                 {
@@ -2718,7 +2718,7 @@
                       "$ref": "#/$defs/ProviderSetupCatalogListRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/setup/catalog/list",
+                  "description": "Params for _goose/unstable/providers/setup/catalog/list",
                   "title": "ProviderSetupCatalogListRequest"
                 },
                 {
@@ -2727,7 +2727,7 @@
                       "$ref": "#/$defs/ProviderCatalogTemplateRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/catalog/template",
+                  "description": "Params for _goose/unstable/providers/catalog/template",
                   "title": "ProviderCatalogTemplateRequest"
                 },
                 {
@@ -2736,7 +2736,7 @@
                       "$ref": "#/$defs/CustomProviderCreateRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/custom/create",
+                  "description": "Params for _goose/unstable/providers/custom/create",
                   "title": "CustomProviderCreateRequest"
                 },
                 {
@@ -2745,7 +2745,7 @@
                       "$ref": "#/$defs/CustomProviderReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/custom/read",
+                  "description": "Params for _goose/unstable/providers/custom/read",
                   "title": "CustomProviderReadRequest"
                 },
                 {
@@ -2754,7 +2754,7 @@
                       "$ref": "#/$defs/CustomProviderUpdateRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/custom/update",
+                  "description": "Params for _goose/unstable/providers/custom/update",
                   "title": "CustomProviderUpdateRequest"
                 },
                 {
@@ -2763,7 +2763,7 @@
                       "$ref": "#/$defs/CustomProviderDeleteRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/custom/delete",
+                  "description": "Params for _goose/unstable/providers/custom/delete",
                   "title": "CustomProviderDeleteRequest"
                 },
                 {
@@ -2772,7 +2772,7 @@
                       "$ref": "#/$defs/RefreshProviderInventoryRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/inventory/refresh",
+                  "description": "Params for _goose/unstable/providers/inventory/refresh",
                   "title": "RefreshProviderInventoryRequest"
                 },
                 {
@@ -2781,7 +2781,7 @@
                       "$ref": "#/$defs/ProviderConfigReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/config/read",
+                  "description": "Params for _goose/unstable/providers/config/read",
                   "title": "ProviderConfigReadRequest"
                 },
                 {
@@ -2790,7 +2790,7 @@
                       "$ref": "#/$defs/ProviderConfigStatusRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/config/status",
+                  "description": "Params for _goose/unstable/providers/config/status",
                   "title": "ProviderConfigStatusRequest"
                 },
                 {
@@ -2799,7 +2799,7 @@
                       "$ref": "#/$defs/ProviderConfigSaveRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/config/save",
+                  "description": "Params for _goose/unstable/providers/config/save",
                   "title": "ProviderConfigSaveRequest"
                 },
                 {
@@ -2808,7 +2808,7 @@
                       "$ref": "#/$defs/ProviderConfigDeleteRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/config/delete",
+                  "description": "Params for _goose/unstable/providers/config/delete",
                   "title": "ProviderConfigDeleteRequest"
                 },
                 {
@@ -2817,7 +2817,7 @@
                       "$ref": "#/$defs/ProviderConfigAuthenticateRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/providers/config/authenticate",
+                  "description": "Params for _goose/unstable/providers/config/authenticate",
                   "title": "ProviderConfigAuthenticateRequest"
                 },
                 {
@@ -2826,7 +2826,7 @@
                       "$ref": "#/$defs/PreferencesReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/preferences/read",
+                  "description": "Params for _goose/unstable/preferences/read",
                   "title": "PreferencesReadRequest"
                 },
                 {
@@ -2835,7 +2835,7 @@
                       "$ref": "#/$defs/PreferencesSaveRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/preferences/save",
+                  "description": "Params for _goose/unstable/preferences/save",
                   "title": "PreferencesSaveRequest"
                 },
                 {
@@ -2844,7 +2844,7 @@
                       "$ref": "#/$defs/PreferencesRemoveRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/preferences/remove",
+                  "description": "Params for _goose/unstable/preferences/remove",
                   "title": "PreferencesRemoveRequest"
                 },
                 {
@@ -2853,7 +2853,7 @@
                       "$ref": "#/$defs/DefaultsReadRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/defaults/read",
+                  "description": "Params for _goose/unstable/defaults/read",
                   "title": "DefaultsReadRequest"
                 },
                 {
@@ -2862,7 +2862,7 @@
                       "$ref": "#/$defs/DefaultsSaveRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/defaults/save",
+                  "description": "Params for _goose/unstable/defaults/save",
                   "title": "DefaultsSaveRequest"
                 },
                 {
@@ -2871,7 +2871,7 @@
                       "$ref": "#/$defs/OnboardingImportScanRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/onboarding/import/scan",
+                  "description": "Params for _goose/unstable/onboarding/import/scan",
                   "title": "OnboardingImportScanRequest"
                 },
                 {
@@ -2880,7 +2880,7 @@
                       "$ref": "#/$defs/OnboardingImportApplyRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/onboarding/import/apply",
+                  "description": "Params for _goose/unstable/onboarding/import/apply",
                   "title": "OnboardingImportApplyRequest"
                 },
                 {
@@ -2889,7 +2889,7 @@
                       "$ref": "#/$defs/ExportSessionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/export",
+                  "description": "Params for _goose/unstable/session/export",
                   "title": "ExportSessionRequest"
                 },
                 {
@@ -2898,7 +2898,7 @@
                       "$ref": "#/$defs/ImportSessionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/import",
+                  "description": "Params for _goose/unstable/session/import",
                   "title": "ImportSessionRequest"
                 },
                 {
@@ -2907,7 +2907,7 @@
                       "$ref": "#/$defs/UpdateSessionProjectRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/project/update",
+                  "description": "Params for _goose/unstable/session/project/update",
                   "title": "UpdateSessionProjectRequest"
                 },
                 {
@@ -2916,7 +2916,7 @@
                       "$ref": "#/$defs/RenameSessionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/rename",
+                  "description": "Params for _goose/unstable/session/rename",
                   "title": "RenameSessionRequest"
                 },
                 {
@@ -2925,7 +2925,7 @@
                       "$ref": "#/$defs/ArchiveSessionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/archive",
+                  "description": "Params for _goose/unstable/session/archive",
                   "title": "ArchiveSessionRequest"
                 },
                 {
@@ -2934,7 +2934,7 @@
                       "$ref": "#/$defs/UnarchiveSessionRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/session/unarchive",
+                  "description": "Params for _goose/unstable/session/unarchive",
                   "title": "UnarchiveSessionRequest"
                 },
                 {
@@ -2943,7 +2943,7 @@
                       "$ref": "#/$defs/CreateSourceRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/sources/create",
+                  "description": "Params for _goose/unstable/sources/create",
                   "title": "CreateSourceRequest"
                 },
                 {
@@ -2952,7 +2952,7 @@
                       "$ref": "#/$defs/ListSourcesRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/sources/list",
+                  "description": "Params for _goose/unstable/sources/list",
                   "title": "ListSourcesRequest"
                 },
                 {
@@ -2961,7 +2961,7 @@
                       "$ref": "#/$defs/UpdateSourceRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/sources/update",
+                  "description": "Params for _goose/unstable/sources/update",
                   "title": "UpdateSourceRequest"
                 },
                 {
@@ -2970,7 +2970,7 @@
                       "$ref": "#/$defs/DeleteSourceRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/sources/delete",
+                  "description": "Params for _goose/unstable/sources/delete",
                   "title": "DeleteSourceRequest"
                 },
                 {
@@ -2979,7 +2979,7 @@
                       "$ref": "#/$defs/ExportSourceRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/sources/export",
+                  "description": "Params for _goose/unstable/sources/export",
                   "title": "ExportSourceRequest"
                 },
                 {
@@ -2988,7 +2988,7 @@
                       "$ref": "#/$defs/ImportSourcesRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/sources/import",
+                  "description": "Params for _goose/unstable/sources/import",
                   "title": "ImportSourcesRequest"
                 },
                 {
@@ -2997,7 +2997,7 @@
                       "$ref": "#/$defs/DictationTranscribeRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/transcribe",
+                  "description": "Params for _goose/unstable/dictation/transcribe",
                   "title": "DictationTranscribeRequest"
                 },
                 {
@@ -3006,7 +3006,7 @@
                       "$ref": "#/$defs/DictationConfigRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/config",
+                  "description": "Params for _goose/unstable/dictation/config",
                   "title": "DictationConfigRequest"
                 },
                 {
@@ -3015,7 +3015,7 @@
                       "$ref": "#/$defs/DictationSecretSaveRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/secret/save",
+                  "description": "Params for _goose/unstable/dictation/secret/save",
                   "title": "DictationSecretSaveRequest"
                 },
                 {
@@ -3024,7 +3024,7 @@
                       "$ref": "#/$defs/DictationSecretDeleteRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/secret/delete",
+                  "description": "Params for _goose/unstable/dictation/secret/delete",
                   "title": "DictationSecretDeleteRequest"
                 },
                 {
@@ -3033,7 +3033,7 @@
                       "$ref": "#/$defs/DictationModelsListRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/models/list",
+                  "description": "Params for _goose/unstable/dictation/models/list",
                   "title": "DictationModelsListRequest"
                 },
                 {
@@ -3042,7 +3042,7 @@
                       "$ref": "#/$defs/DictationModelDownloadRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/models/download",
+                  "description": "Params for _goose/unstable/dictation/models/download",
                   "title": "DictationModelDownloadRequest"
                 },
                 {
@@ -3051,7 +3051,7 @@
                       "$ref": "#/$defs/DictationModelDownloadProgressRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/models/download/progress",
+                  "description": "Params for _goose/unstable/dictation/models/download/progress",
                   "title": "DictationModelDownloadProgressRequest"
                 },
                 {
@@ -3060,7 +3060,7 @@
                       "$ref": "#/$defs/DictationModelCancelRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/models/cancel",
+                  "description": "Params for _goose/unstable/dictation/models/cancel",
                   "title": "DictationModelCancelRequest"
                 },
                 {
@@ -3069,7 +3069,7 @@
                       "$ref": "#/$defs/DictationModelDeleteRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/models/delete",
+                  "description": "Params for _goose/unstable/dictation/models/delete",
                   "title": "DictationModelDeleteRequest"
                 },
                 {
@@ -3078,7 +3078,7 @@
                       "$ref": "#/$defs/DictationModelSelectRequest"
                     }
                   ],
-                  "description": "Params for _goose/v1/dictation/models/select",
+                  "description": "Params for _goose/unstable/dictation/models/select",
                   "title": "DictationModelSelectRequest"
                 }
               ]
