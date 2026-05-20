@@ -134,13 +134,13 @@ import {
 export class GooseExtClient {
   constructor(private conn: ExtMethodProvider) {}
 
-  async GooseUnstableSessionExtensionsAdd(
+  async sessionExtensionsAdd_unstable(
     params: AddExtensionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/session/extensions/add", params);
   }
 
-  async GooseUnstableSessionExtensionsRemove(
+  async sessionExtensionsRemove_unstable(
     params: RemoveExtensionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -149,14 +149,14 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableToolsList(
+  async toolsList_unstable(
     params: GetToolsRequest_unstable,
   ): Promise<GetToolsResponse_unstable> {
     const raw = await this.conn.extMethod("_goose/unstable/tools/list", params);
     return zGetToolsResponse_unstable.parse(raw) as GetToolsResponse_unstable;
   }
 
-  async GooseUnstableToolsCall(
+  async toolsCall_unstable(
     params: GooseToolCallRequest_unstable,
   ): Promise<GooseToolCallResponse_unstable> {
     const raw = await this.conn.extMethod("_goose/unstable/tools/call", params);
@@ -165,7 +165,7 @@ export class GooseExtClient {
     ) as GooseToolCallResponse_unstable;
   }
 
-  async GooseUnstableResourcesRead(
+  async resourcesRead_unstable(
     params: ReadResourceRequest_unstable,
   ): Promise<ReadResourceResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -177,7 +177,7 @@ export class GooseExtClient {
     ) as ReadResourceResponse_unstable;
   }
 
-  async GooseUnstableSessionWorkingDirUpdate(
+  async sessionWorkingDirUpdate_unstable(
     params: UpdateWorkingDirRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -190,7 +190,7 @@ export class GooseExtClient {
     await this.conn.extMethod("session/delete", params);
   }
 
-  async GooseUnstableConfigExtensionsList(
+  async configExtensionsList_unstable(
     params: GetExtensionsRequest_unstable,
   ): Promise<GetExtensionsResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -202,13 +202,13 @@ export class GooseExtClient {
     ) as GetExtensionsResponse_unstable;
   }
 
-  async GooseUnstableConfigExtensionsAdd(
+  async configExtensionsAdd_unstable(
     params: AddConfigExtensionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/config/extensions/add", params);
   }
 
-  async GooseUnstableConfigExtensionsRemove(
+  async configExtensionsRemove_unstable(
     params: RemoveConfigExtensionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -217,7 +217,7 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableConfigExtensionsToggle(
+  async configExtensionsToggle_unstable(
     params: ToggleConfigExtensionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -226,7 +226,7 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableSessionExtensionsList(
+  async sessionExtensionsList_unstable(
     params: GetSessionExtensionsRequest_unstable,
   ): Promise<GetSessionExtensionsResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -238,7 +238,7 @@ export class GooseExtClient {
     ) as GetSessionExtensionsResponse_unstable;
   }
 
-  async GooseUnstableProvidersList(
+  async providersList_unstable(
     params: ListProvidersRequest_unstable,
   ): Promise<ListProvidersResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -250,7 +250,7 @@ export class GooseExtClient {
     ) as ListProvidersResponse_unstable;
   }
 
-  async GooseUnstableProvidersCatalogList(
+  async providersCatalogList_unstable(
     params: ProviderCatalogListRequest_unstable,
   ): Promise<ProviderCatalogListResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -262,7 +262,7 @@ export class GooseExtClient {
     ) as ProviderCatalogListResponse_unstable;
   }
 
-  async GooseUnstableProvidersSetupCatalogList(
+  async providersSetupCatalogList_unstable(
     params: ProviderSetupCatalogListRequest_unstable,
   ): Promise<ProviderSetupCatalogListResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -274,7 +274,7 @@ export class GooseExtClient {
     ) as ProviderSetupCatalogListResponse_unstable;
   }
 
-  async GooseUnstableProvidersCatalogTemplate(
+  async providersCatalogTemplate_unstable(
     params: ProviderCatalogTemplateRequest_unstable,
   ): Promise<ProviderCatalogTemplateResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -286,7 +286,7 @@ export class GooseExtClient {
     ) as ProviderCatalogTemplateResponse_unstable;
   }
 
-  async GooseUnstableProvidersCustomCreate(
+  async providersCustomCreate_unstable(
     params: CustomProviderCreateRequest_unstable,
   ): Promise<CustomProviderCreateResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -298,7 +298,7 @@ export class GooseExtClient {
     ) as CustomProviderCreateResponse_unstable;
   }
 
-  async GooseUnstableProvidersCustomRead(
+  async providersCustomRead_unstable(
     params: CustomProviderReadRequest_unstable,
   ): Promise<CustomProviderReadResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -310,7 +310,7 @@ export class GooseExtClient {
     ) as CustomProviderReadResponse_unstable;
   }
 
-  async GooseUnstableProvidersCustomUpdate(
+  async providersCustomUpdate_unstable(
     params: CustomProviderUpdateRequest_unstable,
   ): Promise<CustomProviderUpdateResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -322,7 +322,7 @@ export class GooseExtClient {
     ) as CustomProviderUpdateResponse_unstable;
   }
 
-  async GooseUnstableProvidersCustomDelete(
+  async providersCustomDelete_unstable(
     params: CustomProviderDeleteRequest_unstable,
   ): Promise<CustomProviderDeleteResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -334,7 +334,7 @@ export class GooseExtClient {
     ) as CustomProviderDeleteResponse_unstable;
   }
 
-  async GooseUnstableProvidersInventoryRefresh(
+  async providersInventoryRefresh_unstable(
     params: RefreshProviderInventoryRequest_unstable,
   ): Promise<RefreshProviderInventoryResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -346,7 +346,7 @@ export class GooseExtClient {
     ) as RefreshProviderInventoryResponse_unstable;
   }
 
-  async GooseUnstableProvidersConfigRead(
+  async providersConfigRead_unstable(
     params: ProviderConfigReadRequest_unstable,
   ): Promise<ProviderConfigReadResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -358,7 +358,7 @@ export class GooseExtClient {
     ) as ProviderConfigReadResponse_unstable;
   }
 
-  async GooseUnstableProvidersConfigStatus(
+  async providersConfigStatus_unstable(
     params: ProviderConfigStatusRequest_unstable,
   ): Promise<ProviderConfigStatusResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -370,7 +370,7 @@ export class GooseExtClient {
     ) as ProviderConfigStatusResponse_unstable;
   }
 
-  async GooseUnstableProvidersConfigSave(
+  async providersConfigSave_unstable(
     params: ProviderConfigSaveRequest_unstable,
   ): Promise<ProviderConfigChangeResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -382,7 +382,7 @@ export class GooseExtClient {
     ) as ProviderConfigChangeResponse_unstable;
   }
 
-  async GooseUnstableProvidersConfigDelete(
+  async providersConfigDelete_unstable(
     params: ProviderConfigDeleteRequest_unstable,
   ): Promise<ProviderConfigChangeResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -394,7 +394,7 @@ export class GooseExtClient {
     ) as ProviderConfigChangeResponse_unstable;
   }
 
-  async GooseUnstableProvidersConfigAuthenticate(
+  async providersConfigAuthenticate_unstable(
     params: ProviderConfigAuthenticateRequest_unstable,
   ): Promise<ProviderConfigChangeResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -406,7 +406,7 @@ export class GooseExtClient {
     ) as ProviderConfigChangeResponse_unstable;
   }
 
-  async GooseUnstablePreferencesRead(
+  async preferencesRead_unstable(
     params: PreferencesReadRequest_unstable,
   ): Promise<PreferencesReadResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -418,19 +418,19 @@ export class GooseExtClient {
     ) as PreferencesReadResponse_unstable;
   }
 
-  async GooseUnstablePreferencesSave(
+  async preferencesSave_unstable(
     params: PreferencesSaveRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/preferences/save", params);
   }
 
-  async GooseUnstablePreferencesRemove(
+  async preferencesRemove_unstable(
     params: PreferencesRemoveRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/preferences/remove", params);
   }
 
-  async GooseUnstableDefaultsRead(
+  async defaultsRead_unstable(
     params: DefaultsReadRequest_unstable,
   ): Promise<DefaultsReadResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -442,7 +442,7 @@ export class GooseExtClient {
     ) as DefaultsReadResponse_unstable;
   }
 
-  async GooseUnstableDefaultsSave(
+  async defaultsSave_unstable(
     params: DefaultsSaveRequest_unstable,
   ): Promise<DefaultsReadResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -454,7 +454,7 @@ export class GooseExtClient {
     ) as DefaultsReadResponse_unstable;
   }
 
-  async GooseUnstableOnboardingImportScan(
+  async onboardingImportScan_unstable(
     params: OnboardingImportScanRequest_unstable,
   ): Promise<OnboardingImportScanResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -466,7 +466,7 @@ export class GooseExtClient {
     ) as OnboardingImportScanResponse_unstable;
   }
 
-  async GooseUnstableOnboardingImportApply(
+  async onboardingImportApply_unstable(
     params: OnboardingImportApplyRequest_unstable,
   ): Promise<OnboardingImportApplyResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -478,7 +478,7 @@ export class GooseExtClient {
     ) as OnboardingImportApplyResponse_unstable;
   }
 
-  async GooseUnstableSessionExport(
+  async sessionExport_unstable(
     params: ExportSessionRequest_unstable,
   ): Promise<ExportSessionResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -490,7 +490,7 @@ export class GooseExtClient {
     ) as ExportSessionResponse_unstable;
   }
 
-  async GooseUnstableSessionImport(
+  async sessionImport_unstable(
     params: ImportSessionRequest_unstable,
   ): Promise<ImportSessionResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -502,31 +502,31 @@ export class GooseExtClient {
     ) as ImportSessionResponse_unstable;
   }
 
-  async GooseUnstableSessionProjectUpdate(
+  async sessionProjectUpdate_unstable(
     params: UpdateSessionProjectRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/session/project/update", params);
   }
 
-  async GooseUnstableSessionRename(
+  async sessionRename_unstable(
     params: RenameSessionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/session/rename", params);
   }
 
-  async GooseUnstableSessionArchive(
+  async sessionArchive_unstable(
     params: ArchiveSessionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/session/archive", params);
   }
 
-  async GooseUnstableSessionUnarchive(
+  async sessionUnarchive_unstable(
     params: UnarchiveSessionRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/session/unarchive", params);
   }
 
-  async GooseUnstableSourcesCreate(
+  async sourcesCreate_unstable(
     params: CreateSourceRequest_unstable,
   ): Promise<CreateSourceResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -538,7 +538,7 @@ export class GooseExtClient {
     ) as CreateSourceResponse_unstable;
   }
 
-  async GooseUnstableSourcesList(
+  async sourcesList_unstable(
     params: ListSourcesRequest_unstable,
   ): Promise<ListSourcesResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -550,7 +550,7 @@ export class GooseExtClient {
     ) as ListSourcesResponse_unstable;
   }
 
-  async GooseUnstableSourcesUpdate(
+  async sourcesUpdate_unstable(
     params: UpdateSourceRequest_unstable,
   ): Promise<UpdateSourceResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -562,13 +562,13 @@ export class GooseExtClient {
     ) as UpdateSourceResponse_unstable;
   }
 
-  async GooseUnstableSourcesDelete(
+  async sourcesDelete_unstable(
     params: DeleteSourceRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/sources/delete", params);
   }
 
-  async GooseUnstableSourcesExport(
+  async sourcesExport_unstable(
     params: ExportSourceRequest_unstable,
   ): Promise<ExportSourceResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -580,7 +580,7 @@ export class GooseExtClient {
     ) as ExportSourceResponse_unstable;
   }
 
-  async GooseUnstableSourcesImport(
+  async sourcesImport_unstable(
     params: ImportSourcesRequest_unstable,
   ): Promise<ImportSourcesResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -592,7 +592,7 @@ export class GooseExtClient {
     ) as ImportSourcesResponse_unstable;
   }
 
-  async GooseUnstableDictationTranscribe(
+  async dictationTranscribe_unstable(
     params: DictationTranscribeRequest_unstable,
   ): Promise<DictationTranscribeResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -604,7 +604,7 @@ export class GooseExtClient {
     ) as DictationTranscribeResponse_unstable;
   }
 
-  async GooseUnstableDictationConfig(
+  async dictationConfig_unstable(
     params: DictationConfigRequest_unstable,
   ): Promise<DictationConfigResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -616,13 +616,13 @@ export class GooseExtClient {
     ) as DictationConfigResponse_unstable;
   }
 
-  async GooseUnstableDictationSecretSave(
+  async dictationSecretSave_unstable(
     params: DictationSecretSaveRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod("_goose/unstable/dictation/secret/save", params);
   }
 
-  async GooseUnstableDictationSecretDelete(
+  async dictationSecretDelete_unstable(
     params: DictationSecretDeleteRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -631,7 +631,7 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableDictationModelsList(
+  async dictationModelsList_unstable(
     params: DictationModelsListRequest_unstable,
   ): Promise<DictationModelsListResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -643,7 +643,7 @@ export class GooseExtClient {
     ) as DictationModelsListResponse_unstable;
   }
 
-  async GooseUnstableDictationModelsDownload(
+  async dictationModelsDownload_unstable(
     params: DictationModelDownloadRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -652,7 +652,7 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableDictationModelsDownloadProgress(
+  async dictationModelsDownloadProgress_unstable(
     params: DictationModelDownloadProgressRequest_unstable,
   ): Promise<DictationModelDownloadProgressResponse_unstable> {
     const raw = await this.conn.extMethod(
@@ -664,7 +664,7 @@ export class GooseExtClient {
     ) as DictationModelDownloadProgressResponse_unstable;
   }
 
-  async GooseUnstableDictationModelsCancel(
+  async dictationModelsCancel_unstable(
     params: DictationModelCancelRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -673,7 +673,7 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableDictationModelsDelete(
+  async dictationModelsDelete_unstable(
     params: DictationModelDeleteRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
@@ -682,7 +682,7 @@ export class GooseExtClient {
     );
   }
 
-  async GooseUnstableDictationModelsSelect(
+  async dictationModelsSelect_unstable(
     params: DictationModelSelectRequest_unstable,
   ): Promise<void> {
     await this.conn.extMethod(
