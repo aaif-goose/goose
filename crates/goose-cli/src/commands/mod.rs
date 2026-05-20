@@ -8,5 +8,6 @@ pub mod recipe;
 pub mod review;
 pub mod schedule;
 pub mod session;
+pub mod skills;
 pub mod term;
 pub mod update;
