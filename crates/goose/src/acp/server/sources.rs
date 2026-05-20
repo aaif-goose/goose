@@ -5,24 +5,13 @@ impl GooseAcpAgent {
         &self,
         req: CreateSourceRequest,
     ) -> Result<CreateSourceResponse, agent_client_protocol::Error> {
-        let project_dir = match (&req.project_id, &req.project_dir) {
-            (Some(pid), _) if !req.global => {
-                let dirs = crate::sources::project_working_dirs(pid);
-                Some(dirs.into_iter().next().ok_or_else(|| {
-                    agent_client_protocol::Error::invalid_params().data(format!(
-                        "Project \"{pid}\" has no working directories configured"
-                    ))
-                })?)
-            }
-            (_, Some(pd)) => Some(pd.clone()),
-            _ => None,
-        };
+        let (global, project_dir) = resolve_source_scope(&req.target)?;
         let source = crate::sources::create_source(
             req.source_type,
             &req.name,
             &req.description,
             &req.content,
-            req.global,
+            global,
             project_dir.as_deref(),
             req.properties,
         )?;
@@ -88,8 +77,26 @@ impl GooseAcpAgent {
         &self,
         req: ImportSourcesRequest,
     ) -> Result<ImportSourcesResponse, agent_client_protocol::Error> {
-        let sources =
-            crate::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
+        let (global, project_dir) = resolve_source_scope(&req.target)?;
+        let sources = crate::sources::import_sources(&req.data, global, project_dir.as_deref())?;
         Ok(ImportSourcesResponse { sources })
+    }
+}
+
+fn resolve_source_scope(
+    target: &SourceScope,
+) -> Result<(bool, Option<String>), agent_client_protocol::Error> {
+    match target {
+        SourceScope::Global => Ok((true, None)),
+        SourceScope::ProjectDir { project_dir } => Ok((false, Some(project_dir.clone()))),
+        SourceScope::ProjectId { project_id } => {
+            let dirs = crate::sources::project_working_dirs(project_id);
+            let project_dir = dirs.into_iter().next().ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params().data(format!(
+                    "Project \"{project_id}\" has no working directories configured"
+                ))
+            })?;
+            Ok((false, Some(project_dir)))
+        }
     }
 }

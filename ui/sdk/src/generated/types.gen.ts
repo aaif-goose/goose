@@ -4,7 +4,7 @@
 /**
  * Add an extension to an active session.
  */
-export type AddExtensionRequest = {
+export type AddExtensionRequest_unstable = {
     sessionId: string;
     /**
      * Extension configuration (see ExtensionConfig variants: Stdio, StreamableHttp, Builtin, Platform).
@@ -22,7 +22,7 @@ export type EmptyResponse = {
 /**
  * Remove an extension from an active session.
  */
-export type RemoveExtensionRequest = {
+export type RemoveExtensionRequest_unstable = {
     sessionId: string;
     name: string;
 };
@@ -30,14 +30,14 @@ export type RemoveExtensionRequest = {
 /**
  * List all tools available in a session.
  */
-export type GetToolsRequest = {
+export type GetToolsRequest_unstable = {
     sessionId: string;
 };
 
 /**
  * Tools response.
  */
-export type GetToolsResponse = {
+export type GetToolsResponse_unstable = {
     /**
      * Array of tool info objects with `name`, `description`, `parameters`, and optional `permission`.
      */
@@ -47,7 +47,7 @@ export type GetToolsResponse = {
 /**
  * Call a tool from an extension.
  */
-export type GooseToolCallRequest = {
+export type GooseToolCallRequest_unstable = {
     sessionId: string;
     name: string;
     arguments?: unknown;
@@ -56,7 +56,7 @@ export type GooseToolCallRequest = {
 /**
  * Tool call response.
  */
-export type GooseToolCallResponse = {
+export type GooseToolCallResponse_unstable = {
     content?: Array<unknown>;
     structuredContent?: unknown;
     isError: boolean;
@@ -66,7 +66,7 @@ export type GooseToolCallResponse = {
 /**
  * Read a resource from an extension.
  */
-export type ReadResourceRequest = {
+export type ReadResourceRequest_unstable = {
     sessionId: string;
     uri: string;
     extensionName: string;
@@ -75,7 +75,7 @@ export type ReadResourceRequest = {
 /**
  * Resource read response.
  */
-export type ReadResourceResponse = {
+export type ReadResourceResponse_unstable = {
     /**
      * The resource result from the extension (MCP ReadResourceResult).
      */
@@ -85,7 +85,7 @@ export type ReadResourceResponse = {
 /**
  * Update the working directory for a session.
  */
-export type UpdateWorkingDirRequest = {
+export type UpdateWorkingDirRequest_unstable = {
     sessionId: string;
     workingDir: string;
 };
@@ -100,14 +100,14 @@ export type DeleteSessionRequest = {
 /**
  * List configured extensions and any warnings.
  */
-export type GetExtensionsRequest = {
+export type GetExtensionsRequest_unstable = {
     [key: string]: unknown;
 };
 
 /**
  * List configured extensions and any warnings.
  */
-export type GetExtensionsResponse = {
+export type GetExtensionsResponse_unstable = {
     /**
      * Array of ExtensionEntry objects with `enabled` flag, `configKey`, and flattened config details.
      */
@@ -118,7 +118,7 @@ export type GetExtensionsResponse = {
 /**
  * Persist a new extension to the user's global goose config.
  */
-export type AddConfigExtensionRequest = {
+export type AddConfigExtensionRequest_unstable = {
     name: string;
     /**
      * Extension configuration. Must be a JSON object matching one of the
@@ -132,30 +132,30 @@ export type AddConfigExtensionRequest = {
 /**
  * Remove a persisted extension from the user's global goose config.
  */
-export type RemoveConfigExtensionRequest = {
+export type RemoveConfigExtensionRequest_unstable = {
     configKey: string;
 };
 
 /**
  * Toggle the `enabled` flag for a persisted extension in the user's global goose config.
  */
-export type ToggleConfigExtensionRequest = {
+export type ToggleConfigExtensionRequest_unstable = {
     configKey: string;
     enabled: boolean;
 };
 
-export type GetSessionExtensionsRequest = {
+export type GetSessionExtensionsRequest_unstable = {
     sessionId: string;
 };
 
-export type GetSessionExtensionsResponse = {
+export type GetSessionExtensionsResponse_unstable = {
     extensions: Array<unknown>;
 };
 
 /**
  * List providers with setup metadata and the current model inventory snapshot.
  */
-export type ListProvidersRequest = {
+export type ListProvidersRequest_unstable = {
     /**
      * Only return entries for these providers. Empty means all.
      */
@@ -165,7 +165,7 @@ export type ListProvidersRequest = {
 /**
  * Provider list response.
  */
-export type ListProvidersResponse = {
+export type ListProvidersResponse_unstable = {
     entries: Array<ProviderInventoryEntryDto>;
 };
 
@@ -288,11 +288,11 @@ export type ProviderInventoryModelDto = {
 /**
  * List custom-provider catalog entries. Omit `format` to list all formats.
  */
-export type ProviderCatalogListRequest = {
+export type ProviderCatalogListRequest_unstable = {
     format?: string | null;
 };
 
-export type ProviderCatalogListResponse = {
+export type ProviderCatalogListResponse_unstable = {
     providers: Array<ProviderTemplateCatalogEntryDto>;
 };
 
@@ -309,11 +309,11 @@ export type ProviderTemplateCatalogEntryDto = {
 /**
  * List provider setup catalog entries
  */
-export type ProviderSetupCatalogListRequest = {
+export type ProviderSetupCatalogListRequest_unstable = {
     [key: string]: unknown;
 };
 
-export type ProviderSetupCatalogListResponse = {
+export type ProviderSetupCatalogListResponse_unstable = {
     providers: Array<ProviderSetupCatalogEntryDto>;
 };
 
@@ -351,11 +351,11 @@ export type ProviderSetupGroupDto = 'default' | 'additional';
 /**
  * Return the editable template for one catalog provider.
  */
-export type ProviderCatalogTemplateRequest = {
+export type ProviderCatalogTemplateRequest_unstable = {
     providerId: string;
 };
 
-export type ProviderCatalogTemplateResponse = {
+export type ProviderCatalogTemplateResponse_unstable = {
     template: ProviderTemplateDto;
 };
 
@@ -388,7 +388,7 @@ export type ProviderTemplateCapabilitiesDto = {
 /**
  * Create a custom provider backed by Goose's declarative provider store.
  */
-export type CustomProviderCreateRequest = {
+export type CustomProviderCreateRequest_unstable = {
     engine: string;
     displayName: string;
     apiUrl: string;
@@ -404,10 +404,10 @@ export type CustomProviderCreateRequest = {
     preservesThinking?: boolean | null;
 };
 
-export type CustomProviderCreateResponse = {
+export type CustomProviderCreateResponse_unstable = {
     providerId: string;
     status: ProviderConfigStatusDto;
-    refresh: RefreshProviderInventoryResponse;
+    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 export type ProviderConfigStatusDto = {
@@ -418,7 +418,7 @@ export type ProviderConfigStatusDto = {
 /**
  * Refresh acknowledgement.
  */
-export type RefreshProviderInventoryResponse = {
+export type RefreshProviderInventoryResponse_unstable = {
     /**
      * Which providers will be refreshed.
      */
@@ -439,11 +439,11 @@ export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_co
 /**
  * Read a declarative provider config. Custom configs are editable; bundled configs are read-only.
  */
-export type CustomProviderReadRequest = {
+export type CustomProviderReadRequest_unstable = {
     providerId: string;
 };
 
-export type CustomProviderReadResponse = {
+export type CustomProviderReadResponse_unstable = {
     provider: CustomProviderConfigDto;
     editable: boolean;
     status: ProviderConfigStatusDto;
@@ -470,7 +470,7 @@ export type CustomProviderConfigDto = {
 /**
  * Update a custom provider backed by Goose's declarative provider store.
  */
-export type CustomProviderUpdateRequest = {
+export type CustomProviderUpdateRequest_unstable = {
     providerId: string;
     engine: string;
     displayName: string;
@@ -487,28 +487,28 @@ export type CustomProviderUpdateRequest = {
     preservesThinking?: boolean | null;
 };
 
-export type CustomProviderUpdateResponse = {
+export type CustomProviderUpdateResponse_unstable = {
     providerId: string;
     status: ProviderConfigStatusDto;
-    refresh: RefreshProviderInventoryResponse;
+    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 /**
  * Delete a custom provider from Goose's declarative provider store.
  */
-export type CustomProviderDeleteRequest = {
+export type CustomProviderDeleteRequest_unstable = {
     providerId: string;
 };
 
-export type CustomProviderDeleteResponse = {
+export type CustomProviderDeleteResponse_unstable = {
     providerId: string;
-    refresh: RefreshProviderInventoryResponse;
+    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 /**
  * Trigger a background refresh of provider inventories.
  */
-export type RefreshProviderInventoryRequest = {
+export type RefreshProviderInventoryRequest_unstable = {
     /**
      * Which providers to refresh. Empty means all known providers.
      */
@@ -518,11 +518,11 @@ export type RefreshProviderInventoryRequest = {
 /**
  * Read saved configuration field values for one provider.
  */
-export type ProviderConfigReadRequest = {
+export type ProviderConfigReadRequest_unstable = {
     providerId: string;
 };
 
-export type ProviderConfigReadResponse = {
+export type ProviderConfigReadResponse_unstable = {
     fields: Array<ProviderConfigFieldValueDto>;
 };
 
@@ -537,18 +537,18 @@ export type ProviderConfigFieldValueDto = {
 /**
  * Return provider configured statuses. Empty provider_ids means all providers.
  */
-export type ProviderConfigStatusRequest = {
+export type ProviderConfigStatusRequest_unstable = {
     providerIds?: Array<string>;
 };
 
-export type ProviderConfigStatusResponse = {
+export type ProviderConfigStatusResponse_unstable = {
     statuses: Array<ProviderConfigStatusDto>;
 };
 
 /**
  * Save provider configuration fields and start an inventory refresh when supported.
  */
-export type ProviderConfigSaveRequest = {
+export type ProviderConfigSaveRequest_unstable = {
     providerId: string;
     fields: Array<ProviderConfigFieldUpdate>;
 };
@@ -558,35 +558,35 @@ export type ProviderConfigFieldUpdate = {
     value: string;
 };
 
-export type ProviderConfigChangeResponse = {
+export type ProviderConfigChangeResponse_unstable = {
     status: ProviderConfigStatusDto;
-    refresh: RefreshProviderInventoryResponse;
+    refresh: RefreshProviderInventoryResponse_unstable;
 };
 
 /**
  * Delete provider configuration fields and start an inventory refresh when supported.
  */
-export type ProviderConfigDeleteRequest = {
+export type ProviderConfigDeleteRequest_unstable = {
     providerId: string;
 };
 
 /**
  * Run a provider-owned native authentication flow and start an inventory refresh when supported.
  */
-export type ProviderConfigAuthenticateRequest = {
+export type ProviderConfigAuthenticateRequest_unstable = {
     providerId: string;
 };
 
 /**
  * Read allowlisted user preferences. Empty `keys` means all supported preferences.
  */
-export type PreferencesReadRequest = {
+export type PreferencesReadRequest_unstable = {
     keys?: Array<PreferenceKey>;
 };
 
 export type PreferenceKey = 'autoCompactThreshold' | 'voiceAutoSubmitPhrases' | 'voiceDictationProvider' | 'voiceDictationPreferredMic';
 
-export type PreferencesReadResponse = {
+export type PreferencesReadResponse_unstable = {
     values: Array<PreferenceValue>;
 };
 
@@ -598,25 +598,25 @@ export type PreferenceValue = {
 /**
  * Save allowlisted user preferences.
  */
-export type PreferencesSaveRequest = {
+export type PreferencesSaveRequest_unstable = {
     values?: Array<PreferenceValue>;
 };
 
 /**
  * Remove allowlisted user preferences.
  */
-export type PreferencesRemoveRequest = {
+export type PreferencesRemoveRequest_unstable = {
     keys?: Array<PreferenceKey>;
 };
 
 /**
  * Read Goose default provider and model configuration.
  */
-export type DefaultsReadRequest = {
+export type DefaultsReadRequest_unstable = {
     [key: string]: unknown;
 };
 
-export type DefaultsReadResponse = {
+export type DefaultsReadResponse_unstable = {
     providerId?: string | null;
     modelId?: string | null;
 };
@@ -624,7 +624,7 @@ export type DefaultsReadResponse = {
 /**
  * Save Goose default provider and model configuration.
  */
-export type DefaultsSaveRequest = {
+export type DefaultsSaveRequest_unstable = {
     providerId: string;
     modelId?: string | null;
 };
@@ -632,7 +632,7 @@ export type DefaultsSaveRequest = {
 /**
  * Scan for existing Goose and compatible app data that onboarding can import.
  */
-export type OnboardingImportScanRequest = {
+export type OnboardingImportScanRequest_unstable = {
     /**
      * Empty means all supported import sources.
      */
@@ -644,7 +644,7 @@ export type OnboardingImportScanRequest = {
  */
 export type OnboardingImportSourceKind = 'goose_config' | 'claude_desktop';
 
-export type OnboardingImportScanResponse = {
+export type OnboardingImportScanResponse_unstable = {
     candidates: Array<OnboardingImportCandidate>;
 };
 
@@ -669,43 +669,43 @@ export type OnboardingImportCounts = {
 /**
  * Import selected onboarding candidates.
  */
-export type OnboardingImportApplyRequest = {
+export type OnboardingImportApplyRequest_unstable = {
     candidateIds?: Array<string>;
     enableImportedExtensions?: boolean;
 };
 
-export type OnboardingImportApplyResponse = {
+export type OnboardingImportApplyResponse_unstable = {
     imported: OnboardingImportCounts;
     skipped: OnboardingImportCounts;
     warnings?: Array<string>;
-    providerDefaults?: DefaultsReadResponse | null;
+    providerDefaults?: DefaultsReadResponse_unstable | null;
 };
 
 /**
  * Export a session as a JSON string.
  */
-export type ExportSessionRequest = {
+export type ExportSessionRequest_unstable = {
     sessionId: string;
 };
 
 /**
  * Export session response — raw JSON of the goose session with `conversation`.
  */
-export type ExportSessionResponse = {
+export type ExportSessionResponse_unstable = {
     data: string;
 };
 
 /**
  * Import a session from a JSON string.
  */
-export type ImportSessionRequest = {
+export type ImportSessionRequest_unstable = {
     data: string;
 };
 
 /**
  * Import session response — metadata about the newly created session.
  */
-export type ImportSessionResponse = {
+export type ImportSessionResponse_unstable = {
     sessionId: string;
     title?: string | null;
     updatedAt?: string | null;
@@ -715,7 +715,7 @@ export type ImportSessionResponse = {
 /**
  * Update the project association for a session.
  */
-export type UpdateSessionProjectRequest = {
+export type UpdateSessionProjectRequest_unstable = {
     sessionId: string;
     projectId?: string | null;
 };
@@ -723,7 +723,7 @@ export type UpdateSessionProjectRequest = {
 /**
  * Rename a session.
  */
-export type RenameSessionRequest = {
+export type RenameSessionRequest_unstable = {
     sessionId: string;
     title: string;
 };
@@ -731,36 +731,26 @@ export type RenameSessionRequest = {
 /**
  * Archive a session (soft delete).
  */
-export type ArchiveSessionRequest = {
+export type ArchiveSessionRequest_unstable = {
     sessionId: string;
 };
 
 /**
  * Unarchive a previously archived session.
  */
-export type UnarchiveSessionRequest = {
+export type UnarchiveSessionRequest_unstable = {
     sessionId: string;
 };
 
 /**
  * Create a new source in an explicit target scope (global or project-scoped).
  */
-export type CreateSourceRequest = {
+export type CreateSourceRequest_unstable = {
     type: SourceType;
     name: string;
     description: string;
     content: string;
-    global: boolean;
-    /**
-     * Absolute path to the project root. Required when `global` is false.
-     */
-    projectDir?: string | null;
-    /**
-     * Project source ID. When set with `global: false`, the backend resolves
-     * the project's first working directory automatically. Takes precedence
-     * over `project_dir`.
-     */
-    projectId?: string | null;
+    target: SourceScope;
     /**
      * Arbitrary key/value metadata.
      */
@@ -774,7 +764,20 @@ export type CreateSourceRequest = {
  */
 export type SourceType = 'skill' | 'builtinSkill' | 'recipe' | 'subrecipe' | 'agent' | 'project';
 
-export type CreateSourceResponse = {
+/**
+ * Target scope for creating or importing sources.
+ */
+export type SourceScope = {
+    scope: 'global';
+} | {
+    projectDir: string;
+    scope: 'projectDir';
+} | {
+    projectId: string;
+    scope: 'projectId';
+};
+
+export type CreateSourceResponse_unstable = {
     source: SourceEntry;
 };
 
@@ -827,7 +830,7 @@ export type SourceEntry = {
  * set. If `type` is `builtinSkill`, this lists shipped read-only built-in
  * skills.
  */
-export type ListSourcesRequest = {
+export type ListSourcesRequest_unstable = {
     type?: SourceType | null;
     projectDir?: string | null;
     /**
@@ -837,14 +840,14 @@ export type ListSourcesRequest = {
     includeProjectSources?: boolean;
 };
 
-export type ListSourcesResponse = {
+export type ListSourcesResponse_unstable = {
     sources: Array<SourceEntry>;
 };
 
 /**
  * Update an existing source's name, description, and content by absolute path.
  */
-export type UpdateSourceRequest = {
+export type UpdateSourceRequest_unstable = {
     type: SourceType;
     path: string;
     name: string;
@@ -862,14 +865,14 @@ export type UpdateSourceRequest = {
     } | null;
 };
 
-export type UpdateSourceResponse = {
+export type UpdateSourceResponse_unstable = {
     source: SourceEntry;
 };
 
 /**
  * Delete a source and its on-disk directory by absolute path.
  */
-export type DeleteSourceRequest = {
+export type DeleteSourceRequest_unstable = {
     type: SourceType;
     path: string;
 };
@@ -877,35 +880,34 @@ export type DeleteSourceRequest = {
 /**
  * Export a source at an absolute path as a portable JSON payload.
  */
-export type ExportSourceRequest = {
+export type ExportSourceRequest_unstable = {
     type: SourceType;
     path: string;
 };
 
-export type ExportSourceResponse = {
+export type ExportSourceResponse_unstable = {
     json: string;
     filename: string;
 };
 
 /**
- * Import a source from a JSON export payload produced by `_goose/sources/export`.
+ * Import a source from a JSON export payload produced by `_goose/unstable/sources/export`.
  * The imported source is written into the explicit target scope; on name
  * collisions a `-imported` suffix is appended.
  */
-export type ImportSourcesRequest = {
+export type ImportSourcesRequest_unstable = {
     data: string;
-    global: boolean;
-    projectDir?: string | null;
+    target: SourceScope;
 };
 
-export type ImportSourcesResponse = {
+export type ImportSourcesResponse_unstable = {
     sources: Array<SourceEntry>;
 };
 
 /**
  * Transcribe audio via a dictation provider.
  */
-export type DictationTranscribeRequest = {
+export type DictationTranscribeRequest_unstable = {
     /**
      * Base64-encoded audio data
      */
@@ -923,21 +925,21 @@ export type DictationTranscribeRequest = {
 /**
  * Transcription result.
  */
-export type DictationTranscribeResponse = {
+export type DictationTranscribeResponse_unstable = {
     text: string;
 };
 
 /**
  * Get the configuration status of all dictation providers.
  */
-export type DictationConfigRequest = {
+export type DictationConfigRequest_unstable = {
     [key: string]: unknown;
 };
 
 /**
  * Dictation config response — map of provider name to status.
  */
-export type DictationConfigResponse = {
+export type DictationConfigResponse_unstable = {
     providers: {
         [key: string]: DictationProviderStatusEntry;
     };
@@ -968,7 +970,7 @@ export type DictationModelOption = {
 /**
  * Set a dictation provider secret value.
  */
-export type DictationSecretSaveRequest = {
+export type DictationSecretSaveRequest_unstable = {
     provider: string;
     value: string;
 };
@@ -976,18 +978,18 @@ export type DictationSecretSaveRequest = {
 /**
  * Remove a dictation provider secret value.
  */
-export type DictationSecretDeleteRequest = {
+export type DictationSecretDeleteRequest_unstable = {
     provider: string;
 };
 
 /**
  * List available local Whisper models with their download status.
  */
-export type DictationModelsListRequest = {
+export type DictationModelsListRequest_unstable = {
     [key: string]: unknown;
 };
 
-export type DictationModelsListResponse = {
+export type DictationModelsListResponse_unstable = {
     models: Array<DictationLocalModelStatus>;
 };
 
@@ -1003,18 +1005,18 @@ export type DictationLocalModelStatus = {
 /**
  * Kick off a background download of a local Whisper model.
  */
-export type DictationModelDownloadRequest = {
+export type DictationModelDownloadRequest_unstable = {
     modelId: string;
 };
 
 /**
  * Poll the progress of an in-flight download.
  */
-export type DictationModelDownloadProgressRequest = {
+export type DictationModelDownloadProgressRequest_unstable = {
     modelId: string;
 };
 
-export type DictationModelDownloadProgressResponse = {
+export type DictationModelDownloadProgressResponse_unstable = {
     /**
      * None when no download is active for this model id.
      */
@@ -1035,21 +1037,21 @@ export type DictationDownloadProgress = {
 /**
  * Cancel an in-flight download.
  */
-export type DictationModelCancelRequest = {
+export type DictationModelCancelRequest_unstable = {
     modelId: string;
 };
 
 /**
  * Delete a downloaded local Whisper model from disk.
  */
-export type DictationModelDeleteRequest = {
+export type DictationModelDeleteRequest_unstable = {
     modelId: string;
 };
 
 /**
  * Persist the user's model selection for a given provider.
  */
-export type DictationModelSelectRequest = {
+export type DictationModelSelectRequest_unstable = {
     provider: string;
     modelId: string;
 };
@@ -1057,14 +1059,14 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | GooseToolCallRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | AddConfigExtensionRequest | RemoveConfigExtensionRequest | ToggleConfigExtensionRequest | GetSessionExtensionsRequest | ListProvidersRequest | ProviderCatalogListRequest | ProviderSetupCatalogListRequest | ProviderCatalogTemplateRequest | CustomProviderCreateRequest | CustomProviderReadRequest | CustomProviderUpdateRequest | CustomProviderDeleteRequest | RefreshProviderInventoryRequest | ProviderConfigReadRequest | ProviderConfigStatusRequest | ProviderConfigSaveRequest | ProviderConfigDeleteRequest | ProviderConfigAuthenticateRequest | PreferencesReadRequest | PreferencesSaveRequest | PreferencesRemoveRequest | DefaultsReadRequest | DefaultsSaveRequest | OnboardingImportScanRequest | OnboardingImportApplyRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | RenameSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationSecretSaveRequest | DictationSecretDeleteRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest_unstable | RemoveExtensionRequest_unstable | GetToolsRequest_unstable | GooseToolCallRequest_unstable | ReadResourceRequest_unstable | UpdateWorkingDirRequest_unstable | DeleteSessionRequest | GetExtensionsRequest_unstable | AddConfigExtensionRequest_unstable | RemoveConfigExtensionRequest_unstable | ToggleConfigExtensionRequest_unstable | GetSessionExtensionsRequest_unstable | ListProvidersRequest_unstable | ProviderCatalogListRequest_unstable | ProviderSetupCatalogListRequest_unstable | ProviderCatalogTemplateRequest_unstable | CustomProviderCreateRequest_unstable | CustomProviderReadRequest_unstable | CustomProviderUpdateRequest_unstable | CustomProviderDeleteRequest_unstable | RefreshProviderInventoryRequest_unstable | ProviderConfigReadRequest_unstable | ProviderConfigStatusRequest_unstable | ProviderConfigSaveRequest_unstable | ProviderConfigDeleteRequest_unstable | ProviderConfigAuthenticateRequest_unstable | PreferencesReadRequest_unstable | PreferencesSaveRequest_unstable | PreferencesRemoveRequest_unstable | DefaultsReadRequest_unstable | DefaultsSaveRequest_unstable | OnboardingImportScanRequest_unstable | OnboardingImportApplyRequest_unstable | ExportSessionRequest_unstable | ImportSessionRequest_unstable | UpdateSessionProjectRequest_unstable | RenameSessionRequest_unstable | ArchiveSessionRequest_unstable | UnarchiveSessionRequest_unstable | CreateSourceRequest_unstable | ListSourcesRequest_unstable | UpdateSourceRequest_unstable | DeleteSourceRequest_unstable | ExportSourceRequest_unstable | ImportSourcesRequest_unstable | DictationTranscribeRequest_unstable | DictationConfigRequest_unstable | DictationSecretSaveRequest_unstable | DictationSecretDeleteRequest_unstable | DictationModelsListRequest_unstable | DictationModelDownloadRequest_unstable | DictationModelDownloadProgressRequest_unstable | DictationModelCancelRequest_unstable | DictationModelDeleteRequest_unstable | DictationModelSelectRequest_unstable | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | GooseToolCallResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | ProviderCatalogListResponse | ProviderSetupCatalogListResponse | ProviderCatalogTemplateResponse | CustomProviderCreateResponse | CustomProviderReadResponse | CustomProviderUpdateResponse | CustomProviderDeleteResponse | RefreshProviderInventoryResponse | ProviderConfigReadResponse | ProviderConfigStatusResponse | ProviderConfigChangeResponse | PreferencesReadResponse | DefaultsReadResponse | OnboardingImportScanResponse | OnboardingImportApplyResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse_unstable | GooseToolCallResponse_unstable | ReadResourceResponse_unstable | GetExtensionsResponse_unstable | GetSessionExtensionsResponse_unstable | ListProvidersResponse_unstable | ProviderCatalogListResponse_unstable | ProviderSetupCatalogListResponse_unstable | ProviderCatalogTemplateResponse_unstable | CustomProviderCreateResponse_unstable | CustomProviderReadResponse_unstable | CustomProviderUpdateResponse_unstable | CustomProviderDeleteResponse_unstable | RefreshProviderInventoryResponse_unstable | ProviderConfigReadResponse_unstable | ProviderConfigStatusResponse_unstable | ProviderConfigChangeResponse_unstable | PreferencesReadResponse_unstable | DefaultsReadResponse_unstable | OnboardingImportScanResponse_unstable | OnboardingImportApplyResponse_unstable | ExportSessionResponse_unstable | ImportSessionResponse_unstable | CreateSourceResponse_unstable | ListSourcesResponse_unstable | UpdateSourceResponse_unstable | ExportSourceResponse_unstable | ImportSourcesResponse_unstable | DictationTranscribeResponse_unstable | DictationConfigResponse_unstable | DictationModelsListResponse_unstable | DictationModelDownloadProgressResponse_unstable | unknown;
 } | {
     error: {
         code: number;

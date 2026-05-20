@@ -3,7 +3,7 @@ import type { ExtensionConfig, ExtensionEntry } from "../types";
 
 export async function listExtensions(): Promise<ExtensionEntry[]> {
   const client = await getClient();
-  const response = await client.goose.GooseConfigExtensions({});
+  const response = await client.goose.GooseConfigExtensionsList({});
   return response.extensions as ExtensionEntry[];
 }
 

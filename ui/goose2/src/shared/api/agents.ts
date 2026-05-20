@@ -98,7 +98,7 @@ export async function createPersona(
     description: AGENT_DESCRIPTION,
     content: request.systemPrompt,
     properties: personaProperties(request),
-    global: true,
+    target: { scope: "global" },
   });
 
   if (!isAgentSource(response.source)) {
@@ -209,7 +209,7 @@ export async function importPersonas(
   const client = await getClient();
   const response = await client.goose.GooseSourcesImport({
     data,
-    global: true,
+    target: { scope: "global" },
   });
 
   return response.sources.filter(isAgentSource).map(toPersona);

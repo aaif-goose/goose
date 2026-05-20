@@ -18,7 +18,7 @@ export interface ProjectInfo {
   archivedAt: string | null;
 }
 
-// Shape returned by _goose/sources/*. Narrowed to project-type sources here.
+// Shape returned by _goose/unstable/sources/*. Narrowed to project-type sources here.
 interface SourceEntry {
   type: "project";
   name: string;
@@ -111,7 +111,7 @@ export interface ProjectIconData {
 
 export async function listProjects(): Promise<ProjectInfo[]> {
   const client = await getClient();
-  const raw = await client.extMethod("_goose/sources/list", {
+  const raw = await client.extMethod("_goose/unstable/sources/list", {
     type: "project",
   });
   const sources = (raw.sources ?? []) as SourceEntry[];
@@ -145,12 +145,12 @@ export async function createProject(
   const client = await getClient();
   const existing = await listAllProjects();
   const id = uniqueProjectSlug(name, new Set(existing.map((p) => p.id)));
-  const raw = await client.extMethod("_goose/sources/create", {
+  const raw = await client.extMethod("_goose/unstable/sources/create", {
     type: "project",
     name: id,
     description,
     content: prompt,
-    global: true,
+    target: { scope: "global" },
     properties: toProperties({
       name,
       icon,
@@ -172,7 +172,7 @@ export async function updateProject(
 ): Promise<ProjectInfo> {
   const merged = { ...existing, ...updates };
   const client = await getClient();
-  const raw = await client.extMethod("_goose/sources/update", {
+  const raw = await client.extMethod("_goose/unstable/sources/update", {
     type: "project",
     path: existing.path,
     name: existing.id,
@@ -201,7 +201,7 @@ export async function deleteProject(
     typeof idOrProject === "string"
       ? (await getProject(idOrProject)).path
       : idOrProject.path;
-  await client.extMethod("_goose/sources/delete", {
+  await client.extMethod("_goose/unstable/sources/delete", {
     type: "project",
     path,
   });
@@ -217,7 +217,7 @@ export async function getProject(id: string): Promise<ProjectInfo> {
 /** List both archived and active projects. */
 async function listAllProjects(): Promise<ProjectInfo[]> {
   const client = await getClient();
-  const raw = await client.extMethod("_goose/sources/list", {
+  const raw = await client.extMethod("_goose/unstable/sources/list", {
     type: "project",
   });
   const sources = (raw.sources ?? []) as SourceEntry[];

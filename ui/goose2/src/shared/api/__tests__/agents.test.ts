@@ -98,7 +98,7 @@ describe("agents API", () => {
         model: "claude-sonnet-4",
         avatar: source.properties.avatar,
       },
-      global: true,
+      target: { scope: "global" },
     });
     expect(result.displayName).toBe("Scout");
   });
@@ -172,7 +172,7 @@ describe("agents API", () => {
 
     expect(mockGooseSourcesImport).toHaveBeenCalledWith({
       data,
-      global: true,
+      target: { scope: "global" },
     });
     expect(result).toHaveLength(1);
   });

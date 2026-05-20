@@ -36,7 +36,7 @@ export async function saveDictationModelSelection(
   modelId: string,
 ): Promise<void> {
   const client = await getClient();
-  await client.goose.GooseDictationModelSelect({ provider, modelId });
+  await client.goose.GooseDictationModelsSelect({ provider, modelId });
 }
 
 export async function saveDictationProviderSecret(

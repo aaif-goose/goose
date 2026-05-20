@@ -44,7 +44,16 @@ export default async function main() {
     output: {
       path: OUTPUT_DIR,
     },
-    plugins: ["zod", "@hey-api/typescript"],
+    plugins: [
+      {
+        case: "preserve",
+        name: "zod",
+      },
+      {
+        case: "preserve",
+        name: "@hey-api/typescript",
+      },
+    ],
   });
 
   await postProcessTypes();
@@ -118,12 +127,27 @@ interface MethodMeta {
 }
 
 function methodToCamelCase(method: string): string {
-  return method
-    .split(/[/_]/)
+  let methodParts = method.split(/[/_]/).filter((part) => part.length > 0);
+
+  let suffix: string;
+  if (methodParts[0] == "goose" && methodParts[1] == "unstable") {
+    methodParts.shift();
+    methodParts.shift();
+    suffix = "_unstable";
+  } else {
+    suffix = "";
+  }
+
+  let prefix = methodParts
+    .map((part) =>
+      part.replace(/[^a-zA-Z0-9]+(.)/g, (_, chr: string) => chr.toUpperCase()),
+    )
     .map((part, i) =>
       i === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1),
     )
     .join("");
+
+  return `${prefix}${suffix}`;
 }
 
 async function generateClient(meta: { methods: MethodMeta[] }) {

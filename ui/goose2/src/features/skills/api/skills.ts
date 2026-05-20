@@ -133,8 +133,9 @@ export async function createSkill(
     name,
     description,
     content: instructions,
-    global: !options.projectId,
-    ...(options.projectId ? { projectId: options.projectId } : {}),
+    target: options.projectId
+      ? { scope: "projectId", projectId: options.projectId }
+      : { scope: "global" },
   });
 }
 
@@ -249,7 +250,7 @@ export async function importSkills(
   const client = await getClient();
   const response = await client.goose.GooseSourcesImport({
     data,
-    global: true,
+    target: { scope: "global" },
   });
 
   return response.sources.filter(isFilesystemSkillSource).map(toSkillInfo);

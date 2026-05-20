@@ -77,8 +77,8 @@ const READ_ONLY_CHECKS = [
     call: (c) => c.goose.GooseDictationModelsList({}),
   },
   {
-    name: "GooseConfigExtensions",
-    call: (c) => c.goose.GooseConfigExtensions({}),
+    name: "GooseConfigExtensionsList",
+    call: (c) => c.goose.GooseConfigExtensionsList({}),
   },
 ];
 

@@ -113,7 +113,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
         write_secrets(&config_dir, "GROQ_API_KEY: fresh-key\n");
         send_custom(
             conn.cx(),
-            "_goose/dictation/secret/save",
+            "_goose/unstable/dictation/secret/save",
             serde_json::json!({
                 "provider": "groq",
                 "value": "fresh-key",
@@ -133,7 +133,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
         write_secrets(&config_dir, "{}\n");
         send_custom(
             conn.cx(),
-            "_goose/dictation/secret/delete",
+            "_goose/unstable/dictation/secret/delete",
             serde_json::json!({
                 "provider": "groq",
             }),
@@ -151,7 +151,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
 
         let save_provider_config = send_custom(
             conn.cx(),
-            "_goose/providers/config/save",
+            "_goose/unstable/providers/config/save",
             serde_json::json!({
                 "providerId": "xai",
                 "fields": [
@@ -199,7 +199,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
 
         let read_provider_config = send_custom(
             conn.cx(),
-            "_goose/providers/config/read",
+            "_goose/unstable/providers/config/read",
             serde_json::json!({
                 "providerId": "xai",
             }),
@@ -223,7 +223,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
 
         let delete_provider_config = send_custom(
             conn.cx(),
-            "_goose/providers/config/delete",
+            "_goose/unstable/providers/config/delete",
             serde_json::json!({
                 "providerId": "xai",
             }),
@@ -255,7 +255,7 @@ fn acp_secret_mutations_and_inventory_refresh_invalidate_global_secret_cache() {
 
         let refresh = send_custom(
             conn.cx(),
-            "_goose/providers/inventory/refresh",
+            "_goose/unstable/providers/inventory/refresh",
             serde_json::json!({
                 "providerIds": ["anthropic"],
             }),

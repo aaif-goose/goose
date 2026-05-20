@@ -346,7 +346,7 @@ export function McpAppView({
       setActiveToolInput(args ?? {});
 
       const client = await getClient();
-      const response = (await client.extMethod("_goose/tool/call", {
+      const response = (await client.extMethod("_goose/unstable/tools/call", {
         sessionId: payload.sessionId,
         name: `${payload.tool.extensionName}__${name}`,
         arguments: args ?? {},
@@ -368,7 +368,7 @@ export function McpAppView({
   const handleReadResource = useCallback(
     async ({ uri }: { uri: string }) => {
       const client = await getClient();
-      const response = await client.goose.GooseResourceRead({
+      const response = await client.goose.GooseResourcesRead({
         sessionId: payload.sessionId,
         uri,
         extensionName: payload.tool.extensionName,

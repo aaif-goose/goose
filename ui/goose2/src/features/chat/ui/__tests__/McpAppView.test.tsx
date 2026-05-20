@@ -185,11 +185,14 @@ describe("McpAppView nested tool calls", () => {
     fireEvent.click(screen.getByTestId("mock-app-renderer"));
 
     await waitFor(() => {
-      expect(mocks.extMethod).toHaveBeenCalledWith("_goose/tool/call", {
-        sessionId: "local-session",
-        name: "mcpappbench_local___get-server-time",
-        arguments: { timezone: "America/New_York" },
-      });
+      expect(mocks.extMethod).toHaveBeenCalledWith(
+        "_goose/unstable/tools/call",
+        {
+          sessionId: "local-session",
+          name: "mcpappbench_local___get-server-time",
+          arguments: { timezone: "America/New_York" },
+        },
+      );
     });
 
     await waitFor(() => {

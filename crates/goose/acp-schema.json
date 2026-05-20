@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "GooseExtensions",
   "$defs": {
-    "AddExtensionRequest": {
+    "AddExtensionRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -18,14 +18,14 @@
       ],
       "description": "Add an extension to an active session.",
       "x-side": "agent",
-      "x-method": "_goose/extensions/add"
+      "x-method": "_goose/unstable/session/extensions/add"
     },
     "EmptyResponse": {
       "type": "object",
       "description": "Empty success response for operations that return no data.",
       "x-side": "agent"
     },
-    "RemoveExtensionRequest": {
+    "RemoveExtensionRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -41,9 +41,9 @@
       ],
       "description": "Remove an extension from an active session.",
       "x-side": "agent",
-      "x-method": "_goose/extensions/remove"
+      "x-method": "_goose/unstable/session/extensions/remove"
     },
-    "GetToolsRequest": {
+    "GetToolsRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -55,9 +55,9 @@
       ],
       "description": "List all tools available in a session.",
       "x-side": "agent",
-      "x-method": "_goose/tools"
+      "x-method": "_goose/unstable/tools/list"
     },
-    "GetToolsResponse": {
+    "GetToolsResponse_unstable": {
       "type": "object",
       "properties": {
         "tools": {
@@ -71,9 +71,9 @@
       ],
       "description": "Tools response.",
       "x-side": "agent",
-      "x-method": "_goose/tools"
+      "x-method": "_goose/unstable/tools/list"
     },
-    "GooseToolCallRequest": {
+    "GooseToolCallRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -92,9 +92,9 @@
       ],
       "description": "Call a tool from an extension.",
       "x-side": "agent",
-      "x-method": "_goose/tool/call"
+      "x-method": "_goose/unstable/tools/call"
     },
-    "GooseToolCallResponse": {
+    "GooseToolCallResponse_unstable": {
       "type": "object",
       "properties": {
         "content": {
@@ -113,9 +113,9 @@
       ],
       "description": "Tool call response.",
       "x-side": "agent",
-      "x-method": "_goose/tool/call"
+      "x-method": "_goose/unstable/tools/call"
     },
-    "ReadResourceRequest": {
+    "ReadResourceRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -135,9 +135,9 @@
       ],
       "description": "Read a resource from an extension.",
       "x-side": "agent",
-      "x-method": "_goose/resource/read"
+      "x-method": "_goose/unstable/resources/read"
     },
-    "ReadResourceResponse": {
+    "ReadResourceResponse_unstable": {
       "type": "object",
       "properties": {
         "result": {
@@ -147,9 +147,9 @@
       },
       "description": "Resource read response.",
       "x-side": "agent",
-      "x-method": "_goose/resource/read"
+      "x-method": "_goose/unstable/resources/read"
     },
-    "UpdateWorkingDirRequest": {
+    "UpdateWorkingDirRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -165,7 +165,7 @@
       ],
       "description": "Update the working directory for a session.",
       "x-side": "agent",
-      "x-method": "_goose/working_dir/update"
+      "x-method": "_goose/unstable/session/working-dir/update"
     },
     "DeleteSessionRequest": {
       "type": "object",
@@ -181,13 +181,13 @@
       "x-side": "agent",
       "x-method": "session/delete"
     },
-    "GetExtensionsRequest": {
+    "GetExtensionsRequest_unstable": {
       "type": "object",
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
-      "x-method": "_goose/config/extensions"
+      "x-method": "_goose/unstable/config/extensions/list"
     },
-    "GetExtensionsResponse": {
+    "GetExtensionsResponse_unstable": {
       "type": "object",
       "properties": {
         "extensions": {
@@ -208,9 +208,9 @@
       ],
       "description": "List configured extensions and any warnings.",
       "x-side": "agent",
-      "x-method": "_goose/config/extensions"
+      "x-method": "_goose/unstable/config/extensions/list"
     },
-    "AddConfigExtensionRequest": {
+    "AddConfigExtensionRequest_unstable": {
       "type": "object",
       "properties": {
         "name": {
@@ -230,9 +230,9 @@
       ],
       "description": "Persist a new extension to the user's global goose config.",
       "x-side": "agent",
-      "x-method": "_goose/config/extensions/add"
+      "x-method": "_goose/unstable/config/extensions/add"
     },
-    "RemoveConfigExtensionRequest": {
+    "RemoveConfigExtensionRequest_unstable": {
       "type": "object",
       "properties": {
         "configKey": {
@@ -244,9 +244,9 @@
       ],
       "description": "Remove a persisted extension from the user's global goose config.",
       "x-side": "agent",
-      "x-method": "_goose/config/extensions/remove"
+      "x-method": "_goose/unstable/config/extensions/remove"
     },
-    "ToggleConfigExtensionRequest": {
+    "ToggleConfigExtensionRequest_unstable": {
       "type": "object",
       "properties": {
         "configKey": {
@@ -262,9 +262,9 @@
       ],
       "description": "Toggle the `enabled` flag for a persisted extension in the user's global goose config.",
       "x-side": "agent",
-      "x-method": "_goose/config/extensions/toggle"
+      "x-method": "_goose/unstable/config/extensions/toggle"
     },
-    "GetSessionExtensionsRequest": {
+    "GetSessionExtensionsRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -275,9 +275,9 @@
         "sessionId"
       ],
       "x-side": "agent",
-      "x-method": "_goose/session/extensions"
+      "x-method": "_goose/unstable/session/extensions/list"
     },
-    "GetSessionExtensionsResponse": {
+    "GetSessionExtensionsResponse_unstable": {
       "type": "object",
       "properties": {
         "extensions": {
@@ -289,9 +289,9 @@
         "extensions"
       ],
       "x-side": "agent",
-      "x-method": "_goose/session/extensions"
+      "x-method": "_goose/unstable/session/extensions/list"
     },
-    "ListProvidersRequest": {
+    "ListProvidersRequest_unstable": {
       "type": "object",
       "properties": {
         "providerIds": {
@@ -305,9 +305,9 @@
       },
       "description": "List providers with setup metadata and the current model inventory snapshot.",
       "x-side": "agent",
-      "x-method": "_goose/providers/list"
+      "x-method": "_goose/unstable/providers/list"
     },
-    "ListProvidersResponse": {
+    "ListProvidersResponse_unstable": {
       "type": "object",
       "properties": {
         "entries": {
@@ -322,7 +322,7 @@
       ],
       "description": "Provider list response.",
       "x-side": "agent",
-      "x-method": "_goose/providers/list"
+      "x-method": "_goose/unstable/providers/list"
     },
     "ProviderInventoryEntryDto": {
       "type": "object",
@@ -525,7 +525,7 @@
       ],
       "description": "A single model in provider inventory."
     },
-    "ProviderCatalogListRequest": {
+    "ProviderCatalogListRequest_unstable": {
       "type": "object",
       "properties": {
         "format": {
@@ -537,9 +537,9 @@
       },
       "description": "List custom-provider catalog entries. Omit `format` to list all formats.",
       "x-side": "agent",
-      "x-method": "_goose/providers/catalog/list"
+      "x-method": "_goose/unstable/providers/catalog/list"
     },
-    "ProviderCatalogListResponse": {
+    "ProviderCatalogListResponse_unstable": {
       "type": "object",
       "properties": {
         "providers": {
@@ -553,7 +553,7 @@
         "providers"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/catalog/list"
+      "x-method": "_goose/unstable/providers/catalog/list"
     },
     "ProviderTemplateCatalogEntryDto": {
       "type": "object",
@@ -591,13 +591,13 @@
         "envVar"
       ]
     },
-    "ProviderSetupCatalogListRequest": {
+    "ProviderSetupCatalogListRequest_unstable": {
       "type": "object",
       "description": "List provider setup catalog entries",
       "x-side": "agent",
-      "x-method": "_goose/providers/setup/catalog/list"
+      "x-method": "_goose/unstable/providers/setup/catalog/list"
     },
-    "ProviderSetupCatalogListResponse": {
+    "ProviderSetupCatalogListResponse_unstable": {
       "type": "object",
       "properties": {
         "providers": {
@@ -611,7 +611,7 @@
         "providers"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/setup/catalog/list"
+      "x-method": "_goose/unstable/providers/setup/catalog/list"
     },
     "ProviderSetupCatalogEntryDto": {
       "type": "object",
@@ -748,7 +748,7 @@
         "additional"
       ]
     },
-    "ProviderCatalogTemplateRequest": {
+    "ProviderCatalogTemplateRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -760,9 +760,9 @@
       ],
       "description": "Return the editable template for one catalog provider.",
       "x-side": "agent",
-      "x-method": "_goose/providers/catalog/template"
+      "x-method": "_goose/unstable/providers/catalog/template"
     },
-    "ProviderCatalogTemplateResponse": {
+    "ProviderCatalogTemplateResponse_unstable": {
       "type": "object",
       "properties": {
         "template": {
@@ -773,7 +773,7 @@
         "template"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/catalog/template"
+      "x-method": "_goose/unstable/providers/catalog/template"
     },
     "ProviderTemplateDto": {
       "type": "object",
@@ -868,7 +868,7 @@
         "temperature"
       ]
     },
-    "CustomProviderCreateRequest": {
+    "CustomProviderCreateRequest_unstable": {
       "type": "object",
       "properties": {
         "engine": {
@@ -936,9 +936,9 @@
       ],
       "description": "Create a custom provider backed by Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/create"
+      "x-method": "_goose/unstable/providers/custom/create"
     },
-    "CustomProviderCreateResponse": {
+    "CustomProviderCreateResponse_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -948,7 +948,7 @@
           "$ref": "#/$defs/ProviderConfigStatusDto"
         },
         "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
@@ -957,7 +957,7 @@
         "refresh"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/create"
+      "x-method": "_goose/unstable/providers/custom/create"
     },
     "ProviderConfigStatusDto": {
       "type": "object",
@@ -974,7 +974,7 @@
         "isConfigured"
       ]
     },
-    "RefreshProviderInventoryResponse": {
+    "RefreshProviderInventoryResponse_unstable": {
       "type": "object",
       "properties": {
         "started": {
@@ -998,7 +998,7 @@
       ],
       "description": "Refresh acknowledgement.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory/refresh"
+      "x-method": "_goose/unstable/providers/inventory/refresh"
     },
     "RefreshProviderInventorySkipDto": {
       "type": "object",
@@ -1024,7 +1024,7 @@
         "already_refreshing"
       ]
     },
-    "CustomProviderReadRequest": {
+    "CustomProviderReadRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1036,9 +1036,9 @@
       ],
       "description": "Read a declarative provider config. Custom configs are editable; bundled configs are read-only.",
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/read"
+      "x-method": "_goose/unstable/providers/custom/read"
     },
-    "CustomProviderReadResponse": {
+    "CustomProviderReadResponse_unstable": {
       "type": "object",
       "properties": {
         "provider": {
@@ -1057,7 +1057,7 @@
         "status"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/read"
+      "x-method": "_goose/unstable/providers/custom/read"
     },
     "CustomProviderConfigDto": {
       "type": "object",
@@ -1132,7 +1132,7 @@
         "preservesThinking"
       ]
     },
-    "CustomProviderUpdateRequest": {
+    "CustomProviderUpdateRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1204,9 +1204,9 @@
       ],
       "description": "Update a custom provider backed by Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/update"
+      "x-method": "_goose/unstable/providers/custom/update"
     },
-    "CustomProviderUpdateResponse": {
+    "CustomProviderUpdateResponse_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1216,7 +1216,7 @@
           "$ref": "#/$defs/ProviderConfigStatusDto"
         },
         "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
@@ -1225,9 +1225,9 @@
         "refresh"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/update"
+      "x-method": "_goose/unstable/providers/custom/update"
     },
-    "CustomProviderDeleteRequest": {
+    "CustomProviderDeleteRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1239,16 +1239,16 @@
       ],
       "description": "Delete a custom provider from Goose's declarative provider store.",
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/delete"
+      "x-method": "_goose/unstable/providers/custom/delete"
     },
-    "CustomProviderDeleteResponse": {
+    "CustomProviderDeleteResponse_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
           "type": "string"
         },
         "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
@@ -1256,9 +1256,9 @@
         "refresh"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/custom/delete"
+      "x-method": "_goose/unstable/providers/custom/delete"
     },
-    "RefreshProviderInventoryRequest": {
+    "RefreshProviderInventoryRequest_unstable": {
       "type": "object",
       "properties": {
         "providerIds": {
@@ -1272,9 +1272,9 @@
       },
       "description": "Trigger a background refresh of provider inventories.",
       "x-side": "agent",
-      "x-method": "_goose/providers/inventory/refresh"
+      "x-method": "_goose/unstable/providers/inventory/refresh"
     },
-    "ProviderConfigReadRequest": {
+    "ProviderConfigReadRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1286,9 +1286,9 @@
       ],
       "description": "Read saved configuration field values for one provider.",
       "x-side": "agent",
-      "x-method": "_goose/providers/config/read"
+      "x-method": "_goose/unstable/providers/config/read"
     },
-    "ProviderConfigReadResponse": {
+    "ProviderConfigReadResponse_unstable": {
       "type": "object",
       "properties": {
         "fields": {
@@ -1302,7 +1302,7 @@
         "fields"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/config/read"
+      "x-method": "_goose/unstable/providers/config/read"
     },
     "ProviderConfigFieldValueDto": {
       "type": "object",
@@ -1334,7 +1334,7 @@
         "required"
       ]
     },
-    "ProviderConfigStatusRequest": {
+    "ProviderConfigStatusRequest_unstable": {
       "type": "object",
       "properties": {
         "providerIds": {
@@ -1347,9 +1347,9 @@
       },
       "description": "Return provider configured statuses. Empty provider_ids means all providers.",
       "x-side": "agent",
-      "x-method": "_goose/providers/config/status"
+      "x-method": "_goose/unstable/providers/config/status"
     },
-    "ProviderConfigStatusResponse": {
+    "ProviderConfigStatusResponse_unstable": {
       "type": "object",
       "properties": {
         "statuses": {
@@ -1363,9 +1363,9 @@
         "statuses"
       ],
       "x-side": "agent",
-      "x-method": "_goose/providers/config/status"
+      "x-method": "_goose/unstable/providers/config/status"
     },
-    "ProviderConfigSaveRequest": {
+    "ProviderConfigSaveRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1384,7 +1384,7 @@
       ],
       "description": "Save provider configuration fields and start an inventory refresh when supported.",
       "x-side": "agent",
-      "x-method": "_goose/providers/config/save"
+      "x-method": "_goose/unstable/providers/config/save"
     },
     "ProviderConfigFieldUpdate": {
       "type": "object",
@@ -1401,14 +1401,14 @@
         "value"
       ]
     },
-    "ProviderConfigChangeResponse": {
+    "ProviderConfigChangeResponse_unstable": {
       "type": "object",
       "properties": {
         "status": {
           "$ref": "#/$defs/ProviderConfigStatusDto"
         },
         "refresh": {
-          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
         }
       },
       "required": [
@@ -1417,7 +1417,7 @@
       ],
       "x-side": "agent"
     },
-    "ProviderConfigDeleteRequest": {
+    "ProviderConfigDeleteRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1429,9 +1429,9 @@
       ],
       "description": "Delete provider configuration fields and start an inventory refresh when supported.",
       "x-side": "agent",
-      "x-method": "_goose/providers/config/delete"
+      "x-method": "_goose/unstable/providers/config/delete"
     },
-    "ProviderConfigAuthenticateRequest": {
+    "ProviderConfigAuthenticateRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1443,9 +1443,9 @@
       ],
       "description": "Run a provider-owned native authentication flow and start an inventory refresh when supported.",
       "x-side": "agent",
-      "x-method": "_goose/providers/config/authenticate"
+      "x-method": "_goose/unstable/providers/config/authenticate"
     },
-    "PreferencesReadRequest": {
+    "PreferencesReadRequest_unstable": {
       "type": "object",
       "properties": {
         "keys": {
@@ -1458,7 +1458,7 @@
       },
       "description": "Read allowlisted user preferences. Empty `keys` means all supported preferences.",
       "x-side": "agent",
-      "x-method": "_goose/preferences/read"
+      "x-method": "_goose/unstable/preferences/read"
     },
     "PreferenceKey": {
       "type": "string",
@@ -1469,7 +1469,7 @@
         "voiceDictationPreferredMic"
       ]
     },
-    "PreferencesReadResponse": {
+    "PreferencesReadResponse_unstable": {
       "type": "object",
       "properties": {
         "values": {
@@ -1483,7 +1483,7 @@
         "values"
       ],
       "x-side": "agent",
-      "x-method": "_goose/preferences/read"
+      "x-method": "_goose/unstable/preferences/read"
     },
     "PreferenceValue": {
       "type": "object",
@@ -1499,7 +1499,7 @@
         "key"
       ]
     },
-    "PreferencesSaveRequest": {
+    "PreferencesSaveRequest_unstable": {
       "type": "object",
       "properties": {
         "values": {
@@ -1512,9 +1512,9 @@
       },
       "description": "Save allowlisted user preferences.",
       "x-side": "agent",
-      "x-method": "_goose/preferences/save"
+      "x-method": "_goose/unstable/preferences/save"
     },
-    "PreferencesRemoveRequest": {
+    "PreferencesRemoveRequest_unstable": {
       "type": "object",
       "properties": {
         "keys": {
@@ -1527,15 +1527,15 @@
       },
       "description": "Remove allowlisted user preferences.",
       "x-side": "agent",
-      "x-method": "_goose/preferences/remove"
+      "x-method": "_goose/unstable/preferences/remove"
     },
-    "DefaultsReadRequest": {
+    "DefaultsReadRequest_unstable": {
       "type": "object",
       "description": "Read Goose default provider and model configuration.",
       "x-side": "agent",
-      "x-method": "_goose/defaults/read"
+      "x-method": "_goose/unstable/defaults/read"
     },
-    "DefaultsReadResponse": {
+    "DefaultsReadResponse_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1553,7 +1553,7 @@
       },
       "x-side": "agent"
     },
-    "DefaultsSaveRequest": {
+    "DefaultsSaveRequest_unstable": {
       "type": "object",
       "properties": {
         "providerId": {
@@ -1571,9 +1571,9 @@
       ],
       "description": "Save Goose default provider and model configuration.",
       "x-side": "agent",
-      "x-method": "_goose/defaults/save"
+      "x-method": "_goose/unstable/defaults/save"
     },
-    "OnboardingImportScanRequest": {
+    "OnboardingImportScanRequest_unstable": {
       "type": "object",
       "properties": {
         "sources": {
@@ -1587,7 +1587,7 @@
       },
       "description": "Scan for existing Goose and compatible app data that onboarding can import.",
       "x-side": "agent",
-      "x-method": "_goose/onboarding/import/scan"
+      "x-method": "_goose/unstable/onboarding/import/scan"
     },
     "OnboardingImportSourceKind": {
       "type": "string",
@@ -1597,7 +1597,7 @@
       ],
       "description": "Sources that onboarding knows how to discover and import."
     },
-    "OnboardingImportScanResponse": {
+    "OnboardingImportScanResponse_unstable": {
       "type": "object",
       "properties": {
         "candidates": {
@@ -1611,7 +1611,7 @@
         "candidates"
       ],
       "x-side": "agent",
-      "x-method": "_goose/onboarding/import/scan"
+      "x-method": "_goose/unstable/onboarding/import/scan"
     },
     "OnboardingImportCandidate": {
       "type": "object",
@@ -1684,7 +1684,7 @@
         "preferences"
       ]
     },
-    "OnboardingImportApplyRequest": {
+    "OnboardingImportApplyRequest_unstable": {
       "type": "object",
       "properties": {
         "candidateIds": {
@@ -1701,9 +1701,9 @@
       },
       "description": "Import selected onboarding candidates.",
       "x-side": "agent",
-      "x-method": "_goose/onboarding/import/apply"
+      "x-method": "_goose/unstable/onboarding/import/apply"
     },
-    "OnboardingImportApplyResponse": {
+    "OnboardingImportApplyResponse_unstable": {
       "type": "object",
       "properties": {
         "imported": {
@@ -1722,7 +1722,7 @@
         "providerDefaults": {
           "anyOf": [
             {
-              "$ref": "#/$defs/DefaultsReadResponse"
+              "$ref": "#/$defs/DefaultsReadResponse_unstable"
             },
             {
               "type": "null"
@@ -1735,9 +1735,9 @@
         "skipped"
       ],
       "x-side": "agent",
-      "x-method": "_goose/onboarding/import/apply"
+      "x-method": "_goose/unstable/onboarding/import/apply"
     },
-    "ExportSessionRequest": {
+    "ExportSessionRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -1749,9 +1749,9 @@
       ],
       "description": "Export a session as a JSON string.",
       "x-side": "agent",
-      "x-method": "_goose/session/export"
+      "x-method": "_goose/unstable/session/export"
     },
-    "ExportSessionResponse": {
+    "ExportSessionResponse_unstable": {
       "type": "object",
       "properties": {
         "data": {
@@ -1763,9 +1763,9 @@
       ],
       "description": "Export session response — raw JSON of the goose session with `conversation`.",
       "x-side": "agent",
-      "x-method": "_goose/session/export"
+      "x-method": "_goose/unstable/session/export"
     },
-    "ImportSessionRequest": {
+    "ImportSessionRequest_unstable": {
       "type": "object",
       "properties": {
         "data": {
@@ -1777,9 +1777,9 @@
       ],
       "description": "Import a session from a JSON string.",
       "x-side": "agent",
-      "x-method": "_goose/session/import"
+      "x-method": "_goose/unstable/session/import"
     },
-    "ImportSessionResponse": {
+    "ImportSessionResponse_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -1808,9 +1808,9 @@
       ],
       "description": "Import session response — metadata about the newly created session.",
       "x-side": "agent",
-      "x-method": "_goose/session/import"
+      "x-method": "_goose/unstable/session/import"
     },
-    "UpdateSessionProjectRequest": {
+    "UpdateSessionProjectRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -1828,9 +1828,9 @@
       ],
       "description": "Update the project association for a session.",
       "x-side": "agent",
-      "x-method": "_goose/session/update_project"
+      "x-method": "_goose/unstable/session/project/update"
     },
-    "RenameSessionRequest": {
+    "RenameSessionRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -1846,9 +1846,9 @@
       ],
       "description": "Rename a session.",
       "x-side": "agent",
-      "x-method": "_goose/session/rename"
+      "x-method": "_goose/unstable/session/rename"
     },
-    "ArchiveSessionRequest": {
+    "ArchiveSessionRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -1860,9 +1860,9 @@
       ],
       "description": "Archive a session (soft delete).",
       "x-side": "agent",
-      "x-method": "_goose/session/archive"
+      "x-method": "_goose/unstable/session/archive"
     },
-    "UnarchiveSessionRequest": {
+    "UnarchiveSessionRequest_unstable": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -1874,9 +1874,9 @@
       ],
       "description": "Unarchive a previously archived session.",
       "x-side": "agent",
-      "x-method": "_goose/session/unarchive"
+      "x-method": "_goose/unstable/session/unarchive"
     },
-    "CreateSourceRequest": {
+    "CreateSourceRequest_unstable": {
       "type": "object",
       "properties": {
         "type": {
@@ -1891,22 +1891,8 @@
         "content": {
           "type": "string"
         },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "Absolute path to the project root. Required when `global` is false."
-        },
-        "projectId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "Project source ID. When set with `global: false`, the backend resolves\nthe project's first working directory automatically. Takes precedence\nover `project_dir`."
+        "target": {
+          "$ref": "#/$defs/SourceScope"
         },
         "properties": {
           "type": "object",
@@ -1919,11 +1905,11 @@
         "name",
         "description",
         "content",
-        "global"
+        "target"
       ],
       "description": "Create a new source in an explicit target scope (global or project-scoped).",
       "x-side": "agent",
-      "x-method": "_goose/sources/create"
+      "x-method": "_goose/unstable/sources/create"
     },
     "SourceType": {
       "type": "string",
@@ -1937,7 +1923,56 @@
       ],
       "description": "The type of source entity."
     },
-    "CreateSourceResponse": {
+    "SourceScope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "const": "global"
+            }
+          },
+          "required": [
+            "scope"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "projectDir": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string",
+              "const": "projectDir"
+            }
+          },
+          "required": [
+            "scope",
+            "projectDir"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "projectId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string",
+              "const": "projectId"
+            }
+          },
+          "required": [
+            "scope",
+            "projectId"
+          ]
+        }
+      ],
+      "description": "Target scope for creating or importing sources."
+    },
+    "CreateSourceResponse_unstable": {
       "type": "object",
       "properties": {
         "source": {
@@ -1948,7 +1983,7 @@
         "source"
       ],
       "x-side": "agent",
-      "x-method": "_goose/sources/create"
+      "x-method": "_goose/unstable/sources/create"
     },
     "SourceEntry": {
       "type": "object",
@@ -2001,7 +2036,7 @@
       ],
       "description": "A source discovered by Goose. Filesystem sources use an on-disk path;\nbuilt-in sources use a stable synthetic path. Sources may be either\n`global` (shared across all projects) or project-specific."
     },
-    "ListSourcesRequest": {
+    "ListSourcesRequest_unstable": {
       "type": "object",
       "properties": {
         "type": {
@@ -2028,9 +2063,9 @@
       },
       "description": "List discovered sources.\n\nIf `type` is omitted or `skill`, this lists filesystem/plugin skills only.\nBoth global and project-scoped skills are included when `project_dir` is\nset. If `type` is `builtinSkill`, this lists shipped read-only built-in\nskills.",
       "x-side": "agent",
-      "x-method": "_goose/sources/list"
+      "x-method": "_goose/unstable/sources/list"
     },
-    "ListSourcesResponse": {
+    "ListSourcesResponse_unstable": {
       "type": "object",
       "properties": {
         "sources": {
@@ -2044,9 +2079,9 @@
         "sources"
       ],
       "x-side": "agent",
-      "x-method": "_goose/sources/list"
+      "x-method": "_goose/unstable/sources/list"
     },
-    "UpdateSourceRequest": {
+    "UpdateSourceRequest_unstable": {
       "type": "object",
       "properties": {
         "type": {
@@ -2082,9 +2117,9 @@
       ],
       "description": "Update an existing source's name, description, and content by absolute path.",
       "x-side": "agent",
-      "x-method": "_goose/sources/update"
+      "x-method": "_goose/unstable/sources/update"
     },
-    "UpdateSourceResponse": {
+    "UpdateSourceResponse_unstable": {
       "type": "object",
       "properties": {
         "source": {
@@ -2095,9 +2130,9 @@
         "source"
       ],
       "x-side": "agent",
-      "x-method": "_goose/sources/update"
+      "x-method": "_goose/unstable/sources/update"
     },
-    "DeleteSourceRequest": {
+    "DeleteSourceRequest_unstable": {
       "type": "object",
       "properties": {
         "type": {
@@ -2113,9 +2148,9 @@
       ],
       "description": "Delete a source and its on-disk directory by absolute path.",
       "x-side": "agent",
-      "x-method": "_goose/sources/delete"
+      "x-method": "_goose/unstable/sources/delete"
     },
-    "ExportSourceRequest": {
+    "ExportSourceRequest_unstable": {
       "type": "object",
       "properties": {
         "type": {
@@ -2131,9 +2166,9 @@
       ],
       "description": "Export a source at an absolute path as a portable JSON payload.",
       "x-side": "agent",
-      "x-method": "_goose/sources/export"
+      "x-method": "_goose/unstable/sources/export"
     },
-    "ExportSourceResponse": {
+    "ExportSourceResponse_unstable": {
       "type": "object",
       "properties": {
         "json": {
@@ -2148,33 +2183,27 @@
         "filename"
       ],
       "x-side": "agent",
-      "x-method": "_goose/sources/export"
+      "x-method": "_goose/unstable/sources/export"
     },
-    "ImportSourcesRequest": {
+    "ImportSourcesRequest_unstable": {
       "type": "object",
       "properties": {
         "data": {
           "type": "string"
         },
-        "global": {
-          "type": "boolean"
-        },
-        "projectDir": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "target": {
+          "$ref": "#/$defs/SourceScope"
         }
       },
       "required": [
         "data",
-        "global"
+        "target"
       ],
-      "description": "Import a source from a JSON export payload produced by `_goose/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
+      "description": "Import a source from a JSON export payload produced by `_goose/unstable/sources/export`.\nThe imported source is written into the explicit target scope; on name\ncollisions a `-imported` suffix is appended.",
       "x-side": "agent",
-      "x-method": "_goose/sources/import"
+      "x-method": "_goose/unstable/sources/import"
     },
-    "ImportSourcesResponse": {
+    "ImportSourcesResponse_unstable": {
       "type": "object",
       "properties": {
         "sources": {
@@ -2188,9 +2217,9 @@
         "sources"
       ],
       "x-side": "agent",
-      "x-method": "_goose/sources/import"
+      "x-method": "_goose/unstable/sources/import"
     },
-    "DictationTranscribeRequest": {
+    "DictationTranscribeRequest_unstable": {
       "type": "object",
       "properties": {
         "audio": {
@@ -2213,9 +2242,9 @@
       ],
       "description": "Transcribe audio via a dictation provider.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/transcribe"
+      "x-method": "_goose/unstable/dictation/transcribe"
     },
-    "DictationTranscribeResponse": {
+    "DictationTranscribeResponse_unstable": {
       "type": "object",
       "properties": {
         "text": {
@@ -2227,15 +2256,15 @@
       ],
       "description": "Transcription result.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/transcribe"
+      "x-method": "_goose/unstable/dictation/transcribe"
     },
-    "DictationConfigRequest": {
+    "DictationConfigRequest_unstable": {
       "type": "object",
       "description": "Get the configuration status of all dictation providers.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/config"
+      "x-method": "_goose/unstable/dictation/config"
     },
-    "DictationConfigResponse": {
+    "DictationConfigResponse_unstable": {
       "type": "object",
       "properties": {
         "providers": {
@@ -2250,7 +2279,7 @@
       ],
       "description": "Dictation config response — map of provider name to status.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/config"
+      "x-method": "_goose/unstable/dictation/config"
     },
     "DictationProviderStatusEntry": {
       "type": "object",
@@ -2334,7 +2363,7 @@
         "description"
       ]
     },
-    "DictationSecretSaveRequest": {
+    "DictationSecretSaveRequest_unstable": {
       "type": "object",
       "properties": {
         "provider": {
@@ -2350,9 +2379,9 @@
       ],
       "description": "Set a dictation provider secret value.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/secret/save"
+      "x-method": "_goose/unstable/dictation/secret/save"
     },
-    "DictationSecretDeleteRequest": {
+    "DictationSecretDeleteRequest_unstable": {
       "type": "object",
       "properties": {
         "provider": {
@@ -2364,15 +2393,15 @@
       ],
       "description": "Remove a dictation provider secret value.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/secret/delete"
+      "x-method": "_goose/unstable/dictation/secret/delete"
     },
-    "DictationModelsListRequest": {
+    "DictationModelsListRequest_unstable": {
       "type": "object",
       "description": "List available local Whisper models with their download status.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/list"
+      "x-method": "_goose/unstable/dictation/models/list"
     },
-    "DictationModelsListResponse": {
+    "DictationModelsListResponse_unstable": {
       "type": "object",
       "properties": {
         "models": {
@@ -2386,7 +2415,7 @@
         "models"
       ],
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/list"
+      "x-method": "_goose/unstable/dictation/models/list"
     },
     "DictationLocalModelStatus": {
       "type": "object",
@@ -2420,7 +2449,7 @@
         "downloadInProgress"
       ]
     },
-    "DictationModelDownloadRequest": {
+    "DictationModelDownloadRequest_unstable": {
       "type": "object",
       "properties": {
         "modelId": {
@@ -2432,9 +2461,9 @@
       ],
       "description": "Kick off a background download of a local Whisper model.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/download"
+      "x-method": "_goose/unstable/dictation/models/download"
     },
-    "DictationModelDownloadProgressRequest": {
+    "DictationModelDownloadProgressRequest_unstable": {
       "type": "object",
       "properties": {
         "modelId": {
@@ -2446,9 +2475,9 @@
       ],
       "description": "Poll the progress of an in-flight download.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/download/progress"
+      "x-method": "_goose/unstable/dictation/models/download/progress"
     },
-    "DictationModelDownloadProgressResponse": {
+    "DictationModelDownloadProgressResponse_unstable": {
       "type": "object",
       "properties": {
         "progress": {
@@ -2464,7 +2493,7 @@
         }
       },
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/download/progress"
+      "x-method": "_goose/unstable/dictation/models/download/progress"
     },
     "DictationDownloadProgress": {
       "type": "object",
@@ -2499,7 +2528,7 @@
         "status"
       ]
     },
-    "DictationModelCancelRequest": {
+    "DictationModelCancelRequest_unstable": {
       "type": "object",
       "properties": {
         "modelId": {
@@ -2511,9 +2540,9 @@
       ],
       "description": "Cancel an in-flight download.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/cancel"
+      "x-method": "_goose/unstable/dictation/models/cancel"
     },
-    "DictationModelDeleteRequest": {
+    "DictationModelDeleteRequest_unstable": {
       "type": "object",
       "properties": {
         "modelId": {
@@ -2525,9 +2554,9 @@
       ],
       "description": "Delete a downloaded local Whisper model from disk.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/models/delete"
+      "x-method": "_goose/unstable/dictation/models/delete"
     },
-    "DictationModelSelectRequest": {
+    "DictationModelSelectRequest_unstable": {
       "type": "object",
       "properties": {
         "provider": {
@@ -2543,7 +2572,7 @@
       ],
       "description": "Persist the user's model selection for a given provider.",
       "x-side": "agent",
-      "x-method": "_goose/dictation/model/select"
+      "x-method": "_goose/unstable/dictation/models/select"
     },
     "ExtRequest": {
       "properties": {
@@ -2560,56 +2589,56 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/AddExtensionRequest"
+                      "$ref": "#/$defs/AddExtensionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/extensions/add",
-                  "title": "AddExtensionRequest"
+                  "description": "Params for _goose/unstable/session/extensions/add",
+                  "title": "AddExtensionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/RemoveExtensionRequest"
+                      "$ref": "#/$defs/RemoveExtensionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/extensions/remove",
-                  "title": "RemoveExtensionRequest"
+                  "description": "Params for _goose/unstable/session/extensions/remove",
+                  "title": "RemoveExtensionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetToolsRequest"
+                      "$ref": "#/$defs/GetToolsRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/tools",
-                  "title": "GetToolsRequest"
+                  "description": "Params for _goose/unstable/tools/list",
+                  "title": "GetToolsRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GooseToolCallRequest"
+                      "$ref": "#/$defs/GooseToolCallRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/tool/call",
-                  "title": "GooseToolCallRequest"
+                  "description": "Params for _goose/unstable/tools/call",
+                  "title": "GooseToolCallRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ReadResourceRequest"
+                      "$ref": "#/$defs/ReadResourceRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/resource/read",
-                  "title": "ReadResourceRequest"
+                  "description": "Params for _goose/unstable/resources/read",
+                  "title": "ReadResourceRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UpdateWorkingDirRequest"
+                      "$ref": "#/$defs/UpdateWorkingDirRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/working_dir/update",
-                  "title": "UpdateWorkingDirRequest"
+                  "description": "Params for _goose/unstable/session/working-dir/update",
+                  "title": "UpdateWorkingDirRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -2623,434 +2652,434 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetExtensionsRequest"
+                      "$ref": "#/$defs/GetExtensionsRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/config/extensions",
-                  "title": "GetExtensionsRequest"
+                  "description": "Params for _goose/unstable/config/extensions/list",
+                  "title": "GetExtensionsRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/AddConfigExtensionRequest"
+                      "$ref": "#/$defs/AddConfigExtensionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/config/extensions/add",
-                  "title": "AddConfigExtensionRequest"
+                  "description": "Params for _goose/unstable/config/extensions/add",
+                  "title": "AddConfigExtensionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/RemoveConfigExtensionRequest"
+                      "$ref": "#/$defs/RemoveConfigExtensionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/config/extensions/remove",
-                  "title": "RemoveConfigExtensionRequest"
+                  "description": "Params for _goose/unstable/config/extensions/remove",
+                  "title": "RemoveConfigExtensionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ToggleConfigExtensionRequest"
+                      "$ref": "#/$defs/ToggleConfigExtensionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/config/extensions/toggle",
-                  "title": "ToggleConfigExtensionRequest"
+                  "description": "Params for _goose/unstable/config/extensions/toggle",
+                  "title": "ToggleConfigExtensionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/GetSessionExtensionsRequest"
+                      "$ref": "#/$defs/GetSessionExtensionsRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/extensions",
-                  "title": "GetSessionExtensionsRequest"
+                  "description": "Params for _goose/unstable/session/extensions/list",
+                  "title": "GetSessionExtensionsRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ListProvidersRequest"
+                      "$ref": "#/$defs/ListProvidersRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/list",
-                  "title": "ListProvidersRequest"
+                  "description": "Params for _goose/unstable/providers/list",
+                  "title": "ListProvidersRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderCatalogListRequest"
+                      "$ref": "#/$defs/ProviderCatalogListRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/catalog/list",
-                  "title": "ProviderCatalogListRequest"
+                  "description": "Params for _goose/unstable/providers/catalog/list",
+                  "title": "ProviderCatalogListRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderSetupCatalogListRequest"
+                      "$ref": "#/$defs/ProviderSetupCatalogListRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/setup/catalog/list",
-                  "title": "ProviderSetupCatalogListRequest"
+                  "description": "Params for _goose/unstable/providers/setup/catalog/list",
+                  "title": "ProviderSetupCatalogListRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderCatalogTemplateRequest"
+                      "$ref": "#/$defs/ProviderCatalogTemplateRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/catalog/template",
-                  "title": "ProviderCatalogTemplateRequest"
+                  "description": "Params for _goose/unstable/providers/catalog/template",
+                  "title": "ProviderCatalogTemplateRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CustomProviderCreateRequest"
+                      "$ref": "#/$defs/CustomProviderCreateRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/custom/create",
-                  "title": "CustomProviderCreateRequest"
+                  "description": "Params for _goose/unstable/providers/custom/create",
+                  "title": "CustomProviderCreateRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CustomProviderReadRequest"
+                      "$ref": "#/$defs/CustomProviderReadRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/custom/read",
-                  "title": "CustomProviderReadRequest"
+                  "description": "Params for _goose/unstable/providers/custom/read",
+                  "title": "CustomProviderReadRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CustomProviderUpdateRequest"
+                      "$ref": "#/$defs/CustomProviderUpdateRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/custom/update",
-                  "title": "CustomProviderUpdateRequest"
+                  "description": "Params for _goose/unstable/providers/custom/update",
+                  "title": "CustomProviderUpdateRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CustomProviderDeleteRequest"
+                      "$ref": "#/$defs/CustomProviderDeleteRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/custom/delete",
-                  "title": "CustomProviderDeleteRequest"
+                  "description": "Params for _goose/unstable/providers/custom/delete",
+                  "title": "CustomProviderDeleteRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/RefreshProviderInventoryRequest"
+                      "$ref": "#/$defs/RefreshProviderInventoryRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/inventory/refresh",
-                  "title": "RefreshProviderInventoryRequest"
+                  "description": "Params for _goose/unstable/providers/inventory/refresh",
+                  "title": "RefreshProviderInventoryRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderConfigReadRequest"
+                      "$ref": "#/$defs/ProviderConfigReadRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/config/read",
-                  "title": "ProviderConfigReadRequest"
+                  "description": "Params for _goose/unstable/providers/config/read",
+                  "title": "ProviderConfigReadRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderConfigStatusRequest"
+                      "$ref": "#/$defs/ProviderConfigStatusRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/config/status",
-                  "title": "ProviderConfigStatusRequest"
+                  "description": "Params for _goose/unstable/providers/config/status",
+                  "title": "ProviderConfigStatusRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderConfigSaveRequest"
+                      "$ref": "#/$defs/ProviderConfigSaveRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/config/save",
-                  "title": "ProviderConfigSaveRequest"
+                  "description": "Params for _goose/unstable/providers/config/save",
+                  "title": "ProviderConfigSaveRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderConfigDeleteRequest"
+                      "$ref": "#/$defs/ProviderConfigDeleteRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/config/delete",
-                  "title": "ProviderConfigDeleteRequest"
+                  "description": "Params for _goose/unstable/providers/config/delete",
+                  "title": "ProviderConfigDeleteRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProviderConfigAuthenticateRequest"
+                      "$ref": "#/$defs/ProviderConfigAuthenticateRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/providers/config/authenticate",
-                  "title": "ProviderConfigAuthenticateRequest"
+                  "description": "Params for _goose/unstable/providers/config/authenticate",
+                  "title": "ProviderConfigAuthenticateRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/PreferencesReadRequest"
+                      "$ref": "#/$defs/PreferencesReadRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/preferences/read",
-                  "title": "PreferencesReadRequest"
+                  "description": "Params for _goose/unstable/preferences/read",
+                  "title": "PreferencesReadRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/PreferencesSaveRequest"
+                      "$ref": "#/$defs/PreferencesSaveRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/preferences/save",
-                  "title": "PreferencesSaveRequest"
+                  "description": "Params for _goose/unstable/preferences/save",
+                  "title": "PreferencesSaveRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/PreferencesRemoveRequest"
+                      "$ref": "#/$defs/PreferencesRemoveRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/preferences/remove",
-                  "title": "PreferencesRemoveRequest"
+                  "description": "Params for _goose/unstable/preferences/remove",
+                  "title": "PreferencesRemoveRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DefaultsReadRequest"
+                      "$ref": "#/$defs/DefaultsReadRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/defaults/read",
-                  "title": "DefaultsReadRequest"
+                  "description": "Params for _goose/unstable/defaults/read",
+                  "title": "DefaultsReadRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DefaultsSaveRequest"
+                      "$ref": "#/$defs/DefaultsSaveRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/defaults/save",
-                  "title": "DefaultsSaveRequest"
+                  "description": "Params for _goose/unstable/defaults/save",
+                  "title": "DefaultsSaveRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/OnboardingImportScanRequest"
+                      "$ref": "#/$defs/OnboardingImportScanRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/onboarding/import/scan",
-                  "title": "OnboardingImportScanRequest"
+                  "description": "Params for _goose/unstable/onboarding/import/scan",
+                  "title": "OnboardingImportScanRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/OnboardingImportApplyRequest"
+                      "$ref": "#/$defs/OnboardingImportApplyRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/onboarding/import/apply",
-                  "title": "OnboardingImportApplyRequest"
+                  "description": "Params for _goose/unstable/onboarding/import/apply",
+                  "title": "OnboardingImportApplyRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ExportSessionRequest"
+                      "$ref": "#/$defs/ExportSessionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/export",
-                  "title": "ExportSessionRequest"
+                  "description": "Params for _goose/unstable/session/export",
+                  "title": "ExportSessionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ImportSessionRequest"
+                      "$ref": "#/$defs/ImportSessionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/import",
-                  "title": "ImportSessionRequest"
+                  "description": "Params for _goose/unstable/session/import",
+                  "title": "ImportSessionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UpdateSessionProjectRequest"
+                      "$ref": "#/$defs/UpdateSessionProjectRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/update_project",
-                  "title": "UpdateSessionProjectRequest"
+                  "description": "Params for _goose/unstable/session/project/update",
+                  "title": "UpdateSessionProjectRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/RenameSessionRequest"
+                      "$ref": "#/$defs/RenameSessionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/rename",
-                  "title": "RenameSessionRequest"
+                  "description": "Params for _goose/unstable/session/rename",
+                  "title": "RenameSessionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ArchiveSessionRequest"
+                      "$ref": "#/$defs/ArchiveSessionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/archive",
-                  "title": "ArchiveSessionRequest"
+                  "description": "Params for _goose/unstable/session/archive",
+                  "title": "ArchiveSessionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UnarchiveSessionRequest"
+                      "$ref": "#/$defs/UnarchiveSessionRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/session/unarchive",
-                  "title": "UnarchiveSessionRequest"
+                  "description": "Params for _goose/unstable/session/unarchive",
+                  "title": "UnarchiveSessionRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/CreateSourceRequest"
+                      "$ref": "#/$defs/CreateSourceRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/sources/create",
-                  "title": "CreateSourceRequest"
+                  "description": "Params for _goose/unstable/sources/create",
+                  "title": "CreateSourceRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ListSourcesRequest"
+                      "$ref": "#/$defs/ListSourcesRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/sources/list",
-                  "title": "ListSourcesRequest"
+                  "description": "Params for _goose/unstable/sources/list",
+                  "title": "ListSourcesRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/UpdateSourceRequest"
+                      "$ref": "#/$defs/UpdateSourceRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/sources/update",
-                  "title": "UpdateSourceRequest"
+                  "description": "Params for _goose/unstable/sources/update",
+                  "title": "UpdateSourceRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DeleteSourceRequest"
+                      "$ref": "#/$defs/DeleteSourceRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/sources/delete",
-                  "title": "DeleteSourceRequest"
+                  "description": "Params for _goose/unstable/sources/delete",
+                  "title": "DeleteSourceRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ExportSourceRequest"
+                      "$ref": "#/$defs/ExportSourceRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/sources/export",
-                  "title": "ExportSourceRequest"
+                  "description": "Params for _goose/unstable/sources/export",
+                  "title": "ExportSourceRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ImportSourcesRequest"
+                      "$ref": "#/$defs/ImportSourcesRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/sources/import",
-                  "title": "ImportSourcesRequest"
+                  "description": "Params for _goose/unstable/sources/import",
+                  "title": "ImportSourcesRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationTranscribeRequest"
+                      "$ref": "#/$defs/DictationTranscribeRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/transcribe",
-                  "title": "DictationTranscribeRequest"
+                  "description": "Params for _goose/unstable/dictation/transcribe",
+                  "title": "DictationTranscribeRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationConfigRequest"
+                      "$ref": "#/$defs/DictationConfigRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/config",
-                  "title": "DictationConfigRequest"
+                  "description": "Params for _goose/unstable/dictation/config",
+                  "title": "DictationConfigRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationSecretSaveRequest"
+                      "$ref": "#/$defs/DictationSecretSaveRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/secret/save",
-                  "title": "DictationSecretSaveRequest"
+                  "description": "Params for _goose/unstable/dictation/secret/save",
+                  "title": "DictationSecretSaveRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationSecretDeleteRequest"
+                      "$ref": "#/$defs/DictationSecretDeleteRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/secret/delete",
-                  "title": "DictationSecretDeleteRequest"
+                  "description": "Params for _goose/unstable/dictation/secret/delete",
+                  "title": "DictationSecretDeleteRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationModelsListRequest"
+                      "$ref": "#/$defs/DictationModelsListRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/models/list",
-                  "title": "DictationModelsListRequest"
+                  "description": "Params for _goose/unstable/dictation/models/list",
+                  "title": "DictationModelsListRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationModelDownloadRequest"
+                      "$ref": "#/$defs/DictationModelDownloadRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/models/download",
-                  "title": "DictationModelDownloadRequest"
+                  "description": "Params for _goose/unstable/dictation/models/download",
+                  "title": "DictationModelDownloadRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationModelDownloadProgressRequest"
+                      "$ref": "#/$defs/DictationModelDownloadProgressRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/models/download/progress",
-                  "title": "DictationModelDownloadProgressRequest"
+                  "description": "Params for _goose/unstable/dictation/models/download/progress",
+                  "title": "DictationModelDownloadProgressRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationModelCancelRequest"
+                      "$ref": "#/$defs/DictationModelCancelRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/models/cancel",
-                  "title": "DictationModelCancelRequest"
+                  "description": "Params for _goose/unstable/dictation/models/cancel",
+                  "title": "DictationModelCancelRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationModelDeleteRequest"
+                      "$ref": "#/$defs/DictationModelDeleteRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/models/delete",
-                  "title": "DictationModelDeleteRequest"
+                  "description": "Params for _goose/unstable/dictation/models/delete",
+                  "title": "DictationModelDeleteRequest_unstable"
                 },
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/DictationModelSelectRequest"
+                      "$ref": "#/$defs/DictationModelSelectRequest_unstable"
                     }
                   ],
-                  "description": "Params for _goose/dictation/model/select",
-                  "title": "DictationModelSelectRequest"
+                  "description": "Params for _goose/unstable/dictation/models/select",
+                  "title": "DictationModelSelectRequest_unstable"
                 }
               ]
             },
@@ -3093,258 +3122,258 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GetToolsResponse"
+                          "$ref": "#/$defs/GetToolsResponse_unstable"
                         }
                       ],
-                      "title": "GetToolsResponse"
+                      "title": "GetToolsResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GooseToolCallResponse"
+                          "$ref": "#/$defs/GooseToolCallResponse_unstable"
                         }
                       ],
-                      "title": "GooseToolCallResponse"
+                      "title": "GooseToolCallResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ReadResourceResponse"
+                          "$ref": "#/$defs/ReadResourceResponse_unstable"
                         }
                       ],
-                      "title": "ReadResourceResponse"
+                      "title": "ReadResourceResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GetExtensionsResponse"
+                          "$ref": "#/$defs/GetExtensionsResponse_unstable"
                         }
                       ],
-                      "title": "GetExtensionsResponse"
+                      "title": "GetExtensionsResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/GetSessionExtensionsResponse"
+                          "$ref": "#/$defs/GetSessionExtensionsResponse_unstable"
                         }
                       ],
-                      "title": "GetSessionExtensionsResponse"
+                      "title": "GetSessionExtensionsResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ListProvidersResponse"
+                          "$ref": "#/$defs/ListProvidersResponse_unstable"
                         }
                       ],
-                      "title": "ListProvidersResponse"
+                      "title": "ListProvidersResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderCatalogListResponse"
+                          "$ref": "#/$defs/ProviderCatalogListResponse_unstable"
                         }
                       ],
-                      "title": "ProviderCatalogListResponse"
+                      "title": "ProviderCatalogListResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderSetupCatalogListResponse"
+                          "$ref": "#/$defs/ProviderSetupCatalogListResponse_unstable"
                         }
                       ],
-                      "title": "ProviderSetupCatalogListResponse"
+                      "title": "ProviderSetupCatalogListResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderCatalogTemplateResponse"
+                          "$ref": "#/$defs/ProviderCatalogTemplateResponse_unstable"
                         }
                       ],
-                      "title": "ProviderCatalogTemplateResponse"
+                      "title": "ProviderCatalogTemplateResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CustomProviderCreateResponse"
+                          "$ref": "#/$defs/CustomProviderCreateResponse_unstable"
                         }
                       ],
-                      "title": "CustomProviderCreateResponse"
+                      "title": "CustomProviderCreateResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CustomProviderReadResponse"
+                          "$ref": "#/$defs/CustomProviderReadResponse_unstable"
                         }
                       ],
-                      "title": "CustomProviderReadResponse"
+                      "title": "CustomProviderReadResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CustomProviderUpdateResponse"
+                          "$ref": "#/$defs/CustomProviderUpdateResponse_unstable"
                         }
                       ],
-                      "title": "CustomProviderUpdateResponse"
+                      "title": "CustomProviderUpdateResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CustomProviderDeleteResponse"
+                          "$ref": "#/$defs/CustomProviderDeleteResponse_unstable"
                         }
                       ],
-                      "title": "CustomProviderDeleteResponse"
+                      "title": "CustomProviderDeleteResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/RefreshProviderInventoryResponse"
+                          "$ref": "#/$defs/RefreshProviderInventoryResponse_unstable"
                         }
                       ],
-                      "title": "RefreshProviderInventoryResponse"
+                      "title": "RefreshProviderInventoryResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderConfigReadResponse"
+                          "$ref": "#/$defs/ProviderConfigReadResponse_unstable"
                         }
                       ],
-                      "title": "ProviderConfigReadResponse"
+                      "title": "ProviderConfigReadResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderConfigStatusResponse"
+                          "$ref": "#/$defs/ProviderConfigStatusResponse_unstable"
                         }
                       ],
-                      "title": "ProviderConfigStatusResponse"
+                      "title": "ProviderConfigStatusResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProviderConfigChangeResponse"
+                          "$ref": "#/$defs/ProviderConfigChangeResponse_unstable"
                         }
                       ],
-                      "title": "ProviderConfigChangeResponse"
+                      "title": "ProviderConfigChangeResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/PreferencesReadResponse"
+                          "$ref": "#/$defs/PreferencesReadResponse_unstable"
                         }
                       ],
-                      "title": "PreferencesReadResponse"
+                      "title": "PreferencesReadResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/DefaultsReadResponse"
+                          "$ref": "#/$defs/DefaultsReadResponse_unstable"
                         }
                       ],
-                      "title": "DefaultsReadResponse"
+                      "title": "DefaultsReadResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/OnboardingImportScanResponse"
+                          "$ref": "#/$defs/OnboardingImportScanResponse_unstable"
                         }
                       ],
-                      "title": "OnboardingImportScanResponse"
+                      "title": "OnboardingImportScanResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/OnboardingImportApplyResponse"
+                          "$ref": "#/$defs/OnboardingImportApplyResponse_unstable"
                         }
                       ],
-                      "title": "OnboardingImportApplyResponse"
+                      "title": "OnboardingImportApplyResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ExportSessionResponse"
+                          "$ref": "#/$defs/ExportSessionResponse_unstable"
                         }
                       ],
-                      "title": "ExportSessionResponse"
+                      "title": "ExportSessionResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ImportSessionResponse"
+                          "$ref": "#/$defs/ImportSessionResponse_unstable"
                         }
                       ],
-                      "title": "ImportSessionResponse"
+                      "title": "ImportSessionResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/CreateSourceResponse"
+                          "$ref": "#/$defs/CreateSourceResponse_unstable"
                         }
                       ],
-                      "title": "CreateSourceResponse"
+                      "title": "CreateSourceResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ListSourcesResponse"
+                          "$ref": "#/$defs/ListSourcesResponse_unstable"
                         }
                       ],
-                      "title": "ListSourcesResponse"
+                      "title": "ListSourcesResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/UpdateSourceResponse"
+                          "$ref": "#/$defs/UpdateSourceResponse_unstable"
                         }
                       ],
-                      "title": "UpdateSourceResponse"
+                      "title": "UpdateSourceResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ExportSourceResponse"
+                          "$ref": "#/$defs/ExportSourceResponse_unstable"
                         }
                       ],
-                      "title": "ExportSourceResponse"
+                      "title": "ExportSourceResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ImportSourcesResponse"
+                          "$ref": "#/$defs/ImportSourcesResponse_unstable"
                         }
                       ],
-                      "title": "ImportSourcesResponse"
+                      "title": "ImportSourcesResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/DictationTranscribeResponse"
+                          "$ref": "#/$defs/DictationTranscribeResponse_unstable"
                         }
                       ],
-                      "title": "DictationTranscribeResponse"
+                      "title": "DictationTranscribeResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/DictationConfigResponse"
+                          "$ref": "#/$defs/DictationConfigResponse_unstable"
                         }
                       ],
-                      "title": "DictationConfigResponse"
+                      "title": "DictationConfigResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/DictationModelsListResponse"
+                          "$ref": "#/$defs/DictationModelsListResponse_unstable"
                         }
                       ],
-                      "title": "DictationModelsListResponse"
+                      "title": "DictationModelsListResponse_unstable"
                     },
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/DictationModelDownloadProgressResponse"
+                          "$ref": "#/$defs/DictationModelDownloadProgressResponse_unstable"
                         }
                       ],
-                      "title": "DictationModelDownloadProgressResponse"
+                      "title": "DictationModelDownloadProgressResponse_unstable"
                     }
                   ]
                 },
