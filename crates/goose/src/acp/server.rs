@@ -941,15 +941,22 @@ fn with_preserved_session_request_params(
     current_model_config: Option<&crate::model::ModelConfig>,
     request_params: Option<HashMap<String, serde_json::Value>>,
 ) -> crate::model::ModelConfig {
-    if let Some(thinking_effort) = current_model_config
-        .and_then(|config| config.request_params.as_ref())
+    let has_model_effort = model_config
+        .request_params
+        .as_ref()
         .and_then(|params| params.get("thinking_effort"))
-        .cloned()
-    {
-        model_config = model_config.with_merged_request_params(HashMap::from([(
-            "thinking_effort".into(),
-            thinking_effort,
-        )]));
+        .is_some();
+    if !has_model_effort {
+        if let Some(thinking_effort) = current_model_config
+            .and_then(|config| config.request_params.as_ref())
+            .and_then(|params| params.get("thinking_effort"))
+            .cloned()
+        {
+            model_config = model_config.with_merged_request_params(HashMap::from([(
+                "thinking_effort".into(),
+                thinking_effort,
+            )]));
+        }
     }
     if let Some(request_params) = request_params {
         model_config = model_config.with_merged_request_params(request_params);
