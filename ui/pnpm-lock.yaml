@@ -227,7 +227,7 @@ importers:
         specifier: ^6.14.0
         version: 6.14.0
       '@hey-api/openapi-ts':
-        specifier: ^0.93.0
+        specifier: 0.93.1
         version: 0.93.1(magicast@0.5.2)(typescript@5.9.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.0

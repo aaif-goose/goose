@@ -1489,7 +1489,11 @@ pub fn configure_keyring_dialog() -> anyhow::Result<()> {
         );
     }
 
-    let currently_disabled = config.get_param::<String>("GOOSE_DISABLE_KEYRING").is_ok();
+    let currently_disabled = config
+        .get_param::<serde_yaml::Value>("GOOSE_DISABLE_KEYRING")
+        .is_ok_and(|v| {
+            v.as_bool().unwrap_or(false) || v.as_str().is_some_and(|s| s == "true" || s == "1")
+        });
 
     let current_status = if currently_disabled {
         "Disabled (using file-based storage)"

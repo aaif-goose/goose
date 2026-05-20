@@ -1,0 +1,1476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GooseConfigSchema",
+  "description": "JSON Schema representation of Goose's config.yaml.\n\nAll fields are optional. The standalone JSON Schema (`config.schema.json`)\nsets `additionalProperties: true` so config.yaml can carry undocumented\nprovider-specific keys as env-var overrides. However, the typed API\nendpoints only persist fields explicitly declared on this struct — unknown\nkeys in a `PATCH /config/typed` payload are silently dropped by serde.",
+  "type": "object",
+  "properties": {
+    "GOOSE_PROVIDER": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_MODEL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_MODE": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GooseMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "GOOSE_MAX_TOKENS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "GOOSE_CONTEXT_LIMIT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_INPUT_LIMIT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_MAX_TURNS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "GOOSE_MAX_ACTIVE_AGENTS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_AUTO_COMPACT_THRESHOLD": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    },
+    "GOOSE_TOOL_PAIR_SUMMARIZATION": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_TOOL_CALL_CUTOFF": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_STREAM_TIMEOUT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_SEARCH_PATHS": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "GOOSE_DISABLE_SESSION_NAMING": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_DISABLE_KEYRING": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_TELEMETRY_ENABLED": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_DEFAULT_EXTENSION_TIMEOUT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_PROMPT_EDITOR": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_PROMPT_EDITOR_ALWAYS": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_ALLOWLIST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_SYSTEM_PROMPT_FILE_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_DEBUG": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_SHOW_FULL_OUTPUT": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_DISABLE_TOOL_CALL_SUMMARY": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_STATUS_HOOK": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_LOCAL_ENABLE_THINKING": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_DATABRICKS_CLIENT_REQUEST_ID": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "CONTEXT_FILE_NAMES": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "EDIT_MODE": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "RANDOM_THINKING_MESSAGES": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "CODE_MODE_TOOL_DISCLOSURE": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_CLIENT_CERT_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_CLIENT_KEY_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_CA_CERT_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_PLANNER_PROVIDER": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_PLANNER_MODEL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_SUBAGENT_PROVIDER": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_SUBAGENT_MODEL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_SUBAGENT_MAX_TURNS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_MAX_BACKGROUND_TASKS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_RECIPE_GITHUB_REPO": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "GOOSE_CLI_MIN_PRIORITY": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "float"
+    },
+    "GOOSE_CLI_THEME": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_CLI_LIGHT_THEME": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_CLI_DARK_THEME": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOSE_CLI_SHOW_COST": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_CLI_SHOW_THINKING": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "GOOSE_CLI_NEWLINE_KEY": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CLAUDE_CODE_COMMAND": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GEMINI_CLI_COMMAND": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CURSOR_AGENT_COMMAND": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CODEX_COMMAND": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CODEX_REASONING_EFFORT": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CODEX_ENABLE_SKILLS": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CODEX_SKIP_GIT_CHECK": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CHATGPT_CODEX_REASONING_EFFORT": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CLAUDE_THINKING_TYPE": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CLAUDE_THINKING_EFFORT": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "CLAUDE_THINKING_BUDGET": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "ANTHROPIC_THINKING_BUDGET": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "GEMINI3_THINKING_LEVEL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GEMINI25_THINKING_BUDGET": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "SECURITY_PROMPT_ENABLED": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "SECURITY_PROMPT_THRESHOLD": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    },
+    "SECURITY_PROMPT_CLASSIFIER_ENABLED": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "SECURITY_PROMPT_CLASSIFIER_MODEL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "SECURITY_PROMPT_CLASSIFIER_ENDPOINT": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "SECURITY_COMMAND_CLASSIFIER_ENABLED": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "OPENAI_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OPENAI_BASE_URL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OPENAI_BASE_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OPENAI_ORGANIZATION": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OPENAI_PROJECT": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OPENAI_TIMEOUT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "ANTHROPIC_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OLLAMA_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OLLAMA_TIMEOUT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "OLLAMA_STREAM_TIMEOUT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "OLLAMA_STREAM_USAGE": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "DATABRICKS_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "DATABRICKS_MAX_RETRIES": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "DATABRICKS_INITIAL_RETRY_INTERVAL_MS": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "DATABRICKS_BACKOFF_MULTIPLIER": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "DATABRICKS_MAX_RETRY_INTERVAL_MS": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "AZURE_OPENAI_ENDPOINT": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "AZURE_OPENAI_DEPLOYMENT_NAME": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "AZURE_OPENAI_API_VERSION": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GOOGLE_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GCP_PROJECT_ID": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GCP_LOCATION": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GCP_MAX_RETRIES": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GCP_INITIAL_RETRY_INTERVAL_MS": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GCP_BACKOFF_MULTIPLIER": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GCP_MAX_RETRY_INTERVAL_MS": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "AWS_REGION": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "AWS_PROFILE": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "BEDROCK_MAX_RETRIES": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "BEDROCK_INITIAL_RETRY_INTERVAL_MS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "BEDROCK_BACKOFF_MULTIPLIER": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    },
+    "BEDROCK_MAX_RETRY_INTERVAL_MS": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "BEDROCK_ENABLE_CACHING": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "SAGEMAKER_ENDPOINT_NAME": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "LITELLM_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "LITELLM_BASE_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "LITELLM_TIMEOUT": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "SNOWFLAKE_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GITHUB_COPILOT_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GITHUB_COPILOT_CLIENT_ID": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "GITHUB_COPILOT_TOKEN_URL": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "XAI_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "OPENROUTER_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "VENICE_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "VENICE_BASE_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "VENICE_MODELS_PATH": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "TETRATE_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "AVIAN_HOST": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "active_provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "otel_exporter_otlp_endpoint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "otel_exporter_otlp_timeout": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "tunnel_auto_start": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "extensions": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/ExtensionEntry"
+      }
+    },
+    "slash_commands": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/SlashCommandMapping"
+      }
+    },
+    "experiments": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "providers": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderEntry"
+      }
+    }
+  },
+  "$defs": {
+    "GooseMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "approve",
+        "smart_approve",
+        "chat"
+      ]
+    },
+    "ExtensionEntry": {
+      "description": "Represents the different types of MCP extensions that can be added to the manager",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "oneOf": [
+        {
+          "description": "SSE transport is no longer supported - kept only for config file compatibility",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": ""
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "uri": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "sse"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Standard I/O client with command and arguments",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The name used to identify this extension",
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "cmd": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "envs": {
+              "$ref": "#/$defs/Envs",
+              "default": {}
+            },
+            "env_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "timeout": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "bundled": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": null
+            },
+            "available_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "type": {
+              "type": "string",
+              "const": "stdio"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "cmd",
+            "args"
+          ]
+        },
+        {
+          "description": "Built-in extension that is part of the bundled goose MCP server",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The name used to identify this extension",
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "display_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeout": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "bundled": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": null
+            },
+            "available_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "type": {
+              "type": "string",
+              "const": "builtin"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "Platform extensions that have direct access to the agent etc and run in the agent process",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The name used to identify this extension",
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "display_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bundled": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": null
+            },
+            "available_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "type": {
+              "type": "string",
+              "const": "platform"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "Streamable HTTP client with a URI endpoint using MCP Streamable HTTP specification",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The name used to identify this extension",
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "uri": {
+              "type": "string"
+            },
+            "envs": {
+              "$ref": "#/$defs/Envs",
+              "default": {}
+            },
+            "env_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {}
+            },
+            "timeout": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "socket": {
+              "description": "Optional Unix domain socket path for HTTP-over-UDS transport.\nWhen set, the HTTP connection is routed through this socket while\n`uri` is used for the Host header and path.\nUse `@name` for Linux abstract sockets.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "bundled": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": null
+            },
+            "available_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "type": {
+              "type": "string",
+              "const": "streamable_http"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "uri"
+          ]
+        },
+        {
+          "description": "Frontend-provided tools that will be called through the frontend",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The name used to identify this extension",
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "tools": {
+              "description": "The tools provided by the frontend",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Tool"
+              }
+            },
+            "instructions": {
+              "description": "Instructions for how to use these tools",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bundled": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": null
+            },
+            "available_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "type": {
+              "type": "string",
+              "const": "frontend"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "tools"
+          ]
+        },
+        {
+          "description": "Inline Python code that will be executed using uvx",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The name used to identify this extension",
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "code": {
+              "description": "The Python code to execute",
+              "type": "string"
+            },
+            "timeout": {
+              "description": "Timeout in seconds",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "dependencies": {
+              "description": "Python package dependencies required by this extension",
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "default": null
+            },
+            "available_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "type": {
+              "type": "string",
+              "const": "inline_python"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "code"
+          ]
+        }
+      ]
+    },
+    "Envs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "Tool": {
+      "description": "A tool that can be used by a model.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name of the tool",
+          "type": "string"
+        },
+        "title": {
+          "description": "A human-readable title for the tool",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "A description of what the tool does",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inputSchema": {
+          "description": "A JSON Schema object defining the expected parameters for the tool",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "outputSchema": {
+          "description": "An optional JSON Schema object defining the structure of the tool's output",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "annotations": {
+          "description": "Optional additional tool information.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolAnnotations"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution": {
+          "description": "Execution-related configuration including task support mode.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolExecution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icons": {
+          "description": "Optional list of icons for the tool",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Icon"
+          }
+        },
+        "_meta": {
+          "description": "Optional additional metadata for this tool",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "name",
+        "inputSchema"
+      ]
+    },
+    "ToolAnnotations": {
+      "description": "Additional properties describing a Tool to clients.\n\nNOTE: all properties in ToolAnnotations are **hints**.\nThey are not guaranteed to provide a faithful description of\ntool behavior (including descriptive properties like `title`).\n\nClients should never make tool use decisions based on ToolAnnotations\nreceived from untrusted servers.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "description": "A human-readable title for the tool.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readOnlyHint": {
+          "description": "If true, the tool does not modify its environment.\n\nDefault: false",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "destructiveHint": {
+          "description": "If true, the tool may perform destructive updates to its environment.\nIf false, the tool performs only additive updates.\n\n(This property is meaningful only when `readOnlyHint == false`)\n\nDefault: true\nA human-readable description of the tool's purpose.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "idempotentHint": {
+          "description": "If true, calling the tool repeatedly with the same arguments\nwill have no additional effect on the its environment.\n\n(This property is meaningful only when `readOnlyHint == false`)\n\nDefault: false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "openWorldHint": {
+          "description": "If true, this tool may interact with an \"open world\" of external\nentities. If false, the tool's domain of interaction is closed.\nFor example, the world of a web search tool is open, whereas that\nof a memory tool is not.\n\nDefault: true",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "ToolExecution": {
+      "description": "Execution-related configuration for a tool.\n\nThis struct contains settings that control how a tool should be executed,\nincluding task support configuration.",
+      "type": "object",
+      "properties": {
+        "taskSupport": {
+          "description": "Indicates whether this tool supports task-based invocation.\n\nWhen not present or set to `Forbidden`, clients MUST NOT invoke this tool as a task.\nWhen set to `Optional`, clients MAY invoke this tool as a task or normal call.\nWhen set to `Required`, clients MUST invoke this tool as a task.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskSupport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "TaskSupport": {
+      "description": "Per-tool task support mode as defined in the MCP specification.\n\nThis enum indicates whether a tool supports task-based invocation,\nallowing clients to know how to properly call the tool.\n\nSee [Tool-Level Negotiation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#tool-level-negotiation).",
+      "oneOf": [
+        {
+          "description": "Clients MUST NOT invoke this tool as a task (default behavior).",
+          "type": "string",
+          "const": "forbidden"
+        },
+        {
+          "description": "Clients MAY invoke this tool as either a task or a normal call.",
+          "type": "string",
+          "const": "optional"
+        },
+        {
+          "description": "Clients MUST invoke this tool as a task.",
+          "type": "string",
+          "const": "required"
+        }
+      ]
+    },
+    "Icon": {
+      "description": "A URL pointing to an icon resource or a base64-encoded data URI.\n\nClients that support rendering icons MUST support at least the following MIME types:\n- image/png - PNG images (safe, universal compatibility)\n- image/jpeg (and image/jpg) - JPEG images (safe, universal compatibility)\n\nClients that support rendering icons SHOULD also support:\n- image/svg+xml - SVG images (scalable but requires security precautions)\n- image/webp - WebP images (modern, efficient format)",
+      "type": "object",
+      "properties": {
+        "src": {
+          "description": "A standard URI pointing to an icon resource",
+          "type": "string"
+        },
+        "mimeType": {
+          "description": "Optional override if the server's MIME type is missing or generic",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sizes": {
+          "description": "Size specification, each string should be in WxH format (e.g., `\\\"48x48\\\"`, `\\\"96x96\\\"`) or `\\\"any\\\"` for scalable formats like SVG",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "theme": {
+          "description": "Optional specifier for the theme this icon is designed for\nIf not provided, the client should assume the icon can be used with any theme.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IconTheme"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "src"
+      ]
+    },
+    "IconTheme": {
+      "description": "Icon themes supported by the MCP specification",
+      "oneOf": [
+        {
+          "description": "Indicates the icon is designed to be used with a light background",
+          "type": "string",
+          "const": "light"
+        },
+        {
+          "description": "Indicates the icon is designed to be used with a dark background",
+          "type": "string",
+          "const": "dark"
+        }
+      ]
+    },
+    "SlashCommandMapping": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "recipe_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "recipe_path"
+      ]
+    },
+    "ProviderEntry": {
+      "description": "A single provider's persisted configuration within the `providers:` block.\n\nThe `providers` block in config.yaml is the authoritative source for\nper-provider settings, replacing the old flat-key scheme where switching\nproviders destructively overwrote `GOOSE_PROVIDER` / `GOOSE_MODEL`.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "model": {
+          "type": "string",
+          "default": ""
+        },
+        "configured": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}

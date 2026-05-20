@@ -117,7 +117,7 @@
     "@electron/fuses": "^1.8.0",
     "@eslint/js": "^9.39.2",
     "@formatjs/cli": "^6.14.0",
-    "@hey-api/openapi-ts": "^0.93.0",
+    "@hey-api/openapi-ts": "0.93.1",
     "@modelcontextprotocol/sdk": "^1.27.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/line-clamp": "^0.4.4",

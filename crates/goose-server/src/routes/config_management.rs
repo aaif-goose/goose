@@ -9,6 +9,7 @@ use axum::{
 };
 use goose::config::declarative_providers::LoadedProvider;
 use goose::config::paths::Paths;
+use goose::config::schema::{GooseConfigSchema, GooseConfigUpdate};
 use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
 use goose::custom_requests::SourceType;
@@ -915,9 +916,67 @@ pub async fn configure_provider_oauth(
     Ok(Json("OAuth configuration completed".to_string()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/config/typed",
+    responses(
+        (status = 200, description = "All configuration values (typed)", body = GooseConfigSchema),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn read_typed_config() -> Result<Json<GooseConfigSchema>, ErrorResponse> {
+    let config = Config::global();
+    let mut typed = GooseConfigSchema::from_config(config);
+    if let Some(ref mut exts) = typed.extensions {
+        exts.retain(|_key, entry| {
+            !goose::agents::extension_manager::is_hidden_extension(&entry.config.name())
+        });
+    }
+    Ok(Json(typed))
+}
+
+/// Update configuration values via sparse patch. Only send the fields you want
+/// to change — omitted and null fields are both left unchanged (serde cannot
+/// distinguish the two). To delete a key, use `POST /config/remove`.
+///
+/// Nested objects (`extensions`, `slash_commands`, `experiments`) use whole-value
+/// replacement, not deep merge. Secret fields (API keys) are stored in the system
+/// keyring, not the config file.
+///
+/// **Caution:** `GET /config/typed` returns values merged from env vars, system
+/// config, and user config. Sending the full GET response back as a PATCH payload
+/// can persist inherited/env values into the user config file. Only send fields
+/// the user explicitly changed.
+#[utoipa::path(
+    patch,
+    path = "/config/typed",
+    request_body = GooseConfigUpdate,
+    responses(
+        (status = 200, description = "Configuration updated", body = GooseConfigSchema),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn patch_typed_config(
+    Json(update): Json<GooseConfigUpdate>,
+) -> Result<Json<GooseConfigSchema>, ErrorResponse> {
+    let config = Config::global();
+    update.apply_to_config(config)?;
+    let mut typed = GooseConfigSchema::from_config(config);
+    if let Some(ref mut exts) = typed.extensions {
+        exts.retain(|_key, entry| {
+            !goose::agents::extension_manager::is_hidden_extension(&entry.config.name())
+        });
+    }
+    Ok(Json(typed))
+}
+
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/config", get(read_all_config))
+        .route(
+            "/config/typed",
+            get(read_typed_config).patch(patch_typed_config),
+        )
         .route("/config/upsert", post(upsert_config))
         .route("/config/remove", post(remove_config))
         .route("/config/read", post(read_config))

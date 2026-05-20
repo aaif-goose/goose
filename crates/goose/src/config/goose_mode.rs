@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumMessage, EnumString, IntoStaticStr, VariantNames};
 use utoipa::ToSchema;
@@ -18,6 +19,7 @@ use utoipa::ToSchema;
     IntoStaticStr,
     VariantNames,
     ToSchema,
+    JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]

@@ -3,6 +3,7 @@ use goose::agents::extension::ToolInfo;
 use goose::agents::ExtensionConfig;
 use goose::config::permission::PermissionLevel;
 use goose::config::ExtensionEntry;
+use goose::config::ProviderEntry;
 use goose::conversation::Conversation;
 use goose::download_manager::{DownloadProgress, DownloadStatus};
 use goose::model::ModelConfig;
@@ -391,6 +392,8 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         super::routes::config_management::upsert_config,
         super::routes::config_management::remove_config,
         super::routes::config_management::read_config,
+        super::routes::config_management::read_typed_config,
+        super::routes::config_management::patch_typed_config,
         super::routes::config_management::add_extension,
         super::routes::config_management::remove_extension,
         super::routes::config_management::get_extensions,
@@ -484,6 +487,9 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         super::routes::config_management::UpsertConfigQuery,
         super::routes::config_management::ConfigKeyQuery,
         super::routes::config_management::ConfigResponse,
+        goose::config::schema::GooseConfigSchema,
+        goose::config::schema::GooseConfigUpdate,
+        goose::slash_commands::SlashCommandMapping,
         super::routes::config_management::ProvidersResponse,
         super::routes::config_management::ProviderDetails,
         super::routes::config_management::SlashCommandsResponse,
@@ -559,6 +565,7 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         DeclarativeProviderConfig,
         EnvVarConfig,
         ExtensionEntry,
+        ProviderEntry,
         ExtensionConfig,
         ConfigKey,
         Envs,

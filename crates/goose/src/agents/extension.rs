@@ -7,6 +7,7 @@ use crate::config::Config;
 use rmcp::model::Tool;
 use rmcp::service::ClientInitializeError;
 use rmcp::ServiceError as ClientError;
+use schemars::JsonSchema;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -58,7 +59,7 @@ pub enum ExtensionError {
 
 pub type ExtensionResult<T> = Result<T, ExtensionError>;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default, ToSchema, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, ToSchema, PartialEq, JsonSchema)]
 pub struct Envs {
     /// A map of environment variables to set, e.g. API_KEY -> some_secret, HOST -> host
     #[serde(default)]
@@ -148,7 +149,7 @@ impl Envs {
 }
 
 /// Represents the different types of MCP extensions that can be added to the manager
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq, JsonSchema)]
 #[serde(tag = "type")]
 pub enum ExtensionConfig {
     /// SSE transport is no longer supported - kept only for config file compatibility
