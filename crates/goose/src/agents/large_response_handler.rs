@@ -1,14 +1,22 @@
+use crate::config::Config;
 use chrono::Utc;
 use rmcp::model::{CallToolResult, Content, ErrorData};
 use std::fs::File;
 use std::io::Write;
 
-const LARGE_TEXT_THRESHOLD: usize = 200_000;
+const DEFAULT_LARGE_TEXT_THRESHOLD: usize = 200_000;
+
+fn large_text_threshold() -> usize {
+    Config::global()
+        .get_param::<usize>("GOOSE_MAX_TOOL_RESPONSE_SIZE")
+        .unwrap_or(DEFAULT_LARGE_TEXT_THRESHOLD)
+}
 
 /// Process tool response and handle large text content
 pub fn process_tool_response(
     response: Result<CallToolResult, ErrorData>,
 ) -> Result<CallToolResult, ErrorData> {
+    let threshold = large_text_threshold();
     match response {
         Ok(mut result) => {
             let mut processed_contents = Vec::new();
@@ -17,7 +25,7 @@ pub fn process_tool_response(
                 match content.as_text() {
                     Some(text_content) => {
                         // Check if text exceeds threshold
-                        if text_content.text.chars().count() > LARGE_TEXT_THRESHOLD {
+                        if text_content.text.chars().count() > threshold {
                             // Write to temp file
                             match write_large_text_to_file(&text_content.text) {
                                 Ok(file_path) => {
@@ -107,7 +115,7 @@ mod tests {
     #[test]
     fn test_large_text_response_redirected_to_file() {
         // Create a text larger than the threshold
-        let large_text = "a".repeat(LARGE_TEXT_THRESHOLD + 1000);
+        let large_text = "a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1000);
         let content = Content::text(large_text.clone());
 
         let response = Ok(CallToolResult::success(vec![content]));
@@ -166,7 +174,7 @@ mod tests {
     fn test_mixed_content_handled_correctly() {
         // Create a response with mixed content types
         let small_text = Content::text("Small text");
-        let large_text = Content::text("a".repeat(LARGE_TEXT_THRESHOLD + 1000));
+        let large_text = Content::text("a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1000));
         let image = Content::image("image_data".to_string(), "image/jpeg".to_string());
 
         let response = Ok(CallToolResult::success(vec![small_text, large_text, image]));
