@@ -153,7 +153,7 @@ fn format_messages_with_options(
                                 TYPE_FIELD: TOOL_USE_TYPE,
                                 ID_FIELD: tool_request.id,
                                 NAME_FIELD: tool_call.name,
-                                INPUT_FIELD: tool_call.arguments
+                                INPUT_FIELD: tool_call.arguments.clone().unwrap_or_default()
                             }));
                         }
                         Err(_tool_error) => {
@@ -235,7 +235,7 @@ fn format_messages_with_options(
                             TYPE_FIELD: TOOL_USE_TYPE,
                             ID_FIELD: tool_request.id,
                             NAME_FIELD: tool_call.name,
-                            INPUT_FIELD: tool_call.arguments
+                            INPUT_FIELD: tool_call.arguments.clone().unwrap_or_default()
                         }));
                     }
                 }
@@ -1360,6 +1360,24 @@ mod tests {
         let assistant_content = spec[1]["content"].as_array().unwrap();
         assert_eq!(assistant_content.len(), 1);
         assert_eq!(assistant_content[0]["type"], "tool_use");
+    }
+
+    #[test]
+    fn test_parameterless_tool_call_sends_empty_object() {
+        use crate::conversation::message::Message;
+
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("tool_1", Ok(CallToolRequestParams::new("list_files"))),
+            Message::user()
+                .with_tool_response("tool_1", Ok(rmcp::model::CallToolResult::success(vec![]))),
+        ];
+
+        let spec = format_messages(&messages);
+
+        let input = &spec[0]["content"][0]["input"];
+        assert_eq!(input, &json!({}), "input must be {{}} not null");
+        assert!(!input.is_null());
     }
 
     #[test]
