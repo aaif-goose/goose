@@ -111,7 +111,22 @@ async fn list_sessions(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let sessions = sessions
+        .into_iter()
+        .filter(|s| !is_ghost_session(s))
+        .collect();
+
     Ok(Json(SessionListResponse { sessions }))
+}
+
+/// Returns true for "ghost" sessions: empty user chats that were created by
+/// `POST /agent/start` but never received a message. These appear as blank
+/// "New Chat" entries in the session list and clutter the UI without
+fn is_ghost_session(session: &Session) -> bool {
+    session.session_type == SessionType::User
+        && session.message_count == 0
+        && !session.user_set_name
+        && session.recipe.is_none()
 }
 
 #[utoipa::path(
@@ -713,7 +728,7 @@ async fn search_sessions(
 
     let matching_sessions: Vec<Session> = all_sessions
         .into_iter()
-        .filter(|s| session_ids.contains(&s.id))
+        .filter(|s| session_ids.contains(&s.id) && !is_ghost_session(s))
         .collect();
 
     Ok(Json(matching_sessions))
