@@ -177,6 +177,7 @@ impl ProviderRegistry {
             .iter()
             .map(|m| ModelInfo {
                 name: m.name.clone(),
+                resolved_model: None,
                 context_limit: m.context_limit,
                 input_token_cost: m.input_token_cost,
                 output_token_cost: m.output_token_cost,

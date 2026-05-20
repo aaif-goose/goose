@@ -539,6 +539,7 @@ impl DatabricksProvider {
 
         ModelInfo {
             name: info.name,
+            resolved_model: info.upstream_model_name,
             context_limit,
             input_token_cost: None,
             output_token_cost: None,
@@ -643,10 +644,6 @@ impl Provider for DatabricksProvider {
 
     fn get_model_config(&self) -> ModelConfig {
         self.model.clone()
-    }
-
-    fn reports_resolved_model(&self) -> bool {
-        true
     }
 
     async fn stream(
@@ -1003,6 +1000,14 @@ mod tests {
         assert_eq!(info.name, "goose");
         assert_eq!(info.upstream_model_name.as_deref(), Some("claude-opus-4.6"));
         assert_eq!(info.reasoning, Some(true));
+
+        let model_info = DatabricksProvider::model_info_from_endpoint(info);
+        assert_eq!(model_info.name, "goose");
+        assert_eq!(
+            model_info.resolved_model.as_deref(),
+            Some("claude-opus-4.6")
+        );
+        assert!(model_info.reasoning);
     }
 
     #[test]

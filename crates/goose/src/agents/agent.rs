@@ -42,7 +42,7 @@ use crate::mcp_utils::ToolResult;
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::PermissionConfirmation;
-use crate::providers::base::{PermissionRouting, Provider, ProviderUsage};
+use crate::providers::base::{PermissionRouting, Provider};
 use crate::providers::errors::ProviderError;
 use crate::recipe::{Author, Recipe, Response, Settings};
 use crate::scheduler_trait::SchedulerTrait;
@@ -1588,14 +1588,16 @@ impl Agent {
         let provider = self.provider().await?;
         let provider_name = provider.get_name().to_string();
         let requested_model = provider.get_model_config().model_name;
-        let reports_resolved_model = provider.reports_resolved_model();
-        let provider_name_for_inference = provider_name.clone();
-        let requested_model_for_inference = requested_model.clone();
-        let build_inference = move |usage: &ProviderUsage| InferenceMetadata {
-            provider: provider_name_for_inference.clone(),
-            requested_model: requested_model_for_inference.clone(),
-            resolved_model: Some(usage.model.clone()),
-        };
+        let inference = provider
+            .fetch_model_info(&requested_model)
+            .await
+            .ok()
+            .and_then(|model_info| model_info.resolved_model)
+            .map(|resolved_model| InferenceMetadata {
+                provider: provider_name,
+                requested_model,
+                resolved_model: Some(resolved_model),
+            });
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
@@ -1703,7 +1705,6 @@ impl Agent {
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
                 let mut tools_updated = false;
-                let mut turn_usage: Option<ProviderUsage> = None;
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
 
@@ -1723,16 +1724,6 @@ impl Agent {
 
                             if let Some(ref usage) = usage {
                                 self.update_session_metrics(&session_config.id, session_config.schedule_id.clone(), usage, false).await?;
-                                if reports_resolved_model {
-                                    turn_usage = Some(usage.clone());
-                                    if response.is_none() {
-                                        yield AgentEvent::Message(
-                                            Message::assistant()
-                                                .with_visibility(true, false)
-                                                .with_inference(build_inference(usage)),
-                                        );
-                                    }
-                                }
                             }
 
                             if let Some(response) = response {
@@ -1748,13 +1739,13 @@ impl Agent {
                                     )
                                     .await;
 
-                                let filtered_response = if let Some(usage) = turn_usage.as_ref() {
-                                    filtered_response.with_inference(build_inference(usage))
+                                let filtered_response = if let Some(inference) = inference.as_ref() {
+                                    filtered_response.with_inference(inference.clone())
                                 } else {
                                     filtered_response
                                 };
-                                let response = if let Some(usage) = turn_usage.as_ref() {
-                                    response.with_inference(build_inference(usage))
+                                let response = if let Some(inference) = inference.as_ref() {
+                                    response.with_inference(inference.clone())
                                 } else {
                                     response
                                 };
@@ -2267,11 +2258,11 @@ impl Agent {
                     }
                 }
 
-                let messages_to_add = if let Some(ref usage) = turn_usage {
+                let messages_to_add = if let Some(ref inference) = inference {
                     Conversation::new_unvalidated(
                         messages_to_add
                             .into_iter()
-                            .map(|message| message.with_inference_if_assistant(build_inference(usage))),
+                            .map(|message| message.with_inference_if_assistant(inference.clone())),
                     )
                 } else {
                     messages_to_add

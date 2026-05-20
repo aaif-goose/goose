@@ -385,6 +385,9 @@ pub static MSG_COUNT_FOR_SESSION_NAME_GENERATION: usize = 3;
 pub struct ModelInfo {
     /// The name of the model
     pub name: String,
+    /// The underlying model resolved from provider metadata, when the configured model is an alias or endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_model: Option<String>,
     /// The maximum context length this model supports
     pub context_limit: usize,
     /// Cost per token for input in USD (optional)
@@ -405,6 +408,7 @@ impl ModelInfo {
     pub fn new(name: impl Into<String>, context_limit: usize) -> Self {
         Self {
             name: name.into(),
+            resolved_model: None,
             context_limit,
             input_token_cost: None,
             output_token_cost: None,
@@ -423,6 +427,7 @@ impl ModelInfo {
     ) -> Self {
         Self {
             name: name.into(),
+            resolved_model: None,
             context_limit,
             input_token_cost: Some(input_cost),
             output_token_cost: Some(output_cost),
@@ -448,6 +453,7 @@ fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> Model
 
     ModelInfo {
         name: model_name.to_string(),
+        resolved_model: None,
         context_limit: ModelConfig::new_or_fail(model_name)
             .with_canonical_limits(provider_name)
             .context_limit(),
@@ -930,10 +936,6 @@ pub trait Provider: Send + Sync {
 
     /// Get the model config from the provider
     fn get_model_config(&self) -> ModelConfig;
-
-    fn reports_resolved_model(&self) -> bool {
-        false
-    }
 
     fn retry_config(&self) -> RetryConfig {
         RetryConfig::default()
@@ -1782,6 +1784,7 @@ mod tests {
         // Test direct ModelInfo creation
         let info = ModelInfo {
             name: "test-model".to_string(),
+            resolved_model: None,
             context_limit: 1000,
             input_token_cost: None,
             output_token_cost: None,
@@ -1794,6 +1797,7 @@ mod tests {
         // Test equality
         let info2 = ModelInfo {
             name: "test-model".to_string(),
+            resolved_model: None,
             context_limit: 1000,
             input_token_cost: None,
             output_token_cost: None,
@@ -1806,6 +1810,7 @@ mod tests {
         // Test inequality
         let info3 = ModelInfo {
             name: "test-model".to_string(),
+            resolved_model: None,
             context_limit: 2000,
             input_token_cost: None,
             output_token_cost: None,

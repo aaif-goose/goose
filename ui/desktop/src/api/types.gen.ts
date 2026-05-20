@@ -830,6 +830,10 @@ export type ModelInfo = {
      */
     reasoning?: boolean;
     /**
+     * The underlying model resolved from provider metadata, when the configured model is an alias or endpoint.
+     */
+    resolved_model?: string | null;
+    /**
      * Whether this model supports cache control
      */
     supports_cache_control?: boolean | null;

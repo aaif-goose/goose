@@ -6614,6 +6614,11 @@
             "type": "boolean",
             "description": "Whether this model supports reasoning/thinking controls"
           },
+          "resolved_model": {
+            "type": "string",
+            "description": "The underlying model resolved from provider metadata, when the configured model is an alias or endpoint.",
+            "nullable": true
+          },
           "supports_cache_control": {
             "type": "boolean",
             "description": "Whether this model supports cache control",
