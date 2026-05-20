@@ -91,7 +91,9 @@ push fatter single results), but plain shell sessions hit the same wall, just sl
 
 ## Proposed improvements, in leverage order
 
-### P0 — universal tool-result size cap (this branch)
+Status markers as of this branch: ✅ implemented, 🟡 partial, ⏭️ deferred.
+
+### P0 — universal tool-result size cap ✅
 
 The single most impactful change. Intercept every `tool_response` at the point it
 becomes a `MessageContent` and, if the text body exceeds a threshold, replace the
@@ -113,69 +115,102 @@ overflow with a truncation marker that tells the model exactly how to retrieve m
 
 Implemented in this branch as a first cut (16 KB cap, toggleable).
 
-### P1 — content-hash dedup of repeated tool results within a session
+### P1 — content-hash dedup of repeated tool results within a session ✅
 
-If the exact same `text` block has already been emitted as a tool result in the
-last N turns, replace the body with `[goose: identical to tool result at turn X
-(<sha8>), N bytes elided]`. Cheap, big win for the "re-cat the same file
-3 times" pattern.
+If the exact same `text` block has already been emitted as a tool result
+earlier in the conversation snapshot being sent, replace the body with
+`[goose: identical to tool result at turn X (sha=...), N bytes elided,
+tool=...]`. Cheap, big win for the "re-cat the same file 3 times" pattern.
 
-- **Where:** same choke point as P0, with a per-session LRU keyed by `sha256(text)`.
-- **Risk:** if the file actually changed between reads, we'd hide that. Mitigation:
-  only dedup when the *same `tool_name` + same `arguments`* produced the same
-  result within the last K turns. Otherwise pass through.
+Implemented in `crates/goose/src/conversation/dedup.rs`, applied in
+`stream_response_from_provider` just before the conversation is handed to the
+provider. Keyed by `sha256(tool_name + args_json + body)`, so any change in
+arguments or in the file contents flows through unmodified. Bodies under
+512 bytes are skipped (not worth a marker). Disable with
+`GOOSE_TOOL_RESULT_DEDUP=0`. Session DB and on-screen view are untouched.
 
-### P2 — `code_execution` result bundle size cap
+### P2 — `code_execution` result bundle size cap ✅
 
-Apply P0 *per field* of the bundled `Result: { foo, bar, baz }` object before it's
-serialized to text. So if `foo` is 40 KB, it becomes `<40KB elided>` while `bar`
-and `baz` survive intact. Without this, a single fat field forces P0 to truncate
-the whole bundle (which loses the small useful fields too).
+Apply per-field truncation inside the bundled
+`Result: { foo, bar, baz }` object before it's serialized to text. If `foo`
+is 40 KB, it becomes `<...[goose: truncated 32K bytes from this field]>`
+while `bar` and `baz` survive intact. Operates *before* P0's whole-block
+cap so one fat field doesn't crowd out small useful fields in the same
+bundle.
 
-- **Where:** `pctx_code_mode::model::ExecuteOutput::markdown()` (upstream crate)
-  or `crates/goose/src/agents/platform_extensions/code_execution.rs` before
-  emitting the `Content::text(output.markdown())`.
+Implemented in `crates/goose/src/agents/platform_extensions/code_execution.rs`
+via `truncate_execute_output()` which intercepts `ExecuteOutput` and walks
+`output` (`serde_json::Value`) plus the top-level `stdout`/`stderr` strings.
+Default cap 8 KB per field. Tunable via `GOOSE_CODE_EXEC_FIELD_MAX_BYTES`
+(0 to disable). Applied to both `execute_typescript` and `execute_bash`.
 
-### P3 — soften the "bundle everything" prompt attractor
+### P3 — soften the "bundle everything" prompt attractor ✅
 
-The current `execute_code` description says *"Always combine related operations"*
-with a `{ files, readme, status }` example. Change to:
-> Batch related operations when the **result fields are small**. If any field
-> is likely to exceed ~5 KB, call it separately so it can be inspected/discarded
-> on its own. Return only the data you actually need; large objects waste context.
+The upstream `pctx_code_mode` tool descriptions are explicit attractors
+toward bundling. Rather than fork upstream, append a goose-side
+`CONTEXT HYGIENE (goose):` addendum to each `execute_typescript`
+description (catalog / filesystem / sidecar variants) that:
 
-- **Where:** the `desc` string for `execute_code` in goose's `code_execution.rs`
-  (it's set per goose, not in the upstream `pctx_code_mode` crate).
+- tells the model to bundle only when each field is small (~5 KB),
+- tells it to call large-output tools on their own,
+- tells it to return only the fields it actually needs,
+- tells it to use `line`/`limit`/`head`/`tail`/`grep` instead of `cat <big-file>`.
 
-### P4 — structured compaction summary + file-tracking
+Implemented in `with_goose_context_advice()` in `code_execution.rs`. Upstream
+descriptions are preserved verbatim and the addendum follows; no schema
+changes, no tool semantics change.
 
-Replace freeform compaction summary with a structured template (Goal / Decisions
-/ Next Steps / `<read-files>` / `<modified-files>`), and accumulate read/modified
-file lists across successive compactions.
+### P4 — structured compaction summary + file-tracking + honest continuation ✅
 
-- **Where:** `crates/goose/src/context_mgmt/mod.rs::summarize_messages` and the
-  summarize prompt template.
-- **Win:** post-compaction sessions stop confabulating because the structure
-  forces explicit "what we know / what's next" sections, and file tracking makes
-  re-reads cheap (skip if already in the list).
+Three coordinated changes:
 
-### P5 — improve tool-pair summarization
+1. **Rewrote `prompts/compaction.md`** as an explicit section-based
+   template (Goal / Constraints & Preferences / Progress (Done | In
+   Progress | Blocked) / Key Decisions / Critical Context / Next Step)
+   followed by `<read-files>` and `<modified-files>` blocks. Tells the
+   summarizer that the summary is its only memory, to prefer concrete
+   facts, and not to invent facts not in the transcript.
 
-- Lower the trigger by *result-byte count* in addition to call count. Currently
-  it's count-only, so 120 small calls trigger but 30 mega-bundle calls don't.
-- Better summary prompt: instead of "A call to X was made", emit the actual
-  arguments and a one-line outcome. e.g. `read_file(plan.md) → 487 lines, key
-  facts: <bullets>`.
+2. **`extract_file_history()`** in `context_mgmt::mod` walks tool
+   requests and pulls `path` arguments out of read/write/edit-shaped
+   calls. Deduplicated in first-seen order. The lists are threaded into
+   `SummarizeContext` and rendered in the template so the summarizer
+   gets explicit file hints to include in its output.
 
-### P6 — opt-in `developer.read` tool with a default cap
+3. **Rewrote the three continuation prompts** (auto compact, tool-loop
+   compact, manual `/compact`). The previous prompts said
+   *"Do not mention that you read a summary or that conversation
+   summarization occurred"* — a direct confabulation cue. New text tells
+   the model the previous message is a structured summary, that
+   originals are gone, and to admit gaps plainly rather than guess.
 
-Currently goose has no `read` tool — model is told to use `shell({command:"cat ..."})`
-which is fine but loses the structured offset/limit knobs. Add a thin `read`
-tool that defaults to `limit=2000` lines, advertises `line`/`limit` in its
-description, and surfaces a truncation marker in the same shape as P0.
+### P5 — improve tool-pair summarization ⏭️ deferred
 
-This already half-exists in `developer/edit.rs::FileReadParams` — just not
-wired as a public tool. Wiring it would be ~30 LOC.
+Deferred on purpose. pi does not do tool-pair summarization at all — it
+relies on (a) bounded tool outputs by convention, (b) full-conversation
+compaction. Goose's tool-pair summarization is an emergency vent, not
+hygiene, and the lossy "A call to X was made" summary it produces is
+likely to make brain rot worse, not better, on the long-context models
+where it would fire latest. Better to leave it gated by
+`GOOSE_TOOL_PAIR_SUMMARIZATION` (default true) and recommend disabling
+it for users who notice the artifact. P0–P4 + P6 attack the actual
+root cause.
+
+### P6 — `developer.read` tool with a default cap ✅
+
+The `read` handler was added then removed (`f2ad0a852`) because ACP clients
+delegate filesystem I/O and intercept `read` at the AcpTools layer. Non-ACP
+sessions were left without a structured read tool, forcing
+`shell({command:"cat ..."})`.
+
+Restored on `DeveloperClient` with `FileReadParams` (already present in
+`developer/edit.rs`). Default cap of 2000 lines applied via
+`DEFAULT_FILE_READ_LIMIT`; on truncation the body is followed by a marker
+showing the line range, total line count, and how many more lines exist,
+with the suggestion to pass `line`/`limit`. `developer_instructions`
+updated on both POSIX and Windows to tell the model to prefer `read` over
+`cat`/`sed`/`type`/`Get-Content`. ACP layer is unchanged: when its
+`fs_read` capability is on, `AcpTools` still intercepts `read`.
 
 ## Things considered and rejected
 
