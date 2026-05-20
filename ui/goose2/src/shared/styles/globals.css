@@ -745,8 +745,21 @@ body,
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--brand) 60%, transparent);
-    color: var(--brand-foreground);
+    background: color-mix(in oklab, var(--brand) 18%, transparent);
+    color: inherit;
+  }
+
+  button,
+  [role="button"],
+  [data-tauri-drag-region] {
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"],
+  [data-streamdown] {
+    user-select: text;
   }
 
   ::-webkit-scrollbar {
