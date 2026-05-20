@@ -161,7 +161,9 @@ async fn make_request(provider: &dyn Provider, session_id: &str) {
 async fn test_session_id_propagates_to_log_records() {
     use opentelemetry::logs::AnyValue;
     use opentelemetry::Key;
-    use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+    use opentelemetry_appender_tracing::layer::{
+        OpenTelemetryTracingBridge, TracingSpanAttributes,
+    };
     use opentelemetry_sdk::logs::{InMemoryLogExporterBuilder, SdkLoggerProvider};
     use tracing_subscriber::prelude::*;
 
@@ -171,7 +173,7 @@ async fn test_session_id_propagates_to_log_records() {
         .build();
 
     let layer = OpenTelemetryTracingBridge::builder(&provider)
-        .with_span_attribute_allowlist(["session.id"])
+        .with_tracing_span_attributes(TracingSpanAttributes::allowlist(["session.id"]))
         .build();
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
