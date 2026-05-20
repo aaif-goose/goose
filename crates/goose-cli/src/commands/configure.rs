@@ -332,29 +332,42 @@ async fn handle_existing_config() -> anyhow::Result<()> {
 }
 
 /// Helper function to handle OAuth configuration for a provider
-async fn handle_oauth_configuration(provider_name: &str, key_name: &str) -> anyhow::Result<()> {
-    let _ = cliclack::log::info(format!(
-        "Configuring {} using OAuth device code flow...",
-        key_name
-    ));
+async fn handle_oauth_configuration(
+    provider_name: &str,
+    key_name: &str,
+    device_code_flow: bool,
+) -> anyhow::Result<()> {
+    let flow_name = if device_code_flow {
+        "OAuth device code flow"
+    } else {
+        "OAuth browser flow"
+    };
+    let _ = cliclack::log::info(format!("Configuring {} using {}...", key_name, flow_name));
 
     // Create a temporary provider instance to handle OAuth
     let temp_model = ModelConfig::new("temp")?.with_canonical_limits(provider_name);
     match create(provider_name, temp_model, Vec::new()).await {
-        Ok(provider) => match provider.configure_oauth().await {
-            Ok(_) => {
-                let _ = cliclack::log::success("OAuth authentication completed successfully!");
-                Ok(())
+        Ok(provider) => {
+            let result = if device_code_flow {
+                provider.configure_oauth_device_code().await
+            } else {
+                provider.configure_oauth().await
+            };
+            match result {
+                Ok(_) => {
+                    let _ = cliclack::log::success("OAuth authentication completed successfully!");
+                    Ok(())
+                }
+                Err(e) => {
+                    let _ = cliclack::log::error(format!("Failed to authenticate: {}", e));
+                    Err(anyhow::anyhow!(
+                        "OAuth authentication failed for {}: {}",
+                        key_name,
+                        e
+                    ))
+                }
             }
-            Err(e) => {
-                let _ = cliclack::log::error(format!("Failed to authenticate: {}", e));
-                Err(anyhow::anyhow!(
-                    "OAuth authentication failed for {}: {}",
-                    key_name,
-                    e
-                ))
-            }
-        },
+        }
         Err(e) => {
             let _ = cliclack::log::error(format!("Failed to create provider for OAuth: {}", e));
             Err(anyhow::anyhow!(
@@ -586,7 +599,12 @@ async fn configure_single_key(
                     let _ = cliclack::log::info(format!("{} is already configured", key.name));
                     if cliclack::confirm("Would you like to update this value?").interact()? {
                         if key.oauth_flow {
-                            handle_oauth_configuration(provider_name, &key.name).await?;
+                            handle_oauth_configuration(
+                                provider_name,
+                                &key.name,
+                                key.device_code_flow,
+                            )
+                            .await?;
                         } else {
                             let value: String = if key.secret {
                                 cliclack::password(format!("Enter new value for {}", key.name))
@@ -613,7 +631,8 @@ async fn configure_single_key(
                 }
                 Err(_) => {
                     if key.oauth_flow {
-                        handle_oauth_configuration(provider_name, &key.name).await?;
+                        handle_oauth_configuration(provider_name, &key.name, key.device_code_flow)
+                            .await?;
                     } else if !key.required && key.secret {
                         if cliclack::confirm(format!(
                             "Would you like to set {}? (optional)",
@@ -705,13 +724,54 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .find(|(p, _)| &p.name == provider_name)
         .expect("Selected provider must exist in metadata");
 
-    for key in provider_meta
+    let primary_keys: Vec<_> = provider_meta
         .config_keys
         .iter()
         .filter(|k| k.primary || k.oauth_flow)
-    {
-        if !configure_single_key(config, provider_name, &provider_meta.display_name, key).await? {
-            return Ok(false);
+        .collect();
+    let oauth_keys: Vec<_> = primary_keys
+        .iter()
+        .copied()
+        .filter(|key| key.oauth_flow)
+        .collect();
+
+    if !oauth_keys.is_empty() {
+        let auth_options: Vec<(&str, &str, &str)> = primary_keys
+            .iter()
+            .map(|key| {
+                let label = if key.oauth_flow {
+                    if key.device_code_flow {
+                        "OAuth device code"
+                    } else {
+                        "OAuth browser"
+                    }
+                } else {
+                    key.name.as_str()
+                };
+                (key.name.as_str(), label, "")
+            })
+            .collect();
+        let selected_key_name = cliclack::select("How would you like to authenticate?")
+            .items(&auth_options)
+            .interact()?;
+        if let Some(key) = primary_keys
+            .iter()
+            .copied()
+            .find(|key| key.name == selected_key_name)
+        {
+            if !configure_single_key(config, provider_name, &provider_meta.display_name, key)
+                .await?
+            {
+                return Ok(false);
+            }
+        }
+    } else {
+        for key in primary_keys {
+            if !configure_single_key(config, provider_name, &provider_meta.display_name, key)
+                .await?
+            {
+                return Ok(false);
+            }
         }
     }
 

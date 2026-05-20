@@ -175,7 +175,8 @@ export default function ProviderConfigurationModal({
   const configKeys = provider.metadata.config_keys.filter((key) => !key.oauth_flow);
   const hasOAuth = provider.metadata.config_keys.some((key) => key.oauth_flow);
   const hasConfig = configKeys.length > 0;
-  const hasDeviceCodeFlow = provider.metadata.config_keys.some((key) => key.device_code_flow);
+  const oauthKeys = provider.metadata.config_keys.filter((key) => key.oauth_flow);
+  const hasDeviceCodeFlow = oauthKeys.length > 0 && oauthKeys.every((key) => key.device_code_flow);
 
   const isConfigured = provider.is_configured;
   const headerText = showDeleteConfirmation
@@ -218,9 +219,12 @@ export default function ProviderConfigurationModal({
       });
       if (oauthResult.error) {
         const err = oauthResult.error as Record<string, unknown>;
-        const errDetail = typeof oauthResult.error === 'string'
-          ? oauthResult.error
-          : (err?.message as string) ?? (err?.detail as string) ?? JSON.stringify(oauthResult.error);
+        const errDetail =
+          typeof oauthResult.error === 'string'
+            ? oauthResult.error
+            : ((err?.message as string) ??
+              (err?.detail as string) ??
+              JSON.stringify(oauthResult.error));
         throw new Error(errDetail);
       }
       if (onConfigured) {
@@ -471,7 +475,7 @@ export default function ProviderConfigurationModal({
           </div>
 
           <DialogFooter>
-            {hasOAuth && !showDeleteConfirmation ? (
+            {hasOAuth && !hasConfig && !showDeleteConfirmation ? (
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={handleCancel}>
                   {intl.formatMessage(i18n.cancel)}

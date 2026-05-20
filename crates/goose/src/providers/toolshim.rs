@@ -31,8 +31,7 @@
 //!
 
 use super::errors::ProviderError;
-#[cfg(feature = "local-inference")]
-use super::local_inference::LOCAL_LLM_MODEL_CONFIG_KEY;
+const LOCAL_LLM_MODEL_CONFIG_KEY: &str = "LOCAL_LLM_MODEL";
 use super::ollama::OLLAMA_DEFAULT_PORT;
 use super::ollama::OLLAMA_HOST;
 use crate::conversation::message::{Message, MessageContent};
