@@ -381,6 +381,7 @@ if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
 // Apply single instance lock on Windows and Linux where it's needed for deep links
 // macOS uses the 'open-url' event instead
 let gotTheLock = true;
+let openUrlHandledLaunch = false;
 if (process.platform !== 'darwin') {
   gotTheLock = app.requestSingleInstanceLock();
 
@@ -420,8 +421,21 @@ if (process.platform !== 'darwin') {
           return;
         }
 
+        const resumeSessionId = getResumeSessionId(parsedUrl);
+        if (resumeSessionId) {
+          app.whenReady().then(async () => {
+            const recentDirs = loadRecentDirs();
+            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+            await createChat(app, {
+              dir: openDir || undefined,
+              resumeSessionId,
+            });
+          });
+          return;
+        }
+
         // For non-bot URLs, continue with normal handling
-        handleProtocolUrl(protocolUrl);
+        handleProtocolUrl(protocolUrl, parsedUrl);
       }
 
       // Only focus existing windows for non-bot/recipe URLs
@@ -439,24 +453,54 @@ if (process.platform !== 'darwin') {
   // Handle protocol URLs on Windows and Linux startup
   const protocolUrl = process.argv.find((arg) => arg.startsWith('goose://'));
   if (protocolUrl) {
-    app.whenReady().then(() => {
-      handleProtocolUrl(protocolUrl);
+    app.whenReady().then(async () => {
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(protocolUrl);
+      } catch (error) {
+        log.warn('[Main] Ignoring invalid startup protocol URL:', errorMessage(error));
+        return;
+      }
+
+      openUrlHandledLaunch = true;
+      try {
+        await handleProtocolUrl(protocolUrl, parsedUrl);
+      } catch (error) {
+        log.error('[Main] Failed to handle startup protocol URL:', errorMessage(error));
+        if (BrowserWindow.getAllWindows().length === 0) {
+          const { dirPath } = parseArgs();
+          await createNewWindow(app, dirPath);
+        }
+      }
     });
   }
 }
 
 const pendingDeepLinks = new Map<number, string>(); // windowId -> deep link URL
-let openUrlHandledLaunch = false;
 
-async function handleProtocolUrl(url: string) {
+function getResumeSessionId(parsedUrl: URL): string | undefined {
+  if (parsedUrl.hostname !== 'resume') {
+    return undefined;
+  }
+
+  return parsedUrl.pathname.replace(/^\//, '') || undefined;
+}
+
+async function handleProtocolUrl(url: string, parsedUrl: URL) {
   if (!url) return;
 
-  const parsedUrl = new URL(url);
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+  const resumeSessionId = getResumeSessionId(parsedUrl);
 
   if (parsedUrl.hostname === 'new-session') {
     await createChat(app, { dir: openDir || undefined });
+    return;
+  } else if (resumeSessionId) {
+    await createChat(app, {
+      dir: openDir || undefined,
+      resumeSessionId,
+    });
     return;
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     const existingWindows = BrowserWindow.getAllWindows();
@@ -513,7 +557,10 @@ app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
     const parsedUrl = new URL(url);
 
-    log.info('[Main] Received open-url event:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
+    log.info(
+      '[Main] Received open-url event:',
+      url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url
+    );
 
     await app.whenReady();
 
@@ -525,6 +572,17 @@ app.on('open-url', async (_event, url) => {
       log.info('[Main] Detected new-session URL, creating new chat window');
       openUrlHandledLaunch = true;
       await createChat(app, { dir: openDir || undefined });
+      return;
+    }
+
+    const resumeSessionId = getResumeSessionId(parsedUrl);
+    if (resumeSessionId) {
+      log.info('[Main] Detected resume URL, creating resumed chat window');
+      openUrlHandledLaunch = true;
+      await createChat(app, {
+        dir: openDir || undefined,
+        resumeSessionId,
+      });
       return;
     }
 
