@@ -988,6 +988,104 @@ enum Command {
         bin_name: String,
     },
 
+    /// Local code review.
+    ///
+    /// Discovers `**/.agents/checks/*.md` subagent reviewers and
+    /// `**/.agents/REVIEW.md` scoped prompt overrides, builds a review
+    /// request from the working tree (or an explicit diff range), and
+    /// runs the review through goose.
+    #[command(about = "Review the current diff using goose")]
+    Review {
+        /// Diff range to review (e.g. "main...HEAD"). Defaults to the working
+        /// tree vs HEAD.
+        #[arg(value_name = "RANGE")]
+        range: Option<String>,
+
+        /// Path to a Markdown file with a custom base review prompt. Replaces
+        /// the embedded default prompt.
+        #[arg(long = "prompt", value_name = "FILE")]
+        prompt: Option<PathBuf>,
+
+        /// Default model used for the main review agent and for any check
+        /// that does not declare its own `model:` in frontmatter.
+        #[arg(long = "model", value_name = "MODEL")]
+        model: Option<String>,
+
+        /// Provider for the main review agent.
+        #[arg(long = "provider", value_name = "PROVIDER")]
+        provider: Option<String>,
+
+        /// Force every discovered check to use this model, regardless of
+        /// the check's own `model:` field.
+        #[arg(long = "override-model", value_name = "MODEL")]
+        override_model: Option<String>,
+
+        /// Default `turn-limit` applied to checks that do not declare their
+        /// own.
+        #[arg(long = "turn-limit", value_name = "N")]
+        turn_limit: Option<usize>,
+
+        /// Print the assembled review prompt and discovered checks instead of
+        /// running the review.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+
+        /// Suppress non-result output from the underlying agent.
+        #[arg(long, short = 'q')]
+        quiet: bool,
+
+        /// Disable the Rust-driven parallel orchestrator and fall back to
+        /// the single-prompt path that asks the main agent to delegate
+        /// each check via `delegate(... async: true ...)`. The default
+        /// orchestrator dispatches one `goose run` subprocess per check
+        /// (capped at 4 concurrent), bounding wall-clock to the slowest
+        /// single check rather than waiting on the model to issue
+        /// dispatches.
+        #[arg(long = "no-orchestrate")]
+        no_orchestrate: bool,
+
+        /// Additional free-form instructions to prepend to the review
+        /// (e.g. PR intent, commit-message context, "this is a refactor,
+        /// flag any behavior change"). Mirrors `amp review --instructions`
+        /// for drop-in compatibility with existing reviewer wrappers.
+        #[arg(long = "instructions", short = 'i', value_name = "TEXT")]
+        instructions: Option<String>,
+
+        /// Restrict the review to a specific set of files. Other files in
+        /// the diff are still passed to the agent for context but are
+        /// excluded from the assembled diff sent to checks. Mirrors
+        /// `amp review --files`.
+        #[arg(long = "files", short = 'f', value_name = "FILE", num_args = 1..)]
+        files: Vec<String>,
+
+        /// Only run checks whose `name` matches one of these. Other
+        /// discovered checks are skipped. Mirrors `amp review --check-filter`.
+        #[arg(long = "check-filter", short = 'c', value_name = "NAME", num_args = 1..)]
+        check_filter: Vec<String>,
+
+        /// Alternate directory to search for `.agents/checks/*.md` instead
+        /// of the repo root. Mirrors `amp review --check-scope`.
+        #[arg(long = "check-scope", short = 's', value_name = "DIR")]
+        check_scope: Option<PathBuf>,
+
+        /// Skip the main correctness pass and only run check subagents.
+        /// Mirrors `amp review --checks-only`.
+        #[arg(long = "checks-only")]
+        checks_only: bool,
+
+        /// Print only the diff summary; skip the full review.
+        /// Mirrors `amp review --summary-only`.
+        #[arg(long = "summary-only")]
+        summary_only: bool,
+
+        /// Minimum severity to display. Findings below this rank are
+        /// dropped from the output. Default is `medium`, matching
+        /// Amp's CLI which hides `low` from review output. Pass
+        /// `--severity low` to surface every finding.
+        #[arg(long = "severity", value_name = "LEVEL", default_value = "medium")]
+        severity: String,
+    },
+
     #[command(
         name = "validate-extensions",
         about = "Validate a bundled-extensions.json file",
@@ -1157,6 +1255,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
         Some(Command::Completion { .. }) => "completion",
+        Some(Command::Review { .. }) => "review",
         Some(Command::ValidateExtensions { .. }) => "validate-extensions",
         None => "default_session",
     }
@@ -1990,6 +2089,45 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
+        Some(Command::Review {
+            range,
+            prompt,
+            model,
+            provider,
+            override_model,
+            turn_limit,
+            dry_run,
+            quiet,
+            no_orchestrate,
+            instructions,
+            files,
+            check_filter,
+            check_scope,
+            checks_only,
+            summary_only,
+            severity,
+        }) => {
+            use crate::commands::review::{handle_review, ReviewOptions};
+            handle_review(ReviewOptions {
+                range,
+                prompt_file: prompt,
+                default_model: model,
+                provider,
+                override_model,
+                default_turn_limit: turn_limit,
+                dry_run,
+                quiet,
+                no_orchestrate,
+                instructions,
+                files,
+                check_filter,
+                check_scope,
+                checks_only,
+                summary_only,
+                severity,
+            })
+            .await
+        }
         Some(Command::ValidateExtensions { file }) => {
             use goose::agents::validate_extensions::validate_bundled_extensions;
             match validate_bundled_extensions(&file) {

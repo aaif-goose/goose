@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 
 const FALLBACK_URL = "https://github.com/aaif-goose/goose/releases/latest";
 
+const isStandardLinuxAsset = (asset) => !asset.name.includes('-vulkan');
+
 const LinuxDesktopInstallButtons = () => {
   const [downloadUrls, setDownloadUrls] = useState({
     deb: FALLBACK_URL,
@@ -33,9 +35,15 @@ const LinuxDesktopInstallButtons = () => {
         const assets = release.assets || [];
 
         // Find DEB, RPM, and Flatpak files
-        const debAsset = assets.find(asset => asset.name.includes('.deb') && asset.name.includes('amd64'));
-        const rpmAsset = assets.find(asset => asset.name.includes('.rpm') && asset.name.includes('x86_64'));
-        const flatpakAsset = assets.find(asset => asset.name.endsWith('.flatpak'));
+        const debAsset = assets.find(asset =>
+          isStandardLinuxAsset(asset) && asset.name.includes('.deb') && asset.name.includes('amd64')
+        );
+        const rpmAsset = assets.find(asset =>
+          isStandardLinuxAsset(asset) && asset.name.includes('.rpm') && asset.name.includes('x86_64')
+        );
+        const flatpakAsset = assets.find(asset =>
+          isStandardLinuxAsset(asset) && asset.name.endsWith('.flatpak')
+        );
 
         const newUrls = {
           deb: debAsset?.browser_download_url || FALLBACK_URL,

@@ -69,7 +69,7 @@ Here's a real Town Wall snippet from a session where parallel researchers conver
 * **[10:14] researcher-endpoints** - 💡 Found: native endpoint already exists with minimal deps. Alternative path viable.   
 * **[10:15] researcher-source** - ✅ Done. Confirmed: native path requires zero new dependencies. Recommending pivot.
 
-Goosetown operates on 4 components: [skills](/docs/guides/context-engineering/using-skills), [subagents](/docs/guides/subagents), [beads](https://github.com/steveyegge/beads), and a [gtwall](https://github.com/aaif-goose/goosetown/blob/main/gtwall).
+Goosetown operates on 4 components: [skills](/docs/guides/context-engineering/using-skills), [subagents](/docs/guides/context-engineering/subagents), [beads](https://github.com/steveyegge/beads), and a [gtwall](https://github.com/aaif-goose/goosetown/blob/main/gtwall).
 
 ### Skills
 
@@ -77,7 +77,7 @@ Goosetown operates on 4 components: [skills](/docs/guides/context-engineering/us
 
 ### Subagents
 
-Instead of doing everything in one long conversation that eventually hits a "context cliff," Goosetown uses [subagents](/docs/guides/subagents), ephemeral agent instances. These are triggered by the [summon extension](/docs/mcp/summon-mcp), using `delegate()` to hand off work to a fresh agent instance. They do the work in their own clean context and return a summary, keeping your main session fast and focused.
+Instead of doing everything in one long conversation that eventually hits a "context cliff," Goosetown uses [subagents](/docs/guides/context-engineering/subagents), ephemeral agent instances. These are triggered by the [summon extension](/docs/mcp/summon-mcp), using `delegate()` to hand off work to a fresh agent instance. They do the work in their own clean context and return a summary, keeping your main session fast and focused.
 
 ### Beads
 

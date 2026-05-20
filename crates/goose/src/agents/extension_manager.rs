@@ -517,8 +517,13 @@ async fn connect_with_auth(
 ) -> ExtensionResult<Box<dyn McpClientTrait>> {
     let mut auth_headers = HeaderMap::new();
     auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
-    let auth_http_client = reqwest::Client::builder()
-        .default_headers(auth_headers)
+    #[allow(unused_mut)]
+    let mut auth_client_builder = reqwest::Client::builder().default_headers(auth_headers);
+    #[cfg(target_os = "linux")]
+    {
+        auth_client_builder = auth_client_builder.tcp_user_timeout(Some(timeout));
+    }
+    let auth_http_client = auth_client_builder
         .build()
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
     let auth_client = AuthClient::new(auth_http_client, auth_manager);
@@ -587,8 +592,15 @@ async fn create_streamable_http_client(
         );
     }
 
-    let http_client = reqwest::Client::builder()
-        .default_headers(default_headers)
+    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
+
+    #[allow(unused_mut)]
+    let mut http_client_builder = reqwest::Client::builder().default_headers(default_headers);
+    #[cfg(target_os = "linux")]
+    {
+        http_client_builder = http_client_builder.tcp_user_timeout(Some(timeout_duration));
+    }
+    let http_client = http_client_builder
         .build()
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
 
@@ -596,8 +608,6 @@ async fn create_streamable_http_client(
         http_client,
         StreamableHttpClientTransportConfig::with_uri(uri),
     );
-
-    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
@@ -731,6 +741,7 @@ impl ExtensionManager {
         session_manager: Arc<crate::session::SessionManager>,
         client_name: String,
         capabilities: ExtensionManagerCapabilities,
+        use_login_shell_path: bool,
     ) -> Self {
         Self {
             extensions: Mutex::new(HashMap::new()),
@@ -738,6 +749,7 @@ impl ExtensionManager {
                 extension_manager: None,
                 session_manager,
                 session: None,
+                use_login_shell_path,
             },
             provider,
             tools_cache: Mutex::new(None),
@@ -757,6 +769,7 @@ impl ExtensionManager {
                 mcpui: false,
                 host_info: None,
             },
+            false,
         )
     }
 

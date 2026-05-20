@@ -9,7 +9,7 @@ use super::base::{
 };
 use super::errors::ProviderError;
 use super::formats::snowflake::{create_request, get_usage, response_to_message};
-use super::openai_compatible::map_http_error_to_provider_error;
+use super::openai_compatible::{map_http_error_to_provider_error, sanitize_url};
 use super::retry::ProviderRetry;
 use super::utils::{get_model, ImageFormat, RequestLog};
 use crate::config::ConfigError;
@@ -123,6 +123,7 @@ impl SnowflakeProvider {
             .await?;
 
         let status = response.status();
+        let url = sanitize_url(response.url().as_str());
         let payload_text: String = response.text().await.ok().unwrap_or_default();
 
         if status.is_success() {
@@ -292,7 +293,7 @@ impl SnowflakeProvider {
             Ok(answer_payload)
         } else {
             let error_json = serde_json::from_str::<Value>(&payload_text).ok();
-            Err(map_http_error_to_provider_error(status, error_json))
+            Err(map_http_error_to_provider_error(status, error_json, &url))
         }
     }
 }

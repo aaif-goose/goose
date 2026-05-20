@@ -1119,6 +1119,276 @@ mod tests {
         }
     }
 
+    #[cfg(test)]
+    mod goal_checking_tests {
+        use super::*;
+        use async_trait::async_trait;
+        use goose::agents::AgentConfig;
+        use goose::agents::SessionConfig;
+        use goose::config::permission::PermissionManager;
+        use goose::config::GooseMode;
+        use goose::conversation::message::Message;
+        use goose::model::ModelConfig;
+        use goose::providers::base::{
+            stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
+            ProviderUsage, Usage,
+        };
+        use goose::providers::errors::ProviderError;
+        use goose::session::session_manager::SessionType;
+        use goose::session::SessionManager;
+        use rmcp::model::Tool;
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use tempfile::TempDir;
+
+        struct GoalTextProvider {
+            call_count: AtomicU32,
+        }
+
+        impl GoalTextProvider {
+            fn new() -> Self {
+                Self {
+                    call_count: AtomicU32::new(0),
+                }
+            }
+        }
+
+        impl ProviderDef for GoalTextProvider {
+            type Provider = Self;
+
+            fn metadata() -> ProviderMetadata {
+                ProviderMetadata {
+                    name: "goal-mock".to_string(),
+                    display_name: "Goal Mock Provider".to_string(),
+                    description: "Mock provider for goal testing".to_string(),
+                    default_model: "mock-model".to_string(),
+                    known_models: vec![],
+                    model_doc_link: "".to_string(),
+                    config_keys: vec![],
+                    setup_steps: vec![],
+                    model_selection_hint: None,
+                }
+            }
+
+            fn from_env(
+                _model: ModelConfig,
+                _extensions: Vec<goose::config::ExtensionConfig>,
+            ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+                Box::pin(async { Ok(Self::new()) })
+            }
+        }
+
+        #[async_trait]
+        impl Provider for GoalTextProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _session_id: &str,
+                _system_prompt: &str,
+                _messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                let count = self.call_count.fetch_add(1, Ordering::SeqCst);
+                let text = format!("Response number {count}");
+                let message = Message::assistant().with_text(&text);
+                let usage = ProviderUsage::new(
+                    "mock-model".to_string(),
+                    Usage::new(Some(10), Some(5), Some(15)),
+                );
+                Ok(stream_from_single_message(message, usage))
+            }
+
+            fn get_model_config(&self) -> ModelConfig {
+                ModelConfig::new("mock-model").unwrap()
+            }
+
+            fn get_name(&self) -> &str {
+                "goal-mock"
+            }
+        }
+
+        fn create_agent_with_session_naming_disabled(
+            session_manager: Arc<SessionManager>,
+        ) -> Agent {
+            let config = AgentConfig::new(
+                session_manager,
+                PermissionManager::instance(),
+                None,
+                GooseMode::Auto,
+                true,
+                GoosePlatform::GooseCli,
+            );
+            Agent::with_config(config)
+        }
+
+        #[tokio::test]
+        async fn test_goal_nudges_agent_before_exit() -> Result<()> {
+            let temp_dir = TempDir::new()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let provider = Arc::new(GoalTextProvider::new());
+
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "goal-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await?;
+
+            agent.update_provider(provider.clone(), &session.id).await?;
+            agent
+                .set_goal(Some("Ensure the sky is blue".to_string()))
+                .await;
+
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                schedule_id: None,
+                max_turns: Some(10),
+                retry_config: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text("Hello"), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+
+            let mut messages = Vec::new();
+            while let Some(event) = reply_stream.next().await {
+                match event {
+                    Ok(AgentEvent::Message(msg)) => messages.push(msg),
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let call_count = provider.call_count.load(Ordering::SeqCst);
+            assert!(
+                call_count > 1,
+                "Expected provider to be called more than once due to goal checking, got {call_count}"
+            );
+            assert!(
+                call_count <= 3,
+                "Expected at most 3 provider calls (1 initial + 1 goal check + 1 exit), got {call_count}"
+            );
+
+            // The goal nudge should NOT appear in yielded events (it's internal)
+            let nudge_messages: Vec<_> = messages
+                .iter()
+                .filter(|m| {
+                    m.as_concat_text()
+                        .contains("check whether the following goal")
+                })
+                .collect();
+            assert!(
+                nudge_messages.is_empty(),
+                "Goal nudge should be hidden from user, but found {} in events",
+                nudge_messages.len()
+            );
+
+            // Goal should be cleared after being met
+            assert_eq!(
+                agent.get_goal().await,
+                None,
+                "Goal should be cleared after the agent finishes with it met"
+            );
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn test_no_goal_exits_immediately() -> Result<()> {
+            let temp_dir = TempDir::new()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let provider = Arc::new(GoalTextProvider::new());
+
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "no-goal-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await?;
+
+            agent.update_provider(provider.clone(), &session.id).await?;
+
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                schedule_id: None,
+                max_turns: Some(10),
+                retry_config: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text("Hello"), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+
+            while let Some(event) = reply_stream.next().await {
+                match event {
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let call_count = provider.call_count.load(Ordering::SeqCst);
+            assert_eq!(
+                call_count, 1,
+                "Without a goal, provider should be called exactly once, got {call_count}"
+            );
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn test_goal_command_set_and_clear() -> Result<()> {
+            let temp_dir = TempDir::new()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "goal-cmd-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await?;
+
+            // No goal initially
+            let result = agent.execute_command("/goal", &session.id).await?.unwrap();
+            assert!(result.as_concat_text().contains("No goal set"));
+
+            // Set a goal
+            let result = agent
+                .execute_command("/goal make all tests pass", &session.id)
+                .await?
+                .unwrap();
+            assert!(result.as_concat_text().contains("Goal set"));
+            assert_eq!(
+                agent.get_goal().await,
+                Some("make all tests pass".to_string())
+            );
+
+            // Query it
+            let result = agent.execute_command("/goal", &session.id).await?.unwrap();
+            assert!(result.as_concat_text().contains("make all tests pass"));
+
+            // Clear it
+            let result = agent
+                .execute_command("/goal off", &session.id)
+                .await?
+                .unwrap();
+            assert!(result.as_concat_text().contains("cleared"));
+            assert_eq!(agent.get_goal().await, None);
+
+            Ok(())
+        }
+    }
+
     mod cumulative_token_tests {
         use super::*;
         use async_trait::async_trait;

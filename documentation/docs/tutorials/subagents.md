@@ -8,7 +8,7 @@ image: /assets/images/tutorial-using-subagents-ef265627024db73e73d80e5799ed0c1a.
 ![](/img/tutorial-using-subagents.png)
 </div>
 
-This tutorial walks you through how to spin up a team of AI [subagents](/docs/guides/subagents/) and guide them through building a fully functional app.
+This tutorial walks you through how to spin up a team of AI [subagents](/docs/guides/context-engineering/subagents/) and guide them through building a fully functional app.
 
 You'll build **AI BriefMe**, an app that generates a structured executive style briefing based on any topic. 
 

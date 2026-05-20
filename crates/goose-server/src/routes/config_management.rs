@@ -13,7 +13,7 @@ use goose::config::ExtensionEntry;
 use goose::config::{Config, ConfigError};
 use goose::custom_requests::SourceType;
 use goose::model::ModelConfig;
-use goose::providers::base::{ProviderMetadata, ProviderType};
+use goose::providers::base::{ModelInfo, ProviderMetadata, ProviderType};
 use goose::providers::canonical::maybe_get_canonical_model;
 use goose::providers::catalog::{
     get_provider_template, get_providers_by_format, ProviderCatalogEntry, ProviderFormat,
@@ -23,7 +23,7 @@ use goose::providers::create_with_default_model;
 use goose::providers::providers as get_providers;
 use goose::{
     agents::execute_commands, agents::ExtensionConfig, config::permission::PermissionLevel,
-    slash_commands,
+    slash_commands::recipe_slash_command,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -69,6 +69,8 @@ pub struct ProviderDetails {
     pub metadata: ProviderMetadata,
     pub is_configured: bool,
     pub provider_type: ProviderType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saved_model: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -171,6 +173,29 @@ pub async fn upsert_config(
     Json(query): Json<UpsertConfigQuery>,
 ) -> Result<Json<Value>, ErrorResponse> {
     let config = Config::global();
+
+    // Intercept legacy keys to write structured provider config
+    if query.key == "GOOSE_PROVIDER" {
+        if let Some(name) = query.value.as_str() {
+            // Preserve the target provider's saved model rather than copying
+            // the current active provider's model into the new entry.
+            let model = goose::config::get_provider_entry(config, name)
+                .map(|e| e.model)
+                .or_else(|| config.get_goose_model().ok())
+                .unwrap_or_default();
+            goose::config::set_active_provider(config, name, &model)?;
+            return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
+        }
+    }
+    if query.key == "GOOSE_MODEL" {
+        if let Some(model) = query.value.as_str() {
+            if let Ok(provider) = config.get_goose_provider() {
+                goose::config::set_active_provider(config, &provider, model)?;
+                return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
+            }
+        }
+    }
+
     config.set(&query.key, &query.value, query.is_secret)?;
     Ok(Json(Value::String(format!("Upserted key {}", query.key))))
 }
@@ -192,6 +217,14 @@ pub async fn remove_config(
 
     if query.is_secret {
         config.delete_secret(&query.key)?;
+    } else if query.key == "GOOSE_PROVIDER" || query.key == "active_provider" {
+        config.delete("active_provider")?;
+        config.delete("GOOSE_PROVIDER")?;
+    } else if query.key == "GOOSE_MODEL" {
+        if let Ok(provider) = config.get_goose_provider() {
+            goose::config::set_active_provider(config, &provider, "")?;
+        }
+        config.delete("GOOSE_MODEL")?;
     } else {
         config.delete(&query.key)?;
     }
@@ -235,6 +268,20 @@ pub async fn read_config(
     Json(query): Json<ConfigKeyQuery>,
 ) -> Result<Json<ConfigValueResponse>, ErrorResponse> {
     let config = Config::global();
+
+    // Intercept legacy keys to return structured provider config
+    if query.key == "GOOSE_PROVIDER" || query.key == "active_provider" {
+        if let Ok(val) = config.get_goose_provider() {
+            return Ok(Json(ConfigValueResponse::Value(Value::String(val))));
+        }
+        return Ok(Json(ConfigValueResponse::Value(Value::Null)));
+    }
+    if query.key == "GOOSE_MODEL" {
+        if let Ok(val) = config.get_goose_model() {
+            return Ok(Json(ConfigValueResponse::Value(Value::String(val))));
+        }
+        return Ok(Json(ConfigValueResponse::Value(Value::Null)));
+    }
 
     let response_value = match config.get(&query.key, query.is_secret) {
         Ok(value) => {
@@ -341,17 +388,22 @@ pub async fn read_all_config() -> Result<Json<ConfigResponse>, ErrorResponse> {
     )
 )]
 pub async fn providers() -> Result<Json<Vec<ProviderDetails>>, ErrorResponse> {
+    let config = Config::global();
     let providers = get_providers().await;
     let providers_response: Vec<ProviderDetails> = providers
         .into_iter()
         .map(|(metadata, provider_type)| {
             let is_configured = check_provider_configured(&metadata, provider_type);
+            let saved_model = goose::config::get_provider_entry(config, &metadata.name)
+                .map(|e| e.model)
+                .filter(|m| !m.is_empty());
 
             ProviderDetails {
                 name: metadata.name.clone(),
                 metadata,
                 is_configured,
                 provider_type,
+                saved_model,
             }
         })
         .collect();
@@ -366,7 +418,7 @@ pub async fn providers() -> Result<Json<Vec<ProviderDetails>>, ErrorResponse> {
         ("name" = String, Path, description = "Provider name (e.g., openai)")
     ),
     responses(
-        (status = 200, description = "Models fetched successfully", body = [String]),
+        (status = 200, description = "Models fetched successfully", body = [ModelInfo]),
         (status = 400, description = "Unknown provider, provider not configured, or authentication error"),
         (status = 429, description = "Rate limit exceeded"),
         (status = 500, description = "Internal server error")
@@ -374,7 +426,7 @@ pub async fn providers() -> Result<Json<Vec<ProviderDetails>>, ErrorResponse> {
 )]
 pub async fn get_provider_models(
     Path(name): Path<String>,
-) -> Result<Json<Vec<String>>, ErrorResponse> {
+) -> Result<Json<Vec<ModelInfo>>, ErrorResponse> {
     let all = get_providers().await.into_iter().collect::<Vec<_>>();
     let Some((metadata, provider_type)) = all.into_iter().find(|(m, _)| m.name == name) else {
         return Err(ErrorResponse::bad_request(format!(
@@ -392,12 +444,76 @@ pub async fn get_provider_models(
     let model_config = ModelConfig::new(&metadata.default_model)?.with_canonical_limits(&name);
     let provider = goose::providers::create(&name, model_config, Vec::new()).await?;
 
-    let models_result = provider.fetch_recommended_models().await;
+    let models_result = provider.fetch_recommended_model_info().await;
 
     match models_result {
         Ok(models) => Ok(Json(models)),
         Err(provider_error) => Err(provider_error.into()),
     }
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ProviderModelInfoQuery {
+    pub model: String,
+}
+
+pub async fn resolve_provider_model_info(
+    name: &str,
+    model: &str,
+) -> Result<ModelInfo, ErrorResponse> {
+    let all = get_providers().await.into_iter().collect::<Vec<_>>();
+    let Some((metadata, provider_type)) = all.into_iter().find(|(m, _)| m.name == name) else {
+        return Err(ErrorResponse::bad_request(format!(
+            "Unknown provider: {}",
+            name
+        )));
+    };
+    if !check_provider_configured(&metadata, provider_type) {
+        return Err(ErrorResponse::bad_request(format!(
+            "Provider '{}' is not configured",
+            name
+        )));
+    }
+
+    let model_config = ModelConfig::new(model)?.with_canonical_limits(name);
+    let provider = goose::providers::create(name, model_config.clone(), Vec::new()).await?;
+    match provider.fetch_model_info(model).await {
+        Ok(info) => Ok(info),
+        Err(error) => {
+            let mut info = ModelInfo::new(model, model_config.context_limit());
+            info.reasoning = model_config.is_reasoning_model();
+            tracing::debug!(
+                provider = name,
+                model,
+                error = %error,
+                "Falling back to local model metadata"
+            );
+            Ok(info)
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/config/providers/{name}/model-info",
+    params(
+        ("name" = String, Path, description = "Provider name (e.g., openai)")
+    ),
+    request_body = ProviderModelInfoQuery,
+    responses(
+        (status = 200, description = "Model metadata fetched successfully", body = ModelInfo),
+        (status = 400, description = "Unknown provider, provider not configured, or authentication error"),
+        (status = 429, description = "Rate limit exceeded"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_provider_model_info(
+    Path(name): Path<String>,
+    Json(query): Json<ProviderModelInfoQuery>,
+) -> Result<Json<ModelInfo>, ErrorResponse> {
+    resolve_provider_model_info(&name, &query.model)
+        .await
+        .map(Json)
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
@@ -417,7 +533,7 @@ pub struct SlashCommandsQuery {
 pub async fn get_slash_commands(
     axum::extract::Query(query): axum::extract::Query<SlashCommandsQuery>,
 ) -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
-    let mut commands: Vec<_> = slash_commands::list_commands()
+    let mut commands: Vec<_> = recipe_slash_command::list_commands()
         .iter()
         .map(|command| SlashCommand {
             command: command.command.clone(),
@@ -471,6 +587,7 @@ pub struct ModelInfoData {
     pub model: String,
     pub context_limit: usize,
     pub max_output_tokens: Option<usize>,
+    pub reasoning: bool,
     pub input_token_cost: Option<f64>,
     pub output_token_cost: Option<f64>,
     pub cache_read_token_cost: Option<f64>,
@@ -508,6 +625,9 @@ pub async fn get_canonical_model_info(
         model: query.model.clone(),
         context_limit: canonical_model.limit.context,
         max_output_tokens: canonical_model.limit.output,
+        reasoning: canonical_model
+            .reasoning
+            .unwrap_or_else(|| ModelConfig::new_or_fail(&query.model).is_reasoning_model()),
         // Costs are per million tokens - client handles division for display
         input_token_cost: canonical_model.cost.input,
         output_token_cost: canonical_model.cost.output,
@@ -729,9 +849,7 @@ pub async fn set_config_provider(
         .await
         .and_then(|_| {
             let config = Config::global();
-            config
-                .set_goose_provider(provider.clone())
-                .and_then(|_| config.set_goose_model(model.clone()))
+            goose::config::set_active_provider(config, &provider, &model)
                 .map_err(|e| anyhow::anyhow!(e))
         })
         .map_err(|err| {
@@ -839,9 +957,28 @@ pub async fn configure_provider_oauth(
     })?;
 
     // Mark the provider as configured after successful OAuth
-    let configured_marker = format!("{}_configured", provider_name);
     let config = goose::config::Config::global();
-    config.set_param(&configured_marker, true)?;
+    if let Some(mut entry) = goose::config::get_provider_entry(config, &provider_name) {
+        entry.configured = true;
+        goose::config::set_provider_entry(config, &provider_name, &entry)?;
+    } else {
+        let model = if goose::config::get_active_provider(config).as_deref()
+            == Some(provider_name.as_str())
+        {
+            config.get_goose_model().unwrap_or_default()
+        } else {
+            String::new()
+        };
+        goose::config::set_provider_entry(
+            config,
+            &provider_name,
+            &goose::config::ProviderEntry {
+                enabled: true,
+                model,
+                configured: true,
+            },
+        )?;
+    }
 
     Ok(Json("OAuth configuration completed".to_string()))
 }
@@ -857,6 +994,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/config/extensions/{name}", delete(remove_extension))
         .route("/config/providers", get(providers))
         .route("/config/providers/{name}/models", get(get_provider_models))
+        .route(
+            "/config/providers/{name}/model-info",
+            post(get_provider_model_info),
+        )
         .route("/config/provider-catalog", get(get_provider_catalog))
         .route(
             "/config/provider-catalog/{id}",

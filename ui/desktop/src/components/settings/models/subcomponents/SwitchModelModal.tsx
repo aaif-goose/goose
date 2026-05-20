@@ -17,12 +17,20 @@ import { Select } from '../../../ui/Select';
 import { useConfig } from '../../../ConfigContext';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
-import Model, { getProviderMetadata, fetchModelsForProviders } from '../modelInterface';
+import Model, {
+  fetchModelReasoning,
+  fetchModelsForProviders,
+  getProviderMetadata,
+} from '../modelInterface';
 import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../predefinedModelsUtils';
-import { ProviderType } from '../../../../api';
+import type { ProviderType, ThinkingEffort } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
+  thinkingEffortOff: {
+    id: 'switchModelModal.thinkingEffortOff',
+    defaultMessage: 'Off - No extended thinking',
+  },
   thinkingLevelLow: {
     id: 'switchModelModal.thinkingLevelLow',
     defaultMessage: 'Low - Better latency, lighter reasoning',
@@ -185,16 +193,7 @@ const i18n = defineMessages({
   },
 });
 
-// THINKING_LEVEL_OPTIONS and CLAUDE_THINKING_EFFORT_OPTIONS are created inside the component to support i18n.
-
-function isClaudeModel(name: string | null | undefined): boolean {
-  return !!name && name.toLowerCase().startsWith('claude-');
-}
-
-function supportsAdaptiveThinking(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.includes('claude-opus-4-6') || lower.includes('claude-sonnet-4-6');
-}
+// Thinking effort options are created inside the component to support i18n.
 
 const PREFERRED_MODEL_PATTERNS = [
   /claude-sonnet-4/i,
@@ -256,12 +255,8 @@ export const SwitchModelModal = ({
 }: SwitchModelModalProps) => {
   const intl = useIntl();
 
-  const THINKING_LEVEL_OPTIONS = [
-    { value: 'low', label: intl.formatMessage(i18n.thinkingLevelLow) },
-    { value: 'high', label: intl.formatMessage(i18n.thinkingLevelHigh) },
-  ];
-
-  const CLAUDE_THINKING_EFFORT_OPTIONS = [
+  const THINKING_EFFORT_OPTIONS: { value: ThinkingEffort; label: string }[] = [
+    { value: 'off', label: intl.formatMessage(i18n.thinkingEffortOff) },
     { value: 'low', label: intl.formatMessage(i18n.claudeEffortLow) },
     { value: 'medium', label: intl.formatMessage(i18n.claudeEffortMedium) },
     { value: 'high', label: intl.formatMessage(i18n.claudeEffortHigh) },
@@ -278,7 +273,13 @@ export const SwitchModelModal = ({
   const currentModel = sessionModel ?? configModel;
   const currentProvider = sessionProvider ?? configProvider;
   const [providerOptions, setProviderOptions] = useState<{ value: string; label: string }[]>([]);
-  type ModelOption = { value: string; label: string; provider: string; isDisabled?: boolean };
+  type ModelOption = {
+    value: string;
+    label: string;
+    provider: string;
+    isDisabled?: boolean;
+    reasoning?: boolean;
+  };
   const [modelOptions, setModelOptions] = useState<{ options: ModelOption[] }[]>([]);
   const [provider, setProvider] = useState<string | null>(
     initialProvider || currentProvider || null
@@ -304,42 +305,55 @@ export const SwitchModelModal = ({
     import('../../../../api').ProviderDetails[]
   >([]);
   const fetchedProviders = useRef<Set<string>>(new Set());
-  const [thinkingLevel, setThinkingLevel] = useState<string>('low');
-  const [claudeThinkingType, setClaudeThinkingType] = useState<string>('disabled');
-  const [claudeThinkingEffort, setClaudeThinkingEffort] = useState<string>('high');
-  const [claudeThinkingBudget, setClaudeThinkingBudget] = useState<string>('16000');
+  const reasoningRequestId = useRef(0);
+  const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort | null>(null);
+  const [selectedModelReasoning, setSelectedModelReasoning] = useState<boolean | null>(null);
 
-  const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
-  const isGemini3Model = modelName?.toLowerCase().startsWith('gemini-3') ?? false;
-  const showClaudeThinking = isClaudeModel(modelName);
-  const modelSupportsAdaptive = modelName ? supportsAdaptiveThinking(modelName) : false;
+  const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
+  const showThinkingControl = modelReasoning === true;
+  const resolveSelectedModelReasoning = useCallback(
+    (providerName: string, modelName: string, fallback?: boolean) => {
+      const requestId = ++reasoningRequestId.current;
+      setSelectedModelReasoning(fallback ?? null);
+      fetchModelReasoning(providerName, modelName, fallback).then((reasoning) => {
+        if (requestId === reasoningRequestId.current) {
+          setSelectedModelReasoning(reasoning);
+        }
+      });
+    },
+    []
+  );
 
   useEffect(() => {
-    if (!showClaudeThinking) return;
-    if (claudeThinkingType === 'adaptive' && !modelSupportsAdaptive) {
-      setClaudeThinkingType('disabled');
-    }
-  }, [modelName, showClaudeThinking, modelSupportsAdaptive, claudeThinkingType]);
-
-  useEffect(() => {
-    const readConfig = async (key: string): Promise<string | null> => {
-      try {
-        const val = (await read(key, false)) as string;
-        return val || null;
-      } catch (e) {
-        console.warn(`Could not read ${key}, using default:`, e);
-        return null;
-      }
-    };
     (async () => {
-      const tt = await readConfig('CLAUDE_THINKING_TYPE');
-      if (tt) setClaudeThinkingType(tt);
-      const effort = await readConfig('CLAUDE_THINKING_EFFORT');
-      if (effort) setClaudeThinkingEffort(effort);
-      const budget = await readConfig('CLAUDE_THINKING_BUDGET');
-      if (budget) setClaudeThinkingBudget(budget);
+      try {
+        const effort = (await read('GOOSE_THINKING_EFFORT', false)) as ThinkingEffort;
+        if (effort) setThinkingEffort(effort);
+      } catch (e) {
+        console.warn('Could not read GOOSE_THINKING_EFFORT, using default:', e);
+      }
     })();
   }, [read]);
+
+  useEffect(() => {
+    if (!provider || !model) return;
+
+    const selectedOption = modelOptions
+      .flatMap((group) => group.options)
+      .find((option) => option.provider === provider && option.value === model);
+
+    if (selectedOption) {
+      resolveSelectedModelReasoning(provider, model, selectedOption.reasoning);
+      return;
+    }
+
+    setSelectedModelReasoning(null);
+    const timeout = setTimeout(() => {
+      resolveSelectedModelReasoning(provider, model);
+    }, 400);
+
+    return () => clearTimeout(timeout);
+  }, [model, provider, modelOptions, resolveSelectedModelReasoning]);
 
   // Validate form data
   const validateForm = useCallback(() => {
@@ -393,36 +407,18 @@ export const SwitchModelModal = ({
           subtext: providerDisplayName,
         } as Model;
       }
+      modelObj = {
+        ...modelObj,
+        reasoning: selectedModelReasoning ?? modelObj.reasoning,
+      };
 
-      if (isGemini3Model) {
+      if (showThinkingControl) {
+        const effort = thinkingEffort ?? modelObj.request_params?.thinking_effort ?? 'off';
         modelObj = {
           ...modelObj,
-          request_params: { ...modelObj.request_params, thinking_level: thinkingLevel },
+          request_params: { ...modelObj.request_params, thinking_effort: effort },
         };
-      }
-
-      if (showClaudeThinking) {
-        const params: Record<string, unknown> = {
-          ...modelObj.request_params,
-          thinking_type: claudeThinkingType,
-        };
-        if (claudeThinkingType === 'adaptive') {
-          params.effort = claudeThinkingEffort;
-        } else if (claudeThinkingType === 'enabled') {
-          params.budget_tokens = parseInt(claudeThinkingBudget, 10) || 16000;
-        }
-        modelObj = { ...modelObj, request_params: params };
-
-        upsert('CLAUDE_THINKING_TYPE', claudeThinkingType, false).catch(console.warn);
-        if (claudeThinkingType === 'adaptive') {
-          upsert('CLAUDE_THINKING_EFFORT', claudeThinkingEffort, false).catch(console.warn);
-        } else if (claudeThinkingType === 'enabled') {
-          upsert(
-            'CLAUDE_THINKING_BUDGET',
-            parseInt(claudeThinkingBudget, 10) || 16000,
-            false
-          ).catch(console.warn);
-        }
+        upsert('GOOSE_THINKING_EFFORT', effort, false).catch(console.warn);
       }
 
       const success = await changeModel(sessionId, modelObj);
@@ -450,8 +446,13 @@ export const SwitchModelModal = ({
     const matchingModel = models.find((m) => m.name === currentModel);
     if (matchingModel) {
       setSelectedPredefinedModel(matchingModel);
+      resolveSelectedModelReasoning(
+        matchingModel.provider,
+        matchingModel.name,
+        matchingModel.reasoning
+      );
     }
-  }, [usePredefinedModels, currentModel]);
+  }, [usePredefinedModels, currentModel, resolveSelectedModelReasoning]);
 
   // For manual mode: one-time sync of provider/model when session data
   // arrives after the modal has already mounted. Uses a ref so it only
@@ -515,7 +516,7 @@ export const SwitchModelModal = ({
         if (cancelled) return;
 
         const newGroupedOptions: {
-          options: { value: string; label: string; provider: string; providerType: ProviderType }[];
+          options: (ModelOption & { providerType: ProviderType })[];
         }[] = [];
         const newErrors: Record<string, string> = {};
         const newWarnings: Record<string, string> = {};
@@ -536,11 +537,13 @@ export const SwitchModelModal = ({
             label: string;
             provider: string;
             providerType: ProviderType;
+            reasoning?: boolean;
           }[] = modelList.map((m) => ({
-            value: m,
-            label: m,
+            value: m.name,
+            label: m.name,
             provider: p.name,
             providerType: p.provider_type,
+            reasoning: m.reasoning,
           }));
 
           if (p.provider_type !== 'Custom') {
@@ -594,6 +597,13 @@ export const SwitchModelModal = ({
     // Don't auto-select if user explicitly cleared the model
     if (!provider || loadingModels || model || isCustomModel || userClearedModel) return;
 
+    // Use saved model from provider config if available
+    const providerInfo = activeProvidersList.find((p) => p.name === provider);
+    if (providerInfo?.saved_model) {
+      setModel(providerInfo.saved_model);
+      return;
+    }
+
     const providerModels = modelOptions
       .filter((group) => group.options[0]?.provider === provider)
       .flatMap((group) => group.options);
@@ -604,32 +614,53 @@ export const SwitchModelModal = ({
         setModel(preferredModel);
       }
     }
-  }, [provider, modelOptions, loadingModels, model, isCustomModel, userClearedModel]);
+  }, [provider, modelOptions, loadingModels, model, isCustomModel, userClearedModel, activeProvidersList]);
+
+  const handlePredefinedModelChange = (model: Model) => {
+    setSelectedPredefinedModel(model);
+    resolveSelectedModelReasoning(model.provider, model.name, model.reasoning);
+  };
 
   // Handle model selection change
   const handleModelChange = (newValue: unknown) => {
-    const selectedOption = newValue as { value: string; label: string; provider: string } | null;
+    const selectedOption = newValue as {
+      value: string;
+      label: string;
+      provider: string;
+      reasoning?: boolean;
+    } | null;
     if (selectedOption?.value === 'custom') {
       setIsCustomModel(true);
       setModel('');
       setProvider(selectedOption.provider);
+      setSelectedModelReasoning(null);
       setUserClearedModel(false);
     } else if (selectedOption === null) {
       // User cleared the selection
       setIsCustomModel(false);
       setModel('');
+      setSelectedModelReasoning(null);
       setUserClearedModel(true);
     } else {
       setIsCustomModel(false);
       setModel(selectedOption?.value || '');
       setProvider(selectedOption?.provider || '');
+      if (selectedOption?.provider && selectedOption.value) {
+        resolveSelectedModelReasoning(
+          selectedOption.provider,
+          selectedOption.value,
+          selectedOption.reasoning
+        );
+      } else {
+        setSelectedModelReasoning(selectedOption?.reasoning ?? null);
+      }
       setUserClearedModel(false);
     }
   };
 
   // Store the original model options in state, initialized from modelOptions
   const [originalModelOptions, setOriginalModelOptions] =
-    useState<{ options: { value: string; label: string; provider: string }[] }[]>(modelOptions);
+    useState<{ options: ModelOption[] }[]>(modelOptions);
 
   const handleInputChange = (inputValue: string) => {
     if (!provider) return;
@@ -673,54 +704,20 @@ export const SwitchModelModal = ({
     }
   };
 
-  const claudeThinkingTypeOptions = [
-    ...(modelSupportsAdaptive
-      ? [{ value: 'adaptive', label: intl.formatMessage(i18n.claudeAdaptive) }]
-      : []),
-    { value: 'enabled', label: intl.formatMessage(i18n.claudeEnabled) },
-    { value: 'disabled', label: intl.formatMessage(i18n.claudeDisabled) },
-  ];
-
-  const claudeThinkingControls = showClaudeThinking && (
-    <div className="mt-2 flex flex-col gap-3">
-      <div>
-        <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.extendedThinking)}</label>
-        <Select
-          options={claudeThinkingTypeOptions}
-          value={claudeThinkingTypeOptions.find((o) => o.value === claudeThinkingType)}
-          onChange={(newValue: unknown) => {
-            const option = newValue as { value: string; label: string } | null;
-            setClaudeThinkingType(option?.value || 'disabled');
-          }}
-          placeholder={intl.formatMessage(i18n.selectThinkingMode)}
-        />
-      </div>
-      {claudeThinkingType === 'adaptive' && (
-        <div>
-          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingEffort)}</label>
-          <Select
-            options={CLAUDE_THINKING_EFFORT_OPTIONS}
-            value={CLAUDE_THINKING_EFFORT_OPTIONS.find((o) => o.value === claudeThinkingEffort)}
-            onChange={(newValue: unknown) => {
-              const option = newValue as { value: string; label: string } | null;
-              setClaudeThinkingEffort(option?.value || 'high');
-            }}
-            placeholder={intl.formatMessage(i18n.selectEffortLevel)}
-          />
-        </div>
-      )}
-      {claudeThinkingType === 'enabled' && (
-        <div>
-          <label className="text-sm text-textSubtle mb-1 block">{intl.formatMessage(i18n.thinkingBudget)}</label>
-          <Input
-            className="border-2 px-4 py-2"
-            type="number"
-            min="1024"
-            value={claudeThinkingBudget}
-            onChange={(e) => setClaudeThinkingBudget(e.target.value)}
-          />
-        </div>
-      )}
+  const thinkingEffortControl = showThinkingControl && (
+    <div className="mt-2">
+      <label className="text-sm text-textSubtle mb-1 block">
+        {intl.formatMessage(i18n.thinkingEffort)}
+      </label>
+      <Select
+        options={THINKING_EFFORT_OPTIONS}
+        value={THINKING_EFFORT_OPTIONS.find((o) => o.value === (thinkingEffort ?? 'off'))}
+        onChange={(newValue: unknown) => {
+          const option = newValue as { value: ThinkingEffort; label: string } | null;
+          setThinkingEffort(option?.value || 'off');
+        }}
+        placeholder={intl.formatMessage(i18n.selectEffortLevel)}
+      />
     </div>
   );
 
@@ -753,7 +750,7 @@ export const SwitchModelModal = ({
                           ? 'bg-background-secondary'
                           : 'bg-background-primary hover:bg-background-secondary'
                       } rounded-lg transition-all`}
-                      onClick={() => setSelectedPredefinedModel(model)}
+                      onClick={() => handlePredefinedModelChange(model)}
                     >
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
@@ -779,7 +776,7 @@ export const SwitchModelModal = ({
                           name="predefined-model"
                           value={model.name}
                           checked={selectedPredefinedModel?.name === model.name}
-                          onChange={() => setSelectedPredefinedModel(model)}
+                          onChange={() => handlePredefinedModelChange(model)}
                           className="peer sr-only"
                         />
                         <div
@@ -798,25 +795,7 @@ export const SwitchModelModal = ({
                 <div className="text-red-500 text-sm mt-1">{validationErrors.model}</div>
               )}
 
-              {isGemini3Model && (
-                <div className="mt-2">
-                  <label className="text-sm text-textSubtle mb-1 block">
-                    {intl.formatMessage(i18n.thinkingLevel)}
-                    <span className="text-xs text-textMuted ml-2">{intl.formatMessage(i18n.geminiOnly)}</span>
-                  </label>
-                  <Select
-                    options={THINKING_LEVEL_OPTIONS}
-                    value={THINKING_LEVEL_OPTIONS.find((o) => o.value === thinkingLevel)}
-                    onChange={(newValue: unknown) => {
-                      const option = newValue as { value: string; label: string } | null;
-                      setThinkingLevel(option?.value || 'low');
-                    }}
-                    placeholder={intl.formatMessage(i18n.selectThinkingLevel)}
-                  />
-                </div>
-              )}
-
-              {claudeThinkingControls}
+              {thinkingEffortControl}
             </div>
           ) : (
             /* Manual Provider/Model Selection */
@@ -963,25 +942,7 @@ export const SwitchModelModal = ({
                     </div>
                   )}
 
-                  {isGemini3Model && (
-                    <div className="mt-2">
-                      <label className="text-sm text-textSubtle mb-1 block">
-                        Thinking Level
-                        <span className="text-xs text-textMuted ml-2">(Gemini 3 models only)</span>
-                      </label>
-                      <Select
-                        options={THINKING_LEVEL_OPTIONS}
-                        value={THINKING_LEVEL_OPTIONS.find((o) => o.value === thinkingLevel)}
-                        onChange={(newValue: unknown) => {
-                          const option = newValue as { value: string; label: string } | null;
-                          setThinkingLevel(option?.value || 'low');
-                        }}
-                        placeholder="Select thinking level"
-                      />
-                    </div>
-                  )}
-
-                  {claudeThinkingControls}
+                  {thinkingEffortControl}
                 </>
               )}
             </div>

@@ -265,6 +265,7 @@ async fn test_replayed_session(
             mcpui: true,
             host_info: None,
         },
+        true,
     ));
 
     #[allow(clippy::redundant_closure_call)]

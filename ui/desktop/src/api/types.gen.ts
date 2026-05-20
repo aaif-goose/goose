@@ -602,6 +602,12 @@ export type ImportSessionRequest = {
     json: string;
 };
 
+export type InferenceMetadata = {
+    provider: string;
+    requestedModel: string;
+    resolvedModel?: string | null;
+};
+
 export type InspectJobResponse = {
     processStartTime?: string | null;
     runningDurationSeconds?: number | null;
@@ -746,13 +752,14 @@ export type MessageEvent = {
 };
 
 /**
- * Metadata for message visibility
+ * Metadata for message visibility and model inference details
  */
 export type MessageMetadata = {
     /**
      * Whether the message should be included in the agent's context window
      */
     agentVisible: boolean;
+    inference?: InferenceMetadata | null;
     /**
      * Whether the message should be visible to the user in the UI
      */
@@ -819,6 +826,14 @@ export type ModelInfo = {
      */
     output_token_cost?: number | null;
     /**
+     * Whether this model supports reasoning/thinking controls
+     */
+    reasoning?: boolean;
+    /**
+     * The underlying model resolved from provider metadata, when the configured model is an alias or endpoint.
+     */
+    resolved_model?: string | null;
+    /**
      * Whether this model supports cache control
      */
     supports_cache_control?: boolean | null;
@@ -834,6 +849,7 @@ export type ModelInfoData = {
     model: string;
     output_token_cost?: number | null;
     provider: string;
+    reasoning: boolean;
 };
 
 export type ModelInfoQuery = {
@@ -953,6 +969,7 @@ export type ProviderDetails = {
     metadata: ProviderMetadata;
     name: string;
     provider_type: ProviderType;
+    saved_model?: string | null;
 };
 
 export type ProviderEngine = 'openai' | 'ollama' | 'anthropic';
@@ -997,6 +1014,10 @@ export type ProviderMetadata = {
      * step-by-step instructions for set up providers eg: api key
      */
     setup_steps?: Array<string>;
+};
+
+export type ProviderModelInfoQuery = {
+    model: string;
 };
 
 export type ProviderTemplate = {
@@ -1480,6 +1501,8 @@ export type ThinkingContent = {
     signature: string;
     thinking: string;
 };
+
+export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'max';
 
 export type TokenState = {
     accumulatedCost?: number | null;
@@ -2727,6 +2750,42 @@ export type CleanupProviderCacheResponses = {
 
 export type CleanupProviderCacheResponse = CleanupProviderCacheResponses[keyof CleanupProviderCacheResponses];
 
+export type GetProviderModelInfoData = {
+    body: ProviderModelInfoQuery;
+    path: {
+        /**
+         * Provider name (e.g., openai)
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/config/providers/{name}/model-info';
+};
+
+export type GetProviderModelInfoErrors = {
+    /**
+     * Unknown provider, provider not configured, or authentication error
+     */
+    400: unknown;
+    /**
+     * Rate limit exceeded
+     */
+    429: unknown;
+    /**
+     * Internal server error
+     */
+    500: unknown;
+};
+
+export type GetProviderModelInfoResponses = {
+    /**
+     * Model metadata fetched successfully
+     */
+    200: ModelInfo;
+};
+
+export type GetProviderModelInfoResponse = GetProviderModelInfoResponses[keyof GetProviderModelInfoResponses];
+
 export type GetProviderModelsData = {
     body?: never;
     path: {
@@ -2758,7 +2817,7 @@ export type GetProviderModelsResponses = {
     /**
      * Models fetched successfully
      */
-    200: Array<string>;
+    200: Array<ModelInfo>;
 };
 
 export type GetProviderModelsResponse = GetProviderModelsResponses[keyof GetProviderModelsResponses];

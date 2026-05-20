@@ -149,9 +149,7 @@ pub fn get_input(
         rustyline::EventHandler::Conditional(Box::new(CtrlCHandler::new(completion_cache))),
     );
 
-    let prompt = get_input_prompt_string();
-
-    let input = match editor.readline(&prompt) {
+    let input = match editor.readline("> ") {
         Ok(text) => text,
         Err(e) => match e {
             rustyline::error::ReadlineError::Interrupted => return Ok(InputResult::Exit),
@@ -385,24 +383,6 @@ fn parse_plan_command(input: String) -> Option<InputResult> {
     };
 
     Some(InputResult::Plan(options))
-}
-
-fn get_input_prompt_string() -> String {
-    if is_vte_with_broken_emoji_width() {
-        return "> ".to_string();
-    }
-    "🪿 ".to_string()
-}
-
-/// VTE < 0.70 renders 🪿 as 1 cell while unicode-width counts 2, causing cursor offset.
-fn is_vte_with_broken_emoji_width() -> bool {
-    let Ok(vte_version) = std::env::var("VTE_VERSION") else {
-        return false;
-    };
-    let Ok(version) = vte_version.parse::<u32>() else {
-        return true;
-    };
-    version < 7000
 }
 
 fn print_help() {

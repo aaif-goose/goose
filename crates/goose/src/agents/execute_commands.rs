@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::{Message, SystemNotificationType};
-use crate::recipe::build_recipe::build_recipe_from_template_with_positional_params;
+use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
 use super::Agent;
 
@@ -40,6 +40,15 @@ static COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "doctor",
         description: "Check that your Goose setup is working",
+    },
+    CommandDef {
+        name: "goal",
+        description: "Set a goal the agent must satisfy before finishing, or clear with /goal off",
+    },
+    CommandDef {
+        name: "grind",
+        description:
+            "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
     },
 ];
 
@@ -101,8 +110,19 @@ impl Agent {
             "clear" => self.handle_clear_command(session_id).await,
             "skills" => self.handle_skills_command(session_id).await,
             "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
+            "goal" => self.handle_goal_command(params_str).await,
+            "grind" => self.handle_grind_command(params_str).await,
             _ => {
-                self.handle_recipe_command(command, params_str, session_id)
+                if let Some(message) = self
+                    .handle_recipe_command(command, params_str, session_id)
+                    .await?
+                {
+                    #[cfg(feature = "telemetry")]
+                    crate::posthog::emit_custom_slash_command_used();
+                    return Ok(Some(message));
+                }
+
+                self.handle_skill_command(command, params_str, session_id)
                     .await
             }
         }
@@ -159,9 +179,6 @@ impl Agent {
     }
 
     async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
-        use crate::skills::list_installed_skills;
-        use goose_sdk::custom_requests::SourceType;
-
         let working_dir = self
             .config
             .session_manager
@@ -169,34 +186,7 @@ impl Agent {
             .await
             .ok()
             .map(|s| s.working_dir);
-        let sources = list_installed_skills(working_dir.as_deref());
-        let skills: Vec<_> = sources
-            .iter()
-            .filter(|s| matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill))
-            .collect();
-
-        let mut output = String::new();
-        if skills.is_empty() {
-            output.push_str("No skills installed.\n\n");
-            output.push_str("Skills are loaded from SKILL.md files in:\n");
-            output.push_str("  - ~/.agents/skills/ (global)\n");
-            output.push_str("  - ~/.agents/plugins/*/skills/ (installed plugins)\n");
-            output.push_str("  - .agents/skills/ (in current project)\n");
-        } else {
-            output.push_str(&format!("**Installed skills ({}):**\n\n", skills.len()));
-            for skill in &skills {
-                let kind_label = if skill.source_type == SourceType::BuiltinSkill {
-                    " *(builtin)*"
-                } else {
-                    ""
-                };
-                output.push_str(&format!(
-                    "- **{}**{}: {}\n",
-                    skill.name, kind_label, skill.description
-                ));
-            }
-        }
-
+        let output = skill_slash_command::format_installed_skills(working_dir.as_deref());
         Ok(Some(Message::assistant().with_text(output)))
     }
 
@@ -355,110 +345,83 @@ impl Agent {
         params_str: &str,
         _session_id: &str,
     ) -> Result<Option<Message>> {
-        let full_command = format!("/{}", command);
-        let recipe_path = match crate::slash_commands::get_recipe_for_command(&full_command) {
-            Some(path) => path,
-            None => return Ok(None),
-        };
+        match recipe_slash_command::resolve_command(command, params_str) {
+            Ok(None) => Ok(None),
+            Ok(Some((response, prompt))) => {
+                self.apply_recipe_components(response, true).await;
+                Ok(Some(Message::user().with_text(prompt)))
+            }
+            Err(text) => Ok(Some(Message::assistant().with_text(text))),
+        }
+    }
 
-        if !recipe_path.exists() {
-            return Ok(None);
+    async fn handle_skill_command(
+        &self,
+        command: &str,
+        params_str: &str,
+        session_id: &str,
+    ) -> Result<Option<Message>> {
+        let working_dir = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .ok()
+            .map(|session| session.working_dir);
+
+        match skill_slash_command::resolve_command(command, params_str, working_dir.as_deref()) {
+            Ok(None) => Ok(None),
+            Ok(Some(prompt)) => Ok(Some(Message::user().with_text(prompt))),
+            Err(text) => Ok(Some(Message::assistant().with_text(text))),
+        }
+    }
+
+    async fn handle_goal_command(&self, params_str: &str) -> Result<Option<Message>> {
+        if params_str.is_empty() {
+            let current = self.get_goal().await;
+            let text = match current {
+                Some(goal) => format!("Current goal: {goal}"),
+                None => "No goal set. Use `/goal <description>` to set one.".to_string(),
+            };
+            return Ok(Some(Message::assistant().with_text(text)));
         }
 
-        let recipe_content = std::fs::read_to_string(&recipe_path)
-            .map_err(|e| anyhow!("Failed to read recipe file: {}", e))?;
+        if params_str == "off" || params_str == "clear" || params_str == "none" {
+            self.set_goal(None).await;
+            return Ok(Some(
+                Message::assistant().with_text("Goal cleared. The agent will finish normally."),
+            ));
+        }
 
-        let recipe_dir = recipe_path
-            .parent()
-            .ok_or_else(|| anyhow!("Recipe path has no parent directory"))?;
+        let goal = params_str.to_string();
+        self.set_goal(Some(goal.clone())).await;
+        Ok(Some(Message::assistant().with_text(format!(
+            "Goal set. The agent will verify this goal is met before finishing:\n\n> {goal}"
+        ))))
+    }
 
-        let recipe_dir_str = recipe_dir.display().to_string();
-        let validation_result =
-            crate::recipe::validate_recipe::validate_recipe_template_from_content(
-                &recipe_content,
-                Some(recipe_dir_str),
-            )
-            .map_err(|e| anyhow!("Failed to parse recipe: {}", e))?;
+    async fn handle_grind_command(&self, params_str: &str) -> Result<Option<Message>> {
+        if params_str.is_empty() {
+            let current = self.get_grind().await;
+            let text = match current {
+                Some(goal) => format!("Current grind goal: {goal}"),
+                None => "No grind goal set. Use `/grind <description>` to set one.".to_string(),
+            };
+            return Ok(Some(Message::assistant().with_text(text)));
+        }
 
-        let param_values: Vec<String> = if params_str.is_empty() {
-            vec![]
-        } else {
-            let params_without_default = validation_result
-                .parameters
-                .as_ref()
-                .map(|params| params.iter().filter(|p| p.default.is_none()).count())
-                .unwrap_or(0);
+        if params_str == "off" || params_str == "clear" {
+            self.set_grind(None).await;
+            return Ok(Some(
+                Message::assistant().with_text("Grind cleared. The agent will finish normally."),
+            ));
+        }
 
-            if params_without_default <= 1 {
-                vec![params_str.to_string()]
-            } else {
-                let param_names: Vec<String> = validation_result
-                    .parameters
-                    .as_ref()
-                    .map(|params| {
-                        params
-                            .iter()
-                            .filter(|p| p.default.is_none())
-                            .map(|p| p.key.clone())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                let error_message = format!(
-                    "The /{} recipe requires {} parameters: {}.\n\n\
-                    Slash command recipes only support 1 parameter.\n\n\
-                    **To use this recipe:**\n\
-                    • **CLI:** `goose run --recipe {} {}`\n\
-                    • **Desktop:** Launch from the recipes sidebar to fill in parameters",
-                    command,
-                    params_without_default,
-                    param_names
-                        .iter()
-                        .map(|name| format!("**{}**", name))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    command,
-                    param_names
-                        .iter()
-                        .map(|name| format!("--params {}=\"...\"", name))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                );
-
-                return Err(anyhow!(error_message));
-            }
-        };
-
-        let param_values_len = param_values.len();
-
-        let recipe = match build_recipe_from_template_with_positional_params(
-            recipe_content,
-            recipe_dir,
-            param_values,
-            None::<fn(&str, &str) -> Result<String>>,
-        ) {
-            Ok(recipe) => recipe,
-            Err(crate::recipe::build_recipe::RecipeError::MissingParams { parameters }) => {
-                return Ok(Some(Message::assistant().with_text(format!(
-                    "Recipe requires {} parameter(s): {}. Provided: {}",
-                    parameters.len(),
-                    parameters.join(", "),
-                    param_values_len
-                ))));
-            }
-            Err(e) => return Err(anyhow!("Failed to build recipe: {}", e)),
-        };
-
-        self.apply_recipe_components(recipe.response.clone(), true)
-            .await;
-
-        let prompt = [recipe.instructions.as_deref(), recipe.prompt.as_deref()]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        Ok(Some(Message::user().with_text(prompt)))
+        let goal = params_str.to_string();
+        self.set_grind(Some(goal.clone())).await;
+        Ok(Some(Message::assistant().with_text(format!(
+            "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {goal}"
+        ))))
     }
 }
 

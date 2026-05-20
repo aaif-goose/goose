@@ -5,7 +5,7 @@ use goose::config::permission::PermissionLevel;
 use goose::config::ExtensionEntry;
 use goose::conversation::Conversation;
 use goose::download_manager::{DownloadProgress, DownloadStatus};
-use goose::model::ModelConfig;
+use goose::model::{ModelConfig, ThinkingEffort};
 use goose::permission::permission_confirmation::{Permission, PrincipalType};
 use goose::providers::base::{ConfigKey, ModelInfo, ProviderMetadata, ProviderType};
 use goose::session::{Session, SessionInsights, SessionType, SystemInfo};
@@ -20,9 +20,10 @@ use goose::config::declarative_providers::{
     DeclarativeProviderConfig, EnvVarConfig, LoadedProvider, ProviderEngine,
 };
 use goose::conversation::message::{
-    ActionRequired, ActionRequiredData, FrontendToolRequest, Message, MessageContent,
-    MessageMetadata, RedactedThinkingContent, SystemNotificationContent, SystemNotificationType,
-    ThinkingContent, TokenState, ToolConfirmationRequest, ToolRequest, ToolResponse,
+    ActionRequired, ActionRequiredData, FrontendToolRequest, InferenceMetadata, Message,
+    MessageContent, MessageMetadata, RedactedThinkingContent, SystemNotificationContent,
+    SystemNotificationType, ThinkingContent, TokenState, ToolConfirmationRequest, ToolRequest,
+    ToolResponse,
 };
 
 use crate::routes::recipe_utils::RecipeManifest;
@@ -397,6 +398,7 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         super::routes::config_management::read_all_config,
         super::routes::config_management::providers,
         super::routes::config_management::get_provider_models,
+        super::routes::config_management::get_provider_model_info,
         super::routes::config_management::get_slash_commands,
         super::routes::config_management::upsert_permissions,
         super::routes::config_management::create_custom_provider,
@@ -527,6 +529,7 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         Message,
         MessageContent,
         MessageMetadata,
+        InferenceMetadata,
         TokenState,
         ContentSchema,
         EmbeddedResourceSchema,
@@ -573,6 +576,8 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         PrincipalType,
         ModelInfo,
         ModelConfig,
+        ThinkingEffort,
+        super::routes::config_management::ProviderModelInfoQuery,
         Session,
         goose::config::goose_mode::GooseMode,
         SessionInsights,

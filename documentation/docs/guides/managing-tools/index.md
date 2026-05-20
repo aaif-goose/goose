@@ -16,6 +16,11 @@ import styles from '@site/src/components/Card/styles.module.css';
   <h2 className={styles.categoryTitle}>📚 Documentation & Guides</h2>
   <div className={styles.cardGrid}>
     <Card 
+      title="goose Permissions"
+      description="Choose how much autonomy goose has when using tools, editing files, and taking action in a session."
+      link="/docs/guides/managing-tools/goose-permissions"
+    />
+    <Card 
       title="Tool Permissions"
       description="Configure fine-grained permissions to control which tools goose can use and when, ensuring secure and controlled automation."
       link="/docs/guides/managing-tools/tool-permissions"
@@ -24,11 +29,6 @@ import styles from '@site/src/components/Card/styles.module.css';
       title="Adjust Tool Output"
       description="Customize how tool interactions are displayed, from detailed verbose output to clean concise summaries."
       link="/docs/guides/managing-tools/adjust-tool-output"
-    />
-    <Card 
-      title="Hooks"
-      description="Run scripts when goose starts sessions, submits prompts, calls tools, edits files, or executes shell commands."
-      link="/docs/guides/managing-tools/hooks"
     />
     <Card 
       title="Code Mode"
@@ -61,10 +61,6 @@ import styles from '@site/src/components/Card/styles.module.css';
       description="Technical deep-dive into the challenges of tool calling with open-source models and the research behind toolshim solutions."
       link="/blog/2025/04/11/finetuning-toolshim"
     />
-    <Card
-      title="Hooks: run your own scripts on every goose event"
-      description="Learn how lifecycle hooks let you react to session, prompt, tool, file, and shell events with your own scripts."
-      link="/blog/2026/05/14/goose-hooks"
-    />
+
   </div>
 </div>

@@ -5,8 +5,8 @@ use crate::providers::base::{split_think_blocks, ProviderUsage, ThinkFilter, Usa
 use crate::providers::errors::ProviderError;
 use crate::providers::utils::{
     convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
-    is_valid_function_name, load_image_file, safely_parse_json, sanitize_function_name,
-    ImageFormat,
+    is_valid_function_name, load_image_file, openai_reasoning_effort_for_thinking,
+    safely_parse_json, sanitize_function_name, ImageFormat,
 };
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -734,15 +734,22 @@ pub fn get_usage(usage: &Value) -> Usage {
         .with_cache_tokens(cache_read_input_tokens, cache_write_input_tokens)
 }
 
-fn extract_usage_with_output_tokens(chunk: &StreamingChunk) -> Option<ProviderUsage> {
+fn extract_usage_with_output_tokens(
+    chunk: &StreamingChunk,
+    fallback_model: Option<&str>,
+) -> Option<ProviderUsage> {
     chunk
         .usage
         .as_ref()
         .and_then(|u| {
-            chunk.model.as_ref().map(|model| ProviderUsage {
-                usage: get_usage(u),
-                model: model.clone(),
-            })
+            chunk
+                .model
+                .as_deref()
+                .or(fallback_model)
+                .map(|model| ProviderUsage {
+                    usage: get_usage(u),
+                    model: model.to_string(),
+                })
         })
         .filter(|u| u.usage.output_tokens.is_some())
 }
@@ -901,6 +908,7 @@ where
         // reasoning will arrive. Emitting it immediately and then receiving
         // reasoning_content in a later chunk would produce duplicated reasoning.
         let mut pending_inline_thinking = String::new();
+        let mut last_seen_model: Option<String> = None;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -917,6 +925,9 @@ where
             let chunk: StreamingChunk = parse_streaming_chunk(
                 line.ok_or_else(|| anyhow!("unexpected stream format"))?
             )?;
+            if let Some(model) = &chunk.model {
+                last_seen_model = Some(model.clone());
+            }
 
             if !chunk.choices.is_empty() {
                 if let Some(details) = &chunk.choices[0].delta.reasoning_details {
@@ -931,7 +942,7 @@ where
                 }
             }
 
-            let mut usage = extract_usage_with_output_tokens(&chunk);
+            let mut usage = extract_usage_with_output_tokens(&chunk, last_seen_model.as_deref());
 
             if chunk.choices.is_empty() {
                 yield (None, usage)
@@ -959,8 +970,11 @@ where
                                 }
 
                                 let tool_chunk: StreamingChunk = parse_streaming_chunk(line)?;
+                                if let Some(model) = &tool_chunk.model {
+                                    last_seen_model = Some(model.clone());
+                                }
 
-                                if let Some(chunk_usage) = extract_usage_with_output_tokens(&tool_chunk) {
+                                if let Some(chunk_usage) = extract_usage_with_output_tokens(&tool_chunk, last_seen_model.as_deref()) {
                                     usage = Some(chunk_usage);
                                 }
 
@@ -1239,8 +1253,17 @@ pub fn create_request_with_options(
         ));
     }
 
-    let (model_name, reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
+    let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
     let is_reasoning_model = is_openai_responses_model(&model_name);
+    let reasoning_effort = if is_reasoning_model {
+        model_config
+            .thinking_effort()
+            .map_or(legacy_reasoning_effort, |effort| {
+                openai_reasoning_effort_for_thinking(&model_name, effort)
+            })
+    } else {
+        None
+    };
 
     let system_message = json!({
         "role": if is_reasoning_model { "developer" } else { "system" },
@@ -1299,7 +1322,7 @@ pub fn create_request_with_options(
     if let Some(params) = &model_config.request_params {
         if let Some(obj) = payload.as_object_mut() {
             for (key, value) in params {
-                if !is_reserved_request_param_key(key) {
+                if key != "thinking_effort" && !is_reserved_request_param_key(key) {
                     obj.insert(key.clone(), value.clone());
                 }
             }
@@ -2070,8 +2093,7 @@ mod tests {
     fn test_create_request_omits_max_tokens_when_unset() -> anyhow::Result<()> {
         // Unknown models on OpenAI-compatible local providers (llama_swap,
         // lmstudio) have no canonical record and no GOOSE_MAX_TOKENS, so the
-        // request must not pin the legacy 4096 default — the server should
-        // pick its own ceiling. See issue #9007.
+        // request must not pin the legacy 4096 default. See issue #9007.
         let model_config = ModelConfig {
             model_name: "some-unknown-local-model".to_string(),
             context_limit: None,
@@ -2164,8 +2186,6 @@ mod tests {
 
     #[test]
     fn test_create_request_o1_default() -> anyhow::Result<()> {
-        // Without an explicit effort suffix the API picks its own default;
-        // we should omit reasoning_effort entirely but still use "developer" role.
         let model_config = ModelConfig {
             model_name: "o1".to_string(),
             context_limit: Some(4096),
@@ -2209,17 +2229,111 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_o3_custom_reasoning_effort() -> anyhow::Result<()> {
-        // Test custom reasoning effort for O3 model
+    fn test_create_request_o1_medium_effort() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("medium"));
         let model_config = ModelConfig {
-            model_name: "o3-mini-high".to_string(),
+            model_name: "o1".to_string(),
             context_limit: Some(4096),
             temperature: None,
             max_tokens: Some(1024),
             toolshim: false,
             toolshim_model: None,
             fast_model_config: None,
-            request_params: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("medium")));
+        assert!(obj.get("thinking_effort").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_o3_off_effort_preserves_none() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("off"));
+        let model_config = ModelConfig {
+            model_name: "o3".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("none")));
+        assert!(obj.get("thinking_effort").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_gpt5_pro_max_effort_uses_supported_level() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("max"));
+        let model_config = ModelConfig {
+            model_name: "gpt-5.2-pro-2025-12-11".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
+            reasoning: None,
+        };
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("high")));
+        assert!(obj.get("thinking_effort").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_o3_custom_reasoning_effort() -> anyhow::Result<()> {
+        let mut params = std::collections::HashMap::new();
+        params.insert("thinking_effort".to_string(), json!("high"));
+        let model_config = ModelConfig {
+            model_name: "o3-mini".to_string(),
+            context_limit: Some(4096),
+            temperature: None,
+            max_tokens: Some(1024),
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: Some(params),
             reasoning: None,
         };
         let request = create_request(
@@ -2246,6 +2360,7 @@ mod tests {
         for (key, value) in expected.as_object().unwrap() {
             assert_eq!(obj.get(key).unwrap(), value);
         }
+        assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
     }
@@ -2427,6 +2542,10 @@ data: [DONE]
         assert_eq!(result.tool_calls.len(), 1, "Expected 1 tool call");
         assert_eq!(result.tool_calls[0], "developer__shell");
         assert_usage_yielded_once(&result, 8320, 172, 8492);
+        assert_eq!(
+            result.usage.as_ref().map(|usage| usage.model.as_str()),
+            Some("gpt-5.2-1106-preview")
+        );
 
         Ok(())
     }

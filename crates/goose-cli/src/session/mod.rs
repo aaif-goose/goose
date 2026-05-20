@@ -239,36 +239,6 @@ pub async fn classify_planner_response(
     }
 }
 
-pub fn split_quoted(input: &str) -> Result<Vec<String>> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_double_quote = false;
-    let mut in_single_quote = false;
-
-    for c in input.chars() {
-        match c {
-            '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
-            c if c.is_whitespace() && !in_double_quote && !in_single_quote => {
-                if !current.is_empty() {
-                    parts.push(std::mem::take(&mut current));
-                }
-            }
-            _ => current.push(c),
-        }
-    }
-
-    if in_double_quote || in_single_quote {
-        return Err(anyhow::anyhow!("Unmatched quote in command"));
-    }
-
-    if !current.is_empty() {
-        parts.push(current);
-    }
-
-    Ok(parts)
-}
-
 impl CliSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
@@ -311,7 +281,7 @@ impl CliSession {
     /// Parse a stdio extension command string into an ExtensionConfig
     /// Format: "ENV1=val1 ENV2=val2 command args..."
     pub fn parse_stdio_extension(extension_command: &str) -> Result<ExtensionConfig> {
-        let mut parts = split_quoted(extension_command)?;
+        let mut parts = goose::utils::split_command_args(extension_command)?;
         let mut envs = HashMap::new();
 
         while let Some(part) = parts.first() {
@@ -2250,20 +2220,20 @@ mod tests {
     }
 
     #[test]
-    fn test_split_quoted_windows_paths() {
+    fn test_split_command_args_windows_paths() {
         assert_eq!(
-            split_quoted(r"C:\tools\mcp.exe --arg value").unwrap(),
+            goose::utils::split_command_args(r"C:\tools\mcp.exe --arg value").unwrap(),
             vec![r"C:\tools\mcp.exe", "--arg", "value"]
         );
         assert_eq!(
-            split_quoted(r#""C:\Program Files\server\mcp.exe" --arg"#).unwrap(),
+            goose::utils::split_command_args(r#""C:\Program Files\server\mcp.exe" --arg"#).unwrap(),
             vec![r"C:\Program Files\server\mcp.exe", "--arg"]
         );
     }
 
     #[test]
-    fn test_split_quoted_unmatched_quote() {
-        assert!(split_quoted(r#""unmatched"#).is_err());
+    fn test_split_command_args_unmatched_quote() {
+        assert!(goose::utils::split_command_args(r#""unmatched"#).is_err());
     }
 
     #[test_case(

@@ -143,7 +143,7 @@ pub async fn compact_messages(
             // This is the most recent message and we're preserving it by adding a fresh copy
             MessageMetadata::invisible()
         } else {
-            msg.metadata.with_agent_invisible()
+            msg.metadata.clone().with_agent_invisible()
         };
         let updated_msg = msg.clone().with_metadata(updated_metadata);
         final_messages.push(updated_msg);

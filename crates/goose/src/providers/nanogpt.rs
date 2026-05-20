@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 use rmcp::model::Tool;
 
-const NANOGPT_PROVIDER_NAME: &str = "nano-gpt";
+pub const NANOGPT_PROVIDER_NAME: &str = "nano-gpt";
 pub const NANOGPT_API_HOST: &str = "https://nano-gpt.com/api/v1";
 pub const NANOGPT_SUBSCRIPTION_HOST: &str = "https://nano-gpt.com/api/subscription/v1";
 pub const NANOGPT_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4.6";

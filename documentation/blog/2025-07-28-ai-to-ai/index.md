@@ -406,7 +406,7 @@ Angie's Diner shows exceptional performance with premium order values and strong
 </details>
 
 
-What a fun experiment! This gave me a better understanding of how agent-to-agent and [subagent](/docs/guides/subagents) workflows may work behind the scenes. Makes you wonder, what else could happen when AIs start talking to each other without us?
+What a fun experiment! This gave me a better understanding of how agent-to-agent and [subagent](/docs/guides/context-engineering/subagents) workflows may work behind the scenes. Makes you wonder, what else could happen when AIs start talking to each other without us?
 
 ---
 

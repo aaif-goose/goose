@@ -455,10 +455,7 @@ const MentionPopover = forwardRef<
       if (item.itemType === 'Agent') {
         return '@' + item.name + ' ';
       }
-      if (item.itemType === 'Skill') {
-        return `Use the ${item.name} skill to `;
-      }
-      if (['Builtin', 'Recipe'].includes(item.itemType)) {
+      if (['Builtin', 'Recipe', 'Skill'].includes(item.itemType)) {
         return '/' + item.name;
       }
       return item.extra;

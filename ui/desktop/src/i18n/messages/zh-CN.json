@@ -2333,6 +2333,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "本地模型设置 — {modelName}"
   },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "解析后的模型"
+  },
   "modelsBottomBar.selectModel": {
     "defaultMessage": "选择模型"
   },
@@ -2597,21 +2600,6 @@
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "传给提供商的隐藏指令，用于引导并为回复补充上下文。"
   },
-  "popularChatTopics.governmentForms": {
-    "defaultMessage": "详细介绍各种政府形式的运作方式，并按“鹅”的单位对每种进行排名"
-  },
-  "popularChatTopics.heading": {
-    "defaultMessage": "热门聊天话题"
-  },
-  "popularChatTopics.organizePhotos": {
-    "defaultMessage": "按主题把我桌面上的照片整理成一些整洁的小文件夹"
-  },
-  "popularChatTopics.start": {
-    "defaultMessage": "开始"
-  },
-  "popularChatTopics.tamagotchiGame": {
-    "defaultMessage": "开发一个住在我电脑里、像素风的电子宠物游戏"
-  },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "错误类型（例如“rate_limit”“auth”——不含详情）"
   },
@@ -2644,6 +2632,9 @@
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "正在加载消息…（{renderedCount}/{totalCount}）"
+  },
+  "progressiveMessageList.modelChanged": {
+    "defaultMessage": "模型已更改：{previousModel} → {currentModel}"
   },
   "progressiveMessageList.searchHint": {
     "defaultMessage": "按 Cmd/Ctrl+F 立即加载全部消息以便搜索"

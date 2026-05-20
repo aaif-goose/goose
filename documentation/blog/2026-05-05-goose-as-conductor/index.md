@@ -16,7 +16,7 @@ That's what orchestration gives you. Instead of feeding goose one task at a time
 
 ## What is orchestration?
 
-If you've used [subagents](/docs/guides/subagents) before, you already know how to delegate work to independent AI instances. Orchestration is the layer above that — the part that decides _who_ does _what_ and _when_. Instead of one goose session doing everything sequentially, orchestration lets you:
+If you've used [subagents](/docs/guides/context-engineering/subagents) before, you already know how to delegate work to independent AI instances. Orchestration is the layer above that — the part that decides _who_ does _what_ and _when_. Instead of one goose session doing everything sequentially, orchestration lets you:
 
 - **Decompose** a complex task into independent subtasks
 - **Delegate** each subtask to a separate agent (subagent, ACP provider, or another goose instance)
@@ -43,7 +43,7 @@ Orchestration doesn't replace subagents or subrecipes — it builds on them:
 
 | Layer | What it does |
 |-------|-------------|
-| [Subagents](/docs/guides/subagents) (delegate) | Spin up independent sub-tasks |
+| [Subagents](/docs/guides/context-engineering/subagents) (delegate) | Spin up independent sub-tasks |
 | Async delegates | Run subagents in the background, collect results later |
 | [ACP providers](/docs/guides/acp-providers) | Bring in external agents (Claude Code, Codex, Amp) |
 | **Orchestration** | Coordinate all of the above into structured workflows |

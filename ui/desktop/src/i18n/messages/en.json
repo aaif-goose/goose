@@ -314,7 +314,6 @@
   "costTracker.pricingUnavailable": {
     "defaultMessage": "Pricing data unavailable for {model}"
   },
-
   "costTracker.totalSessionCost": {
     "defaultMessage": "Total session cost: {cost}"
   },
@@ -2391,6 +2390,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Local Model Settings — {modelName}"
   },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "Resolved model"
+  },
   "modelsBottomBar.selectModel": {
     "defaultMessage": "Select Model"
   },
@@ -2655,21 +2657,6 @@
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Hidden instructions that will be passed to the provider to help direct and add context to your responses."
   },
-  "popularChatTopics.governmentForms": {
-    "defaultMessage": "Describe in detail how various forms of government works and rank each by units of geese"
-  },
-  "popularChatTopics.heading": {
-    "defaultMessage": "Popular chat topics"
-  },
-  "popularChatTopics.organizePhotos": {
-    "defaultMessage": "Organize the photos on my desktop into neat little folders by subject matter"
-  },
-  "popularChatTopics.start": {
-    "defaultMessage": "Start"
-  },
-  "popularChatTopics.tamagotchiGame": {
-    "defaultMessage": "Develop a tamagotchi game that lives on my computer and follows a pixelated styling"
-  },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Error types (e.g., \"rate_limit\", \"auth\" - no details)"
   },
@@ -2702,6 +2689,9 @@
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Loading messages... ({renderedCount}/{totalCount})"
+  },
+  "progressiveMessageList.modelChanged": {
+    "defaultMessage": "Model changed: {previousModel} → {currentModel}"
   },
   "progressiveMessageList.searchHint": {
     "defaultMessage": "Press Cmd/Ctrl+F to load all messages immediately for search"
@@ -4490,6 +4480,9 @@
   },
   "switchModelModal.thinkingEffort": {
     "defaultMessage": "Thinking Effort"
+  },
+  "switchModelModal.thinkingEffortOff": {
+    "defaultMessage": "Off - No extended thinking"
   },
   "switchModelModal.thinkingLevel": {
     "defaultMessage": "Thinking Level"

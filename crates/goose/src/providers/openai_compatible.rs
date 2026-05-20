@@ -133,7 +133,9 @@ impl Provider for OpenAiCompatibleProvider {
 
 // Re-exported from the dedicated `http_status` module — these helpers are
 // format-agnostic and used across all provider families.
-pub use super::http_status::{handle_response, handle_status, map_http_error_to_provider_error};
+pub use super::http_status::{
+    handle_response, handle_status, map_http_error_to_provider_error, sanitize_url,
+};
 
 // Legacy alias kept for callers that haven't migrated their import path yet.
 pub use super::http_status::handle_response as handle_response_openai_compat;
@@ -244,7 +246,7 @@ mod tests {
         payload: Option<Value>,
         expected_variant: &str,
     ) {
-        let err = map_http_error_to_provider_error(status, payload);
+        let err = map_http_error_to_provider_error(status, payload, "http://test/endpoint");
         let actual = err.telemetry_type();
         let expected_telemetry = match expected_variant {
             "CreditsExhausted" => "credits_exhausted",

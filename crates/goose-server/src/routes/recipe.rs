@@ -9,7 +9,7 @@ use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use goose::recipe::local_recipes;
 use goose::recipe::validate_recipe::validate_recipe_template_from_content;
 use goose::recipe::{strip_error_location, Recipe};
-use goose::{recipe_deeplink, slash_commands};
+use goose::{recipe_deeplink, slash_commands::recipe_slash_command};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -321,7 +321,7 @@ async fn list_recipes(
         .map(|j| (PathBuf::from(j.source), j.cron))
         .collect();
 
-    let all_commands = slash_commands::list_commands();
+    let all_commands = recipe_slash_command::list_commands();
     let slash_map: HashMap<_, _> = all_commands
         .into_iter()
         .map(|sc| (PathBuf::from(sc.recipe_path), sc.command))
@@ -422,7 +422,7 @@ async fn set_recipe_slash_command(
         Err(err) => return Err(err.status),
     };
 
-    match slash_commands::set_recipe_slash_command(file_path, request.slash_command) {
+    match recipe_slash_command::set_recipe_slash_command(file_path, request.slash_command) {
         Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("Failed to set slash command: {}", e);

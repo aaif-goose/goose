@@ -177,17 +177,25 @@ impl ProviderRegistry {
             .iter()
             .map(|m| ModelInfo {
                 name: m.name.clone(),
+                resolved_model: None,
                 context_limit: m.context_limit,
                 input_token_cost: m.input_token_cost,
                 output_token_cost: m.output_token_cost,
                 currency: m.currency.clone(),
                 supports_cache_control: Some(m.supports_cache_control.unwrap_or(false)),
+                reasoning: m.reasoning,
             })
             .collect();
 
         let mut config_keys = if provider_type == ProviderType::Declarative {
-            if config.requires_auth && !config.api_key_env.is_empty() {
-                vec![ConfigKey::new(&config.api_key_env, true, true, None, true)]
+            if !config.api_key_env.is_empty() {
+                vec![ConfigKey::new(
+                    &config.api_key_env,
+                    config.requires_auth,
+                    true,
+                    None,
+                    true,
+                )]
             } else {
                 Vec::new()
             }

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 35
+sidebar_position: 7
 title: CLI Commands
 sidebar_label: CLI Commands
 toc_max_heading_level: 4
@@ -504,6 +504,30 @@ goose recipe validate my-recipe.yaml
 # Get help about recipe commands
 goose recipe help
 ```
+
+---
+
+#### plugin
+Install and update git-backed plugins that provide skills or other Open Plugins components.
+
+**Commands:**
+- **`install [OPTIONS] <URL>`**: Install a plugin from a git repository URL
+  - **`--auto-update`**: Automatically check for updates before plugin skills are loaded
+- **`update <NAME>`**: Update an installed git-backed plugin by name
+
+**Usage:**
+```bash
+# Install a plugin from a git repository
+goose plugin install https://github.com/example/my-goose-plugin.git
+
+# Install a plugin and enable automatic update checks
+goose plugin install --auto-update https://github.com/example/my-goose-plugin.git
+
+# Update an installed plugin manually
+goose plugin update my-plugin
+```
+
+Installed plugins are stored under `~/.agents/plugins/<plugin-name>/`. For more about plugin-provided skills, hooks, and update behavior, see the [Plugins guide](/docs/guides/context-engineering/plugins).
 
 ---
 

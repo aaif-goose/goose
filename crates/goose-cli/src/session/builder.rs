@@ -268,6 +268,7 @@ fn resolve_provider_and_model(
             .is_some_and(|mc| mc.model_name == model_name)
     {
         let mut config = saved_model_config.unwrap();
+        config.normalize_effort_suffix();
         if let Some(temp) = recipe_settings.and_then(|s| s.temperature) {
             config = config.with_temperature(Some(temp));
         }

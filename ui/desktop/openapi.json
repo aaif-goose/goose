@@ -1369,6 +1369,56 @@
         }
       }
     },
+    "/config/providers/{name}/model-info": {
+      "post": {
+        "tags": [
+          "super::routes::config_management"
+        ],
+        "operationId": "get_provider_model_info",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Provider name (e.g., openai)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderModelInfoQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Model metadata fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown provider, provider not configured, or authentication error"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/config/providers/{name}/models": {
       "get": {
         "tags": [
@@ -1394,7 +1444,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/components/schemas/ModelInfo"
                   }
                 }
               }
@@ -5749,6 +5799,25 @@
           }
         }
       },
+      "InferenceMetadata": {
+        "type": "object",
+        "required": [
+          "provider",
+          "requestedModel"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "requestedModel": {
+            "type": "string"
+          },
+          "resolvedModel": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "InspectJobResponse": {
         "type": "object",
         "properties": {
@@ -6344,7 +6413,7 @@
       },
       "MessageMetadata": {
         "type": "object",
-        "description": "Metadata for message visibility",
+        "description": "Metadata for message visibility and model inference details",
         "required": [
           "userVisible",
           "agentVisible"
@@ -6353,6 +6422,14 @@
           "agentVisible": {
             "type": "boolean",
             "description": "Whether the message should be included in the agent's context window"
+          },
+          "inference": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InferenceMetadata"
+              }
+            ],
+            "nullable": true
           },
           "userVisible": {
             "type": "boolean",
@@ -6533,6 +6610,15 @@
             "description": "Cost per token for output in USD (optional)",
             "nullable": true
           },
+          "reasoning": {
+            "type": "boolean",
+            "description": "Whether this model supports reasoning/thinking controls"
+          },
+          "resolved_model": {
+            "type": "string",
+            "description": "The underlying model resolved from provider metadata, when the configured model is an alias or endpoint.",
+            "nullable": true
+          },
           "supports_cache_control": {
             "type": "boolean",
             "description": "Whether this model supports cache control",
@@ -6546,6 +6632,7 @@
           "provider",
           "model",
           "context_limit",
+          "reasoning",
           "currency"
         ],
         "properties": {
@@ -6586,6 +6673,9 @@
           },
           "provider": {
             "type": "string"
+          },
+          "reasoning": {
+            "type": "boolean"
           }
         }
       },
@@ -6897,6 +6987,10 @@
           },
           "provider_type": {
             "$ref": "#/components/schemas/ProviderType"
+          },
+          "saved_model": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -6966,6 +7060,17 @@
               "type": "string"
             },
             "description": "step-by-step instructions for set up providers eg: api key"
+          }
+        }
+      },
+      "ProviderModelInfoQuery": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
           }
         }
       },
@@ -8563,6 +8668,16 @@
             "type": "string"
           }
         }
+      },
+      "ThinkingEffort": {
+        "type": "string",
+        "enum": [
+          "off",
+          "low",
+          "medium",
+          "high",
+          "max"
+        ]
       },
       "TokenState": {
         "type": "object",

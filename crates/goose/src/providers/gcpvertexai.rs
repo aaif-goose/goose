@@ -27,7 +27,7 @@ use crate::providers::formats::gcpvertexai::{
     DEFAULT_MODEL, KNOWN_MODELS,
 };
 use crate::providers::gcpauth::GcpAuth;
-use crate::providers::openai_compatible::map_http_error_to_provider_error;
+use crate::providers::openai_compatible::{map_http_error_to_provider_error, sanitize_url};
 use crate::providers::retry::RetryConfig;
 use crate::providers::utils::RequestLog;
 use crate::session_context::SESSION_ID_HEADER;
@@ -359,9 +359,10 @@ impl GcpVertexAIProvider {
                     "Authentication failed with status: {status}"
                 )));
             } else {
+                let url = sanitize_url(response.url().as_str());
                 let response_text = response.text().await.unwrap_or_default();
                 let payload = serde_json::from_str::<Value>(&response_text).ok();
-                return Err(map_http_error_to_provider_error(status, payload));
+                return Err(map_http_error_to_provider_error(status, payload, &url));
             }
         }
     }

@@ -38,7 +38,7 @@ impl ProviderDef for CopilotAcpProvider {
         .with_setup_steps(vec![
             "Install the Copilot CLI: `npm install -g @github/copilot`",
             "Run `copilot login` to authenticate with your GitHub account",
-            "Set in your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: copilot-acp\n  GOOSE_MODEL: current",
+            "Add to your goose config file (`~/.config/goose/config.yaml` on macOS/Linux):\n  GOOSE_PROVIDER: copilot-acp\n  GOOSE_MODEL: current\n  copilot-acp_configured: true",
             "Restart goose for changes to take effect",
         ])
     }

@@ -1,4 +1,5 @@
 use super::discover_skills;
+use super::loaded_skill_context_with_args;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
@@ -49,6 +50,10 @@ impl McpClientTrait for SkillsClient {
                 "name": {
                     "type": "string",
                     "description": "Name of the skill to load. Use \"skill-name/path\" to load a supporting file."
+                },
+                "args": {
+                    "type": "string",
+                    "description": "Optional arguments to provide when loading the skill."
                 }
             }
         });
@@ -60,6 +65,7 @@ impl McpClientTrait for SkillsClient {
              load it first to get the detailed instructions.\n\n\
              Examples:\n\
              - load_skill(name: \"gdrive\") → Loads the gdrive skill instructions\n\
+             - load_skill(name: \"my-skill\", args: \"the arguments for the skill\") → Loads a skill with arguments\n\
              - load_skill(name: \"my-skill/template.md\") → Loads a supporting file"
                 .to_string(),
             schema.as_object().unwrap().clone(),
@@ -97,36 +103,21 @@ impl McpClientTrait for SkillsClient {
                 "Missing required parameter: name",
             )]));
         }
+        let args = arguments
+            .as_ref()
+            .and_then(|args| args.get("args"))
+            .and_then(|v| v.as_str());
 
         let skills = discover_skills(Some(&self.working_dir));
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
-            let mut output = format!(
-                "# Loaded Skill: {} ({})\n\n{}\n",
-                skill.name,
-                skill.source_type,
-                skill.to_load_text()
-            );
-
-            if !skill.supporting_files.is_empty() {
-                let skill_dir = Path::new(&skill.path);
-                output.push_str(&format!(
-                    "\n## Supporting Files\n\nSkill directory: {}\n\n",
-                    skill.path
-                ));
-                for file in &skill.supporting_files {
-                    if let Ok(relative) = Path::new(file).strip_prefix(skill_dir) {
-                        let rel_str = relative.to_string_lossy().replace('\\', "/");
-                        output.push_str(&format!(
-                            "- {} → load_skill(name: \"{}/{}\")\n",
-                            rel_str, skill.name, rel_str
-                        ));
-                    }
-                }
-            }
-
-            output.push_str("\n---\nThis knowledge is now available in your context.");
-            return Ok(CallToolResult::success(vec![Content::text(output)]));
+            return match loaded_skill_context_with_args(skill, args) {
+                Ok(rendered) => Ok(CallToolResult::success(vec![Content::text(rendered)])),
+                Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Failed to parse skill arguments: {}",
+                    e
+                ))])),
+            };
         }
 
         if let Some((parent_skill_name, raw_relative_path)) = skill_name.split_once('/') {
@@ -285,6 +276,7 @@ mod tests {
             extension_manager: None,
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: Some(session),
+            use_login_shell_path: false,
         })
         .unwrap();
 
@@ -311,6 +303,7 @@ mod tests {
             extension_manager: None,
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: None,
+            use_login_shell_path: false,
         })
         .unwrap();
 

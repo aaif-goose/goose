@@ -3,7 +3,7 @@
   "engine": "openai",
   "display_name": "Llama Swap",
   "description": "Local proxy that hot-swaps llama.cpp (and other) inference backends on demand via an OpenAI-compatible API.",
-  "api_key_env": "",
+  "api_key_env": "LLAMA_SWAP_API_KEY",
   "base_url": "${LLAMA_SWAP_HOST}/v1/chat/completions",
   "env_vars": [
     {

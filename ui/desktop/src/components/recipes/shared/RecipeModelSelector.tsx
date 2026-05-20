@@ -108,8 +108,8 @@ export const RecipeModelSelector = ({
 
           const modelList = models || [];
           const options = modelList.map((m) => ({
-            value: m,
-            label: m,
+            value: m.name,
+            label: m.name,
             provider: p.name,
           }));
 

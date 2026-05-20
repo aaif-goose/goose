@@ -212,6 +212,7 @@ pub struct PlatformExtensionContext {
         Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub session: Option<std::sync::Arc<Session>>,
+    pub use_login_shell_path: bool,
 }
 
 impl PlatformExtensionContext {

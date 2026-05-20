@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::MessageStream;
 use super::errors::ProviderError;
-use super::openai_compatible::{handle_status, map_http_error_to_provider_error};
+use super::openai_compatible::{handle_status, map_http_error_to_provider_error, sanitize_url};
 use super::retry::ProviderRetry;
 use super::utils::RequestLog;
 use crate::conversation::message::Message;
@@ -177,9 +177,10 @@ impl Provider for GoogleProvider {
             .await?;
         let status = response.status();
         if !status.is_success() {
+            let url = sanitize_url(response.url().as_str());
             let body = response.text().await.unwrap_or_default();
             let payload = serde_json::from_str::<serde_json::Value>(&body).ok();
-            return Err(map_http_error_to_provider_error(status, payload));
+            return Err(map_http_error_to_provider_error(status, payload, &url));
         }
 
         let json: serde_json::Value = response.json().await?;

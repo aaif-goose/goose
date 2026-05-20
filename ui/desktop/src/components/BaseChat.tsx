@@ -10,7 +10,6 @@ import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
-import PopularChatTopics from './PopularChatTopics';
 import ProgressiveMessageList from './ProgressiveMessageList';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
@@ -71,7 +70,6 @@ interface BaseChatProps {
   customMainLayoutProps?: Record<string, unknown>;
   contentClassName?: string;
   disableSearch?: boolean;
-  showPopularTopics?: boolean;
   suppressEmptyState: boolean;
   sessionId: string;
   isActiveSession: boolean;
@@ -198,6 +196,15 @@ export default function BaseChat({
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
   const sessionLoaded = session !== undefined;
+  const latestInference = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'assistant' && message.metadata.userVisible && message.metadata.inference) {
+        return message.metadata.inference;
+      }
+    }
+    return null;
+  }, [messages]);
 
   useEffect(() => {
     if (!recipe || !isActiveSession) return;
@@ -319,9 +326,6 @@ export default function BaseChat({
       msg: intl.formatMessage(i18n.recipeCreatedMessage, { title: recipe.title }),
     });
   };
-
-  const showPopularTopics =
-    messages.length === 0 && !initialMessage && chatState === ChatState.Idle;
 
   const chat: ChatType = {
     messages,
@@ -461,10 +465,6 @@ export default function BaseChat({
 
                 <div className="block h-8" />
               </>
-            ) : !recipe && showPopularTopics ? (
-              <PopularChatTopics
-                append={(text: string) => handleSubmit({ msg: text, images: [] })}
-              />
             ) : null}
           </ScrollArea>
 
@@ -517,6 +517,7 @@ export default function BaseChat({
             sessionModel={sessionModel}
             sessionProvider={sessionProvider}
             sessionLoaded={sessionLoaded}
+            latestInference={latestInference}
             {...customChatInputProps}
           />
         </div>

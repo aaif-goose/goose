@@ -1,6 +1,7 @@
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use fs2::FileExt;
+#[cfg(feature = "system-keyring")]
 use keyring::Entry;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,9 @@ fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
     }
 }
 
+#[cfg(feature = "system-keyring")]
 const KEYRING_SERVICE: &str = "goose";
+#[cfg(feature = "system-keyring")]
 const KEYRING_USERNAME: &str = "secrets";
 pub const CONFIG_YAML_NAME: &str = "config.yaml";
 
@@ -68,6 +71,7 @@ impl From<serde_yaml::Error> for ConfigError {
     }
 }
 
+#[cfg(feature = "system-keyring")]
 impl From<keyring::Error> for ConfigError {
     fn from(err: keyring::Error) -> Self {
         ConfigError::KeyringError(err.to_string())
@@ -131,8 +135,13 @@ pub struct Config {
 }
 
 enum SecretStorage {
-    Keyring { service: String },
-    File { path: PathBuf },
+    #[cfg(feature = "system-keyring")]
+    Keyring {
+        service: String,
+    },
+    File {
+        path: PathBuf,
+    },
 }
 
 // Global instance
@@ -175,19 +184,11 @@ impl Default for Config {
             secrets_cache: Arc::new(Mutex::new(None)),
         };
 
-        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
+        let keyring_disabled = env::var("GOOSE_DISABLE_KEYRING").is_ok()
             || no_secrets_config
                 .get_param::<serde_yaml::Value>("GOOSE_DISABLE_KEYRING")
-                .is_ok_and(|v| keyring_disabled_value(&v))
-        {
-            SecretStorage::File {
-                path: config_dir.join("secrets.yaml"),
-            }
-        } else {
-            SecretStorage::Keyring {
-                service: KEYRING_SERVICE.to_string(),
-            }
-        };
+                .is_ok_and(|v| keyring_disabled_value(&v));
+        let secrets = secret_storage(&config_dir, keyring_disabled, default_keyring_service());
         Self {
             config_paths,
             secrets,
@@ -281,9 +282,11 @@ fn keyring_disabled_value(value: &serde_yaml::Value) -> bool {
 }
 
 const EXTENSIONS_KEY: &str = "extensions";
+const PROVIDERS_KEY: &str = "providers";
 
 pub fn merge_config_values(base: &mut Mapping, overlay: Mapping) {
     let extensions_key = serde_yaml::Value::String(EXTENSIONS_KEY.to_string());
+    let providers_key = serde_yaml::Value::String(PROVIDERS_KEY.to_string());
 
     for (key, overlay_value) in overlay {
         if key == extensions_key {
@@ -293,7 +296,18 @@ pub fn merge_config_values(base: &mut Mapping, overlay: Mapping) {
             if let (Some(base_map), Some(overlay_map)) =
                 (base_ext.as_mapping_mut(), overlay_value.as_mapping())
             {
-                merge_extensions(base_map, overlay_map);
+                merge_nested_entries(base_map, overlay_map);
+            } else {
+                base.insert(key, overlay_value);
+            }
+        } else if key == providers_key {
+            let base_prov = base
+                .entry(key.clone())
+                .or_insert_with(|| serde_yaml::Value::Mapping(Mapping::new()));
+            if let (Some(base_map), Some(overlay_map)) =
+                (base_prov.as_mapping_mut(), overlay_value.as_mapping())
+            {
+                merge_nested_entries(base_map, overlay_map);
             } else {
                 base.insert(key, overlay_value);
             }
@@ -303,7 +317,7 @@ pub fn merge_config_values(base: &mut Mapping, overlay: Mapping) {
     }
 }
 
-fn merge_extensions(base: &mut Mapping, overlay: &Mapping) {
+fn merge_nested_entries(base: &mut Mapping, overlay: &Mapping) {
     for (ext_key, overlay_ext) in overlay {
         match base.get_mut(ext_key) {
             Some(base_ext) => {
@@ -337,6 +351,40 @@ fn keyring_disabled_in_config(config_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(feature = "system-keyring")]
+fn default_keyring_service() -> &'static str {
+    KEYRING_SERVICE
+}
+
+#[cfg(not(feature = "system-keyring"))]
+fn default_keyring_service() -> &'static str {
+    ""
+}
+
+fn secrets_file_path_in(config_dir: &Path) -> PathBuf {
+    config_dir.join("secrets.yaml")
+}
+
+#[cfg(feature = "system-keyring")]
+fn secret_storage(config_dir: &Path, keyring_disabled: bool, service: &str) -> SecretStorage {
+    if keyring_disabled {
+        SecretStorage::File {
+            path: secrets_file_path_in(config_dir),
+        }
+    } else {
+        SecretStorage::Keyring {
+            service: service.to_string(),
+        }
+    }
+}
+
+#[cfg(not(feature = "system-keyring"))]
+fn secret_storage(config_dir: &Path, _keyring_disabled: bool, _service: &str) -> SecretStorage {
+    SecretStorage::File {
+        path: secrets_file_path_in(config_dir),
+    }
+}
+
 impl Config {
     /// Get the global configuration instance.
     ///
@@ -352,21 +400,13 @@ impl Config {
     /// to manage multiple configuration files.
     pub fn new<P: AsRef<Path>>(config_path: P, service: &str) -> Result<Self, ConfigError> {
         let config_path = config_path.as_ref().to_path_buf();
-        let secrets = if env::var("GOOSE_DISABLE_KEYRING").is_ok()
-            || keyring_disabled_in_config(&config_path)
-        {
-            let config_dir = config_path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(Paths::config_dir);
-            SecretStorage::File {
-                path: config_dir.join("secrets.yaml"),
-            }
-        } else {
-            SecretStorage::Keyring {
-                service: service.to_string(),
-            }
-        };
+        let keyring_disabled =
+            env::var("GOOSE_DISABLE_KEYRING").is_ok() || keyring_disabled_in_config(&config_path);
+        let config_dir = config_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(Paths::config_dir);
+        let secrets = secret_storage(&config_dir, keyring_disabled, service);
         Ok(Config {
             config_paths: vec![config_path],
             secrets,
@@ -471,20 +511,27 @@ impl Config {
             }
         }
 
-        crate::config::migrations::run_migrations(&mut merged);
+        crate::config::migrations::run_read_migrations(&mut merged);
 
         Ok(merged)
     }
 
     pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let config_values = self.load()?;
-        Ok(HashMap::from_iter(config_values.into_iter().filter_map(
-            |(k, v)| {
-                k.as_str()
-                    .map(|k| k.to_string())
-                    .zip(serde_json::to_value(v).ok())
-            },
-        )))
+        let mut map = HashMap::from_iter(config_values.into_iter().filter_map(|(k, v)| {
+            k.as_str()
+                .map(|k| k.to_string())
+                .zip(serde_json::to_value(v).ok())
+        }));
+
+        if let Ok(provider) = self.get_goose_provider() {
+            map.insert("GOOSE_PROVIDER".to_string(), Value::String(provider));
+        }
+        if let Ok(model) = self.get_goose_model() {
+            map.insert("GOOSE_MODEL".to_string(), Value::String(model));
+        }
+
+        Ok(map)
     }
 
     fn config_write_target_path(&self) -> Result<PathBuf, ConfigError> {
@@ -578,6 +625,7 @@ impl Config {
             tracing::debug!("secrets cache miss, fetching from storage");
 
             let loaded = match &self.secrets {
+                #[cfg(feature = "system-keyring")]
                 SecretStorage::Keyring { service } => {
                     let result =
                         self.handle_keyring_operation(|entry| entry.get_password(), service, None);
@@ -594,7 +642,7 @@ impl Config {
                             if msg.contains("No entry found")
                                 || msg.contains("No matching entry found") =>
                         {
-                            HashMap::new()
+                            self.fallback_to_file_storage()?
                         }
                         Err(e) => return Err(e),
                     }
@@ -701,6 +749,24 @@ impl Config {
                 serde_json::from_value(parsed).map_err(|_| yaml_err.into())
             }
         }
+    }
+
+    /// Read-modify-write a configuration value atomically through the write path.
+    pub fn update_param<T, V, F>(&self, key: &str, f: F) -> Result<(), ConfigError>
+    where
+        T: for<'de> Deserialize<'de> + Default,
+        V: Serialize,
+        F: FnOnce(T) -> V,
+    {
+        let _guard = self.guard.lock().unwrap();
+        let mut values = self.load_write_config()?;
+        let current: T = values
+            .get(key)
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        let updated = f(current);
+        values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(updated)?);
+        self.save_values(&values)
     }
 
     /// Set a configuration value in the config file (non-secret).
@@ -819,6 +885,7 @@ impl Config {
 
     fn write_all_secrets(&self, values: &HashMap<String, Value>) -> Result<(), ConfigError> {
         match &self.secrets {
+            #[cfg(feature = "system-keyring")]
             SecretStorage::Keyring { service } => {
                 let json_value = serde_json::to_string(values)?;
                 match self.handle_keyring_operation(
@@ -937,17 +1004,20 @@ impl Config {
     }
 
     /// Get the path to the secrets storage file
+    #[cfg(feature = "system-keyring")]
     fn secrets_file_path() -> PathBuf {
-        Paths::config_dir().join("secrets.yaml")
+        secrets_file_path_in(&Paths::config_dir())
     }
 
     /// Fall back to file storage when keyring is unavailable
+    #[cfg(feature = "system-keyring")]
     fn fallback_to_file_storage(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let path = Self::secrets_file_path();
         self.read_secrets_from_file(&path)
     }
 
     /// Write secrets to file storage (used for fallback)
+    #[cfg(feature = "system-keyring")]
     fn write_secrets_to_file(&self, values: &HashMap<String, Value>) -> Result<(), ConfigError> {
         std::fs::create_dir_all(Paths::config_dir())?;
         let path = Self::secrets_file_path();
@@ -962,6 +1032,7 @@ impl Config {
     }
 
     /// Check if an error string indicates a keyring availability issue that should trigger fallback
+    #[cfg(feature = "system-keyring")]
     fn is_keyring_availability_error(&self, error_str: &str) -> bool {
         let lower = error_str.to_lowercase();
         lower.contains("keyring")
@@ -972,11 +1043,13 @@ impl Config {
     }
 
     /// Get a keyring entry for the specified service
+    #[cfg(feature = "system-keyring")]
     fn get_keyring_entry(service: &str) -> Result<keyring::Entry, keyring::Error> {
         Entry::new(service, KEYRING_USERNAME)
     }
 
     /// Handle keyring errors with automatic fallback to file storage
+    #[cfg(feature = "system-keyring")]
     fn handle_keyring_fallback_error<T>(
         &self,
         keyring_err: &keyring::Error,
@@ -998,6 +1071,7 @@ impl Config {
     }
 
     /// Handle keyring operation with automatic fallback to file storage
+    #[cfg(feature = "system-keyring")]
     fn handle_keyring_operation<T>(
         &self,
         operation: impl FnOnce(keyring::Entry) -> Result<T, keyring::Error>,
@@ -1024,25 +1098,85 @@ config_value!(CLAUDE_CODE_COMMAND, String, "claude");
 config_value!(GEMINI_CLI_COMMAND, String, "gemini");
 config_value!(CURSOR_AGENT_COMMAND, String, "cursor-agent");
 config_value!(CODEX_COMMAND, String, "codex");
-config_value!(CODEX_REASONING_EFFORT, String, "high");
 config_value!(CODEX_ENABLE_SKILLS, String, "true");
 config_value!(CODEX_SKIP_GIT_CHECK, String, "false");
 config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 
 config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
-config_value!(GOOSE_PROVIDER, String);
-config_value!(GOOSE_MODEL, String);
+// GOOSE_PROVIDER and GOOSE_MODEL are handled by crate::config::providers
+// which checks the structured `providers:` block first and falls back to
+// the legacy flat keys. The accessors below delegate to that module.
+impl Config {
+    pub fn get_goose_provider(&self) -> Result<String, ConfigError> {
+        crate::config::providers::get_active_provider(self)
+            .ok_or_else(|| ConfigError::NotFound("GOOSE_PROVIDER".to_string()))
+    }
+    pub fn set_goose_provider(&self, v: impl Into<String>) -> Result<(), ConfigError> {
+        let name = v.into();
+        let model = crate::config::providers::get_provider_entry(self, &name)
+            .map(|e| e.model)
+            .unwrap_or_default();
+        crate::config::providers::set_active_provider(self, &name, &model)
+    }
+    pub fn get_goose_model(&self) -> Result<String, ConfigError> {
+        crate::config::providers::get_active_model(self)
+            .ok_or_else(|| ConfigError::NotFound("GOOSE_MODEL".to_string()))
+    }
+    pub fn set_goose_model(&self, v: impl Into<String>) -> Result<(), ConfigError> {
+        let model = v.into();
+        if let Some(provider) = crate::config::providers::get_active_provider(self) {
+            crate::config::providers::set_active_provider(self, &provider, &model)?;
+        }
+        Ok(())
+    }
+}
 config_value!(GOOSE_PROMPT_EDITOR, Option<String>);
 config_value!(GOOSE_PROMPT_EDITOR_ALWAYS, Option<bool>);
 config_value!(GOOSE_MAX_ACTIVE_AGENTS, usize);
 config_value!(GOOSE_DISABLE_SESSION_NAMING, bool);
 config_value!(GOOSE_DISABLE_TOOL_CALL_SUMMARY, bool);
-config_value!(GEMINI3_THINKING_LEVEL, String);
-config_value!(CLAUDE_THINKING_TYPE, String);
-config_value!(CLAUDE_THINKING_EFFORT, String);
-config_value!(CLAUDE_THINKING_BUDGET, i32);
+config_value!(GOOSE_THINKING_EFFORT, String);
 config_value!(GOOSE_DEFAULT_EXTENSION_TIMEOUT, u64);
+
+fn find_workspace_or_exe_root() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?.to_path_buf();
+
+    let mut path = exe;
+    while let Some(parent) = path.parent() {
+        let cargo_toml = parent.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                if content.contains("[workspace]") {
+                    return Some(parent.to_path_buf());
+                }
+            }
+        }
+        path = parent.to_path_buf();
+    }
+
+    Some(exe_dir)
+}
+
+pub fn load_init_config_from_workspace() -> Result<Mapping, ConfigError> {
+    let root = find_workspace_or_exe_root().ok_or_else(|| {
+        ConfigError::FileError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Could not determine executable path",
+        ))
+    })?;
+
+    let init_config_path = root.join("init-config.yaml");
+    if !init_config_path.exists() {
+        return Err(ConfigError::NotFound(
+            "init-config.yaml not found".to_string(),
+        ));
+    }
+
+    let init_content = std::fs::read_to_string(&init_config_path)?;
+    parse_yaml_content(&init_content)
+}
 
 #[cfg(test)]
 mod tests {
@@ -2144,5 +2278,124 @@ extensions:
         assert_eq!(value, "base");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_merge_providers_append_new() {
+        let mut base = Mapping::new();
+        let mut base_prov = Mapping::new();
+        let mut prov_a = Mapping::new();
+        prov_a.insert(
+            serde_yaml::Value::String("enabled".into()),
+            serde_yaml::Value::Bool(true),
+        );
+        prov_a.insert(
+            serde_yaml::Value::String("model".into()),
+            serde_yaml::Value::String("gpt-4o".into()),
+        );
+        prov_a.insert(
+            serde_yaml::Value::String("configured".into()),
+            serde_yaml::Value::Bool(true),
+        );
+        base_prov.insert(
+            serde_yaml::Value::String("openai".into()),
+            serde_yaml::Value::Mapping(prov_a),
+        );
+        base.insert(
+            serde_yaml::Value::String("providers".into()),
+            serde_yaml::Value::Mapping(base_prov),
+        );
+
+        let mut overlay = Mapping::new();
+        let mut overlay_prov = Mapping::new();
+        let mut prov_b = Mapping::new();
+        prov_b.insert(
+            serde_yaml::Value::String("enabled".into()),
+            serde_yaml::Value::Bool(true),
+        );
+        prov_b.insert(
+            serde_yaml::Value::String("model".into()),
+            serde_yaml::Value::String("claude-3-opus".into()),
+        );
+        prov_b.insert(
+            serde_yaml::Value::String("configured".into()),
+            serde_yaml::Value::Bool(true),
+        );
+        overlay_prov.insert(
+            serde_yaml::Value::String("anthropic".into()),
+            serde_yaml::Value::Mapping(prov_b),
+        );
+        overlay.insert(
+            serde_yaml::Value::String("providers".into()),
+            serde_yaml::Value::Mapping(overlay_prov),
+        );
+
+        merge_config_values(&mut base, overlay);
+
+        let providers = base.get("providers").unwrap().as_mapping().unwrap();
+        assert!(providers.contains_key("openai"));
+        assert!(providers.contains_key("anthropic"));
+        // openai should be unchanged
+        let a = providers.get("openai").unwrap().as_mapping().unwrap();
+        assert!(a.get("enabled").unwrap().as_bool().unwrap());
+        assert_eq!(a.get("model").unwrap().as_str().unwrap(), "gpt-4o");
+    }
+
+    #[test]
+    fn test_merge_providers_partial_override() {
+        let mut base = Mapping::new();
+        let mut base_prov = Mapping::new();
+        let mut prov = Mapping::new();
+        prov.insert(
+            serde_yaml::Value::String("enabled".into()),
+            serde_yaml::Value::Bool(true),
+        );
+        prov.insert(
+            serde_yaml::Value::String("model".into()),
+            serde_yaml::Value::String("gpt-4o".into()),
+        );
+        prov.insert(
+            serde_yaml::Value::String("configured".into()),
+            serde_yaml::Value::Bool(true),
+        );
+        base_prov.insert(
+            serde_yaml::Value::String("openai".into()),
+            serde_yaml::Value::Mapping(prov),
+        );
+        base.insert(
+            serde_yaml::Value::String("providers".into()),
+            serde_yaml::Value::Mapping(base_prov),
+        );
+
+        // Overlay just changes the model
+        let mut overlay = Mapping::new();
+        let mut overlay_prov = Mapping::new();
+        let mut prov_override = Mapping::new();
+        prov_override.insert(
+            serde_yaml::Value::String("model".into()),
+            serde_yaml::Value::String("gpt-4o-mini".into()),
+        );
+        overlay_prov.insert(
+            serde_yaml::Value::String("openai".into()),
+            serde_yaml::Value::Mapping(prov_override),
+        );
+        overlay.insert(
+            serde_yaml::Value::String("providers".into()),
+            serde_yaml::Value::Mapping(overlay_prov),
+        );
+
+        merge_config_values(&mut base, overlay);
+
+        let providers = base.get("providers").unwrap().as_mapping().unwrap();
+        let openai = providers.get("openai").unwrap().as_mapping().unwrap();
+
+        // model should be overridden
+        assert_eq!(
+            openai.get("model").unwrap().as_str().unwrap(),
+            "gpt-4o-mini"
+        );
+        // Other fields should be preserved
+        assert!(openai.get("enabled").unwrap().as_bool().unwrap());
+        assert!(openai.get("configured").unwrap().as_bool().unwrap());
     }
 }

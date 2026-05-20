@@ -4,6 +4,12 @@
 #  - canary.yml (when added)
 #  - pr-comment-bundle-desktop.yml (when added)
 on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch name to bundle app from'
+        required: true
+        type: string
   workflow_call:
     inputs:
       version:
@@ -20,14 +26,22 @@ name: "Bundle Desktop (Linux)"
 
 jobs:
   build-desktop-linux:
-    name: Build Desktop (Linux)
-    runs-on: ubuntu-22.04
+    name: Build Desktop (Linux, ${{ matrix.variant }})
+    runs-on: ${{ matrix.build-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: standard
+            build-on: ubuntu-22.04
+          - variant: vulkan
+            build-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || inputs.branch }}
 
       - name: Update versions
         if: ${{ inputs.version != '' }}
@@ -72,7 +86,6 @@ jobs:
             libxrandr2 \
             libgbm1 \
             libxss1 \
-            libasound2 \
             rpm \
             fakeroot \
             dpkg-dev \
@@ -80,6 +93,16 @@ jobs:
             flatpak \
             flatpak-builder \
             elfutils
+
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            sudo apt-get install -y \
+              libasound2t64 \
+              libvulkan-dev \
+              libvulkan1 \
+              glslc
+          else
+            sudo apt-get install -y libasound2
+          fi
 
       - name: Setup Flatpak Runtimes
         run: |
@@ -94,7 +117,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
-          key: linux
+          key: linux-${{ matrix.build-on }}-${{ matrix.variant }}
 
       - name: Build goosed binary
         env:
@@ -104,7 +127,12 @@ jobs:
           source ./bin/activate-hermit
           export TARGET="x86_64-unknown-linux-gnu"
           rustup target add "${TARGET}"
-          cargo build --release --target ${TARGET} -p goose-server
+          FEATURE_ARGS=()
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            FEATURE_ARGS=(--features vulkan)
+          fi
+
+          cargo build --release --target ${TARGET} -p goose-server "${FEATURE_ARGS[@]}"
 
       - name: Copy binaries into Electron folder
         run: |
@@ -134,13 +162,24 @@ jobs:
           ls -la node_modules/.bin/ | head -5
 
       - name: Build Linux packages
+        env:
+          GOOSE_DESKTOP_LINUX_VARIANT: ${{ matrix.variant }}
         run: |
           source ./bin/activate-hermit
           cd ui/desktop
-          echo "Building Linux packages (.deb, .rpm, and .flatpak)..."
+          echo "Building Linux packages (.deb, .rpm, and .flatpak) for ${{ matrix.variant }}..."
 
           # Build all configured packages
           pnpm run make --platform=linux --arch=x64
+
+          if [ "${{ matrix.variant }}" = "vulkan" ]; then
+            for package in out/make/deb/x64/*.deb out/make/rpm/x64/*.rpm out/make/flatpak/x86_64/*.flatpak; do
+              [ -e "$package" ] || continue
+              extension="${package##*.}"
+              base="${package%.*}"
+              mv "$package" "${base}-vulkan.${extension}"
+            done
+          fi
 
           echo "Build completed. Checking output..."
           ls -la out/
@@ -158,22 +197,49 @@ jobs:
           find ui/desktop/out/ -name "*.deb" -o -name "*.rpm" -o -name "*.flatpak" -exec ls -lh {} \;
 
       - name: Upload .deb package
+        if: matrix.variant == 'standard'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: Goose-linux-x64-deb
           path: ui/desktop/out/make/deb/x64/*.deb
           if-no-files-found: error
 
+      - name: Upload .deb package (Vulkan)
+        if: matrix.variant == 'vulkan'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-linux-x64-vulkan-deb
+          path: ui/desktop/out/make/deb/x64/*-vulkan.deb
+          if-no-files-found: error
+
       - name: Upload .rpm package
+        if: matrix.variant == 'standard'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: Goose-linux-x64-rpm
           path: ui/desktop/out/make/rpm/x64/*.rpm
           if-no-files-found: error
 
+      - name: Upload .rpm package (Vulkan)
+        if: matrix.variant == 'vulkan'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-linux-x64-vulkan-rpm
+          path: ui/desktop/out/make/rpm/x64/*-vulkan.rpm
+          if-no-files-found: error
+
       - name: Upload .flatpak package
+        if: matrix.variant == 'standard'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: Goose-linux-x64-flatpak
           path: ui/desktop/out/make/flatpak/x86_64/*.flatpak
+          if-no-files-found: error
+
+      - name: Upload .flatpak package (Vulkan)
+        if: matrix.variant == 'vulkan'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: Goose-linux-x64-vulkan-flatpak
+          path: ui/desktop/out/make/flatpak/x86_64/*-vulkan.flatpak
           if-no-files-found: error
