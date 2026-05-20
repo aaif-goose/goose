@@ -501,7 +501,14 @@ pub struct XaiProvider {
 impl XaiProvider {
     pub async fn cleanup() -> Result<()> {
         TokenCache::new().clear().await?;
-        let _ = Config::global().delete(XAI_CONFIGURED_MARKER);
+        let config = Config::global();
+        let _ = config.delete(XAI_CONFIGURED_MARKER);
+        if let Some(mut entry) = crate::config::get_provider_entry(config, XAI_PROVIDER_NAME) {
+            if entry.configured {
+                entry.configured = false;
+                let _ = crate::config::set_provider_entry(config, XAI_PROVIDER_NAME, &entry);
+            }
+        }
         Ok(())
     }
 
@@ -573,7 +580,7 @@ impl ProviderDef for XaiProvider {
             XAI_KNOWN_MODELS.to_vec(),
             XAI_DOC_URL,
             vec![
-                ConfigKey::new("XAI_API_KEY", false, true, None, true),
+                ConfigKey::new("XAI_API_KEY", true, true, None, true),
                 ConfigKey::new_oauth("XAI_OAUTH", false, true, None, true),
                 ConfigKey::new_oauth_device_code("XAI_DEVICE_CODE", false, true, None, true),
                 ConfigKey::new("XAI_HOST", false, false, Some(XAI_API_HOST), false),
