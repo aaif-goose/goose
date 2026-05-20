@@ -346,7 +346,7 @@ export function McpAppView({
       setActiveToolInput(args ?? {});
 
       const client = await getClient();
-      const response = (await client.extMethod("_goose/v1/tools/call", {
+      const response = (await client.extMethod("_goose/unstable/tools/call", {
         sessionId: payload.sessionId,
         name: `${payload.tool.extensionName}__${name}`,
         arguments: args ?? {},

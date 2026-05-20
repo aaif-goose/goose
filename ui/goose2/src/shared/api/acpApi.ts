@@ -160,7 +160,7 @@ export async function updateWorkingDir(
   workingDir: string,
 ): Promise<void> {
   const client = await getClient();
-  await client.extMethod("_goose/v1/session/working-dir/update", {
+  await client.extMethod("_goose/unstable/session/working-dir/update", {
     sessionId,
     workingDir,
   });
@@ -171,7 +171,7 @@ export async function updateSessionProject(
   projectId: string | null,
 ): Promise<void> {
   const client = await getClient();
-  await client.extMethod("_goose/v1/session/project/update", {
+  await client.extMethod("_goose/unstable/session/project/update", {
     sessionId,
     projectId,
   });
@@ -179,12 +179,12 @@ export async function updateSessionProject(
 
 export async function archiveSession(sessionId: string): Promise<void> {
   const client = await getClient();
-  await client.extMethod("_goose/v1/session/archive", { sessionId });
+  await client.extMethod("_goose/unstable/session/archive", { sessionId });
 }
 
 export async function unarchiveSession(sessionId: string): Promise<void> {
   const client = await getClient();
-  await client.extMethod("_goose/v1/session/unarchive", { sessionId });
+  await client.extMethod("_goose/unstable/session/unarchive", { sessionId });
 }
 
 export async function renameSession(
@@ -192,7 +192,10 @@ export async function renameSession(
   title: string,
 ): Promise<void> {
   const client = await getClient();
-  await client.extMethod("_goose/v1/session/rename", { sessionId, title });
+  await client.extMethod("_goose/unstable/session/rename", {
+    sessionId,
+    title,
+  });
 }
 
 export async function cancelSession(sessionId: string): Promise<void> {
