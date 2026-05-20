@@ -858,14 +858,32 @@ impl Provider for OpenAiProvider {
 }
 
 fn parse_custom_headers(s: String) -> HashMap<String, String> {
-    s.split(',')
-        .filter_map(|header| {
-            let mut parts = header.splitn(2, '=');
-            let key = parts.next().map(|s| s.trim().to_string())?;
-            let value = parts.next().map(|s| s.trim().to_string())?;
-            Some((key, value))
-        })
-        .collect()
+    let mut headers = HashMap::new();
+    let mut rest = s.as_str();
+    while !rest.is_empty() {
+        let Some((key, after_eq)) = rest.split_once('=') else {
+            break;
+        };
+        let key = key.trim();
+        let (value, remainder) = if let Some(after_quote) = after_eq.strip_prefix('"') {
+            match after_quote.split_once('"') {
+                Some((value, after_close)) => {
+                    (value, after_close.strip_prefix(',').unwrap_or(after_close))
+                }
+                None => (after_quote, ""),
+            }
+        } else {
+            match after_eq.split_once(',') {
+                Some((value, after_comma)) => (value, after_comma),
+                None => (after_eq, ""),
+            }
+        };
+        if !key.is_empty() {
+            headers.insert(key.to_string(), value.trim().to_string());
+        }
+        rest = remainder;
+    }
+    headers
 }
 
 #[async_trait]
@@ -1241,6 +1259,16 @@ mod tests {
 
         let models = provider.fetch_supported_models().await.unwrap();
         assert_eq!(models, vec!["m1".to_string(), "m2".to_string()]);
+    }
+
+    #[test]
+    fn parse_custom_headers_with_commas_in_quoted_values() {
+        let headers = parse_custom_headers(
+            r#"Authorization=Bearer token,x-tags="a,b,c",x-path=C:\temp"#.to_string(),
+        );
+        assert_eq!(headers.get("Authorization").unwrap(), "Bearer token");
+        assert_eq!(headers.get("x-tags").unwrap(), "a,b,c");
+        assert_eq!(headers.get("x-path").unwrap(), r"C:\temp");
     }
 
     #[test]
