@@ -420,6 +420,15 @@ if (process.platform !== 'darwin') {
           return;
         }
 
+        if (parsedUrl.hostname === 'resume') {
+          app.whenReady().then(async () => {
+            const recentDirs = loadRecentDirs();
+            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+            await createResumeChatWindow(parsedUrl, openDir || undefined);
+          });
+          return;
+        }
+
         // For non-bot URLs, continue with normal handling
         handleProtocolUrl(protocolUrl);
       }
@@ -448,6 +457,26 @@ if (process.platform !== 'darwin') {
 const pendingDeepLinks = new Map<number, string>(); // windowId -> deep link URL
 let openUrlHandledLaunch = false;
 
+function getResumeSessionId(parsedUrl: URL): string | null {
+  try {
+    const sessionId = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, '')).trim();
+    return sessionId || null;
+  } catch {
+    return null;
+  }
+}
+
+async function createResumeChatWindow(parsedUrl: URL, dir?: string): Promise<boolean> {
+  const resumeSessionId = getResumeSessionId(parsedUrl);
+  if (!resumeSessionId) {
+    log.warn('[Main] Ignoring goose://resume URL without a session id');
+    return false;
+  }
+
+  await createChat(app, { dir, resumeSessionId });
+  return true;
+}
+
 async function handleProtocolUrl(url: string) {
   if (!url) return;
 
@@ -457,6 +486,9 @@ async function handleProtocolUrl(url: string) {
 
   if (parsedUrl.hostname === 'new-session') {
     await createChat(app, { dir: openDir || undefined });
+    return;
+  } else if (parsedUrl.hostname === 'resume') {
+    await createResumeChatWindow(parsedUrl, openDir || undefined);
     return;
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     const existingWindows = BrowserWindow.getAllWindows();
@@ -525,6 +557,13 @@ app.on('open-url', async (_event, url) => {
       log.info('[Main] Detected new-session URL, creating new chat window');
       openUrlHandledLaunch = true;
       await createChat(app, { dir: openDir || undefined });
+      return;
+    }
+
+    if (parsedUrl.hostname === 'resume') {
+      log.info('[Main] Detected resume URL, creating session resume window');
+      openUrlHandledLaunch = true;
+      await createResumeChatWindow(parsedUrl, openDir || undefined);
       return;
     }
 
