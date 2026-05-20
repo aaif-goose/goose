@@ -34,8 +34,8 @@ const STATUS_ICON = {
 } as const;
 
 const STATUS_COLOR = {
-  pass: "text-text-success",
-  warn: "text-text-warning",
+  pass: "text-status-added",
+  warn: "text-warning",
   fail: "text-destructive",
 } as const;
 

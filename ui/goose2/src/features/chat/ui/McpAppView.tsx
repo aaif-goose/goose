@@ -136,7 +136,8 @@ export function McpAppView({
   onAutoScrollRequest,
 }: McpAppViewProps) {
   const { t } = useTranslation("chat");
-  const { resolvedTheme } = useTheme();
+  const { isDark } = useTheme();
+  const resolvedTheme = isDark ? "dark" : "light";
   const [hostInfo, setHostInfo] = useState<{
     httpBaseUrl: string;
     secretKey: string;

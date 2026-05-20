@@ -29,6 +29,7 @@
         "red": "Rojo"
       },
       "description": "Elige tu color de acento",
+      "disabledDescription": "Selecciona primero un tema para activar los acentos personalizados.",
       "label": "Color de acento"
     },
     "density": {
@@ -41,13 +42,12 @@
       }
     },
     "theme": {
-      "description": "Elige tu esquema de color preferido",
+      "description": "Elige un tema de la app inspirado en sintaxis o déjalo sin seleccionar para seguir la apariencia del sistema.",
+      "empty": "Ningún tema coincide con tu búsqueda.",
       "label": "Tema",
-      "options": {
-        "dark": "Oscuro",
-        "light": "Claro",
-        "system": "Sistema"
-      }
+      "searchPlaceholder": "Buscar temas...",
+      "systemDescription": "Usa el tema claro u oscuro predeterminado de Goose según la configuración de tu dispositivo.",
+      "systemLabel": "Predeterminado del sistema"
     },
     "title": "Apariencia"
   },

@@ -105,13 +105,13 @@ const statusIconComponents: Record<ToolPart["state"], LucideIcon> = {
 };
 
 const statusIconClasses: Record<ToolPart["state"], string> = {
-  "approval-requested": "text-yellow-600",
-  "approval-responded": "text-blue-600",
+  "approval-requested": "text-warning",
+  "approval-responded": "text-brand",
   "input-available": "animate-pulse",
   "input-streaming": "",
-  "output-available": "text-green-600",
-  "output-denied": "text-orange-600",
-  "output-error": "text-red-600",
+  "output-available": "text-status-added",
+  "output-denied": "text-warning",
+  "output-error": "text-status-deleted",
 };
 
 export const ToolStatusIcon = ({

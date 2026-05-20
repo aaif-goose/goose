@@ -29,7 +29,8 @@
         "red": "Red"
       },
       "description": "Choose your accent color",
-      "label": "Accent color"
+      "disabledDescription": "Select a theme first to enable accent overrides.",
+      "label": "Accent Color"
     },
     "density": {
       "description": "Adjust the spacing of UI elements",
@@ -41,13 +42,12 @@
       }
     },
     "theme": {
-      "description": "Choose your preferred color scheme",
+      "description": "Pick a syntax-inspired app theme, or leave it unset to follow your system appearance.",
+      "empty": "No themes match your search.",
       "label": "Theme",
-      "options": {
-        "dark": "Dark",
-        "light": "Light",
-        "system": "System"
-      }
+      "searchPlaceholder": "Search themes...",
+      "systemDescription": "Uses the default Goose light or dark theme based on your device settings.",
+      "systemLabel": "System Default"
     },
     "title": "Appearance"
   },

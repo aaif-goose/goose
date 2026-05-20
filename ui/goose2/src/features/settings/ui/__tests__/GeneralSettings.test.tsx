@@ -10,8 +10,6 @@ describe("GeneralSettings appearance section", () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute("data-density");
-    document.documentElement.style.removeProperty("--density-spacing");
-    document.documentElement.style.removeProperty("--spacing");
   });
 
   it("updates interface density from the appearance controls", async () => {
@@ -30,12 +28,6 @@ describe("GeneralSettings appearance section", () => {
     await waitFor(() => {
       expect(localStorage.getItem("goose-density")).toBe("compact");
       expect(document.documentElement.dataset.density).toBe("compact");
-      expect(
-        document.documentElement.style.getPropertyValue("--density-spacing"),
-      ).toBe("");
-      expect(document.documentElement.style.getPropertyValue("--spacing")).toBe(
-        "",
-      );
     });
     expect(compact).toHaveAttribute("data-state", "on");
   });

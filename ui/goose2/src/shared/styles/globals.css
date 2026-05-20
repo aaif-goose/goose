@@ -84,55 +84,112 @@
   /* shape */
   --radius: 20px;
 
+  /* shadcn source vars — HSL component format */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 10.2%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 10.2%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 10.2%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 94.1%;
+  --secondary-foreground: 0 0% 10.2%;
+  --muted: 0 0% 94.1%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 0 0% 94.1%;
+  --accent-foreground: 0 0% 10.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 90.9%;
+  --input: 0 0% 89%;
+  --ring: 0 0% 10.2%;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 0 0% 10.2%;
+  --sidebar-primary: 217.2 91.2% 59.8%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 94.1%;
+  --sidebar-accent-foreground: 0 0% 10.2%;
+  --sidebar-border: 0 0% 90.9%;
+  --sidebar-ring: 0 0% 90.9%;
+
+  /* semantic overlays derived from adaptive vars */
+  --status-added: #16a34a;
+  --status-deleted: #dc2626;
+  --status-modified: #ca8a04;
+  --ui-warning: #ca8a04;
+  --ui-warning-bg: rgba(202, 138, 4, 0.12);
+
   /* theming accents */
-  --brand: var(--color-gray-900);
-  --brand-foreground: #ffffff;
-  --background-accent: var(--brand);
-  --border-accent: var(--brand);
-  --text-accent: var(--brand);
+  --background-accent: hsl(var(--primary));
+  --border-accent: hsl(var(--primary));
+  --text-accent: hsl(var(--primary));
 
-  /* Semantic backgrounds */
-  --background-default: var(--color-white);
-  --background-alt: var(--color-gray-50);
-  --background-medium: var(--color-gray-400);
-  --background-muted: var(--color-gray-100);
-  --background-inverse: var(--color-black);
-  --background-danger: var(--color-red-200);
-  --background-success: var(--color-green-200);
-  --background-info: var(--color-blue-200);
-  --background-warning: var(--color-yellow-200);
+  /* semantic backgrounds */
+  --background-default: hsl(var(--background));
+  --background-alt: hsl(var(--card));
+  --background-medium: hsl(var(--secondary));
+  --background-muted: hsl(var(--muted));
+  --background-inverse: hsl(var(--foreground));
+  --background-danger: hsl(var(--destructive) / 0.14);
+  --background-success: color-mix(
+    in srgb,
+    var(--status-added) 14%,
+    transparent
+  );
+  --background-info: color-mix(in srgb, var(--brand-color) 14%, transparent);
+  --background-warning: var(--ui-warning-bg);
 
-  /* Semantic borders */
-  --border-default: var(--color-gray-200);
+  /* semantic borders */
+  --border-default: hsl(var(--border));
   --border-soft: color-mix(in srgb, var(--border-default) 80%, transparent);
   --border-soft-divider: color-mix(
     in srgb,
     var(--border-default) 70%,
     transparent
   );
-  --border-input: var(--color-gray-300);
-  --border-input-hover: var(--color-gray-400);
-  --border-strong: var(--color-gray-900);
-  --border-card: var(--color-gray-200);
-  --border-inverse: var(--color-black);
-  --border-danger: var(--color-red-200);
-  --border-success: var(--color-green-300);
-  --border-warning: var(--color-yellow-200);
-  --border-info: var(--color-blue-200);
+  --border-input: hsl(var(--input));
+  --border-input-hover: color-mix(
+    in srgb,
+    hsl(var(--input)) 75%,
+    hsl(var(--foreground))
+  );
+  --border-strong: hsl(var(--foreground));
+  --border-card: hsl(var(--border));
+  --border-inverse: hsl(var(--background));
+  --border-danger: hsl(var(--destructive));
+  --border-success: var(--status-added);
+  --border-warning: var(--ui-warning);
+  --border-info: var(--brand-color);
 
-  /* Semantic text */
-  --text-default: var(--color-gray-900);
-  --text-subtle: var(--color-gray-600);
-  --text-muted: var(--color-gray-500);
-  --text-alt: var(--color-gray-600);
-  --text-inverse: var(--color-white);
-  --text-danger: var(--color-red-200);
-  --text-success: var(--color-green-300);
-  --text-warning: var(--color-yellow-200);
-  --text-info: var(--color-blue-200);
-  --text-placeholder: var(--color-gray-400);
+  /* semantic text */
+  --text-default: hsl(var(--foreground));
+  --text-subtle: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 80%,
+    hsl(var(--foreground))
+  );
+  --text-muted: hsl(var(--muted-foreground));
+  --text-alt: hsl(var(--muted-foreground));
+  --text-inverse: hsl(var(--background));
+  --text-danger: hsl(var(--destructive));
+  --text-success: var(--status-added);
+  --text-warning: var(--ui-warning);
+  --text-info: var(--brand-color);
+  --text-placeholder: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 75%,
+    transparent
+  );
 
-  --ring: color-mix(in oklab, var(--brand) 42%, transparent);
+  --sidebar: hsl(var(--sidebar-background));
+  --sidebar-foreground-color: hsl(var(--sidebar-foreground));
+  --sidebar-primary-color: hsl(var(--sidebar-primary));
+  --sidebar-primary-foreground-color: hsl(var(--sidebar-primary-foreground));
+  --sidebar-accent-color: hsl(var(--sidebar-accent));
+  --sidebar-accent-foreground-color: hsl(var(--sidebar-accent-foreground));
+  --sidebar-border-color: hsl(var(--sidebar-border));
+  --sidebar-ring-color: hsl(var(--sidebar-ring));
 
   /* Alpha variants */
   --dark-10: rgba(26, 26, 26, 0.1);
@@ -163,35 +220,6 @@
   --chart-4: #d185e0;
   --chart-5: #91cb80;
 
-  /* shadcn/ui standard tokens — aliases into our semantic vars */
-  --background: var(--background-default);
-  --foreground: var(--text-default);
-  --card: var(--background-default);
-  --card-foreground: var(--text-default);
-  --popover: var(--background-default);
-  --popover-foreground: var(--text-default);
-  --primary: var(--brand);
-  --primary-foreground: var(--brand-foreground);
-  --secondary: var(--background-muted);
-  --secondary-foreground: var(--text-default);
-  --muted: var(--background-muted);
-  --muted-foreground: var(--text-muted);
-  --accent: color-mix(in oklab, var(--brand) 12%, var(--background-muted));
-  --accent-foreground: var(--text-default);
-  --destructive: var(--background-danger);
-  --destructive-foreground: #ffffff;
-  --border: var(--border-default);
-  --input: var(--border-input);
-
-  /* Sidebar */
-  --sidebar: var(--background-default);
-  --sidebar-foreground: var(--text-default);
-  --sidebar-primary: var(--brand);
-  --sidebar-primary-foreground: var(--brand-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--text-default);
-  --sidebar-border: var(--border-default);
-  --sidebar-ring: var(--border-default);
 
   /* Heading typography — magazine scale */
   --heading-display-font-size: clamp(64px, 8vw, 96px);
@@ -249,8 +277,8 @@
   --duration-slow: 0.4s;
 
   /* goose2 custom — brand accent + density */
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
+  --brand-color: #3b82f6;
+  --brand-foreground-color: #ffffff;
   --density-spacing: 1;
 }
 
@@ -265,75 +293,96 @@
 }
 
 .dark {
-  /* theming accents */
-  --brand: var(--color-white);
-  --brand-foreground: #000000;
-  --background-accent: var(--brand);
-  --border-accent: var(--brand);
-  --text-accent: var(--brand);
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 6.7%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --accent: 0 0% 14.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 72.2% 50.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 18%;
+  --input: 0 0% 18%;
+  --ring: 0 0% 98%;
+  --sidebar-background: 0 0% 3.9%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-primary: 217.2 91.2% 59.8%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 14.9%;
+  --sidebar-accent-foreground: 0 0% 98%;
+  --sidebar-border: 0 0% 18%;
+  --sidebar-ring: 0 0% 18%;
 
-  /* shadcn/ui standard tokens — same aliases, dark values cascade via custom vars */
-  --background: var(--background-default);
-  --foreground: var(--text-default);
-  --card: var(--background-default);
-  --card-foreground: var(--text-default);
-  --popover: var(--background-default);
-  --popover-foreground: var(--text-default);
-  --primary: var(--brand);
-  --primary-foreground: var(--brand-foreground);
-  --secondary: var(--background-muted);
-  --secondary-foreground: var(--text-default);
-  --muted: var(--background-muted);
-  --muted-foreground: var(--text-muted);
-  --accent: color-mix(in oklab, var(--brand) 18%, var(--background-muted));
-  --accent-foreground: var(--text-default);
-  --destructive: var(--background-danger);
-  --destructive-foreground: #ffffff;
-  --border: var(--border-default);
-  --input: var(--border-input);
-
-  /* semantic backgrounds */
-  --background-default: var(--color-black);
-  --background-alt: var(--color-gray-800);
-  --background-medium: var(--color-gray-700);
-  --background-muted: var(--color-gray-800);
-  --background-inverse: var(--color-white);
-  --background-danger: var(--color-red-100);
-  --background-success: var(--color-green-100);
-  --background-info: var(--color-blue-100);
-  --background-warning: var(--color-yellow-100);
-
-  /* semantic borders */
-  --border-default: var(--color-gray-700);
+  --background-accent: hsl(var(--primary));
+  --border-accent: hsl(var(--primary));
+  --text-accent: hsl(var(--primary));
+  --background-default: hsl(var(--background));
+  --background-alt: hsl(var(--card));
+  --background-medium: hsl(var(--secondary));
+  --background-muted: hsl(var(--muted));
+  --background-inverse: hsl(var(--foreground));
+  --background-danger: hsl(var(--destructive) / 0.18);
+  --background-success: color-mix(
+    in srgb,
+    var(--status-added) 16%,
+    transparent
+  );
+  --background-info: color-mix(in srgb, var(--brand-color) 16%, transparent);
+  --background-warning: var(--ui-warning-bg);
+  --border-default: hsl(var(--border));
   --border-soft: color-mix(in srgb, var(--border-default) 80%, transparent);
   --border-soft-divider: color-mix(
     in srgb,
     var(--border-default) 70%,
     transparent
   );
-  --border-input: var(--color-gray-700);
-  --border-input-hover: var(--color-gray-600);
-  --border-strong: var(--color-white);
-  --border-card: var(--color-gray-700);
-  --border-inverse: var(--color-white);
-  --border-danger: var(--color-red-200);
-  --border-success: var(--color-green-200);
-  --border-warning: var(--color-yellow-200);
-  --border-info: var(--color-blue-200);
-
-  /* semantic text */
-  --text-default: var(--color-white);
-  --text-subtle: var(--color-gray-400);
-  --text-muted: var(--color-gray-500);
-  --text-alt: var(--color-gray-500);
-  --text-inverse: var(--color-black);
-  --text-danger: var(--color-red-100);
-  --text-success: var(--color-green-100);
-  --text-warning: var(--color-yellow-100);
-  --text-info: var(--color-blue-100);
-  --text-placeholder: var(--color-gray-600);
-
-  --ring: color-mix(in oklab, var(--brand) 52%, transparent);
+  --border-input: hsl(var(--input));
+  --border-input-hover: color-mix(
+    in srgb,
+    hsl(var(--input)) 72%,
+    hsl(var(--foreground))
+  );
+  --border-strong: hsl(var(--foreground));
+  --border-card: hsl(var(--border));
+  --border-inverse: hsl(var(--background));
+  --border-danger: hsl(var(--destructive));
+  --border-success: var(--status-added);
+  --border-warning: var(--ui-warning);
+  --border-info: var(--brand-color);
+  --text-default: hsl(var(--foreground));
+  --text-subtle: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 80%,
+    hsl(var(--foreground))
+  );
+  --text-muted: hsl(var(--muted-foreground));
+  --text-alt: hsl(var(--muted-foreground));
+  --text-inverse: hsl(var(--background));
+  --text-danger: hsl(var(--destructive));
+  --text-success: var(--status-added);
+  --text-warning: var(--ui-warning);
+  --text-info: var(--brand-color);
+  --text-placeholder: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 75%,
+    transparent
+  );
+  --sidebar: hsl(var(--sidebar-background));
+  --sidebar-foreground-color: hsl(var(--sidebar-foreground));
+  --sidebar-primary-color: hsl(var(--sidebar-primary));
+  --sidebar-primary-foreground-color: hsl(var(--sidebar-primary-foreground));
+  --sidebar-accent-color: hsl(var(--sidebar-accent));
+  --sidebar-accent-foreground-color: hsl(var(--sidebar-accent-foreground));
+  --sidebar-border-color: hsl(var(--sidebar-border));
+  --sidebar-ring-color: hsl(var(--sidebar-ring));
 
   /* Alpha variants (dark mode) */
   --dark-10: rgba(242, 242, 242, 0.1);
@@ -357,47 +406,38 @@
   --chart-3: #d76a6a;
   --chart-4: #d185e0;
   --chart-5: #91cb80;
-
-  /* Sidebar */
-  --sidebar: var(--background-default);
-  --sidebar-foreground: var(--text-default);
-  --sidebar-primary: var(--brand);
-  --sidebar-primary-foreground: var(--brand-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--text-default);
-  --sidebar-border: var(--border-default);
-  --sidebar-ring: var(--border-default);
 }
 
 @theme inline {
   /* shadcn/ui standard Tailwind color mappings */
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
   --color-foreground-subtle: var(--text-subtle);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
   --color-placeholder: var(--text-placeholder);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
 
   /* brand accent */
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
+  --color-brand: var(--brand-color);
+  --color-brand-foreground: var(--brand-foreground-color);
 
   /* danger (alias for destructive) */
-  --color-danger: var(--destructive);
+  --color-danger: hsl(var(--destructive));
 
   /* semantic backgrounds (custom superset) */
   --color-background-default: var(--background-default);
@@ -475,8 +515,6 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --color-ring: var(--ring);
-
   /* shadows */
   --shadow-mini: var(--shadow-mini);
   --shadow-mini-inset: var(--shadow-mini-inset);
@@ -503,13 +541,19 @@
   --color-chart-5: var(--chart-5);
 
   --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-background: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: var(--sidebar-foreground-color);
+  --color-sidebar-primary: var(--sidebar-primary-color);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground-color);
+  --color-sidebar-accent: var(--sidebar-accent-color);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground-color);
+  --color-sidebar-border: var(--sidebar-border-color);
+  --color-sidebar-ring: var(--sidebar-ring-color);
+  --color-status-added: var(--status-added);
+  --color-status-deleted: var(--status-deleted);
+  --color-status-modified: var(--status-modified);
+  --color-warning: var(--ui-warning);
+  --color-warning-bg: var(--ui-warning-bg);
 
   --breakpoint-desktop: 1440px;
 
