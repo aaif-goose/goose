@@ -342,7 +342,17 @@ export const SwitchModelModal = ({
       .flatMap((group) => group.options)
       .find((option) => option.provider === provider && option.value === model);
 
-    resolveSelectedModelReasoning(provider, model, selectedOption?.reasoning);
+    if (selectedOption) {
+      resolveSelectedModelReasoning(provider, model, selectedOption.reasoning);
+      return;
+    }
+
+    setSelectedModelReasoning(null);
+    const timeout = setTimeout(() => {
+      resolveSelectedModelReasoning(provider, model);
+    }, 400);
+
+    return () => clearTimeout(timeout);
   }, [model, provider, modelOptions, resolveSelectedModelReasoning]);
 
   // Validate form data
