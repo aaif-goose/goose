@@ -1,0 +1,21 @@
+{
+  "name": "perplexity",
+  "engine": "openai",
+  "display_name": "Perplexity",
+  "description": "Chat models with built-in real-time web search grounding",
+  "api_key_env": "PERPLEXITY_API_KEY",
+  "base_url": "https://api.perplexity.ai",
+  "models": [
+    { "name": "sonar", "context_limit": 128000 },
+    { "name": "sonar-pro", "context_limit": 128000 },
+    { "name": "sonar-reasoning", "context_limit": 128000 },
+    { "name": "sonar-reasoning-pro", "context_limit": 128000 }
+  ],
+  "supports_streaming": true,
+  "model_doc_link": "https://docs.perplexity.ai/docs/getting-started",
+  "setup_steps": [
+    "Go to https://www.perplexity.ai/account/api/keys",
+    "Create or copy an existing API key",
+    "Paste the key above as PERPLEXITY_API_KEY"
+  ]
+}
