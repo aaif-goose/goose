@@ -4662,6 +4662,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "tree-sitter",
+ "tree-sitter-elixir",
  "tree-sitter-go",
  "tree-sitter-java",
  "tree-sitter-javascript",
@@ -11507,6 +11508,16 @@ dependencies = [
  "regex-syntax",
  "serde_json",
  "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-elixir"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66dd064a762ed95bfc29857fa3cb7403bb1e5cb88112de0f6341b7e47284ba40"
+dependencies = [
+ "cc",
  "tree-sitter-language",
 ]
 

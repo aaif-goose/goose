@@ -181,6 +181,7 @@ indexmap = "2.14.0"
 ignore = { workspace = true }
 rayon = { workspace = true }
 tree-sitter = { workspace = true }
+tree-sitter-elixir = { workspace = true }
 tree-sitter-go = { workspace = true }
 tree-sitter-java = { workspace = true }
 tree-sitter-javascript = { workspace = true }
