@@ -920,6 +920,12 @@
             "string",
             "null"
           ]
+        },
+        "preservesThinking": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1111,6 +1117,9 @@
         },
         "apiKeySet": {
           "type": "boolean"
+        },
+        "preservesThinking": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1119,7 +1128,8 @@
         "displayName",
         "apiUrl",
         "requiresAuth",
-        "apiKeySet"
+        "apiKeySet",
+        "preservesThinking"
       ]
     },
     "CustomProviderUpdateRequest": {
@@ -1175,6 +1185,12 @@
         "basePath": {
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "preservesThinking": {
+          "type": [
+            "boolean",
             "null"
           ]
         }

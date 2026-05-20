@@ -594,6 +594,13 @@ export const SwitchModelModal = ({
     // Don't auto-select if user explicitly cleared the model
     if (!provider || loadingModels || model || isCustomModel || userClearedModel) return;
 
+    // Use saved model from provider config if available
+    const providerInfo = activeProvidersList.find((p) => p.name === provider);
+    if (providerInfo?.saved_model) {
+      setModel(providerInfo.saved_model);
+      return;
+    }
+
     const providerModels = modelOptions
       .filter((group) => group.options[0]?.provider === provider)
       .flatMap((group) => group.options);
@@ -604,7 +611,7 @@ export const SwitchModelModal = ({
         setModel(preferredModel);
       }
     }
-  }, [provider, modelOptions, loadingModels, model, isCustomModel, userClearedModel]);
+  }, [provider, modelOptions, loadingModels, model, isCustomModel, userClearedModel, activeProvidersList]);
 
   // Handle model selection change
   const handleModelChange = (newValue: unknown) => {

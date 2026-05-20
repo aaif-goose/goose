@@ -1,5 +1,5 @@
 ---
-sidebar_position: 46
+sidebar_position: 9
 title: ACP Providers
 sidebar_label: ACP Providers
 description: Use ACP agents like Claude Code and Codex as goose providers with extension support

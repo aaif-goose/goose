@@ -314,9 +314,6 @@
   "costTracker.pricingUnavailable": {
     "defaultMessage": "Pricing data unavailable for {model}"
   },
-  "costTracker.sessionCostBreakdown": {
-    "defaultMessage": "Session cost breakdown:"
-  },
   "costTracker.totalSessionCost": {
     "defaultMessage": "Total session cost: {cost}"
   },
@@ -2657,21 +2654,6 @@
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Hidden instructions that will be passed to the provider to help direct and add context to your responses."
   },
-  "popularChatTopics.governmentForms": {
-    "defaultMessage": "Describe in detail how various forms of government works and rank each by units of geese"
-  },
-  "popularChatTopics.heading": {
-    "defaultMessage": "Popular chat topics"
-  },
-  "popularChatTopics.organizePhotos": {
-    "defaultMessage": "Organize the photos on my desktop into neat little folders by subject matter"
-  },
-  "popularChatTopics.start": {
-    "defaultMessage": "Start"
-  },
-  "popularChatTopics.tamagotchiGame": {
-    "defaultMessage": "Develop a tamagotchi game that lives on my computer and follows a pixelated styling"
-  },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Error types (e.g., \"rate_limit\", \"auth\" - no details)"
   },
@@ -4616,11 +4598,11 @@
   "toolCallWithResponse.viewSubagentSession": {
     "defaultMessage": "View subagent session"
   },
-  "toolConfirmation.allowToolCall": {
-    "defaultMessage": "Do you allow this tool call?"
+  "toolConfirmation.allowToolCallWithName": {
+    "defaultMessage": "Allow {toolName}?"
   },
-  "toolConfirmation.gooseWouldLikeToCall": {
-    "defaultMessage": "Goose would like to call the above tool. Allow?"
+  "toolConfirmation.gooseWouldLikeToCallWithName": {
+    "defaultMessage": "Goose would like to call {toolName}. Allow?"
   },
   "tunnelSection.appStoreQrInstructions": {
     "defaultMessage": "Scan this QR code with your iPhone camera to install the goose mobile app from the App Store"

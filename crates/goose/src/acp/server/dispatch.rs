@@ -330,9 +330,12 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                 .if_request({
                     let agent = agent.clone();
                     let cx = cx.clone();
-                    |_req: ListSessionsRequest, responder: Responder<ListSessionsResponse>| async move {
+                    |req: ListSessionsRequest, responder: Responder<ListSessionsResponse>| async move {
                         cx.spawn(async move {
-                            responder.respond(agent.on_list_sessions().await?)?;
+                            match agent.on_list_sessions(req).await {
+                                Ok(response) => responder.respond(response)?,
+                                Err(e) => responder.respond_with_error(e)?,
+                            }
                             Ok(())
                         })?;
                         Ok(())

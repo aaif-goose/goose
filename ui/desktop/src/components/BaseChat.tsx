@@ -10,7 +10,6 @@ import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
-import PopularChatTopics from './PopularChatTopics';
 import ProgressiveMessageList from './ProgressiveMessageList';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
@@ -28,7 +27,6 @@ import { RecipeHeader } from './RecipeHeader';
 import { RecipeWarningModal } from './ui/RecipeWarningModal';
 import { scanRecipe } from '../recipe';
 import { UserInput } from '../types/message';
-import { useCostTracking } from '../hooks/useCostTracking';
 import RecipeActivities from './recipes/RecipeActivities';
 import { useToolCount } from './alerts/useToolCount';
 import { getThinkingMessage, getTextAndImageContent } from '../types/message';
@@ -72,7 +70,6 @@ interface BaseChatProps {
   customMainLayoutProps?: Record<string, unknown>;
   contentClassName?: string;
   disableSearch?: boolean;
-  showPopularTopics?: boolean;
   suppressEmptyState: boolean;
   sessionId: string;
   isActiveSession: boolean;
@@ -195,14 +192,6 @@ export default function BaseChat({
     }
     handleSubmit(input);
   };
-
-  const { sessionCosts } = useCostTracking({
-    sessionInputTokens: session?.accumulated_input_tokens || 0,
-    sessionOutputTokens: session?.accumulated_output_tokens || 0,
-    localInputTokens: 0,
-    localOutputTokens: 0,
-    session,
-  });
 
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
@@ -328,9 +317,6 @@ export default function BaseChat({
       msg: intl.formatMessage(i18n.recipeCreatedMessage, { title: recipe.title }),
     });
   };
-
-  const showPopularTopics =
-    messages.length === 0 && !initialMessage && chatState === ChatState.Idle;
 
   const chat: ChatType = {
     messages,
@@ -470,10 +456,6 @@ export default function BaseChat({
 
                 <div className="block h-8" />
               </>
-            ) : !recipe && showPopularTopics ? (
-              <PopularChatTopics
-                append={(text: string) => handleSubmit({ msg: text, images: [] })}
-              />
             ) : null}
           </ScrollArea>
 
@@ -511,11 +493,14 @@ export default function BaseChat({
             accumulatedOutputTokens={
               tokenState?.accumulatedOutputTokens ?? session?.accumulated_output_tokens ?? undefined
             }
+            accumulatedCost={
+              tokenState?.accumulatedCost ?? session?.accumulated_cost ?? undefined
+            }
             droppedFiles={droppedFiles}
             onFilesProcessed={() => setDroppedFiles([])} // Clear dropped files after processing
             messages={messages}
             disableAnimation={disableAnimation}
-            sessionCosts={sessionCosts}
+
             recipe={recipe}
             recipeAccepted={!hasNotAcceptedRecipe}
             initialPrompt={initialPrompt}

@@ -3,7 +3,7 @@
   "engine": "openai",
   "display_name": "oMLX",
   "description": "Run local models with oMLX",
-  "api_key_env": "",
+  "api_key_env": "OMLX_API_KEY",
   "base_url": "${OMLX_HOST}/v1/chat/completions",
   "env_vars": [
     {

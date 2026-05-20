@@ -142,12 +142,14 @@ type ElectronAPI = {
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
   getSecretKey: () => Promise<string>;
   getGoosedHostPort: () => Promise<string | null>;
+  getAcpUrl: () => Promise<string | null>;
   setWakelock: (enable: boolean) => Promise<boolean>;
   getWakelockState: () => Promise<boolean>;
   setSpellcheck: (enable: boolean) => Promise<boolean>;
   getSpellcheckState: () => Promise<boolean>;
   openNotificationsSettings: () => Promise<boolean>;
   isAnyWindowFocused: () => Promise<boolean>;
+  getIsFullScreen: () => Promise<boolean>;
   onMouseBackButtonClicked: (callback: () => void) => void;
   offMouseBackButtonClicked: (callback: () => void) => void;
   on: (
@@ -265,12 +267,14 @@ const electronAPI: ElectronAPI = {
   },
   getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
   getGoosedHostPort: () => ipcRenderer.invoke('get-goosed-host-port'),
+  getAcpUrl: () => ipcRenderer.invoke('get-acp-url'),
   setWakelock: (enable: boolean) => ipcRenderer.invoke('set-wakelock', enable),
   getWakelockState: () => ipcRenderer.invoke('get-wakelock-state'),
   setSpellcheck: (enable: boolean) => ipcRenderer.invoke('set-spellcheck', enable),
   getSpellcheckState: () => ipcRenderer.invoke('get-spellcheck-state'),
   openNotificationsSettings: () => ipcRenderer.invoke('open-notifications-settings'),
   isAnyWindowFocused: () => ipcRenderer.invoke('is-any-window-focused'),
+  getIsFullScreen: () => ipcRenderer.invoke('get-is-fullscreen'),
   onMouseBackButtonClicked: (callback: () => void) => {
     // Wrapper that ignores the event parameter.
     const wrappedCallback = (_event: Electron.IpcRendererEvent) => callback();

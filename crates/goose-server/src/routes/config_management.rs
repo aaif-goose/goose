@@ -69,6 +69,8 @@ pub struct ProviderDetails {
     pub metadata: ProviderMetadata,
     pub is_configured: bool,
     pub provider_type: ProviderType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saved_model: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -102,6 +104,8 @@ pub struct UpdateCustomProviderRequest {
     pub catalog_provider_id: Option<String>,
     #[serde(default)]
     pub base_path: Option<String>,
+    #[serde(default)]
+    pub preserves_thinking: Option<bool>,
 }
 
 fn default_requires_auth() -> bool {
@@ -169,6 +173,29 @@ pub async fn upsert_config(
     Json(query): Json<UpsertConfigQuery>,
 ) -> Result<Json<Value>, ErrorResponse> {
     let config = Config::global();
+
+    // Intercept legacy keys to write structured provider config
+    if query.key == "GOOSE_PROVIDER" {
+        if let Some(name) = query.value.as_str() {
+            // Preserve the target provider's saved model rather than copying
+            // the current active provider's model into the new entry.
+            let model = goose::config::get_provider_entry(config, name)
+                .map(|e| e.model)
+                .or_else(|| config.get_goose_model().ok())
+                .unwrap_or_default();
+            goose::config::set_active_provider(config, name, &model)?;
+            return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
+        }
+    }
+    if query.key == "GOOSE_MODEL" {
+        if let Some(model) = query.value.as_str() {
+            if let Ok(provider) = config.get_goose_provider() {
+                goose::config::set_active_provider(config, &provider, model)?;
+                return Ok(Json(Value::String(format!("Upserted key {}", query.key))));
+            }
+        }
+    }
+
     config.set(&query.key, &query.value, query.is_secret)?;
     Ok(Json(Value::String(format!("Upserted key {}", query.key))))
 }
@@ -190,6 +217,14 @@ pub async fn remove_config(
 
     if query.is_secret {
         config.delete_secret(&query.key)?;
+    } else if query.key == "GOOSE_PROVIDER" || query.key == "active_provider" {
+        config.delete("active_provider")?;
+        config.delete("GOOSE_PROVIDER")?;
+    } else if query.key == "GOOSE_MODEL" {
+        if let Ok(provider) = config.get_goose_provider() {
+            goose::config::set_active_provider(config, &provider, "")?;
+        }
+        config.delete("GOOSE_MODEL")?;
     } else {
         config.delete(&query.key)?;
     }
@@ -233,6 +268,20 @@ pub async fn read_config(
     Json(query): Json<ConfigKeyQuery>,
 ) -> Result<Json<ConfigValueResponse>, ErrorResponse> {
     let config = Config::global();
+
+    // Intercept legacy keys to return structured provider config
+    if query.key == "GOOSE_PROVIDER" || query.key == "active_provider" {
+        if let Ok(val) = config.get_goose_provider() {
+            return Ok(Json(ConfigValueResponse::Value(Value::String(val))));
+        }
+        return Ok(Json(ConfigValueResponse::Value(Value::Null)));
+    }
+    if query.key == "GOOSE_MODEL" {
+        if let Ok(val) = config.get_goose_model() {
+            return Ok(Json(ConfigValueResponse::Value(Value::String(val))));
+        }
+        return Ok(Json(ConfigValueResponse::Value(Value::Null)));
+    }
 
     let response_value = match config.get(&query.key, query.is_secret) {
         Ok(value) => {
@@ -339,17 +388,22 @@ pub async fn read_all_config() -> Result<Json<ConfigResponse>, ErrorResponse> {
     )
 )]
 pub async fn providers() -> Result<Json<Vec<ProviderDetails>>, ErrorResponse> {
+    let config = Config::global();
     let providers = get_providers().await;
     let providers_response: Vec<ProviderDetails> = providers
         .into_iter()
         .map(|(metadata, provider_type)| {
             let is_configured = check_provider_configured(&metadata, provider_type);
+            let saved_model = goose::config::get_provider_entry(config, &metadata.name)
+                .map(|e| e.model)
+                .filter(|m| !m.is_empty());
 
             ProviderDetails {
                 name: metadata.name.clone(),
                 metadata,
                 is_configured,
                 provider_type,
+                saved_model,
             }
         })
         .collect();
@@ -595,6 +649,7 @@ pub async fn create_custom_provider(
             requires_auth: request.requires_auth,
             catalog_provider_id: request.catalog_provider_id,
             base_path: request.base_path,
+            preserves_thinking: request.preserves_thinking,
         },
     )?;
 
@@ -687,6 +742,7 @@ pub async fn update_custom_provider(
             requires_auth: request.requires_auth,
             catalog_provider_id: request.catalog_provider_id,
             base_path: request.base_path,
+            preserves_thinking: request.preserves_thinking,
         },
     )?;
 
@@ -725,9 +781,7 @@ pub async fn set_config_provider(
         .await
         .and_then(|_| {
             let config = Config::global();
-            config
-                .set_goose_provider(provider.clone())
-                .and_then(|_| config.set_goose_model(model.clone()))
+            goose::config::set_active_provider(config, &provider, &model)
                 .map_err(|e| anyhow::anyhow!(e))
         })
         .map_err(|err| {
@@ -835,9 +889,28 @@ pub async fn configure_provider_oauth(
     })?;
 
     // Mark the provider as configured after successful OAuth
-    let configured_marker = format!("{}_configured", provider_name);
     let config = goose::config::Config::global();
-    config.set_param(&configured_marker, true)?;
+    if let Some(mut entry) = goose::config::get_provider_entry(config, &provider_name) {
+        entry.configured = true;
+        goose::config::set_provider_entry(config, &provider_name, &entry)?;
+    } else {
+        let model = if goose::config::get_active_provider(config).as_deref()
+            == Some(provider_name.as_str())
+        {
+            config.get_goose_model().unwrap_or_default()
+        } else {
+            String::new()
+        };
+        goose::config::set_provider_entry(
+            config,
+            &provider_name,
+            &goose::config::ProviderEntry {
+                enabled: true,
+                model,
+                configured: true,
+            },
+        )?;
+    }
 
     Ok(Json("OAuth configuration completed".to_string()))
 }

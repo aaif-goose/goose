@@ -21,7 +21,7 @@ Every week, the PulseMCP team faced the same time-consuming workflow: sourcing r
 
 ## The Solution: Why Sequential Beats Monolithic
 
-Instead of building one massive "do-everything" agent (which inevitably fails on complex tasks), PulseMCP broke their workflow into six distinct phases. Each phase gets handled by focused [recipes](/docs/guides/recipes/session-recipes), [subrecipes](/docs/guides/recipes/subrecipes) and [subagents](/docs/guides/subagents) with clear inputs, outputs, and a single job.
+Instead of building one massive "do-everything" agent (which inevitably fails on complex tasks), PulseMCP broke their workflow into six distinct phases. Each phase gets handled by focused [recipes](/docs/guides/recipes/session-recipes), [subrecipes](/docs/guides/recipes/subrecipes) and [subagents](/docs/guides/context-engineering/subagents) with clear inputs, outputs, and a single job.
 
 This approach has three main benefits: debugging becomes easier when agents have single responsibilities, results become more predictable with clear handoffs between stages, and humans stay in control of the editorial process while automating the tedious work.
 

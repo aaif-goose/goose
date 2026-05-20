@@ -937,6 +937,31 @@ pub fn list_sources_with_roots(
             }
             SourceType::Agent => {
                 sources.extend(list_agent_sources(project_dir, additional_roots));
+
+                // Surface `.agents/checks/*.md` review checks under the same
+                // `Agent` source type. They live at a different path on disk
+                // (Amp-compatible `.agents/checks/`) but are conceptually
+                // agents: a check is a sub-agent definition specialized for
+                // code review. `properties["kind"] = "check"` lets clients
+                // differentiate.
+                let working_dir = project_dir
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .map(PathBuf::from);
+                let discovered = match working_dir.as_deref() {
+                    Some(root) => crate::checks::discover(root, &[])
+                        .map_err(|e| Error::internal_error().data(e.to_string()))?,
+                    None => crate::checks::DiscoveredReview::default(),
+                };
+                for check in discovered.checks {
+                    let global = check.path.starts_with(
+                        crate::checks::global_checks_dirs()
+                            .first()
+                            .map(PathBuf::as_path)
+                            .unwrap_or_else(|| Path::new("")),
+                    );
+                    sources.push(check.to_source_entry(global));
+                }
             }
             SourceType::Recipe | SourceType::Subrecipe => {
                 return Err(Error::invalid_params()
@@ -1749,6 +1774,50 @@ mod tests {
 
         let exported = export_source(SourceType::Skill, matching[0].path.as_str()).unwrap();
         assert!(exported.0.contains("preferred"));
+    }
+
+    #[test]
+    fn list_agent_sources_includes_review_checks_with_kind_check() {
+        let tmp = TempDir::new().unwrap();
+        let checks_dir = tmp.path().join(".agents").join("checks");
+        std::fs::create_dir_all(&checks_dir).unwrap();
+        std::fs::write(
+            checks_dir.join("perf.md"),
+            "---\nname: perf\ndescription: Flag perf regressions\nmodel: claude-sonnet-4\nturn-limit: 40\ntools: [Read, Grep]\nseverity-default: high\n---\nLook for N+1 queries.",
+        )
+        .unwrap();
+
+        let listed = list_sources(
+            Some(SourceType::Agent),
+            Some(tmp.path().to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+
+        let check = listed
+            .iter()
+            .find(|s| s.name == "perf")
+            .expect("perf check should appear in Agent listing");
+        assert_eq!(check.source_type, SourceType::Agent);
+        assert_eq!(
+            check.properties.get("kind").and_then(|v| v.as_str()),
+            Some("check")
+        );
+        assert_eq!(
+            check.properties.get("model").and_then(|v| v.as_str()),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(
+            check.properties.get("turnLimit").and_then(|v| v.as_u64()),
+            Some(40)
+        );
+        assert_eq!(
+            check
+                .properties
+                .get("severityDefault")
+                .and_then(|v| v.as_str()),
+            Some("high")
+        );
     }
 
     #[test]

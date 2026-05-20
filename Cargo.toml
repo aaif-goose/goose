@@ -21,7 +21,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "1.6.0", features = ["schemars", "auth"] }
+rmcp = { version = "1.7.0", features = ["schemars", "auth"] }
 agent-client-protocol-schema = { version = "0.12", features = ["unstable"] }
 agent-client-protocol = "0.11"
 arboard = "3"

@@ -170,7 +170,7 @@ function FeaturesSection() {
             description={
               <p>
                 Spawn independent{" "}
-                <Link to="/docs/guides/subagents">subagents</Link> to handle
+                <Link to="/docs/guides/context-engineering/subagents">subagents</Link> to handle
                 tasks in parallel — code review, research, file processing —
                 keeping the main conversation clean.
               </p>

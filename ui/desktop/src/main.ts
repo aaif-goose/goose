@@ -410,6 +410,16 @@ if (process.platform !== 'darwin') {
           return; // Skip the rest of the handler
         }
 
+        // Handle new-session URL by creating a fresh chat window
+        if (parsedUrl.hostname === 'new-session') {
+          app.whenReady().then(async () => {
+            const recentDirs = loadRecentDirs();
+            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+            await createChat(app, { dir: openDir || undefined });
+          });
+          return;
+        }
+
         // For non-bot URLs, continue with normal handling
         handleProtocolUrl(protocolUrl);
       }
@@ -435,73 +445,65 @@ if (process.platform !== 'darwin') {
   }
 }
 
-let firstOpenWindow: BrowserWindow;
-let pendingDeepLink: string | null = null;
+const pendingDeepLinks = new Map<number, string>(); // windowId -> deep link URL
 let openUrlHandledLaunch = false;
 
 async function handleProtocolUrl(url: string) {
   if (!url) return;
 
-  pendingDeepLink = url;
-
   const parsedUrl = new URL(url);
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
 
-  if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    // For bot/recipe URLs, get existing window or create new one
+  if (parsedUrl.hostname === 'new-session') {
+    await createChat(app, { dir: openDir || undefined });
+    return;
+  } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     const existingWindows = BrowserWindow.getAllWindows();
     const targetWindow =
       existingWindows.length > 0
         ? existingWindows[0]
         : await createChat(app, { dir: openDir || undefined });
-    await processProtocolUrl(parsedUrl, targetWindow);
+    await processProtocolUrl(url, parsedUrl, targetWindow);
   } else {
-    // For other URL types, reuse existing window if available
     const existingWindows = BrowserWindow.getAllWindows();
+    let targetWindow: BrowserWindow;
     if (existingWindows.length > 0) {
-      firstOpenWindow = existingWindows[0];
-      if (firstOpenWindow.isMinimized()) {
-        firstOpenWindow.restore();
+      targetWindow = existingWindows[0];
+      if (targetWindow.isMinimized()) {
+        targetWindow.restore();
       }
-      firstOpenWindow.focus();
+      targetWindow.focus();
     } else {
-      firstOpenWindow = await createChat(app, { dir: openDir || undefined });
+      targetWindow = await createChat(app, { dir: openDir || undefined });
     }
 
-    if (firstOpenWindow) {
-      const webContents = firstOpenWindow.webContents;
-      if (webContents.isLoadingMainFrame()) {
-        webContents.once('did-finish-load', async () => {
-          await processProtocolUrl(parsedUrl, firstOpenWindow);
-        });
-      } else {
-        await processProtocolUrl(parsedUrl, firstOpenWindow);
-      }
+    if (targetWindow.webContents.isLoadingMainFrame()) {
+      pendingDeepLinks.set(targetWindow.id, url);
+    } else {
+      await processProtocolUrl(url, parsedUrl, targetWindow);
     }
   }
 }
 
-async function processProtocolUrl(parsedUrl: URL, window: BrowserWindow) {
+async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
   const recentDirs = loadRecentDirs();
   const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
 
   if (parsedUrl.hostname === 'extension') {
-    window.webContents.send('add-extension', pendingDeepLink);
+    window.webContents.send('add-extension', url);
   } else if (parsedUrl.hostname === 'sessions') {
-    window.webContents.send('open-shared-session', pendingDeepLink);
+    window.webContents.send('open-shared-session', url);
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    const deeplinkData = parseRecipeDeeplink(pendingDeepLink ?? parsedUrl.toString());
+    const deeplinkData = parseRecipeDeeplink(url);
     const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
 
-    // Create a new window and ignore the passed-in window
     await createChat(app, {
       dir: openDir || undefined,
       recipeDeeplink: deeplinkData?.config,
       scheduledJobId: scheduledJobId || undefined,
       recipeParameters: deeplinkData?.parameters,
     });
-    pendingDeepLink = null;
   }
 }
 
@@ -517,6 +519,14 @@ app.on('open-url', async (_event, url) => {
 
     const recentDirs = loadRecentDirs();
     const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+
+    // Handle new-session URL by creating a fresh chat window
+    if (parsedUrl.hostname === 'new-session') {
+      log.info('[Main] Detected new-session URL, creating new chat window');
+      openUrlHandledLaunch = true;
+      await createChat(app, { dir: openDir || undefined });
+      return;
+    }
 
     // Handle bot/recipe URLs by directly creating a new window
     if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
@@ -538,25 +548,21 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    // For extension/session URLs, store the deep link for processing after React is ready
-    pendingDeepLink = url;
-    log.info('[Main] Stored pending deep link for processing after React ready:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
-
+    // For extension/session URLs, send to existing window or store pending for new one
     const existingWindows = BrowserWindow.getAllWindows();
     if (existingWindows.length > 0) {
-      firstOpenWindow = existingWindows[0];
-      if (firstOpenWindow.isMinimized()) firstOpenWindow.restore();
-      firstOpenWindow.focus();
+      const targetWindow = existingWindows[0];
+      if (targetWindow.isMinimized()) targetWindow.restore();
+      targetWindow.focus();
       if (parsedUrl.hostname === 'extension') {
-        firstOpenWindow.webContents.send('add-extension', pendingDeepLink);
-        pendingDeepLink = null;
+        targetWindow.webContents.send('add-extension', url);
       } else if (parsedUrl.hostname === 'sessions') {
-        firstOpenWindow.webContents.send('open-shared-session', pendingDeepLink);
-        pendingDeepLink = null;
+        targetWindow.webContents.send('open-shared-session', url);
       }
     } else {
       openUrlHandledLaunch = true;
-      firstOpenWindow = await createChat(app, { dir: openDir || undefined });
+      const newWindow = await createChat(app, { dir: openDir || undefined });
+      pendingDeepLinks.set(newWindow.id, url);
     }
   }
 });
@@ -701,6 +707,14 @@ const getServerSecret = (settings: Settings): string => {
   return GENERATED_SECRET;
 };
 
+const buildAcpWebSocketUrl = (baseUrl: string, token: string): string => {
+  const url = new URL(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/acp`;
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('token', token);
+  return url.toString();
+};
+
 let appConfig = {
   GOOSE_DEFAULT_PROVIDER: defaultProvider,
   GOOSE_DEFAULT_MODEL: defaultModel,
@@ -796,7 +810,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   const {
     baseUrl,
     workingDir,
-    process: goosedProcess,
     errorLog,
     stopErrorLogCollection,
     startupDiagnosticsPath,
@@ -1104,6 +1117,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     }
   });
 
+  const broadcastFullScreenState = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('fullscreen-change', mainWindow.isFullScreen());
+    }
+  };
+  mainWindow.on('enter-full-screen', broadcastFullScreenState);
+  mainWindow.on('leave-full-screen', broadcastFullScreenState);
+
   // Handle mouse back button (button 3)
   // Use type assertion for non-standard Electron event
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1120,8 +1141,8 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   mainWindow.on('closed', () => {
     windowMap.delete(windowId);
 
-    // Clean up pending initial message
     pendingInitialMessages.delete(windowId);
+    pendingDeepLinks.delete(windowId);
 
     if (windowPowerSaveBlockers.has(windowId)) {
       const blockerId = windowPowerSaveBlockers.get(windowId)!;
@@ -1139,9 +1160,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
       windowPowerSaveBlockers.delete(windowId);
     }
 
-    if (goosedProcess && typeof goosedProcess === 'object' && 'kill' in goosedProcess) {
-      goosedProcess.kill();
-    }
   });
   return mainWindow;
 };
@@ -1488,27 +1506,21 @@ ipcMain.on('react-ready', (event) => {
     pendingInitialMessages.delete(windowId);
   }
 
-  if (pendingDeepLink && window) {
-    log.info('Processing pending deep link:', pendingDeepLink);
+  if (windowId && pendingDeepLinks.has(windowId) && window) {
+    const deepLinkUrl = pendingDeepLinks.get(windowId)!;
+    pendingDeepLinks.delete(windowId);
+    log.info('Processing pending deep link for window:', windowId);
     try {
-      const parsedUrl = new URL(pendingDeepLink);
+      const parsedUrl = new URL(deepLinkUrl);
       if (parsedUrl.hostname === 'extension') {
-        log.info('Sending add-extension IPC to ready window');
-        window.webContents.send('add-extension', pendingDeepLink);
+        window.webContents.send('add-extension', deepLinkUrl);
       } else if (parsedUrl.hostname === 'sessions') {
-        log.info('Sending open-shared-session IPC to ready window');
-        window.webContents.send('open-shared-session', pendingDeepLink);
+        window.webContents.send('open-shared-session', deepLinkUrl);
       }
-      pendingDeepLink = null;
     } catch (error) {
       log.error('Error processing pending deep link:', error);
-      pendingDeepLink = null;
     }
-  } else {
-    log.info('No pending deep link to process');
   }
-
-  log.info('React ready - window is prepared for deep links');
 });
 
 ipcMain.handle('open-external', async (_event, url: string) => {
@@ -1600,6 +1612,19 @@ ipcMain.handle('get-goosed-host-port', async (event) => {
     return null;
   }
   return client.getConfig().baseUrl || null;
+});
+
+ipcMain.handle('get-acp-url', async (event) => {
+  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+  if (!windowId) {
+    return null;
+  }
+  const client = goosedClients.get(windowId);
+  const baseUrl = client?.getConfig().baseUrl;
+  if (!baseUrl) {
+    return null;
+  }
+  return buildAcpWebSocketUrl(baseUrl, getServerSecret(getSettings()));
 });
 
 // Handle menu bar icon visibility
@@ -1769,6 +1794,11 @@ ipcMain.handle('get-spellcheck-state', () => {
 
 ipcMain.handle('is-any-window-focused', () => {
   return BrowserWindow.getFocusedWindow() !== null;
+});
+
+ipcMain.handle('get-is-fullscreen', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win?.isFullScreen() ?? false;
 });
 
 // Add file/directory selection handler

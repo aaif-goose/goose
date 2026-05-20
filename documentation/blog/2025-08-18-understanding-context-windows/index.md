@@ -81,7 +81,7 @@ The [Memory extension](https://goose-docs.ai/docs/mcp/memory-mcp) stores importa
 
 **5. Subagents**
 
-[Subagents](https://goose-docs.ai/docs/guides/subagents) handle specific tasks in their own isolated sessions. This prevents your main conversation from getting cluttered with implementation details and tool outputs. You delegate work to subagents and only see the final results, keeping your primary context window clean and focused.
+[Subagents](https://goose-docs.ai/docs/guides/context-engineering/subagents) handle specific tasks in their own isolated sessions. This prevents your main conversation from getting cluttered with implementation details and tool outputs. You delegate work to subagents and only see the final results, keeping your primary context window clean and focused.
 
 **6. Short sessions**
 
@@ -89,7 +89,7 @@ Keep individual sessions focused on specific tasks. When you complete a task or 
 
 **7. Planner model + focused execution**
 
-Use a dedicated [planner model](/docs/guides/creating-plans) for complex reasoning and keep your default model focused on execution. This gives you control over cost and quality while keeping model behavior explicit and predictable.
+Use a dedicated [planner model](/docs/guides/context-engineering/creating-plans) for complex reasoning and keep your default model focused on execution. This gives you control over cost and quality while keeping model behavior explicit and predictable.
 
 ---
 

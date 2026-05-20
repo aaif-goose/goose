@@ -21,7 +21,7 @@ use crate::providers::inventory::{
     InventoryIdentity, ProviderInventoryEntry, ProviderInventoryService, RefreshJobPlan,
     RefreshPlan, RefreshSkipReason,
 };
-use crate::session::session_manager::SessionType;
+use crate::session::session_manager::{SessionListCursor, SessionType};
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
@@ -51,6 +51,7 @@ use agent_client_protocol::{
     Responder,
 };
 use anyhow::Result;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use fs_err as fs;
 use futures::future::{BoxFuture, Either};
 use futures::stream::{self, StreamExt};
@@ -58,9 +59,11 @@ use futures::FutureExt;
 use rmcp::model::{
     AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
 use tokio::sync::{Mutex, OnceCell};
@@ -86,10 +89,15 @@ pub type AcpProviderFactory = Arc<
             String,
             crate::model::ModelConfig,
             Vec<ExtensionConfig>,
+            Option<PathBuf>,
         ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
         + Send
         + Sync,
 >;
+
+const SESSION_LIST_PAGE_SIZE: usize = 50;
+const ACP_SESSION_LIST_TYPES: [SessionType; 3] =
+    [SessionType::User, SessionType::Scheduled, SessionType::Acp];
 
 /// Convenience conversions from any `Display` error into an `agent_client_protocol::Error`.
 ///
@@ -236,6 +244,7 @@ pub struct GooseAcpAgent {
     client_fs_capabilities: OnceCell<FileSystemCapabilities>,
     client_terminal: OnceCell<bool>,
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
+    use_login_shell_path: OnceCell<bool>,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
     permission_manager: Arc<PermissionManager>,
@@ -251,6 +260,94 @@ pub struct GooseAcpAgent {
 /// can be extracted with `grep 'perf:' <log> | grep 'sid=abc12345'`.
 fn sid_short(id: &str) -> String {
     id.chars().take(8).collect()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SessionListCursorToken {
+    updated_at: chrono::DateTime<chrono::Utc>,
+    // Goose stores updated_at with second precision in common write paths, so the
+    // cursor needs the full (updated_at, id) sort key to avoid skipping tied rows.
+    session_id: String,
+    filter_hash: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionListCursorFilters {
+    cwd: Option<String>,
+    session_types: Vec<String>,
+    non_empty: bool,
+}
+
+fn invalid_session_list_cursor(message: &'static str) -> agent_client_protocol::Error {
+    agent_client_protocol::Error::invalid_params().data(message)
+}
+
+// bind cursors to the effective filters so they cannot be reused for a different list.
+fn session_list_filter_hash(
+    cwd: Option<&std::path::Path>,
+    session_types: &[SessionType],
+) -> Result<String, agent_client_protocol::Error> {
+    let mut session_type_names = session_types
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    session_type_names.sort();
+    let filters = SessionListCursorFilters {
+        cwd: cwd.map(|path| path.to_string_lossy().to_string()),
+        session_types: session_type_names,
+        non_empty: true,
+    };
+    let bytes =
+        serde_json::to_vec(&filters).internal_err_ctx("Failed to encode session list filters")?;
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(bytes)))
+}
+
+fn decode_session_list_cursor(
+    cursor: Option<&str>,
+    cwd: Option<&std::path::Path>,
+    session_types: &[SessionType],
+) -> Result<Option<SessionListCursor>, agent_client_protocol::Error> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| invalid_session_list_cursor("malformed session list cursor"))?;
+    let token: SessionListCursorToken = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_session_list_cursor("malformed session list cursor"))?;
+
+    if token.session_id.is_empty() || token.filter_hash.is_empty() {
+        return Err(invalid_session_list_cursor("malformed session list cursor"));
+    }
+
+    let expected_filter_hash = session_list_filter_hash(cwd, session_types)?;
+    if token.filter_hash != expected_filter_hash {
+        return Err(invalid_session_list_cursor(
+            "session list cursor does not match filters",
+        ));
+    }
+
+    Ok(Some(SessionListCursor {
+        updated_at: token.updated_at,
+        session_id: token.session_id,
+    }))
+}
+
+fn encode_session_list_cursor(
+    cursor: &SessionListCursor,
+    cwd: Option<&std::path::Path>,
+    session_types: &[SessionType],
+) -> Result<String, agent_client_protocol::Error> {
+    let token = SessionListCursorToken {
+        updated_at: cursor.updated_at,
+        session_id: cursor.session_id.clone(),
+        filter_hash: session_list_filter_hash(cwd, session_types)?,
+    };
+    let bytes =
+        serde_json::to_vec(&token).internal_err_ctx("Failed to encode session list cursor")?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 fn session_meta(session: &Session) -> serde_json::Map<String, serde_json::Value> {
@@ -381,6 +478,14 @@ fn extract_client_mcp_host_info(args: &InitializeRequest) -> GooseMcpHostInfo {
         client_name: args.client_info.as_ref().map(|info| info.name.clone()),
         client_version: args.client_info.as_ref().map(|info| info.version.clone()),
     }
+}
+
+fn extract_use_login_shell_path(args: &InitializeRequest) -> bool {
+    args.meta
+        .as_ref()
+        .and_then(|meta| meta.get("goose/useLoginShellPath"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConfig, String> {
@@ -1044,6 +1149,20 @@ fn build_usage_update(session: &Session, context_limit: usize) -> UsageUpdate {
     UsageUpdate::new(used, context_limit as u64)
 }
 
+fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_protocol::Error> {
+    if !cwd.is_absolute() {
+        return Err(
+            agent_client_protocol::Error::invalid_params().data("cwd must be an absolute path")
+        );
+    }
+
+    if !cwd.exists() || !cwd.is_dir() {
+        return Err(agent_client_protocol::Error::invalid_params().data("invalid directory path"));
+    }
+
+    Ok(())
+}
+
 impl GooseAcpAgent {
     fn available_commands_update(working_dir: &std::path::Path) -> AvailableCommandsUpdate {
         let commands = crate::slash_commands::slash_command::list_acp_commands(Some(working_dir))
@@ -1097,6 +1216,7 @@ impl GooseAcpAgent {
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
+            use_login_shell_path: OnceCell::new(),
             config_dir: options.config_dir,
             session_manager,
             permission_manager,
@@ -1121,8 +1241,15 @@ impl GooseAcpAgent {
         provider_name: &str,
         model_config: crate::model::ModelConfig,
         extensions: Vec<ExtensionConfig>,
+        working_dir: Option<PathBuf>,
     ) -> Result<Arc<dyn Provider>> {
-        (self.provider_factory)(provider_name.to_string(), model_config, extensions).await
+        (self.provider_factory)(
+            provider_name.to_string(),
+            model_config,
+            extensions,
+            working_dir,
+        )
+        .await
     }
 
     async fn prepare_session_init_config(
@@ -1159,7 +1286,12 @@ impl GooseAcpAgent {
                     );
                     Config::global().invalidate_secrets_cache();
                     match self
-                        .create_provider(provider_name, model_config.clone(), ext_state)
+                        .create_provider(
+                            provider_name,
+                            model_config.clone(),
+                            ext_state,
+                            Some(goose_session.working_dir.clone()),
+                        )
                         .await
                     {
                         Ok(provider) => {
@@ -1327,6 +1459,7 @@ impl GooseAcpAgent {
             .unwrap_or_default();
         let client_terminal = self.client_terminal.get().copied().unwrap_or(false);
         let client_mcp_host_info = self.client_mcp_host_info.get().cloned();
+        let use_login_shell_path = self.use_login_shell_path.get().copied().unwrap_or(false);
         let provider_factory = Arc::clone(&self.provider_factory);
         let disable_session_naming = self.disable_session_naming;
         let goose_platform = self.goose_platform.clone();
@@ -1360,7 +1493,8 @@ impl GooseAcpAgent {
                         goose_platform,
                     )
                     .with_mcp_host_info(client_mcp_host_info)
-                    .with_session_name_update_tx(session_name_update_tx),
+                    .with_session_name_update_tx(session_name_update_tx)
+                    .with_use_login_shell_path(use_login_shell_path),
                 ));
 
                 // Init provider — reuse the pre-resolved name + model when
@@ -1376,9 +1510,14 @@ impl GooseAcpAgent {
                 );
                 let provider = match prebuilt_provider {
                     Some(provider) => provider,
-                    None => provider_factory(provider_name.to_string(), model_config, ext_state)
-                        .await
-                        .map_err(|e| e.to_string())?,
+                    None => provider_factory(
+                        provider_name.to_string(),
+                        model_config,
+                        ext_state,
+                        Some(goose_session.working_dir.clone()),
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?,
                 };
                 agent
                     .update_provider(provider.clone(), &goose_session.id)
@@ -1468,15 +1607,17 @@ impl GooseAcpAgent {
                 }
 
                 let ext_manager = &agent.extension_manager;
+                let working_dir = goose_session.working_dir.clone();
                 let extension_futures = extensions
                     .into_iter()
                     .map(|ext| {
                         let ext_manager = Arc::clone(ext_manager);
                         let sid_inner = sid_str.clone();
+                        let working_dir = working_dir.clone();
                         async move {
                             let name = ext.name().to_string();
                             if let Err(e) = ext_manager
-                                .add_extension(ext, None, None, sid_inner.as_deref())
+                                .add_extension(ext, Some(working_dir), None, sid_inner.as_deref())
                                 .await
                             {
                                 warn!(extension = %name, error = %e, "extension load failed");
@@ -2324,6 +2465,9 @@ impl GooseAcpAgent {
         let _ = self
             .client_mcp_host_info
             .set(extract_client_mcp_host_info(&args));
+        let _ = self
+            .use_login_shell_path
+            .set(extract_use_login_shell_path(&args));
 
         let capabilities = AgentCapabilities::new()
             .load_session(true)
@@ -2354,6 +2498,7 @@ impl GooseAcpAgent {
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "new session request");
         let t_start = std::time::Instant::now();
+        validate_absolute_cwd(&args.cwd)?;
 
         let requested_provider = args
             .meta
@@ -2605,6 +2750,7 @@ impl GooseAcpAgent {
         args: LoadSessionRequest,
     ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
+        validate_absolute_cwd(&args.cwd)?;
 
         let session_id = args.session_id.0.to_string();
         let sid = sid_short(&session_id);
@@ -2776,6 +2922,11 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err_ctx("Failed to update session working directory")?;
+        let goose_session = self
+            .session_manager
+            .get_session(&session_id, false)
+            .await
+            .internal_err_ctx("Failed to reload session")?;
 
         // Register the session with a Loading handle.
         let (agent_tx, agent_rx) = tokio::sync::watch::channel::<AgentSetupSignal>(None);
@@ -3077,8 +3228,18 @@ impl GooseAcpAgent {
         let model_config = crate::model::ModelConfig::new(model_id)
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to get session")?;
         let provider = self
-            .create_provider(&provider_name, model_config, extensions)
+            .create_provider(
+                &provider_name,
+                model_config,
+                extensions,
+                Some(session.working_dir),
+            )
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
@@ -3204,8 +3365,18 @@ impl GooseAcpAgent {
 
         let extensions =
             EnabledExtensionsState::for_session(&self.session_manager, session_id, &config).await;
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to get session")?;
         let new_provider = self
-            .create_provider(&resolved_provider_name, model_config, extensions)
+            .create_provider(
+                &resolved_provider_name,
+                model_config,
+                extensions,
+                Some(session.working_dir),
+            )
             .await
             .internal_err_ctx("Failed to create provider")?;
         agent
@@ -3246,16 +3417,35 @@ impl GooseAcpAgent {
         Ok(())
     }
 
-    async fn on_list_sessions(&self) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
+    async fn on_list_sessions(
+        &self,
+        req: ListSessionsRequest,
+    ) -> Result<ListSessionsResponse, agent_client_protocol::Error> {
+        if let Some(cwd) = req.cwd.as_deref() {
+            if !cwd.is_absolute() {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("cwd must be an absolute path"));
+            }
+        }
+
+        let cwd = req.cwd.as_deref();
+        let cursor =
+            decode_session_list_cursor(req.cursor.as_deref(), cwd, &ACP_SESSION_LIST_TYPES)?;
+
         // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
-        let sessions = self
+        let page = self
             .session_manager
-            .list_sessions_by_types(&[SessionType::User, SessionType::Scheduled, SessionType::Acp])
+            .list_nonempty_sessions_by_types_paged(
+                &ACP_SESSION_LIST_TYPES,
+                cwd,
+                cursor.as_ref(),
+                SESSION_LIST_PAGE_SIZE,
+            )
             .await
             .internal_err()?;
-        let session_infos: Vec<SessionInfo> = sessions
+        let session_infos: Vec<SessionInfo> = page
+            .sessions
             .into_iter()
-            .filter(|s| s.message_count > 0)
             .map(|s| {
                 let meta = session_meta(&s);
                 SessionInfo::new(SessionId::new(s.id), s.working_dir)
@@ -3264,7 +3454,12 @@ impl GooseAcpAgent {
                     .meta(meta)
             })
             .collect();
-        Ok(ListSessionsResponse::new(session_infos))
+        let next_cursor = page
+            .next_cursor
+            .as_ref()
+            .map(|cursor| encode_session_list_cursor(cursor, cwd, &ACP_SESSION_LIST_TYPES))
+            .transpose()?;
+        Ok(ListSessionsResponse::new(session_infos).next_cursor(next_cursor))
     }
 
     async fn on_fork_session(
@@ -3272,6 +3467,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         args: ForkSessionRequest,
     ) -> Result<ForkSessionResponse, agent_client_protocol::Error> {
+        validate_absolute_cwd(&args.cwd)?;
         let source_session_id = &*args.session_id.0;
 
         let new_session = self
@@ -4230,6 +4426,7 @@ print(\"hello, world\")
             accumulated_total_tokens,
             accumulated_input_tokens,
             accumulated_output_tokens,
+            accumulated_cost: None,
             schedule_id: None,
             recipe: None,
             user_recipe_values: None,

@@ -86,6 +86,9 @@ async function initializeConnection(): Promise<GooseClient> {
   const tInit = performance.now();
   await client.initialize({
     protocolVersion: PROTOCOL_VERSION,
+    _meta: {
+      "goose/useLoginShellPath": true,
+    },
     clientCapabilities: {
       _meta: {
         goose: {

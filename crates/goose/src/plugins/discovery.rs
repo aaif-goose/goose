@@ -1,27 +1,8 @@
-//! Discovery of installed and user-placed plugins, honoring the Open Plugins
-//! `settings.json` enabled/disabled lists.
-//!
-//! Two sources of plugins are supported:
-//!
-//! 1. **Installed**: plugins installed via [`crate::plugins::install_plugin`]
-//!    live under [`crate::plugins::plugin_install_dir`] (i.e.
-//!    `<data>/plugins/<name>/`).
-//! 2. **User-placed**: plugins dropped into `~/.agents/plugins/<name>/` or
-//!    `<project>/.agents/plugins/<name>/` per the Open Plugins spec.
-//!
-//! Settings files (`<config>/settings.json`) declare which plugins are
-//! enabled. The default is **enabled** for every discovered plugin — to
-//! disable one, list it under `disabledPlugins`. (We deliberately diverge
-//! from the spec's strict "enabled list only" model so users who drop a
-//! plugin into `.agents/plugins/` see it work without also editing a
-//! settings file.)
-
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::config::paths::Paths;
 use crate::plugins::plugin_install_dir;
 
 /// A plugin found on disk and not disabled by any settings file.
@@ -29,15 +10,13 @@ use crate::plugins::plugin_install_dir;
 pub struct DiscoveredPlugin {
     pub name: String,
     pub root: PathBuf,
-    pub source: PluginSource,
+    pub scope: PluginScope,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PluginSource {
-    /// Installed via `goose plugins install` into the data dir cache.
-    Installed,
-    /// User-placed under `~/.agents/plugins/` or `.agents/plugins/`.
-    UserPlaced,
+pub enum PluginScope {
+    User,
+    Project,
 }
 
 /// Settings file format from <https://open-plugins.com/plugin-builders/installation>.
@@ -49,9 +28,8 @@ struct PluginSettings {
     disabled: Vec<String>,
 }
 
-/// Scope of a settings file, in precedence order (highest first).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Scope {
+enum SettingsScope {
     Local,
     Project,
     User,
@@ -62,70 +40,61 @@ enum Scope {
 /// `project_root`, when supplied, enables project + local scope settings and
 /// project-scope `.agents/plugins/` lookups.
 pub fn discover_enabled_plugins(project_root: Option<&Path>) -> Vec<DiscoveredPlugin> {
-    let settings = load_all_settings(project_root);
-
+    let scoped_settings = load_all_settings(project_root);
     let mut found: HashMap<String, DiscoveredPlugin> = HashMap::new();
 
-    // Installed plugins (from `goose plugins install`).
-    for (name, root) in list_installed_plugins() {
-        found.entry(name.clone()).or_insert(DiscoveredPlugin {
-            name,
-            root,
-            source: PluginSource::Installed,
-        });
-    }
-
-    // User-placed plugins. Project scope wins over user scope.
-    let mut placed_roots: Vec<PathBuf> = Vec::new();
     if let Some(root) = project_root {
-        placed_roots.push(root.join(".agents").join("plugins"));
-    }
-    if let Some(home) = dirs::home_dir() {
-        placed_roots.push(home.join(".agents").join("plugins"));
-    }
-    for dir in placed_roots {
-        for (name, root) in list_dir_children(&dir) {
+        for (name, root) in list_dir_children(&project_plugin_dir(root)) {
             found.entry(name.clone()).or_insert(DiscoveredPlugin {
                 name,
                 root,
-                source: PluginSource::UserPlaced,
+                scope: PluginScope::Project,
             });
         }
     }
-
-    // Apply settings: a plugin disabled at any scope is dropped. (Strictly
-    // the spec says higher precedence wins, but a "disabled" mark anywhere
-    // is the safer default and matches what users intuitively expect.)
-    let disabled: HashSet<&str> = settings
-        .iter()
-        .flat_map(|(_, s)| s.disabled.iter().map(String::as_str))
-        .collect();
-    let explicit_enabled: HashSet<&str> = settings
-        .iter()
-        .flat_map(|(_, s)| s.enabled.iter().map(String::as_str))
-        .collect();
+    for (name, root) in list_dir_children(&plugin_install_dir()) {
+        found.entry(name.clone()).or_insert(DiscoveredPlugin {
+            name,
+            root,
+            scope: PluginScope::User,
+        });
+    }
 
     found
         .into_values()
-        .filter(|p| !disabled.contains(p.name.as_str()))
-        // If the user has explicitly listed plugins as enabled, treat the
-        // list as a filter for installed plugins (project teams pinning what
-        // teammates run). User-placed plugins remain available unconditionally
-        // unless explicitly disabled, so demos drop in and just work.
-        .filter(|p| {
-            if explicit_enabled.is_empty() {
-                return true;
-            }
-            match p.source {
-                PluginSource::Installed => explicit_enabled.contains(p.name.as_str()),
-                PluginSource::UserPlaced => true,
-            }
-        })
+        .filter(|plugin| is_enabled(&plugin.name, &scoped_settings))
         .collect()
 }
 
-fn list_installed_plugins() -> Vec<(String, PathBuf)> {
-    list_dir_children(&plugin_install_dir())
+fn is_enabled(plugin_name: &str, scoped_settings: &[(SettingsScope, PluginSettings)]) -> bool {
+    for scope in [
+        SettingsScope::Local,
+        SettingsScope::Project,
+        SettingsScope::User,
+    ] {
+        let Some(settings) = scoped_settings
+            .iter()
+            .find_map(|(s, settings)| (*s == scope).then_some(settings))
+        else {
+            continue;
+        };
+
+        let listed_disabled = settings.disabled.iter().any(|n| n == plugin_name);
+        let listed_enabled = settings.enabled.iter().any(|n| n == plugin_name);
+
+        if listed_disabled {
+            return false;
+        }
+        if listed_enabled {
+            return true;
+        }
+    }
+
+    true
+}
+
+fn project_plugin_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".agents").join("plugins")
 }
 
 fn list_dir_children(dir: &Path) -> Vec<(String, PathBuf)> {
@@ -146,11 +115,14 @@ fn list_dir_children(dir: &Path) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
-fn load_all_settings(project_root: Option<&Path>) -> Vec<(Scope, PluginSettings)> {
-    let mut paths: Vec<(Scope, PathBuf)> = vec![(Scope::User, user_settings_path())];
+fn load_all_settings(project_root: Option<&Path>) -> Vec<(SettingsScope, PluginSettings)> {
+    let mut paths: Vec<(SettingsScope, PathBuf)> = Vec::new();
+    if let Some(path) = user_settings_path() {
+        paths.push((SettingsScope::User, path));
+    }
     if let Some(root) = project_root {
-        paths.push((Scope::Project, project_settings_path(root, false)));
-        paths.push((Scope::Local, project_settings_path(root, true)));
+        paths.push((SettingsScope::Project, project_settings_path(root, false)));
+        paths.push((SettingsScope::Local, project_settings_path(root, true)));
     }
 
     paths
@@ -166,8 +138,21 @@ fn load_all_settings(project_root: Option<&Path>) -> Vec<(Scope, PluginSettings)
         .collect()
 }
 
-fn user_settings_path() -> PathBuf {
-    Paths::in_config_dir("settings.json")
+fn user_settings_path() -> Option<PathBuf> {
+    if let Ok(test_root) = std::env::var("GOOSE_PATH_ROOT") {
+        return Some(
+            PathBuf::from(test_root)
+                .join(".config")
+                .join("goose")
+                .join("settings.json"),
+        );
+    }
+    Some(
+        dirs::home_dir()?
+            .join(".config")
+            .join("goose")
+            .join("settings.json"),
+    )
 }
 
 fn project_settings_path(project_root: &Path, local: bool) -> PathBuf {
@@ -202,8 +187,18 @@ mod tests {
         .unwrap();
     }
 
+    fn write_settings(dir: &Path, contents: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("settings.json"), contents).unwrap();
+    }
+
+    fn write_local_settings(dir: &Path, contents: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("settings.local.json"), contents).unwrap();
+    }
+
     #[test]
-    fn finds_user_placed_plugin_under_project_root() {
+    fn finds_project_scope_plugin() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
@@ -211,44 +206,94 @@ mod tests {
         let found = discover_enabled_plugins(Some(project));
         let names: Vec<_> = found.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"demo"), "got: {names:?}");
+        let demo = found.iter().find(|p| p.name == "demo").unwrap();
+        assert_eq!(demo.scope, PluginScope::Project);
     }
 
     #[test]
-    fn disabled_plugin_is_filtered_out() {
+    fn disabled_in_project_settings_drops_plugin() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
 
-        let settings_dir = project.join(".config").join("goose");
-        std::fs::create_dir_all(&settings_dir).unwrap();
-        std::fs::write(
-            settings_dir.join("settings.json"),
+        write_settings(
+            &project.join(".config").join("goose"),
             r#"{"disabledPlugins":["demo"]}"#,
-        )
-        .unwrap();
+        );
 
         let found = discover_enabled_plugins(Some(project));
         assert!(found.iter().all(|p| p.name != "demo"));
     }
 
     #[test]
-    fn explicit_enabled_does_not_block_user_placed() {
+    fn explicit_enabled_filters_out_unlisted_plugins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
+        write_plugin_dir(&project.join(".agents").join("plugins"), "other");
+
+        write_settings(
+            &project.join(".config").join("goose"),
+            r#"{"enabledPlugins":["demo"]}"#,
+        );
+
+        let found = discover_enabled_plugins(Some(project));
+        let names: Vec<_> = found.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"demo"), "got: {names:?}");
+        assert!(names.contains(&"other"), "got: {names:?}");
+    }
+
+    #[test]
+    fn local_scope_overrides_project_scope() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
 
-        let settings_dir = project.join(".config").join("goose");
-        std::fs::create_dir_all(&settings_dir).unwrap();
-        std::fs::write(
-            settings_dir.join("settings.json"),
-            r#"{"enabledPlugins":["something-else"]}"#,
-        )
-        .unwrap();
+        write_settings(
+            &project.join(".config").join("goose"),
+            r#"{"disabledPlugins":["demo"]}"#,
+        );
+        write_local_settings(
+            &project.join(".config").join("goose"),
+            r#"{"enabledPlugins":["demo"]}"#,
+        );
 
         let found = discover_enabled_plugins(Some(project));
         assert!(
             found.iter().any(|p| p.name == "demo"),
-            "user-placed plugin should remain available; got: {:?}",
+            "local scope should win; got: {:?}",
+            found.iter().map(|p| &p.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn project_scope_overrides_user_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
+
+        let fake_home = tempfile::tempdir().unwrap();
+        write_settings(
+            &fake_home.path().join(".config").join("goose"),
+            r#"{"disabledPlugins":["demo"]}"#,
+        );
+
+        write_settings(
+            &project.join(".config").join("goose"),
+            r#"{"enabledPlugins":["demo"]}"#,
+        );
+
+        let prev = std::env::var("GOOSE_PATH_ROOT").ok();
+        unsafe { std::env::set_var("GOOSE_PATH_ROOT", fake_home.path()) };
+        let found = discover_enabled_plugins(Some(project));
+        match prev {
+            Some(v) => unsafe { std::env::set_var("GOOSE_PATH_ROOT", v) },
+            None => unsafe { std::env::remove_var("GOOSE_PATH_ROOT") },
+        }
+
+        assert!(
+            found.iter().any(|p| p.name == "demo"),
+            "project scope should win over user; got: {:?}",
             found.iter().map(|p| &p.name).collect::<Vec<_>>()
         );
     }

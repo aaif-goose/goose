@@ -68,8 +68,8 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         assert!(
             catalog_providers
                 .iter()
-                .any(|provider| provider.get("providerId") == Some(&serde_json::json!("zai"))),
-            "OpenAI-compatible catalog should include z.ai"
+                .any(|provider| provider.get("providerId") == Some(&serde_json::json!("opencode"))),
+            "OpenAI-compatible catalog should include OpenCode Zen"
         );
 
         let setup_catalog = send_custom(
@@ -268,6 +268,7 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         assert_eq!(saved_provider.name, provider_id);
         assert_eq!(saved_provider.display_name, "Stark ACP Provider");
         assert_eq!(saved_provider.base_url, "https://stark.example/v1");
+        assert!(saved_provider.preserves_thinking);
         assert_eq!(
             saved_provider
                 .models
@@ -314,6 +315,7 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
                 "basePath": "v1/chat/completions",
                 "apiKeyEnv": "CUSTOM_STARK_ACP_PROVIDER_API_KEY",
                 "apiKeySet": true,
+                "preservesThinking": true,
             }))
         );
 
@@ -346,7 +348,8 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
                 "supportsStreaming": false,
                 "headers": {},
                 "requiresAuth": true,
-                "catalogProviderId": "zai"
+                "catalogProviderId": "zai",
+                "preservesThinking": false
             }),
         )
         .await
@@ -377,6 +380,7 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         );
         assert_eq!(updated_provider.base_path, None);
         assert_eq!(updated_provider.headers, None);
+        assert!(!updated_provider.preserves_thinking);
         assert_eq!(
             updated_provider
                 .models
@@ -417,6 +421,7 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
                 .expect("no-auth provider should remain core-compatible");
         assert!(!no_auth_provider.requires_auth);
         assert_eq!(no_auth_provider.api_key_env, "");
+        assert!(!no_auth_provider.preserves_thinking);
         assert!(
             matches!(
                 Config::global().get_secret::<String>("CUSTOM_STARK_ACP_PROVIDER_API_KEY"),

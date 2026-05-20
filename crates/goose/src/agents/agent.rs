@@ -22,7 +22,6 @@ use crate::agents::extension_manager::{
     get_parameter_names, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
-use crate::agents::platform_extensions::summon::discover_filesystem_sources;
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
 use crate::agents::prompt_manager::PromptManager;
@@ -69,6 +68,36 @@ const DEFAULT_MAX_TURNS: u32 = 1000;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
 const DEFAULT_FRONTEND_INSTRUCTIONS: &str =
     "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolCategory {
+    Shell,
+    Read,
+    Write,
+    Other,
+}
+
+fn categorize_tool(tool_name: &str) -> ToolCategory {
+    let local = tool_name.rsplit("__").next().unwrap_or(tool_name);
+    match local {
+        "shell" | "bash" | "exec" | "run" => ToolCategory::Shell,
+        "read" | "view" | "cat" | "read_file" => ToolCategory::Read,
+        "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
+        _ => ToolCategory::Other,
+    }
+}
+
+fn extract_string_arg(input: &Value, keys: &[&str]) -> Option<String> {
+    let obj = input.as_object()?;
+    for k in keys {
+        if let Some(s) = obj.get(*k).and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    None
+}
 
 /// Context needed for the reply function
 pub struct ReplyContext {
@@ -120,6 +149,7 @@ pub struct AgentConfig {
     pub goose_platform: GoosePlatform,
     pub mcp_host_info: Option<GooseMcpHostInfo>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
+    pub use_login_shell_path: Option<bool>,
 }
 
 impl AgentConfig {
@@ -140,6 +170,7 @@ impl AgentConfig {
             goose_platform,
             mcp_host_info: None,
             session_name_update_tx: None,
+            use_login_shell_path: None,
         }
     }
 
@@ -153,6 +184,11 @@ impl AgentConfig {
         tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     ) -> Self {
         self.session_name_update_tx = tx;
+        self
+    }
+
+    pub fn with_use_login_shell_path(mut self, use_login_shell_path: bool) -> Self {
+        self.use_login_shell_path = Some(use_login_shell_path);
         self
     }
 }
@@ -265,6 +301,9 @@ impl Agent {
             .unwrap_or_else(|| goose_platform.to_string());
         let session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
+        let use_login_shell_path = config
+            .use_login_shell_path
+            .unwrap_or(matches!(goose_platform, GoosePlatform::GooseDesktop));
         Self {
             provider: provider.clone(),
             config,
@@ -274,6 +313,7 @@ impl Agent {
                 session_manager,
                 client_name,
                 capabilities,
+                use_login_shell_path,
             )),
             final_output_tool: Arc::new(Mutex::new(None)),
             frontend_extensions: Mutex::new(HashMap::new()),
@@ -304,6 +344,65 @@ impl Agent {
             .await;
     }
 
+    async fn emit_pre_tool_extended_hooks(
+        &self,
+        tool_name: &str,
+        tool_input: Option<&Value>,
+        session: &Session,
+    ) {
+        let working_dir = session.working_dir.to_string_lossy().to_string();
+        match categorize_tool(tool_name) {
+            ToolCategory::Shell => {
+                if let Some(cmd) = tool_input.and_then(|v| extract_string_arg(v, &["command"])) {
+                    self.emit_with_matcher(
+                        crate::hooks::HookEvent::BeforeShellExecution,
+                        &session.id,
+                        &cmd,
+                        tool_name,
+                        tool_input.cloned(),
+                        &working_dir,
+                    )
+                    .await;
+                }
+            }
+            ToolCategory::Read => {
+                if let Some(path) =
+                    tool_input.and_then(|v| extract_string_arg(v, &["path", "file", "file_path"]))
+                {
+                    self.emit_with_matcher(
+                        crate::hooks::HookEvent::BeforeReadFile,
+                        &session.id,
+                        &path,
+                        tool_name,
+                        tool_input.cloned(),
+                        &working_dir,
+                    )
+                    .await;
+                }
+            }
+            ToolCategory::Write | ToolCategory::Other => {}
+        }
+    }
+
+    async fn emit_with_matcher(
+        &self,
+        event: crate::hooks::HookEvent,
+        session_id: &str,
+        matcher_context: &str,
+        tool_name: &str,
+        tool_input: Option<Value>,
+        working_dir: &str,
+    ) {
+        if !self.hook_manager.has_hooks(event) {
+            return;
+        }
+        let mut ctx = crate::hooks::HookContext::new(event, session_id)
+            .with_tool(tool_name.to_string(), tool_input)
+            .with_working_dir(working_dir.to_string());
+        ctx.matcher_context = Some(matcher_context.to_string());
+        self.hook_manager.emit(event, ctx).await;
+    }
+
     fn with_post_tool_hook(
         &self,
         result: ToolCallResult,
@@ -318,6 +417,7 @@ impl Agent {
             .arguments
             .as_ref()
             .map(|a| serde_json::Value::Object(a.clone()));
+        let category = categorize_tool(&tool_name);
 
         let fut = async move {
             let processed_result =
@@ -331,9 +431,36 @@ impl Agent {
 
             if hook_manager.has_hooks(event) {
                 let ctx = crate::hooks::HookContext::new(event, &session_id)
-                    .with_tool(tool_name, tool_input)
-                    .with_working_dir(working_dir);
+                    .with_tool(tool_name.clone(), tool_input.clone())
+                    .with_working_dir(working_dir.clone());
                 hook_manager.emit(event, ctx).await;
+            }
+
+            if event == crate::hooks::HookEvent::PostToolUse {
+                let extended = match category {
+                    ToolCategory::Shell => Some((
+                        crate::hooks::HookEvent::AfterShellExecution,
+                        tool_input
+                            .as_ref()
+                            .and_then(|v| extract_string_arg(v, &["command"])),
+                    )),
+                    ToolCategory::Write => Some((
+                        crate::hooks::HookEvent::AfterFileEdit,
+                        tool_input
+                            .as_ref()
+                            .and_then(|v| extract_string_arg(v, &["path", "file", "file_path"])),
+                    )),
+                    _ => None,
+                };
+                if let Some((ext_event, Some(matcher))) = extended {
+                    if hook_manager.has_hooks(ext_event) {
+                        let mut ctx = crate::hooks::HookContext::new(ext_event, &session_id)
+                            .with_tool(tool_name, tool_input)
+                            .with_working_dir(working_dir);
+                        ctx.matcher_context = Some(matcher);
+                        hook_manager.emit(ext_event, ctx).await;
+                    }
+                }
             }
 
             processed_result
@@ -459,16 +586,9 @@ impl Agent {
         }
         let initial_messages = conversation.messages().clone();
 
-        let (tools, toolshim_tools, mut system_prompt) = self
+        let (tools, toolshim_tools, system_prompt) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
-
-        if let Some(instructions) = self.resolve_at_mention(&conversation, working_dir) {
-            system_prompt = format!(
-                "{}\n\n# Instructions from active agent:\n\n{}",
-                system_prompt, instructions
-            );
-        }
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -501,30 +621,6 @@ impl Agent {
             tool_call_cut_off,
             initial_messages,
         })
-    }
-
-    fn resolve_at_mention(
-        &self,
-        conversation: &Conversation,
-        working_dir: &std::path::Path,
-    ) -> Option<String> {
-        let last_message = conversation.messages().last()?;
-        if last_message.role == rmcp::model::Role::User {
-            let after_at = last_message
-                .as_concat_text()
-                .trim()
-                .strip_prefix('@')?
-                .to_lowercase();
-
-            for source in discover_filesystem_sources(working_dir) {
-                let name = source.name.to_lowercase();
-                let is_match = after_at == name || after_at.starts_with(&format!("{} ", name));
-                if is_match && !source.content.is_empty() {
-                    return Some(source.content.clone());
-                }
-            }
-        }
-        None
     }
 
     async fn categorize_tools(
@@ -791,10 +887,35 @@ impl Agent {
                             .map(|a| serde_json::Value::Object(a.clone())),
                     )
                     .with_working_dir(session.working_dir.to_string_lossy().to_string());
-            self.hook_manager
-                .emit(crate::hooks::HookEvent::PreToolUse, ctx)
-                .await;
+            if let crate::hooks::HookDecision::Deny { reason, plugin } = self
+                .hook_manager
+                .emit_blocking(crate::hooks::HookEvent::PreToolUse, ctx)
+                .await
+            {
+                return (
+                    request_id,
+                    Err(ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        format!(
+                            "Tool call denied by policy hook `{plugin}`: {reason}. \
+                             Do not retry; this is a policy denial, not a transient failure."
+                        ),
+                        None,
+                    )),
+                );
+            }
         }
+
+        let tool_input_for_extended = tool_call
+            .arguments
+            .as_ref()
+            .map(|a| serde_json::Value::Object(a.clone()));
+        self.emit_pre_tool_extended_hooks(
+            &tool_call.name,
+            tool_input_for_extended.as_ref(),
+            session,
+        )
+        .await;
 
         if tool_call.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME {
             let arguments = tool_call
@@ -1494,7 +1615,7 @@ impl Agent {
             .count();
 
         let working_dir = session.working_dir.clone();
-        let reply_stream_span = tracing::info_span!(target: "goose::agents::agent", "reply_stream", session.id = %session_config.id);
+        let reply_stream_span = tracing::info_span!(target: "goose::agents::agent", "reply_stream", trace_output = tracing::field::Empty, session.id = %session_config.id);
         let inner = Box::pin(async_stream::try_stream! {
             let mut turns_taken = 0u32;
             let max_turns = session_config.max_turns.unwrap_or_else(|| {
@@ -2079,8 +2200,10 @@ impl Agent {
             }
 
             if !last_assistant_text.is_empty() {
-                tracing::info!(target: "goose::agents::agent", trace_output = last_assistant_text.as_str());
+                tracing::Span::current().record("trace_output", last_assistant_text.as_str());
             }
+
+            self.emit_hook(crate::hooks::HookEvent::Stop, &session_config.id).await;
         }.instrument(reply_stream_span));
         Ok(inner)
     }
@@ -2742,5 +2865,35 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn categorize_tool_recognizes_conventional_names() {
+        assert_eq!(categorize_tool("developer__shell"), ToolCategory::Shell);
+        assert_eq!(categorize_tool("filesystem__write"), ToolCategory::Write);
+        assert_eq!(categorize_tool("filesystem__edit"), ToolCategory::Write);
+        assert_eq!(categorize_tool("filesystem__read"), ToolCategory::Read);
+        assert_eq!(categorize_tool("filesystem__view"), ToolCategory::Read);
+        assert_eq!(categorize_tool("filesystem__cat"), ToolCategory::Read);
+        assert_eq!(categorize_tool("scheduler__list"), ToolCategory::Other);
+        assert_eq!(categorize_tool("shell"), ToolCategory::Shell);
+    }
+
+    #[test]
+    fn extract_string_arg_picks_first_present_key() {
+        let input = serde_json::json!({ "file_path": "/tmp/a.txt", "path": "/tmp/b.txt" });
+        assert_eq!(
+            extract_string_arg(&input, &["path", "file", "file_path"]).as_deref(),
+            Some("/tmp/b.txt")
+        );
+        let input = serde_json::json!({ "file_path": "/tmp/a.txt" });
+        assert_eq!(
+            extract_string_arg(&input, &["path", "file", "file_path"]).as_deref(),
+            Some("/tmp/a.txt")
+        );
+        let input = serde_json::json!({ "other": 1 });
+        assert!(extract_string_arg(&input, &["path"]).is_none());
+        let input = serde_json::json!({ "path": "" });
+        assert!(extract_string_arg(&input, &["path"]).is_none());
     }
 }

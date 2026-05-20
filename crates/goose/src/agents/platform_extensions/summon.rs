@@ -13,6 +13,7 @@ use crate::recipe::{Recipe, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::SessionType;
 use crate::sources::parse_frontmatter;
+use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
@@ -34,23 +35,16 @@ use tracing::{info, warn};
 
 pub static EXTENSION_NAME: &str = "summon";
 
+const SUBAGENT_DESCRIPTION_BUDGET: usize = 160;
+
+const TASK_LABEL_BUDGET: usize = 60;
+
 fn kind_plural(kind: SourceType) -> &'static str {
     match kind {
         SourceType::Subrecipe => "Subrecipes",
         SourceType::Recipe => "Recipes",
         SourceType::Agent => "Agents",
         _ => "Other",
-    }
-}
-
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.chars().count() <= max_len {
-        s.to_string()
-    } else if max_len <= 3 {
-        "...".to_string()
-    } else {
-        let truncated: String = s.chars().take(max_len - 3).collect();
-        format!("{}...", truncated)
     }
 }
 
@@ -291,6 +285,99 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     sources
 }
 
+fn build_subagent_instructions(session: Option<&crate::session::Session>) -> String {
+    let Some(session) = session else {
+        return String::new();
+    };
+
+    // filter the sources down to what we want even though currently that is what we get
+    let mut sources: Vec<SourceEntry> = discover_filesystem_sources(&session.working_dir)
+        .into_iter()
+        .filter(|s| {
+            matches!(
+                s.source_type,
+                SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
+            )
+        })
+        .collect();
+
+    // If the session is started from a recipe, also use the subrecipes for
+    // that recipe as delegate targets
+    if let Some(recipe) = session.recipe.as_ref() {
+        if let Some(subs) = recipe.sub_recipes.as_ref() {
+            let mut seen: std::collections::HashSet<String> =
+                sources.iter().map(|s| s.name.clone()).collect();
+            for sr in subs {
+                if !seen.insert(sr.name.clone()) {
+                    continue;
+                }
+                sources.push(SourceEntry {
+                    source_type: SourceType::Subrecipe,
+                    name: sr.name.clone(),
+                    description: sr.description.clone().unwrap_or_default(),
+                    content: String::new(),
+                    path: sr.path.clone(),
+                    global: false,
+                    writable: false,
+                    supporting_files: Vec::new(),
+                    properties: std::collections::HashMap::new(),
+                });
+            }
+        }
+    }
+
+    if sources.is_empty() {
+        return String::new();
+    }
+
+    sources.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
+    let subagents: Vec<&SourceEntry> = sources.iter().collect();
+
+    let names = subagents
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut out = String::new();
+    out.push_str(
+        "\n\nThe following named subagents are available in this session and \
+         can be invoked through the `delegate` tool (run as a subagent) or \
+         the `load` tool (read their instructions into your own context):\n",
+    );
+
+    let mut current_kind: Option<SourceType> = None;
+    for s in &subagents {
+        if current_kind != Some(s.source_type) {
+            out.push_str(&format!("\n{}:", kind_plural(s.source_type)));
+            current_kind = Some(s.source_type);
+        }
+        out.push_str(&format!(
+            "\n• {} — {}",
+            s.name,
+            safe_truncate(&s.description, SUBAGENT_DESCRIPTION_BUDGET)
+        ));
+    }
+
+    out.push_str(&format!(
+        "\n\nWhen to call a subagent (one of [{names}]):\n\
+         • `@<name>` in the user's message — always call that subagent.\n\
+         • The user mentions a subagent by name without `@` — infer from \
+         context whether they want it invoked, and if so, call it.\n\
+         • The user's request strongly matches a subagent's description — \
+         call it.\n\n\
+         Calling a subagent normally means `delegate(source: \"<name>\", \
+         instructions: ...)`, which runs it as an isolated subagent and \
+         returns its result. Use `load(source: \"<name>\")` instead if you \
+         only want to read the subagent's instructions into your own \
+         context. For long-running work, pass `async: true` to `delegate` — \
+         it returns a task id immediately, and you collect the result later \
+         with `load(source: \"<task_id>\")`, which waits for completion.",
+    ));
+
+    out
+}
+
 fn round_duration(d: Duration) -> String {
     let secs = d.as_secs();
     if secs < 60 {
@@ -341,8 +428,11 @@ impl Drop for SummonClient {
 
 impl SummonClient {
     pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+        let instructions = build_subagent_instructions(context.session.as_deref());
+
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Summon"));
+            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Summon"))
+            .with_instructions(instructions);
 
         Ok(Self {
             info,
@@ -859,7 +949,7 @@ impl SummonClient {
                     output.push_str(&format!(
                         "• {} - {}\n",
                         source.name,
-                        truncate(&source.description, 60)
+                        safe_truncate(&source.description, SUBAGENT_DESCRIPTION_BUDGET)
                     ));
                 }
             }
@@ -1430,16 +1520,11 @@ impl SummonClient {
     }
 
     fn get_task_description(params: &DelegateParams) -> String {
-        if let Some(source) = &params.source {
-            if let Some(instructions) = &params.instructions {
-                format!("{}: {}", source, truncate(instructions, 30))
-            } else {
-                source.clone()
-            }
-        } else if let Some(instructions) = &params.instructions {
-            truncate(instructions, 40)
-        } else {
-            "Unknown task".to_string()
+        match (&params.source, &params.instructions) {
+            (Some(source), Some(instructions)) => format!("{}: {}", source, instructions),
+            (Some(source), None) => source.clone(),
+            (None, Some(instructions)) => instructions.clone(),
+            (None, None) => "Unknown task".to_string(),
         }
     }
 
@@ -1474,7 +1559,7 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
 
-        let description = truncate(&Self::get_task_description(&params), 40);
+        let description = safe_truncate(&Self::get_task_description(&params), TASK_LABEL_BUDGET);
 
         // Subagents must use Auto until get_agent_messages forwards
         // ActionRequired messages to the parent. Until then, any mode
@@ -1715,6 +1800,7 @@ mod tests {
             extension_manager: None,
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: None,
+            use_login_shell_path: false,
         }
     }
 
@@ -1964,10 +2050,10 @@ You review code."#;
             SummonClient::get_task_description(&make_params(Some("r"), Some("task"))),
             "r: task"
         );
-
-        let long = "x".repeat(100);
-        let desc = SummonClient::get_task_description(&make_params(None, Some(&long)));
-        assert!(desc.len() <= 43 && desc.ends_with("..."));
+        assert_eq!(
+            SummonClient::get_task_description(&make_params(None, None)),
+            "Unknown task"
+        );
     }
 
     #[test]
