@@ -1,3 +1,4 @@
+use crate::routes::config_management::resolve_provider_model_info;
 use crate::routes::errors::ErrorResponse;
 use crate::routes::recipe_utils::{
     apply_recipe_to_agent, build_recipe_with_parameter_values, load_recipe_by_id, validate_recipe,
@@ -48,7 +49,6 @@ pub struct UpdateProviderRequest {
     model: Option<String>,
     session_id: String,
     context_limit: Option<usize>,
-    reasoning: Option<bool>,
     request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
@@ -609,7 +609,10 @@ async fn update_agent_provider(
     if let Some(request_params) = payload.request_params {
         model_config = model_config.with_merged_request_params(request_params);
     }
-    model_config.reasoning = payload.reasoning;
+    let model_info = resolve_provider_model_info(&payload.provider, &model)
+        .await
+        .map_err(|e| (e.status, e.message))?;
+    model_config.reasoning = Some(model_info.reasoning);
 
     let extensions =
         EnabledExtensionsState::for_session(state.session_manager(), &payload.session_id, config)

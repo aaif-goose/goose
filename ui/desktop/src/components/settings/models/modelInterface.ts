@@ -1,4 +1,10 @@
-import { ProviderDetails, getProviderModels, listLocalModels } from '../../../api';
+import {
+  ProviderDetails,
+  ThinkingEffort,
+  getProviderModelInfo,
+  getProviderModels,
+  listLocalModels,
+} from '../../../api';
 import { errorMessage as getErrorMessage } from '../../../utils/conversionUtils';
 
 export default interface Model {
@@ -10,7 +16,7 @@ export default interface Model {
   subtext?: string; // goes below model name if not the provider
   context_limit?: number; // optional context limit override
   reasoning?: boolean; // optional reasoning/thinking support metadata
-  request_params?: Record<string, unknown>; // provider-specific request parameters
+  request_params?: Record<string, unknown> & { thinking_effort?: ThinkingEffort }; // provider-specific request parameters
 }
 
 export function createModelStruct(
@@ -115,4 +121,20 @@ export async function fetchModelsForProviders(
   });
 
   return await Promise.all(modelPromises);
+}
+
+export async function fetchModelReasoning(
+  provider: string,
+  model: string,
+  fallback?: boolean
+): Promise<boolean | null> {
+  try {
+    const response = await getProviderModelInfo({
+      path: { name: provider },
+      body: { model },
+    });
+    return response.data?.reasoning ?? fallback ?? null;
+  } catch {
+    return fallback ?? null;
+  }
 }

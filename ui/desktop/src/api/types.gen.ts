@@ -1490,6 +1490,8 @@ export type ThinkingContent = {
     thinking: string;
 };
 
+export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'max';
+
 export type TokenState = {
     accumulatedCost?: number | null;
     accumulatedInputTokens: number;
@@ -1652,7 +1654,6 @@ export type UpdateProviderRequest = {
     context_limit?: number | null;
     model?: string | null;
     provider: string;
-    reasoning?: boolean | null;
     request_params?: {
         [key: string]: unknown;
     } | null;

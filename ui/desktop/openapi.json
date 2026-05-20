@@ -8633,6 +8633,16 @@
           }
         }
       },
+      "ThinkingEffort": {
+        "type": "string",
+        "enum": [
+          "off",
+          "low",
+          "medium",
+          "high",
+          "max"
+        ]
+      },
       "TokenState": {
         "type": "object",
         "required": [
@@ -9055,10 +9065,6 @@
           },
           "provider": {
             "type": "string"
-          },
-          "reasoning": {
-            "type": "boolean",
-            "nullable": true
           },
           "request_params": {
             "type": "object",

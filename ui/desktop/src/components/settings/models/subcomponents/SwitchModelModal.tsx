@@ -17,9 +17,13 @@ import { Select } from '../../../ui/Select';
 import { useConfig } from '../../../ConfigContext';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
-import Model, { getProviderMetadata, fetchModelsForProviders } from '../modelInterface';
+import Model, {
+  fetchModelReasoning,
+  fetchModelsForProviders,
+  getProviderMetadata,
+} from '../modelInterface';
 import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../predefinedModelsUtils';
-import { getProviderModelInfo, ProviderType } from '../../../../api';
+import type { ProviderType, ThinkingEffort } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
@@ -251,7 +255,7 @@ export const SwitchModelModal = ({
 }: SwitchModelModalProps) => {
   const intl = useIntl();
 
-  const THINKING_EFFORT_OPTIONS = [
+  const THINKING_EFFORT_OPTIONS: { value: ThinkingEffort; label: string }[] = [
     { value: 'off', label: intl.formatMessage(i18n.thinkingEffortOff) },
     { value: 'low', label: intl.formatMessage(i18n.claudeEffortLow) },
     { value: 'medium', label: intl.formatMessage(i18n.claudeEffortMedium) },
@@ -301,51 +305,35 @@ export const SwitchModelModal = ({
     import('../../../../api').ProviderDetails[]
   >([]);
   const fetchedProviders = useRef<Set<string>>(new Set());
-  const [thinkingEffort, setThinkingEffort] = useState<string | null>(null);
+  const reasoningRequestId = useRef(0);
+  const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort | null>(null);
   const [selectedModelReasoning, setSelectedModelReasoning] = useState<boolean | null>(null);
 
-  const modelName = usePredefinedModels ? selectedPredefinedModel?.name : model;
-  const effectiveProvider = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
   const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
   const showThinkingControl = modelReasoning === true;
+  const resolveSelectedModelReasoning = useCallback(
+    (providerName: string, modelName: string, fallback?: boolean) => {
+      const requestId = ++reasoningRequestId.current;
+      setSelectedModelReasoning(fallback ?? null);
+      fetchModelReasoning(providerName, modelName, fallback).then((reasoning) => {
+        if (requestId === reasoningRequestId.current) {
+          setSelectedModelReasoning(reasoning);
+        }
+      });
+    },
+    []
+  );
 
   useEffect(() => {
     (async () => {
       try {
-        const effort = (await read('GOOSE_THINKING_EFFORT', false)) as string;
+        const effort = (await read('GOOSE_THINKING_EFFORT', false)) as ThinkingEffort;
         if (effort) setThinkingEffort(effort);
       } catch (e) {
         console.warn('Could not read GOOSE_THINKING_EFFORT, using default:', e);
       }
     })();
   }, [read]);
-
-  useEffect(() => {
-    if (!effectiveProvider || !modelName || modelName === 'custom') {
-      return;
-    }
-
-    let cancelled = false;
-    setSelectedModelReasoning(selectedPredefinedModel?.reasoning ?? null);
-    getProviderModelInfo({
-      path: { name: effectiveProvider },
-      body: { model: modelName },
-    })
-      .then((response) => {
-        if (!cancelled) {
-          setSelectedModelReasoning(response.data?.reasoning ?? null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSelectedModelReasoning(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveProvider, modelName, selectedPredefinedModel?.reasoning]);
 
   useEffect(() => {
     if (!provider || !model) return;
@@ -452,8 +440,13 @@ export const SwitchModelModal = ({
     const matchingModel = models.find((m) => m.name === currentModel);
     if (matchingModel) {
       setSelectedPredefinedModel(matchingModel);
+      resolveSelectedModelReasoning(
+        matchingModel.provider,
+        matchingModel.name,
+        matchingModel.reasoning
+      );
     }
-  }, [usePredefinedModels, currentModel]);
+  }, [usePredefinedModels, currentModel, resolveSelectedModelReasoning]);
 
   // For manual mode: one-time sync of provider/model when session data
   // arrives after the modal has already mounted. Uses a ref so it only
@@ -610,6 +603,11 @@ export const SwitchModelModal = ({
     }
   }, [provider, modelOptions, loadingModels, model, isCustomModel, userClearedModel]);
 
+  const handlePredefinedModelChange = (model: Model) => {
+    setSelectedPredefinedModel(model);
+    resolveSelectedModelReasoning(model.provider, model.name, model.reasoning);
+  };
+
   // Handle model selection change
   const handleModelChange = (newValue: unknown) => {
     const selectedOption = newValue as {
@@ -634,7 +632,15 @@ export const SwitchModelModal = ({
       setIsCustomModel(false);
       setModel(selectedOption?.value || '');
       setProvider(selectedOption?.provider || '');
-      setSelectedModelReasoning(selectedOption?.reasoning ?? null);
+      if (selectedOption?.provider && selectedOption.value) {
+        resolveSelectedModelReasoning(
+          selectedOption.provider,
+          selectedOption.value,
+          selectedOption.reasoning
+        );
+      } else {
+        setSelectedModelReasoning(selectedOption?.reasoning ?? null);
+      }
       setUserClearedModel(false);
     }
   };
@@ -694,7 +700,7 @@ export const SwitchModelModal = ({
         options={THINKING_EFFORT_OPTIONS}
         value={THINKING_EFFORT_OPTIONS.find((o) => o.value === (thinkingEffort ?? 'off'))}
         onChange={(newValue: unknown) => {
-          const option = newValue as { value: string; label: string } | null;
+          const option = newValue as { value: ThinkingEffort; label: string } | null;
           setThinkingEffort(option?.value || 'off');
         }}
         placeholder={intl.formatMessage(i18n.selectEffortLevel)}
@@ -731,7 +737,7 @@ export const SwitchModelModal = ({
                           ? 'bg-background-secondary'
                           : 'bg-background-primary hover:bg-background-secondary'
                       } rounded-lg transition-all`}
-                      onClick={() => setSelectedPredefinedModel(model)}
+                      onClick={() => handlePredefinedModelChange(model)}
                     >
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
@@ -757,7 +763,7 @@ export const SwitchModelModal = ({
                           name="predefined-model"
                           value={model.name}
                           checked={selectedPredefinedModel?.name === model.name}
-                          onChange={() => setSelectedPredefinedModel(model)}
+                          onChange={() => handlePredefinedModelChange(model)}
                           className="peer sr-only"
                         />
                         <div

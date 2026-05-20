@@ -405,6 +405,42 @@ pub struct ProviderModelInfoQuery {
     pub model: String,
 }
 
+pub async fn resolve_provider_model_info(
+    name: &str,
+    model: &str,
+) -> Result<ModelInfo, ErrorResponse> {
+    let all = get_providers().await.into_iter().collect::<Vec<_>>();
+    let Some((metadata, provider_type)) = all.into_iter().find(|(m, _)| m.name == name) else {
+        return Err(ErrorResponse::bad_request(format!(
+            "Unknown provider: {}",
+            name
+        )));
+    };
+    if !check_provider_configured(&metadata, provider_type) {
+        return Err(ErrorResponse::bad_request(format!(
+            "Provider '{}' is not configured",
+            name
+        )));
+    }
+
+    let model_config = ModelConfig::new(model)?.with_canonical_limits(name);
+    let provider = goose::providers::create(name, model_config.clone(), Vec::new()).await?;
+    match provider.fetch_model_info(model).await {
+        Ok(info) => Ok(info),
+        Err(error) => {
+            let mut info = ModelInfo::new(model, model_config.context_limit());
+            info.reasoning = model_config.is_reasoning_model();
+            tracing::debug!(
+                provider = name,
+                model,
+                error = %error,
+                "Falling back to local model metadata"
+            );
+            Ok(info)
+        }
+    }
+}
+
 #[utoipa::path(
     post,
     path = "/config/providers/{name}/model-info",
@@ -423,27 +459,9 @@ pub async fn get_provider_model_info(
     Path(name): Path<String>,
     Json(query): Json<ProviderModelInfoQuery>,
 ) -> Result<Json<ModelInfo>, ErrorResponse> {
-    let all = get_providers().await.into_iter().collect::<Vec<_>>();
-    let Some((metadata, provider_type)) = all.into_iter().find(|(m, _)| m.name == name) else {
-        return Err(ErrorResponse::bad_request(format!(
-            "Unknown provider: {}",
-            name
-        )));
-    };
-    if !check_provider_configured(&metadata, provider_type) {
-        return Err(ErrorResponse::bad_request(format!(
-            "Provider '{}' is not configured",
-            name
-        )));
-    }
-
-    let model_config = ModelConfig::new(&query.model)?.with_canonical_limits(&name);
-    let provider = goose::providers::create(&name, model_config, Vec::new()).await?;
-    provider
-        .fetch_model_info(&query.model)
+    resolve_provider_model_info(&name, &query.model)
         .await
         .map(Json)
-        .map_err(Into::into)
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
