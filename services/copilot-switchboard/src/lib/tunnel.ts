@@ -11,7 +11,6 @@ export interface TunnelRunParams {
   headSha: string;
   prUrl: string;
   checkRunId?: number;
-  /** Comment that triggered this review (when invoked via `@goose-copilot review`). */
   commentId?: number;
 }
 
@@ -25,7 +24,6 @@ export interface TunnelCommentParams {
   commentBody: string;
   commenter: string;
   commentId: number;
-  /** `false` when this mention came from a plain issue (no PR head ref). */
   isPr: boolean;
 }
 
@@ -36,6 +34,41 @@ export interface TunnelRunResult {
 }
 
 const TUNNEL_TIMEOUT_MS = 20_000;
+const REGISTER_PROBE_TIMEOUT_MS = 10_000;
+
+export function agentIdFromTunnelUrl(tunnelUrl: string): string | null {
+  const match = tunnelUrl.match(/\/tunnel\/([^/?#]+)/);
+  return match?.[1] ?? null;
+}
+
+/** Proves the registrant controls tunnel_url + tunnel_secret before we write KV. */
+export async function verifyTunnelReachable(
+  tunnelUrl: string,
+  tunnelSecret: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const base = tunnelUrl.replace(/\/$/, '');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REGISTER_PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${base}/copilot/status`, {
+      method: 'GET',
+      headers: { 'X-Secret-Key': tunnelSecret },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `tunnel probe returned ${res.status}`,
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `tunnel probe failed: ${msg}` };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 async function postJson(
   install: InstallRecord,

@@ -28,7 +28,12 @@ import {
   type TriggerPermission,
 } from './prefs';
 import { deleteInstall, loadInstall, loadInstallByAgent, saveInstall } from './registry';
-import { runCommentViaTunnel, runReviewViaTunnel } from './tunnel';
+import {
+  agentIdFromTunnelUrl,
+  runCommentViaTunnel,
+  runReviewViaTunnel,
+  verifyTunnelReachable,
+} from './tunnel';
 import type {
   Env,
   InstallationEvent,
@@ -52,6 +57,15 @@ export async function handleRegister(req: RegisterRequest, env: Env): Promise<Re
   }
   if (!/^https:\/\//.test(req.tunnel_url)) {
     return jsonError(400, 'tunnel_url must be an https URL');
+  }
+  const urlAgentId = agentIdFromTunnelUrl(req.tunnel_url);
+  if (!urlAgentId || urlAgentId !== req.agent_id) {
+    return jsonError(400, 'tunnel_url does not match agent_id');
+  }
+
+  const tunnel = await verifyTunnelReachable(req.tunnel_url, req.tunnel_secret);
+  if (!tunnel.ok) {
+    return jsonError(400, tunnel.error);
   }
 
   const resolution = await exchangeCodeAndResolve({
@@ -92,11 +106,6 @@ function jsonError(status: number, message: string): Response {
   });
 }
 
-/**
- * Persist the routing-prefs subset goosed pushed to us. Authenticated by the
- * install secret minted at register time — same secret the tunnel uses, so
- * no new credential surface.
- */
 export async function handleRoutingPrefs(request: Request, env: Env): Promise<Response> {
   const installIdRaw = request.headers.get('x-install-id');
   const installSecret = request.headers.get('x-install-secret');
@@ -134,15 +143,32 @@ export async function handleRoutingPrefs(request: Request, env: Env): Promise<Re
   });
 }
 
-/**
- * `whoami`: given the (agent_id, tunnel_secret) any registered goosed has,
- * return its installation_id. This is the authoritative way for goosed to
- * learn its own install id when local config is empty (fresh install,
- * pre-this-code install, or wiped config).
- *
- * Auth is the same shape as the tunnel itself: agent_id + matching
- * tunnel_secret. Constant-time on success/failure paths.
- */
+export async function handleUnregister(request: Request, env: Env): Promise<Response> {
+  const installIdRaw = request.headers.get('x-install-id');
+  const installSecret = request.headers.get('x-install-secret');
+  if (!installIdRaw || !installSecret) {
+    return jsonError(401, 'missing install credentials');
+  }
+  const installId = Number.parseInt(installIdRaw, 10);
+  if (!Number.isFinite(installId)) {
+    return jsonError(400, 'invalid install id');
+  }
+
+  const install = await loadInstall(env, installId);
+  if (!install || install.tunnelSecret !== installSecret) {
+    return jsonError(401, 'install credentials rejected');
+  }
+
+  await deleteInstall(env, installId);
+  await deleteRoutingPrefs(env, installId);
+  await deleteAnalytics(env, installId);
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 export async function handleWhoami(request: Request, env: Env): Promise<Response> {
   let body: { agent_id?: unknown; tunnel_secret?: unknown };
   try {
@@ -169,11 +195,6 @@ export async function handleWhoami(request: Request, env: Env): Promise<Response
   );
 }
 
-/**
- * List the repositories accessible to the installation. Mints an install
- * token (cached) from the App JWT and calls GitHub's
- * `/installation/repositories` endpoint, paginated up to a hard cap.
- */
 export async function handleListRepos(request: Request, env: Env): Promise<Response> {
   const installIdRaw = request.headers.get('x-install-id');
   const installSecret = request.headers.get('x-install-secret');
@@ -205,7 +226,6 @@ export async function handleListRepos(request: Request, env: Env): Promise<Respo
   }
 }
 
-/** GET analytics rollups for the calling install. Auth same as routing-prefs. */
 export async function handleAnalyticsGet(request: Request, env: Env): Promise<Response> {
   const auth = authenticateInstall(request);
   if (!auth.ok) return jsonError(auth.status, auth.message);
@@ -220,7 +240,6 @@ export async function handleAnalyticsGet(request: Request, env: Env): Promise<Re
   });
 }
 
-/** POST a single event; switchboard increments the rollup counters. */
 export async function handleAnalyticsEvent(request: Request, env: Env): Promise<Response> {
   const auth = authenticateInstall(request);
   if (!auth.ok) return jsonError(auth.status, auth.message);
@@ -321,10 +340,6 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
       token
     ))
   ) {
-    console.log(
-      `[comment] ${payload.repository.full_name} #${payload.issue.number}: ` +
-        `commenter ${payload.comment.user.login} blocked by trigger_permission=${routing.trigger_permission}`
-    );
     return;
   }
 
@@ -354,11 +369,7 @@ export async function handleIssueComment(payload: IssueCommentEvent, env: Env): 
     payload.comment.id,
     'eyes',
     token
-  ).catch((err) =>
-    console.warn(
-      `[comment] ${payload.repository.full_name} #${payload.issue.number}: :eyes: reaction failed: ${err}`
-    )
-  );
+  ).catch(() => {});
 
   if (isPr && REVIEW_TRIGGER_RE.test(payload.comment.body)) {
     await triggerReview({
@@ -465,9 +476,7 @@ async function triggerReview(opts: {
   prUrl: string;
   installationId: number;
   env: Env;
-  /** Reuse a freshly-minted token from the caller if we already have one. */
   token?: string;
-  /** When the review was triggered via `@goose-copilot review`, goosed reacts on this comment when done. */
   commentId?: number;
 }): Promise<void> {
   const { fullName, prNumber, headSha, prUrl, installationId, env } = opts;
@@ -503,13 +512,7 @@ async function triggerReview(opts: {
   let checkRunId: number | undefined;
   try {
     checkRunId = await createCheckRun(fullName, headSha, token);
-  } catch (err) {
-    console.warn(
-      `[trigger] ${fullName} #${prNumber}: check run creation failed (continuing): ${
-        err instanceof Error ? err.message : err
-      }`
-    );
-  }
+  } catch {}
 
   try {
     const result = await runReviewViaTunnel(install, {
@@ -575,8 +578,6 @@ async function postNeutralCheck(opts: {
   });
 }
 
-/** Returns true when the commenter passes the configured trigger permission.
- *  Errors fail closed except for `'anyone'`, where we don't need a check at all. */
 async function commenterMayTrigger(
   permission: TriggerPermission,
   allowlist: string[],

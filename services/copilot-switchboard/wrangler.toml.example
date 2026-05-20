@@ -3,8 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Each operator copies this file to `wrangler.toml` (gitignored) and fills in
-# the values below. See README.md → "Deploying your own switchboard".
+# Copy to `wrangler.toml` (gitignored), create the KV namespace, and set secrets below.
 #
 # Secrets (set via `wrangler secret put`, NOT here):
 #   GITHUB_APP_ID            — numeric App ID

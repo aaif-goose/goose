@@ -1,6 +1,3 @@
-// Exchanges a GitHub App OAuth code for a user access token and resolves
-// which installation of *our* app the authenticated user owns.
-
 const UA = 'goose-copilot-switchboard/0.1';
 
 interface OAuthTokenResponse {

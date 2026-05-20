@@ -1,6 +1,3 @@
-// No third-party deps — Web Crypto + fetch only, portable to any
-// Web-Platform runtime, not just Cloudflare Workers.
-
 const API = 'https://api.github.com';
 const UA = 'goose-copilot-switchboard/0.1';
 
@@ -115,8 +112,6 @@ interface InstallationReposPage {
   }>;
 }
 
-/** Maximum repo pages we'll fetch. 100/page × 5 pages = 500 repos.
- *  Past that, Desktop shows a `truncated` notice. */
 const MAX_REPO_PAGES = 5;
 const REPOS_PER_PAGE = 100;
 
@@ -176,10 +171,6 @@ function normalizeVisibility(v: string | undefined): RepoSummary['visibility'] {
   return 'unknown';
 }
 
-/**
- * GitHub returns one of: `admin`, `maintain`, `write`, `triage`, `read`,
- * `none`. Returns `null` if the API rejects or the user is anonymous.
- */
 export async function getCommenterPermission(
   fullName: string,
   username: string,

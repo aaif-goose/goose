@@ -1,17 +1,12 @@
-// Kept dependency-free so the switchboard lifts cleanly into its own repo.
-
 export interface Env {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
   GITHUB_OAUTH_CLIENT_ID: string;
   GITHUB_OAUTH_CLIENT_SECRET: string;
-  /** Stores routing records only — never API keys. */
   INSTALL_REGISTRY: KVNamespace;
 }
 
-// Stored under key `install:<installation_id>`. Routing only; nothing
-// that could compromise the user if leaked.
 export interface InstallRecord {
   installationId: number;
   agentId: string;

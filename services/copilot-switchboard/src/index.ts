@@ -1,12 +1,4 @@
-/**
- * Trust model: the Worker holds zero user API keys and never sees user
- * code. Reviews run in the user's local goosed via the lapstone tunnel
- * using a per-install secret; KV stores opaque routing data only.
- *
- * Registration is authenticated by exchanging a GitHub OAuth code (issued
- * to the user during App install) and verifying via the GitHub API that
- * the user owns the claimed installation_id.
- */
+// Reviews run on the user's goosed via lapstone; KV holds routing metadata only.
 
 import { verifyWebhookSignature } from './lib/github';
 import {
@@ -18,6 +10,7 @@ import {
   handlePullRequest,
   handleRegister,
   handleRoutingPrefs,
+  handleUnregister,
   handleWhoami,
 } from './lib/handlers';
 import type {
@@ -55,6 +48,10 @@ export default {
       return handleWhoami(request, env);
     }
 
+    if (request.method === 'DELETE' && url.pathname === '/copilot/install') {
+      return handleUnregister(request, env);
+    }
+
     if (request.method === 'GET' && url.pathname === '/copilot/repos') {
       return handleListRepos(request, env);
     }
@@ -67,9 +64,6 @@ export default {
       return handleAnalyticsEvent(request, env);
     }
 
-    // Public OAuth client ID for goosed to build the /login/oauth/authorize URL.
-    // The OAuth *secret* never leaves the Worker — only the client_id does, and
-    // GitHub treats client_ids as public values.
     if (request.method === 'GET' && url.pathname === '/copilot/oauth-config') {
       return new Response(
         JSON.stringify({ oauth_client_id: env.GITHUB_OAUTH_CLIENT_ID }),

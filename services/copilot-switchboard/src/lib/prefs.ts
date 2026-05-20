@@ -1,11 +1,8 @@
-// Routing-only subset of the user's Copilot preferences. Authoritative copy
-// lives in goosed; this is a cache the switchboard reads on every webhook so
-// routing decisions stay sub-millisecond and survive when the user's machine
-// is offline.
+// Routing prefs cache — authoritative copy lives in goosed (see crates/goose/src/copilot/prefs.rs).
+// DEFAULT_ROUTING_PREFS must match fixtures/routing_prefs_default.json (checked by Rust + vitest).
 
 import type { Env } from './types';
 
-/** Bumped in lockstep with crates/goose/src/copilot/prefs.rs SCHEMA_VERSION. */
 export const CURRENT_SCHEMA_VERSION = 1;
 
 const KV_PREFIX = 'routing';
@@ -23,8 +20,6 @@ export interface RoutingPrefs {
   specific_users_allowlist: string[];
 }
 
-/** Server-side defaults; mirrored from goose/src/copilot/prefs.rs. Used on KV
- *  miss so existing installs behave exactly as they do today. */
 export const DEFAULT_ROUTING_PREFS: RoutingPrefs = {
   schema_version: CURRENT_SCHEMA_VERSION,
   auto_review_on_pr_open: true,
@@ -48,16 +43,11 @@ export async function loadRoutingPrefs(
     const parsed = JSON.parse(raw) as RoutingPrefs;
     if (typeof parsed?.schema_version !== 'number') return DEFAULT_ROUTING_PREFS;
     if (parsed.schema_version > CURRENT_SCHEMA_VERSION) {
-      console.warn(
-        `[prefs] install=${installationId} schema_version=${parsed.schema_version} ` +
-          `exceeds switchboard version ${CURRENT_SCHEMA_VERSION}; using defaults.`
-      );
       return DEFAULT_ROUTING_PREFS;
     }
     // Merge so partial older payloads still produce a complete object.
     return { ...DEFAULT_ROUTING_PREFS, ...parsed };
-  } catch (e) {
-    console.warn(`[prefs] install=${installationId} parse failed: ${e}`);
+  } catch {
     return DEFAULT_ROUTING_PREFS;
   }
 }
@@ -79,8 +69,6 @@ export async function deleteRoutingPrefs(
   await env.INSTALL_REGISTRY.delete(key(installationId));
 }
 
-/** Type-narrow + bounds-check a payload claimed to be RoutingPrefs. Throws
- *  with a precise error if anything is off so the handler can return 400. */
 export function parseRoutingPrefs(body: unknown): RoutingPrefs {
   if (!body || typeof body !== 'object') {
     throw new Error('body must be a JSON object');
