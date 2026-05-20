@@ -177,29 +177,6 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
 }
 
 function pushMessage(currentMessages: Message[], incomingMsg: Message): Message[] {
-  if (incomingMsg.content.length === 0 && incomingMsg.metadata?.inference) {
-    let existingMessageIndex = -1;
-    for (let i = currentMessages.length - 1; i >= 0; i--) {
-      const message = currentMessages[i];
-      if (message.role === 'assistant' && message.metadata.userVisible) {
-        existingMessageIndex = i;
-        break;
-      }
-    }
-    if (existingMessageIndex !== -1) {
-      const nextMessages = [...currentMessages];
-      nextMessages[existingMessageIndex] = {
-        ...nextMessages[existingMessageIndex],
-        metadata: {
-          ...nextMessages[existingMessageIndex].metadata,
-          inference: incomingMsg.metadata.inference,
-        },
-      };
-      return nextMessages;
-    }
-    return currentMessages;
-  }
-
   const lastMsg = currentMessages[currentMessages.length - 1];
 
   if (lastMsg?.id && lastMsg.id === incomingMsg.id) {
@@ -266,6 +243,7 @@ function createEventProcessor(
   let latestChatState: ChatState = ChatState.Streaming;
   let lastBatchUpdate = Date.now();
   let hasPendingUpdate = false;
+  let pendingInference: Message['metadata']['inference'] | undefined;
 
   const flushBatchedUpdates = () => {
     if (reduceMotion && hasPendingUpdate) {
@@ -305,8 +283,25 @@ function createEventProcessor(
   const processEvent = (event: SessionEvent): boolean => {
     switch (event.type) {
       case 'Message': {
-        const msg = (event as Record<string, unknown>).message as Message;
+        let msg = (event as Record<string, unknown>).message as Message;
         const tokenState = (event as Record<string, unknown>).token_state as TokenState;
+
+        if (msg.content.length === 0 && msg.metadata?.inference) {
+          pendingInference = msg.metadata.inference;
+          return false;
+        }
+
+        if (pendingInference && msg.role === 'assistant' && msg.metadata.userVisible) {
+          msg = {
+            ...msg,
+            metadata: {
+              ...msg.metadata,
+              inference: msg.metadata.inference ?? pendingInference,
+            },
+          };
+          pendingInference = undefined;
+        }
+
         currentMessages = pushMessage(currentMessages, msg);
 
         const hasToolConfirmation = msg.content.some(
