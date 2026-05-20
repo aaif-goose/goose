@@ -936,13 +936,20 @@ async fn resolve_provider_and_model_from_config(
     Ok((provider_name, model_config))
 }
 
-fn with_preserved_request_params(
+fn with_preserved_session_request_params(
     mut model_config: crate::model::ModelConfig,
     current_model_config: Option<&crate::model::ModelConfig>,
     request_params: Option<HashMap<String, serde_json::Value>>,
 ) -> crate::model::ModelConfig {
-    if let Some(existing) = current_model_config.and_then(|config| config.request_params.clone()) {
-        model_config = model_config.with_merged_request_params(existing);
+    if let Some(thinking_effort) = current_model_config
+        .and_then(|config| config.request_params.as_ref())
+        .and_then(|params| params.get("thinking_effort"))
+        .cloned()
+    {
+        model_config = model_config.with_merged_request_params(HashMap::from([(
+            "thinking_effort".into(),
+            thinking_effort,
+        )]));
     }
     if let Some(request_params) = request_params {
         model_config = model_config.with_merged_request_params(request_params);
@@ -3195,7 +3202,7 @@ impl GooseAcpAgent {
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&provider_name);
         let model_config =
-            with_preserved_request_params(model_config, Some(&current_model_config), None);
+            with_preserved_session_request_params(model_config, Some(&current_model_config), None);
         let session = self
             .session_manager
             .get_session(session_id, false)
@@ -3330,7 +3337,7 @@ impl GooseAcpAgent {
             .invalid_params_err_ctx("Invalid model config")?
             .with_canonical_limits(&resolved_provider_name)
             .with_context_limit(context_limit);
-        model_config = with_preserved_request_params(
+        model_config = with_preserved_session_request_params(
             model_config,
             (!is_changing_provider).then_some(&current_model_config),
             request_params,

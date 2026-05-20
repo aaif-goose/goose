@@ -342,12 +342,8 @@ export const SwitchModelModal = ({
       .flatMap((group) => group.options)
       .find((option) => option.provider === provider && option.value === model);
 
-    if (selectedOption?.reasoning !== undefined) {
-      setSelectedModelReasoning(selectedOption.reasoning);
-    } else {
-      setSelectedModelReasoning(null);
-    }
-  }, [model, provider, modelOptions]);
+    resolveSelectedModelReasoning(provider, model, selectedOption?.reasoning);
+  }, [model, provider, modelOptions, resolveSelectedModelReasoning]);
 
   // Validate form data
   const validateForm = useCallback(() => {
