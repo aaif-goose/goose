@@ -12,6 +12,8 @@ use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::time::Duration;
 
+const GOOSE_PROVIDER_TIMEOUT: &str = "GOOSE_PROVIDER_TIMEOUT";
+
 pub struct ApiClient {
     client: Client,
     host: String,
@@ -279,11 +281,7 @@ pub struct ApiRequestBuilder<'a> {
 
 impl ApiClient {
     pub fn new(host: String, auth: AuthMethod) -> Result<Self> {
-        Self::with_timeout(
-            host,
-            auth,
-            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
-        )
+        Self::with_timeout(host, auth, resolve_provider_timeout(None))
     }
 
     pub fn with_timeout(host: String, auth: AuthMethod, timeout: Duration) -> Result<Self> {
@@ -431,6 +429,22 @@ impl ApiClient {
         )
         .await
     }
+}
+
+pub(crate) fn resolve_provider_timeout(provider_timeout_key: Option<&str>) -> Duration {
+    let config = crate::config::Config::global();
+    let timeout_secs = provider_timeout_key
+        .and_then(|key| config.get_param::<u64>(key).ok())
+        .filter(|seconds| *seconds > 0)
+        .or_else(|| {
+            config
+                .get_param::<u64>(GOOSE_PROVIDER_TIMEOUT)
+                .ok()
+                .filter(|seconds| *seconds > 0)
+        })
+        .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
+
+    Duration::from_secs(timeout_secs)
 }
 
 impl<'a> ApiRequestBuilder<'a> {
@@ -644,6 +658,78 @@ ShGoCNbfNS+COlPMRAujyDlATZcLs9p4tA==
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[test]
+    fn test_api_client_default_timeout() {
+        let _guard = env_lock::lock_env([(GOOSE_PROVIDER_TIMEOUT, None::<&str>)]);
+        let client = ApiClient::new("http://localhost:8080".to_string(), AuthMethod::NoAuth)
+            .expect("client should build");
+
+        assert_eq!(
+            client.timeout,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS)
+        );
+    }
+
+    #[test]
+    fn test_api_client_uses_goose_provider_timeout() {
+        let _guard = env_lock::lock_env([(GOOSE_PROVIDER_TIMEOUT, Some("123"))]);
+        let client = ApiClient::new("http://localhost:8080".to_string(), AuthMethod::NoAuth)
+            .expect("client should build");
+
+        assert_eq!(client.timeout, Duration::from_secs(123));
+    }
+
+    #[test]
+    fn test_api_client_ignores_zero_goose_provider_timeout() {
+        let _guard = env_lock::lock_env([(GOOSE_PROVIDER_TIMEOUT, Some("0"))]);
+        let client = ApiClient::new("http://localhost:8080".to_string(), AuthMethod::NoAuth)
+            .expect("client should build");
+
+        assert_eq!(
+            client.timeout,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS)
+        );
+    }
+
+    #[test]
+    fn test_api_client_with_timeout_overrides_goose_provider_timeout() {
+        let _guard = env_lock::lock_env([(GOOSE_PROVIDER_TIMEOUT, Some("123"))]);
+        let client = ApiClient::with_timeout(
+            "http://localhost:8080".to_string(),
+            AuthMethod::NoAuth,
+            Duration::from_secs(42),
+        )
+        .expect("client should build");
+
+        assert_eq!(client.timeout, Duration::from_secs(42));
+    }
+
+    #[test]
+    fn test_resolve_provider_timeout_prefers_provider_specific_timeout() {
+        let _guard = env_lock::lock_env([
+            ("OPENAI_TIMEOUT", Some("321")),
+            (GOOSE_PROVIDER_TIMEOUT, Some("123")),
+        ]);
+
+        assert_eq!(
+            resolve_provider_timeout(Some("OPENAI_TIMEOUT")),
+            Duration::from_secs(321)
+        );
+    }
+
+    #[test]
+    fn test_resolve_provider_timeout_uses_goose_timeout_when_provider_specific_unset() {
+        let _guard = env_lock::lock_env([
+            ("OPENAI_TIMEOUT", None::<&str>),
+            (GOOSE_PROVIDER_TIMEOUT, Some("123")),
+        ]);
+
+        assert_eq!(
+            resolve_provider_timeout(Some("OPENAI_TIMEOUT")),
+            Duration::from_secs(123)
+        );
+    }
 
     #[test_case(Some("test-session_id-456"), None, Some("test-session_id-456"); "header set")]
     #[test_case(Some("new-session"), Some(("Agent-Session-Id", "old-session")), Some("new-session"); "replaces existing")]

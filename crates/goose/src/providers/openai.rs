@@ -1,7 +1,5 @@
-use super::api_client::{ApiClient, AuthMethod};
-use super::base::{
-    ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS,
-};
+use super::api_client::{resolve_provider_timeout, ApiClient, AuthMethod};
+use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata};
 use super::embedding::{EmbeddingCapable, EmbeddingRequest, EmbeddingResponse};
 use super::errors::ProviderError;
 use super::formats::openai::{
@@ -228,19 +226,13 @@ impl OpenAiProvider {
 
         let organization: Option<String> = config.get_param("OPENAI_ORGANIZATION").ok();
         let project: Option<String> = config.get_param("OPENAI_PROJECT").ok();
-        let timeout_secs: u64 = config
-            .get_param("OPENAI_TIMEOUT")
-            .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
+        let timeout = resolve_provider_timeout(Some("OPENAI_TIMEOUT"));
 
         let auth = match api_key {
             Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),
             _ => AuthMethod::NoAuth,
         };
-        let mut api_client = ApiClient::with_timeout(
-            parsed.host,
-            auth,
-            std::time::Duration::from_secs(timeout_secs),
-        )?;
+        let mut api_client = ApiClient::with_timeout(parsed.host, auth, timeout)?;
 
         if !parsed.query_params.is_empty() {
             api_client = api_client.with_query(parsed.query_params);
@@ -391,16 +383,17 @@ impl OpenAiProvider {
             Self::derive_base_path(url.path())
         };
 
-        let timeout_secs = config
+        let timeout = config
             .timeout_seconds
-            .unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS);
+            .filter(|seconds| *seconds > 0)
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| resolve_provider_timeout(None));
 
         let auth = match api_key {
             Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),
             _ => AuthMethod::NoAuth,
         };
-        let mut api_client =
-            ApiClient::with_timeout(host, auth, std::time::Duration::from_secs(timeout_secs))?;
+        let mut api_client = ApiClient::with_timeout(host, auth, timeout)?;
 
         // Add custom headers if present
         if let Some(headers) = &config.headers {

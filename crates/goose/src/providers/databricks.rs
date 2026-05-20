@@ -4,13 +4,9 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use super::api_client::{ApiClient, AuthMethod, AuthProvider};
-use super::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
-};
+use super::api_client::{resolve_provider_timeout, ApiClient, AuthMethod, AuthProvider};
+use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::embedding::EmbeddingCapable;
 use super::errors::ProviderError;
 use super::formats::databricks::create_request;
@@ -36,7 +32,6 @@ use serde_json::json;
 const DEFAULT_CLIENT_ID: &str = "databricks-cli";
 const DEFAULT_REDIRECT_URL: &str = "http://localhost";
 const DEFAULT_SCOPES: &[&str] = &["all-apis", "offline_access"];
-
 const DATABRICKS_PROVIDER_NAME: &str = "databricks";
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
 const DATABRICKS_DEFAULT_FAST_MODEL: &str = "databricks-claude-haiku-4-5";
@@ -171,11 +166,8 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client = ApiClient::with_timeout(
-            host,
-            auth_method,
-            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
-        )?;
+        let api_client =
+            ApiClient::with_timeout(host, auth_method, resolve_provider_timeout(None))?;
 
         let mut provider = Self {
             api_client,
@@ -239,11 +231,8 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client = ApiClient::with_timeout(
-            host,
-            auth_method,
-            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
-        )?;
+        let api_client =
+            ApiClient::with_timeout(host, auth_method, resolve_provider_timeout(None))?;
 
         Ok(Self {
             api_client,
