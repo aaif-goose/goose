@@ -428,11 +428,8 @@ impl Drop for SummonClient {
 
 impl SummonClient {
     pub fn new(context: PlatformExtensionContext) -> Result<Self> {
-        let instructions = build_subagent_instructions(context.session.as_deref());
-
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Summon"))
-            .with_instructions(instructions);
+            .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Summon"));
 
         Ok(Self {
             info,
@@ -1717,6 +1714,15 @@ impl McpClientTrait for SummonClient {
 
     fn get_info(&self) -> Option<&InitializeResult> {
         Some(&self.info)
+    }
+
+    fn get_instructions(&self) -> Option<String> {
+        let instructions = build_subagent_instructions(self.context.session.as_deref());
+        if instructions.is_empty() {
+            None
+        } else {
+            Some(instructions)
+        }
     }
 
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
