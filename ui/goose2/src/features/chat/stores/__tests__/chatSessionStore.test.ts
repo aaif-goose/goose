@@ -23,6 +23,7 @@ function resetStore() {
     activeSessionId: null,
     isLoading: false,
     hasHydratedSessions: false,
+    isContextPanelOpen: false,
     contextPanelOpenBySession: {},
     activeWorkspaceBySession: {},
   });
@@ -49,6 +50,7 @@ function seedSession(overrides: Partial<ChatSession> = {}): ChatSession {
 
 describe("chatSessionStore", () => {
   beforeEach(() => {
+    window.localStorage.removeItem("goose:context-panel-open");
     resetStore();
     vi.clearAllMocks();
   });
@@ -268,6 +270,20 @@ describe("chatSessionStore", () => {
       expect(updated?.providerId).toBe("anthropic");
       expect(updated?.modelId).toBeUndefined();
       expect(updated?.modelName).toBeUndefined();
+    });
+  });
+
+  describe("context panel preference", () => {
+    it("stores context panel open state as a global preference", () => {
+      useChatSessionStore.getState().setContextPanelOpen("session-1", true);
+
+      expect(useChatSessionStore.getState().isContextPanelOpen).toBe(true);
+      expect(window.localStorage.getItem("goose:context-panel-open")).toBe("1");
+
+      useChatSessionStore.getState().setContextPanelOpen("session-2", false);
+
+      expect(useChatSessionStore.getState().isContextPanelOpen).toBe(false);
+      expect(window.localStorage.getItem("goose:context-panel-open")).toBe("0");
     });
   });
 

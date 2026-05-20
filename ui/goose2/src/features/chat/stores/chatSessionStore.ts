@@ -14,6 +14,8 @@ import {
   unarchiveSession as acpUnarchiveSession,
 } from "@/shared/api/acpApi";
 
+const CONTEXT_PANEL_OPEN_STORAGE_KEY = "goose:context-panel-open";
+
 export interface ChatSession {
   id: string;
   title: string;
@@ -58,6 +60,7 @@ interface ChatSessionStoreState {
   activeSessionId: string | null;
   isLoading: boolean;
   hasHydratedSessions: boolean;
+  isContextPanelOpen: boolean;
   contextPanelOpenBySession: Record<string, boolean>;
   activeWorkspaceBySession: Record<string, ActiveWorkspace>;
 }
@@ -116,6 +119,29 @@ function sortByUpdatedAtDesc(sessions: ChatSession[]): ChatSession[] {
   );
 }
 
+function loadContextPanelOpenPreference(): boolean {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return window.localStorage.getItem(CONTEXT_PANEL_OPEN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistContextPanelOpenPreference(open: boolean): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      CONTEXT_PANEL_OPEN_STORAGE_KEY,
+      open ? "1" : "0",
+    );
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
 export function sessionToChatSession(session: Session): ChatSession {
   return {
     id: session.id,
@@ -138,6 +164,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
   activeSessionId: null,
   isLoading: false,
   hasHydratedSessions: false,
+  isContextPanelOpen: loadContextPanelOpenPreference(),
   contextPanelOpenBySession: {},
   activeWorkspaceBySession: {},
 
@@ -255,13 +282,9 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     set({ activeSessionId: sessionId });
   },
 
-  setContextPanelOpen: (sessionId, open) => {
-    set((state) => ({
-      contextPanelOpenBySession: {
-        ...state.contextPanelOpenBySession,
-        [sessionId]: open,
-      },
-    }));
+  setContextPanelOpen: (_sessionId, open) => {
+    persistContextPanelOpenPreference(open);
+    set({ isContextPanelOpen: open, contextPanelOpenBySession: {} });
   },
 
   setActiveWorkspace: (sessionId, context) => {

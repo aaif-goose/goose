@@ -47,9 +47,7 @@ export function ChatView({
 }: ChatViewProps) {
   const { t } = useTranslation("chat");
   const mountStart = useRef(performance.now());
-  const isContextPanelOpen = useChatSessionStore(
-    (s) => s.contextPanelOpenBySession[sessionId] ?? false,
-  );
+  const isContextPanelOpen = useChatSessionStore((s) => s.isContextPanelOpen);
   const setContextPanelOpen = useChatSessionStore((s) => s.setContextPanelOpen);
   const [isLoadingIndicatorMounted, setIsLoadingIndicatorMounted] =
     useState(false);
@@ -189,6 +187,7 @@ export function ChatView({
           isOpen={isContextPanelOpen}
           label={contextPanelLabel}
           project={controller.project}
+          sessionWorkingDir={controller.session?.workingDir}
           setOpen={setContextPanelOpen}
         />
       </div>

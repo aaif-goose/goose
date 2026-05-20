@@ -27,6 +27,7 @@ interface ChatContextPanelProps {
     color?: string;
     workingDirs?: string[];
   } | null;
+  sessionWorkingDir?: string | null;
   setOpen: (sessionId: string, open: boolean) => void;
 }
 
@@ -35,6 +36,7 @@ export function ChatContextPanel({
   isOpen,
   label,
   project,
+  sessionWorkingDir,
   setOpen,
 }: ChatContextPanelProps) {
   const shouldReduceMotion = useReducedMotion();
@@ -104,6 +106,7 @@ export function ChatContextPanel({
                   projectName={project?.name}
                   projectColor={project?.color}
                   projectWorkingDirs={project?.workingDirs ?? []}
+                  sessionWorkingDir={sessionWorkingDir}
                 />
               </aside>
             </motion.div>

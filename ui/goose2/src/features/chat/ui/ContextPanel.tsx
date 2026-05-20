@@ -26,6 +26,7 @@ interface ContextPanelProps {
   projectName?: string;
   projectColor?: string;
   projectWorkingDirs?: string[];
+  sessionWorkingDir?: string | null;
 }
 
 type ContextPanelTab = "details" | "files";
@@ -64,6 +65,7 @@ export function ContextPanel({
   projectName,
   projectColor,
   projectWorkingDirs = [],
+  sessionWorkingDir,
 }: ContextPanelProps) {
   const { t } = useTranslation("chat");
   const [activeTab, setActiveTab] = useState<ContextPanelTab>("details");
@@ -77,7 +79,8 @@ export function ContextPanel({
   );
   const setActiveWorkspace = useChatSessionStore((s) => s.setActiveWorkspace);
 
-  const gitTargetPath = activeContext?.path ?? primaryWorkspaceRoot;
+  const gitTargetPath =
+    activeContext?.path ?? sessionWorkingDir ?? primaryWorkspaceRoot;
   const {
     data: gitState,
     error,
@@ -230,6 +233,7 @@ export function ContextPanel({
             projectName={projectName}
             projectColor={projectColor}
             projectWorkingDirs={projectWorkingDirs}
+            sessionWorkingDir={sessionWorkingDir}
             gitState={gitState}
             isLoading={isLoading}
             isFetching={isFetching}

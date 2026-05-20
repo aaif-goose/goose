@@ -73,6 +73,7 @@ describe("useChat", () => {
       sessions: [],
       activeSessionId: null,
       isLoading: false,
+      isContextPanelOpen: false,
       contextPanelOpenBySession: {},
       activeWorkspaceBySession: {},
     });

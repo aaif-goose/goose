@@ -55,6 +55,7 @@ vi.mock("../../hooks/useChatSessionController", () => ({
 vi.mock("../../stores/chatSessionStore", () => ({
   useChatSessionStore: (selector: (state: unknown) => unknown) =>
     selector({
+      isContextPanelOpen: false,
       contextPanelOpenBySession: {},
       setContextPanelOpen: vi.fn(),
     }),

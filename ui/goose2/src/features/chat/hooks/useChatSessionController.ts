@@ -170,6 +170,7 @@ export function useChatSessionController({
         workingDir,
         modelId: modelSelection?.id,
       });
+      useChatSessionStore.getState().patchSession(sessionId, { workingDir });
       if (!result.applied || !modelSelection?.id) {
         return result.applied;
       }
