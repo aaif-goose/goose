@@ -515,6 +515,21 @@
   "copilotSaveIndicator.syncing": {
     "defaultMessage": "Saving…"
   },
+  "copilotView.experimentalBannerBody": {
+    "defaultMessage": "Goose Copilot is in early access — we're gathering feedback. Share bug reports and ideas on"
+  },
+  "copilotView.experimentalBannerDiscord": {
+    "defaultMessage": "Discord"
+  },
+  "copilotView.experimentalBannerIssues": {
+    "defaultMessage": "GitHub Issues"
+  },
+  "copilotView.experimentalBannerOr": {
+    "defaultMessage": "or"
+  },
+  "copilotView.experimentalBannerTitle": {
+    "defaultMessage": "Experimental feature"
+  },
   "copilotView.notConnectedBannerBody": {
     "defaultMessage": "Connect the GitHub App in the Connectors tab to start receiving automated PR reviews."
   },

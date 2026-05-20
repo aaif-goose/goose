@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
+  ExternalLink,
+  Info,
   ListChecks,
   Plug,
   Settings as SettingsIcon,
@@ -72,6 +74,27 @@ const i18n = defineMessages({
   notConnectedBannerCta: {
     id: 'copilotView.notConnectedBannerCta',
     defaultMessage: 'Go to Connectors',
+  },
+  experimentalBannerTitle: {
+    id: 'copilotView.experimentalBannerTitle',
+    defaultMessage: 'Experimental feature',
+  },
+  experimentalBannerBody: {
+    id: 'copilotView.experimentalBannerBody',
+    defaultMessage:
+      "Goose Copilot is in early access — we're gathering feedback. Share bug reports and ideas on",
+  },
+  experimentalBannerIssues: {
+    id: 'copilotView.experimentalBannerIssues',
+    defaultMessage: 'GitHub Issues',
+  },
+  experimentalBannerOr: {
+    id: 'copilotView.experimentalBannerOr',
+    defaultMessage: 'or',
+  },
+  experimentalBannerDiscord: {
+    id: 'copilotView.experimentalBannerDiscord',
+    defaultMessage: 'Discord',
   },
 });
 
@@ -160,6 +183,34 @@ export default function CopilotView() {
         </div>
 
         <div className="flex-1 min-h-0 relative px-6">
+          <div className="flex items-start gap-2 p-2 mb-3 mr-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+            <Info className="h-4 w-4 text-yellow-700 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-yellow-900 dark:text-yellow-200">
+              <strong>{intl.formatMessage(i18n.experimentalBannerTitle)}:</strong>{' '}
+              {intl.formatMessage(i18n.experimentalBannerBody)}{' '}
+              <button
+                type="button"
+                onClick={() =>
+                  window.electron.openExternal('https://github.com/block/goose/issues')
+                }
+                className="inline-flex items-center gap-1 underline hover:no-underline"
+              >
+                {intl.formatMessage(i18n.experimentalBannerIssues)}
+                <ExternalLink className="h-3 w-3" />
+              </button>{' '}
+              {intl.formatMessage(i18n.experimentalBannerOr)}{' '}
+              <button
+                type="button"
+                onClick={() => window.electron.openExternal('https://discord.gg/goose-oss')}
+                className="inline-flex items-center gap-1 underline hover:no-underline"
+              >
+                {intl.formatMessage(i18n.experimentalBannerDiscord)}
+                <ExternalLink className="h-3 w-3" />
+              </button>
+              .
+            </div>
+          </div>
+
           {!isConnected && activeTab !== 'connectors' && (
             <Card className="rounded-lg border-amber-300 dark:border-amber-800 mb-4 mr-4">
               <CardContent className="pt-4 px-4 flex items-start gap-3">
