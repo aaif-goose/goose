@@ -287,6 +287,240 @@
   "conversationLimitsDropdown.maxTurnsDescription": {
     "defaultMessage": "Goose 请求用户输入前的最大 agent 轮次"
   },
+  "copilotAnalytics.commitsPushed": {
+    "defaultMessage": "已推送提交"
+  },
+  "copilotAnalytics.issuesHandled": {
+    "defaultMessage": "已处理问题"
+  },
+  "copilotAnalytics.loadFailed": {
+    "defaultMessage": "无法加载分析数据"
+  },
+  "copilotAnalytics.prsReviewed": {
+    "defaultMessage": "已审查 PR"
+  },
+  "copilotAnalytics.retry": {
+    "defaultMessage": "重试"
+  },
+  "copilotCodeReview.allowCommitHelper": {
+    "defaultMessage": "当有人在评论中 @goose-copilot 请求修复时，以 goose-copilot[bot] 身份将结果推送到 PR 分支。"
+  },
+  "copilotCodeReview.allowCommitLabel": {
+    "defaultMessage": "允许向 PR 分支推送提交"
+  },
+  "copilotCodeReview.allowIssuesHelper": {
+    "defaultMessage": "允许 @goose-copilot 在 issue 评论中回答问题并起草 PR，而不仅限于 pull request 内。"
+  },
+  "copilotCodeReview.allowIssuesLabel": {
+    "defaultMessage": "响应 issue 中的 @ 提及"
+  },
+  "copilotCodeReview.allowNewPrsHelper": {
+    "defaultMessage": "当有人在普通 issue 中 @ 机器人并请求修复时，在新分支上推送更改并打开关联该 issue 的 PR。"
+  },
+  "copilotCodeReview.allowNewPrsLabel": {
+    "defaultMessage": "为 issue 修复打开新 pull request"
+  },
+  "copilotCodeReview.allowlistHelper": {
+    "defaultMessage": "每行一个 GitHub 用户名。仅列出的用户可以 @ 机器人。"
+  },
+  "copilotCodeReview.allowlistLabel": {
+    "defaultMessage": "允许列表"
+  },
+  "copilotCodeReview.allowlistPlaceholder": {
+    "defaultMessage": "octocat"
+  },
+  "copilotCodeReview.autoReviewHelper": {
+    "defaultMessage": "在已启用 Goose Copilot 的仓库中，你的所有 pull request 都会自动被审查。"
+  },
+  "copilotCodeReview.autoReviewLabel": {
+    "defaultMessage": "个人自动审查偏好"
+  },
+  "copilotCodeReview.hideArchived": {
+    "defaultMessage": "隐藏已归档仓库"
+  },
+  "copilotCodeReview.outputStyleHelper": {
+    "defaultMessage": "审查结果如何发布回 pull request。"
+  },
+  "copilotCodeReview.outputStyleLabel": {
+    "defaultMessage": "审查输出样式"
+  },
+  "copilotCodeReview.permissionsDescription": {
+    "defaultMessage": "控制谁可以与 @goose-copilot 交互以及它可以执行的操作。"
+  },
+  "copilotCodeReview.permissionsTitle": {
+    "defaultMessage": "权限"
+  },
+  "copilotCodeReview.repoColBranch": {
+    "defaultMessage": "默认分支"
+  },
+  "copilotCodeReview.repoColRepo": {
+    "defaultMessage": "仓库"
+  },
+  "copilotCodeReview.repoColVisibility": {
+    "defaultMessage": "可见性"
+  },
+  "copilotCodeReview.repoCount": {
+    "defaultMessage": "{shown,plural,one{可访问 # 个仓库} other{可访问 # 个仓库}}"
+  },
+  "copilotCodeReview.repoEmptyConnected": {
+    "defaultMessage": "按仓库覆盖设置即将推出 — 目前机器人对所有已连接仓库使用你的个人默认设置。"
+  },
+  "copilotCodeReview.repoError": {
+    "defaultMessage": "无法加载仓库列表"
+  },
+  "copilotCodeReview.repoLoading": {
+    "defaultMessage": "正在加载仓库…"
+  },
+  "copilotCodeReview.repoNoMatch": {
+    "defaultMessage": "没有匹配的仓库。"
+  },
+  "copilotCodeReview.repoPrefsTitle": {
+    "defaultMessage": "仓库偏好"
+  },
+  "copilotCodeReview.repoRetry": {
+    "defaultMessage": "重试"
+  },
+  "copilotCodeReview.repoSearchPlaceholder": {
+    "defaultMessage": "搜索仓库或输入 GitHub org/repo"
+  },
+  "copilotCodeReview.repoTruncated": {
+    "defaultMessage": "显示前 {shown} 个，共 {total} 个 — 其余已省略。"
+  },
+  "copilotCodeReview.reviewDescription": {
+    "defaultMessage": "配置 Goose Copilot 何时以及如何审查 pull request。"
+  },
+  "copilotCodeReview.reviewModelHelper": {
+    "defaultMessage": "审查编排器使用的模型。默认为 goose 配置的模型。"
+  },
+  "copilotCodeReview.reviewModelLabel": {
+    "defaultMessage": "审查模型"
+  },
+  "copilotCodeReview.reviewTitle": {
+    "defaultMessage": "代码审查"
+  },
+  "copilotCodeReview.setupBlurb": {
+    "defaultMessage": "开启代码审查后，Goose Copilot 会自动审查 pull request 并留下行内建议。在任何 PR 评论中 @goose-copilot 即可提问、请求手动审查或应用修复。"
+  },
+  "copilotCodeReview.severityHelper": {
+    "defaultMessage": "低于此级别的发现项不会出现在审查中。数值越高，输出越少。"
+  },
+  "copilotCodeReview.severityLabel": {
+    "defaultMessage": "最低展示严重级别"
+  },
+  "copilotCodeReview.triggerHelper": {
+    "defaultMessage": "选择 Goose Copilot 应何时自动审查你的 pull request。"
+  },
+  "copilotCodeReview.triggerLabel": {
+    "defaultMessage": "个人审查触发偏好"
+  },
+  "copilotCodeReview.triggerPermissionHelper": {
+    "defaultMessage": "限制谁可以 @ 机器人以请求审查、修复或回复。"
+  },
+  "copilotCodeReview.triggerPermissionLabel": {
+    "defaultMessage": "谁可以触发 Goose Copilot"
+  },
+  "copilotConnectors.awaitingInstall": {
+    "defaultMessage": "请在浏览器中完成 GitHub 安装…"
+  },
+  "copilotConnectors.awaitingInstallHint": {
+    "defaultMessage": "已在浏览器中打开 GitHub。选择要审查的仓库，然后点击 Install & Authorize。"
+  },
+  "copilotConnectors.comingSoon": {
+    "defaultMessage": "即将推出"
+  },
+  "copilotConnectors.connectedLabel": {
+    "defaultMessage": "已连接 — 安装 ID {id}"
+  },
+  "copilotConnectors.disconnectAction": {
+    "defaultMessage": "断开连接"
+  },
+  "copilotConnectors.disconnectHint": {
+    "defaultMessage": "打开 GitHub App 设置以便卸载。在 GitHub 上卸载后，此端会自动断开。"
+  },
+  "copilotConnectors.githubDescription": {
+    "defaultMessage": "在你希望自动审查的仓库上安装 Goose Copilot GitHub App。"
+  },
+  "copilotConnectors.githubTitle": {
+    "defaultMessage": "GitHub"
+  },
+  "copilotConnectors.installAction": {
+    "defaultMessage": "连接 GitHub"
+  },
+  "copilotConnectors.linearDescription": {
+    "defaultMessage": "在 issue 中 @goose-copilot，让它打开 PR 来处理。"
+  },
+  "copilotConnectors.linearTitle": {
+    "defaultMessage": "Linear"
+  },
+  "copilotConnectors.manageAction": {
+    "defaultMessage": "在 GitHub 上管理"
+  },
+  "copilotConnectors.notConnected": {
+    "defaultMessage": "未连接"
+  },
+  "copilotConnectors.setupFailed": {
+    "defaultMessage": "连接 Goose Copilot 失败"
+  },
+  "copilotConnectors.slackDescription": {
+    "defaultMessage": "在 Slack 频道中向 @goose-copilot 提问或触发审查。"
+  },
+  "copilotConnectors.slackTitle": {
+    "defaultMessage": "Slack"
+  },
+  "copilotGeneral.customInstructionsDescription": {
+    "defaultMessage": "附加到每次审查提示的自由格式规则。用于引导机器人关注团队真正在意的内容。"
+  },
+  "copilotGeneral.customInstructionsHelper": {
+    "defaultMessage": "这些说明会原样附加到审查编排器发送给模型的系统提示。"
+  },
+  "copilotGeneral.customInstructionsPlaceholder": {
+    "defaultMessage": "示例：不要标记 TODO 注释。对缺少测试严格。将 crates/goose/src/security/ 下的任何更改视为严重。"
+  },
+  "copilotGeneral.customInstructionsTitle": {
+    "defaultMessage": "自定义说明"
+  },
+  "copilotSaveIndicator.failed": {
+    "defaultMessage": "保存失败"
+  },
+  "copilotSaveIndicator.loading": {
+    "defaultMessage": "加载中…"
+  },
+  "copilotSaveIndicator.retry": {
+    "defaultMessage": "重试"
+  },
+  "copilotSaveIndicator.saved": {
+    "defaultMessage": "已保存"
+  },
+  "copilotSaveIndicator.savedPending": {
+    "defaultMessage": "已本地保存 — webhook 同步待完成"
+  },
+  "copilotSaveIndicator.syncing": {
+    "defaultMessage": "保存中…"
+  },
+  "copilotView.notConnectedBannerBody": {
+    "defaultMessage": "在「连接器」标签页连接 GitHub App 以开始接收自动 PR 审查。"
+  },
+  "copilotView.notConnectedBannerCta": {
+    "defaultMessage": "前往连接器"
+  },
+  "copilotView.notConnectedBannerTitle": {
+    "defaultMessage": "尚未连接 Goose Copilot"
+  },
+  "copilotView.pageTitle": {
+    "defaultMessage": "Goose Copilot"
+  },
+  "copilotView.tabAnalytics": {
+    "defaultMessage": "分析"
+  },
+  "copilotView.tabCodeReview": {
+    "defaultMessage": "代码审查"
+  },
+  "copilotView.tabConnectors": {
+    "defaultMessage": "连接器"
+  },
+  "copilotView.tabGeneral": {
+    "defaultMessage": "常规"
+  },
   "costTracker.costUnavailable": {
     "defaultMessage": "无法获取 {model} 的费用数据（输入 {inputTokens}、输出 {outputTokens} 令牌）"
   },
@@ -2356,6 +2590,9 @@
   },
   "navigationCustomization.itemChat": {
     "defaultMessage": "聊天"
+  },
+  "navigationCustomization.itemCopilot": {
+    "defaultMessage": "副驾驶"
   },
   "navigationCustomization.itemExtensions": {
     "defaultMessage": "扩展"

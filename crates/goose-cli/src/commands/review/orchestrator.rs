@@ -62,6 +62,11 @@ pub struct Finding {
     pub line_end: i64,
     pub summary: String,
     pub check: String,
+    /// Optional concrete fix: the exact line(s) that should replace
+    /// `path:line_start..line_end`. Consumers (e.g. PR-review bots) can
+    /// render this as a GitHub ```suggestion block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
 }
 
 /// Schema the check subprocess is required to emit.
@@ -82,6 +87,8 @@ struct RawFinding {
     line_end: Option<i64>,
     #[serde(default)]
     summary: Option<String>,
+    #[serde(default)]
+    suggestion: Option<String>,
 }
 
 /// Run all discovered checks concurrently as `goose run` subprocesses.
@@ -215,6 +222,7 @@ async fn run_single_check_subprocess(
             line_end: r.line_end.unwrap_or(0),
             summary: r.summary.unwrap_or_default(),
             check: check.name.clone(),
+            suggestion: r.suggestion.filter(|s| !s.trim().is_empty()),
         })
         .collect())
 }
@@ -369,6 +377,7 @@ pub async fn run_main_pass_in_parallel(
                         line_end: r.line_end.unwrap_or(0),
                         summary: r.summary.unwrap_or_default(),
                         check: "main".to_string(),
+                        suggestion: r.suggestion.filter(|s| !s.trim().is_empty()),
                     })
                     .collect();
                 if !quiet {
@@ -598,7 +607,7 @@ fn build_main_pass_prompt(
     );
     s.push_str(
         "## Output\n\nReturn ONLY valid JSON with this exact schema:\n\n\
-{\n  \"findings\": [\n    {\n      \"severity\": \"low|medium|high|critical\",\n      \"path\": \"relative/path/to/file\",\n      \"line_start\": 10,\n      \"line_end\": 12,\n      \"summary\": \"One-paragraph actionable explanation of the issue and the fix\"\n    }\n  ]\n}\n\nIf there are no real issues, return:\n{\"findings\":[]}\n\nDo NOT include any text before or after the JSON. Do NOT wrap the JSON in code fences.\n\n",
+{\n  \"findings\": [\n    {\n      \"severity\": \"low|medium|high|critical\",\n      \"path\": \"relative/path/to/file\",\n      \"line_start\": 10,\n      \"line_end\": 12,\n      \"summary\": \"One-paragraph actionable explanation of the issue and the fix\",\n      \"suggestion\": \"the exact line(s) that should replace path:line_start..line_end — no leading +/-, no surrounding context. Omit this field when you don't have a single concrete replacement (e.g. the fix spans multiple non-contiguous locations or requires structural changes).\"\n    }\n  ]\n}\n\nIf there are no real issues, return:\n{\"findings\":[]}\n\nDo NOT include any text before or after the JSON. Do NOT wrap the JSON in code fences.\n\n",
     );
     s.push_str("## Diff\n\n```diff\n");
     s.push_str(file_diff.trim_end_matches('\n'));
@@ -648,7 +657,7 @@ fn build_check_prompt(check: &Check, diff: &str, instructions: Option<&str>) -> 
     s.push_str("Do NOT report issues for unchanged/pre-existing code shown for context.\n\n");
     s.push_str(
         "Return ONLY valid JSON with this exact schema:\n\
-{\n  \"findings\": [\n    {\n      \"severity\": \"low|medium|high|critical\",\n      \"path\": \"relative/path/to/file\",\n      \"line_start\": 10,\n      \"line_end\": 12,\n      \"summary\": \"One-sentence actionable issue\"\n    }\n  ]\n}\n\nIf there are no issues, return:\n{\"findings\":[]}\n\nDo NOT include any text before or after the JSON. Do NOT wrap the JSON in code fences.\n\n",
+{\n  \"findings\": [\n    {\n      \"severity\": \"low|medium|high|critical\",\n      \"path\": \"relative/path/to/file\",\n      \"line_start\": 10,\n      \"line_end\": 12,\n      \"summary\": \"One-sentence actionable issue\",\n      \"suggestion\": \"the exact line(s) that should replace path:line_start..line_end — no leading +/-, no surrounding context. Omit when no single concrete replacement applies.\"\n    }\n  ]\n}\n\nIf there are no issues, return:\n{\"findings\":[]}\n\nDo NOT include any text before or after the JSON. Do NOT wrap the JSON in code fences.\n\n",
     );
     s.push_str("Check instructions:\n\n");
     s.push_str(check.body.trim());

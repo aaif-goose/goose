@@ -13,6 +13,7 @@ activities:
   - Test load tool for knowledge injection and discovery
   - Test delegate tool for task delegation (sync and async)
   - Test error boundaries including nested delegation prevention
+  - Test Copilot prefs persistence (when goosed is reachable)
   - Generate comprehensive test report
 
 parameters:
@@ -367,6 +368,20 @@ prompt: |
   4. Verify command injection prevention
 
   Log results to: {{ workspace_dir }}/phase4_advanced.md
+  {% endif %}
+
+  {% if test_phases == "all" or "copilot" in test_phases %}
+  ## 🤖 PHASE: Copilot prefs (optional)
+
+  Skip if `GOOSE_COPILOT_SWITCHBOARD_URL` is unset or goosed is not running.
+
+  With the goosed base URL and `X-Secret-Key`:
+  1. `GET /copilot/prefs` — expect 200 and `schema_version` in the body.
+  2. `PUT /copilot/prefs` with `custom_instructions` set to `self-test ping` (keep other fields valid).
+  3. `GET /copilot/prefs` again — confirm `custom_instructions` persisted.
+  4. Restore any prefs you changed for production use.
+
+  Log results to: {{ workspace_dir }}/phase_copilot_prefs.md
   {% endif %}
 
   ## 📊 PHASE 5: Final Report Generation

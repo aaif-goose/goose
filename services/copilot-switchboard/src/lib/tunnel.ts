@@ -1,0 +1,128 @@
+// lapstone forwards any request hitting `/tunnel/<agent_id>/*` to
+// `127.0.0.1:<goosed_port>/*` after validating `X-Secret-Key`. So we just
+// POST `<tunnel_url>/copilot/<endpoint>` with the per-install secret.
+
+import type { InstallRecord } from './types';
+
+export interface TunnelRunParams {
+  githubToken: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  prUrl: string;
+  checkRunId?: number;
+  commentId?: number;
+}
+
+export interface TunnelCommentParams {
+  githubToken: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  headRef: string;
+  prUrl: string;
+  commentBody: string;
+  commenter: string;
+  commentId: number;
+  isPr: boolean;
+}
+
+export interface TunnelRunResult {
+  ok: boolean;
+  status: number;
+  body: string;
+}
+
+const TUNNEL_TIMEOUT_MS = 20_000;
+const REGISTER_PROBE_TIMEOUT_MS = 10_000;
+
+export function agentIdFromTunnelUrl(tunnelUrl: string): string | null {
+  const match = tunnelUrl.match(/\/tunnel\/([^/?#]+)/);
+  return match?.[1] ?? null;
+}
+
+/** Proves the registrant controls tunnel_url + tunnel_secret before we write KV. */
+export async function verifyTunnelReachable(
+  tunnelUrl: string,
+  tunnelSecret: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const base = tunnelUrl.replace(/\/$/, '');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REGISTER_PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${base}/copilot/status`, {
+      method: 'GET',
+      headers: { 'X-Secret-Key': tunnelSecret },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `tunnel probe returned ${res.status}`,
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `tunnel probe failed: ${msg}` };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function postJson(
+  install: InstallRecord,
+  path: string,
+  body: unknown
+): Promise<TunnelRunResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TUNNEL_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${install.tunnelUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Secret-Key': install.tunnelSecret,
+      },
+      signal: controller.signal,
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    return { ok: res.ok, status: res.status, body: text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function runReviewViaTunnel(
+  install: InstallRecord,
+  params: TunnelRunParams
+): Promise<TunnelRunResult> {
+  return postJson(install, '/copilot/review', {
+    github_token: params.githubToken,
+    repo: params.repo,
+    pr_number: params.prNumber,
+    head_sha: params.headSha,
+    pr_url: params.prUrl,
+    check_run_id: params.checkRunId,
+    comment_id: params.commentId,
+  });
+}
+
+export async function runCommentViaTunnel(
+  install: InstallRecord,
+  params: TunnelCommentParams
+): Promise<TunnelRunResult> {
+  return postJson(install, '/copilot/comment', {
+    github_token: params.githubToken,
+    repo: params.repo,
+    pr_number: params.prNumber,
+    head_sha: params.headSha,
+    head_ref: params.headRef,
+    pr_url: params.prUrl,
+    comment_body: params.commentBody,
+    commenter: params.commenter,
+    comment_id: params.commentId,
+    is_pr: params.isPr,
+  });
+}

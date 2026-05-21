@@ -1,0 +1,21 @@
+name = "goose-copilot-switchboard"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Copy to `wrangler.toml` (gitignored), create the KV namespace, and set secrets below.
+#
+# Secrets (set via `wrangler secret put`, NOT here):
+#   GITHUB_APP_ID            — numeric App ID
+#   GITHUB_APP_PRIVATE_KEY   — PEM contents (full PRIVATE KEY block, newlines preserved)
+#   GITHUB_WEBHOOK_SECRET    — HMAC shared secret configured on the App's webhook
+#   GITHUB_OAUTH_CLIENT_ID   — public OAuth client ID from the App settings
+#   GITHUB_OAUTH_CLIENT_SECRET — OAuth client secret from the App settings
+
+[[kv_namespaces]]
+binding = "INSTALL_REGISTRY"
+# Run `wrangler kv namespace create INSTALL_REGISTRY` and paste the id here.
+id = "<your-kv-namespace-id>"
+
+[observability]
+enabled = true

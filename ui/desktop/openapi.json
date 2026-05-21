@@ -1663,6 +1663,245 @@
         }
       }
     },
+    "/copilot/analytics": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_analytics",
+        "responses": {
+          "200": {
+            "description": "Per-install analytics rollups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotAnalytics"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Setup not completed"
+          }
+        }
+      }
+    },
+    "/copilot/comment": {
+      "post": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Comment accepted, replying in background",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotReviewResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/prefs": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_prefs",
+        "responses": {
+          "200": {
+            "description": "Current Copilot preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotPrefs"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "put_prefs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotPrefsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Preferences saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotPrefsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/repos": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_repos",
+        "responses": {
+          "200": {
+            "description": "Repos accessible to the installation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotReposResponse"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Setup not completed"
+          },
+          "502": {
+            "description": "Switchboard / GitHub error"
+          }
+        }
+      }
+    },
+    "/copilot/review": {
+      "post": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "review",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Review accepted, running in background",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotReviewResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/setup": {
+      "post": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "setup",
+        "responses": {
+          "200": {
+            "description": "Goose Copilot connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotSetupResponse"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Install timed out"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "disconnect",
+        "responses": {
+          "200": {
+            "description": "Local install cleared and switchboard registration removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotDisconnectResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/copilot/status": {
+      "get": {
+        "tags": [
+          "copilot"
+        ],
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "description": "Cached GitHub App installation id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/diagnostics/{session_id}": {
       "get": {
         "tags": [
@@ -4592,6 +4831,303 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Message"
+        }
+      },
+      "CopilotAnalytics": {
+        "type": "object",
+        "properties": {
+          "commits_pushed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "issues_handled": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "prs_reviewed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CopilotCommentRequest": {
+        "type": "object",
+        "required": [
+          "github_token",
+          "repo",
+          "pr_number",
+          "pr_url",
+          "comment_body",
+          "commenter"
+        ],
+        "properties": {
+          "comment_body": {
+            "type": "string"
+          },
+          "comment_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "commenter": {
+            "type": "string"
+          },
+          "github_token": {
+            "type": "string"
+          },
+          "head_ref": {
+            "type": "string"
+          },
+          "is_pr": {
+            "type": "boolean",
+            "description": "Omitted in older switchboard payloads (treated as PR); current switchboard always sends this."
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pr_url": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        }
+      },
+      "CopilotDisconnectResponse": {
+        "type": "object",
+        "required": [
+          "disconnected"
+        ],
+        "properties": {
+          "disconnected": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CopilotPrefs": {
+        "type": "object",
+        "properties": {
+          "allow_act_on_issues": {
+            "type": "boolean"
+          },
+          "allow_commit_on_fix": {
+            "type": "boolean"
+          },
+          "allow_open_new_prs": {
+            "type": "boolean"
+          },
+          "auto_review_on_pr_open": {
+            "type": "boolean"
+          },
+          "custom_instructions": {
+            "type": "string"
+          },
+          "review_model": {
+            "type": "string",
+            "nullable": true
+          },
+          "review_model_choice": {
+            "$ref": "#/components/schemas/ReviewModelChoice"
+          },
+          "review_output_style": {
+            "$ref": "#/components/schemas/ReviewOutputStyle"
+          },
+          "review_provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "review_severity": {
+            "$ref": "#/components/schemas/ReviewSeverity"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "specific_users_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trigger_permission": {
+            "$ref": "#/components/schemas/TriggerPermission"
+          },
+          "trigger_preference": {
+            "$ref": "#/components/schemas/TriggerPreference"
+          }
+        }
+      },
+      "CopilotPrefsRequest": {
+        "type": "object",
+        "required": [
+          "prefs"
+        ],
+        "properties": {
+          "prefs": {
+            "$ref": "#/components/schemas/CopilotPrefs"
+          }
+        }
+      },
+      "CopilotPrefsResponse": {
+        "type": "object",
+        "required": [
+          "prefs",
+          "switchboard_synced"
+        ],
+        "properties": {
+          "prefs": {
+            "$ref": "#/components/schemas/CopilotPrefs"
+          },
+          "switchboard_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "switchboard_synced": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CopilotRepo": {
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "name",
+          "owner"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/RepoVisibility"
+          }
+        }
+      },
+      "CopilotReposResponse": {
+        "type": "object",
+        "required": [
+          "total_count",
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopilotRepo"
+            }
+          },
+          "total_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CopilotReviewRequest": {
+        "type": "object",
+        "required": [
+          "github_token",
+          "repo",
+          "pr_number",
+          "head_sha",
+          "pr_url"
+        ],
+        "properties": {
+          "check_run_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "comment_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "github_token": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pr_url": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        }
+      },
+      "CopilotReviewResponse": {
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CopilotSetupResponse": {
+        "type": "object",
+        "required": [
+          "installation_id"
+        ],
+        "properties": {
+          "installation_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CopilotStatusResponse": {
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
         }
       },
       "CreateCustomProviderResponse": {
@@ -7534,6 +8070,15 @@
           }
         }
       },
+      "RepoVisibility": {
+        "type": "string",
+        "enum": [
+          "public",
+          "private",
+          "internal",
+          "unknown"
+        ]
+      },
       "ResourceContents": {
         "anyOf": [
           {
@@ -7704,6 +8249,30 @@
           }
         }
       },
+      "ReviewModelChoice": {
+        "type": "string",
+        "enum": [
+          "default",
+          "custom"
+        ]
+      },
+      "ReviewOutputStyle": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "summary",
+          "both"
+        ]
+      },
+      "ReviewSeverity": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ]
+      },
       "Role": {
         "oneOf": [
           {
@@ -7719,6 +8288,41 @@
             ]
           }
         ]
+      },
+      "RoutingPrefs": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "auto_review_on_pr_open",
+          "trigger_preference",
+          "trigger_permission",
+          "allow_act_on_issues"
+        ],
+        "properties": {
+          "allow_act_on_issues": {
+            "type": "boolean"
+          },
+          "auto_review_on_pr_open": {
+            "type": "boolean"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "specific_users_allowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trigger_permission": {
+            "$ref": "#/components/schemas/TriggerPermission"
+          },
+          "trigger_preference": {
+            "$ref": "#/components/schemas/TriggerPreference"
+          }
+        }
       },
       "RunNowResponse": {
         "type": "object",
@@ -8955,6 +9559,22 @@
             "description": "Transcribed text from the audio"
           }
         }
+      },
+      "TriggerPermission": {
+        "type": "string",
+        "enum": [
+          "anyone",
+          "write-access",
+          "specific-users"
+        ]
+      },
+      "TriggerPreference": {
+        "type": "string",
+        "enum": [
+          "pr-open",
+          "on-every-push",
+          "manual-only"
+        ]
       },
       "TunnelInfo": {
         "type": "object",

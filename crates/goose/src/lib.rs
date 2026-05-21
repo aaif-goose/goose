@@ -13,6 +13,7 @@ pub mod checks;
 pub mod config;
 pub mod context_mgmt;
 pub mod conversation;
+pub mod copilot;
 pub mod dictation;
 pub mod doctor;
 pub mod download_manager;
