@@ -229,6 +229,15 @@ export default function ProviderConfigForm({ provider, onConfigured }: ProviderC
   const hasApiKey = provider.metadata.config_keys.some((key) => !key.oauth_flow && key.secret);
   const [authMode, setAuthMode] = useState<'oauth' | 'api_key'>(hasOAuth ? 'oauth' : 'api_key');
 
+  // The API-key form must not surface OAuth marker keys as editable secrets.
+  const apiKeyProvider: ProviderDetails = {
+    ...provider,
+    metadata: {
+      ...provider.metadata,
+      config_keys: provider.metadata.config_keys.filter((key) => !key.oauth_flow),
+    },
+  };
+
   const renderForm = () => {
     if (hasOAuth && hasApiKey) {
       return (
@@ -260,7 +269,7 @@ export default function ProviderConfigForm({ provider, onConfigured }: ProviderC
           {authMode === 'oauth' ? (
             <OAuthForm provider={provider} onConfigured={onConfigured} onError={setError} />
           ) : (
-            <ApiKeyForm provider={provider} onConfigured={onConfigured} onError={setError} />
+            <ApiKeyForm provider={apiKeyProvider} onConfigured={onConfigured} onError={setError} />
           )}
         </div>
       );
@@ -268,7 +277,7 @@ export default function ProviderConfigForm({ provider, onConfigured }: ProviderC
     if (hasOAuth) {
       return <OAuthForm provider={provider} onConfigured={onConfigured} onError={setError} />;
     }
-    return <ApiKeyForm provider={provider} onConfigured={onConfigured} onError={setError} />;
+    return <ApiKeyForm provider={apiKeyProvider} onConfigured={onConfigured} onError={setError} />;
   };
 
   return (

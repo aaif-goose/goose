@@ -175,6 +175,7 @@ export default function ProviderConfigurationModal({
   const configKeys = provider.metadata.config_keys.filter((key) => !key.oauth_flow);
   const hasOAuth = provider.metadata.config_keys.some((key) => key.oauth_flow);
   const hasConfig = configKeys.length > 0;
+  const hasRequiredConfig = configKeys.some((key) => key.required);
   const oauthKeys = provider.metadata.config_keys.filter((key) => key.oauth_flow);
   const hasDeviceCodeFlow = oauthKeys.length > 0 && oauthKeys.every((key) => key.device_code_flow);
 
@@ -244,7 +245,7 @@ export default function ProviderConfigurationModal({
 
     setValidationErrors({});
 
-    const parameters = provider.metadata.config_keys || [];
+    const parameters = configKeys;
     const errors: Record<string, string> = {};
 
     parameters.forEach((parameter) => {
@@ -475,7 +476,7 @@ export default function ProviderConfigurationModal({
           </div>
 
           <DialogFooter>
-            {hasOAuth && !hasConfig && !showDeleteConfirmation ? (
+            {hasOAuth && !hasRequiredConfig && !showDeleteConfirmation ? (
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={handleCancel}>
                   {intl.formatMessage(i18n.cancel)}
