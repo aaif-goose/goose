@@ -271,6 +271,7 @@ The built-in OpenAI provider can connect to OpenAI's official API (`api.openai.c
 - Private OpenAI-compatible API servers
 - Enterprise deployments requiring data governance and security compliance
 - OpenAI API proxies or gateways
+- Tuning Engines workspaces through the hosted OpenAI-compatible endpoint
 
 :::tip Custom Provider Option
 Need to connect to multiple OpenAI-compatible endpoints? [Configure custom providers](#configure-custom-provider) instead for easier switching and better organization, as well as custom naming and shareable configurations.
@@ -311,6 +312,15 @@ Need to connect to multiple OpenAI-compatible endpoints? [Configure custom provi
     OPENAI_API_KEY=your-api-key
     OPENAI_ORGANIZATION=org-id123
     OPENAI_PROJECT=compliance-approved
+    ```
+  </TabItem>
+  <TabItem value="tuning-engines" label="Tuning Engines">
+    For Tuning Engines workspaces:
+    ```sh
+    GOOSE_PROVIDER=openai
+    GOOSE_MODEL=<your-model-alias>
+    OPENAI_HOST=https://api.tuningengines.com/v1
+    OPENAI_API_KEY=sk-te-...
     ```
   </TabItem>
   <TabItem value="custom-headers" label="Custom Headers">
