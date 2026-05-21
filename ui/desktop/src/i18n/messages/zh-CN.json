@@ -11,9 +11,6 @@
   "announcementModal.gotIt": {
     "defaultMessage": "知道了！"
   },
-  "appLayout.closeNavigation": {
-    "defaultMessage": "收起导航"
-  },
   "appLayout.openNavigation": {
     "defaultMessage": "展开导航"
   },
@@ -173,12 +170,6 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "正在等待图片保存…"
   },
-  "chatSessionsDropdown.newChat": {
-    "defaultMessage": "新建聊天"
-  },
-  "chatSessionsDropdown.showAll": {
-    "defaultMessage": "显示全部"
-  },
   "chatSettings.modeDescription": {
     "defaultMessage": "配置 Goose 与工具和扩展的交互方式"
   },
@@ -190,9 +181,6 @@
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "回复风格"
-  },
-  "condensedRenderer.newChat": {
-    "defaultMessage": "新建聊天"
   },
   "configSettings.configReset": {
     "defaultMessage": "配置已重置"
@@ -295,9 +283,6 @@
   },
   "costTracker.pricingUnavailable": {
     "defaultMessage": "无法获取 {model} 的定价数据"
-  },
-  "costTracker.sessionCostBreakdown": {
-    "defaultMessage": "本次会话费用明细："
   },
   "costTracker.totalSessionCost": {
     "defaultMessage": "本次会话总费用：{cost}"
@@ -2345,77 +2330,26 @@
   "modelsSection.resetTitle": {
     "defaultMessage": "重置提供商和模型"
   },
-  "navigationCustomization.dragInstructions": {
-    "defaultMessage": "拖动重新排序，点击眼睛图标显示/隐藏项"
-  },
-  "navigationCustomization.hideItem": {
-    "defaultMessage": "隐藏项"
-  },
-  "navigationCustomization.itemApps": {
+  "navigation.itemApps": {
     "defaultMessage": "应用"
   },
-  "navigationCustomization.itemChat": {
-    "defaultMessage": "聊天"
-  },
-  "navigationCustomization.itemExtensions": {
+  "navigation.itemExtensions": {
     "defaultMessage": "扩展"
   },
-  "navigationCustomization.itemHome": {
+  "navigation.itemHome": {
     "defaultMessage": "首页"
   },
-  "navigationCustomization.itemRecipes": {
+  "navigation.itemRecipes": {
     "defaultMessage": "配方"
   },
-  "navigationCustomization.itemScheduler": {
+  "navigation.itemScheduler": {
     "defaultMessage": "调度"
   },
-  "navigationCustomization.itemSettings": {
+  "navigation.itemSettings": {
     "defaultMessage": "设置"
   },
-  "navigationCustomization.itemSkills": {
+  "navigation.itemSkills": {
     "defaultMessage": "技能"
-  },
-  "navigationCustomization.resetToDefaults": {
-    "defaultMessage": "重置为默认"
-  },
-  "navigationCustomization.showItem": {
-    "defaultMessage": "显示项"
-  },
-  "navigationModeSelector.overlayDescription": {
-    "defaultMessage": "全屏悬浮"
-  },
-  "navigationModeSelector.overlayLabel": {
-    "defaultMessage": "悬浮"
-  },
-  "navigationModeSelector.pushDescription": {
-    "defaultMessage": "导航会推动内容"
-  },
-  "navigationModeSelector.pushLabel": {
-    "defaultMessage": "推动"
-  },
-  "navigationPositionSelector.bottomLabel": {
-    "defaultMessage": "底部"
-  },
-  "navigationPositionSelector.leftLabel": {
-    "defaultMessage": "左侧"
-  },
-  "navigationPositionSelector.rightLabel": {
-    "defaultMessage": "右侧"
-  },
-  "navigationPositionSelector.topLabel": {
-    "defaultMessage": "顶部"
-  },
-  "navigationStyleSelector.listDescription": {
-    "defaultMessage": "经典的紧凑视图"
-  },
-  "navigationStyleSelector.listLabel": {
-    "defaultMessage": "列表"
-  },
-  "navigationStyleSelector.tileDescription": {
-    "defaultMessage": "放大的瓷砖视图"
-  },
-  "navigationStyleSelector.tileLabel": {
-    "defaultMessage": "瓷砖"
   },
   "onboardingGuard.checkProviderErrorDescription": {
     "defaultMessage": "服务器可能正在启动或暂时不可用。"
@@ -3941,15 +3875,6 @@
   "sessionsInsights.totalTokens": {
     "defaultMessage": "令牌总数"
   },
-  "sessionsList.showAll": {
-    "defaultMessage": "显示全部"
-  },
-  "sessionsList.startNewChat": {
-    "defaultMessage": "开始新聊天"
-  },
-  "sessionsList.untitledSession": {
-    "defaultMessage": "未命名会话"
-  },
   "sessionsView.error.failedToLoad": {
     "defaultMessage": "加载会话详情失败，请稍后重试。"
   },
@@ -3994,24 +3919,6 @@
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "菜单栏图标"
-  },
-  "settings.navigation.customize": {
-    "defaultMessage": "自定义项"
-  },
-  "settings.navigation.description": {
-    "defaultMessage": "自定义导航布局和行为"
-  },
-  "settings.navigation.mode": {
-    "defaultMessage": "模式"
-  },
-  "settings.navigation.position": {
-    "defaultMessage": "位置"
-  },
-  "settings.navigation.style": {
-    "defaultMessage": "样式"
-  },
-  "settings.navigation.title": {
-    "defaultMessage": "导航"
   },
   "settings.notifications.configGuide": {
     "defaultMessage": "配置指南"
