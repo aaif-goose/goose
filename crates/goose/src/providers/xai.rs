@@ -149,8 +149,11 @@ impl TokenCache {
         }
     }
 
-    fn exists() -> bool {
-        Self::new().path.exists()
+    fn has_valid_token() -> bool {
+        std::fs::read_to_string(Self::new().path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<XaiToken>(&raw).ok())
+            .is_some()
     }
 }
 
@@ -539,18 +542,8 @@ impl XaiProvider {
         })
     }
 
-    async fn current_auth(&self) -> AuthMethod {
-        if let Some(token) = usable_oauth_token(&self.client, &self.token_cache).await {
-            AuthMethod::BearerToken(token.access_token)
-        } else if let Ok(api_key) = Config::global().get_secret::<String>("XAI_API_KEY") {
-            AuthMethod::BearerToken(api_key)
-        } else {
-            AuthMethod::NoAuth
-        }
-    }
-
-    async fn current_provider(&self) -> Result<OpenAiCompatibleProvider, ProviderError> {
-        let api_client = ApiClient::new(self.host.clone(), self.current_auth().await)
+    fn build_provider(&self, auth: AuthMethod) -> Result<OpenAiCompatibleProvider, ProviderError> {
+        let api_client = ApiClient::new(self.host.clone(), auth)
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
         Ok(OpenAiCompatibleProvider::new(
             XAI_PROVIDER_NAME.to_string(),
@@ -558,6 +551,29 @@ impl XaiProvider {
             self.model.clone(),
             String::new(),
         ))
+    }
+
+    /// Builds the preferred provider plus an optional fallback. A cached OAuth
+    /// token is preferred, but `XAI_API_KEY` is kept as a fallback so a revoked
+    /// OAuth token cannot lock the user out while an API key is configured.
+    async fn auth_chain(
+        &self,
+    ) -> Result<(OpenAiCompatibleProvider, Option<OpenAiCompatibleProvider>), ProviderError> {
+        let oauth_token = usable_oauth_token(&self.client, &self.token_cache).await;
+        let api_key = Config::global().get_secret::<String>("XAI_API_KEY").ok();
+        match (oauth_token, api_key) {
+            (Some(token), api_key) => {
+                let primary = self.build_provider(AuthMethod::BearerToken(token.access_token))?;
+                let fallback = api_key
+                    .map(|key| self.build_provider(AuthMethod::BearerToken(key)))
+                    .transpose()?;
+                Ok((primary, fallback))
+            }
+            (None, Some(api_key)) => {
+                Ok((self.build_provider(AuthMethod::BearerToken(api_key))?, None))
+            }
+            (None, None) => Ok((self.build_provider(AuthMethod::NoAuth)?, None)),
+        }
     }
 
     async fn configure_browser_oauth(&self) -> Result<()> {
@@ -607,7 +623,8 @@ impl ProviderDef for XaiProvider {
     }
 
     fn inventory_configured() -> bool {
-        TokenCache::exists() || Config::global().get_secret::<String>("XAI_API_KEY").is_ok()
+        TokenCache::has_valid_token()
+            || Config::global().get_secret::<String>("XAI_API_KEY").is_ok()
     }
 }
 
@@ -629,17 +646,32 @@ impl Provider for XaiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        self.current_provider()
-            .await?
+        let (primary, fallback) = self.auth_chain().await?;
+        match primary
             .stream(model_config, session_id, system, messages, tools)
             .await
+        {
+            Err(ProviderError::Authentication(err)) => match fallback {
+                Some(fallback) => {
+                    fallback
+                        .stream(model_config, session_id, system, messages, tools)
+                        .await
+                }
+                None => Err(ProviderError::Authentication(err)),
+            },
+            result => result,
+        }
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        self.current_provider()
-            .await?
-            .fetch_supported_models()
-            .await
+        let (primary, fallback) = self.auth_chain().await?;
+        match primary.fetch_supported_models().await {
+            Err(ProviderError::Authentication(err)) => match fallback {
+                Some(fallback) => fallback.fetch_supported_models().await,
+                None => Err(ProviderError::Authentication(err)),
+            },
+            result => result,
+        }
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
