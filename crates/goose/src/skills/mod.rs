@@ -14,7 +14,7 @@ use crate::sources::parse_frontmatter;
 use agent_client_protocol::Error;
 use anyhow::Result;
 use arguments::apply_skill_arguments;
-use goose_sdk::custom_requests::{SourceEntry, SourceType};
+use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};

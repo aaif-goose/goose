@@ -1,0 +1,5 @@
+.build/
+build/
+dist/
+src/
+*.egg-info/

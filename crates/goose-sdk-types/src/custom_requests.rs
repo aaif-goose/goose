@@ -1283,3 +1283,53 @@ pub struct DictationModelSelectRequest {
     pub provider: String,
     pub model_id: String,
 }
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSpec {
+    pub name: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ExtensionSpec {
+    Builtin {
+        name: String,
+    },
+    Stdio {
+        name: String,
+        cmd: String,
+        args: Vec<String>,
+        envs: HashMap<String, String>,
+    },
+    StreamableHttp {
+        name: String,
+        uri: String,
+        headers: HashMap<String, String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentEvent {
+    AssistantText {
+        text: String,
+    },
+    Thinking {
+        text: String,
+    },
+    ToolRequest {
+        id: String,
+        name: String,
+        arguments: String,
+    },
+    ToolResponse {
+        id: String,
+        output: String,
+        is_error: bool,
+    },
+}

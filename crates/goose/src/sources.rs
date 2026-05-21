@@ -11,7 +11,7 @@ use crate::skills::{
 use crate::source_roots::SourceRoot;
 use agent_client_protocol::Error;
 use fs_err as fs;
-use goose_sdk::custom_requests::{SourceEntry, SourceType};
+use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

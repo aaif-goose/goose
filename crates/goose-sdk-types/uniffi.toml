@@ -1,0 +1,4 @@
+[bindings.kotlin]
+package_name = "io.aaif.goose.sdk_types"
+
+[bindings.python]

@@ -6,19 +6,51 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Rust SDK for talking to Goose over the Agent Client Protocol (ACP)"
+description = "Rust SDK for Goose with optional uniffi bindings for Python/Kotlin"
+
+[lib]
+name = "goose_sdk"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "goose-uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi"]
+
+[features]
+default = []
+uniffi = [
+    "dep:uniffi",
+    "dep:goose",
+    "dep:tokio",
+    "dep:futures",
+    "dep:anyhow",
+    "dep:thiserror",
+    "dep:async-trait",
+    "dep:rmcp",
+    "goose-sdk-types/uniffi",
+]
 
 [dependencies]
+goose-sdk-types = { path = "../goose-sdk-types" }
 agent-client-protocol = { workspace = true, features = ["unstable"] }
 agent-client-protocol-schema = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 schemars = { workspace = true, features = ["derive"] }
 
+goose = { path = "../goose", optional = true }
+uniffi = { version = "0.29", features = ["tokio", "cli"], optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"], optional = true }
+futures = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+thiserror = { version = "2", optional = true }
+async-trait = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["compat", "rt"] }
 
 [package.metadata.cargo-machete]
-# Used to provide extras imports for agent-client-protocol
 ignored = ["agent-client-protocol-schema"]

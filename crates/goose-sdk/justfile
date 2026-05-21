@@ -1,0 +1,46 @@
+set shell := ["bash", "-cu"]
+set working-directory := '../..'
+
+lib_ext := if os() == "macos" { "dylib" } else if os() == "windows" { "dll" } else { "so" }
+lib_dir := "./target/debug"
+lib_path := lib_dir / "libgoose_sdk." + lib_ext
+bindgen := "./target/debug/goose-uniffi-bindgen"
+gen_dir := "./crates/goose-sdk/generated"
+examples_dir := "./crates/goose-sdk/examples/uniffi"
+
+default:
+    @just --list --justfile {{justfile()}}
+
+_build:
+    cargo build -p goose-sdk --features uniffi -q
+
+_generate lang: _build
+    {{bindgen}} generate --library {{lib_path}} --language {{lang}} --no-format --out-dir {{gen_dir}} 2>/dev/null
+    cp {{lib_path}} {{gen_dir}}/
+    touch {{gen_dir}}/__init__.py
+
+python: (_generate "python")
+    DYLD_LIBRARY_PATH={{lib_dir}} LD_LIBRARY_PATH={{lib_dir}} \
+        python3 {{examples_dir}}/ping_aaif.py
+
+kotlin: (_generate "kotlin")
+    @if [ ! -f {{examples_dir}}/jna.jar ]; then \
+        curl -sSL -o {{examples_dir}}/jna.jar \
+            https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar; \
+    fi
+    kotlinc -cp {{examples_dir}}/jna.jar -nowarn \
+        {{gen_dir}}/io/aaif/goose/sdk_types/goose_sdk_types.kt \
+        {{gen_dir}}/io/aaif/goose/sdk/goose_sdk.kt \
+        {{examples_dir}}/PingAaif.kt \
+        -include-runtime -d {{examples_dir}}/ping_aaif.jar 2>/dev/null
+    java -Djna.library.path={{lib_dir}} \
+        --enable-native-access=ALL-UNNAMED \
+        -cp {{examples_dir}}/ping_aaif.jar:{{examples_dir}}/jna.jar examples.PingAaifKt
+
+# Build a platform-specific Python wheel under packaging/python/dist/
+python-wheel:
+    python3 ./crates/goose-sdk/packaging/python/make_wheel.py
+
+# Build a platform-specific Kotlin/JVM JAR under packaging/kotlin/dist/
+kotlin-jar:
+    python3 ./crates/goose-sdk/packaging/kotlin/make_jar.py
