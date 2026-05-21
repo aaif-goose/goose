@@ -10,7 +10,7 @@ use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::{Mutex, OnceCell, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -20,6 +20,7 @@ static AGENT_MANAGER: OnceCell<Arc<AgentManager>> = OnceCell::const_new();
 
 pub struct AgentManager {
     sessions: Arc<RwLock<LruCache<String, Arc<Agent>>>>,
+    creating: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
     scheduler: Arc<dyn SchedulerTrait>,
     session_manager: Arc<SessionManager>,
     default_provider: Arc<RwLock<Option<Arc<dyn crate::providers::base::Provider>>>>,
@@ -41,6 +42,7 @@ impl AgentManager {
 
         let manager = Self {
             sessions: Arc::new(RwLock::new(LruCache::new(capacity))),
+            creating: Arc::new(Mutex::new(HashMap::new())),
             scheduler,
             session_manager,
             default_provider: Arc::new(RwLock::new(None)),
@@ -89,6 +91,26 @@ impl AgentManager {
     }
 
     pub async fn get_or_create_agent(&self, session_id: String) -> Result<Arc<Agent>> {
+        // Fast path: agent already exists.
+        {
+            let mut sessions = self.sessions.write().await;
+            if let Some(existing) = sessions.get(&session_id) {
+                return Ok(Arc::clone(existing));
+            }
+        }
+
+        // Acquire a per-session creation lock to prevent concurrent callers from
+        // each independently creating an agent (and triggering duplicate OAuth flows).
+        let session_lock = {
+            let mut creating = self.creating.lock().await;
+            creating
+                .entry(session_id.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _guard = session_lock.lock().await;
+
+        // Re-check: another caller may have created the agent while we waited.
         {
             let mut sessions = self.sessions.write().await;
             if let Some(existing) = sessions.get(&session_id) {
@@ -146,12 +168,13 @@ impl AgentManager {
         }
 
         let mut sessions = self.sessions.write().await;
-        if let Some(existing) = sessions.get(&session_id) {
-            Ok(Arc::clone(existing))
-        } else {
-            sessions.put(session_id, agent.clone());
-            Ok(agent)
-        }
+        sessions.put(session_id.clone(), agent.clone());
+
+        // Clean up the creation lock now that the agent is cached.
+        let mut creating = self.creating.lock().await;
+        creating.remove(&session_id);
+
+        Ok(agent)
     }
 
     pub async fn remove_session(&self, session_id: &str) -> Result<()> {
