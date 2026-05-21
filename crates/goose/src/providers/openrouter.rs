@@ -1,7 +1,8 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use super::api_client::{ApiClient, AuthMethod};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
@@ -16,6 +17,7 @@ use crate::providers::formats::openrouter as openrouter_format;
 use rmcp::model::Tool;
 
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
+const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4";
 pub const OPENROUTER_DEFAULT_FAST_MODEL: &str = "google/gemini-2.5-flash";
 pub const OPENROUTER_MODEL_PREFIX_ANTHROPIC: &str = "anthropic";
@@ -47,13 +49,17 @@ pub struct OpenRouterProvider {
 
 impl OpenRouterProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
-        let model = model.with_fast(OPENROUTER_DEFAULT_FAST_MODEL, OPENROUTER_PROVIDER_NAME)?;
+        let mut model = model.with_fast(OPENROUTER_DEFAULT_FAST_MODEL, OPENROUTER_PROVIDER_NAME)?;
 
         let config = crate::config::Config::global();
         let api_key: String = config.get_secret("OPENROUTER_API_KEY")?;
         let host: String = config
             .get_param("OPENROUTER_HOST")
             .unwrap_or_else(|_| "https://openrouter.ai".to_string());
+
+        if let Some(params) = configured_openrouter_parameters()? {
+            merge_openrouter_parameters(&mut model, params);
+        }
 
         let auth = AuthMethod::BearerToken(api_key);
         let api_client = ApiClient::new(host, auth)?
@@ -146,6 +152,42 @@ fn is_gemini_model(model_name: &str) -> bool {
     model_name.starts_with("google/")
 }
 
+fn parse_openrouter_parameters(raw: Value) -> Result<HashMap<String, Value>> {
+    match raw {
+        Value::Object(params) => Ok(params.into_iter().collect()),
+        Value::String(raw_json) => match serde_json::from_str::<Value>(&raw_json)? {
+            Value::Object(params) => Ok(params.into_iter().collect()),
+            _ => bail!("{OPENROUTER_PARAMETERS_CONFIG_KEY} must be a JSON object"),
+        },
+        _ => bail!("{OPENROUTER_PARAMETERS_CONFIG_KEY} must be a JSON object"),
+    }
+}
+
+fn configured_openrouter_parameters() -> Result<Option<HashMap<String, Value>>> {
+    let config = crate::config::Config::global();
+    match config.get_param::<Value>(OPENROUTER_PARAMETERS_CONFIG_KEY) {
+        Ok(raw) => parse_openrouter_parameters(raw).map(Some),
+        Err(crate::config::ConfigError::NotFound(_)) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn merge_request_params(
+    request_params: &mut Option<HashMap<String, Value>>,
+    params: HashMap<String, Value>,
+) {
+    request_params
+        .get_or_insert_with(HashMap::new)
+        .extend(params);
+}
+
+fn merge_openrouter_parameters(model: &mut ModelConfig, params: HashMap<String, Value>) {
+    merge_request_params(&mut model.request_params, params.clone());
+    if let Some(fast_model_config) = &mut model.fast_model_config {
+        merge_request_params(&mut fast_model_config.request_params, params);
+    }
+}
+
 impl ProviderDef for OpenRouterProvider {
     type Provider = Self;
 
@@ -166,6 +208,7 @@ impl ProviderDef for OpenRouterProvider {
                     Some("https://openrouter.ai"),
                     false,
                 ),
+                ConfigKey::new(OPENROUTER_PARAMETERS_CONFIG_KEY, false, false, None, false),
             ],
         )
         .with_setup_steps(vec![
@@ -300,5 +343,96 @@ impl Provider for OpenRouterProvider {
             })?;
 
         stream_openai_compat(response, log)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn model_config(model_name: &str) -> ModelConfig {
+        ModelConfig {
+            model_name: model_name.to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            fast_model_config: None,
+            request_params: None,
+            reasoning: None,
+        }
+    }
+
+    #[test]
+    fn metadata_includes_openrouter_parameters_config_key() {
+        let metadata = OpenRouterProvider::metadata();
+
+        assert!(metadata
+            .config_keys
+            .iter()
+            .any(|key| key.name == OPENROUTER_PARAMETERS_CONFIG_KEY));
+    }
+
+    #[test]
+    fn parse_openrouter_parameters_accepts_object_value() {
+        let params = parse_openrouter_parameters(json!({
+            "verbosity": "xhigh",
+            "reasoning": { "effort": "high" }
+        }))
+        .unwrap();
+
+        assert_eq!(params["verbosity"], json!("xhigh"));
+        assert_eq!(params["reasoning"], json!({ "effort": "high" }));
+    }
+
+    #[test]
+    fn parse_openrouter_parameters_accepts_json_string_value() {
+        let params = parse_openrouter_parameters(json!(
+            r#"{"plugins":[{"id":"web"}],"reasoning":{"max_tokens":2000}}"#
+        ))
+        .unwrap();
+
+        assert_eq!(params["plugins"], json!([{ "id": "web" }]));
+        assert_eq!(params["reasoning"], json!({ "max_tokens": 2000 }));
+    }
+
+    #[test]
+    fn parse_openrouter_parameters_rejects_non_object_json_string() {
+        let err = parse_openrouter_parameters(json!(r#"["web"]"#)).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("OPENROUTER_PARAMETERS must be a JSON object"));
+    }
+
+    #[test]
+    fn merge_openrouter_parameters_updates_model_and_fast_model_request_params() {
+        let mut model = model_config("anthropic/claude-sonnet-4");
+        model.request_params = Some(HashMap::from([("verbosity".to_string(), json!("low"))]));
+        model.fast_model_config = Some(Box::new(model_config(OPENROUTER_DEFAULT_FAST_MODEL)));
+
+        let params = parse_openrouter_parameters(json!({
+            "plugins": [{ "id": "web" }],
+            "verbosity": "xhigh"
+        }))
+        .unwrap();
+
+        merge_openrouter_parameters(&mut model, params);
+
+        let request_params = model.request_params.as_ref().unwrap();
+        assert_eq!(request_params["plugins"], json!([{ "id": "web" }]));
+        assert_eq!(request_params["verbosity"], json!("xhigh"));
+
+        let fast_request_params = model
+            .fast_model_config
+            .as_ref()
+            .unwrap()
+            .request_params
+            .as_ref()
+            .unwrap();
+        assert_eq!(fast_request_params["plugins"], json!([{ "id": "web" }]));
+        assert_eq!(fast_request_params["verbosity"], json!("xhigh"));
     }
 }
