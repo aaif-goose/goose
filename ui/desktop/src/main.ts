@@ -2535,46 +2535,6 @@ async function appMain() {
     }
   });
 
-  // Handle metadata fetching from main process
-  ipcMain.handle('fetch-metadata', async (_event, url) => {
-    try {
-      // Validate URL
-      const parsedUrl = new URL(url);
-
-      // Only allow http and https protocols for fetching web content
-      if (!WEB_PROTOCOLS.includes(parsedUrl.protocol)) {
-        throw new Error('Invalid URL protocol. Only HTTP and HTTPS are allowed.');
-      }
-
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; Goose/1.0)',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Set a reasonable size limit (e.g., 10MB)
-      const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-      const contentLength = parseInt(response.headers.get('content-length') || '0');
-      if (contentLength > MAX_SIZE) {
-        throw new Error('Response too large');
-      }
-
-      const text = await response.text();
-      if (text.length > MAX_SIZE) {
-        throw new Error('Response too large');
-      }
-
-      return text;
-    } catch (error) {
-      console.error('Error fetching metadata:', error);
-      throw error;
-    }
-  });
-
   ipcMain.on('open-in-chrome', (_event, url) => {
     try {
       // Validate URL
