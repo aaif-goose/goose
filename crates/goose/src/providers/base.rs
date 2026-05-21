@@ -1184,6 +1184,10 @@ pub trait Provider: Send + Sync {
         ))
     }
 
+    async fn configure_oauth_device_code(&self) -> Result<(), ProviderError> {
+        self.configure_oauth().await
+    }
+
     async fn refresh_credentials(&self) -> Result<(), ProviderError> {
         Err(ProviderError::NotImplemented(
             "credential refresh not supported by this provider".to_string(),

@@ -87,6 +87,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<XaiProvider>(false);
     });
     // Register cleanup functions for providers with cached state
+    registry.set_cleanup("xai", Arc::new(|| Box::pin(XaiProvider::cleanup())));
     registry.set_cleanup(
         "github_copilot",
         Arc::new(|| Box::pin(GithubCopilotProvider::cleanup())),
