@@ -33,39 +33,38 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 // Translation descriptors for nav labels. Kept here next to NAV_ITEMS so the two
-// stay in sync. Reuses the existing `navigationCustomization.item*` ids that are
-// also used by the "Customize Navigation" settings screen.
+// stay in sync.
 const navItemMessages = defineMessages({
   home: {
-    id: 'navigationCustomization.itemHome',
+    id: 'navigation.itemHome',
     defaultMessage: 'Home',
   },
   chat: {
-    id: 'navigationCustomization.itemChat',
+    id: 'navigation.itemChat',
     defaultMessage: 'Chat',
   },
   recipes: {
-    id: 'navigationCustomization.itemRecipes',
+    id: 'navigation.itemRecipes',
     defaultMessage: 'Recipes',
   },
   skills: {
-    id: 'navigationCustomization.itemSkills',
+    id: 'navigation.itemSkills',
     defaultMessage: 'Skills',
   },
   apps: {
-    id: 'navigationCustomization.itemApps',
+    id: 'navigation.itemApps',
     defaultMessage: 'Apps',
   },
   scheduler: {
-    id: 'navigationCustomization.itemScheduler',
+    id: 'navigation.itemScheduler',
     defaultMessage: 'Scheduler',
   },
   extensions: {
-    id: 'navigationCustomization.itemExtensions',
+    id: 'navigation.itemExtensions',
     defaultMessage: 'Extensions',
   },
   settings: {
-    id: 'navigationCustomization.itemSettings',
+    id: 'navigation.itemSettings',
     defaultMessage: 'Settings',
   },
 });

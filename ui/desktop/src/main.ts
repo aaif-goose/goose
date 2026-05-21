@@ -513,7 +513,10 @@ app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
     const parsedUrl = new URL(url);
 
-    log.info('[Main] Received open-url event:', url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url);
+    log.info(
+      '[Main] Received open-url event:',
+      url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url
+    );
 
     await app.whenReady();
 
@@ -1159,7 +1162,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
       }
       windowPowerSaveBlockers.delete(windowId);
     }
-
   });
   return mainWindow;
 };
@@ -1576,7 +1578,6 @@ const validSettingKeys: Set<string> = new Set([
   'showPricing',
   'sessionSharing',
   'seenAnnouncementIds',
-  'navExpandedWidth',
 ]);
 
 ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {

@@ -191,12 +191,6 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Waiting for images to save..."
   },
-  "chatSessionsDropdown.newChat": {
-    "defaultMessage": "New Chat"
-  },
-  "chatSessionsDropdown.showAll": {
-    "defaultMessage": "Show All"
-  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Configure how Goose interacts with tools and extensions"
   },
@@ -208,9 +202,6 @@
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Response Styles"
-  },
-  "condensedRenderer.newChat": {
-    "defaultMessage": "New Chat"
   },
   "configSettings.configReset": {
     "defaultMessage": "Configuration Reset"
@@ -2402,77 +2393,32 @@
   "modelsSection.resetTitle": {
     "defaultMessage": "Reset Provider and Model"
   },
-  "navigationCustomization.dragInstructions": {
-    "defaultMessage": "Drag to reorder, click the eye icon to show/hide items"
-  },
-  "navigationCustomization.hideItem": {
-    "defaultMessage": "Hide item"
-  },
-  "navigationCustomization.itemApps": {
+  "navigation.itemApps": {
     "defaultMessage": "Apps"
   },
-  "navigationCustomization.itemChat": {
+  "navigation.itemChat": {
     "defaultMessage": "Chat"
   },
-  "navigationCustomization.itemExtensions": {
+  "navigation.itemExtensions": {
     "defaultMessage": "Extensions"
   },
-  "navigationCustomization.itemHome": {
+  "navigation.itemHome": {
     "defaultMessage": "Home"
   },
-  "navigationCustomization.itemRecipes": {
+  "navigation.itemRecipes": {
     "defaultMessage": "Recipes"
   },
-  "navigationCustomization.itemScheduler": {
+  "navigation.itemScheduler": {
     "defaultMessage": "Scheduler"
   },
-  "navigationCustomization.itemSettings": {
+  "navigation.itemSettings": {
     "defaultMessage": "Settings"
   },
-  "navigationCustomization.itemSkills": {
+  "navigation.itemSkills": {
     "defaultMessage": "Skills"
   },
-  "navigationCustomization.resetToDefaults": {
-    "defaultMessage": "Reset to defaults"
-  },
-  "navigationCustomization.showItem": {
-    "defaultMessage": "Show item"
-  },
-  "navigationModeSelector.overlayDescription": {
-    "defaultMessage": "Full-screen overlay"
-  },
-  "navigationModeSelector.overlayLabel": {
-    "defaultMessage": "Overlay"
-  },
-  "navigationModeSelector.pushDescription": {
-    "defaultMessage": "Navigation pushes content"
-  },
-  "navigationModeSelector.pushLabel": {
-    "defaultMessage": "Push"
-  },
-  "navigationPositionSelector.bottomLabel": {
-    "defaultMessage": "Bottom"
-  },
-  "navigationPositionSelector.leftLabel": {
-    "defaultMessage": "Left"
-  },
-  "navigationPositionSelector.rightLabel": {
-    "defaultMessage": "Right"
-  },
-  "navigationPositionSelector.topLabel": {
-    "defaultMessage": "Top"
-  },
-  "navigationStyleSelector.listDescription": {
-    "defaultMessage": "Classic condensed view"
-  },
-  "navigationStyleSelector.listLabel": {
-    "defaultMessage": "List"
-  },
-  "navigationStyleSelector.tileDescription": {
-    "defaultMessage": "Enlarged tile view"
-  },
-  "navigationStyleSelector.tileLabel": {
-    "defaultMessage": "Tile"
+  "navigationPanel.newChat": {
+    "defaultMessage": "New Chat"
   },
   "onboardingGuard.checkProviderErrorDescription": {
     "defaultMessage": "The server may be starting up or temporarily unavailable."
@@ -4087,24 +4033,6 @@
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "Menu bar icon"
-  },
-  "settings.navigation.customize": {
-    "defaultMessage": "Customize Items"
-  },
-  "settings.navigation.description": {
-    "defaultMessage": "Customize navigation layout and behavior"
-  },
-  "settings.navigation.mode": {
-    "defaultMessage": "Mode"
-  },
-  "settings.navigation.position": {
-    "defaultMessage": "Position"
-  },
-  "settings.navigation.style": {
-    "defaultMessage": "Style"
-  },
-  "settings.navigation.title": {
-    "defaultMessage": "Navigation"
   },
   "settings.notifications.configGuide": {
     "defaultMessage": "Configuration guide"

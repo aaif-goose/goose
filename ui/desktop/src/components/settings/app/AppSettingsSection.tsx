@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { defineMessages, useIntl } from '../../../i18n';
 import { Switch } from '../../ui/switch';
 import { Button } from '../../ui/button';
-import { Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../ui/dialog';
 import UpdateSection from './UpdateSection';
 
@@ -13,11 +13,6 @@ import BlockLogoBlack from './icons/block-lockup_black.png';
 import BlockLogoWhite from './icons/block-lockup_white.png';
 import TelemetrySettings from './TelemetrySettings';
 import { trackSettingToggled } from '../../../utils/analytics';
-import { NavigationModeSelector } from './NavigationModeSelector';
-import { NavigationStyleSelector } from './NavigationStyleSelector';
-import { NavigationPositionSelector } from './NavigationPositionSelector';
-import { NavigationCustomizationSettings } from './NavigationCustomizationSettings';
-import { NavigationProvider, useNavigationContextSafe } from '../../Layout/NavigationContext';
 
 const i18n = defineMessages({
   appearanceTitle: { id: 'settings.appearance.title', defaultMessage: 'Appearance' },
@@ -63,15 +58,6 @@ const i18n = defineMessages({
     id: 'settings.theme.description',
     defaultMessage: 'Customize the look and feel of goose',
   },
-  navigationTitle: { id: 'settings.navigation.title', defaultMessage: 'Navigation' },
-  navigationDesc: {
-    id: 'settings.navigation.description',
-    defaultMessage: 'Customize navigation layout and behavior',
-  },
-  navMode: { id: 'settings.navigation.mode', defaultMessage: 'Mode' },
-  navStyle: { id: 'settings.navigation.style', defaultMessage: 'Style' },
-  navPosition: { id: 'settings.navigation.position', defaultMessage: 'Position' },
-  navCustomize: { id: 'settings.navigation.customize', defaultMessage: 'Customize Items' },
   helpTitle: { id: 'settings.help.title', defaultMessage: 'Help & feedback' },
   helpDesc: {
     id: 'settings.help.description',
@@ -135,83 +121,6 @@ const i18n = defineMessages({
 interface AppSettingsSectionProps {
   scrollToSection?: string;
 }
-
-const NavigationSettingsContent: React.FC = () => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const navContext = useNavigationContextSafe();
-  const isOverlayMode = navContext?.navigationMode === 'overlay';
-  const intl = useIntl();
-
-  return (
-    <Card className="rounded-lg">
-      <CardHeader className="pb-0">
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-between text-left"
-        >
-          <div>
-            <CardTitle className="mb-1">{intl.formatMessage(i18n.navigationTitle)}</CardTitle>
-            <CardDescription>{intl.formatMessage(i18n.navigationDesc)}</CardDescription>
-          </div>
-          {isExpanded ? (
-            <ChevronUp className="w-5 h-5 text-text-secondary" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-text-secondary" />
-          )}
-        </button>
-      </CardHeader>
-      {isExpanded && (
-        <CardContent className="pt-4 px-4 space-y-6">
-          <div>
-            <h3 className="text-sm font-medium text-text-primary mb-3">
-              {intl.formatMessage(i18n.navMode)}
-            </h3>
-            <NavigationModeSelector />
-          </div>
-          {!isOverlayMode && (
-            <div>
-              <h3 className="text-sm font-medium text-text-primary mb-3">
-                {intl.formatMessage(i18n.navStyle)}
-              </h3>
-              <NavigationStyleSelector />
-            </div>
-          )}
-          {!isOverlayMode && (
-            <div>
-              <h3 className="text-sm font-medium text-text-primary mb-3">
-                {intl.formatMessage(i18n.navPosition)}
-              </h3>
-              <NavigationPositionSelector />
-            </div>
-          )}
-          <div>
-            <h3 className="text-sm font-medium text-text-primary mb-3">
-              {intl.formatMessage(i18n.navCustomize)}
-            </h3>
-            <NavigationCustomizationSettings />
-          </div>
-        </CardContent>
-      )}
-    </Card>
-  );
-};
-
-// Navigation Settings Card - wrapped in its own provider for settings page
-const NavigationSettingsCard: React.FC = () => {
-  const navContext = useNavigationContextSafe();
-
-  // If already in a NavigationProvider context, render directly
-  if (navContext) {
-    return <NavigationSettingsContent />;
-  }
-
-  // Otherwise wrap with provider
-  return (
-    <NavigationProvider>
-      <NavigationSettingsContent />
-    </NavigationProvider>
-  );
-};
 
 export default function AppSettingsSection({ scrollToSection }: AppSettingsSectionProps) {
   const [menuBarIconEnabled, setMenuBarIconEnabled] = useState(true);
@@ -490,9 +399,6 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
           <ThemeSelector className="w-auto" hideTitle horizontal />
         </CardContent>
       </Card>
-
-      {/* Navigation Settings */}
-      <NavigationSettingsCard />
 
       <TelemetrySettings />
 
