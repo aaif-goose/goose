@@ -4409,6 +4409,9 @@
   "switchModelModal.claudeEffortMedium": {
     "defaultMessage": "Medium - Moderate thinking"
   },
+  "switchModelModal.claudeEffortXHigh": {
+    "defaultMessage": "XHigh - Extended coding and agentic work"
+  },
   "switchModelModal.claudeEnabled": {
     "defaultMessage": "Enabled - Fixed token budget for thinking"
   },

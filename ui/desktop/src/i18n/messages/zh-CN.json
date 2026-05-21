@@ -4307,6 +4307,9 @@
   "switchModelModal.claudeEffortHigh": {
     "defaultMessage": "高 - 深度推理（默认）"
   },
+  "switchModelModal.claudeEffortXHigh": {
+    "defaultMessage": "超高 - 长程编码和代理任务"
+  },
   "switchModelModal.claudeEffortLow": {
     "defaultMessage": "低 - 最少思考，响应最快"
   },

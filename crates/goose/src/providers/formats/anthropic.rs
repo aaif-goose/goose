@@ -69,7 +69,13 @@ impl AnthropicFormatOptions {
 
 pub fn supports_adaptive_thinking(model_name: &str) -> bool {
     let lower = model_name.to_lowercase();
-    lower.contains("claude-opus-4-6") || lower.contains("claude-sonnet-4-6")
+    lower.contains("claude-opus-4-7")
+        || lower.contains("claude-opus-4-6")
+        || lower.contains("claude-sonnet-4-6")
+}
+
+fn is_claude_opus_47(model_name: &str) -> bool {
+    model_name.to_lowercase().contains("claude-opus-4-7")
 }
 
 pub fn thinking_type(model_config: &ModelConfig) -> ThinkingType {
@@ -112,6 +118,7 @@ const IS_ERROR_FIELD: &str = "is_error";
 const SIGNATURE_FIELD: &str = "signature";
 const DATA_FIELD: &str = "data";
 const EVENT_MESSAGE_START: &str = "message_start";
+const DEFAULT_PRESERVED_THINKING_BUDGET_TOKENS: i32 = 16000;
 const EVENT_MESSAGE_DELTA: &str = "message_delta";
 const EVENT_MESSAGE_STOP: &str = "message_stop";
 const EVENT_CONTENT_BLOCK_START: &str = "content_block_start";
@@ -491,36 +498,90 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
     }
 }
 
-pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
-    model_config
-        .thinking_effort()
-        .unwrap_or(ThinkingEffort::High)
+pub fn thinking_effort(model_config: &ModelConfig) -> Option<ThinkingEffort> {
+    model_config.thinking_effort()
 }
 
-pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
-    if let Some(request_param) = model_config
+pub fn adaptive_effort_value(model_config: &ModelConfig) -> Option<&'static str> {
+    adaptive_effort_value_for_model(&model_config.model_name, model_config.thinking_effort())
+}
+
+fn adaptive_effort_value_for_model(
+    model_name: &str,
+    effort: Option<ThinkingEffort>,
+) -> Option<&'static str> {
+    match effort? {
+        ThinkingEffort::Off => None,
+        ThinkingEffort::Low => Some("low"),
+        ThinkingEffort::Medium => Some("medium"),
+        ThinkingEffort::High => Some("high"),
+        ThinkingEffort::XHigh if is_claude_opus_47(model_name) => Some("xhigh"),
+        ThinkingEffort::XHigh => Some("high"),
+        ThinkingEffort::Max => Some("max"),
+    }
+}
+
+pub fn thinking_budget_tokens(model_config: &ModelConfig) -> Option<i32> {
+    thinking_budget_tokens_for_effort(model_config, model_config.thinking_effort())
+}
+
+fn preserved_thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
+    let request_budget = model_config
         .request_params
         .as_ref()
         .and_then(|params| params.get("budget_tokens"))
-        .and_then(|v| serde_json::from_value::<i32>(v.clone()).ok())
-    {
-        return request_param.max(1024);
+        .and_then(|v| serde_json::from_value::<i32>(v.clone()).ok());
+
+    preserved_thinking_budget_tokens_for_values(
+        request_budget,
+        legacy_thinking_budget_tokens(),
+        model_config.thinking_effort(),
+    )
+}
+
+fn thinking_budget_tokens_for_effort(
+    model_config: &ModelConfig,
+    effort: Option<ThinkingEffort>,
+) -> Option<i32> {
+    let request_budget = model_config
+        .request_params
+        .as_ref()
+        .and_then(|params| params.get("budget_tokens"))
+        .and_then(|v| serde_json::from_value::<i32>(v.clone()).ok());
+
+    thinking_budget_tokens_for_values(request_budget, legacy_thinking_budget_tokens(), effort)
+}
+
+fn thinking_budget_tokens_for_values(
+    request_budget: Option<i32>,
+    legacy_budget: Option<i32>,
+    effort: Option<ThinkingEffort>,
+) -> Option<i32> {
+    if let Some(request_budget) = request_budget {
+        return Some(request_budget.max(1024));
     }
 
-    if let Some(budget) = legacy_thinking_budget_tokens() {
-        return budget;
+    if let Some(legacy_budget) = legacy_budget {
+        return Some(legacy_budget);
     }
 
-    let effort = model_config
-        .thinking_effort()
-        .unwrap_or(ThinkingEffort::High);
-    match effort {
+    Some(match effort? {
         ThinkingEffort::Off => 1024,
         ThinkingEffort::Low => 4000,
         ThinkingEffort::Medium => 10000,
         ThinkingEffort::High => 16000,
+        ThinkingEffort::XHigh => 24000,
         ThinkingEffort::Max => 32000,
-    }
+    })
+}
+
+fn preserved_thinking_budget_tokens_for_values(
+    request_budget: Option<i32>,
+    legacy_budget: Option<i32>,
+    effort: Option<ThinkingEffort>,
+) -> i32 {
+    thinking_budget_tokens_for_values(request_budget, legacy_budget, effort)
+        .unwrap_or(DEFAULT_PRESERVED_THINKING_BUDGET_TOKENS)
 }
 
 fn legacy_thinking_budget_tokens() -> Option<i32> {
@@ -542,36 +603,50 @@ fn apply_thinking_config(
     let obj = payload.as_object_mut().unwrap();
     match thinking_type(model_config) {
         ThinkingType::Adaptive => {
-            obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
-            let effort = thinking_effort(model_config).to_string();
-            obj.insert("output_config".to_string(), json!({"effort": effort}));
-        }
-        ThinkingType::Enabled => {
-            let budget_tokens = thinking_budget_tokens(model_config);
-
-            obj.insert("max_tokens".to_string(), json!(max_tokens + budget_tokens));
             obj.insert(
                 "thinking".to_string(),
-                json!({
-                    "type": "enabled",
-                    "budget_tokens": budget_tokens
-                }),
+                json!({"type": "adaptive", "display": "summarized"}),
             );
+            if let Some(effort) = adaptive_effort_value(model_config) {
+                obj.insert("output_config".to_string(), json!({"effort": effort}));
+            }
+        }
+        ThinkingType::Enabled => {
+            if let Some(budget_tokens) = thinking_budget_tokens(model_config) {
+                obj.insert("max_tokens".to_string(), json!(max_tokens + budget_tokens));
+                obj.insert(
+                    "thinking".to_string(),
+                    json!({
+                        "type": "enabled",
+                        "budget_tokens": budget_tokens
+                    }),
+                );
+            }
         }
         ThinkingType::Disabled => {}
     }
 
     if options.preserve_thinking_context {
         if !obj.contains_key("thinking") {
-            let budget_tokens = thinking_budget_tokens(model_config);
-            obj.insert("max_tokens".to_string(), json!(max_tokens + budget_tokens));
-            obj.insert(
-                "thinking".to_string(),
-                json!({
-                    "type": "enabled",
-                    "budget_tokens": budget_tokens
-                }),
-            );
+            if supports_adaptive_thinking(&model_config.model_name) {
+                obj.insert(
+                    "thinking".to_string(),
+                    json!({"type": "adaptive", "display": "summarized"}),
+                );
+                if let Some(effort) = adaptive_effort_value(model_config) {
+                    obj.insert("output_config".to_string(), json!({"effort": effort}));
+                }
+            } else {
+                let budget_tokens = preserved_thinking_budget_tokens(model_config);
+                obj.insert("max_tokens".to_string(), json!(max_tokens + budget_tokens));
+                obj.insert(
+                    "thinking".to_string(),
+                    json!({
+                        "type": "enabled",
+                        "budget_tokens": budget_tokens
+                    }),
+                );
+            }
         }
 
         if let Some(thinking) = obj.get_mut("thinking").and_then(|t| t.as_object_mut()) {
@@ -634,10 +709,17 @@ pub fn create_request_with_options(
     }
 
     if let Some(temp) = model_config.temperature {
-        payload
-            .as_object_mut()
-            .unwrap()
-            .insert("temperature".to_string(), json!(temp));
+        if is_claude_opus_47(&model_config.model_name) {
+            tracing::warn!(
+                "Temperature is not supported for {}, omitting configured temperature",
+                model_config.model_name
+            );
+        } else {
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert("temperature".to_string(), json!(temp));
+        }
     }
 
     apply_thinking_config(&mut payload, model_config, max_tokens, options);
@@ -1185,8 +1267,82 @@ mod tests {
         let payload = create_request(&config, "system", &messages, &[])?;
 
         assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(payload["thinking"]["display"], "summarized");
         assert_eq!(payload["output_config"]["effort"], "high");
         assert!(payload.get("budget_tokens").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_adaptive_thinking_for_opus_47_max_effort() -> Result<()> {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut config = cfg_with_effort("claude-opus-4-7", "max");
+        config.max_tokens = Some(4096);
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request(&config, "system", &messages, &[])?;
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(payload["thinking"]["display"], "summarized");
+        assert_eq!(payload["output_config"]["effort"], "max");
+        assert_eq!(payload["max_tokens"], 4096);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_adaptive_thinking_for_opus_47_xhigh_effort() -> Result<()> {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut config = cfg_with_effort("claude-opus-4-7", "xhigh");
+        config.max_tokens = Some(4096);
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request(&config, "system", &messages, &[])?;
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(payload["thinking"]["display"], "summarized");
+        assert_eq!(payload["output_config"]["effort"], "xhigh");
+        assert_eq!(payload["max_tokens"], 4096);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_adaptive_thinking_for_46_xhigh_effort_downgrades() -> Result<()> {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut config = cfg_with_effort("claude-sonnet-4-6", "xhigh");
+        config.max_tokens = Some(4096);
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request(&config, "system", &messages, &[])?;
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(payload["thinking"]["display"], "summarized");
+        assert_eq!(payload["output_config"]["effort"], "high");
+        assert_eq!(payload["max_tokens"], 4096);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_adaptive_effort_omits_unset_default() {
+        assert_eq!(
+            adaptive_effort_value_for_model("claude-opus-4-7", None),
+            None
+        );
+    }
+
+    #[test]
+    fn test_create_request_omits_temperature_for_opus_47() -> Result<()> {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut config = cfg("claude-opus-4-7");
+        config.temperature = Some(0.2);
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request(&config, "system", &messages, &[])?;
+
+        assert!(payload.get("temperature").is_none());
 
         Ok(())
     }
@@ -1230,8 +1386,10 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_preserves_thinking_context_for_compatible_models() -> Result<()> {
+    fn test_create_request_preserves_thinking_context_without_effort_for_compatible_models(
+    ) -> Result<()> {
         let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
             ("CLAUDE_THINKING_TYPE", None::<&str>),
             ("CLAUDE_THINKING_ENABLED", None::<&str>),
             ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
@@ -1272,6 +1430,19 @@ mod tests {
     }
 
     #[test]
+    fn test_thinking_budget_omits_unset_default() {
+        assert_eq!(thinking_budget_tokens_for_values(None, None, None), None);
+    }
+
+    #[test]
+    fn test_preserved_thinking_context_uses_budget_when_effort_unset() {
+        assert_eq!(
+            preserved_thinking_budget_tokens_for_values(None, None, None),
+            DEFAULT_PRESERVED_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
     fn test_create_request_model_params_enable_preserved_thinking_context() -> Result<()> {
         let _guard = env_lock::lock_env([
             ("CLAUDE_THINKING_TYPE", None::<&str>),
@@ -1284,6 +1455,7 @@ mod tests {
 
         let mut params = std::collections::HashMap::new();
         params.insert("preserve_thinking_context".to_string(), json!(true));
+        params.insert("thinking_effort".to_string(), json!("high"));
 
         let mut config = cfg("glm-4.7");
         config.request_params = Some(params);
@@ -1297,6 +1469,47 @@ mod tests {
         assert_eq!(payload["thinking"]["clear_thinking"], false);
         assert_eq!(payload["messages"][0]["content"][0]["type"], "thinking");
         assert_eq!(payload["messages"][0]["content"][0]["thinking"], "internal");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_request_preserves_thinking_context_with_opus_47_adaptive() -> Result<()> {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("CLAUDE_THINKING_TYPE", None::<&str>),
+            ("CLAUDE_THINKING_ENABLED", None::<&str>),
+            ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
+            ("CLAUDE_THINKING_BUDGET", None::<&str>),
+            ("ANTHROPIC_PRESERVE_THINKING_CONTEXT", None::<&str>),
+            ("ANTHROPIC_PRESERVE_UNSIGNED_THINKING", None::<&str>),
+        ]);
+
+        let mut config = cfg_with_effort("claude-opus-4-7", "max");
+        config.max_tokens = Some(4096);
+        let messages = vec![
+            Message::assistant().with_content(MessageContent::thinking("internal", "")),
+            Message::user().with_text("Continue"),
+        ];
+
+        let payload = create_request_with_options(
+            &config,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions {
+                preserve_unsigned_thinking: true,
+                preserve_thinking_context: true,
+            },
+        )?;
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(payload["thinking"]["display"], "summarized");
+        assert_eq!(payload["thinking"]["clear_thinking"], false);
+        assert_eq!(payload["output_config"]["effort"], "max");
+        assert!(payload["thinking"].get("budget_tokens").is_none());
+        assert_eq!(payload["max_tokens"], 4096);
+        assert_eq!(payload["messages"][0]["content"][0]["type"], "thinking");
 
         Ok(())
     }
@@ -1451,6 +1664,10 @@ mod tests {
             thinking_type(&cfg_with_effort("claude-opus-4-6", "high")),
             ThinkingType::Adaptive
         );
+        assert_eq!(
+            thinking_type(&cfg_with_effort("claude-opus-4-7", "max")),
+            ThinkingType::Adaptive
+        );
         // Adaptive model with off → disabled
         assert_eq!(
             thinking_type(&cfg_with_effort("claude-opus-4-6", "off")),
@@ -1476,7 +1693,7 @@ mod tests {
             ("CLAUDE_THINKING_BUDGET", None::<&str>),
         ]);
         let config = cfg_with_effort("claude-3-7-sonnet-20250219", "high");
-        assert_eq!(thinking_budget_tokens(&config), 8192);
+        assert_eq!(thinking_budget_tokens(&config), Some(8192));
     }
 
     #[test]

@@ -26,6 +26,8 @@ import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../prede
 import type { ProviderType, ThinkingEffort } from '../../../../api';
 import { trackModelChanged } from '../../../../utils/analytics';
 
+const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'high';
+
 const i18n = defineMessages({
   thinkingEffortOff: {
     id: 'switchModelModal.thinkingEffortOff',
@@ -50,6 +52,10 @@ const i18n = defineMessages({
   claudeEffortHigh: {
     id: 'switchModelModal.claudeEffortHigh',
     defaultMessage: 'High - Deep reasoning (default)',
+  },
+  claudeEffortXHigh: {
+    id: 'switchModelModal.claudeEffortXHigh',
+    defaultMessage: 'XHigh - Extended coding and agentic work',
   },
   claudeEffortMax: {
     id: 'switchModelModal.claudeEffortMax',
@@ -260,6 +266,7 @@ export const SwitchModelModal = ({
     { value: 'low', label: intl.formatMessage(i18n.claudeEffortLow) },
     { value: 'medium', label: intl.formatMessage(i18n.claudeEffortMedium) },
     { value: 'high', label: intl.formatMessage(i18n.claudeEffortHigh) },
+    { value: 'xhigh', label: intl.formatMessage(i18n.claudeEffortXHigh) },
     { value: 'max', label: intl.formatMessage(i18n.claudeEffortMax) },
   ];
 
@@ -413,12 +420,16 @@ export const SwitchModelModal = ({
       };
 
       if (showThinkingControl) {
-        const effort = thinkingEffort ?? modelObj.request_params?.thinking_effort ?? 'off';
-        modelObj = {
-          ...modelObj,
-          request_params: { ...modelObj.request_params, thinking_effort: effort },
-        };
-        upsert('GOOSE_THINKING_EFFORT', effort, false).catch(console.warn);
+        const effort = (thinkingEffort ??
+          modelObj.request_params?.thinking_effort ??
+          DEFAULT_THINKING_EFFORT) as ThinkingEffort;
+        if (effort) {
+          modelObj = {
+            ...modelObj,
+            request_params: { ...modelObj.request_params, thinking_effort: effort },
+          };
+          upsert('GOOSE_THINKING_EFFORT', effort, false).catch(console.warn);
+        }
       }
 
       const success = await changeModel(sessionId, modelObj);
@@ -704,6 +715,11 @@ export const SwitchModelModal = ({
     }
   };
 
+  const selectedThinkingEffort =
+    thinkingEffort ??
+    (selectedPredefinedModel?.request_params?.thinking_effort as ThinkingEffort | undefined) ??
+    DEFAULT_THINKING_EFFORT;
+
   const thinkingEffortControl = showThinkingControl && (
     <div className="mt-2">
       <label className="text-sm text-textSubtle mb-1 block">
@@ -711,10 +727,10 @@ export const SwitchModelModal = ({
       </label>
       <Select
         options={THINKING_EFFORT_OPTIONS}
-        value={THINKING_EFFORT_OPTIONS.find((o) => o.value === (thinkingEffort ?? 'off'))}
+        value={THINKING_EFFORT_OPTIONS.find((o) => o.value === selectedThinkingEffort) ?? null}
         onChange={(newValue: unknown) => {
           const option = newValue as { value: ThinkingEffort; label: string } | null;
-          setThinkingEffort(option?.value || 'off');
+          setThinkingEffort(option?.value ?? null);
         }}
         placeholder={intl.formatMessage(i18n.selectEffortLevel)}
       />

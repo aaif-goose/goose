@@ -1100,7 +1100,7 @@ config_value!(CURSOR_AGENT_COMMAND, String, "cursor-agent");
 config_value!(CODEX_COMMAND, String, "codex");
 config_value!(CODEX_ENABLE_SKILLS, String, "true");
 config_value!(CODEX_SKIP_GIT_CHECK, String, "false");
-config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
+config_value!(CHATGPT_CODEX_REASONING_EFFORT, String);
 
 config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);

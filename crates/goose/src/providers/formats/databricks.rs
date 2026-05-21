@@ -1,7 +1,7 @@
 use crate::conversation::message::{Message, MessageContent};
 use crate::model::ModelConfig;
 use crate::providers::formats::anthropic::{
-    thinking_budget_tokens, thinking_effort, thinking_type, ThinkingType,
+    adaptive_effort_value, thinking_budget_tokens, thinking_type, ThinkingType,
 };
 use crate::providers::utils::{
     convert_image, detect_image_path, extract_reasoning_effort, is_openai_responses_model,
@@ -247,27 +247,27 @@ fn apply_claude_thinking_config(payload: &mut Value, model_config: &ModelConfig)
     match thinking_type(model_config) {
         ThinkingType::Adaptive => {
             obj.insert("thinking".to_string(), json!({ "type": "adaptive" }));
-            obj.insert(
-                "output_config".to_string(),
-                json!({ "effort": thinking_effort(model_config).to_string() }),
-            );
+            if let Some(effort) = adaptive_effort_value(model_config) {
+                obj.insert("output_config".to_string(), json!({ "effort": effort }));
+            }
             obj.insert(
                 "max_completion_tokens".to_string(),
                 json!(model_config.max_output_tokens()),
             );
         }
         ThinkingType::Enabled => {
-            let budget_tokens = thinking_budget_tokens(model_config);
-            let max_tokens = model_config.max_output_tokens() + budget_tokens;
-            obj.insert("max_tokens".to_string(), json!(max_tokens));
-            obj.insert(
-                "thinking".to_string(),
-                json!({
-                    "type": "enabled",
-                    "budget_tokens": budget_tokens
-                }),
-            );
-            obj.insert("temperature".to_string(), json!(2));
+            if let Some(budget_tokens) = thinking_budget_tokens(model_config) {
+                let max_tokens = model_config.max_output_tokens() + budget_tokens;
+                obj.insert("max_tokens".to_string(), json!(max_tokens));
+                obj.insert(
+                    "thinking".to_string(),
+                    json!({
+                        "type": "enabled",
+                        "budget_tokens": budget_tokens
+                    }),
+                );
+                obj.insert("temperature".to_string(), json!(2));
+            }
         }
         ThinkingType::Disabled => {
             if let Some(temp) = model_config.temperature {
@@ -1124,19 +1124,12 @@ mod tests {
 
     #[test]
     fn test_create_request_reasoning_effort_xhigh() -> anyhow::Result<()> {
-        let model_config = ModelConfig {
-            model_name: "o3-xhigh".to_string(),
-            context_limit: Some(4096),
-            temperature: None,
-            max_tokens: Some(1024),
-            toolshim: false,
-            toolshim_model: None,
-            fast_model_config: None,
-            request_params: None,
-            reasoning: None,
-        };
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut model_config = ModelConfig::new_or_fail("gpt-5.4-xhigh");
+        model_config.max_tokens = Some(1024);
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
-        assert_eq!(request["model"], "o3");
+        assert_eq!(request["model"], "gpt-5.4");
         assert_eq!(request["reasoning_effort"], "xhigh");
         Ok(())
     }
@@ -1219,10 +1212,17 @@ mod tests {
 
     #[test]
     fn test_create_request_enabled_thinking_budget_tracks_effort() -> anyhow::Result<()> {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("ANTHROPIC_THINKING_BUDGET", None::<&str>),
+            ("CLAUDE_THINKING_BUDGET", None::<&str>),
+        ]);
+
         for (effort, expected_budget) in [
             ("low", 4000),
             ("medium", 10000),
             ("high", 16000),
+            ("xhigh", 24000),
             ("max", 32000),
         ] {
             let mut model_config = ModelConfig::new_or_fail("databricks-claude-3-7-sonnet");

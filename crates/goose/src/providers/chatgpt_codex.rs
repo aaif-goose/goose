@@ -209,38 +209,41 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
     Ok(items)
 }
 
-fn get_reasoning_effort(model_name: &str) -> String {
-    let config = crate::config::Config::global();
-    let effort = config
-        .get_chatgpt_codex_reasoning_effort()
-        .map(String::from)
-        .unwrap_or_else(|_| "medium".to_string());
-
+fn configured_reasoning_effort(model_name: &str, config: &crate::config::Config) -> Option<String> {
+    let effort = config.get_chatgpt_codex_reasoning_effort().ok()?;
     let valid_levels = reasoning_levels_for_model(model_name);
+
     if valid_levels.contains(&effort.as_str()) {
-        effort
+        Some(effort)
     } else {
         tracing::warn!(
-            "Invalid CHATGPT_CODEX_REASONING_EFFORT '{}' for model '{}', using 'medium'",
+            "Invalid CHATGPT_CODEX_REASONING_EFFORT '{}' for model '{}', omitting reasoning effort",
             effort,
             model_name
         );
-        "medium".to_string()
+        None
     }
 }
 
 fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
+    reasoning_effort_for_config_with_config(model_config, crate::config::Config::global())
+}
+
+fn reasoning_effort_for_config_with_config(
+    model_config: &ModelConfig,
+    config: &crate::config::Config,
+) -> Option<String> {
     use crate::model::ThinkingEffort;
 
-    model_config
-        .thinking_effort()
-        .map(|effort| {
+    match model_config.thinking_effort() {
+        Some(effort) => {
             let valid_levels = reasoning_levels_for_model(&model_config.model_name);
             let preferred_levels: &[&str] = match effort {
                 ThinkingEffort::Off => return None,
                 ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
                 ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
                 ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
+                ThinkingEffort::XHigh => &["xhigh", "high", "medium", "low"],
                 ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
             };
 
@@ -248,8 +251,9 @@ fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
                 .iter()
                 .find(|level| valid_levels.contains(level))
                 .map(|level| (*level).to_string())
-        })
-        .unwrap_or_else(|| Some(get_reasoning_effort(&model_config.model_name)))
+        }
+        None => configured_reasoning_effort(&model_config.model_name, config),
+    }
 }
 
 fn create_codex_request(
@@ -1240,6 +1244,21 @@ mod tests {
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert!(payload.get("reasoning").is_none());
         assert!(payload.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn test_create_codex_request_omits_reasoning_when_effort_unset() {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_THINKING_EFFORT", None::<&str>),
+            ("CHATGPT_CODEX_REASONING_EFFORT", None::<&str>),
+        ]);
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let empty_config =
+            crate::config::Config::new_with_file_secrets(config_file.path(), secrets_file.path())
+                .unwrap();
+
+        assert!(configured_reasoning_effort("gpt-5.2-codex", &empty_config).is_none());
     }
 
     #[test_case(

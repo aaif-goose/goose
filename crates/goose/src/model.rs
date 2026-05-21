@@ -17,6 +17,7 @@ pub enum ThinkingEffort {
     Low,
     Medium,
     High,
+    XHigh,
     Max,
 }
 
@@ -28,7 +29,8 @@ impl FromStr for ThinkingEffort {
             "low" => Ok(Self::Low),
             "medium" | "med" => Ok(Self::Medium),
             "high" => Ok(Self::High),
-            "max" | "xhigh" => Ok(Self::Max),
+            "xhigh" => Ok(Self::XHigh),
+            "max" => Ok(Self::Max),
             other => Err(format!("unknown thinking effort: '{other}'")),
         }
     }
@@ -41,6 +43,7 @@ impl fmt::Display for ThinkingEffort {
             Self::Low => write!(f, "low"),
             Self::Medium => write!(f, "medium"),
             Self::High => write!(f, "high"),
+            Self::XHigh => write!(f, "xhigh"),
             Self::Max => write!(f, "max"),
         }
     }
@@ -445,7 +448,7 @@ impl ModelConfig {
             "low" => ThinkingEffort::Low,
             "medium" => ThinkingEffort::Medium,
             "high" => ThinkingEffort::High,
-            "xhigh" => ThinkingEffort::Max,
+            "xhigh" => ThinkingEffort::XHigh,
             _ => return,
         };
         self.model_name = parts[..parts.len() - 1].join("-");
@@ -794,7 +797,7 @@ mod tests {
             ]);
             let config = ModelConfig::new("gpt-5.4-xhigh").unwrap();
             assert_eq!(config.model_name, "gpt-5.4");
-            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Max));
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::XHigh));
         }
 
         #[test]
@@ -857,7 +860,7 @@ mod tests {
             );
             assert_eq!("med".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Medium));
             assert_eq!("max".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
-            assert_eq!("xhigh".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
+            assert_eq!("xhigh".parse::<ThinkingEffort>(), Ok(ThinkingEffort::XHigh));
             assert!("invalid".parse::<ThinkingEffort>().is_err());
         }
     }

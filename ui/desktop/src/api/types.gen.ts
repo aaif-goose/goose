@@ -1502,7 +1502,7 @@ export type ThinkingContent = {
     thinking: string;
 };
 
-export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'max';
+export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export type TokenState = {
     accumulatedCost?: number | null;
