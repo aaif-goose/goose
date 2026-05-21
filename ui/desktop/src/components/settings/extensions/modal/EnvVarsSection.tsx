@@ -42,7 +42,10 @@ interface EnvVarsSectionProps {
   onRemove: (index: number) => void;
   onChange: (index: number, field: 'key' | 'value', value: string) => void;
   submitAttempted: boolean;
-  onPendingInputChange?: (hasPendingInput: boolean) => void;
+  onPendingInputChange: (
+    hasPendingInput: boolean,
+    pendingEnvVar: { key: string; value: string } | null
+  ) => void;
 }
 
 export default function EnvVarsSection({
@@ -65,7 +68,9 @@ export default function EnvVarsSection({
   // Notify parent when pending input changes
   React.useEffect(() => {
     const hasPendingInput = newKey.trim() !== '' || newValue.trim() !== '';
-    onPendingInputChange?.(hasPendingInput);
+    const pendingEnvVar =
+      newKey.trim() && newValue.trim() ? { key: newKey, value: newValue } : null;
+    onPendingInputChange(hasPendingInput, pendingEnvVar);
   }, [newKey, newValue, onPendingInputChange]);
 
   const handleAdd = () => {
