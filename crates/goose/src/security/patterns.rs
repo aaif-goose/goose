@@ -300,7 +300,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "password_cracking_tools",
-        pattern: r"\b(john|hashcat|hydra|medusa|brutespray)\b",
+        pattern: r"\bjohn\s+--[a-z]|\b(hashcat|hydra|medusa|brutespray)\b",
         description: "Password cracking tools",
         risk_level: RiskLevel::High,
         category: ThreatCategory::PrivilegeEscalation,
@@ -462,6 +462,34 @@ mod tests {
         assert!(!matches(pat, "rm -v ~"));
         assert!(!matches(pat, "rm -- ~"));
         assert!(!matches(pat, "rm ~"));
+    }
+
+    #[test]
+    fn password_cracking_tools_matches_real_invocations() {
+        let pat = "password_cracking_tools";
+        assert!(matches(
+            pat,
+            "john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt"
+        ));
+        assert!(matches(pat, "/usr/sbin/john --format=raw-md5 hashes.txt"));
+        assert!(matches(pat, "john --rules --incremental hash.txt"));
+        assert!(matches(pat, "hashcat -m 1000 -a 0 hash.txt wordlist.txt"));
+        assert!(matches(pat, "hydra -l admin -P passwords.txt ssh://target"));
+        assert!(matches(
+            pat,
+            "medusa -h target -u admin -P wordlist.txt -M ssh"
+        ));
+    }
+
+    #[test]
+    fn password_cracking_tools_no_false_positives_on_name_john() {
+        let pat = "password_cracking_tools";
+        assert!(!matches(pat, "# DS_PLATFORM -> John's integration type"));
+        assert!(!matches(pat, "git log --author=John"));
+        assert!(!matches(pat, "echo \"Hello John\""));
+        assert!(!matches(pat, "grep -r \"john.doe@company.com\" ."));
+        assert!(!matches(pat, "mkdir -p /home/john"));
+        assert!(!matches(pat, "cat /tmp/john_report.csv"));
     }
 
     #[test]
