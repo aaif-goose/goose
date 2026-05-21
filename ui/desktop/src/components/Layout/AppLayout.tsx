@@ -14,10 +14,6 @@ import { cn } from '../../utils';
 import { UserInput } from '../../types/message';
 
 const i18n = defineMessages({
-  closeNavigation: {
-    id: 'appLayout.closeNavigation',
-    defaultMessage: 'Close navigation',
-  },
   openNavigation: {
     id: 'appLayout.openNavigation',
     defaultMessage: 'Open navigation',
@@ -67,25 +63,24 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
 
   return (
     <div className="flex flex-1 w-full h-full relative animate-fade-in bg-background-secondary flex-row">
-      {/* Header controls (menu toggle) */}
-      <div
-        style={{ zIndex: Z_INDEX.HEADER }}
-        className={cn('absolute flex items-center gap-1', headerPadding, headerTop, 'ml-1.5')}
-      >
-        <Button
-          onClick={() => setIsNavExpanded(!isNavExpanded)}
-          className="no-drag hover:!bg-background-tertiary"
-          variant="ghost"
-          size="xs"
-          title={
-            isNavExpanded
-              ? intl.formatMessage(i18n.closeNavigation)
-              : intl.formatMessage(i18n.openNavigation)
-          }
+      {/* Floating menu toggle — only when sidebar is collapsed. When expanded,
+          the sidebar's own header has the collapse button. */}
+      {!isNavExpanded && (
+        <div
+          style={{ zIndex: Z_INDEX.HEADER }}
+          className={cn('absolute flex items-center gap-1', headerPadding, headerTop, 'ml-1.5')}
         >
-          <Menu className="w-5 h-5" />
-        </Button>
-      </div>
+          <Button
+            onClick={() => setIsNavExpanded(true)}
+            className="no-drag hover:!bg-background-tertiary"
+            variant="ghost"
+            size="xs"
+            title={intl.formatMessage(i18n.openNavigation)}
+          >
+            <Menu className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
 
       {/* Main content with navigation */}
       <div className="flex flex-1 w-full h-full min-h-0 p-[2px] flex-row">

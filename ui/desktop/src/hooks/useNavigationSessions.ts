@@ -9,7 +9,7 @@ import { getInitialWorkingDir } from '../utils/workingDir';
 import { AppEvents } from '../constants/events';
 import type { Session } from '../api';
 
-const MAX_RECENT_SESSIONS = 5;
+const MAX_RECENT_SESSIONS = 25;
 
 interface UseNavigationSessionsOptions {
   onNavigate?: () => void;

@@ -11,9 +11,6 @@
   "announcementModal.gotIt": {
     "defaultMessage": "Got it!"
   },
-  "appLayout.closeNavigation": {
-    "defaultMessage": "Close navigation"
-  },
   "appLayout.openNavigation": {
     "defaultMessage": "Open navigation"
   },
@@ -118,24 +115,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose finished the task."
-  },
-  "chatHistorySearch.keyboardHintMac": {
-    "defaultMessage": "⌘K"
-  },
-  "chatHistorySearch.keyboardHintOther": {
-    "defaultMessage": "Ctrl+K"
-  },
-  "chatHistorySearch.messageCount": {
-    "defaultMessage": "{count,plural,one{# message} other{# messages}}"
-  },
-  "chatHistorySearch.noResults": {
-    "defaultMessage": "No chats found"
-  },
-  "chatHistorySearch.searchError": {
-    "defaultMessage": "Search failed"
-  },
-  "chatHistorySearch.searchPlaceholder": {
-    "defaultMessage": "Search chats…"
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
@@ -2396,9 +2375,6 @@
   "navigation.itemApps": {
     "defaultMessage": "Apps"
   },
-  "navigation.itemChat": {
-    "defaultMessage": "Chat"
-  },
   "navigation.itemExtensions": {
     "defaultMessage": "Extensions"
   },
@@ -2417,8 +2393,23 @@
   "navigation.itemSkills": {
     "defaultMessage": "Skills"
   },
+  "navigationPanel.chats": {
+    "defaultMessage": "Chats"
+  },
+  "navigationPanel.collapseSidebar": {
+    "defaultMessage": "Collapse sidebar"
+  },
   "navigationPanel.newChat": {
-    "defaultMessage": "New Chat"
+    "defaultMessage": "New chat"
+  },
+  "navigationPanel.noChats": {
+    "defaultMessage": "No recent chats"
+  },
+  "navigationPanel.searchPlaceholder": {
+    "defaultMessage": "Search chats…"
+  },
+  "navigationPanel.untitledSession": {
+    "defaultMessage": "Untitled session"
   },
   "onboardingGuard.checkProviderErrorDescription": {
     "defaultMessage": "The server may be starting up or temporarily unavailable."
@@ -3979,15 +3970,6 @@
   },
   "sessionsInsights.totalTokens": {
     "defaultMessage": "Total tokens"
-  },
-  "sessionsList.showAll": {
-    "defaultMessage": "Show All"
-  },
-  "sessionsList.startNewChat": {
-    "defaultMessage": "Start New Chat"
-  },
-  "sessionsList.untitledSession": {
-    "defaultMessage": "Untitled session"
   },
   "sessionsView.error.failedToLoad": {
     "defaultMessage": "Failed to load session details. Please try again later."

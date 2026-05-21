@@ -11,9 +11,6 @@
   "announcementModal.gotIt": {
     "defaultMessage": "知道了！"
   },
-  "appLayout.closeNavigation": {
-    "defaultMessage": "收起导航"
-  },
   "appLayout.openNavigation": {
     "defaultMessage": "展开导航"
   },
@@ -2336,9 +2333,6 @@
   "navigation.itemApps": {
     "defaultMessage": "应用"
   },
-  "navigation.itemChat": {
-    "defaultMessage": "聊天"
-  },
   "navigation.itemExtensions": {
     "defaultMessage": "扩展"
   },
@@ -3880,15 +3874,6 @@
   },
   "sessionsInsights.totalTokens": {
     "defaultMessage": "令牌总数"
-  },
-  "sessionsList.showAll": {
-    "defaultMessage": "显示全部"
-  },
-  "sessionsList.startNewChat": {
-    "defaultMessage": "开始新聊天"
-  },
-  "sessionsList.untitledSession": {
-    "defaultMessage": "未命名会话"
   },
   "sessionsView.error.failedToLoad": {
     "defaultMessage": "加载会话详情失败，请稍后重试。"
