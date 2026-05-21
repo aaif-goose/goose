@@ -1,0 +1,43 @@
+{
+  "name": "nearai",
+  "engine": "openai",
+  "display_name": "NEAR AI Cloud",
+  "description": "TEE-backed private inference through NEAR AI Cloud's OpenAI-compatible API.",
+  "api_key_env": "NEARAI_API_KEY",
+  "base_url": "https://cloud-api.near.ai/v1",
+  "catalog_provider_id": "nearai",
+  "dynamic_models": true,
+  "models": [
+    {
+      "name": "zai-org/GLM-5.1-FP8",
+      "context_limit": 202752,
+      "reasoning": true
+    },
+    {
+      "name": "Qwen/Qwen3.6-35B-A3B-FP8",
+      "context_limit": 262144,
+      "reasoning": true
+    },
+    {
+      "name": "Qwen/Qwen3.5-122B-A10B",
+      "context_limit": 131072,
+      "reasoning": true
+    },
+    {
+      "name": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+      "context_limit": 256000
+    },
+    {
+      "name": "google/gemma-4-31B-it",
+      "context_limit": 262144
+    }
+  ],
+  "preserves_thinking": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://docs.near.ai/",
+  "setup_steps": [
+    "Create or sign in to your NEAR AI Cloud account at https://cloud.near.ai",
+    "Create an API key",
+    "Copy the key and paste it above"
+  ]
+}
