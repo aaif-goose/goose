@@ -402,11 +402,21 @@ export function AppInner() {
       });
     };
 
+    const handleSessionDeleted = (event: Event) => {
+      const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
+
+      setActiveSessions((prev) => {
+        return prev.filter((session) => session.sessionId !== sessionId);
+      });
+    };
+
     window.addEventListener(AppEvents.ADD_ACTIVE_SESSION, handleAddActiveSession);
     window.addEventListener(AppEvents.CLEAR_INITIAL_MESSAGE, handleClearInitialMessage);
+    window.addEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
     return () => {
       window.removeEventListener(AppEvents.ADD_ACTIVE_SESSION, handleAddActiveSession);
       window.removeEventListener(AppEvents.CLEAR_INITIAL_MESSAGE, handleClearInitialMessage);
+      window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
     };
   }, []);
 

@@ -56,6 +56,7 @@ import { getTunnelStatus } from '../../api/sdk.gen';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
 import { shouldShowNewChatTitle } from '../../sessions';
+import { clearSessionCache } from '../../hooks/useChatStream';
 import { DEFAULT_CHAT_TITLE } from '../../contexts/ChatContext';
 
 const i18n = defineMessages({
@@ -553,6 +554,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         window.dispatchEvent(
           new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: sessionToDeleteId } })
         );
+        clearSessionCache(sessionToDeleteId);
       } catch (error) {
         console.error('Error deleting session:', error);
         toast.error(intl.formatMessage(i18n.deleteFailed, { name: sessionName, error: errorMessage(error, 'Unknown error') }));

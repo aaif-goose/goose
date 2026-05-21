@@ -32,6 +32,10 @@ import { useSessionEvents, type SessionEvent } from './useSessionEvents';
 
 const resultsCache = new Map<string, { messages: Message[]; session: Session }>();
 
+export function clearSessionCache(sessionId: string): void {
+  resultsCache.delete(sessionId);
+}
+
 interface UseChatStreamProps {
   sessionId: string;
   onStreamFinish: () => void;
