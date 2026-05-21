@@ -28,6 +28,24 @@ use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "code_execution";
 
+/// Append goose-specific context-hygiene advice to the upstream
+/// `pctx_code_mode` tool descriptions. The upstream descriptions push the
+/// model toward bundling many sub-tool calls into one execute and returning a
+/// single fat `{ a, b, c }` object — which is great for round-trip count but
+/// terrible for context if any one field is large.
+fn with_goose_context_advice(upstream_desc: &str) -> String {
+    let advice = "\n\nCONTEXT HYGIENE (goose):\n\
+        - Batch operations whose return values are individually small (under ≈5 KB each). \
+        If any bundled field is likely to be larger than that, call that tool on its own \
+        instead so it can be inspected or discarded without dragging the small fields with it.\n\
+        - Return only the fields you actually need. Do not include whole file bodies, full \
+        directory listings, or large logs unless they will be used in the next step.\n\
+        - Prefer narrow reads: pass `line`/`limit` when calling file-read tools, pipe to \
+        `head`/`tail`/`grep`/`wc -l` in shells, and avoid `cat <big-file>` when you only need \
+        a region. Large tool results stay in the conversation forever and crowd out reasoning.";
+    format!("{upstream_desc}{advice}")
+}
+
 pub struct CodeExecutionClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
@@ -379,7 +397,7 @@ impl McpClientTrait for CodeExecutionClient {
                     )),
                     McpTool::new(
                         "execute_typescript".to_string(),
-                        tool_descriptions::EXECUTE_TYPESCRIPT_CATALOG.to_string(),
+                        with_goose_context_advice(tool_descriptions::EXECUTE_TYPESCRIPT_CATALOG),
                         schema::<ExecuteWithToolGraph>(),
                     )
                     .annotate(ToolAnnotations::from_raw(
@@ -407,7 +425,7 @@ impl McpClientTrait for CodeExecutionClient {
                     )),
                     McpTool::new(
                         "execute_typescript".to_string(),
-                        tool_descriptions::EXECUTE_TYPESCRIPT_FILESYSTEM.to_string(),
+                        with_goose_context_advice(tool_descriptions::EXECUTE_TYPESCRIPT_FILESYSTEM),
                         schema::<ExecuteWithToolGraph>(),
                     )
                     .annotate(ToolAnnotations::from_raw(
@@ -422,7 +440,7 @@ impl McpClientTrait for CodeExecutionClient {
             ToolDisclosure::Sidecar => {
                 vec![McpTool::new(
                     "execute_typescript".to_string(),
-                    tool_descriptions::EXECUTE_TYPESCRIPT_SIDECAR.to_string(),
+                    with_goose_context_advice(tool_descriptions::EXECUTE_TYPESCRIPT_SIDECAR),
                     schema::<ExecuteWithToolGraph>(),
                 )
                 .annotate(ToolAnnotations::from_raw(
@@ -552,5 +570,20 @@ impl CodeModeState {
             s.hash(&mut hasher);
         }
         hasher.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_hygiene_advice_is_appended_to_upstream_desc() {
+        let upstream = "Execute TypeScript code with access to registered SDK functions.";
+        let combined = with_goose_context_advice(upstream);
+        assert!(combined.starts_with(upstream), "must keep upstream prefix");
+        assert!(combined.contains("CONTEXT HYGIENE (goose):"));
+        assert!(combined.contains("individually small"));
+        assert!(combined.contains("Return only the fields you actually need"));
     }
 }

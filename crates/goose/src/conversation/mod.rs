@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use thiserror::Error;
 use utoipa::ToSchema;
 
+pub mod dedup;
 pub mod message;
 mod tool_result_serde;
 

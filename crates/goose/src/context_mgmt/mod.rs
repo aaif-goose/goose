@@ -27,23 +27,108 @@ fn tool_pair_summarization_enabled() -> bool {
 }
 
 const CONVERSATION_CONTINUATION_TEXT: &str =
-    "Your context was compacted. The previous message contains a summary of the conversation so far.
-Do not mention that you read a summary or that conversation summarization occurred.
-Just continue the conversation naturally based on the summarized context.";
+    "The previous message is a structured summary of an earlier portion of this session that no \
+longer fits in your context. The original messages are gone; the summary is your only memory of \
+them. Treat the summary as authoritative for what it covers, but if the user asks about \
+something specific that is not in the summary, say so plainly and ask rather than guess. \
+Continue the session.";
 
 const TOOL_LOOP_CONTINUATION_TEXT: &str =
-    "Your context was compacted. The previous message contains a summary of the conversation so far.
-Do not mention that you read a summary or that conversation summarization occurred.
-Continue calling tools as necessary to complete the task.";
+    "The previous message is a structured summary of an earlier portion of this session that no \
+longer fits in your context. The original messages and tool outputs are gone; the summary is \
+your only memory of them. Treat the summary as authoritative for what it covers; if a tool \
+result you need is not in the summary, re-run the tool rather than guess. Continue calling \
+tools as necessary to complete the task.";
 
 const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
-    "Your context was compacted at the user's request. The previous message contains a summary of the conversation so far.
-Do not mention that you read a summary or that conversation summarization occurred.
-Just continue the conversation naturally based on the summarized context.";
+    "The previous message is a structured summary of the session so far, produced at the user's \
+request because the context was getting long. The original messages are gone; the summary is \
+your only memory of them. Treat the summary as authoritative for what it covers, but if the \
+user asks about specifics that are not in the summary, say so plainly and ask rather than \
+guess. Continue the session.";
 
 #[derive(Serialize)]
 struct SummarizeContext {
     messages: String,
+    /// Newline-separated list of files the agent has read in this session.
+    /// Empty string => template skips the block.
+    read_files: String,
+    /// Newline-separated list of files the agent has modified in this session.
+    /// Empty string => template skips the block.
+    modified_files: String,
+}
+
+/// Tools whose `path` argument indicates a *read* of that file.
+const READ_TOOLS: &[&str] = &[
+    "read",
+    "developer__read",
+    "file_read",
+    "view",
+    "text_editor",
+];
+
+/// Tools whose `path` argument indicates a *write/edit* of that file.
+const WRITE_TOOLS: &[&str] = &[
+    "write",
+    "edit",
+    "developer__write",
+    "developer__edit",
+    "file_write",
+    "file_edit",
+    "str_replace_editor",
+];
+
+/// Walk the message history and collect (read_files, modified_files) by
+/// inspecting tool_request arguments. Paths are deduplicated while preserving
+/// first-seen order. Tool names are matched case-sensitively against
+/// [`READ_TOOLS`] / [`WRITE_TOOLS`], or against the suffix after the last
+/// `__` so namespaced names (e.g. `developer__read`) also match.
+pub fn extract_file_history(messages: &[Message]) -> (Vec<String>, Vec<String>) {
+    fn tool_basename(name: &str) -> &str {
+        name.rsplit_once("__").map(|(_, t)| t).unwrap_or(name)
+    }
+    fn extract_path(args: &serde_json::Value) -> Option<String> {
+        args.get("path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    }
+    let mut reads: Vec<String> = Vec::new();
+    let mut writes: Vec<String> = Vec::new();
+    let mut read_set: std::collections::HashSet<String> = Default::default();
+    let mut write_set: std::collections::HashSet<String> = Default::default();
+
+    for msg in messages {
+        for content in &msg.content {
+            let MessageContent::ToolRequest(req) = content else {
+                continue;
+            };
+            let Ok(call) = &req.tool_call else { continue };
+            let name_full = call.name.as_ref();
+            let name_short = tool_basename(name_full);
+            let args_json = call
+                .arguments
+                .as_ref()
+                .map(|m| serde_json::Value::Object(m.clone()));
+            let path = match args_json.as_ref().and_then(extract_path) {
+                Some(p) => p,
+                None => continue,
+            };
+            let is_read = READ_TOOLS
+                .iter()
+                .any(|t| *t == name_full || *t == name_short);
+            let is_write = WRITE_TOOLS
+                .iter()
+                .any(|t| *t == name_full || *t == name_short);
+            if is_write {
+                if write_set.insert(path.clone()) {
+                    writes.push(path);
+                }
+            } else if is_read && read_set.insert(path.clone()) {
+                reads.push(path);
+            }
+        }
+    }
+    (reads, writes)
 }
 
 /// Compact messages by summarizing them
@@ -302,8 +387,11 @@ async fn do_compact(
             .collect::<Vec<_>>()
             .join("\n");
 
+        let (read_files, modified_files) = extract_file_history(&agent_visible_messages);
         let context = SummarizeContext {
             messages: messages_text,
+            read_files: read_files.join("\n"),
+            modified_files: modified_files.join("\n"),
         };
 
         let system_prompt = render_template("compaction.md", &context)?;
@@ -806,5 +894,68 @@ mod tests {
         let result = tool_ids_to_summarize(&conversation, 2, 7);
         assert_eq!(result.len(), TOOLCALL_SUMMARIZATION_BATCH_SIZE);
         assert_eq!(result[0], "call0");
+    }
+
+    fn mk_tool_request(name: &str, args: serde_json::Value) -> Message {
+        let mut params = CallToolRequestParams::new(name.to_string());
+        if let Some(obj) = args.as_object() {
+            params = params.with_arguments(obj.clone());
+        }
+        Message::assistant().with_tool_request(format!("{name}-id"), Ok(params))
+    }
+
+    #[test]
+    fn test_extract_file_history_picks_up_read_write_edit() {
+        let messages = vec![
+            mk_tool_request("read", serde_json::json!({ "path": "/a/b.txt" })),
+            mk_tool_request("write", serde_json::json!({ "path": "/c/d.txt" })),
+            mk_tool_request("edit", serde_json::json!({ "path": "/c/d.txt" })),
+            mk_tool_request("developer__read", serde_json::json!({ "path": "/e/f.txt" })),
+        ];
+        let (reads, writes) = extract_file_history(&messages);
+        assert_eq!(reads, vec!["/a/b.txt".to_string(), "/e/f.txt".to_string()]);
+        assert_eq!(writes, vec!["/c/d.txt".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_file_history_dedups_within_category() {
+        let messages = vec![
+            mk_tool_request("read", serde_json::json!({ "path": "/a.txt" })),
+            mk_tool_request("read", serde_json::json!({ "path": "/a.txt" })),
+            mk_tool_request("read", serde_json::json!({ "path": "/b.txt" })),
+        ];
+        let (reads, writes) = extract_file_history(&messages);
+        assert_eq!(reads, vec!["/a.txt".to_string(), "/b.txt".to_string()]);
+        assert!(writes.is_empty());
+    }
+
+    #[test]
+    fn test_extract_file_history_ignores_unrelated_tools() {
+        let messages = vec![
+            mk_tool_request("shell", serde_json::json!({ "command": "ls" })),
+            mk_tool_request("tree", serde_json::json!({ "path": "/d" })),
+        ];
+        let (reads, writes) = extract_file_history(&messages);
+        assert!(reads.is_empty());
+        assert!(writes.is_empty());
+    }
+
+    #[test]
+    fn test_continuation_prompts_acknowledge_summary() {
+        // The continuation prompts must tell the model it is operating on a
+        // summary (so it can admit gaps) rather than asking it to hide that
+        // fact (which encourages confabulation).
+        for text in [
+            CONVERSATION_CONTINUATION_TEXT,
+            TOOL_LOOP_CONTINUATION_TEXT,
+            MANUAL_COMPACT_CONTINUATION_TEXT,
+        ] {
+            assert!(text.contains("summary"), "prompt: {text}");
+            // Should not instruct the model to hide the summarization.
+            assert!(
+                !text.contains("Do not mention"),
+                "prompt should not tell the model to hide the summary: {text}"
+            );
+        }
     }
 }

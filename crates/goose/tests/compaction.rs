@@ -37,7 +37,8 @@ impl MockCompactionProvider {
         let is_compaction_call = messages.len() == 1
             && messages[0].content.iter().any(|c| {
                 if let MessageContent::Text(text) = c {
-                    text.text.to_lowercase().contains("summarize")
+                    let lower = text.text.to_lowercase();
+                    lower.contains("summarize") || lower.contains("summary")
                 } else {
                     false
                 }
@@ -106,11 +107,12 @@ impl Provider for MockCompactionProvider {
         messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        // Check if this is a compaction call (message contains "summarize")
+        // Check if this is a compaction call (message text mentions summarize/summary)
         let is_compaction = messages.iter().any(|msg| {
             msg.content.iter().any(|content| {
                 if let MessageContent::Text(text) = content {
-                    text.text.to_lowercase().contains("summarize")
+                    let lower = text.text.to_lowercase();
+                    lower.contains("summarize") || lower.contains("summary")
                 } else {
                     false
                 }
@@ -297,8 +299,8 @@ fn assert_conversation_compacted(conversation: &Conversation) {
         // Continuation message should contain instructions about not mentioning summary
         let has_continuation_text = continuation_msg.content.iter().any(|content| {
             if let MessageContent::Text(text) = content {
-                text.text.contains("previous message contains a summary")
-                    || text.text.contains("summarization occurred")
+                let lower = text.text.to_lowercase();
+                lower.contains("summary") || lower.contains("summariz")
             } else {
                 false
             }

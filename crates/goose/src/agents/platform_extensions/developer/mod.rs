@@ -7,7 +7,7 @@ use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
-use edit::{EditTools, FileEditParams, FileWriteParams};
+use edit::{EditTools, FileEditParams, FileReadParams, FileWriteParams};
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
@@ -41,8 +41,9 @@ fn developer_instructions() -> &'static str {
 
             For editing software, prefer the flow of using tree to understand the codebase structure
             and file sizes. When you need to search, prefer findstr or Select-String (via shell).
-            Then use type or Get-Content to gather the context you need, always reading before
-            editing. Use write and edit to efficiently make changes. Test and verify as appropriate.
+            Use the `read` tool (with `line`/`limit` for large files) to fetch file contents — it's
+            cheaper than spawning a shell. Always read before editing. Use write and edit to
+            efficiently make changes. Test and verify as appropriate.
         "}
     } else {
         indoc! {"
@@ -55,8 +56,9 @@ fn developer_instructions() -> &'static str {
 
             For editing software, prefer the flow of using tree to understand the codebase structure
             and file sizes. When you need to search, prefer rg which correctly respects gitignored
-            content. Then use cat or sed to gather the context you need, always reading before editing.
-            Use write and edit to efficiently make changes. Test and verify as appropriate.
+            content. Use the `read` tool (with `line`/`limit` for large files) to fetch file contents
+            — it's cheaper than spawning `cat`/`sed`. Always read before editing. Use write and
+            edit to efficiently make changes. Test and verify as appropriate.
 
             When running Python scripts or commands, always use `python3` instead of `python`.
         "}
@@ -96,6 +98,18 @@ impl DeveloperClient {
 
     pub(crate) fn get_tools() -> Vec<Tool> {
         vec![
+            Tool::new(
+                "read".to_string(),
+                "Read a text file from disk. Returns the file body. By default returns at most 2000 lines starting from line 1; pass `line` and/or `limit` to fetch a different window. Prefer narrow ranges — large reads waste context.".to_string(),
+                Self::schema::<FileReadParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Read".to_string()),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false),
+            )),
             Tool::new(
                 "write".to_string(),
                 "Create a new file or overwrite an existing file. Creates parent directories if needed.".to_string(),
@@ -184,6 +198,13 @@ impl McpClientTrait for DeveloperClient {
                 Ok(params) => Ok(self.shell_tool.shell_with_cwd(params, working_dir).await),
                 Err(error) => Ok(ShellTool::error_result(&format!("Error: {error}"), None)),
             },
+            "read" => match Self::parse_args::<FileReadParams>(arguments) {
+                Ok(params) => Ok(self.edit_tools.file_read_with_cwd(params, working_dir)),
+                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Error: {error}"
+                ))
+                .with_priority(0.0)])),
+            },
             "write" => match Self::parse_args::<FileWriteParams>(arguments) {
                 Ok(params) => Ok(self.edit_tools.file_write_with_cwd(params, working_dir)),
                 Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
@@ -232,7 +253,7 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
 
-        assert_eq!(names, vec!["write", "edit", "shell", "tree"]);
+        assert_eq!(names, vec!["read", "write", "edit", "shell", "tree"]);
     }
 
     fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {

@@ -7,6 +7,10 @@ use serde::Deserialize;
 
 const NO_MATCH_PREVIEW_LINES: usize = 20;
 
+/// Default line cap for `file_read` when the caller passes no `limit`. Mirrors
+/// pi's `read` default. The model can pass an explicit `limit` to override.
+pub const DEFAULT_FILE_READ_LIMIT: u32 = 2000;
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FileReadParams {
     /// Absolute path to the file to read.
@@ -47,8 +51,32 @@ impl EditTools {
 
         match fs::read_to_string(&path) {
             Ok(content) => {
-                let content = apply_line_limit(&content, params.line, params.limit);
-                CallToolResult::success(vec![Content::text(content).with_priority(0.0)])
+                // If the model didn't pass a limit, apply the default cap so
+                // huge files don't dump megabytes into context. The marker
+                // tells the model how to fetch more if it needs it.
+                let effective_limit = params.limit.or(Some(DEFAULT_FILE_READ_LIMIT));
+                let body = apply_line_limit(&content, params.line, effective_limit);
+                let total_lines = content.lines().count() as u32;
+                let start_line = params.line.unwrap_or(1);
+                let end_line = start_line
+                    .saturating_add(effective_limit.unwrap_or(0).saturating_sub(1))
+                    .min(total_lines);
+                let was_truncated = end_line < total_lines || start_line > 1;
+                let text = if was_truncated {
+                    let omitted =
+                        total_lines.saturating_sub(end_line) + start_line.saturating_sub(1);
+                    format!(
+                        "{body}\n[goose: showing lines {start}-{end} of {total} ({omitted} more lines not shown). \
+Pass `line` and/or `limit` to read a different range.]",
+                        start = start_line,
+                        end = end_line,
+                        total = total_lines,
+                        omitted = omitted,
+                    )
+                } else {
+                    body
+                };
+                CallToolResult::success(vec![Content::text(text).with_priority(0.0)])
             }
             Err(error) => CallToolResult::error(vec![Content::text(format!(
                 "Failed to read {}: {}",
@@ -310,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn test_file_read() {
+    fn test_file_read_small_file_no_truncation_marker() {
         let dir = setup();
         let path = dir.path().join("read.txt");
         fs::write(&path, "line1\nline2\nline3").unwrap();
@@ -326,11 +354,12 @@ mod tests {
         );
 
         assert!(!result.is_error.unwrap_or(false));
+        // File fits within the default 2000-line cap, so no marker.
         assert_eq!(extract_text(&result), "line1\nline2\nline3");
     }
 
     #[test]
-    fn test_file_read_partial() {
+    fn test_file_read_partial_emits_marker() {
         let dir = setup();
         let path = dir.path().join("read.txt");
         fs::write(&path, "line1\nline2\nline3").unwrap();
@@ -346,7 +375,35 @@ mod tests {
         );
 
         assert!(!result.is_error.unwrap_or(false));
-        assert_eq!(extract_text(&result), "line2\n");
+        let text = extract_text(&result);
+        assert!(text.starts_with("line2\n"), "body: {text}");
+        assert!(text.contains("[goose: showing lines 2-2 of 3"));
+        assert!(text.contains("2 more lines not shown"));
+    }
+
+    #[test]
+    fn test_file_read_default_cap_truncates_huge_file() {
+        let dir = setup();
+        let path = dir.path().join("big.txt");
+        let big: String = (1..=5000).map(|i| format!("line{i}\n")).collect();
+        fs::write(&path, &big).unwrap();
+        let tools = EditTools::new();
+
+        let result = tools.file_read_with_cwd(
+            FileReadParams {
+                path: path.to_string_lossy().to_string(),
+                line: None,
+                limit: None,
+            },
+            None,
+        );
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        // Should have stopped around line 2000 and emitted a marker.
+        assert!(text.contains("line2000\n"));
+        assert!(!text.contains("line2001\n"), "should not include line 2001");
+        assert!(text.contains("[goose: showing lines 1-2000 of 5000"));
+        assert!(text.contains("3000 more lines not shown"));
     }
 
     #[test]
