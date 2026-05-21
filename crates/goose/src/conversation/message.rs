@@ -1,5 +1,5 @@
 use crate::conversation::tool_result_serde;
-use crate::mcp_utils::{extract_text_from_resource, ToolResult};
+use crate::mcp_utils::{ToolResult, extract_text_from_resource};
 use crate::utils::sanitize_unicode_tags;
 use chrono::Utc;
 use rmcp::model::{
@@ -377,7 +377,13 @@ impl MessageContent {
                     metadata: res.metadata.clone(),
                 }))
             }
-            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => None,
+            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => {
+                if audience == Role::Assistant {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
             _ => Some(self.clone()),
         }
     }
@@ -1225,6 +1231,25 @@ mod tests {
         };
         assert_eq!(thinking.thinking, "step by step");
         assert!(thinking.signature.is_empty());
+    }
+
+    #[test]
+    fn test_agent_visible_content_preserves_thinking_for_provider() {
+        let message = Message::assistant()
+            .with_thinking("internal reasoning", "sig")
+            .with_redacted_thinking("redacted")
+            .with_text("final answer");
+
+        let provider_message = message.agent_visible_content();
+        assert_eq!(provider_message.content.len(), 3);
+        assert!(matches!(
+            provider_message.content[0],
+            MessageContent::Thinking(_)
+        ));
+        assert!(matches!(
+            provider_message.content[1],
+            MessageContent::RedactedThinking(_)
+        ));
     }
 
     #[test]
