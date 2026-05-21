@@ -511,21 +511,46 @@ impl OpenAiProvider {
         "lmstudio",
         "mistral",
         "moonshot",
+        "nearai",
         "ovhcloud",
     ];
 
-    fn sanitize_request_for_compat(&self, mut payload: serde_json::Value) -> serde_json::Value {
-        if !Self::PROVIDERS_NEEDING_MAX_TOKENS_REMAP.contains(&self.name.as_str()) {
-            return payload;
-        }
+    const PROVIDERS_NEEDING_STANDARD_CHAT_PARAMS: &[&str] = &["nearai"];
 
+    fn sanitize_request_for_compat(&self, mut payload: serde_json::Value) -> serde_json::Value {
         if let Some(obj) = payload.as_object_mut() {
-            if let Some(value) = obj.remove("max_completion_tokens") {
-                obj.entry("max_tokens").or_insert(value);
+            if Self::PROVIDERS_NEEDING_MAX_TOKENS_REMAP.contains(&self.name.as_str()) {
+                if let Some(value) = obj.remove("max_completion_tokens") {
+                    obj.entry("max_tokens").or_insert(value);
+                }
+            }
+
+            if Self::PROVIDERS_NEEDING_STANDARD_CHAT_PARAMS.contains(&self.name.as_str()) {
+                obj.remove("reasoning_effort");
+
+                if let Some(messages) = obj.get_mut("messages").and_then(|m| m.as_array_mut()) {
+                    for message in messages {
+                        if message
+                            .get("role")
+                            .and_then(|role| role.as_str())
+                            .is_some_and(|role| role == "developer")
+                        {
+                            message["role"] = serde_json::Value::String("system".to_string());
+                        }
+                    }
+                }
             }
         }
 
         payload
+    }
+
+    fn should_use_responses_api_for_provider(&self, model_name: &str) -> bool {
+        if Self::PROVIDERS_NEEDING_STANDARD_CHAT_PARAMS.contains(&self.name.as_str()) {
+            return false;
+        }
+
+        Self::should_use_responses_api(model_name, &self.base_path)
     }
 
     fn map_base_path(base_path: &str, target: &str, fallback: &str) -> String {
@@ -748,7 +773,7 @@ impl Provider for OpenAiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        if Self::should_use_responses_api(&model_config.model_name, &self.base_path) {
+        if self.should_use_responses_api_for_provider(&model_config.model_name) {
             let mut payload = create_responses_request(model_config, system, messages, tools)?;
             payload["stream"] = serde_json::Value::Bool(self.supports_streaming);
 
@@ -1027,6 +1052,43 @@ mod tests {
 
         let result = provider.sanitize_request_for_compat(payload.clone());
         assert_eq!(result, payload);
+    }
+
+    #[test]
+    fn sanitize_nearai_reasoning_chat_params() {
+        let provider = make_provider("nearai");
+        let payload = json!({
+            "model": "openai/gpt-5",
+            "messages": [
+                {
+                    "role": "developer",
+                    "content": "system instructions"
+                },
+                {
+                    "role": "user",
+                    "content": "hello"
+                }
+            ],
+            "reasoning_effort": "medium",
+            "max_completion_tokens": 16384
+        });
+
+        let result = provider.sanitize_request_for_compat(payload);
+        let obj = result.as_object().unwrap();
+
+        assert!(!obj.contains_key("reasoning_effort"));
+        assert!(!obj.contains_key("max_completion_tokens"));
+        assert_eq!(obj.get("max_tokens").unwrap(), &json!(16384));
+        assert_eq!(obj["messages"][0]["role"], "system");
+        assert_eq!(obj["messages"][1]["role"], "user");
+    }
+
+    #[test]
+    fn nearai_uses_chat_completions_for_openai_reasoning_models() {
+        let provider = make_provider("nearai");
+
+        assert!(!provider.should_use_responses_api_for_provider("openai/gpt-5"));
+        assert!(!provider.should_use_responses_api_for_provider("openai/o3"));
     }
 
     #[test]

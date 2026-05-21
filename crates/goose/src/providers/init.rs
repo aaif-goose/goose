@@ -285,6 +285,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_nearai_declarative_provider_registry_wiring() {
+        let nearai = get_from_registry("nearai")
+            .await
+            .expect("nearai provider should be registered");
+        let meta = nearai.metadata();
+
+        assert_eq!(nearai.provider_type(), ProviderType::Declarative);
+        assert!(nearai.supports_inventory_refresh());
+        assert_eq!(meta.display_name, "NEAR AI Cloud");
+        assert_eq!(meta.default_model, "zai-org/GLM-5.1-FP8");
+        assert_eq!(meta.model_doc_link, "https://docs.near.ai/");
+        assert!(!meta.setup_steps.is_empty());
+
+        let api_key = meta
+            .config_keys
+            .iter()
+            .find(|k| k.name == "NEARAI_API_KEY")
+            .expect("NEARAI_API_KEY config key should exist");
+        assert!(api_key.required, "NEARAI_API_KEY should be required");
+        assert!(api_key.secret, "NEARAI_API_KEY should be secret");
+        assert!(api_key.primary, "NEARAI_API_KEY should be primary");
+    }
+
+    #[tokio::test]
     async fn test_openai_compatible_providers_config_keys() {
         let providers_list = providers().await;
         let required_api_key_cases = vec![

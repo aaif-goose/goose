@@ -835,6 +835,28 @@ mod tests {
     }
 
     #[test]
+    fn test_nearai_json_deserializes() {
+        let json = include_str!("../providers/declarative/nearai.json");
+        let config: DeclarativeProviderConfig =
+            serde_json::from_str(json).expect("nearai.json should parse");
+        assert_eq!(config.name, "nearai");
+        assert_eq!(config.display_name, "NEAR AI Cloud");
+        assert!(matches!(config.engine, ProviderEngine::OpenAI));
+        assert_eq!(config.api_key_env, "NEARAI_API_KEY");
+        assert_eq!(config.base_url, "https://cloud-api.near.ai/v1");
+        assert_eq!(config.catalog_provider_id, Some("nearai".to_string()));
+        assert_eq!(config.dynamic_models, Some(true));
+        assert_eq!(config.supports_streaming, Some(true));
+        assert!(config.preserves_thinking);
+        assert_eq!(
+            config.model_doc_link,
+            Some("https://docs.near.ai/".to_string())
+        );
+        assert_eq!(config.models[0].name, "zai-org/GLM-5.1-FP8");
+        assert!(config.models[0].reasoning);
+    }
+
+    #[test]
     fn test_vercel_ai_gateway_json_deserializes() {
         let json = include_str!("../providers/declarative/vercel_ai_gateway.json");
         let config: DeclarativeProviderConfig =
