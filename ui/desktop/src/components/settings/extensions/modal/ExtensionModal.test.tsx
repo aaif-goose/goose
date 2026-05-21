@@ -10,7 +10,7 @@ vi.mock('../../../../api', async () => {
   const actual = await vi.importActual<typeof import('../../../../api')>('../../../../api');
   return {
     ...actual,
-    upsertConfig: vi.fn().mockResolvedValue({ data: {} }),
+    upsertConfig: vi.fn().mockResolvedValue({ data: 'ok' }),
   };
 });
 
@@ -261,7 +261,12 @@ describe('ExtensionModal', () => {
   describe('pending env var capture (fix for #8969)', () => {
     beforeEach(() => {
       mockedUpsertConfig.mockClear();
-      mockedUpsertConfig.mockResolvedValue({ data: {} });
+      mockedUpsertConfig.mockResolvedValue({
+        data: 'ok',
+        error: undefined,
+        request: new globalThis.Request('http://localhost/test'),
+        response: new globalThis.Response(),
+      });
     });
 
     const emptyInitialData: ExtensionFormData = {
