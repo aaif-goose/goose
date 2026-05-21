@@ -5,13 +5,15 @@
 mod common_tests;
 use common_tests::fixtures::provider::AcpProviderConnection;
 use common_tests::fixtures::run_test;
+#[cfg(feature = "code-mode")]
+use common_tests::run_prompt_codemode;
 use common_tests::{
     run_close_session, run_config_mcp, run_delete_session, run_fs_read_text_file_true,
     run_fs_write_text_file_false, run_fs_write_text_file_true, run_load_mode, run_load_model,
     run_load_session_error, run_load_session_mcp, run_model_list, run_permission_persistence,
-    run_prompt_basic, run_prompt_codemode, run_prompt_error, run_prompt_image,
-    run_prompt_image_attachment, run_prompt_mcp, run_prompt_model_mismatch, run_prompt_skill,
-    run_shell_terminal_false, run_shell_terminal_true,
+    run_prompt_basic, run_prompt_error, run_prompt_image, run_prompt_image_attachment,
+    run_prompt_mcp, run_prompt_model_mismatch, run_prompt_skill, run_shell_terminal_false,
+    run_shell_terminal_true,
 };
 
 #[test]
@@ -87,6 +89,7 @@ fn test_prompt_basic() {
 }
 
 #[test]
+#[cfg(feature = "code-mode")]
 fn test_prompt_codemode() {
     run_test(async { run_prompt_codemode::<AcpProviderConnection>().await });
 }
