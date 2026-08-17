@@ -8,7 +8,10 @@ use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
+use crate::hints::{
+    get_context_filenames, load_hint_files_with_limit, SubdirectoryHintTracker,
+    MAX_HINT_OUTPUT_BYTES,
+};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -88,8 +91,32 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     pub fn with_hints(mut self, working_dir: &Path) -> Self {
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
+        let mut subdirectory_hints = self
+            .manager
+            .system_prompt_extras
+            .iter()
+            .filter(|(key, _)| key.starts_with("subdir_hints:"))
+            .map(|(key, value)| (key.as_str(), value.len()))
+            .collect::<HashMap<_, _>>();
+        subdirectory_hints.extend(
+            self.prompt_extras
+                .iter()
+                .filter(|(key, _)| key.starts_with("subdir_hints:"))
+                .map(|(key, value)| (key.as_str(), value.len())),
+        );
+        let remaining_output_bytes = subdirectory_hints
+            .values()
+            .try_fold(MAX_HINT_OUTPUT_BYTES, |remaining, size| {
+                remaining.checked_sub(*size)
+            })
+            .unwrap_or(0);
 
-        let hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
+        let hints = load_hint_files_with_limit(
+            working_dir,
+            &hints_filenames,
+            &ignore_patterns,
+            remaining_output_bytes,
+        );
 
         if !hints.is_empty() {
             self.hints = Some(hints);
@@ -277,6 +304,7 @@ impl PromptManager {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use std::fs;
 
     use super::*;
 
@@ -333,6 +361,35 @@ mod tests {
 
         assert!(with_contribution.contains("temporary instruction"));
         assert!(!without_contribution.contains("temporary instruction"));
+    }
+
+    #[test]
+    fn root_and_subdirectory_hints_share_one_output_limit() {
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(
+            project.path().join(crate::hints::GOOSE_HINTS_FILENAME),
+            format!("{}ROOT_MARKER", "r".repeat(600 * 1024)),
+        )
+        .unwrap();
+        fs::write(
+            nested.join(crate::hints::GOOSE_HINTS_FILENAME),
+            format!("{}NESTED_MARKER", "n".repeat(600 * 1024)),
+        )
+        .unwrap();
+
+        let mut manager = PromptManager::new();
+        let arguments = serde_json::json!({ "path": "nested/file.txt" })
+            .as_object()
+            .cloned();
+        manager.record_tool_arguments(&arguments, project.path());
+        assert!(manager.load_subdirectory_hints(project.path()));
+
+        let prompt = manager.builder().with_hints(project.path()).build();
+
+        assert!(prompt.contains("NESTED_MARKER"));
+        assert!(!prompt.contains("ROOT_MARKER"));
     }
 
     #[test]

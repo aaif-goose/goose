@@ -5,10 +5,13 @@ use std::{
 };
 
 use crate::config::paths::Paths;
-use crate::hints::import_files::read_referenced_files;
+use crate::hints::import_files::{read_referenced_files_with_limit, MAX_HINT_OUTPUT_BYTES};
 
 pub const GOOSE_HINTS_FILENAME: &str = ".goosehints";
 pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";
+const GLOBAL_HINTS_HEADER: &str = "\n### Global Hints\nThese are my global goose hints.\n";
+const PROJECT_HINTS_HEADER: &str =
+    "### Project Hints\nThese are hints for working on the project in this directory.\n";
 
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
@@ -23,11 +26,17 @@ pub fn get_context_filenames() -> Vec<String> {
         })
 }
 
-#[derive(Default)]
 pub struct SubdirectoryHintTracker {
     loaded_dirs: HashSet<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
+    remaining_output_bytes: usize,
+}
+
+impl Default for SubdirectoryHintTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SubdirectoryHintTracker {
@@ -36,6 +45,7 @@ impl SubdirectoryHintTracker {
             loaded_dirs: HashSet::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
+            remaining_output_bytes: MAX_HINT_OUTPUT_BYTES,
         }
     }
 
@@ -90,9 +100,13 @@ impl SubdirectoryHintTracker {
             if self.loaded_dirs.contains(&dir) {
                 continue;
             }
-            if let Some(content) =
-                load_hints_from_directory(&dir, &working_dir, &self.hints_filenames)
-            {
+            if let Some(content) = load_hints_from_directory(
+                &dir,
+                &working_dir,
+                &self.hints_filenames,
+                self.remaining_output_bytes,
+            ) {
+                self.remaining_output_bytes -= content.len();
                 let key = format!("subdir_hints:{}", dir.display());
                 results.push((key, content));
             }
@@ -116,6 +130,7 @@ fn load_hints_from_directory(
     directory: &Path,
     working_dir: &Path,
     hints_filenames: &[String],
+    output_limit: usize,
 ) -> Option<String> {
     if !directory.is_dir() || !directory.is_absolute() {
         return None;
@@ -136,35 +151,62 @@ fn load_hints_from_directory(
         .collect();
     directories.reverse();
 
-    let mut contents = Vec::new();
+    let header = format!("### Subdirectory Hints ({})\n", directory.display());
+    let mut output = String::new();
+    let mut has_hints = false;
     for dir in &directories {
         for hints_filename in hints_filenames {
             let hints_path = dir.join(hints_filename);
             if hints_path.is_file() {
-                let mut visited = HashSet::new();
-                let expanded = read_referenced_files(
+                let framing = if has_hints { "\n" } else { &header };
+                if append_hint_file(
+                    &mut output,
+                    framing,
                     &hints_path,
                     import_boundary,
-                    &mut visited,
-                    0,
                     &gitignore,
-                );
-                if !expanded.is_empty() {
-                    contents.push(expanded);
+                    output_limit,
+                ) {
+                    has_hints = true;
                 }
             }
         }
     }
 
-    if contents.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "### Subdirectory Hints ({})\n{}",
-            directory.display(),
-            contents.join("\n")
-        ))
+    has_hints.then_some(output)
+}
+
+fn append_hint_file(
+    output: &mut String,
+    framing: &str,
+    hints_path: &Path,
+    import_boundary: &Path,
+    ignore_patterns: &Gitignore,
+    output_limit: usize,
+) -> bool {
+    let Some(used_with_framing) = output.len().checked_add(framing.len()) else {
+        return false;
+    };
+    let Some(available) = output_limit.checked_sub(used_with_framing) else {
+        return false;
+    };
+
+    let mut visited = HashSet::new();
+    let expanded = read_referenced_files_with_limit(
+        hints_path,
+        import_boundary,
+        &mut visited,
+        0,
+        ignore_patterns,
+        available,
+    );
+    if expanded.is_empty() {
+        return false;
     }
+
+    output.push_str(framing);
+    output.push_str(&expanded);
+    true
 }
 
 fn find_git_root(start_dir: &Path) -> Option<&Path> {
@@ -234,9 +276,15 @@ pub fn load_hint_files(
     hints_filenames: &[String],
     ignore_patterns: &Gitignore,
 ) -> String {
-    let mut global_hints_contents = Vec::with_capacity(hints_filenames.len());
-    let mut local_hints_contents = Vec::with_capacity(hints_filenames.len());
+    load_hint_files_with_limit(cwd, hints_filenames, ignore_patterns, MAX_HINT_OUTPUT_BYTES)
+}
 
+pub(crate) fn load_hint_files_with_limit(
+    cwd: &Path,
+    hints_filenames: &[String],
+    ignore_patterns: &Gitignore,
+    output_limit: usize,
+) -> String {
     let mut global_hints_paths: Vec<PathBuf> = hints_filenames
         .iter()
         .map(|name| Paths::in_config_dir(name))
@@ -248,22 +296,28 @@ pub fn load_hint_files(
         global_hints_paths.push(Paths::in_agents_home_dir(AGENTS_MD_FILENAME));
     }
 
+    let mut hints = String::new();
+    let mut has_global_hints = false;
     for global_hints_path in &global_hints_paths {
         if global_hints_path.is_file() {
-            let mut visited = HashSet::new();
             let hints_dir = global_hints_path.parent().unwrap();
             let global_ignore_patterns = GitignoreBuilder::new(hints_dir)
                 .build()
                 .unwrap_or_else(|_| Gitignore::empty());
-            let expanded_content = read_referenced_files(
+            let framing = if has_global_hints {
+                "\n"
+            } else {
+                GLOBAL_HINTS_HEADER
+            };
+            if append_hint_file(
+                &mut hints,
+                framing,
                 global_hints_path,
                 hints_dir,
-                &mut visited,
-                0,
                 &global_ignore_patterns,
-            );
-            if !expanded_content.is_empty() {
-                global_hints_contents.push(expanded_content);
+                output_limit,
+            ) {
+                has_global_hints = true;
             }
         }
     }
@@ -272,39 +326,30 @@ pub fn load_hint_files(
 
     let import_boundary = git_root.unwrap_or(cwd);
 
+    let mut has_local_hints = false;
     for directory in &local_directories {
         for hints_filename in hints_filenames {
             let hints_path = directory.join(hints_filename);
             if hints_path.is_file() {
-                let mut visited = HashSet::new();
-                let expanded_content = read_referenced_files(
+                let framing = if has_local_hints {
+                    "\n"
+                } else if has_global_hints {
+                    "\n\n### Project Hints\nThese are hints for working on the project in this directory.\n"
+                } else {
+                    PROJECT_HINTS_HEADER
+                };
+                if append_hint_file(
+                    &mut hints,
+                    framing,
                     &hints_path,
                     import_boundary,
-                    &mut visited,
-                    0,
                     ignore_patterns,
-                );
-                if !expanded_content.is_empty() {
-                    local_hints_contents.push(expanded_content);
+                    output_limit,
+                ) {
+                    has_local_hints = true;
                 }
             }
         }
-    }
-
-    let mut hints = String::new();
-    if !global_hints_contents.is_empty() {
-        hints.push_str("\n### Global Hints\nThese are my global goose hints.\n");
-        hints.push_str(&global_hints_contents.join("\n"));
-    }
-
-    if !local_hints_contents.is_empty() {
-        if !hints.is_empty() {
-            hints.push_str("\n\n");
-        }
-        hints.push_str(
-            "### Project Hints\nThese are hints for working on the project in this directory.\n",
-        );
-        hints.push_str(&local_hints_contents.join("\n"));
     }
 
     hints
@@ -332,6 +377,91 @@ mod tests {
         let hints = load_hint_files(dir.path(), &[GOOSE_HINTS_FILENAME.to_string()], &gitignore);
 
         assert!(hints.contains("Test hint content"));
+    }
+
+    #[test]
+    fn oversized_top_level_hint_is_rejected_without_partial_instructions() {
+        let dir = TempDir::new().unwrap();
+        let filename = "LOUPE_894_OVERSIZED.md";
+        fs::write(
+            dir.path().join(filename),
+            "x".repeat(MAX_HINT_OUTPUT_BYTES + 1),
+        )
+        .unwrap();
+
+        let gitignore = create_dummy_gitignore();
+        let hints = load_hint_files(dir.path(), &[filename.to_string()], &gitignore);
+
+        assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn top_level_hint_and_framing_fit_exact_output_limit() {
+        let dir = TempDir::new().unwrap();
+        let filename = "LOUPE_894_EXACT.md";
+        let content = "x".repeat(MAX_HINT_OUTPUT_BYTES - PROJECT_HINTS_HEADER.len());
+        fs::write(dir.path().join(filename), &content).unwrap();
+
+        let gitignore = create_dummy_gitignore();
+        let hints = load_hint_files(dir.path(), &[filename.to_string()], &gitignore);
+
+        assert_eq!(hints.len(), MAX_HINT_OUTPUT_BYTES);
+        assert!(hints.starts_with(PROJECT_HINTS_HEADER));
+        assert!(hints.ends_with(&content));
+    }
+
+    #[test]
+    fn reference_expansion_cannot_exceed_aggregate_output_limit() {
+        let dir = TempDir::new().unwrap();
+        let filename = "LOUPE_894_REFERENCE.md";
+        let included = "expanded policy".repeat(16);
+        fs::write(dir.path().join("policy.md"), &included).unwrap();
+        fs::write(
+            dir.path().join(filename),
+            "keep this\n@policy.md\nkeep that",
+        )
+        .unwrap();
+
+        let gitignore = create_dummy_gitignore();
+        let mut output = String::new();
+        let appended = append_hint_file(
+            &mut output,
+            "header\n",
+            &dir.path().join(filename),
+            dir.path(),
+            &gitignore,
+            64,
+        );
+
+        assert!(appended);
+        assert!(output.len() <= 64);
+        assert!(output.contains("@policy.md"));
+        assert!(!output.contains("expanded policy"));
+        assert!(output.ends_with("keep that"));
+    }
+
+    #[test]
+    fn multiple_top_level_hints_share_one_output_limit() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("first.md"), "A1".repeat(300 * 1024)).unwrap();
+        fs::write(dir.path().join("second.md"), "B2".repeat(300 * 1024)).unwrap();
+        fs::write(dir.path().join("third.md"), "third hint").unwrap();
+
+        let gitignore = create_dummy_gitignore();
+        let hints = load_hint_files(
+            dir.path(),
+            &[
+                "first.md".to_string(),
+                "second.md".to_string(),
+                "third.md".to_string(),
+            ],
+            &gitignore,
+        );
+
+        assert!(hints.len() <= MAX_HINT_OUTPUT_BYTES);
+        assert_eq!(hints.matches("A1").count(), 300 * 1024);
+        assert!(!hints.contains("B2"));
+        assert!(hints.ends_with("third hint"));
     }
 
     #[test]
@@ -363,6 +493,33 @@ mod tests {
 
         assert!(hints.contains("Global Hints"));
         assert!(hints.contains("Global agents home instructions"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn global_and_local_hints_share_one_output_limit() {
+        let root = TempDir::new().unwrap();
+        let filename = "LOUPE_894_GLOBAL_LOCAL.md";
+        std::env::set_var("GOOSE_PATH_ROOT", root.path());
+        fs::create_dir(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config").join(filename),
+            "G1".repeat(300 * 1024),
+        )
+        .unwrap();
+
+        let project = TempDir::new().unwrap();
+        fs::write(project.path().join(filename), "L2".repeat(300 * 1024)).unwrap();
+        let gitignore = create_dummy_gitignore();
+        let hints = load_hint_files(project.path(), &[filename.to_string()], &gitignore);
+
+        std::env::remove_var("GOOSE_PATH_ROOT");
+
+        assert!(hints.len() <= MAX_HINT_OUTPUT_BYTES);
+        assert!(hints.contains("Global Hints"));
+        assert!(hints.contains("G1"));
+        assert!(!hints.contains("Project Hints"));
+        assert!(!hints.contains("L2"));
     }
 
     #[test]
@@ -835,6 +992,51 @@ End of hints"#;
         assert_eq!(hints.len(), 1);
         assert!(hints[0].0.contains("nested"));
         assert!(hints[0].1.contains("nested subdirectory hints"));
+    }
+
+    #[test]
+    fn tracker_aggregates_output_limit_across_subdirectories() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+        for directory in ["first", "second", "third"] {
+            fs::create_dir(project_root.join(directory)).unwrap();
+        }
+        fs::write(
+            project_root.join("first").join(GOOSE_HINTS_FILENAME),
+            "A1".repeat(300 * 1024),
+        )
+        .unwrap();
+        fs::write(
+            project_root.join("second").join(GOOSE_HINTS_FILENAME),
+            "B2".repeat(300 * 1024),
+        )
+        .unwrap();
+        fs::write(
+            project_root.join("third").join(GOOSE_HINTS_FILENAME),
+            "third hint",
+        )
+        .unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for directory in ["first", "second", "third"] {
+            let args: serde_json::Map<String, serde_json::Value> = serde_json::from_value(
+                serde_json::json!({ "path": format!("{directory}/file.rs") }),
+            )
+            .unwrap();
+            tracker.record_tool_arguments(&Some(args), &project_root);
+        }
+
+        let hints = tracker.load_new_hints(&project_root);
+        let output_bytes: usize = hints.iter().map(|(_, content)| content.len()).sum();
+        let combined = hints
+            .iter()
+            .map(|(_, content)| content.as_str())
+            .collect::<String>();
+
+        assert!(output_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(combined.contains("A1"));
+        assert!(!combined.contains("B2"));
+        assert!(combined.contains("third hint"));
     }
 
     #[test]
