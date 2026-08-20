@@ -601,7 +601,8 @@ mod tests {
     #[tokio::test]
     async fn test_load_filesystem_skill_without_builtin_skills() {
         let temp_dir = TempDir::new().unwrap();
-        let skill_dir = temp_dir.path().join(".goose/skills/my-skill");
+        let working_dir = temp_dir.path().canonicalize().unwrap();
+        let skill_dir = working_dir.join(".goose/skills/my-skill");
         fs::create_dir_all(&skill_dir).unwrap();
         fs::write(
             skill_dir.join("SKILL.md"),
@@ -612,7 +613,7 @@ mod tests {
         fs::write(skill_dir.join("nested/guide.md"), "Nested guidance.").unwrap();
 
         let session = std::sync::Arc::new(crate::session::Session {
-            working_dir: temp_dir.path().to_path_buf(),
+            working_dir,
             ..crate::session::Session::default()
         });
         let client = SkillsClient::new(PlatformExtensionContext {
