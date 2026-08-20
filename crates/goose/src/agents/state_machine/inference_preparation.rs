@@ -20,13 +20,15 @@ use tokio::sync::Mutex;
 pub(super) fn reconstructed_hint_snapshot(
     conversation: &Conversation,
     working_dir: &std::path::Path,
+    goose_mode: GooseMode,
 ) -> HintSnapshot {
-    reconstructed_hint_snapshot_with_hook(conversation, working_dir, || {})
+    reconstructed_hint_snapshot_with_hook(conversation, working_dir, goose_mode, || {})
 }
 
 fn reconstructed_hint_snapshot_with_hook(
     conversation: &Conversation,
     working_dir: &std::path::Path,
+    goose_mode: GooseMode,
     after_top_level_read: impl FnOnce(),
 ) -> HintSnapshot {
     let mut hints = SubdirectoryHintTracker::new();
@@ -39,11 +41,13 @@ fn reconstructed_hint_snapshot_with_hook(
             }
         }
     }
-    hints.load_snapshot_with_hook(
-        working_dir,
-        HINT_EXTRA_SEPARATOR_BYTES,
-        after_top_level_read,
-    )
+    let reserved_output_bytes = HINT_EXTRA_SEPARATOR_BYTES
+        + if goose_mode == GooseMode::Chat {
+            HINT_EXTRA_SEPARATOR_BYTES
+        } else {
+            0
+        };
+    hints.load_snapshot_with_hook(working_dir, reserved_output_bytes, after_top_level_read)
 }
 
 pub struct GooseInferenceRequestPreparer<'a> {
@@ -80,7 +84,8 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         }
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
-        let hint_snapshot = reconstructed_hint_snapshot(conversation, &session.working_dir);
+        let hint_snapshot =
+            reconstructed_hint_snapshot(conversation, &session.working_dir, goose_mode);
         let system_prompt = self
             .prompt_manager
             .lock()
@@ -140,9 +145,12 @@ mod tests {
             Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
         )]);
 
-        let snapshot = reconstructed_hint_snapshot_with_hook(&conversation, project.path(), || {
-            fs::write(&root_hints, format!("{}ROOT_V2", "v".repeat(700 * 1024))).unwrap()
-        });
+        let snapshot = reconstructed_hint_snapshot_with_hook(
+            &conversation,
+            project.path(),
+            GooseMode::Auto,
+            || fs::write(&root_hints, format!("{}ROOT_V2", "v".repeat(700 * 1024))).unwrap(),
+        );
         let hint_bytes = snapshot.top_level.len()
             + snapshot
                 .subdirectories
@@ -163,5 +171,55 @@ mod tests {
         assert!(prompt.contains("NESTED_MARKER"));
         assert!(!prompt.contains("ROOT_V2"));
         assert!(!prompt.contains("ROOT_V3"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn state_machine_chat_hints_reserve_trailing_separator_at_exact_limit() {
+        const PROJECT_HINTS_HEADER: &str =
+            "### Project Hints\nThese are hints for working on the project in this directory.\n";
+
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let hints_path = project.path().join(GOOSE_HINTS_FILENAME);
+        let reserved_output_bytes = HINT_EXTRA_SEPARATOR_BYTES * 2;
+        let exact_content_len =
+            MAX_HINT_OUTPUT_BYTES - reserved_output_bytes - PROJECT_HINTS_HEADER.len();
+        fs::write(
+            &hints_path,
+            format!(
+                "CHAT_BOUNDARY{}",
+                "h".repeat(exact_content_len - "CHAT_BOUNDARY".len())
+            ),
+        )
+        .unwrap();
+        let conversation = Conversation::default();
+
+        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), GooseMode::Chat);
+        assert_eq!(
+            snapshot.top_level.len() + reserved_output_bytes,
+            MAX_HINT_OUTPUT_BYTES
+        );
+        assert!(snapshot.top_level.contains("CHAT_BOUNDARY"));
+
+        let old_boundary_content_len =
+            MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES - PROJECT_HINTS_HEADER.len();
+        fs::write(
+            hints_path,
+            format!(
+                "CHAT_OVERFLOW{}",
+                "h".repeat(old_boundary_content_len - "CHAT_OVERFLOW".len())
+            ),
+        )
+        .unwrap();
+        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), GooseMode::Chat);
+        assert!(snapshot.top_level.is_empty());
     }
 }

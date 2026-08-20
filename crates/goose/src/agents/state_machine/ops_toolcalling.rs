@@ -34,8 +34,12 @@ fn reconstructed_subdirectory_hints(
     conversation: &Conversation,
     working_dir: &std::path::Path,
 ) -> Vec<(String, String)> {
-    super::inference_preparation::reconstructed_hint_snapshot(conversation, working_dir)
-        .subdirectories
+    super::inference_preparation::reconstructed_hint_snapshot(
+        conversation,
+        working_dir,
+        GooseMode::Auto,
+    )
+    .subdirectories
 }
 
 #[derive(Clone, Copy)]

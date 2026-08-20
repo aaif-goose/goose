@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use crate::agents::{extension::ExtensionInfo, moim};
 #[cfg(test)]
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::load_hints::HintSnapshot;
+use crate::hints::load_hints::{HintSnapshot, HINT_EXTRA_SEPARATOR_BYTES};
 use crate::hints::SubdirectoryHintTracker;
 #[cfg(test)]
-use crate::hints::{get_context_filenames, load_hint_files};
+use crate::hints::MAX_HINT_OUTPUT_BYTES;
 #[cfg(test)]
-use crate::hints::{HINT_EXTRA_SEPARATOR_BYTES, MAX_HINT_OUTPUT_BYTES};
+use crate::hints::{get_context_filenames, load_hint_files};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -27,6 +27,14 @@ pub struct PromptManager {
     system_prompt_extras: IndexMap<String, String>,
     current_date_timestamp: String,
     subdirectory_hint_tracker: SubdirectoryHintTracker,
+}
+
+fn trailing_hint_separator_bytes(goose_mode: GooseMode) -> usize {
+    if goose_mode == GooseMode::Chat {
+        HINT_EXTRA_SEPARATOR_BYTES
+    } else {
+        0
+    }
 }
 
 impl Default for PromptManager {
@@ -261,7 +269,9 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir, 0);
+        let snapshot = self
+            .subdirectory_hint_tracker
+            .load_snapshot(working_dir, trailing_hint_separator_bytes(goose_mode));
         self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
     }
 
@@ -283,10 +293,15 @@ impl PromptManager {
     pub fn builder_with_fresh_hints(
         &mut self,
         working_dir: &Path,
+        goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
-        let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir, 0);
+        let snapshot = self
+            .subdirectory_hint_tracker
+            .load_snapshot(working_dir, trailing_hint_separator_bytes(goose_mode));
         self.apply_subdirectory_hints(snapshot.subdirectories);
-        self.builder().with_hint_snapshot(snapshot.top_level)
+        self.builder()
+            .with_hint_snapshot(snapshot.top_level)
+            .with_goose_mode(goose_mode)
     }
 
     /// Override the system prompt with custom text
@@ -325,6 +340,15 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    const PROJECT_HINTS_HEADER: &str =
+        "### Project Hints\nThese are hints for working on the project in this directory.\n";
+
+    fn write_root_hints_with_output_len(project: &Path, output_len: usize, marker: &str) {
+        let content_len = output_len - PROJECT_HINTS_HEADER.len();
+        let content = format!("{marker}{}", "h".repeat(content_len - marker.len()));
+        fs::write(project.join(crate::hints::GOOSE_HINTS_FILENAME), content).unwrap();
+    }
 
     #[test]
     fn test_build_system_prompt_sanitizes_override() {
@@ -456,8 +480,7 @@ mod tests {
         )
         .unwrap();
         let prompt = manager
-            .builder_with_fresh_hints(project.path())
-            .with_goose_mode(GooseMode::Auto)
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
             .build();
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(project.path());
@@ -482,6 +505,39 @@ mod tests {
         );
         assert!(prompt.contains("ROOT_MARKER"));
         assert!(!prompt.contains("NESTED_MARKER"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_chat_hints_reserve_trailing_separator_at_exact_limit() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        write_root_hints_with_output_len(
+            project.path(),
+            MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES,
+            "CHAT_BOUNDARY",
+        );
+
+        let mut manager = PromptManager::new();
+        let builder = manager.builder_with_fresh_hints(project.path(), GooseMode::Chat);
+        assert_eq!(
+            builder.hints.as_ref().unwrap().len() + HINT_EXTRA_SEPARATOR_BYTES,
+            MAX_HINT_OUTPUT_BYTES
+        );
+        assert!(builder.build().contains("CHAT_BOUNDARY"));
+
+        write_root_hints_with_output_len(project.path(), MAX_HINT_OUTPUT_BYTES, "CHAT_OVERFLOW");
+        let prompt = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Chat)
+            .build();
+        assert!(!prompt.contains("CHAT_OVERFLOW"));
     }
 
     #[test]
