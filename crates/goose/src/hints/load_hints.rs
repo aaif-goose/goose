@@ -81,7 +81,8 @@ impl SubdirectoryHintTracker {
 
     pub fn load_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
         let pending = std::mem::take(&mut self.pending_dirs);
-        let Ok(working_dir) = working_dir.canonicalize() else {
+        let lexical_working_dir = working_dir;
+        let Ok(canonical_working_dir) = working_dir.canonicalize() else {
             return Vec::new();
         };
 
@@ -89,7 +90,7 @@ impl SubdirectoryHintTracker {
             let Ok(dir) = dir.canonicalize() else {
                 continue;
             };
-            if !dir.starts_with(&working_dir) || dir == working_dir {
+            if !dir.starts_with(&canonical_working_dir) || dir == canonical_working_dir {
                 continue;
             }
             if self.loaded_dirs.contains(&dir) {
@@ -98,9 +99,9 @@ impl SubdirectoryHintTracker {
             self.loaded_dirs.push(dir);
         }
 
-        let ignore_patterns = build_gitignore(&working_dir);
+        let ignore_patterns = build_gitignore(lexical_working_dir);
         let top_level_hints =
-            load_hint_files(&working_dir, &self.hints_filenames, &ignore_patterns);
+            load_hint_files(lexical_working_dir, &self.hints_filenames, &ignore_patterns);
         let mut remaining_output_bytes =
             MAX_HINT_OUTPUT_BYTES.saturating_sub(top_level_hints.len());
         let mut has_hint_output = !top_level_hints.is_empty();
@@ -114,9 +115,12 @@ impl SubdirectoryHintTracker {
             let Some(output_limit) = remaining_output_bytes.checked_sub(separator_bytes) else {
                 continue;
             };
-            if let Some(content) =
-                load_hints_from_directory(dir, &working_dir, &self.hints_filenames, output_limit)
-            {
+            if let Some(content) = load_hints_from_directory(
+                dir,
+                &canonical_working_dir,
+                &self.hints_filenames,
+                output_limit,
+            ) {
                 remaining_output_bytes -= separator_bytes + content.len();
                 has_hint_output = true;
                 let key = format!("subdir_hints:{}", dir.display());
@@ -1119,6 +1123,37 @@ End of hints"#;
 
         assert_eq!(header, "### Subdirectory Hints (nested\u{0308}\u{0301})\n");
         assert!(header.len() > format!("### Subdirectory Hints ({})\n", directory.display()).len());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tracker_reserves_hints_from_a_lexical_symlink_working_directory() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repository = temp_dir.path().join("repository");
+        let target = temp_dir.path().join("target");
+        let nested = target.join("nested");
+        fs::create_dir_all(repository.join(".git")).unwrap();
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            repository.join(GOOSE_HINTS_FILENAME),
+            "r".repeat(MAX_HINT_OUTPUT_BYTES - PROJECT_HINTS_HEADER.len() - 1),
+        )
+        .unwrap();
+        fs::write(nested.join(GOOSE_HINTS_FILENAME), "nested hint").unwrap();
+        let working_dir = repository.join("linked-working-dir");
+        symlink(&target, &working_dir).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        tracker.hints_filenames = vec![GOOSE_HINTS_FILENAME.to_string()];
+        let args = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        tracker.record_tool_arguments(&Some(args), &working_dir);
+
+        assert!(tracker.load_hints(&working_dir).is_empty());
     }
 
     #[test]
