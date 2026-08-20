@@ -22,14 +22,21 @@ use crate::agents::AgentEvent;
 use crate::config::GooseMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
-use crate::hints::load_hints::{SubdirectoryHintTracker, HINT_EXTRA_SEPARATOR_BYTES};
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
 use crate::session::{EnabledExtensionsState, ExtensionState, Session};
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
+
+#[cfg(test)]
+fn reconstructed_subdirectory_hints(
+    conversation: &Conversation,
+    working_dir: &std::path::Path,
+) -> Vec<(String, String)> {
+    super::inference_preparation::reconstructed_hint_snapshot(conversation, working_dir)
+        .subdirectories
+}
 
 #[derive(Clone, Copy)]
 enum ToolCategory {
@@ -46,24 +53,6 @@ fn categorize_tool(tool_name: &str) -> ToolCategory {
         "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
         _ => ToolCategory::Other,
     }
-}
-
-fn reconstructed_subdirectory_hints(
-    conversation: &Conversation,
-    working_dir: &Path,
-) -> Vec<(String, String)> {
-    let mut hints = SubdirectoryHintTracker::new();
-    for message in conversation.messages() {
-        for content in &message.content {
-            if let MessageContent::ToolRequest(request) = content {
-                if let Ok(tool_call) = &request.tool_call {
-                    hints.record_tool_arguments(&tool_call.arguments, working_dir);
-                }
-            }
-        }
-    }
-    // Root hints are appended after the other state-machine prompt parts.
-    hints.load_hints_with_reservation(working_dir, HINT_EXTRA_SEPARATOR_BYTES)
 }
 
 fn string_argument(input: &serde_json::Value, keys: &[&str]) -> Option<String> {
@@ -792,9 +781,9 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
     async fn prompt_parts(
         &self,
         session: &Session,
-        conversation: &Conversation,
+        _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        let mut prompt_parts = reconstructed_subdirectory_hints(conversation, &session.working_dir);
+        let mut prompt_parts = Vec::new();
 
         #[cfg(feature = "code-mode")]
         if self

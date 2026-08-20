@@ -15,6 +15,11 @@ const PROJECT_HINTS_HEADER: &str =
     "### Project Hints\nThese are hints for working on the project in this directory.\n";
 pub(crate) const HINT_EXTRA_SEPARATOR_BYTES: usize = "\n\n".len();
 
+pub(crate) struct HintSnapshot {
+    pub(crate) top_level: String,
+    pub(crate) subdirectories: Vec<(String, String)>,
+}
+
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
 
@@ -80,18 +85,30 @@ impl SubdirectoryHintTracker {
     }
 
     pub fn load_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
-        self.load_hints_with_reservation(working_dir, 0)
+        self.load_snapshot(working_dir, 0).subdirectories
     }
 
-    pub(crate) fn load_hints_with_reservation(
+    pub(crate) fn load_snapshot(
         &mut self,
         working_dir: &Path,
         reserved_output_bytes: usize,
-    ) -> Vec<(String, String)> {
+    ) -> HintSnapshot {
+        self.load_snapshot_with_hook(working_dir, reserved_output_bytes, || {})
+    }
+
+    pub(crate) fn load_snapshot_with_hook(
+        &mut self,
+        working_dir: &Path,
+        reserved_output_bytes: usize,
+        after_top_level_read: impl FnOnce(),
+    ) -> HintSnapshot {
         let pending = std::mem::take(&mut self.pending_dirs);
         let lexical_working_dir = working_dir;
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
-            return Vec::new();
+            return HintSnapshot {
+                top_level: String::new(),
+                subdirectories: Vec::new(),
+            };
         };
 
         for dir in pending {
@@ -111,6 +128,7 @@ impl SubdirectoryHintTracker {
         let ignore_patterns = build_gitignore(lexical_working_dir);
         let top_level_hints =
             load_hint_files(lexical_working_dir, &self.hints_filenames, &ignore_patterns);
+        after_top_level_read();
         let mut remaining_output_bytes = MAX_HINT_OUTPUT_BYTES
             .saturating_sub(top_level_hints.len())
             .saturating_sub(reserved_output_bytes);
@@ -137,7 +155,10 @@ impl SubdirectoryHintTracker {
                 results.push((key, content));
             }
         }
-        results
+        HintSnapshot {
+            top_level: top_level_hints,
+            subdirectories: results,
+        }
     }
 
     pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {

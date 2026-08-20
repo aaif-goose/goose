@@ -7,8 +7,12 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
+#[cfg(test)]
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
+use crate::hints::load_hints::HintSnapshot;
+use crate::hints::SubdirectoryHintTracker;
+#[cfg(test)]
+use crate::hints::{get_context_filenames, load_hint_files};
 #[cfg(test)]
 use crate::hints::{HINT_EXTRA_SEPARATOR_BYTES, MAX_HINT_OUTPUT_BYTES};
 use crate::{
@@ -87,11 +91,19 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         self
     }
 
+    #[cfg(test)]
     pub fn with_hints(mut self, working_dir: &Path) -> Self {
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
         let hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
 
+        if !hints.is_empty() {
+            self.hints = Some(hints);
+        }
+        self
+    }
+
+    fn with_hint_snapshot(mut self, hints: String) -> Self {
         if !hints.is_empty() {
             self.hints = Some(hints);
         }
@@ -223,6 +235,10 @@ impl PromptManager {
 
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
         let hints = self.subdirectory_hint_tracker.load_hints(working_dir);
+        self.apply_subdirectory_hints(hints)
+    }
+
+    fn apply_subdirectory_hints(&mut self, hints: Vec<(String, String)>) -> bool {
         let previous_hints: Vec<_> = self
             .system_prompt_extras
             .iter()
@@ -245,7 +261,19 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        self.builder_with_fresh_hints(working_dir)
+        let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir, 0);
+        self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
+    }
+
+    pub(crate) fn build_system_prompt_from_snapshot(
+        &mut self,
+        prompt_parts: Vec<(String, String)>,
+        goose_mode: GooseMode,
+        snapshot: HintSnapshot,
+    ) -> String {
+        self.apply_subdirectory_hints(snapshot.subdirectories);
+        self.builder()
+            .with_hint_snapshot(snapshot.top_level)
             .with_prompt_extras(prompt_parts)
             .with_goose_mode(goose_mode)
             .without_extensions()
@@ -256,8 +284,9 @@ impl PromptManager {
         &mut self,
         working_dir: &Path,
     ) -> SystemPromptBuilder<'_, PromptManager> {
-        self.load_subdirectory_hints(working_dir);
-        self.builder().with_hints(working_dir)
+        let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir, 0);
+        self.apply_subdirectory_hints(snapshot.subdirectories);
+        self.builder().with_hint_snapshot(snapshot.top_level)
     }
 
     /// Override the system prompt with custom text
