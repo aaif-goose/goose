@@ -95,7 +95,7 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
     };
     let skill_name = params.name.as_str();
     let args = params.args.as_deref();
-    let skills = crate::skills::discover_skills(Some(working_dir));
+    let skills = crate::skills::discover_skills_with_details(Some(working_dir));
 
     if let Some(skill) = skills.iter().find(|skill| skill.name == skill_name) {
         return match crate::skills::loaded_skill_context_with_args(skill, args) {
@@ -146,7 +146,7 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
 }
 
 fn load_supporting_file(
-    skill: &SourceEntry,
+    skill: &crate::skills::DiscoveredSkill,
     skill_name: &str,
     relative_path: &str,
 ) -> CallToolResult {
@@ -159,7 +159,12 @@ fn load_supporting_file(
         if relative.to_string_lossy().replace('\\', "/") != relative_path {
             continue;
         }
-        return match crate::skills::load_supporting_file(&skill_dir, relative, skill_name) {
+        return match crate::skills::load_supporting_file(
+            &skill.load_path,
+            relative,
+            skill_name,
+            skill.linked_skill_root,
+        ) {
             Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
             Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
                 "Failed to read '{skill_name}': {error}"
@@ -411,16 +416,20 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
         let file = nested.join("guide.md");
         std::fs::write(&file, "Nested guidance.").unwrap();
-        let skill = SourceEntry {
-            source_type: SourceType::Skill,
-            name: "test-skill".to_string(),
-            description: String::new(),
-            content: String::new(),
-            path: skill_dir.to_string_lossy().into_owned(),
-            global: false,
-            writable: true,
-            supporting_files: vec![file.to_string_lossy().into_owned()],
-            properties: HashMap::new(),
+        let skill = crate::skills::DiscoveredSkill {
+            source: SourceEntry {
+                source_type: SourceType::Skill,
+                name: "test-skill".to_string(),
+                description: String::new(),
+                content: String::new(),
+                path: skill_dir.to_string_lossy().into_owned(),
+                global: false,
+                writable: true,
+                supporting_files: vec![file.to_string_lossy().into_owned()],
+                properties: HashMap::new(),
+            },
+            linked_skill_root: false,
+            load_path: skill_dir,
         };
 
         let result = load_supporting_file(&skill, "test-skill/nested/guide.md", "nested/guide.md");

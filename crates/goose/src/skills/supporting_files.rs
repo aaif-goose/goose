@@ -23,12 +23,14 @@ pub(crate) fn load_supporting_file(
     skill_dir: &Path,
     relative: &Path,
     skill_name: &str,
+    linked_skill_root: bool,
 ) -> io::Result<String> {
     load_supporting_file_with_limit(
         skill_dir,
         relative,
         skill_name,
         crate::agents::max_tool_response_size(),
+        linked_skill_root,
     )
 }
 
@@ -37,6 +39,7 @@ fn load_supporting_file_with_limit(
     relative: &Path,
     skill_name: &str,
     max_characters: usize,
+    linked_skill_root: bool,
 ) -> io::Result<String> {
     let wrapper_characters = LOADED_FILE_PREFIX.chars().count()
         + skill_name.chars().count()
@@ -52,7 +55,13 @@ fn load_supporting_file_with_limit(
                 ),
             )
         })?;
-    let content = read_supporting_file_with_limit(skill_dir, relative, content_limit)?;
+    let root_link_policy = if linked_skill_root {
+        RootLinkPolicy::FollowFinal
+    } else {
+        RootLinkPolicy::Reject
+    };
+    let content =
+        read_supporting_file_with_limit(skill_dir, relative, content_limit, root_link_policy)?;
     Ok(format!(
         "{LOADED_FILE_PREFIX}{skill_name}{LOADED_FILE_SEPARATOR}{content}{LOADED_FILE_SUFFIX}"
     ))
@@ -62,8 +71,15 @@ fn read_supporting_file_with_limit(
     skill_dir: &Path,
     relative: &Path,
     max_characters: usize,
+    root_link_policy: RootLinkPolicy,
 ) -> io::Result<String> {
-    read_supporting_file_with_hook(skill_dir, relative, max_characters, |_| {})
+    read_supporting_file_with_hook(
+        skill_dir,
+        relative,
+        max_characters,
+        root_link_policy,
+        |_| {},
+    )
 }
 
 pub(crate) fn read_source_file(source_dir: &Path, relative: &Path) -> io::Result<String> {
@@ -96,13 +112,14 @@ fn read_supporting_file_with_hook(
     skill_dir: &Path,
     relative: &Path,
     max_characters: usize,
+    root_link_policy: RootLinkPolicy,
     after_opened_component: impl FnMut(&Path),
 ) -> io::Result<String> {
     read_confined_file_with_hook(
         skill_dir,
         relative,
         ReadLimit::Characters(max_characters),
-        RootLinkPolicy::FollowFinal,
+        root_link_policy,
         after_opened_component,
     )
 }
@@ -197,10 +214,12 @@ where
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
+    let mut linked_skill_roots = Vec::new();
     walk_regular_files_no_follow_impl(
         root,
         RootLinkPolicy::FollowFinal,
         false,
+        &mut linked_skill_roots,
         should_descend,
         visit_file,
         after_read_dir,
@@ -212,26 +231,30 @@ pub(super) fn walk_skill_files_no_follow_with_hook<F, G, H>(
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
-) -> io::Result<()>
+) -> io::Result<Vec<PathBuf>>
 where
     F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
+    let mut linked_skill_roots = Vec::new();
     walk_regular_files_no_follow_impl(
         root,
         RootLinkPolicy::Reject,
         true,
+        &mut linked_skill_roots,
         should_descend,
         visit_file,
         after_read_dir,
-    )
+    )?;
+    Ok(linked_skill_roots)
 }
 
 fn walk_regular_files_no_follow_impl<F, G, H>(
     root: &Path,
     root_link_policy: RootLinkPolicy,
     allow_linked_skill_roots: bool,
+    linked_skill_roots: &mut Vec<PathBuf>,
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
@@ -247,6 +270,7 @@ where
         &root,
         directory,
         allow_linked_skill_roots,
+        linked_skill_roots,
         should_descend,
         visit_file,
         after_read_dir,
@@ -290,6 +314,7 @@ fn walk_opened_directory<F, G, H>(
     logical_path: &Path,
     directory: fs::File,
     allow_linked_skill_roots: bool,
+    linked_skill_roots: &mut Vec<PathBuf>,
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
@@ -317,6 +342,7 @@ fn walk_opened_directory<F, G, H>(
                     &path,
                     child,
                     allow_linked_skill_roots && !child_is_skill_root,
+                    linked_skill_roots,
                     should_descend,
                     visit_file,
                     after_read_dir,
@@ -325,10 +351,12 @@ fn walk_opened_directory<F, G, H>(
             }
             if allow_linked_skill_roots {
                 if let Ok(child) = open_child_linked_skill_directory(&directory, &name) {
+                    linked_skill_roots.push(path.clone());
                     walk_opened_directory(
                         &path,
                         child,
                         false,
+                        linked_skill_roots,
                         should_descend,
                         visit_file,
                         after_read_dir,
@@ -1163,6 +1191,7 @@ mod tests {
             &skill_dir,
             Path::new("nested/guide.md"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
         )
         .unwrap();
 
@@ -1212,6 +1241,7 @@ mod tests {
             &skill_dir,
             Path::new("guide.md"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
         );
 
         fs::set_permissions(root.path(), original_permissions).unwrap();
@@ -1225,8 +1255,13 @@ mod tests {
         let skill_dir = fs::canonicalize(root.path()).unwrap();
         fs::write(skill_dir.join("guide.md"), "🙂🙂🙂🙂").unwrap();
 
-        let content =
-            read_supporting_file_with_limit(&skill_dir, Path::new("guide.md"), 4).unwrap();
+        let content = read_supporting_file_with_limit(
+            &skill_dir,
+            Path::new("guide.md"),
+            4,
+            RootLinkPolicy::Reject,
+        )
+        .unwrap();
 
         assert_eq!(content, "🙂🙂🙂🙂");
     }
@@ -1249,6 +1284,7 @@ mod tests {
             Path::new("guide.md"),
             skill_name,
             max_characters,
+            false,
         )
         .unwrap();
 
@@ -1273,6 +1309,7 @@ mod tests {
             Path::new("guide.md"),
             skill_name,
             wrapper_characters + 4,
+            false,
         )
         .expect_err("wrapped supporting-file limit was not enforced");
 
@@ -1289,8 +1326,13 @@ mod tests {
         let skill_dir = fs::canonicalize(root.path()).unwrap();
         fs::write(skill_dir.join("guide.md"), "ééééé").unwrap();
 
-        let error = read_supporting_file_with_limit(&skill_dir, Path::new("guide.md"), 4)
-            .expect_err("oversized supporting file was accepted");
+        let error = read_supporting_file_with_limit(
+            &skill_dir,
+            Path::new("guide.md"),
+            4,
+            RootLinkPolicy::Reject,
+        )
+        .expect_err("oversized supporting file was accepted");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error
@@ -1337,6 +1379,7 @@ mod tests {
             &skill_dir,
             Path::new("nested/secret.txt"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
         );
 
         assert!(result.is_err());
@@ -1358,6 +1401,7 @@ mod tests {
             &skill_dir,
             Path::new("nested/payload"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
             |opened_path| {
                 if opened_path == Path::new("nested") {
                     fs::rename(&nested, &moved_nested).unwrap();
@@ -1373,7 +1417,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn follows_skill_root_replaced_with_symlink_during_open() {
+    fn rejects_regular_skill_root_replaced_with_symlink_during_open() {
         let parent = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let parent = fs::canonicalize(parent.path()).unwrap();
@@ -1383,20 +1427,42 @@ mod tests {
         fs::write(skill_dir.join("payload"), "safe content").unwrap();
         fs::write(outside.path().join("payload"), "outside secret").unwrap();
 
-        let content = read_supporting_file_with_hook(
+        let result = read_supporting_file_with_hook(
             &skill_dir,
             Path::new("payload"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
             |opened_path| {
                 if opened_path == parent {
                     fs::rename(&skill_dir, &moved_skill_dir).unwrap();
                     std::os::unix::fs::symlink(outside.path(), &skill_dir).unwrap();
                 }
             },
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_discovered_linked_skill_root() {
+        let parent = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let parent = fs::canonicalize(parent.path()).unwrap();
+        let skill_dir = parent.join("linked-skill");
+        fs::write(target.path().join("payload"), "linked content").unwrap();
+        std::os::unix::fs::symlink(target.path(), &skill_dir).unwrap();
+
+        let content = read_supporting_file_with_hook(
+            &skill_dir,
+            Path::new("payload"),
+            crate::agents::max_tool_response_size(),
+            RootLinkPolicy::FollowFinal,
+            |_| {},
         )
         .unwrap();
 
-        assert_eq!(content, "outside secret");
+        assert_eq!(content, "linked content");
     }
 
     #[cfg(windows)]
@@ -1413,6 +1479,7 @@ mod tests {
             &skill_dir,
             Path::new("nested/payload"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
             |opened_path| {
                 if opened_path == Path::new("nested") {
                     fs::rename(&nested, &moved_nested).unwrap();
@@ -1447,6 +1514,7 @@ mod tests {
             &skill_dir,
             Path::new("payload"),
             crate::agents::max_tool_response_size(),
+            RootLinkPolicy::Reject,
             |opened_path| {
                 if opened_path == parent {
                     fs::rename(&skill_dir, &moved_skill_dir).unwrap();

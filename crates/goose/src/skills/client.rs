@@ -65,6 +65,15 @@ impl SkillsClient {
             })
             .collect()
     }
+
+    fn discover_skills_with_details(&self) -> Vec<super::DiscoveredSkill> {
+        super::discover_skills_with_details_and_config(Some(&self.working_dir), self.config)
+            .into_iter()
+            .filter(|skill| {
+                !self.exclude_builtin_skills || skill.source_type != SourceType::BuiltinSkill
+            })
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -141,7 +150,7 @@ impl McpClientTrait for SkillsClient {
             .and_then(|args| args.get("args"))
             .and_then(|v| v.as_str());
 
-        let skills = self.discover_skills();
+        let skills = self.discover_skills_with_details();
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
             return match loaded_skill_context_with_args(skill, args) {
@@ -160,15 +169,6 @@ impl McpClientTrait for SkillsClient {
                     && matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill)
             }) {
                 let listed_skill_dir = PathBuf::from(&skill.path);
-                let load_skill_dir = match listed_skill_dir.canonicalize() {
-                    Ok(path) => path,
-                    Err(e) => {
-                        return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                            "Failed to resolve '{}': {}",
-                            parent_skill_name, e
-                        ))]));
-                    }
-                };
 
                 for file_path in &skill.supporting_files {
                     let file_path_buf = Path::new(file_path);
@@ -179,8 +179,12 @@ impl McpClientTrait for SkillsClient {
                         continue;
                     }
 
-                    let result = match super::load_supporting_file(&load_skill_dir, rel, skill_name)
-                    {
+                    let result = match super::load_supporting_file(
+                        &skill.load_path,
+                        rel,
+                        skill_name,
+                        skill.linked_skill_root,
+                    ) {
                         Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
                         Err(e) => CallToolResult::error(vec![ContentBlock::text(format!(
                             "Failed to read '{}': {}",
