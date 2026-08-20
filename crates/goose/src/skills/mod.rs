@@ -1434,6 +1434,26 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn scan_skills_discovers_linked_skill_below_grouping_directory() {
+        use std::os::unix::fs::symlink;
+
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_root = temp_root.join("skills");
+        let group = skill_root.join("team");
+        std::fs::create_dir_all(&group).unwrap();
+        let outside_skill_dir = temp_root.join("outside-skill");
+        write_skill(&outside_skill_dir, "reviewer");
+        symlink(&outside_skill_dir, group.join("reviewer")).unwrap();
+
+        let sources = scan_skills_from_dir(&skill_root, false, &mut HashSet::new());
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "reviewer");
+        assert_eq!(sources[0].path, group.join("reviewer").to_string_lossy());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn scan_skills_ignores_symlinked_supporting_files() {
         use std::os::unix::fs::symlink;
 
