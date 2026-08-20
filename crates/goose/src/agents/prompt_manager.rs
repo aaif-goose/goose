@@ -245,13 +245,19 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        self.load_subdirectory_hints(working_dir);
-        self.builder()
+        self.builder_with_fresh_hints(working_dir)
             .with_prompt_extras(prompt_parts)
-            .with_hints(working_dir)
             .with_goose_mode(goose_mode)
             .without_extensions()
             .build()
+    }
+
+    pub fn builder_with_fresh_hints(
+        &mut self,
+        working_dir: &Path,
+    ) -> SystemPromptBuilder<'_, PromptManager> {
+        self.load_subdirectory_hints(working_dir);
+        self.builder().with_hints(working_dir)
     }
 
     /// Override the system prompt with custom text
@@ -420,7 +426,10 @@ mod tests {
             format!("{}ROOT_MARKER", "r".repeat(700 * 1024)),
         )
         .unwrap();
-        let prompt = manager.build_system_prompt(project.path(), Vec::new(), GooseMode::Auto);
+        let prompt = manager
+            .builder_with_fresh_hints(project.path())
+            .with_goose_mode(GooseMode::Auto)
+            .build();
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(project.path());
         let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
