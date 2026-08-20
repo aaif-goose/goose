@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::utils::sanitize_unicode_tags;
+
 static FILE_REFERENCE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     regex::Regex::new(r"(?:^|\s)@([a-zA-Z0-9_\-./]+(?:\.[a-zA-Z0-9]+)+|[A-Z][a-zA-Z0-9_\-]*|[a-zA-Z0-9_\-./]*[./][a-zA-Z0-9_\-./]*)")
         .expect("Invalid file reference regex pattern")
@@ -406,6 +408,7 @@ fn process_file_reference(
         }
     }
 
+    let content = sanitize_unicode_tags(&content);
     let output_bytes = expanded_output_cost(reference, content.len())?;
     let output_growth = output_bytes.saturating_sub(replaced_bytes);
     if !budget.reserve_output(output_growth) {
@@ -544,6 +547,7 @@ fn read_referenced_files_with_budget(
         tracing::warn!("Could not read hint file {:?}: {}", safe_file_path, e);
         return String::new();
     }
+    let content = sanitize_unicode_tags(&content);
     if content.len() > max_content_bytes || !budget.reserve_output(content.len()) {
         tracing::warn!(
             "Hint file too large: {:?} (remaining limit: {} bytes)",
@@ -1189,6 +1193,35 @@ mod tests {
         }
 
         #[test]
+        fn test_top_level_content_budgets_nfc_expansion() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let import_boundary = temp_dir.path();
+            let ignore_patterns = create_ignore_patterns(import_boundary);
+            let content = "\u{0344}".repeat(2);
+            let normalized = "\u{0308}\u{0301}".repeat(2);
+            let main_file = create_file(import_boundary, "main.md", &content);
+
+            let at_boundary = read_with_budget(
+                &main_file,
+                import_boundary,
+                &ignore_patterns,
+                MAX_REFERENCE_OPERATIONS,
+                normalized.len(),
+            );
+            let below_boundary = read_with_budget(
+                &main_file,
+                import_boundary,
+                &ignore_patterns,
+                MAX_REFERENCE_OPERATIONS,
+                normalized.len() - 1,
+            );
+
+            assert!(content.len() < normalized.len() - 1);
+            assert_eq!(at_boundary, normalized);
+            assert!(below_boundary.is_empty());
+        }
+
+        #[test]
         fn test_reference_operation_budget_preserves_excess_references() {
             let temp_dir = tempfile::tempdir().unwrap();
             let import_boundary = temp_dir.path();
@@ -1362,6 +1395,40 @@ mod tests {
             assert!(!below_boundary.contains("included content"));
             assert!(!below_boundary.contains("@later.md"));
             assert!(below_boundary.contains("later content"));
+        }
+
+        #[test]
+        fn test_reference_content_budgets_nfc_expansion() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let import_boundary = temp_dir.path();
+            let ignore_patterns = create_ignore_patterns(import_boundary);
+            let included_content = "\u{0344}".repeat(2);
+            let normalized = "\u{0308}\u{0301}".repeat(2);
+            create_file(import_boundary, "included.md", &included_content);
+            let main_content = "@included.md";
+            let main_file = create_file(import_boundary, "main.md", main_content);
+            let exact_limit = main_content.len()
+                + expanded_output_cost(Path::new("included.md"), normalized.len()).unwrap()
+                - replaced_reference_cost(Path::new("included.md")).unwrap();
+
+            let at_boundary = read_with_budget(
+                &main_file,
+                import_boundary,
+                &ignore_patterns,
+                MAX_REFERENCE_OPERATIONS,
+                exact_limit,
+            );
+            let below_boundary = read_with_budget(
+                &main_file,
+                import_boundary,
+                &ignore_patterns,
+                MAX_REFERENCE_OPERATIONS,
+                exact_limit - 1,
+            );
+
+            assert!(at_boundary.contains(&normalized));
+            assert!(!at_boundary.contains("@included.md"));
+            assert_eq!(below_boundary, main_content);
         }
 
         #[test]
