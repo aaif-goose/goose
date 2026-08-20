@@ -310,10 +310,13 @@ fn walk_opened_directory<F, G, H>(
         let path = logical_path.join(&name);
         if should_descend(&path) {
             if let Ok(child) = open_child_directory(&directory, &name) {
+                let child_is_skill_root =
+                    is_child_regular_file(&child, std::ffi::OsStr::new("SKILL.md"))
+                        .unwrap_or(false);
                 walk_opened_directory(
                     &path,
                     child,
-                    false,
+                    allow_linked_skill_roots && !child_is_skill_root,
                     should_descend,
                     visit_file,
                     after_read_dir,
