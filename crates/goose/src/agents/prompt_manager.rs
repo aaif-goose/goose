@@ -4,7 +4,7 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::agents::{extension::ExtensionInfo, moim};
 #[cfg(test)]
@@ -27,6 +27,7 @@ pub struct PromptManager {
     system_prompt_extras: IndexMap<String, String>,
     current_date_timestamp: String,
     subdirectory_hint_tracker: SubdirectoryHintTracker,
+    generated_subdirectory_hint_keys: HashSet<String>,
 }
 
 fn trailing_hint_separator_bytes(goose_mode: GooseMode) -> usize {
@@ -209,6 +210,7 @@ impl PromptManager {
             // Filtering to an hour to balance user time accuracy and multi session prompt cache hits.
             current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00 %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
+            generated_subdirectory_hint_keys: HashSet::new(),
         }
     }
 
@@ -219,16 +221,19 @@ impl PromptManager {
             system_prompt_extras: IndexMap::new(),
             current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
+            generated_subdirectory_hint_keys: HashSet::new(),
         }
     }
 
     /// Add an additional instruction to the system prompt with a key
     /// Using the same key will replace the previous instruction
     pub fn add_system_prompt_extra(&mut self, key: String, instruction: String) {
+        self.generated_subdirectory_hint_keys.remove(&key);
         self.system_prompt_extras.insert(key, instruction);
     }
 
     pub fn remove_system_prompt_extra(&mut self, key: &str) {
+        self.generated_subdirectory_hint_keys.remove(key);
         self.system_prompt_extras.shift_remove(key);
     }
 
@@ -250,14 +255,21 @@ impl PromptManager {
         let previous_hints: Vec<_> = self
             .system_prompt_extras
             .iter()
-            .filter(|(key, _)| key.starts_with("subdir_hints:"))
+            .filter(|(key, _)| self.generated_subdirectory_hint_keys.contains(*key))
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
-        let changed = previous_hints != hints;
 
         self.system_prompt_extras
-            .retain(|key, _| !key.starts_with("subdir_hints:"));
-        for (key, content) in hints {
+            .retain(|key, _| !self.generated_subdirectory_hint_keys.contains(key));
+        self.generated_subdirectory_hint_keys.clear();
+        let applied_hints: Vec<_> = hints
+            .into_iter()
+            .filter(|(key, _)| !self.system_prompt_extras.contains_key(key))
+            .collect();
+        let changed = previous_hints != applied_hints;
+
+        for (key, content) in applied_hints {
+            self.generated_subdirectory_hint_keys.insert(key.clone());
             self.system_prompt_extras.insert(key, content);
         }
         changed
@@ -403,6 +415,70 @@ mod tests {
 
         assert!(with_contribution.contains("temporary instruction"));
         assert!(!without_contribution.contains("temporary instruction"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn hint_refresh_preserves_caller_owned_keys_and_removes_stale_generated_keys() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let first = project.path().join("first");
+        let second = project.path().join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let first_hints = first.join(crate::hints::GOOSE_HINTS_FILENAME);
+        let second_hints = second.join(crate::hints::GOOSE_HINTS_FILENAME);
+        fs::write(&first_hints, "first generated hints").unwrap();
+        fs::write(&second_hints, "second generated hints").unwrap();
+
+        let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra(
+            "subdir_hints:caller".to_string(),
+            "caller namespace content".to_string(),
+        );
+        for path in ["first/file.rs", "second/file.rs"] {
+            let arguments = serde_json::json!({ "path": path }).as_object().cloned();
+            manager.record_tool_arguments(&arguments, project.path());
+        }
+        assert!(manager.load_subdirectory_hints(project.path()));
+
+        let first_key = format!("subdir_hints:{}", first.canonicalize().unwrap().display());
+        let second_key = format!("subdir_hints:{}", second.canonicalize().unwrap().display());
+        assert!(manager
+            .generated_subdirectory_hint_keys
+            .contains(&first_key));
+        assert!(manager
+            .generated_subdirectory_hint_keys
+            .contains(&second_key));
+
+        manager.add_system_prompt_extra(first_key.clone(), "caller override".to_string());
+        fs::remove_file(first_hints).unwrap();
+        fs::remove_file(second_hints).unwrap();
+        assert!(manager.load_subdirectory_hints(project.path()));
+
+        assert_eq!(
+            manager
+                .system_prompt_extras
+                .get("subdir_hints:caller")
+                .map(String::as_str),
+            Some("caller namespace content")
+        );
+        assert_eq!(
+            manager
+                .system_prompt_extras
+                .get(&first_key)
+                .map(String::as_str),
+            Some("caller override")
+        );
+        assert!(!manager.system_prompt_extras.contains_key(&second_key));
+        assert!(manager.generated_subdirectory_hint_keys.is_empty());
     }
 
     #[test]
