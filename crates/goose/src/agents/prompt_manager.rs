@@ -276,15 +276,20 @@ impl PromptManager {
             .system_prompt_extras
             .keys()
             .any(|key| !self.generated_subdirectory_hint_keys.contains(key));
-        let chat_boundary_count = usize::from(goose_mode == GooseMode::Chat);
+        let has_chat_mode = goose_mode == GooseMode::Chat;
+        let chat_boundary_count = usize::from(has_chat_mode);
         let root_only_boundary_count =
             usize::from(has_prompt_parts || has_caller_owned_extra) + chat_boundary_count;
-        let subdirectory_boundary_count = usize::from(has_prompt_parts)
+        let subdirectories_only_boundary_count = usize::from(has_prompt_parts)
+            + usize::from(has_caller_owned_extra)
+            + usize::from(has_chat_mode && !has_prompt_parts);
+        let with_subdirectories_boundary_count = usize::from(has_prompt_parts)
             + usize::from(has_caller_owned_extra)
             + chat_boundary_count;
         HintOutputReservation::new(
             root_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
-            subdirectory_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
+            subdirectories_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
+            with_subdirectories_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
         )
     }
 

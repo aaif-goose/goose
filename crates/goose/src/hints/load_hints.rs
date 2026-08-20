@@ -23,13 +23,19 @@ pub(crate) struct HintSnapshot {
 #[derive(Clone, Copy)]
 pub(crate) struct HintOutputReservation {
     pub(crate) root_only: usize,
+    pub(crate) subdirectories_only: usize,
     pub(crate) with_subdirectories: usize,
 }
 
 impl HintOutputReservation {
-    pub(crate) fn new(root_only: usize, with_subdirectories: usize) -> Self {
+    pub(crate) fn new(
+        root_only: usize,
+        subdirectories_only: usize,
+        with_subdirectories: usize,
+    ) -> Self {
         Self {
             root_only,
+            subdirectories_only,
             with_subdirectories,
         }
     }
@@ -37,7 +43,11 @@ impl HintOutputReservation {
 
 impl From<usize> for HintOutputReservation {
     fn from(reserved_output_bytes: usize) -> Self {
-        Self::new(reserved_output_bytes, reserved_output_bytes)
+        Self::new(
+            reserved_output_bytes,
+            reserved_output_bytes,
+            reserved_output_bytes,
+        )
     }
 }
 
@@ -158,13 +168,19 @@ impl SubdirectoryHintTracker {
             top_level_output_limit,
         );
         after_top_level_read();
+        let has_top_level_hints = !top_level_hints.is_empty();
+        let initial_reservation = if has_top_level_hints {
+            reservation.root_only
+        } else {
+            reservation.subdirectories_only
+        };
         let mut remaining_output_bytes = MAX_HINT_OUTPUT_BYTES
             .saturating_sub(top_level_hints.len())
-            .saturating_sub(reservation.root_only);
-        let mut has_hint_output = !top_level_hints.is_empty();
+            .saturating_sub(initial_reservation);
+        let mut has_hint_output = has_top_level_hints;
         let mut results = Vec::new();
         for dir in &self.loaded_dirs {
-            let additional_reservation = if results.is_empty() {
+            let additional_reservation = if has_top_level_hints && results.is_empty() {
                 reservation
                     .with_subdirectories
                     .saturating_sub(reservation.root_only)

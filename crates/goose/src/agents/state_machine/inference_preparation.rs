@@ -4,9 +4,9 @@
 use crate::agents::ExtensionManager;
 use crate::agents::PromptManager;
 use crate::config::GooseMode;
-use crate::hints::load_hints::{
-    HintOutputReservation, HintSnapshot, SubdirectoryHintTracker, HINT_EXTRA_SEPARATOR_BYTES,
-};
+#[cfg(test)]
+use crate::hints::load_hints::HINT_EXTRA_SEPARATOR_BYTES;
+use crate::hints::load_hints::{HintOutputReservation, HintSnapshot, SubdirectoryHintTracker};
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
 use anyhow::Result;
@@ -281,6 +281,68 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn state_machine_chat_subdirectory_hints_ignore_nonadjacent_chat_boundary() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        let nested_hints = nested.join(GOOSE_HINTS_FILENAME);
+        let marker = "SUBDIRECTORY_BOUNDARY";
+        fs::write(&nested_hints, marker).unwrap();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
+            "read-nested",
+            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
+        )]);
+        let mut prompt_manager = PromptManager::new();
+        let reservation = prompt_manager.hint_output_reservation(true, GooseMode::Chat);
+        assert_eq!(reservation.root_only, 2 * HINT_EXTRA_SEPARATOR_BYTES);
+        assert_eq!(reservation.subdirectories_only, HINT_EXTRA_SEPARATOR_BYTES);
+        assert_eq!(
+            reservation.with_subdirectories,
+            2 * HINT_EXTRA_SEPARATOR_BYTES
+        );
+        let measured = reconstructed_hint_snapshot(&conversation, project.path(), reservation);
+        let framing_bytes = measured.subdirectories[0].1.len() - marker.len();
+        let hint_output_bytes = MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES;
+        let content_bytes = hint_output_bytes - framing_bytes;
+        fs::write(
+            nested_hints,
+            format!("{marker}{}", "n".repeat(content_bytes - marker.len())),
+        )
+        .unwrap();
+
+        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), reservation);
+        assert!(snapshot.top_level.is_empty());
+        assert_eq!(snapshot.subdirectories.len(), 1);
+        assert_eq!(
+            snapshot.subdirectories[0].1.len() + HINT_EXTRA_SEPARATOR_BYTES,
+            MAX_HINT_OUTPUT_BYTES
+        );
+        let prompt = prompt_manager.build_system_prompt_from_snapshot(
+            vec![(
+                "extensions".to_string(),
+                "operation prompt instruction".to_string(),
+            )],
+            GooseMode::Chat,
+            snapshot,
+        );
+        assert!(prompt.contains(marker));
+        assert!(prompt.contains("operation prompt instruction"));
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn state_machine_hints_reserve_caller_prompt_and_chat_boundaries_at_exact_limit() {
         const PROJECT_HINTS_HEADER: &str =
             "### Project Hints\nThese are hints for working on the project in this directory.\n";
@@ -315,11 +377,19 @@ mod tests {
         let auto_reservation = prompt_manager.hint_output_reservation(true, GooseMode::Auto);
         assert_eq!(auto_reservation.root_only, HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(
+            auto_reservation.subdirectories_only,
+            2 * HINT_EXTRA_SEPARATOR_BYTES
+        );
+        assert_eq!(
             auto_reservation.with_subdirectories,
             2 * HINT_EXTRA_SEPARATOR_BYTES
         );
         let reservation = prompt_manager.hint_output_reservation(true, GooseMode::Chat);
         assert_eq!(reservation.root_only, 2 * HINT_EXTRA_SEPARATOR_BYTES);
+        assert_eq!(
+            reservation.subdirectories_only,
+            2 * HINT_EXTRA_SEPARATOR_BYTES
+        );
         assert_eq!(
             reservation.with_subdirectories,
             3 * HINT_EXTRA_SEPARATOR_BYTES
