@@ -22,7 +22,7 @@ use crate::agents::AgentEvent;
 use crate::config::GooseMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
-use crate::hints::load_hints::SubdirectoryHintTracker;
+use crate::hints::load_hints::{SubdirectoryHintTracker, HINT_EXTRA_SEPARATOR_BYTES};
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
 use crate::session::{EnabledExtensionsState, ExtensionState, Session};
 use std::path::Path;
@@ -62,7 +62,8 @@ fn reconstructed_subdirectory_hints(
             }
         }
     }
-    hints.load_hints(working_dir)
+    // Root hints are appended after the other state-machine prompt parts.
+    hints.load_hints_with_reservation(working_dir, HINT_EXTRA_SEPARATOR_BYTES)
 }
 
 fn string_argument(input: &serde_json::Value, keys: &[&str]) -> Option<String> {
@@ -1135,5 +1136,47 @@ mod tests {
         );
         assert!(top_level_hints.contains("ROOT_MARKER"));
         assert!(subdirectory_hints.is_empty());
+    }
+
+    #[test]
+    fn reconstructed_hints_reserve_separators_around_non_hint_extras() {
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(project.path().join(GOOSE_HINTS_FILENAME), "root hints").unwrap();
+
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
+            "read-nested",
+            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
+        )]);
+        let hints_filenames = get_context_filenames();
+        let ignore_patterns = build_gitignore(project.path());
+        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
+        let header_bytes = format!(
+            "### Subdirectory Hints ({})\n",
+            nested.canonicalize().unwrap().display()
+        )
+        .len();
+        let nested_content_bytes = MAX_HINT_OUTPUT_BYTES
+            - top_level_hints.len()
+            - 2 * HINT_EXTRA_SEPARATOR_BYTES
+            - header_bytes;
+        let nested_hints = nested.join(GOOSE_HINTS_FILENAME);
+        fs::write(&nested_hints, "n".repeat(nested_content_bytes)).unwrap();
+
+        let subdirectory_hints = reconstructed_subdirectory_hints(&conversation, project.path());
+
+        assert_eq!(subdirectory_hints.len(), 1);
+        assert_eq!(
+            top_level_hints.len() + subdirectory_hints[0].1.len() + 2 * HINT_EXTRA_SEPARATOR_BYTES,
+            MAX_HINT_OUTPUT_BYTES
+        );
+
+        fs::write(&nested_hints, "n".repeat(nested_content_bytes + 1)).unwrap();
+        assert!(reconstructed_subdirectory_hints(&conversation, project.path()).is_empty());
     }
 }

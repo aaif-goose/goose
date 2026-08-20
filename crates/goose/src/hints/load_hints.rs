@@ -80,6 +80,14 @@ impl SubdirectoryHintTracker {
     }
 
     pub fn load_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
+        self.load_hints_with_reservation(working_dir, 0)
+    }
+
+    pub(crate) fn load_hints_with_reservation(
+        &mut self,
+        working_dir: &Path,
+        reserved_output_bytes: usize,
+    ) -> Vec<(String, String)> {
         let pending = std::mem::take(&mut self.pending_dirs);
         let lexical_working_dir = working_dir;
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -99,11 +107,13 @@ impl SubdirectoryHintTracker {
             self.loaded_dirs.push(dir);
         }
 
+        self.hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(lexical_working_dir);
         let top_level_hints =
             load_hint_files(lexical_working_dir, &self.hints_filenames, &ignore_patterns);
-        let mut remaining_output_bytes =
-            MAX_HINT_OUTPUT_BYTES.saturating_sub(top_level_hints.len());
+        let mut remaining_output_bytes = MAX_HINT_OUTPUT_BYTES
+            .saturating_sub(top_level_hints.len())
+            .saturating_sub(reserved_output_bytes);
         let mut has_hint_output = !top_level_hints.is_empty();
         let mut results = Vec::new();
         for dir in &self.loaded_dirs {
@@ -1021,6 +1031,40 @@ End of hints"#;
     }
 
     #[test]
+    #[serial_test::serial]
+    fn tracker_refreshes_context_filenames_before_reserving_root_hints() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"["old.md"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let nested = project_root.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("old.md"), "stale nested hints").unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        std::env::set_var("CONTEXT_FILE_NAMES", r#"["new.md"]"#);
+        fs::write(
+            project_root.path().join("new.md"),
+            "r".repeat(MAX_HINT_OUTPUT_BYTES - PROJECT_HINTS_HEADER.len()),
+        )
+        .unwrap();
+        let args = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&args, project_root.path());
+
+        let hints = tracker.load_hints(project_root.path());
+
+        assert!(hints.is_empty());
+        assert_eq!(tracker.hints_filenames, ["new.md".to_string()]);
+    }
+
+    #[test]
     fn tracker_aggregates_output_limit_across_subdirectories() {
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path().to_path_buf();
@@ -1070,7 +1114,16 @@ End of hints"#;
     }
 
     #[test]
+    #[serial_test::serial]
     fn tracker_charges_separator_between_root_and_subdirectory_hints() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
         let project_root = tempfile::tempdir().unwrap();
         let nested = project_root.path().join("nested");
         fs::create_dir(&nested).unwrap();
@@ -1095,7 +1148,6 @@ End of hints"#;
         .unwrap();
 
         let mut tracker = SubdirectoryHintTracker::new();
-        tracker.hints_filenames = hints_filenames;
         let args = serde_json::json!({ "path": "nested/file.rs" })
             .as_object()
             .unwrap()
