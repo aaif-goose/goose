@@ -546,13 +546,13 @@ where
     let _ = walk_regular_files_no_follow_with_hook(
         dir,
         &mut |path| !should_skip_dir(path),
-        &mut |path, mut file| {
+        &mut |path, open_for_read| {
             if path.file_name().and_then(|name| name.to_str()) == Some("SKILL.md") {
                 if let Some(skill_dir) = path.parent() {
                     skill_dirs.insert(skill_dir.to_path_buf());
                 }
                 let mut content = String::new();
-                match file.read_to_string(&mut content) {
+                match open_for_read().and_then(|mut file| file.read_to_string(&mut content)) {
                     Ok(_) => skill_files.push((path.to_path_buf(), content)),
                     Err(error) => warn!("Failed to read skill file {}: {}", path.display(), error),
                 }
@@ -576,7 +576,7 @@ where
                 let _ = walk_regular_files_no_follow_with_hook(
                     skill_dir,
                     &mut |path| !should_skip_dir(path) && !skill_dirs.contains(path),
-                    &mut |path, _file| {
+                    &mut |path, _open_for_read| {
                         if path.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
                             if let Ok(relative) = path.strip_prefix(skill_dir) {
                                 files.push(
@@ -1255,6 +1255,36 @@ mod tests {
                 .to_string_lossy()
                 .into_owned()]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skills_preserves_execute_only_supporting_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_dir = temp_root.join("native-helper-skill");
+        write_skill(&skill_dir, "native-helper-skill");
+        let helper = skill_dir.join("bin").join("helper");
+        std::fs::create_dir_all(helper.parent().unwrap()).unwrap();
+        std::fs::write(&helper, "native helper").unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o111)).unwrap();
+
+        let sources = scan_skills_from_dir(&temp_root, false, &mut HashSet::new());
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(
+            sources[0].supporting_files,
+            vec![helper.to_string_lossy().into_owned()]
+        );
+        let context = loaded_skill_context_with_args(&sources[0], None).unwrap();
+        assert!(context.contains(&helper.to_string_lossy().replace('\\', "/")));
+        assert!(load_supporting_file(
+            &skill_dir,
+            Path::new("bin/helper"),
+            "native-helper-skill/bin/helper"
+        )
+        .is_err());
     }
 
     #[cfg(unix)]
