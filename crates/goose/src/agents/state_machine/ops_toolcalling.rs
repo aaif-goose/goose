@@ -62,7 +62,7 @@ fn reconstructed_subdirectory_hints(
             }
         }
     }
-    hints.load_new_hints(working_dir)
+    hints.load_hints(working_dir)
 }
 
 fn string_argument(input: &serde_json::Value, keys: &[&str]) -> Option<String> {

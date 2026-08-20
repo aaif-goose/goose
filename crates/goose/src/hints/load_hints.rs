@@ -27,11 +27,9 @@ pub fn get_context_filenames() -> Vec<String> {
 }
 
 pub struct SubdirectoryHintTracker {
-    loaded_dirs: HashSet<PathBuf>,
+    loaded_dirs: Vec<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
-    remaining_output_bytes: usize,
-    output_budget_initialized: bool,
 }
 
 impl Default for SubdirectoryHintTracker {
@@ -43,23 +41,10 @@ impl Default for SubdirectoryHintTracker {
 impl SubdirectoryHintTracker {
     pub fn new() -> Self {
         Self {
-            loaded_dirs: HashSet::new(),
+            loaded_dirs: Vec::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
-            remaining_output_bytes: MAX_HINT_OUTPUT_BYTES,
-            output_budget_initialized: false,
         }
-    }
-
-    fn initialize_output_budget(&mut self, working_dir: &Path) {
-        if self.output_budget_initialized {
-            return;
-        }
-
-        let ignore_patterns = build_gitignore(working_dir);
-        let top_level_hints = load_hint_files(working_dir, &self.hints_filenames, &ignore_patterns);
-        self.remaining_output_bytes = MAX_HINT_OUTPUT_BYTES.saturating_sub(top_level_hints.len());
-        self.output_budget_initialized = true;
     }
 
     pub fn record_tool_arguments(
@@ -92,18 +77,12 @@ impl SubdirectoryHintTracker {
         }
     }
 
-    pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
-        self.initialize_output_budget(working_dir);
+    pub fn load_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
         let pending = std::mem::take(&mut self.pending_dirs);
-        if pending.is_empty() {
-            return Vec::new();
-        }
-
         let Ok(working_dir) = working_dir.canonicalize() else {
             return Vec::new();
         };
 
-        let mut results = Vec::new();
         for dir in pending {
             let Ok(dir) = dir.canonicalize() else {
                 continue;
@@ -114,19 +93,32 @@ impl SubdirectoryHintTracker {
             if self.loaded_dirs.contains(&dir) {
                 continue;
             }
+            self.loaded_dirs.push(dir);
+        }
+
+        let ignore_patterns = build_gitignore(&working_dir);
+        let top_level_hints =
+            load_hint_files(&working_dir, &self.hints_filenames, &ignore_patterns);
+        let mut remaining_output_bytes =
+            MAX_HINT_OUTPUT_BYTES.saturating_sub(top_level_hints.len());
+        let mut results = Vec::new();
+        for dir in &self.loaded_dirs {
             if let Some(content) = load_hints_from_directory(
-                &dir,
+                dir,
                 &working_dir,
                 &self.hints_filenames,
-                self.remaining_output_bytes,
+                remaining_output_bytes,
             ) {
-                self.remaining_output_bytes -= content.len();
+                remaining_output_bytes -= content.len();
                 let key = format!("subdir_hints:{}", dir.display());
                 results.push((key, content));
             }
-            self.loaded_dirs.insert(dir);
         }
         results
+    }
+
+    pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
+        self.load_hints(working_dir)
     }
 }
 
@@ -949,7 +941,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "src/main.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &wd);
-        let hints = tracker.load_new_hints(&wd);
+        let hints = tracker.load_hints(&wd);
         assert!(hints.is_empty());
         assert!(tracker.loaded_dirs.contains(&src.canonicalize().unwrap()));
     }
@@ -964,7 +956,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"command": "cat nested/doc.md"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &wd);
-        let hints = tracker.load_new_hints(&wd);
+        let hints = tracker.load_hints(&wd);
         assert!(hints.is_empty());
         assert!(tracker
             .loaded_dirs
@@ -981,7 +973,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"command": "grep -rn pattern src/lib.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &wd);
-        let _ = tracker.load_new_hints(&wd);
+        let _ = tracker.load_hints(&wd);
         assert!(tracker.loaded_dirs.contains(&src.canonicalize().unwrap()));
         assert_eq!(tracker.loaded_dirs.len(), 1);
     }
@@ -1002,7 +994,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "nested/foo.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &project_root);
-        let hints = tracker.load_new_hints(&project_root);
+        let hints = tracker.load_hints(&project_root);
         assert_eq!(hints.len(), 1);
         assert!(hints[0].0.contains("nested"));
         assert!(hints[0].1.contains("nested subdirectory hints"));
@@ -1040,7 +1032,7 @@ End of hints"#;
             tracker.record_tool_arguments(&Some(args), &project_root);
         }
 
-        let hints = tracker.load_new_hints(&project_root);
+        let hints = tracker.load_hints(&project_root);
         let output_bytes: usize = hints.iter().map(|(_, content)| content.len()).sum();
         let combined = hints
             .iter()
@@ -1065,12 +1057,14 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "nested/foo.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args.clone()), &project_root);
-        let hints = tracker.load_new_hints(&project_root);
+        let hints = tracker.load_hints(&project_root);
         assert_eq!(hints.len(), 1);
 
         tracker.record_tool_arguments(&Some(args), &project_root);
-        let hints = tracker.load_new_hints(&project_root);
-        assert!(hints.is_empty());
+        let hints = tracker.load_hints(&project_root);
+        assert_eq!(hints.len(), 1);
+        assert!(hints[0].1.contains("nested hints"));
+        assert_eq!(tracker.loaded_dirs.len(), 1);
     }
 
     #[test]
@@ -1088,7 +1082,7 @@ End of hints"#;
             serde_json::from_str(r#"{"path": "nested/../../outside/file.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &project_root);
 
-        assert!(tracker.load_new_hints(&project_root).is_empty());
+        assert!(tracker.load_hints(&project_root).is_empty());
     }
 
     #[cfg(unix)]
@@ -1109,7 +1103,7 @@ End of hints"#;
             serde_json::from_str(r#"{"path": "alias/file.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &project_root);
 
-        assert!(tracker.load_new_hints(&project_root).is_empty());
+        assert!(tracker.load_hints(&project_root).is_empty());
     }
 
     #[cfg(unix)]
@@ -1128,14 +1122,14 @@ End of hints"#;
         let alias_args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "alias/file.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(alias_args), &project_root);
-        let hints = tracker.load_new_hints(&project_root);
+        let hints = tracker.load_hints(&project_root);
         assert_eq!(hints.len(), 1);
         assert!(hints[0].1.contains("real hints"));
 
         let real_args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "real/file.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(real_args), &project_root);
-        assert!(tracker.load_new_hints(&project_root).is_empty());
+        assert_eq!(tracker.load_hints(&project_root).len(), 1);
         assert_eq!(tracker.loaded_dirs.len(), 1);
     }
 
@@ -1149,7 +1143,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "future/file.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args.clone()), &project_root);
-        assert!(tracker.load_new_hints(&project_root).is_empty());
+        assert!(tracker.load_hints(&project_root).is_empty());
         assert!(tracker.loaded_dirs.is_empty());
 
         let future = project_root.join("future");
@@ -1157,7 +1151,7 @@ End of hints"#;
         fs::write(future.join(GOOSE_HINTS_FILENAME), "future hints").unwrap();
         tracker.record_tool_arguments(&Some(args), &project_root);
 
-        let hints = tracker.load_new_hints(&project_root);
+        let hints = tracker.load_hints(&project_root);
         assert_eq!(hints.len(), 1);
         assert!(hints[0].1.contains("future hints"));
     }

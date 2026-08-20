@@ -222,12 +222,21 @@ impl PromptManager {
     }
 
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
-        let new_hints = self.subdirectory_hint_tracker.load_new_hints(working_dir);
-        let has_new = !new_hints.is_empty();
-        for (key, content) in new_hints {
+        let hints = self.subdirectory_hint_tracker.load_hints(working_dir);
+        let previous_hints: Vec<_> = self
+            .system_prompt_extras
+            .iter()
+            .filter(|(key, _)| key.starts_with("subdir_hints:"))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        let changed = previous_hints != hints;
+
+        self.system_prompt_extras
+            .retain(|key, _| !key.starts_with("subdir_hints:"));
+        for (key, content) in hints {
             self.system_prompt_extras.insert(key, content);
         }
-        has_new
+        changed
     }
 
     pub fn build_system_prompt(
@@ -361,6 +370,47 @@ mod tests {
         assert!(!manager.load_subdirectory_hints(project.path()));
 
         let prompt = manager.builder().with_hints(project.path()).build();
+        let hints_filenames = get_context_filenames();
+        let ignore_patterns = build_gitignore(project.path());
+        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
+        let subdirectory_hint_bytes: usize = manager
+            .system_prompt_extras
+            .iter()
+            .filter(|(key, _)| key.starts_with("subdir_hints:"))
+            .map(|(_, value)| value.len())
+            .sum();
+
+        assert!(top_level_hints.len() + subdirectory_hint_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(prompt.contains("ROOT_MARKER"));
+        assert!(!prompt.contains("NESTED_MARKER"));
+    }
+
+    #[test]
+    fn growing_root_hints_reclaims_subdirectory_output_budget() {
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        let root_hints = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
+        fs::write(&root_hints, "initial root hints").unwrap();
+        fs::write(
+            nested.join(crate::hints::GOOSE_HINTS_FILENAME),
+            format!("{}NESTED_MARKER", "n".repeat(400 * 1024)),
+        )
+        .unwrap();
+
+        let mut manager = PromptManager::new();
+        let arguments = serde_json::json!({ "path": "nested/file.txt" })
+            .as_object()
+            .cloned();
+        manager.record_tool_arguments(&arguments, project.path());
+        assert!(manager.load_subdirectory_hints(project.path()));
+
+        fs::write(
+            &root_hints,
+            format!("{}ROOT_MARKER", "r".repeat(700 * 1024)),
+        )
+        .unwrap();
+        let prompt = manager.build_system_prompt(project.path(), Vec::new(), GooseMode::Auto);
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(project.path());
         let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
