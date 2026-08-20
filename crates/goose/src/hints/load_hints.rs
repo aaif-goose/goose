@@ -126,8 +126,13 @@ impl SubdirectoryHintTracker {
 
         self.hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(lexical_working_dir);
-        let top_level_hints =
-            load_hint_files(lexical_working_dir, &self.hints_filenames, &ignore_patterns);
+        let top_level_output_limit = MAX_HINT_OUTPUT_BYTES.saturating_sub(reserved_output_bytes);
+        let top_level_hints = load_hint_files_with_limit(
+            lexical_working_dir,
+            &self.hints_filenames,
+            &ignore_patterns,
+            top_level_output_limit,
+        );
         after_top_level_read();
         let mut remaining_output_bytes = MAX_HINT_OUTPUT_BYTES
             .saturating_sub(top_level_hints.len())
@@ -1083,6 +1088,43 @@ End of hints"#;
 
         assert!(hints.is_empty());
         assert_eq!(tracker.hints_filenames, ["new.md".to_string()]);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_applies_reserved_bytes_before_loading_top_level_hints() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let hints_path = project_root.path().join(GOOSE_HINTS_FILENAME);
+        let reserved_output_bytes = HINT_EXTRA_SEPARATOR_BYTES;
+        let content_bytes =
+            MAX_HINT_OUTPUT_BYTES - PROJECT_HINTS_HEADER.len() - reserved_output_bytes;
+        let content = format!(
+            "ROOT_MARKER{}",
+            "r".repeat(content_bytes - "ROOT_MARKER".len())
+        );
+        fs::write(&hints_path, &content).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let snapshot = tracker.load_snapshot(project_root.path(), reserved_output_bytes);
+
+        assert_eq!(
+            snapshot.top_level.len() + reserved_output_bytes,
+            MAX_HINT_OUTPUT_BYTES
+        );
+        assert!(snapshot.top_level.contains("ROOT_MARKER"));
+
+        fs::write(hints_path, format!("{content}xx")).unwrap();
+        let snapshot = tracker.load_snapshot(project_root.path(), reserved_output_bytes);
+
+        assert!(snapshot.top_level.is_empty());
     }
 
     #[test]
