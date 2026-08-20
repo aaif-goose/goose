@@ -31,6 +31,7 @@ pub struct SubdirectoryHintTracker {
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
     remaining_output_bytes: usize,
+    output_budget_initialized: bool,
 }
 
 impl Default for SubdirectoryHintTracker {
@@ -46,7 +47,19 @@ impl SubdirectoryHintTracker {
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
             remaining_output_bytes: MAX_HINT_OUTPUT_BYTES,
+            output_budget_initialized: false,
         }
+    }
+
+    fn initialize_output_budget(&mut self, working_dir: &Path) {
+        if self.output_budget_initialized {
+            return;
+        }
+
+        let ignore_patterns = build_gitignore(working_dir);
+        let top_level_hints = load_hint_files(working_dir, &self.hints_filenames, &ignore_patterns);
+        self.remaining_output_bytes = MAX_HINT_OUTPUT_BYTES.saturating_sub(top_level_hints.len());
+        self.output_budget_initialized = true;
     }
 
     pub fn record_tool_arguments(
@@ -80,6 +93,7 @@ impl SubdirectoryHintTracker {
     }
 
     pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
+        self.initialize_output_budget(working_dir);
         let pending = std::mem::take(&mut self.pending_dirs);
         if pending.is_empty() {
             return Vec::new();

@@ -25,6 +25,7 @@ use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
 use crate::session::{EnabledExtensionsState, ExtensionState, Session};
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -45,6 +46,23 @@ fn categorize_tool(tool_name: &str) -> ToolCategory {
         "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
         _ => ToolCategory::Other,
     }
+}
+
+fn reconstructed_subdirectory_hints(
+    conversation: &Conversation,
+    working_dir: &Path,
+) -> Vec<(String, String)> {
+    let mut hints = SubdirectoryHintTracker::new();
+    for message in conversation.messages() {
+        for content in &message.content {
+            if let MessageContent::ToolRequest(request) = content {
+                if let Ok(tool_call) = &request.tool_call {
+                    hints.record_tool_arguments(&tool_call.arguments, working_dir);
+                }
+            }
+        }
+    }
+    hints.load_new_hints(working_dir)
 }
 
 fn string_argument(input: &serde_json::Value, keys: &[&str]) -> Option<String> {
@@ -775,17 +793,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         session: &Session,
         conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        let mut hints = SubdirectoryHintTracker::new();
-        for message in conversation.messages() {
-            for content in &message.content {
-                if let MessageContent::ToolRequest(request) = content {
-                    if let Ok(tool_call) = &request.tool_call {
-                        hints.record_tool_arguments(&tool_call.arguments, &session.working_dir);
-                    }
-                }
-            }
-        }
-        let mut prompt_parts = hints.load_new_hints(&session.working_dir);
+        let mut prompt_parts = reconstructed_subdirectory_hints(conversation, &session.working_dir);
 
         #[cfg(feature = "code-mode")]
         if self
@@ -1028,6 +1036,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hints::{
+        build_gitignore, get_context_filenames, load_hint_files, GOOSE_HINTS_FILENAME,
+        MAX_HINT_OUTPUT_BYTES,
+    };
+    use std::fs;
 
     #[test]
     fn externally_dispatched_observations_are_not_pending_execution() {
@@ -1078,5 +1091,44 @@ mod tests {
             notification.params,
             Some(serde_json::json!({ "event_type": "app_updated" }))
         );
+    }
+
+    #[test]
+    fn reconstructed_hints_reserve_the_top_level_output_budget() {
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(
+            project.path().join(GOOSE_HINTS_FILENAME),
+            format!("{}ROOT_MARKER", "r".repeat(600 * 1024)),
+        )
+        .unwrap();
+        fs::write(
+            nested.join(GOOSE_HINTS_FILENAME),
+            format!("{}NESTED_MARKER", "n".repeat(600 * 1024)),
+        )
+        .unwrap();
+
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
+            "read-nested",
+            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
+        )]);
+
+        let subdirectory_hints = reconstructed_subdirectory_hints(&conversation, project.path());
+        let hints_filenames = get_context_filenames();
+        let ignore_patterns = build_gitignore(project.path());
+        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
+        let subdirectory_hint_bytes: usize = subdirectory_hints
+            .iter()
+            .map(|(_, content)| content.len())
+            .sum();
+
+        assert!(top_level_hints.len() + subdirectory_hint_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(top_level_hints.contains("ROOT_MARKER"));
+        assert!(subdirectory_hints.is_empty());
     }
 }

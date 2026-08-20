@@ -8,10 +8,9 @@ use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::{
-    get_context_filenames, load_hint_files_with_limit, SubdirectoryHintTracker,
-    MAX_HINT_OUTPUT_BYTES,
-};
+#[cfg(test)]
+use crate::hints::MAX_HINT_OUTPUT_BYTES;
+use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -91,32 +90,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     pub fn with_hints(mut self, working_dir: &Path) -> Self {
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
-        let mut subdirectory_hints = self
-            .manager
-            .system_prompt_extras
-            .iter()
-            .filter(|(key, _)| key.starts_with("subdir_hints:"))
-            .map(|(key, value)| (key.as_str(), value.len()))
-            .collect::<HashMap<_, _>>();
-        subdirectory_hints.extend(
-            self.prompt_extras
-                .iter()
-                .filter(|(key, _)| key.starts_with("subdir_hints:"))
-                .map(|(key, value)| (key.as_str(), value.len())),
-        );
-        let remaining_output_bytes = subdirectory_hints
-            .values()
-            .try_fold(MAX_HINT_OUTPUT_BYTES, |remaining, size| {
-                remaining.checked_sub(*size)
-            })
-            .unwrap_or(0);
-
-        let hints = load_hint_files_with_limit(
-            working_dir,
-            &hints_filenames,
-            &ignore_patterns,
-            remaining_output_bytes,
-        );
+        let hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
 
         if !hints.is_empty() {
             self.hints = Some(hints);
@@ -384,12 +358,22 @@ mod tests {
             .as_object()
             .cloned();
         manager.record_tool_arguments(&arguments, project.path());
-        assert!(manager.load_subdirectory_hints(project.path()));
+        assert!(!manager.load_subdirectory_hints(project.path()));
 
         let prompt = manager.builder().with_hints(project.path()).build();
+        let hints_filenames = get_context_filenames();
+        let ignore_patterns = build_gitignore(project.path());
+        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
+        let subdirectory_hint_bytes: usize = manager
+            .system_prompt_extras
+            .iter()
+            .filter(|(key, _)| key.starts_with("subdir_hints:"))
+            .map(|(_, value)| value.len())
+            .sum();
 
-        assert!(prompt.contains("NESTED_MARKER"));
-        assert!(!prompt.contains("ROOT_MARKER"));
+        assert!(top_level_hints.len() + subdirectory_hint_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(prompt.contains("ROOT_MARKER"));
+        assert!(!prompt.contains("NESTED_MARKER"));
     }
 
     #[test]
