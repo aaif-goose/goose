@@ -1038,7 +1038,7 @@ mod tests {
     use super::*;
     use crate::hints::{
         build_gitignore, get_context_filenames, load_hint_files, GOOSE_HINTS_FILENAME,
-        MAX_HINT_OUTPUT_BYTES,
+        HINT_EXTRA_SEPARATOR_BYTES, MAX_HINT_OUTPUT_BYTES,
     };
     use std::fs;
 
@@ -1126,8 +1126,13 @@ mod tests {
             .iter()
             .map(|(_, content)| content.len())
             .sum();
+        let hint_count = usize::from(!top_level_hints.is_empty()) + subdirectory_hints.len();
+        let separator_bytes = hint_count.saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
 
-        assert!(top_level_hints.len() + subdirectory_hint_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(
+            top_level_hints.len() + subdirectory_hint_bytes + separator_bytes
+                <= MAX_HINT_OUTPUT_BYTES
+        );
         assert!(top_level_hints.contains("ROOT_MARKER"));
         assert!(subdirectory_hints.is_empty());
     }

@@ -12,6 +12,7 @@ pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";
 const GLOBAL_HINTS_HEADER: &str = "\n### Global Hints\nThese are my global goose hints.\n";
 const PROJECT_HINTS_HEADER: &str =
     "### Project Hints\nThese are hints for working on the project in this directory.\n";
+pub(crate) const HINT_EXTRA_SEPARATOR_BYTES: usize = "\n\n".len();
 
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
@@ -101,15 +102,22 @@ impl SubdirectoryHintTracker {
             load_hint_files(&working_dir, &self.hints_filenames, &ignore_patterns);
         let mut remaining_output_bytes =
             MAX_HINT_OUTPUT_BYTES.saturating_sub(top_level_hints.len());
+        let mut has_hint_output = !top_level_hints.is_empty();
         let mut results = Vec::new();
         for dir in &self.loaded_dirs {
-            if let Some(content) = load_hints_from_directory(
-                dir,
-                &working_dir,
-                &self.hints_filenames,
-                remaining_output_bytes,
-            ) {
-                remaining_output_bytes -= content.len();
+            let separator_bytes = if has_hint_output {
+                HINT_EXTRA_SEPARATOR_BYTES
+            } else {
+                0
+            };
+            let Some(output_limit) = remaining_output_bytes.checked_sub(separator_bytes) else {
+                continue;
+            };
+            if let Some(content) =
+                load_hints_from_directory(dir, &working_dir, &self.hints_filenames, output_limit)
+            {
+                remaining_output_bytes -= separator_bytes + content.len();
+                has_hint_output = true;
                 let key = format!("subdir_hints:{}", dir.display());
                 results.push((key, content));
             }
@@ -1033,7 +1041,11 @@ End of hints"#;
         }
 
         let hints = tracker.load_hints(&project_root);
-        let output_bytes: usize = hints.iter().map(|(_, content)| content.len()).sum();
+        let output_bytes: usize = hints
+            .iter()
+            .map(|(_, content)| content.len())
+            .sum::<usize>()
+            + hints.len().saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
         let combined = hints
             .iter()
             .map(|(_, content)| content.as_str())
@@ -1043,6 +1055,53 @@ End of hints"#;
         assert!(combined.contains("A1"));
         assert!(!combined.contains("B2"));
         assert!(combined.contains("third hint"));
+    }
+
+    #[test]
+    fn tracker_charges_separator_between_root_and_subdirectory_hints() {
+        let project_root = tempfile::tempdir().unwrap();
+        let nested = project_root.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(
+            project_root.path().join(GOOSE_HINTS_FILENAME),
+            "r".repeat(MAX_HINT_OUTPUT_BYTES - PROJECT_HINTS_HEADER.len() - 2048),
+        )
+        .unwrap();
+        let hints_filenames = vec![GOOSE_HINTS_FILENAME.to_string()];
+        let ignore_patterns = build_gitignore(project_root.path());
+        let top_level_hints =
+            load_hint_files(project_root.path(), &hints_filenames, &ignore_patterns);
+        let remaining = MAX_HINT_OUTPUT_BYTES - top_level_hints.len();
+        let canonical_nested = nested.canonicalize().unwrap();
+        let subdirectory_header =
+            format!("### Subdirectory Hints ({})\n", canonical_nested.display()).len();
+        let nested_hints = nested.join(GOOSE_HINTS_FILENAME);
+        fs::write(
+            &nested_hints,
+            "n".repeat(remaining - 1 - subdirectory_header),
+        )
+        .unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        tracker.hints_filenames = hints_filenames;
+        let args = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        tracker.record_tool_arguments(&Some(args), project_root.path());
+        assert!(tracker.load_hints(project_root.path()).is_empty());
+
+        fs::write(
+            nested_hints,
+            "n".repeat(remaining - HINT_EXTRA_SEPARATOR_BYTES - subdirectory_header),
+        )
+        .unwrap();
+        let hints = tracker.load_hints(project_root.path());
+        assert_eq!(hints.len(), 1);
+        assert_eq!(
+            top_level_hints.len() + HINT_EXTRA_SEPARATOR_BYTES + hints[0].1.len(),
+            MAX_HINT_OUTPUT_BYTES
+        );
     }
 
     #[test]

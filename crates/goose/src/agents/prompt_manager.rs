@@ -8,9 +8,9 @@ use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
-#[cfg(test)]
-use crate::hints::MAX_HINT_OUTPUT_BYTES;
 use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
+#[cfg(test)]
+use crate::hints::{HINT_EXTRA_SEPARATOR_BYTES, MAX_HINT_OUTPUT_BYTES};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -379,8 +379,18 @@ mod tests {
             .filter(|(key, _)| key.starts_with("subdir_hints:"))
             .map(|(_, value)| value.len())
             .sum();
+        let hint_count = usize::from(!top_level_hints.is_empty())
+            + manager
+                .system_prompt_extras
+                .keys()
+                .filter(|key| key.starts_with("subdir_hints:"))
+                .count();
+        let separator_bytes = hint_count.saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
 
-        assert!(top_level_hints.len() + subdirectory_hint_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(
+            top_level_hints.len() + subdirectory_hint_bytes + separator_bytes
+                <= MAX_HINT_OUTPUT_BYTES
+        );
         assert!(prompt.contains("ROOT_MARKER"));
         assert!(!prompt.contains("NESTED_MARKER"));
     }
@@ -420,8 +430,18 @@ mod tests {
             .filter(|(key, _)| key.starts_with("subdir_hints:"))
             .map(|(_, value)| value.len())
             .sum();
+        let hint_count = usize::from(!top_level_hints.is_empty())
+            + manager
+                .system_prompt_extras
+                .keys()
+                .filter(|key| key.starts_with("subdir_hints:"))
+                .count();
+        let separator_bytes = hint_count.saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
 
-        assert!(top_level_hints.len() + subdirectory_hint_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert!(
+            top_level_hints.len() + subdirectory_hint_bytes + separator_bytes
+                <= MAX_HINT_OUTPUT_BYTES
+        );
         assert!(prompt.contains("ROOT_MARKER"));
         assert!(!prompt.contains("NESTED_MARKER"));
     }
