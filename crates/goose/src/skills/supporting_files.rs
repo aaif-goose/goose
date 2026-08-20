@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{self, Read, Write};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 const LOADED_FILE_PREFIX: &str = "# Loaded: ";
 const LOADED_FILE_SEPARATOR: &str = "\n\n";
@@ -176,6 +176,172 @@ fn read_opened_file(file: fs::File, limit: ReadLimit) -> io::Result<String> {
         ReadLimit::Characters(max_characters) => read_utf8_with_limit(file, max_characters),
         ReadLimit::Bytes(max_bytes) => read_utf8_with_byte_limit(file, max_bytes),
     }
+}
+
+pub(super) fn walk_regular_files_no_follow_with_hook<F, G, H>(
+    root: &Path,
+    should_descend: &mut G,
+    visit_file: &mut F,
+    after_read_dir: &mut H,
+) -> io::Result<()>
+where
+    F: FnMut(&Path, fs::File),
+    G: FnMut(&Path) -> bool,
+    H: FnMut(&Path),
+{
+    walk_regular_files_no_follow_impl(root, should_descend, visit_file, after_read_dir)
+}
+
+fn walk_regular_files_no_follow_impl<F, G, H>(
+    root: &Path,
+    should_descend: &mut G,
+    visit_file: &mut F,
+    after_read_dir: &mut H,
+) -> io::Result<()>
+where
+    F: FnMut(&Path, fs::File),
+    G: FnMut(&Path) -> bool,
+    H: FnMut(&Path),
+{
+    let root = normalize_absolute_path(root)?;
+    let directory = open_skill_root(&root, &mut |_| {})?;
+    walk_opened_directory(&root, directory, should_descend, visit_file, after_read_dir);
+    Ok(())
+}
+
+fn normalize_absolute_path(path: &Path) -> io::Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() || !normalized.has_root() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "skill path must stay within its filesystem root",
+                    ));
+                }
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    if !normalized.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill path must resolve to an absolute path",
+        ));
+    }
+    Ok(normalized)
+}
+
+fn walk_opened_directory<F, G, H>(
+    logical_path: &Path,
+    directory: fs::File,
+    should_descend: &mut G,
+    visit_file: &mut F,
+    after_read_dir: &mut H,
+) where
+    F: FnMut(&Path, fs::File),
+    G: FnMut(&Path) -> bool,
+    H: FnMut(&Path),
+{
+    let entries = match fs::read_dir(logical_path) {
+        Ok(entries) => entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
+            .collect::<Vec<_>>(),
+        Err(_) => return,
+    };
+    after_read_dir(logical_path);
+
+    for name in entries {
+        let path = logical_path.join(&name);
+        if should_descend(&path) {
+            if let Ok(child) = open_child_directory(&directory, &name) {
+                walk_opened_directory(&path, child, should_descend, visit_file, after_read_dir);
+                continue;
+            }
+        }
+        if let Ok(file) = open_child_regular_file(&directory, &name) {
+            visit_file(&path, file);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
+    let child = open_at(directory, name, directory_traversal_flags())?;
+    if !child.metadata()?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill entry is not a directory",
+        ));
+    }
+    Ok(child)
+}
+
+#[cfg(unix)]
+fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
+    let file = open_at(
+        directory,
+        name,
+        libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+    )?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill entry is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
+    let child = windows_open_at(directory, name, true)?;
+    let metadata = child.metadata()?;
+    if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill entry is not a regular directory",
+        ));
+    }
+    Ok(child)
+}
+
+#[cfg(windows)]
+fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
+    let file = windows_open_at(directory, name, false)?;
+    let metadata = file.metadata()?;
+    if windows_metadata_is_reparse_point(&metadata) || !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill entry is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_child_directory(_directory: &fs::File, _name: &std::ffi::OsStr) -> io::Result<fs::File> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure skill discovery is not supported on this platform",
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_child_regular_file(_directory: &fs::File, _name: &std::ffi::OsStr) -> io::Result<fs::File> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure skill discovery is not supported on this platform",
+    ))
 }
 
 fn validated_relative_components(path: &Path) -> io::Result<Vec<&std::ffi::OsStr>> {
