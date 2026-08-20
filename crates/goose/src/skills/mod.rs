@@ -493,12 +493,29 @@ fn should_skip_dir(path: &Path) -> bool {
     )
 }
 
+fn metadata_is_link_or_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use winapi::um::winnt::FILE_ATTRIBUTE_REPARSE_POINT;
+
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+
+    #[cfg(not(windows))]
+    false
+}
+
 fn path_has_no_symlink_components(path: &Path) -> bool {
     path.ancestors()
         .filter(|ancestor| !ancestor.as_os_str().is_empty())
         .all(|ancestor| {
             std::fs::symlink_metadata(ancestor)
-                .is_ok_and(|metadata| !metadata.file_type().is_symlink())
+                .is_ok_and(|metadata| !metadata_is_link_or_reparse_point(&metadata))
         })
 }
 
@@ -543,9 +560,13 @@ fn walk_files_recursively_in_root<F, G>(
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
             continue;
         };
+        if metadata_is_link_or_reparse_point(&metadata) {
+            continue;
+        }
+        let file_type = metadata.file_type();
         if file_type.is_dir() {
             if should_descend(&path) {
                 walk_files_recursively_in_root(&path, visited_dirs, should_descend, visit_file);
@@ -1318,6 +1339,50 @@ mod tests {
 
         let sources =
             scan_skills_from_dir(&linked_parent.join("skills"), false, &mut HashSet::new());
+
+        assert!(sources.is_empty());
+    }
+
+    #[cfg(windows)]
+    fn create_junction(target: &Path, junction: &Path) {
+        let output = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(junction)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "failed to create junction: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_skills_ignores_junction_root() {
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let regular_root = temp_root.join("regular-root");
+        write_skill(&regular_root.join("linked-skill"), "linked-skill");
+        let junction_root = temp_root.join("junction-root");
+        create_junction(&regular_root, &junction_root);
+
+        let sources = scan_skills_from_dir(&junction_root, false, &mut HashSet::new());
+
+        assert!(sources.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_skills_ignores_junction_skill_directories() {
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_root = temp_root.join("skills");
+        std::fs::create_dir_all(&skill_root).unwrap();
+        let outside_skill_dir = temp_root.join("outside-skill");
+        write_skill(&outside_skill_dir, "outside-skill");
+        create_junction(&outside_skill_dir, &skill_root.join("junction-skill"));
+
+        let sources = scan_skills_from_dir(&skill_root, false, &mut HashSet::new());
 
         assert!(sources.is_empty());
     }
