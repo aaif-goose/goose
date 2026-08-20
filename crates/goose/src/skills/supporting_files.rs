@@ -185,7 +185,7 @@ pub(super) fn walk_regular_files_no_follow_with_hook<F, G, H>(
     after_read_dir: &mut H,
 ) -> io::Result<()>
 where
-    F: FnMut(&Path, fs::File),
+    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
@@ -199,7 +199,7 @@ fn walk_regular_files_no_follow_impl<F, G, H>(
     after_read_dir: &mut H,
 ) -> io::Result<()>
 where
-    F: FnMut(&Path, fs::File),
+    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
@@ -248,7 +248,7 @@ fn walk_opened_directory<F, G, H>(
     visit_file: &mut F,
     after_read_dir: &mut H,
 ) where
-    F: FnMut(&Path, fs::File),
+    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
@@ -268,10 +268,34 @@ fn walk_opened_directory<F, G, H>(
                 continue;
             }
         }
-        if let Ok(file) = open_child_regular_file(&directory, &name) {
-            visit_file(&path, file);
+        if is_child_regular_file(&directory, &name).unwrap_or(false) {
+            let mut open_for_read = || open_child_regular_file(&directory, &name);
+            visit_file(&path, &mut open_for_read);
         }
     }
+}
+
+#[cfg(unix)]
+fn is_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<bool> {
+    use std::os::fd::AsRawFd;
+
+    let name = path_component_to_c_string(name)?;
+    let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: metadata points to writable storage and fstatat does not retain the name pointer.
+    let result = unsafe {
+        libc::fstatat(
+            directory.as_raw_fd(),
+            name.as_ptr(),
+            metadata.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fstatat initialized metadata on success.
+    let metadata = unsafe { metadata.assume_init() };
+    Ok(metadata.st_mode & libc::S_IFMT == libc::S_IFREG)
 }
 
 #[cfg(unix)]
@@ -303,8 +327,15 @@ fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::
 }
 
 #[cfg(windows)]
+fn is_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<bool> {
+    let file = windows_open_at(directory, name, false, false)?;
+    let metadata = file.metadata()?;
+    Ok(!windows_metadata_is_reparse_point(&metadata) && metadata.is_file())
+}
+
+#[cfg(windows)]
 fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
-    let child = windows_open_at(directory, name, true)?;
+    let child = windows_open_at(directory, name, true, false)?;
     let metadata = child.metadata()?;
     if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(io::Error::new(
@@ -317,7 +348,7 @@ fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Res
 
 #[cfg(windows)]
 fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
-    let file = windows_open_at(directory, name, false)?;
+    let file = windows_open_at(directory, name, false, true)?;
     let metadata = file.metadata()?;
     if windows_metadata_is_reparse_point(&metadata) || !metadata.is_file() {
         return Err(io::Error::new(
@@ -326,6 +357,14 @@ fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::
         ));
     }
     Ok(file)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn is_child_regular_file(_directory: &fs::File, _name: &std::ffi::OsStr) -> io::Result<bool> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure skill discovery is not supported on this platform",
+    ))
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -539,16 +578,9 @@ fn open_at(
     name: &std::ffi::OsStr,
     flags: libc::c_int,
 ) -> io::Result<fs::File> {
-    use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
-    use std::os::unix::ffi::OsStrExt;
 
-    let name = CString::new(name.as_bytes()).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "supporting file path contains a NUL byte",
-        )
-    })?;
+    let name = path_component_to_c_string(name)?;
     // SAFETY: openat does not retain the name pointer, and no creation flag requiring a mode is set.
     let descriptor = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
     if descriptor < 0 {
@@ -589,6 +621,18 @@ fn open_at_with_mode(
     }
     // SAFETY: openat returned a new owned descriptor on success.
     Ok(unsafe { fs::File::from_raw_fd(descriptor) })
+}
+
+#[cfg(unix)]
+fn path_component_to_c_string(name: &std::ffi::OsStr) -> io::Result<std::ffi::CString> {
+    use std::os::unix::ffi::OsStrExt;
+
+    std::ffi::CString::new(name.as_bytes()).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "supporting file path contains a NUL byte",
+        )
+    })
 }
 
 #[cfg(windows)]
@@ -640,7 +684,7 @@ fn open_skill_root(
     }
     let mut opened_path = root_anchor.to_path_buf();
     for component in components {
-        directory = windows_open_at(&directory, component, true)?;
+        directory = windows_open_at(&directory, component, true, false)?;
         let metadata = directory.metadata()?;
         if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
             return Err(io::Error::new(
@@ -673,7 +717,7 @@ fn read_confined_file_with_hook(
 
     let mut opened_path = std::path::PathBuf::new();
     for ancestor in ancestors {
-        directory = windows_open_at(&directory, ancestor, true)?;
+        directory = windows_open_at(&directory, ancestor, true, false)?;
         let metadata = directory.metadata()?;
         if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
             return Err(io::Error::new(
@@ -685,7 +729,7 @@ fn read_confined_file_with_hook(
         after_opened_component(&opened_path);
     }
 
-    let file = windows_open_at(&directory, file_name, false)?;
+    let file = windows_open_at(&directory, file_name, false, true)?;
     let metadata = file.metadata()?;
     if windows_metadata_is_reparse_point(&metadata) || !metadata.is_file() {
         return Err(io::Error::new(
@@ -711,7 +755,7 @@ fn write_confined_file_with_hook(
 
     let mut opened_path = std::path::PathBuf::new();
     for ancestor in ancestors {
-        directory = windows_open_at(&directory, ancestor, true)?;
+        directory = windows_open_at(&directory, ancestor, true, false)?;
         let metadata = directory.metadata()?;
         if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
             return Err(io::Error::new(
@@ -763,6 +807,7 @@ fn windows_open_at(
     directory: &fs::File,
     name: &std::ffi::OsStr,
     directory_only: bool,
+    read_file: bool,
 ) -> io::Result<fs::File> {
     use ntapi::ntioapi::{
         FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_SYNCHRONOUS_IO_NONALERT,
@@ -775,8 +820,10 @@ fn windows_open_at(
     }
     let desired_access = if directory_only {
         FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
-    } else {
+    } else if read_file {
         FILE_GENERIC_READ
+    } else {
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE
     };
     windows_open_at_with_options(directory, name, desired_access, FILE_OPEN, create_options)
 }
