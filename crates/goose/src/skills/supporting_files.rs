@@ -13,6 +13,12 @@ enum ReadLimit {
     Bytes(usize),
 }
 
+#[derive(Clone, Copy)]
+enum RootLinkPolicy {
+    Reject,
+    FollowFinal,
+}
+
 pub(crate) fn load_supporting_file(
     skill_dir: &Path,
     relative: &Path,
@@ -65,6 +71,7 @@ pub(crate) fn read_source_file(source_dir: &Path, relative: &Path) -> io::Result
         source_dir,
         relative,
         ReadLimit::Bytes(MAX_SOURCE_FILE_BYTES),
+        RootLinkPolicy::Reject,
         |_| {},
     )
 }
@@ -95,6 +102,7 @@ fn read_supporting_file_with_hook(
         skill_dir,
         relative,
         ReadLimit::Characters(max_characters),
+        RootLinkPolicy::FollowFinal,
         after_opened_component,
     )
 }
@@ -189,10 +197,17 @@ where
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
-    walk_regular_files_no_follow_impl(root, should_descend, visit_file, after_read_dir)
+    walk_regular_files_no_follow_impl(
+        root,
+        RootLinkPolicy::FollowFinal,
+        false,
+        should_descend,
+        visit_file,
+        after_read_dir,
+    )
 }
 
-fn walk_regular_files_no_follow_impl<F, G, H>(
+pub(super) fn walk_skill_files_no_follow_with_hook<F, G, H>(
     root: &Path,
     should_descend: &mut G,
     visit_file: &mut F,
@@ -203,9 +218,39 @@ where
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
+    walk_regular_files_no_follow_impl(
+        root,
+        RootLinkPolicy::Reject,
+        true,
+        should_descend,
+        visit_file,
+        after_read_dir,
+    )
+}
+
+fn walk_regular_files_no_follow_impl<F, G, H>(
+    root: &Path,
+    root_link_policy: RootLinkPolicy,
+    allow_linked_skill_roots: bool,
+    should_descend: &mut G,
+    visit_file: &mut F,
+    after_read_dir: &mut H,
+) -> io::Result<()>
+where
+    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
+    G: FnMut(&Path) -> bool,
+    H: FnMut(&Path),
+{
     let root = normalize_absolute_path(root)?;
-    let directory = open_skill_root(&root, &mut |_| {})?;
-    walk_opened_directory(&root, directory, should_descend, visit_file, after_read_dir);
+    let directory = open_skill_root(&root, root_link_policy, &mut |_| {})?;
+    walk_opened_directory(
+        &root,
+        directory,
+        allow_linked_skill_roots,
+        should_descend,
+        visit_file,
+        after_read_dir,
+    );
     Ok(())
 }
 
@@ -244,6 +289,7 @@ fn normalize_absolute_path(path: &Path) -> io::Result<PathBuf> {
 fn walk_opened_directory<F, G, H>(
     logical_path: &Path,
     directory: fs::File,
+    allow_linked_skill_roots: bool,
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
@@ -264,8 +310,28 @@ fn walk_opened_directory<F, G, H>(
         let path = logical_path.join(&name);
         if should_descend(&path) {
             if let Ok(child) = open_child_directory(&directory, &name) {
-                walk_opened_directory(&path, child, should_descend, visit_file, after_read_dir);
+                walk_opened_directory(
+                    &path,
+                    child,
+                    false,
+                    should_descend,
+                    visit_file,
+                    after_read_dir,
+                );
                 continue;
+            }
+            if allow_linked_skill_roots {
+                if let Ok(child) = open_child_linked_skill_directory(&directory, &name) {
+                    walk_opened_directory(
+                        &path,
+                        child,
+                        false,
+                        should_descend,
+                        visit_file,
+                        after_read_dir,
+                    );
+                    continue;
+                }
             }
         }
         if is_child_regular_file(&directory, &name).unwrap_or(false) {
@@ -311,6 +377,48 @@ fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Res
 }
 
 #[cfg(unix)]
+fn open_child_linked_skill_directory(
+    directory: &fs::File,
+    name: &std::ffi::OsStr,
+) -> io::Result<fs::File> {
+    use std::os::fd::AsRawFd;
+
+    let encoded_name = path_component_to_c_string(name)?;
+    let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: metadata points to writable storage and fstatat does not retain the name pointer.
+    let result = unsafe {
+        libc::fstatat(
+            directory.as_raw_fd(),
+            encoded_name.as_ptr(),
+            metadata.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fstatat initialized metadata on success.
+    let metadata = unsafe { metadata.assume_init() };
+    if metadata.st_mode & libc::S_IFMT != libc::S_IFLNK {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill entry is not a linked directory",
+        ));
+    }
+
+    let child = open_at(directory, name, linked_directory_traversal_flags())?;
+    if !child.metadata()?.is_dir()
+        || !is_child_regular_file(&child, std::ffi::OsStr::new("SKILL.md"))?
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "linked skill entry is not a skill directory",
+        ));
+    }
+    Ok(child)
+}
+
+#[cfg(unix)]
 fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
     let file = open_at(
         directory,
@@ -328,14 +436,14 @@ fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::
 
 #[cfg(windows)]
 fn is_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<bool> {
-    let file = windows_open_at(directory, name, false, false)?;
+    let file = windows_open_at(directory, name, false, false, false)?;
     let metadata = file.metadata()?;
     Ok(!windows_metadata_is_reparse_point(&metadata) && metadata.is_file())
 }
 
 #[cfg(windows)]
 fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
-    let child = windows_open_at(directory, name, true, false)?;
+    let child = windows_open_at(directory, name, true, false, false)?;
     let metadata = child.metadata()?;
     if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(io::Error::new(
@@ -347,8 +455,33 @@ fn open_child_directory(directory: &fs::File, name: &std::ffi::OsStr) -> io::Res
 }
 
 #[cfg(windows)]
+fn open_child_linked_skill_directory(
+    directory: &fs::File,
+    name: &std::ffi::OsStr,
+) -> io::Result<fs::File> {
+    let linked = windows_open_at(directory, name, true, false, false)?;
+    if !windows_metadata_is_reparse_point(&linked.metadata()?) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "skill entry is not a linked directory",
+        ));
+    }
+
+    let child = windows_open_at(directory, name, true, false, true)?;
+    if !child.metadata()?.is_dir()
+        || !is_child_regular_file(&child, std::ffi::OsStr::new("SKILL.md"))?
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "linked skill entry is not a skill directory",
+        ));
+    }
+    Ok(child)
+}
+
+#[cfg(windows)]
 fn open_child_regular_file(directory: &fs::File, name: &std::ffi::OsStr) -> io::Result<fs::File> {
-    let file = windows_open_at(directory, name, false, true)?;
+    let file = windows_open_at(directory, name, false, true, false)?;
     let metadata = file.metadata()?;
     if windows_metadata_is_reparse_point(&metadata) || !metadata.is_file() {
         return Err(io::Error::new(
@@ -372,6 +505,17 @@ fn open_child_directory(_directory: &fs::File, _name: &std::ffi::OsStr) -> io::R
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "secure skill discovery is not supported on this platform",
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_child_linked_skill_directory(
+    _directory: &fs::File,
+    _name: &std::ffi::OsStr,
+) -> io::Result<fs::File> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure linked skill discovery is not supported on this platform",
     ))
 }
 
@@ -444,8 +588,14 @@ fn directory_traversal_flags() -> libc::c_int {
 }
 
 #[cfg(unix)]
+fn linked_directory_traversal_flags() -> libc::c_int {
+    directory_traversal_flags() & !libc::O_NOFOLLOW
+}
+
+#[cfg(unix)]
 fn open_skill_root(
     skill_dir: &Path,
+    root_link_policy: RootLinkPolicy,
     after_opened_component: &mut impl FnMut(&Path),
 ) -> io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
@@ -459,8 +609,16 @@ fn open_skill_root(
         match component {
             Component::RootDir if !saw_root => saw_root = true,
             Component::Normal(component) if saw_root => {
-                directory = open_at(&directory, component, directory_traversal_flags())?;
-                opened_path.push(component);
+                let next_path = opened_path.join(component);
+                let flags = if matches!(root_link_policy, RootLinkPolicy::FollowFinal)
+                    && next_path == skill_dir
+                {
+                    linked_directory_traversal_flags()
+                } else {
+                    directory_traversal_flags()
+                };
+                directory = open_at(&directory, component, flags)?;
+                opened_path = next_path;
                 after_opened_component(&opened_path);
             }
             Component::CurDir if saw_root => {}
@@ -492,11 +650,12 @@ fn read_confined_file_with_hook(
     skill_dir: &Path,
     relative: &Path,
     limit: ReadLimit,
+    root_link_policy: RootLinkPolicy,
     mut after_opened_component: impl FnMut(&Path),
 ) -> io::Result<String> {
     let components = validated_relative_components(relative)?;
     let (file_name, ancestors) = components.split_last().unwrap();
-    let mut directory = open_skill_root(skill_dir, &mut after_opened_component)?;
+    let mut directory = open_skill_root(skill_dir, root_link_policy, &mut after_opened_component)?;
 
     let mut opened_path = std::path::PathBuf::new();
     for ancestor in ancestors {
@@ -530,7 +689,11 @@ fn write_confined_file_with_hook(
 ) -> io::Result<()> {
     let components = validated_relative_components(relative)?;
     let (file_name, ancestors) = components.split_last().unwrap();
-    let mut directory = open_skill_root(source_dir, &mut after_opened_component)?;
+    let mut directory = open_skill_root(
+        source_dir,
+        RootLinkPolicy::Reject,
+        &mut after_opened_component,
+    )?;
 
     let mut opened_path = std::path::PathBuf::new();
     for ancestor in ancestors {
@@ -638,6 +801,7 @@ fn path_component_to_c_string(name: &std::ffi::OsStr) -> io::Result<std::ffi::CS
 #[cfg(windows)]
 fn open_skill_root(
     skill_dir: &Path,
+    root_link_policy: RootLinkPolicy,
     after_opened_component: &mut impl FnMut(&Path),
 ) -> io::Result<fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
@@ -684,15 +848,20 @@ fn open_skill_root(
     }
     let mut opened_path = root_anchor.to_path_buf();
     for component in components {
-        directory = windows_open_at(&directory, component, true, false)?;
+        let next_path = opened_path.join(component);
+        let follow_reparse_point =
+            matches!(root_link_policy, RootLinkPolicy::FollowFinal) && next_path == skill_dir;
+        directory = windows_open_at(&directory, component, true, false, follow_reparse_point)?;
         let metadata = directory.metadata()?;
-        if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
+        if (!follow_reparse_point && windows_metadata_is_reparse_point(&metadata))
+            || !metadata.is_dir()
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "skill path ancestor is not a regular directory",
             ));
         }
-        opened_path.push(component);
+        opened_path = next_path;
         after_opened_component(&opened_path);
     }
     if opened_path != skill_dir {
@@ -709,15 +878,16 @@ fn read_confined_file_with_hook(
     skill_dir: &Path,
     relative: &Path,
     limit: ReadLimit,
+    root_link_policy: RootLinkPolicy,
     mut after_opened_component: impl FnMut(&Path),
 ) -> io::Result<String> {
     let components = validated_relative_components(relative)?;
     let (file_name, ancestors) = components.split_last().unwrap();
-    let mut directory = open_skill_root(skill_dir, &mut after_opened_component)?;
+    let mut directory = open_skill_root(skill_dir, root_link_policy, &mut after_opened_component)?;
 
     let mut opened_path = std::path::PathBuf::new();
     for ancestor in ancestors {
-        directory = windows_open_at(&directory, ancestor, true, false)?;
+        directory = windows_open_at(&directory, ancestor, true, false, false)?;
         let metadata = directory.metadata()?;
         if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
             return Err(io::Error::new(
@@ -729,7 +899,7 @@ fn read_confined_file_with_hook(
         after_opened_component(&opened_path);
     }
 
-    let file = windows_open_at(&directory, file_name, false, true)?;
+    let file = windows_open_at(&directory, file_name, false, true, false)?;
     let metadata = file.metadata()?;
     if windows_metadata_is_reparse_point(&metadata) || !metadata.is_file() {
         return Err(io::Error::new(
@@ -751,11 +921,15 @@ fn write_confined_file_with_hook(
 ) -> io::Result<()> {
     let components = validated_relative_components(relative)?;
     let (file_name, ancestors) = components.split_last().unwrap();
-    let mut directory = open_skill_root(source_dir, &mut after_opened_component)?;
+    let mut directory = open_skill_root(
+        source_dir,
+        RootLinkPolicy::Reject,
+        &mut after_opened_component,
+    )?;
 
     let mut opened_path = std::path::PathBuf::new();
     for ancestor in ancestors {
-        directory = windows_open_at(&directory, ancestor, true, false)?;
+        directory = windows_open_at(&directory, ancestor, true, false, false)?;
         let metadata = directory.metadata()?;
         if windows_metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
             return Err(io::Error::new(
@@ -808,13 +982,17 @@ fn windows_open_at(
     name: &std::ffi::OsStr,
     directory_only: bool,
     read_file: bool,
+    follow_reparse_point: bool,
 ) -> io::Result<fs::File> {
     use ntapi::ntioapi::{
         FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_SYNCHRONOUS_IO_NONALERT,
     };
     use winapi::um::winnt::{FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_TRAVERSE, SYNCHRONIZE};
 
-    let mut create_options = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
+    let mut create_options = FILE_SYNCHRONOUS_IO_NONALERT;
+    if !follow_reparse_point {
+        create_options |= FILE_OPEN_REPARSE_POINT;
+    }
     if directory_only {
         create_options |= FILE_DIRECTORY_FILE;
     }
@@ -940,6 +1118,7 @@ fn read_confined_file_with_hook(
     _skill_dir: &Path,
     relative: &Path,
     _limit: ReadLimit,
+    _root_link_policy: RootLinkPolicy,
     _after_opened_component: impl FnMut(&Path),
 ) -> io::Result<String> {
     validated_relative_components(relative)?;
@@ -1191,7 +1370,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn rejects_skill_root_replaced_with_symlink_during_open() {
+    fn follows_skill_root_replaced_with_symlink_during_open() {
         let parent = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let parent = fs::canonicalize(parent.path()).unwrap();
@@ -1201,7 +1380,7 @@ mod tests {
         fs::write(skill_dir.join("payload"), "safe content").unwrap();
         fs::write(outside.path().join("payload"), "outside secret").unwrap();
 
-        let result = read_supporting_file_with_hook(
+        let content = read_supporting_file_with_hook(
             &skill_dir,
             Path::new("payload"),
             crate::agents::max_tool_response_size(),
@@ -1211,9 +1390,10 @@ mod tests {
                     std::os::unix::fs::symlink(outside.path(), &skill_dir).unwrap();
                 }
             },
-        );
+        )
+        .unwrap();
 
-        assert!(result.is_err());
+        assert_eq!(content, "outside secret");
     }
 
     #[cfg(windows)]

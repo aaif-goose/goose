@@ -8,7 +8,9 @@ pub mod client;
 mod supporting_files;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
-use supporting_files::walk_regular_files_no_follow_with_hook;
+use supporting_files::{
+    walk_regular_files_no_follow_with_hook, walk_skill_files_no_follow_with_hook,
+};
 pub(crate) use supporting_files::{
     create_source_file, load_supporting_file, read_source_file, write_source_file,
 };
@@ -543,7 +545,7 @@ where
 {
     let mut skill_files = Vec::new();
     let mut skill_dirs = HashSet::new();
-    let _ = walk_regular_files_no_follow_with_hook(
+    let _ = walk_skill_files_no_follow_with_hook(
         dir,
         &mut |path| !should_skip_dir(path),
         &mut |path, open_for_read| {
@@ -1352,7 +1354,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn scan_skills_ignores_junction_skill_directories() {
+    fn scan_skills_discovers_junctioned_skill_directories() {
         let (_temp_dir, temp_root) = canonical_temp_root();
         let skill_root = temp_root.join("skills");
         std::fs::create_dir_all(&skill_root).unwrap();
@@ -1362,7 +1364,8 @@ mod tests {
 
         let sources = scan_skills_from_dir(&skill_root, false, &mut HashSet::new());
 
-        assert!(sources.is_empty());
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "outside-skill");
     }
 
     #[cfg(unix)]
@@ -1389,7 +1392,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn scan_skills_ignores_symlinked_skill_directories() {
+    fn scan_skills_discovers_linked_skill_without_following_nested_links() {
         use std::os::unix::fs::symlink;
 
         let (_temp_dir, temp_root) = canonical_temp_root();
@@ -1397,11 +1400,36 @@ mod tests {
         std::fs::create_dir_all(&skill_root).unwrap();
         let outside_skill_dir = temp_root.join("outside-skill");
         write_skill(&outside_skill_dir, "outside-skill");
-        symlink(&outside_skill_dir, skill_root.join("linked-skill")).unwrap();
+        let guide = outside_skill_dir.join("guide.md");
+        std::fs::write(&guide, "legitimate guide").unwrap();
+        let escaped_dir = temp_root.join("escaped");
+        std::fs::create_dir(&escaped_dir).unwrap();
+        std::fs::write(escaped_dir.join("secret.md"), "outside secret").unwrap();
+        symlink(&escaped_dir, outside_skill_dir.join("escaped")).unwrap();
+        let linked_skill_dir = skill_root.join("linked-skill");
+        symlink(&outside_skill_dir, &linked_skill_dir).unwrap();
 
         let sources = scan_skills_from_dir(&skill_root, false, &mut HashSet::new());
 
-        assert!(sources.is_empty());
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "outside-skill");
+        assert_eq!(sources[0].path, linked_skill_dir.to_string_lossy());
+        assert_eq!(
+            sources[0].supporting_files,
+            vec![linked_skill_dir.join("guide.md").to_string_lossy()]
+        );
+        assert!(load_supporting_file(
+            &linked_skill_dir,
+            Path::new("guide.md"),
+            "outside-skill/guide.md"
+        )
+        .is_ok());
+        assert!(load_supporting_file(
+            &linked_skill_dir,
+            Path::new("escaped/secret.md"),
+            "outside-skill/escaped/secret.md"
+        )
+        .is_err());
     }
 
     #[cfg(unix)]
@@ -1457,15 +1485,17 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn scan_skills_rejects_directory_swapped_to_symlink() {
+    fn scan_skills_rejects_nested_directory_swapped_to_symlink() {
         use std::os::unix::fs::symlink;
 
         let (_temp_dir, temp_root) = canonical_temp_root();
         let skill_dir = temp_root.join("skill");
-        let moved_skill_dir = temp_root.join("moved-skill");
         write_skill(&skill_dir, "safe-skill");
+        let nested = skill_dir.join("nested");
+        let moved_nested = skill_dir.join("moved-nested");
+        std::fs::create_dir(&nested).unwrap();
         let outside = tempfile::tempdir().unwrap();
-        write_skill(outside.path(), "outside-skill");
+        write_skill(&outside.path().join("outside-skill"), "outside-skill");
         let mut swapped = false;
 
         let sources = scan_skills_from_dir_with_hook(
@@ -1473,15 +1503,17 @@ mod tests {
             false,
             &mut HashSet::new(),
             &mut |opened_dir| {
-                if opened_dir == temp_root && !swapped {
-                    std::fs::rename(&skill_dir, &moved_skill_dir).unwrap();
-                    symlink(outside.path(), &skill_dir).unwrap();
+                if opened_dir == skill_dir && !swapped {
+                    std::fs::rename(&nested, &moved_nested).unwrap();
+                    symlink(outside.path(), &nested).unwrap();
                     swapped = true;
                 }
             },
         );
 
-        assert!(sources.is_empty());
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "safe-skill");
+        assert!(sources.iter().all(|source| source.name != "outside-skill"));
     }
 
     #[cfg(unix)]
