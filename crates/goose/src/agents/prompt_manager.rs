@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::agents::{extension::ExtensionInfo, moim};
 #[cfg(test)]
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::load_hints::{HintSnapshot, HINT_EXTRA_SEPARATOR_BYTES};
+use crate::hints::load_hints::{HintOutputReservation, HintSnapshot, HINT_EXTRA_SEPARATOR_BYTES};
 use crate::hints::SubdirectoryHintTracker;
 #[cfg(test)]
 use crate::hints::MAX_HINT_OUTPUT_BYTES;
@@ -267,19 +267,25 @@ impl PromptManager {
         changed
     }
 
-    pub(crate) fn reserved_hint_separator_bytes(
+    pub(crate) fn hint_output_reservation(
         &self,
         has_prompt_parts: bool,
         goose_mode: GooseMode,
-    ) -> usize {
+    ) -> HintOutputReservation {
         let has_caller_owned_extra = self
             .system_prompt_extras
             .keys()
             .any(|key| !self.generated_subdirectory_hint_keys.contains(key));
-        let boundary_count = usize::from(has_prompt_parts)
+        let chat_boundary_count = usize::from(goose_mode == GooseMode::Chat);
+        let root_only_boundary_count =
+            usize::from(has_prompt_parts || has_caller_owned_extra) + chat_boundary_count;
+        let subdirectory_boundary_count = usize::from(has_prompt_parts)
             + usize::from(has_caller_owned_extra)
-            + usize::from(goose_mode == GooseMode::Chat);
-        boundary_count * HINT_EXTRA_SEPARATOR_BYTES
+            + chat_boundary_count;
+        HintOutputReservation::new(
+            root_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
+            subdirectory_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
+        )
     }
 
     pub fn build_system_prompt(
@@ -288,11 +294,10 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        let reserved_output_bytes =
-            self.reserved_hint_separator_bytes(!prompt_parts.is_empty(), goose_mode);
+        let reservation = self.hint_output_reservation(!prompt_parts.is_empty(), goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
-            .load_snapshot(working_dir, reserved_output_bytes);
+            .load_snapshot(working_dir, reservation);
         self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
     }
 
@@ -316,10 +321,10 @@ impl PromptManager {
         working_dir: &Path,
         goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
-        let reserved_output_bytes = self.reserved_hint_separator_bytes(false, goose_mode);
+        let reservation = self.hint_output_reservation(false, goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
-            .load_snapshot(working_dir, reserved_output_bytes);
+            .load_snapshot(working_dir, reservation);
         self.apply_subdirectory_hints(snapshot.subdirectories);
         self.builder()
             .with_hint_snapshot(snapshot.top_level)
@@ -665,6 +670,46 @@ mod tests {
             .builder_with_fresh_hints(project.path(), GooseMode::Chat)
             .build();
         assert!(!prompt.contains("CALLER_OVERFLOW"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_root_hints_share_one_boundary_with_contiguous_prompt_extras() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
+        let reservation = manager.hint_output_reservation(true, GooseMode::Auto);
+        assert_eq!(reservation.root_only, HINT_EXTRA_SEPARATOR_BYTES);
+        assert_eq!(
+            reservation.with_subdirectories,
+            2 * HINT_EXTRA_SEPARATOR_BYTES
+        );
+        write_root_hints_with_output_len(
+            project.path(),
+            MAX_HINT_OUTPUT_BYTES - reservation.root_only,
+            "ROOT_ONLY_BOUNDARY",
+        );
+
+        let prompt = manager.build_system_prompt(
+            project.path(),
+            vec![(
+                "extensions".to_string(),
+                "operation prompt instruction".to_string(),
+            )],
+            GooseMode::Auto,
+        );
+
+        assert!(prompt.contains("caller instruction"));
+        assert!(prompt.contains("operation prompt instruction"));
+        assert!(prompt.contains("ROOT_ONLY_BOUNDARY"));
     }
 
     #[test]

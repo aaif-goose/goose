@@ -20,6 +20,27 @@ pub(crate) struct HintSnapshot {
     pub(crate) subdirectories: Vec<(String, String)>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct HintOutputReservation {
+    pub(crate) root_only: usize,
+    pub(crate) with_subdirectories: usize,
+}
+
+impl HintOutputReservation {
+    pub(crate) fn new(root_only: usize, with_subdirectories: usize) -> Self {
+        Self {
+            root_only,
+            with_subdirectories,
+        }
+    }
+}
+
+impl From<usize> for HintOutputReservation {
+    fn from(reserved_output_bytes: usize) -> Self {
+        Self::new(reserved_output_bytes, reserved_output_bytes)
+    }
+}
+
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
 
@@ -91,17 +112,18 @@ impl SubdirectoryHintTracker {
     pub(crate) fn load_snapshot(
         &mut self,
         working_dir: &Path,
-        reserved_output_bytes: usize,
+        reservation: impl Into<HintOutputReservation>,
     ) -> HintSnapshot {
-        self.load_snapshot_with_hook(working_dir, reserved_output_bytes, || {})
+        self.load_snapshot_with_hook(working_dir, reservation, || {})
     }
 
     pub(crate) fn load_snapshot_with_hook(
         &mut self,
         working_dir: &Path,
-        reserved_output_bytes: usize,
+        reservation: impl Into<HintOutputReservation>,
         after_top_level_read: impl FnOnce(),
     ) -> HintSnapshot {
+        let reservation = reservation.into();
         let pending = std::mem::take(&mut self.pending_dirs);
         let lexical_working_dir = working_dir;
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -126,7 +148,7 @@ impl SubdirectoryHintTracker {
 
         self.hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(lexical_working_dir);
-        let top_level_output_limit = MAX_HINT_OUTPUT_BYTES.saturating_sub(reserved_output_bytes);
+        let top_level_output_limit = MAX_HINT_OUTPUT_BYTES.saturating_sub(reservation.root_only);
         let top_level_hints = load_hint_files_with_limit(
             lexical_working_dir,
             &self.hints_filenames,
@@ -136,16 +158,25 @@ impl SubdirectoryHintTracker {
         after_top_level_read();
         let mut remaining_output_bytes = MAX_HINT_OUTPUT_BYTES
             .saturating_sub(top_level_hints.len())
-            .saturating_sub(reserved_output_bytes);
+            .saturating_sub(reservation.root_only);
         let mut has_hint_output = !top_level_hints.is_empty();
         let mut results = Vec::new();
         for dir in &self.loaded_dirs {
+            let additional_reservation = if results.is_empty() {
+                reservation
+                    .with_subdirectories
+                    .saturating_sub(reservation.root_only)
+            } else {
+                0
+            };
             let separator_bytes = if has_hint_output {
                 HINT_EXTRA_SEPARATOR_BYTES
             } else {
                 0
             };
-            let Some(output_limit) = remaining_output_bytes.checked_sub(separator_bytes) else {
+            let Some(output_limit) =
+                remaining_output_bytes.checked_sub(separator_bytes + additional_reservation)
+            else {
                 continue;
             };
             if let Some(content) = load_hints_from_directory(
@@ -154,7 +185,7 @@ impl SubdirectoryHintTracker {
                 &self.hints_filenames,
                 output_limit,
             ) {
-                remaining_output_bytes -= separator_bytes + content.len();
+                remaining_output_bytes -= separator_bytes + additional_reservation + content.len();
                 has_hint_output = true;
                 let key = format!("subdir_hints:{}", dir.display());
                 results.push((key, content));
