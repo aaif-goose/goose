@@ -58,6 +58,7 @@ pub struct SubdirectoryHintTracker {
     loaded_dirs: Vec<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
+    emitted_hint_keys: HashSet<String>,
 }
 
 impl Default for SubdirectoryHintTracker {
@@ -72,6 +73,7 @@ impl SubdirectoryHintTracker {
             loaded_dirs: Vec::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
+            emitted_hint_keys: HashSet::new(),
         }
     }
 
@@ -198,17 +200,9 @@ impl SubdirectoryHintTracker {
     }
 
     pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
-        let first_new_directory = self.loaded_dirs.len();
-        let hints = self.load_hints(working_dir);
-        let new_directories = &self.loaded_dirs[first_new_directory..];
-
-        hints
+        self.load_hints(working_dir)
             .into_iter()
-            .filter(|(key, _)| {
-                new_directories
-                    .iter()
-                    .any(|directory| key == &format!("subdir_hints:{}", directory.display()))
-            })
+            .filter(|(key, _)| self.emitted_hint_keys.insert(key.clone()))
             .collect()
     }
 }
@@ -1123,6 +1117,42 @@ End of hints"#;
         let first = tracker.load_new_hints(project_root.path());
         assert_eq!(first.len(), 1);
         assert!(first[0].1.contains("nested hints"));
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_load_new_hints_emits_retained_directory_when_budget_allows() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        fs::write(
+            project_root.path().join(GOOSE_HINTS_FILENAME),
+            "r".repeat(MAX_HINT_OUTPUT_BYTES - PROJECT_HINTS_HEADER.len()),
+        )
+        .unwrap();
+        let nested = project_root.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join(GOOSE_HINTS_FILENAME), "nested hints").unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
+        fs::write(project_root.path().join(GOOSE_HINTS_FILENAME), "root").unwrap();
+
+        let newly_admissible = tracker.load_new_hints(project_root.path());
+        assert_eq!(newly_admissible.len(), 1);
+        assert!(newly_admissible[0].1.contains("nested hints"));
         assert!(tracker.load_new_hints(project_root.path()).is_empty());
     }
 
