@@ -37,7 +37,7 @@ fn reconstructed_subdirectory_hints(
     super::inference_preparation::reconstructed_hint_snapshot(
         conversation,
         working_dir,
-        GooseMode::Auto,
+        crate::hints::HINT_EXTRA_SEPARATOR_BYTES,
     )
     .subdirectories
 }

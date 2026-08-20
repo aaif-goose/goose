@@ -267,7 +267,7 @@ impl PromptManager {
         changed
     }
 
-    fn reserved_hint_separator_bytes(
+    pub(crate) fn reserved_hint_separator_bytes(
         &self,
         has_prompt_parts: bool,
         goose_mode: GooseMode,
@@ -276,7 +276,8 @@ impl PromptManager {
             .system_prompt_extras
             .keys()
             .any(|key| !self.generated_subdirectory_hint_keys.contains(key));
-        let boundary_count = usize::from(has_prompt_parts || has_caller_owned_extra)
+        let boundary_count = usize::from(has_prompt_parts)
+            + usize::from(has_caller_owned_extra)
             + usize::from(goose_mode == GooseMode::Chat);
         boundary_count * HINT_EXTRA_SEPARATOR_BYTES
     }

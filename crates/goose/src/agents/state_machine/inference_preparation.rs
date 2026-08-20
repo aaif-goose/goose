@@ -20,15 +20,15 @@ use tokio::sync::Mutex;
 pub(super) fn reconstructed_hint_snapshot(
     conversation: &Conversation,
     working_dir: &std::path::Path,
-    goose_mode: GooseMode,
+    reserved_output_bytes: usize,
 ) -> HintSnapshot {
-    reconstructed_hint_snapshot_with_hook(conversation, working_dir, goose_mode, || {})
+    reconstructed_hint_snapshot_with_hook(conversation, working_dir, reserved_output_bytes, || {})
 }
 
 fn reconstructed_hint_snapshot_with_hook(
     conversation: &Conversation,
     working_dir: &std::path::Path,
-    goose_mode: GooseMode,
+    reserved_output_bytes: usize,
     after_top_level_read: impl FnOnce(),
 ) -> HintSnapshot {
     let mut hints = SubdirectoryHintTracker::new();
@@ -41,12 +41,6 @@ fn reconstructed_hint_snapshot_with_hook(
             }
         }
     }
-    let reserved_output_bytes = HINT_EXTRA_SEPARATOR_BYTES
-        + if goose_mode == GooseMode::Chat {
-            HINT_EXTRA_SEPARATOR_BYTES
-        } else {
-            0
-        };
     hints.load_snapshot_with_hook(working_dir, reserved_output_bytes, after_top_level_read)
 }
 
@@ -84,13 +78,16 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         }
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
+        let mut prompt_manager = self.prompt_manager.lock().await;
+        let reserved_output_bytes = prompt_manager
+            .reserved_hint_separator_bytes(!input.prompt_parts.is_empty(), goose_mode);
         let hint_snapshot =
-            reconstructed_hint_snapshot(conversation, &session.working_dir, goose_mode);
-        let system_prompt = self
-            .prompt_manager
-            .lock()
-            .await
-            .build_system_prompt_from_snapshot(input.prompt_parts, goose_mode, hint_snapshot);
+            reconstructed_hint_snapshot(conversation, &session.working_dir, reserved_output_bytes);
+        let system_prompt = prompt_manager.build_system_prompt_from_snapshot(
+            input.prompt_parts,
+            goose_mode,
+            hint_snapshot,
+        );
         let turn = messages_since_kickoff(conversation)?;
         let turn_start = turn
             .first()
@@ -145,12 +142,10 @@ mod tests {
             Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
         )]);
 
-        let snapshot = reconstructed_hint_snapshot_with_hook(
-            &conversation,
-            project.path(),
-            GooseMode::Auto,
-            || fs::write(&root_hints, format!("{}ROOT_V2", "v".repeat(700 * 1024))).unwrap(),
-        );
+        let snapshot =
+            reconstructed_hint_snapshot_with_hook(&conversation, project.path(), 0, || {
+                fs::write(&root_hints, format!("{}ROOT_V2", "v".repeat(700 * 1024))).unwrap()
+            });
         let hint_bytes = snapshot.top_level.len()
             + snapshot
                 .subdirectories
@@ -202,7 +197,8 @@ mod tests {
         .unwrap();
         let conversation = Conversation::default();
 
-        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), GooseMode::Chat);
+        let snapshot =
+            reconstructed_hint_snapshot(&conversation, project.path(), reserved_output_bytes);
         assert_eq!(
             snapshot.top_level.len() + reserved_output_bytes,
             MAX_HINT_OUTPUT_BYTES
@@ -219,7 +215,91 @@ mod tests {
             ),
         )
         .unwrap();
-        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), GooseMode::Chat);
+        let snapshot =
+            reconstructed_hint_snapshot(&conversation, project.path(), reserved_output_bytes);
         assert!(snapshot.top_level.is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn state_machine_hints_reserve_caller_prompt_and_chat_boundaries_at_exact_limit() {
+        const PROJECT_HINTS_HEADER: &str =
+            "### Project Hints\nThese are hints for working on the project in this directory.\n";
+
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join(GOOSE_HINTS_FILENAME), "NESTED_BOUNDARY").unwrap();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
+            "read-nested",
+            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
+        )]);
+        let prompt_parts = vec![(
+            "extensions".to_string(),
+            "operation prompt instruction".to_string(),
+        )];
+        let mut prompt_manager = PromptManager::new();
+        prompt_manager
+            .add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
+        assert_eq!(
+            prompt_manager.reserved_hint_separator_bytes(true, GooseMode::Auto),
+            2 * HINT_EXTRA_SEPARATOR_BYTES
+        );
+        let reserved_output_bytes =
+            prompt_manager.reserved_hint_separator_bytes(true, GooseMode::Chat);
+        assert_eq!(reserved_output_bytes, 3 * HINT_EXTRA_SEPARATOR_BYTES);
+
+        let measured =
+            reconstructed_hint_snapshot(&conversation, project.path(), reserved_output_bytes);
+        let nested_hint_bytes = measured.subdirectories[0].1.len();
+        let root_output_bytes = MAX_HINT_OUTPUT_BYTES
+            - reserved_output_bytes
+            - HINT_EXTRA_SEPARATOR_BYTES
+            - nested_hint_bytes;
+        let root_content_bytes = root_output_bytes - PROJECT_HINTS_HEADER.len();
+        fs::write(
+            project.path().join(GOOSE_HINTS_FILENAME),
+            format!(
+                "ROOT_BOUNDARY{}",
+                "r".repeat(root_content_bytes - "ROOT_BOUNDARY".len())
+            ),
+        )
+        .unwrap();
+
+        let snapshot =
+            reconstructed_hint_snapshot(&conversation, project.path(), reserved_output_bytes);
+        assert_eq!(snapshot.subdirectories.len(), 1);
+        assert_eq!(
+            snapshot.top_level.len()
+                + snapshot.subdirectories[0].1.len()
+                + HINT_EXTRA_SEPARATOR_BYTES
+                + reserved_output_bytes,
+            MAX_HINT_OUTPUT_BYTES
+        );
+        let prompt = prompt_manager.build_system_prompt_from_snapshot(
+            prompt_parts,
+            GooseMode::Chat,
+            snapshot,
+        );
+        assert!(prompt.contains("caller instruction"));
+        assert!(prompt.contains("NESTED_BOUNDARY"));
+        assert!(prompt.contains("operation prompt instruction"));
+        assert!(prompt.contains("ROOT_BOUNDARY"));
+        assert_eq!(
+            prompt_manager.reserved_hint_separator_bytes(true, GooseMode::Chat),
+            reserved_output_bytes
+        );
     }
 }
