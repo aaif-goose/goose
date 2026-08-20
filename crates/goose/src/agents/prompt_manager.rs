@@ -30,14 +30,6 @@ pub struct PromptManager {
     generated_subdirectory_hint_keys: HashSet<String>,
 }
 
-fn trailing_hint_separator_bytes(goose_mode: GooseMode) -> usize {
-    if goose_mode == GooseMode::Chat {
-        HINT_EXTRA_SEPARATOR_BYTES
-    } else {
-        0
-    }
-}
-
 impl Default for PromptManager {
     fn default() -> Self {
         PromptManager::new()
@@ -275,15 +267,31 @@ impl PromptManager {
         changed
     }
 
+    fn reserved_hint_separator_bytes(
+        &self,
+        has_prompt_parts: bool,
+        goose_mode: GooseMode,
+    ) -> usize {
+        let has_caller_owned_extra = self
+            .system_prompt_extras
+            .keys()
+            .any(|key| !self.generated_subdirectory_hint_keys.contains(key));
+        let boundary_count = usize::from(has_prompt_parts || has_caller_owned_extra)
+            + usize::from(goose_mode == GooseMode::Chat);
+        boundary_count * HINT_EXTRA_SEPARATOR_BYTES
+    }
+
     pub fn build_system_prompt(
         &mut self,
         working_dir: &Path,
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
+        let reserved_output_bytes =
+            self.reserved_hint_separator_bytes(!prompt_parts.is_empty(), goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
-            .load_snapshot(working_dir, trailing_hint_separator_bytes(goose_mode));
+            .load_snapshot(working_dir, reserved_output_bytes);
         self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
     }
 
@@ -307,9 +315,10 @@ impl PromptManager {
         working_dir: &Path,
         goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
+        let reserved_output_bytes = self.reserved_hint_separator_bytes(false, goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
-            .load_snapshot(working_dir, trailing_hint_separator_bytes(goose_mode));
+            .load_snapshot(working_dir, reserved_output_bytes);
         self.apply_subdirectory_hints(snapshot.subdirectories);
         self.builder()
             .with_hint_snapshot(snapshot.top_level)
@@ -614,6 +623,47 @@ mod tests {
             .builder_with_fresh_hints(project.path(), GooseMode::Chat)
             .build();
         assert!(!prompt.contains("CHAT_OVERFLOW"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_chat_hints_reserve_caller_extra_boundary_at_exact_limit() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let reserved_output_bytes = HINT_EXTRA_SEPARATOR_BYTES * 2;
+        write_root_hints_with_output_len(
+            project.path(),
+            MAX_HINT_OUTPUT_BYTES - reserved_output_bytes,
+            "CALLER_BOUNDARY",
+        );
+
+        let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
+        let builder = manager.builder_with_fresh_hints(project.path(), GooseMode::Chat);
+        assert_eq!(
+            builder.hints.as_ref().unwrap().len() + reserved_output_bytes,
+            MAX_HINT_OUTPUT_BYTES
+        );
+        let prompt = builder.build();
+        assert!(prompt.contains("caller instruction"));
+        assert!(prompt.contains("CALLER_BOUNDARY"));
+
+        write_root_hints_with_output_len(
+            project.path(),
+            MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES,
+            "CALLER_OVERFLOW",
+        );
+        let prompt = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Chat)
+            .build();
+        assert!(!prompt.contains("CALLER_OVERFLOW"));
     }
 
     #[test]
