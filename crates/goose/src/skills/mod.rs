@@ -493,7 +493,32 @@ fn should_skip_dir(path: &Path) -> bool {
     )
 }
 
+fn path_has_no_symlink_components(path: &Path) -> bool {
+    path.ancestors()
+        .filter(|ancestor| !ancestor.as_os_str().is_empty())
+        .all(|ancestor| {
+            std::fs::symlink_metadata(ancestor)
+                .is_ok_and(|metadata| !metadata.file_type().is_symlink())
+        })
+}
+
 fn walk_files_recursively<F, G>(
+    dir: &Path,
+    visited_dirs: &mut HashSet<PathBuf>,
+    should_descend: &mut G,
+    visit_file: &mut F,
+) where
+    F: FnMut(&Path),
+    G: FnMut(&Path) -> bool,
+{
+    if !path_has_no_symlink_components(dir) {
+        return;
+    }
+
+    walk_files_recursively_in_root(dir, visited_dirs, should_descend, visit_file);
+}
+
+fn walk_files_recursively_in_root<F, G>(
     dir: &Path,
     visited_dirs: &mut HashSet<PathBuf>,
     should_descend: &mut G,
@@ -523,7 +548,7 @@ fn walk_files_recursively<F, G>(
         };
         if file_type.is_dir() {
             if should_descend(&path) {
-                walk_files_recursively(&path, visited_dirs, should_descend, visit_file);
+                walk_files_recursively_in_root(&path, visited_dirs, should_descend, visit_file);
             }
         } else if file_type.is_file() {
             visit_file(&path);
@@ -709,6 +734,13 @@ mod tests {
         assert!(!skill.global);
         assert!(!skill.writable);
         assert_path_rejected_by_source_crud(&skill.path, &skill.name, skill_dir);
+    }
+
+
+    fn canonical_temp_root() -> (TempDir, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().canonicalize().unwrap();
+        (temp_dir, root)
     }
 
     fn skill_with_content(content: &str) -> SourceEntry {
@@ -1235,14 +1267,14 @@ mod tests {
 
     #[test]
     fn scan_skills_discovers_regular_files_inside_root() {
-        let temp_dir = TempDir::new().unwrap();
-        let skill_dir = temp_dir.path().join("regular-skill");
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_dir = temp_root.join("regular-skill");
         write_skill(&skill_dir, "regular-skill");
         let supporting_file = skill_dir.join("references").join("guide.md");
         std::fs::create_dir_all(supporting_file.parent().unwrap()).unwrap();
         std::fs::write(&supporting_file, "guide").unwrap();
 
-        let sources = scan_skills_from_dir(temp_dir.path(), false, &mut HashSet::new());
+        let sources = scan_skills_from_dir(&temp_root, false, &mut HashSet::new());
 
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].name, "regular-skill");
@@ -1258,14 +1290,48 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn scan_skills_ignores_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let regular_root = temp_root.join("regular-root");
+        write_skill(&regular_root.join("linked-skill"), "linked-skill");
+        let linked_root = temp_root.join("linked-root");
+        symlink(&regular_root, &linked_root).unwrap();
+
+        let sources = scan_skills_from_dir(&linked_root, false, &mut HashSet::new());
+
+        assert!(sources.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skills_ignores_roots_with_symlinked_ancestor() {
+        use std::os::unix::fs::symlink;
+
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let regular_parent = temp_root.join("regular-parent");
+        let regular_root = regular_parent.join("skills");
+        write_skill(&regular_root.join("linked-skill"), "linked-skill");
+        let linked_parent = temp_root.join("linked-parent");
+        symlink(&regular_parent, &linked_parent).unwrap();
+
+        let sources =
+            scan_skills_from_dir(&linked_parent.join("skills"), false, &mut HashSet::new());
+
+        assert!(sources.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn scan_skills_ignores_symlinked_skill_files() {
         use std::os::unix::fs::symlink;
 
-        let temp_dir = TempDir::new().unwrap();
-        let skill_root = temp_dir.path().join("skills");
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_root = temp_root.join("skills");
         let linked_skill_dir = skill_root.join("linked-skill");
         std::fs::create_dir_all(&linked_skill_dir).unwrap();
-        let outside_skill = temp_dir.path().join("outside-skill.md");
+        let outside_skill = temp_root.join("outside-skill.md");
         std::fs::write(
             &outside_skill,
             "---\nname: linked-skill\ndescription: Linked skill\n---\n\nOutside content\n",
@@ -1283,10 +1349,10 @@ mod tests {
     fn scan_skills_ignores_symlinked_skill_directories() {
         use std::os::unix::fs::symlink;
 
-        let temp_dir = TempDir::new().unwrap();
-        let skill_root = temp_dir.path().join("skills");
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_root = temp_root.join("skills");
         std::fs::create_dir_all(&skill_root).unwrap();
-        let outside_skill_dir = temp_dir.path().join("outside-skill");
+        let outside_skill_dir = temp_root.join("outside-skill");
         write_skill(&outside_skill_dir, "outside-skill");
         symlink(&outside_skill_dir, skill_root.join("linked-skill")).unwrap();
 
@@ -1300,14 +1366,14 @@ mod tests {
     fn scan_skills_ignores_symlinked_supporting_files() {
         use std::os::unix::fs::symlink;
 
-        let temp_dir = TempDir::new().unwrap();
-        let skill_dir = temp_dir.path().join("regular-skill");
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_dir = temp_root.join("regular-skill");
         write_skill(&skill_dir, "regular-skill");
-        let outside_file = temp_dir.path().join("outside.txt");
+        let outside_file = temp_root.join("outside.txt");
         std::fs::write(&outside_file, "outside").unwrap();
         symlink(&outside_file, skill_dir.join("linked.txt")).unwrap();
 
-        let sources = scan_skills_from_dir(temp_dir.path(), false, &mut HashSet::new());
+        let sources = scan_skills_from_dir(&temp_root, false, &mut HashSet::new());
 
         assert_eq!(sources.len(), 1);
         assert!(sources[0].supporting_files.is_empty());
