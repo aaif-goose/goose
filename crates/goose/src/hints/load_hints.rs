@@ -6,6 +6,7 @@ use std::{
 
 use crate::config::paths::Paths;
 use crate::hints::import_files::{read_referenced_files_with_limit, MAX_HINT_OUTPUT_BYTES};
+use crate::utils::sanitize_unicode_tags;
 
 pub const GOOSE_HINTS_FILENAME: &str = ".goosehints";
 pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";
@@ -165,7 +166,7 @@ fn load_hints_from_directory(
         .collect();
     directories.reverse();
 
-    let header = format!("### Subdirectory Hints ({})\n", directory.display());
+    let header = subdirectory_hints_header(directory);
     let mut output = String::new();
     let mut has_hints = false;
     for dir in &directories {
@@ -188,6 +189,13 @@ fn load_hints_from_directory(
     }
 
     has_hints.then_some(output)
+}
+
+fn subdirectory_hints_header(directory: &Path) -> String {
+    sanitize_unicode_tags(&format!(
+        "### Subdirectory Hints ({})\n",
+        directory.display()
+    ))
 }
 
 fn append_hint_file(
@@ -1102,6 +1110,15 @@ End of hints"#;
             top_level_hints.len() + HINT_EXTRA_SEPARATOR_BYTES + hints[0].1.len(),
             MAX_HINT_OUTPUT_BYTES
         );
+    }
+
+    #[test]
+    fn subdirectory_header_is_normalized_before_budgeting() {
+        let directory = Path::new("nested\u{0344}");
+        let header = subdirectory_hints_header(directory);
+
+        assert_eq!(header, "### Subdirectory Hints (nested\u{0308}\u{0301})\n");
+        assert!(header.len() > format!("### Subdirectory Hints ({})\n", directory.display()).len());
     }
 
     #[test]
