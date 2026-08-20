@@ -1128,7 +1128,16 @@ End of hints"#;
     }
 
     #[test]
+    #[serial_test::serial]
     fn tracker_aggregates_output_limit_across_subdirectories() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path().to_path_buf();
         for directory in ["first", "second", "third"] {
@@ -1242,9 +1251,18 @@ End of hints"#;
 
     #[cfg(unix)]
     #[test]
+    #[serial_test::serial]
     fn tracker_reserves_hints_from_a_lexical_symlink_working_directory() {
         use std::os::unix::fs::symlink;
 
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
         let temp_dir = TempDir::new().unwrap();
         let repository = temp_dir.path().join("repository");
         let target = temp_dir.path().join("target");
@@ -1360,7 +1378,16 @@ End of hints"#;
     }
 
     #[test]
+    #[serial_test::serial]
     fn tracker_retries_directory_after_parent_is_created() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path().join("project");
         fs::create_dir_all(&project_root).unwrap();
