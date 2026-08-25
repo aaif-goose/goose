@@ -184,12 +184,18 @@ describe('reasoningConsumedOutputBudget', () => {
     expect(reasoningConsumedOutputBudget(messages, 1)).toBe(false);
   });
 
-  it('does not treat earlier visible text as this turn when looking back', () => {
+  it('does not walk through a previous user turn when looking back', () => {
     const messages: Message[] = [
       assistant({
         id: 'chatcmpl-1',
         content: [{ type: 'text', text: 'complete earlier answer' }],
       }),
+      {
+        created: 2,
+        role: 'user',
+        content: [{ type: 'text', text: 'continue' }],
+        metadata: { agentVisible: true, userVisible: true },
+      },
       assistant({
         id: 'chatcmpl-2',
         content: [{ type: 'thinking', thinking: 'internal reasoning', signature: '' }],
@@ -205,14 +211,20 @@ describe('reasoningConsumedOutputBudget', () => {
       }),
     ];
 
-    expect(reasoningConsumedOutputBudget(messages, 2)).toBe(true);
+    expect(reasoningConsumedOutputBudget(messages, 3)).toBe(true);
   });
 
-  it('classifies a later ID-less length marker without matching an earlier ID-less message', () => {
+  it('classifies a later ID-less length marker from its own list index', () => {
     const messages: Message[] = [
       assistant({
         content: [{ type: 'text', text: 'earlier answer' }],
       }),
+      {
+        created: 2,
+        role: 'user',
+        content: [{ type: 'text', text: 'continue' }],
+        metadata: { agentVisible: true, userVisible: true },
+      },
       assistant({
         content: [{ type: 'thinking', thinking: 'internal reasoning', signature: '' }],
       }),
@@ -227,7 +239,7 @@ describe('reasoningConsumedOutputBudget', () => {
     ];
 
     expect(reasoningConsumedOutputBudget(messages, 0)).toBe(false);
-    expect(reasoningConsumedOutputBudget(messages, 2)).toBe(true);
+    expect(reasoningConsumedOutputBudget(messages, 3)).toBe(true);
   });
 
   it('treats redacted thinking as reasoning', () => {
