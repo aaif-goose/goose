@@ -115,6 +115,28 @@ describe('reasoningConsumedOutputBudget', () => {
     expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
   });
 
+  it('classifies a later ID-less length marker without matching an earlier ID-less message', () => {
+    const messages: Message[] = [
+      assistant({
+        content: [{ type: 'text', text: 'earlier answer' }],
+      }),
+      assistant({
+        content: [{ type: 'thinking', thinking: 'internal reasoning', signature: '' }],
+      }),
+      assistant({
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 0)).toBe(false);
+    expect(reasoningConsumedOutputBudget(messages, 2)).toBe(true);
+  });
+
   it('treats redacted thinking as reasoning', () => {
     const messages: Message[] = [
       assistant({
