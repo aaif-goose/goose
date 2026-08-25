@@ -1213,11 +1213,10 @@ impl Message {
     }
 
     pub fn has_thinking_content(&self) -> bool {
-        self.content.iter().any(|content| {
-            matches!(
-                content,
-                MessageContentBlock::Thinking(_) | MessageContentBlock::RedactedThinking(_)
-            )
+        self.content.iter().any(|content| match content {
+            MessageContentBlock::Thinking(thinking) => !thinking.thinking.trim().is_empty(),
+            MessageContentBlock::RedactedThinking(_) => true,
+            _ => false,
         })
     }
 
@@ -2280,6 +2279,11 @@ mod tests {
         let mut empty_limit = Message::assistant();
         empty_limit.metadata.output_token_limit_reached = true;
         assert!(!empty_limit.reasoning_consumed_output_budget());
+
+        let mut empty_thinking = Message::assistant().with_thinking("   ", "");
+        empty_thinking.metadata.output_token_limit_reached = true;
+        assert!(!empty_thinking.has_thinking_content());
+        assert!(!empty_thinking.reasoning_consumed_output_budget());
     }
 
     #[test]
