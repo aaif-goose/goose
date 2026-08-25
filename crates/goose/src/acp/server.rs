@@ -1384,6 +1384,15 @@ impl AcpConnection {
                     )),
                 ))?;
             }
+            MessageContent::RedactedThinking(_) => {
+                cx.send_notification(SessionNotification::new(
+                    session_id.clone(),
+                    SessionUpdate::AgentThoughtChunk(content_chunk_for_message(
+                        message,
+                        ContentBlock::Text(TextContent::new("Thinking was redacted")),
+                    )),
+                ))?;
+            }
             MessageContent::ActionRequired(action_required) => match &action_required.data {
                 ActionRequiredData::ToolConfirmation {
                     id,

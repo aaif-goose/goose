@@ -391,16 +391,14 @@ pub struct OutputLimitRenderState {
 
 impl OutputLimitRenderState {
     pub fn observe(&mut self, message: &Message) {
-        let new_response_after_visible = message.has_thinking_content() && self.saw_visible_output;
-        if self.response_complete || new_response_after_visible {
+        if self.response_complete {
             self.saw_thinking = false;
             self.saw_visible_output = false;
             self.response_complete = false;
         }
         self.saw_thinking |= message.has_thinking_content();
         self.saw_visible_output |= message.has_visible_output();
-        self.response_complete =
-            message.is_tool_call() || message.metadata.output_token_limit_reached;
+        self.response_complete = message.is_tool_call();
     }
 
     fn warning(&self, message: &Message) -> &'static str {
@@ -2202,6 +2200,16 @@ mod tests {
     }
 
     #[test]
+    fn output_token_limit_warning_ignores_empty_thinking_blocks() {
+        let mut message = Message::assistant().with_thinking("", "");
+        message.metadata.output_token_limit_reached = true;
+        assert_eq!(
+            output_token_limit_warning(&message),
+            EMPTY_OUTPUT_TOKEN_LIMIT_WARNING
+        );
+    }
+
+    #[test]
     fn streamed_output_limit_warning_uses_prior_thinking_for_same_message_id() {
         let thinking = Message::assistant()
             .with_id("chatcmpl-reason-limit")
@@ -2249,26 +2257,20 @@ mod tests {
     }
 
     #[test]
-    fn streamed_output_limit_warning_resets_when_new_thinking_follows_visible_output() {
+    fn streamed_output_limit_warning_keeps_visible_output_when_reasoning_follows() {
+        let visible = Message::assistant().with_id("chatcmpl-1").with_text("Hi");
         let thinking = Message::assistant()
             .with_id("chatcmpl-1")
-            .with_thinking("previous turn reasoning", "");
-        let visible = Message::assistant()
-            .with_id("chatcmpl-1")
-            .with_text("previous turn answer");
-        let next_thinking = Message::assistant()
-            .with_id("chatcmpl-2")
-            .with_thinking("next turn reasoning", "");
-        let mut marker = Message::assistant().with_id("chatcmpl-2");
+            .with_thinking("structured reasoning", "");
+        let mut marker = Message::assistant().with_id("chatcmpl-1");
         marker.metadata.output_token_limit_reached = true;
 
         let mut state = OutputLimitRenderState::default();
-        state.observe(&thinking);
         state.observe(&visible);
-        state.observe(&next_thinking);
+        state.observe(&thinking);
         state.observe(&marker);
 
-        assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
+        assert_eq!(state.warning(&marker), OUTPUT_TOKEN_LIMIT_WARNING);
     }
 
     #[test]
