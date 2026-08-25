@@ -391,14 +391,12 @@ pub struct OutputLimitRenderState {
 
 impl OutputLimitRenderState {
     pub fn observe(&mut self, message: &Message) {
-        if let (Some(current), Some(incoming)) = (&self.message_id, &message.id) {
-            if current != incoming {
+        if let Some(incoming) = provider_completion_id(message) {
+            if self.message_id.as_deref() != Some(incoming) {
+                self.message_id = Some(incoming.to_string());
                 self.saw_thinking = false;
                 self.saw_visible_output = false;
             }
-        }
-        if message.id.is_some() {
-            self.message_id = message.id.clone();
         }
         self.saw_thinking |= message.has_thinking_content();
         self.saw_visible_output |= message.has_visible_output();
@@ -518,6 +516,10 @@ pub fn render_message_streaming(
 
 fn reached_output_token_limit(message: &Message) -> bool {
     message.role == Role::Assistant && message.metadata.output_token_limit_reached
+}
+
+fn provider_completion_id(message: &Message) -> Option<&str> {
+    message.id.as_deref().filter(|id| !id.starts_with("msg_"))
 }
 
 fn output_token_limit_warning(message: &Message) -> &'static str {
@@ -2247,6 +2249,23 @@ mod tests {
         state.observe(&marker);
 
         assert_eq!(state.warning(&marker), EMPTY_OUTPUT_TOKEN_LIMIT_WARNING);
+    }
+
+    #[test]
+    fn streamed_output_limit_warning_keeps_thinking_across_generated_ids() {
+        let thinking = Message::assistant()
+            .with_generated_id()
+            .with_thinking("I will reason until the budget runs out.", "");
+        let mut marker = Message::assistant().with_generated_id();
+        marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&marker);
+
+        assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
+        assert_ne!(thinking.id, marker.id);
+        assert!(thinking.id.as_deref().unwrap().starts_with("msg_"));
     }
 
     #[test]
