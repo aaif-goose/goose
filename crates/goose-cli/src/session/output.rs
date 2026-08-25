@@ -314,7 +314,17 @@ fn is_final_output_request(req: &ToolRequest) -> bool {
 }
 
 pub fn render_message(message: &Message, debug: bool) {
+    let mut output_limit_state = OutputLimitRenderState::default();
+    render_message_with_state(message, debug, &mut output_limit_state);
+}
+
+pub fn render_message_with_state(
+    message: &Message,
+    debug: bool,
+    output_limit_state: &mut OutputLimitRenderState,
+) {
     if !message.is_user_visible() {
+        output_limit_state.observe(message);
         return;
     }
     let message = message.user_visible_content();
@@ -374,8 +384,9 @@ pub fn render_message(message: &Message, debug: bool) {
         }
     }
 
+    output_limit_state.observe(&message);
     if reached_output_token_limit(&message) {
-        render_output_token_limit_warning(&message);
+        println!("\n{}", warning(output_limit_state.warning(&message)));
     }
     let _ = std::io::stdout().flush();
 }
@@ -391,6 +402,12 @@ pub struct OutputLimitRenderState {
 
 impl OutputLimitRenderState {
     pub fn observe(&mut self, message: &Message) {
+        if message.role != Role::Assistant {
+            self.saw_thinking = false;
+            self.saw_visible_output = false;
+            self.response_complete = false;
+            return;
+        }
         if self.response_complete {
             self.saw_thinking = false;
             self.saw_visible_output = false;
@@ -398,7 +415,9 @@ impl OutputLimitRenderState {
         }
         self.saw_thinking |= message.has_thinking_content();
         self.saw_visible_output |= message.has_visible_output();
-        self.response_complete = message.is_tool_call() || is_provider_call_boundary(message);
+        self.response_complete = message.is_tool_call()
+            || is_provider_call_boundary(message)
+            || message.metadata.output_token_limit_reached;
     }
 
     fn warning(&self, message: &Message) -> &'static str {
@@ -527,6 +546,7 @@ fn is_provider_call_boundary(message: &Message) -> bool {
     })
 }
 
+#[cfg(test)]
 fn output_token_limit_warning(message: &Message) -> &'static str {
     output_token_limit_warning_parts(
         message.metadata.output_token_limit_reached,
@@ -547,10 +567,6 @@ fn output_token_limit_warning_parts(
     } else {
         OUTPUT_TOKEN_LIMIT_WARNING
     }
-}
-
-fn render_output_token_limit_warning(message: &Message) {
-    println!("\n{}", warning(output_token_limit_warning(message)));
 }
 
 fn render_credits_exhausted_notification(notification: &SystemNotificationContent) {
@@ -2320,6 +2336,63 @@ mod tests {
         state.observe(&marker);
 
         assert_eq!(state.warning(&marker), EMPTY_OUTPUT_TOKEN_LIMIT_WARNING);
+    }
+
+    #[test]
+    fn history_output_limit_warning_uses_prior_thinking_across_messages() {
+        let thinking = Message::assistant()
+            .with_generated_id()
+            .with_thinking("I will reason until the budget runs out.", "");
+        let mut marker = Message::assistant().with_generated_id();
+        marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&marker);
+
+        assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
+    }
+
+    #[test]
+    fn history_output_limit_warning_resets_after_user_message() {
+        let thinking = Message::assistant()
+            .with_generated_id()
+            .with_thinking("previous turn reasoning", "");
+        let user = Message::user().with_text("continue");
+        let mut marker = Message::assistant().with_generated_id();
+        marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&user);
+        state.observe(&marker);
+
+        assert_eq!(state.warning(&marker), EMPTY_OUTPUT_TOKEN_LIMIT_WARNING);
+    }
+
+    #[test]
+    fn history_output_limit_warning_resets_after_a_prior_length_hit() {
+        let thinking = Message::assistant()
+            .with_generated_id()
+            .with_thinking("previous call reasoning", "");
+        let mut first_marker = Message::assistant().with_generated_id();
+        first_marker.metadata.output_token_limit_reached = true;
+        let mut second_marker = Message::assistant().with_generated_id();
+        second_marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&first_marker);
+        assert_eq!(
+            state.warning(&first_marker),
+            REASONING_OUTPUT_TOKEN_LIMIT_WARNING
+        );
+
+        state.observe(&second_marker);
+        assert_eq!(
+            state.warning(&second_marker),
+            EMPTY_OUTPUT_TOKEN_LIMIT_WARNING
+        );
     }
 
     #[test]

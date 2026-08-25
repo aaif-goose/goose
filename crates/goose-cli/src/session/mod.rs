@@ -1944,9 +1944,9 @@ impl CliSession {
             console::style(format!("{} messages restored", messages.len())).dim()
         );
 
-        // Render each message
-        for message in &messages {
-            output::render_message(message, self.debug);
+        let mut output_limit_state = output::OutputLimitRenderState::default();
+        for message in self.messages.iter() {
+            output::render_message_with_state(message, self.debug, &mut output_limit_state);
         }
 
         println!();
