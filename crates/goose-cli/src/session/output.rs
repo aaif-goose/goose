@@ -398,7 +398,7 @@ impl OutputLimitRenderState {
         }
         self.saw_thinking |= message.has_thinking_content();
         self.saw_visible_output |= message.has_visible_output();
-        self.response_complete = message.is_tool_call();
+        self.response_complete = message.is_tool_call() || is_provider_call_boundary(message);
     }
 
     fn warning(&self, message: &Message) -> &'static str {
@@ -515,6 +515,16 @@ pub fn render_message_streaming(
 
 fn reached_output_token_limit(message: &Message) -> bool {
     message.role == Role::Assistant && message.metadata.output_token_limit_reached
+}
+
+fn is_provider_call_boundary(message: &Message) -> bool {
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            MessageContent::SystemNotification(notification)
+                if notification.notification_type == SystemNotificationType::InlineMessage
+        )
+    })
 }
 
 fn output_token_limit_warning(message: &Message) -> &'static str {
@@ -2288,6 +2298,28 @@ mod tests {
         assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
         assert_ne!(thinking.id, marker.id);
         assert!(thinking.id.as_deref().unwrap().starts_with("msg_"));
+    }
+
+    #[test]
+    fn streamed_output_limit_warning_resets_after_goal_notification() {
+        let thinking = Message::assistant()
+            .with_generated_id()
+            .with_thinking("previous call reasoning", "");
+        let visible = Message::assistant()
+            .with_generated_id()
+            .with_text("previous call answer");
+        let goal = Message::assistant()
+            .with_system_notification(SystemNotificationType::InlineMessage, "Goal: keep going");
+        let mut marker = Message::assistant().with_generated_id();
+        marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&visible);
+        state.observe(&goal);
+        state.observe(&marker);
+
+        assert_eq!(state.warning(&marker), EMPTY_OUTPUT_TOKEN_LIMIT_WARNING);
     }
 
     #[test]

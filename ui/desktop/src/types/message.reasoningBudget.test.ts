@@ -115,6 +115,75 @@ describe('reasoningConsumedOutputBudget', () => {
     expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
   });
 
+  it('records visible text that precedes later reasoning in the same turn', () => {
+    const messages: Message[] = [
+      assistant({
+        id: 'chatcmpl-1',
+        content: [{ type: 'text', text: 'Hi' }],
+      }),
+      assistant({
+        id: 'chatcmpl-2',
+        content: [{ type: 'thinking', thinking: 'structured reasoning', signature: '' }],
+      }),
+      assistant({
+        id: 'chatcmpl-3',
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 2)).toBe(false);
+  });
+
+  it('stops look-back at a Goal/Grind notification', () => {
+    const messages: Message[] = [
+      assistant({
+        content: [{ type: 'thinking', thinking: 'previous call reasoning', signature: '' }],
+      }),
+      assistant({
+        content: [
+          {
+            type: 'systemNotification',
+            notificationType: 'inlineMessage',
+            msg: 'Goal: keep going',
+          },
+        ],
+      }),
+      assistant({
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 2)).toBe(false);
+  });
+
+  it('does not treat whitespace-only thinking as reasoning', () => {
+    const messages: Message[] = [
+      assistant({
+        content: [{ type: 'thinking', thinking: '   ', signature: '' }],
+      }),
+      assistant({
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 1)).toBe(false);
+  });
+
   it('does not treat earlier visible text as this turn when looking back', () => {
     const messages: Message[] = [
       assistant({

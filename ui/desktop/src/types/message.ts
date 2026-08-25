@@ -376,8 +376,17 @@ export function getToolRequests(message: Message): (ToolRequest & { type: 'toolR
 function messageHasThinking(message: Message): boolean {
   return message.content.some(
     (content) =>
-      (content.type === 'thinking' && 'thinking' in content && Boolean(content.thinking)) ||
+      (content.type === 'thinking' &&
+        'thinking' in content &&
+        Boolean(content.thinking?.trim())) ||
       content.type === 'redactedThinking'
+  );
+}
+
+function isProviderCallBoundary(message: Message): boolean {
+  return message.content.some(
+    (content) =>
+      content.type === 'systemNotification' && content.notificationType === 'inlineMessage'
   );
 }
 
@@ -405,14 +414,18 @@ export function reasoningConsumedOutputBudget(messages: Message[], messageIndex:
     if (previous.role !== 'assistant') {
       break;
     }
-    if (getToolRequests(previous).length > 0) {
+    if (getToolRequests(previous).length > 0 || isProviderCallBoundary(previous)) {
       break;
     }
-    if (messageHasVisibleOutput(previous) || previous.metadata.outputTokenLimitReached) {
+    if (previous.metadata.outputTokenLimitReached) {
       break;
     }
 
+    hasVisibleOutput = hasVisibleOutput || messageHasVisibleOutput(previous);
     hasThinking = hasThinking || messageHasThinking(previous);
+    if (messageHasVisibleOutput(previous)) {
+      break;
+    }
   }
 
   return hasThinking && !hasVisibleOutput;
