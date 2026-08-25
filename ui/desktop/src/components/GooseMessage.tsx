@@ -68,6 +68,13 @@ function GooseMessage({
 
   const timestamp = useMemo(() => formatMessageTimestamp(message.created), [message.created]);
   const toolRequests = getToolRequests(message);
+  const reasoningConsumedOutputBudget =
+    outputTokenLimitReached &&
+    !isOutputTokenLimitFallback &&
+    Boolean(thinkingContent) &&
+    !displayText.trim() &&
+    imagePaths.length === 0 &&
+    toolRequests.length === 0;
   const shouldThrottleStreamingText =
     isStreaming && displayText.length > 0 && toolRequests.length === 0 && imagePaths.length === 0;
   const streamingRenderCooldownMs =
@@ -88,7 +95,9 @@ function GooseMessage({
     message.metadata.usage != null || (message.metadata.operationLogs?.length ?? 0) > 0;
   const outputTokenLimitNotice = isOutputTokenLimitFallback
     ? "Response reached the model's output-token limit before returning content."
-    : "Response reached the model's output-token limit and may be incomplete.";
+    : reasoningConsumedOutputBudget
+      ? 'Reasoning consumed the output-token budget before any visible content was produced. Raise GOOSE_MAX_TOKENS or lower GOOSE_THINKING_EFFORT.'
+      : "Response reached the model's output-token limit and may be incomplete.";
   const elicitationData =
     elicitationContent?.data.actionType === 'elicitation'
       ? (elicitationContent.data as typeof elicitationContent.data & {

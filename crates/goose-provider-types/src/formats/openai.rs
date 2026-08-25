@@ -2909,6 +2909,32 @@ mod tests {
 
         assert_eq!(message.as_concat_text(), "Partial answer");
         assert!(message.metadata.output_token_limit_reached);
+        assert!(!message.reasoning_consumed_output_budget());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_response_to_message_marks_length_with_reasoning_and_empty_content() -> anyhow::Result<()>
+    {
+        let response = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "reasoning_content": "Let me think through this at length...",
+                    "content": ""
+                },
+                "finish_reason": "length"
+            }]
+        });
+
+        let message = response_to_message(&response)?;
+
+        assert!(message.has_thinking_content());
+        assert!(!message.has_visible_output());
+        assert_eq!(message.as_concat_text(), "");
+        assert!(message.metadata.output_token_limit_reached);
+        assert!(message.reasoning_consumed_output_budget());
 
         Ok(())
     }
@@ -3434,6 +3460,27 @@ mod tests {
     }
 
     #[test]
+    fn test_create_request_does_not_raise_max_tokens_for_unknown_reasoning_model(
+    ) -> anyhow::Result<()> {
+        let mut model_config =
+            test_model_config("nemotron-35-lightning").with_max_tokens(Some(4096));
+        model_config.reasoning = Some(true);
+        let model_config = model_config.with_thinking_effort(ThinkingEffort::High);
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+        assert_eq!(obj.get("max_tokens"), Some(&json!(4096)));
+        assert!(obj.get("max_completion_tokens").is_none());
+        Ok(())
+    }
+
+    #[test]
     fn test_request_params_preserve_reserved_fields() -> anyhow::Result<()> {
         let params = std::collections::HashMap::from([
             (
@@ -3732,6 +3779,7 @@ mod tests {
         tool_calls: Vec<String>,
         has_text_content: bool,
         text: String,
+        thinking: String,
         output_token_limit_message_ids: Vec<Option<String>>,
     }
 
@@ -3747,6 +3795,7 @@ mod tests {
             tool_calls: Vec::new(),
             has_text_content: false,
             text: String::new(),
+            thinking: String::new(),
             output_token_limit_message_ids: Vec::new(),
         };
 
@@ -3769,6 +3818,9 @@ mod tests {
                         MessageContentBlock::Text(text) if !text.text.is_empty() => {
                             result.has_text_content = true;
                             result.text.push_str(&text.text);
+                        }
+                        MessageContentBlock::Thinking(thinking) => {
+                            result.thinking.push_str(&thinking.thinking);
                         }
                         _ => {}
                     }
@@ -3873,6 +3925,28 @@ data: [DONE]
             vec![Some("chatcmpl-limit".to_string())]
         );
         assert_usage_yielded_once(&result, 10, 5, 15);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_marks_length_with_reasoning_and_empty_content() -> anyhow::Result<()> {
+        let response_lines = r#"
+data: {"id":"chatcmpl-reason-limit","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"I will reason until the budget runs out."},"finish_reason":null}]}
+data: {"id":"chatcmpl-reason-limit","model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":40,"total_tokens":50}}
+data: [DONE]
+"#;
+
+        let result = run_streaming_test(response_lines).await?;
+
+        assert!(!result.has_text_content);
+        assert_eq!(result.text, "");
+        assert_eq!(result.thinking, "I will reason until the budget runs out.");
+        assert_eq!(
+            result.output_token_limit_message_ids,
+            vec![Some("chatcmpl-reason-limit".to_string())]
+        );
+        assert_usage_yielded_once(&result, 10, 40, 50);
 
         Ok(())
     }
