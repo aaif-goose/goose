@@ -382,7 +382,6 @@ pub fn render_message(message: &Message, debug: bool) {
 /// and only render when markdown constructs are complete.
 #[derive(Debug, Default)]
 pub struct OutputLimitRenderState {
-    message_id: Option<String>,
     saw_thinking: bool,
     saw_visible_output: bool,
     response_complete: bool,
@@ -390,18 +389,11 @@ pub struct OutputLimitRenderState {
 
 impl OutputLimitRenderState {
     pub fn observe(&mut self, message: &Message) {
-        let incoming = provider_completion_id(message);
-        let new_provider_response =
-            incoming.is_some_and(|id| self.message_id.as_deref() != Some(id));
-        let new_idless_response =
-            incoming.is_none() && message.has_thinking_content() && self.saw_visible_output;
-        if new_provider_response || self.response_complete || new_idless_response {
+        let new_response_after_visible = message.has_thinking_content() && self.saw_visible_output;
+        if self.response_complete || new_response_after_visible {
             self.saw_thinking = false;
             self.saw_visible_output = false;
             self.response_complete = false;
-        }
-        if let Some(id) = incoming {
-            self.message_id = Some(id.to_string());
         }
         self.saw_thinking |= message.has_thinking_content();
         self.saw_visible_output |= message.has_visible_output();
@@ -523,10 +515,6 @@ pub fn render_message_streaming(
 
 fn reached_output_token_limit(message: &Message) -> bool {
     message.role == Role::Assistant && message.metadata.output_token_limit_reached
-}
-
-fn provider_completion_id(message: &Message) -> Option<&str> {
-    message.id.as_deref().filter(|id| !id.starts_with("msg_"))
 }
 
 fn output_token_limit_warning(message: &Message) -> &'static str {
@@ -2231,10 +2219,10 @@ mod tests {
     }
 
     #[test]
-    fn streamed_output_limit_warning_resets_when_message_id_changes() {
+    fn streamed_output_limit_warning_keeps_thinking_across_distinct_chunk_ids() {
         let thinking = Message::assistant()
             .with_id("chatcmpl-1")
-            .with_thinking("previous turn reasoning", "");
+            .with_thinking("I will reason until the budget runs out.", "");
         let mut marker = Message::assistant().with_id("chatcmpl-2");
         marker.metadata.output_token_limit_reached = true;
 
@@ -2242,7 +2230,30 @@ mod tests {
         state.observe(&thinking);
         state.observe(&marker);
 
-        assert_eq!(state.warning(&marker), EMPTY_OUTPUT_TOKEN_LIMIT_WARNING);
+        assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
+    }
+
+    #[test]
+    fn streamed_output_limit_warning_resets_when_new_thinking_follows_visible_output() {
+        let thinking = Message::assistant()
+            .with_id("chatcmpl-1")
+            .with_thinking("previous turn reasoning", "");
+        let visible = Message::assistant()
+            .with_id("chatcmpl-1")
+            .with_text("previous turn answer");
+        let next_thinking = Message::assistant()
+            .with_id("chatcmpl-2")
+            .with_thinking("next turn reasoning", "");
+        let mut marker = Message::assistant().with_id("chatcmpl-2");
+        marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&visible);
+        state.observe(&next_thinking);
+        state.observe(&marker);
+
+        assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
     }
 
     #[test]

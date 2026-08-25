@@ -68,4 +68,24 @@ describe('reasoningConsumedOutputBudget', () => {
 
     expect(reasoningConsumedOutputBudget(messages, 2)).toBe(false);
   });
+
+  it('uses preceding thinking when chunk ids differ', () => {
+    const messages: Message[] = [
+      assistant({
+        id: 'chatcmpl-1',
+        content: [{ type: 'thinking', thinking: 'internal reasoning', signature: '' }],
+      }),
+      assistant({
+        id: 'chatcmpl-2',
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
+  });
 });
