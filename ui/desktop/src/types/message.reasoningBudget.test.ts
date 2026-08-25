@@ -115,6 +115,30 @@ describe('reasoningConsumedOutputBudget', () => {
     expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
   });
 
+  it('does not treat earlier visible text as this turn when looking back', () => {
+    const messages: Message[] = [
+      assistant({
+        id: 'chatcmpl-1',
+        content: [{ type: 'text', text: 'complete earlier answer' }],
+      }),
+      assistant({
+        id: 'chatcmpl-2',
+        content: [{ type: 'thinking', thinking: 'internal reasoning', signature: '' }],
+      }),
+      assistant({
+        id: 'chatcmpl-2',
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 2)).toBe(true);
+  });
+
   it('classifies a later ID-less length marker without matching an earlier ID-less message', () => {
     const messages: Message[] = [
       assistant({
