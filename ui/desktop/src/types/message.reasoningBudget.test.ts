@@ -88,4 +88,50 @@ describe('reasoningConsumedOutputBudget', () => {
 
     expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
   });
+
+  it('ignores ACP fallback text on the length marker', () => {
+    const messages: Message[] = [
+      assistant({
+        id: 'chatcmpl-1',
+        content: [{ type: 'thinking', thinking: 'internal reasoning', signature: '' }],
+      }),
+      assistant({
+        id: 'chatcmpl-2',
+        content: [
+          {
+            type: 'text',
+            text: 'Response stopped because the model reached its output-token limit.',
+          },
+        ],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+          fallbackContent: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
+  });
+
+  it('treats redacted thinking as reasoning', () => {
+    const messages: Message[] = [
+      assistant({
+        id: 'msg_thinking',
+        content: [{ type: 'redactedThinking', data: 'redacted' }],
+      }),
+      assistant({
+        id: 'msg_marker',
+        content: [],
+        metadata: {
+          agentVisible: false,
+          userVisible: true,
+          outputTokenLimitReached: true,
+        },
+      }),
+    ];
+
+    expect(reasoningConsumedOutputBudget(messages, 1)).toBe(true);
+  });
 });
