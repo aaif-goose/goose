@@ -373,6 +373,55 @@ export function getToolRequests(message: Message): (ToolRequest & { type: 'toolR
   );
 }
 
+function isGeneratedMessageId(id: string | undefined): boolean {
+  return Boolean(id?.startsWith('msg_'));
+}
+
+function providerCompletionId(message: Message): string | undefined {
+  if (!message.id || isGeneratedMessageId(message.id)) {
+    return undefined;
+  }
+  return message.id;
+}
+
+function messageHasVisibleOutput(message: Message): boolean {
+  const { textContent, imagePaths } = getTextAndImageContent(message);
+  return (
+    Boolean(textContent.trim()) || imagePaths.length > 0 || getToolRequests(message).length > 0
+  );
+}
+
+export function reasoningConsumedOutputBudget(messages: Message[], messageIndex: number): boolean {
+  const message = messages[messageIndex];
+  if (!message || message.role !== 'assistant' || !message.metadata.outputTokenLimitReached) {
+    return false;
+  }
+
+  let hasThinking = Boolean(getThinkingContent(message));
+  let hasVisibleOutput = messageHasVisibleOutput(message);
+  const currentProviderId = providerCompletionId(message);
+
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    const previous = messages[index];
+    if (previous.role !== 'assistant') {
+      break;
+    }
+
+    const previousProviderId = providerCompletionId(previous);
+    if (currentProviderId && previousProviderId && previousProviderId !== currentProviderId) {
+      break;
+    }
+    if (getToolRequests(previous).length > 0) {
+      break;
+    }
+
+    hasThinking = hasThinking || Boolean(getThinkingContent(previous));
+    hasVisibleOutput = hasVisibleOutput || messageHasVisibleOutput(previous);
+  }
+
+  return hasThinking && !hasVisibleOutput;
+}
+
 export function getToolResponses(message: Message): (ToolResponse & { type: 'toolResponse' })[] {
   return message.content.filter(
     (content): content is ToolResponse & { type: 'toolResponse' } => content.type === 'toolResponse'

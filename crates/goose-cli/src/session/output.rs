@@ -385,19 +385,28 @@ pub struct OutputLimitRenderState {
     message_id: Option<String>,
     saw_thinking: bool,
     saw_visible_output: bool,
+    response_complete: bool,
 }
 
 impl OutputLimitRenderState {
     pub fn observe(&mut self, message: &Message) {
-        if let Some(incoming) = provider_completion_id(message) {
-            if self.message_id.as_deref() != Some(incoming) {
-                self.message_id = Some(incoming.to_string());
-                self.saw_thinking = false;
-                self.saw_visible_output = false;
-            }
+        let incoming = provider_completion_id(message);
+        let new_provider_response =
+            incoming.is_some_and(|id| self.message_id.as_deref() != Some(id));
+        let new_idless_response =
+            incoming.is_none() && message.has_thinking_content() && self.saw_visible_output;
+        if new_provider_response || self.response_complete || new_idless_response {
+            self.saw_thinking = false;
+            self.saw_visible_output = false;
+            self.response_complete = false;
+        }
+        if let Some(id) = incoming {
+            self.message_id = Some(id.to_string());
         }
         self.saw_thinking |= message.has_thinking_content();
         self.saw_visible_output |= message.has_visible_output();
+        self.response_complete =
+            message.is_tool_call() || message.metadata.output_token_limit_reached;
     }
 
     fn warning(&self, message: &Message) -> &'static str {
@@ -2251,6 +2260,24 @@ mod tests {
         assert_eq!(state.warning(&marker), REASONING_OUTPUT_TOKEN_LIMIT_WARNING);
         assert_ne!(thinking.id, marker.id);
         assert!(thinking.id.as_deref().unwrap().starts_with("msg_"));
+    }
+
+    #[test]
+    fn streamed_output_limit_warning_resets_after_tool_call() {
+        let thinking = Message::assistant()
+            .with_generated_id()
+            .with_thinking("previous call reasoning", "");
+        let tool_call = Message::assistant()
+            .with_tool_request("call-1", Ok(CallToolRequestParams::new("shell")));
+        let mut marker = Message::assistant().with_generated_id();
+        marker.metadata.output_token_limit_reached = true;
+
+        let mut state = OutputLimitRenderState::default();
+        state.observe(&thinking);
+        state.observe(&tool_call);
+        state.observe(&marker);
+
+        assert_eq!(state.warning(&marker), EMPTY_OUTPUT_TOKEN_LIMIT_WARNING);
     }
 
     #[test]
