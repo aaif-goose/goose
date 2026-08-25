@@ -327,6 +327,37 @@ async fn provider_lifecycle() -> Result<()> {
         matches!(event, AgentEvent::Message(message) if message.metadata.output_token_limit_reached)
     }));
 
+    api.on("hit the reasoning output limit")
+        .reasoning_output_limit("I will reason until the budget runs out.");
+    let result = pipeline.run(["hit the reasoning output limit"]).await?;
+    assert!(result.events.iter().any(|event| {
+        matches!(
+            event,
+            AgentEvent::Message(message) if message.has_thinking_content()
+        )
+    }));
+    assert!(result.events.iter().any(|event| {
+        matches!(
+            event,
+            AgentEvent::Message(message) if message.metadata.output_token_limit_reached
+        )
+    }));
+    assert!(result.events.iter().all(|event| {
+        !matches!(
+            event,
+            AgentEvent::Message(message)
+                if message.as_concat_text().contains("model returned an empty response")
+        )
+    }));
+    let thinking_limited = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| message.reasoning_consumed_output_budget())
+        .expect("thinking-only output-limit response should be persisted");
+    assert!(thinking_limited.has_thinking_content());
+    assert!(!thinking_limited.has_visible_output());
+
     api.on("return an empty server error").empty_server_error();
     let result = pipeline.run(["return an empty server error"]).await?;
     result.assert_message(-1, Error, "500");

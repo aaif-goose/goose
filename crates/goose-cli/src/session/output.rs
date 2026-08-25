@@ -31,6 +31,10 @@ pub const DEFAULT_CLI_LIGHT_THEME: &str = "GitHub";
 pub const DEFAULT_CLI_DARK_THEME: &str = "zenburn";
 const OUTPUT_TOKEN_LIMIT_WARNING: &str =
     "Warning: Response reached the model's output-token limit and may be incomplete.";
+const EMPTY_OUTPUT_TOKEN_LIMIT_WARNING: &str =
+    "Warning: Response reached the model's output-token limit before returning content.";
+const REASONING_OUTPUT_TOKEN_LIMIT_WARNING: &str =
+    "Warning: Reasoning consumed the model's output-token budget before any visible content was produced. Raise GOOSE_MAX_TOKENS or lower GOOSE_THINKING_EFFORT.";
 
 fn accent<T: Display>(value: T) -> StyledObject<T> {
     style(value).cyan()
@@ -371,7 +375,7 @@ pub fn render_message(message: &Message, debug: bool) {
     }
 
     if reached_output_token_limit(&message) {
-        render_output_token_limit_warning();
+        render_output_token_limit_warning(&message);
     }
     let _ = std::io::stdout().flush();
 }
@@ -474,7 +478,7 @@ pub fn render_message_streaming(
 
     if reached_output_token_limit(&message) {
         flush_markdown_buffer(buffer, theme);
-        render_output_token_limit_warning();
+        render_output_token_limit_warning(&message);
     }
     let _ = std::io::stdout().flush();
 }
@@ -483,8 +487,18 @@ fn reached_output_token_limit(message: &Message) -> bool {
     message.role == Role::Assistant && message.metadata.output_token_limit_reached
 }
 
-fn render_output_token_limit_warning() {
-    println!("\n{}", warning(OUTPUT_TOKEN_LIMIT_WARNING));
+fn output_token_limit_warning(message: &Message) -> &'static str {
+    if message.reasoning_consumed_output_budget() {
+        REASONING_OUTPUT_TOKEN_LIMIT_WARNING
+    } else if !message.has_visible_output() {
+        EMPTY_OUTPUT_TOKEN_LIMIT_WARNING
+    } else {
+        OUTPUT_TOKEN_LIMIT_WARNING
+    }
+}
+
+fn render_output_token_limit_warning(message: &Message) {
+    println!("\n{}", warning(output_token_limit_warning(message)));
 }
 
 fn render_credits_exhausted_notification(notification: &SystemNotificationContent) {
@@ -2110,6 +2124,36 @@ mod tests {
         assert_eq!(
             get_credits_top_up_url(&message).as_deref(),
             Some("https://router.tetrate.ai/billing")
+        );
+    }
+
+    #[test]
+    fn output_token_limit_warning_is_generic_when_content_is_present() {
+        let mut message = Message::assistant().with_text("Partial answer");
+        message.metadata.output_token_limit_reached = true;
+        assert_eq!(
+            output_token_limit_warning(&message),
+            OUTPUT_TOKEN_LIMIT_WARNING
+        );
+    }
+
+    #[test]
+    fn output_token_limit_warning_is_empty_when_no_content_is_present() {
+        let mut message = Message::assistant();
+        message.metadata.output_token_limit_reached = true;
+        assert_eq!(
+            output_token_limit_warning(&message),
+            EMPTY_OUTPUT_TOKEN_LIMIT_WARNING
+        );
+    }
+
+    #[test]
+    fn output_token_limit_warning_names_reasoning_when_content_is_empty() {
+        let mut message = Message::assistant().with_thinking("internal reasoning", "");
+        message.metadata.output_token_limit_reached = true;
+        assert_eq!(
+            output_token_limit_warning(&message),
+            REASONING_OUTPUT_TOKEN_LIMIT_WARNING
         );
     }
 
