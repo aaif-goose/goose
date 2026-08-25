@@ -373,7 +373,18 @@ export function getToolRequests(message: Message): (ToolRequest & { type: 'toolR
   );
 }
 
+function messageHasThinking(message: Message): boolean {
+  return message.content.some(
+    (content) =>
+      (content.type === 'thinking' && 'thinking' in content && Boolean(content.thinking)) ||
+      content.type === 'redactedThinking'
+  );
+}
+
 function messageHasVisibleOutput(message: Message): boolean {
+  if (message.metadata.fallbackContent === true) {
+    return false;
+  }
   const { textContent, imagePaths } = getTextAndImageContent(message);
   return (
     Boolean(textContent.trim()) || imagePaths.length > 0 || getToolRequests(message).length > 0
@@ -386,7 +397,7 @@ export function reasoningConsumedOutputBudget(messages: Message[], messageIndex:
     return false;
   }
 
-  let hasThinking = Boolean(getThinkingContent(message));
+  let hasThinking = messageHasThinking(message);
   let hasVisibleOutput = messageHasVisibleOutput(message);
 
   for (let index = messageIndex - 1; index >= 0; index -= 1) {
@@ -402,7 +413,7 @@ export function reasoningConsumedOutputBudget(messages: Message[], messageIndex:
       break;
     }
 
-    hasThinking = hasThinking || Boolean(getThinkingContent(previous));
+    hasThinking = hasThinking || messageHasThinking(previous);
   }
 
   return hasThinking && !hasVisibleOutput;
