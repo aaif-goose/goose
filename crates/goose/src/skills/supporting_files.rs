@@ -19,6 +19,20 @@ enum RootLinkPolicy {
     FollowFinal,
 }
 
+#[derive(Clone, Copy)]
+struct WalkPolicy {
+    allow_linked_skill_roots: bool,
+    inside_linked_skill_root: bool,
+}
+
+pub(super) struct OpenedSkillDirectory(fs::File);
+
+impl OpenedSkillDirectory {
+    pub(super) fn from_opened(directory: &fs::File) -> io::Result<Self> {
+        directory.try_clone().map(Self)
+    }
+}
+
 pub(crate) fn load_supporting_file(
     skill_dir: &Path,
     relative: &Path,
@@ -32,6 +46,33 @@ pub(crate) fn load_supporting_file(
         crate::agents::max_tool_response_size(),
         linked_skill_root,
     )
+}
+
+pub(super) fn load_supporting_file_from_opened(
+    skill_dir: &OpenedSkillDirectory,
+    relative: &Path,
+    skill_name: &str,
+) -> io::Result<String> {
+    let max_characters = crate::agents::max_tool_response_size();
+    let wrapper_characters = LOADED_FILE_PREFIX.chars().count()
+        + skill_name.chars().count()
+        + LOADED_FILE_SEPARATOR.chars().count()
+        + LOADED_FILE_SUFFIX.chars().count();
+    let content_limit = max_characters
+        .checked_sub(wrapper_characters)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "maximum tool response size of {max_characters} characters is too small to load '{skill_name}'"
+                ),
+            )
+        })?;
+    let content =
+        read_confined_file_from_opened(skill_dir, relative, ReadLimit::Characters(content_limit))?;
+    Ok(format!(
+        "{LOADED_FILE_PREFIX}{skill_name}{LOADED_FILE_SEPARATOR}{content}{LOADED_FILE_SUFFIX}"
+    ))
 }
 
 fn load_supporting_file_with_limit(
@@ -211,11 +252,10 @@ pub(super) fn walk_regular_files_no_follow_with_hook<F, G, H>(
     after_read_dir: &mut H,
 ) -> io::Result<()>
 where
-    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
+    F: FnMut(&Path, bool, &fs::File, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
-    let mut linked_skill_roots = Vec::new();
     let root_link_policy = if linked_skill_root {
         RootLinkPolicy::FollowFinal
     } else {
@@ -225,11 +265,36 @@ where
         root,
         root_link_policy,
         false,
-        &mut linked_skill_roots,
         should_descend,
         visit_file,
         after_read_dir,
     )
+}
+
+pub(super) fn walk_regular_files_from_opened_with_hook<F, G, H>(
+    root: &Path,
+    directory: &OpenedSkillDirectory,
+    should_descend: &mut G,
+    visit_file: &mut F,
+    after_read_dir: &mut H,
+) -> io::Result<()>
+where
+    F: FnMut(&Path, bool, &fs::File, &mut dyn FnMut() -> io::Result<fs::File>),
+    G: FnMut(&Path) -> bool,
+    H: FnMut(&Path),
+{
+    walk_opened_directory(
+        root,
+        directory.0.try_clone()?,
+        WalkPolicy {
+            allow_linked_skill_roots: false,
+            inside_linked_skill_root: true,
+        },
+        should_descend,
+        visit_file,
+        after_read_dir,
+    );
+    Ok(())
 }
 
 pub(super) fn walk_skill_files_no_follow_with_hook<F, G, H>(
@@ -237,36 +302,32 @@ pub(super) fn walk_skill_files_no_follow_with_hook<F, G, H>(
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
-) -> io::Result<Vec<PathBuf>>
+) -> io::Result<()>
 where
-    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
+    F: FnMut(&Path, bool, &fs::File, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
-    let mut linked_skill_roots = Vec::new();
     walk_regular_files_no_follow_impl(
         root,
         RootLinkPolicy::Reject,
         true,
-        &mut linked_skill_roots,
         should_descend,
         visit_file,
         after_read_dir,
-    )?;
-    Ok(linked_skill_roots)
+    )
 }
 
 fn walk_regular_files_no_follow_impl<F, G, H>(
     root: &Path,
     root_link_policy: RootLinkPolicy,
     allow_linked_skill_roots: bool,
-    linked_skill_roots: &mut Vec<PathBuf>,
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
 ) -> io::Result<()>
 where
-    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
+    F: FnMut(&Path, bool, &fs::File, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
@@ -275,8 +336,10 @@ where
     walk_opened_directory(
         &root,
         directory,
-        allow_linked_skill_roots,
-        linked_skill_roots,
+        WalkPolicy {
+            allow_linked_skill_roots,
+            inside_linked_skill_root: false,
+        },
         should_descend,
         visit_file,
         after_read_dir,
@@ -319,20 +382,17 @@ fn normalize_absolute_path(path: &Path) -> io::Result<PathBuf> {
 fn walk_opened_directory<F, G, H>(
     logical_path: &Path,
     directory: fs::File,
-    allow_linked_skill_roots: bool,
-    linked_skill_roots: &mut Vec<PathBuf>,
+    policy: WalkPolicy,
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
 ) where
-    F: FnMut(&Path, &mut dyn FnMut() -> io::Result<fs::File>),
+    F: FnMut(&Path, bool, &fs::File, &mut dyn FnMut() -> io::Result<fs::File>),
     G: FnMut(&Path) -> bool,
     H: FnMut(&Path),
 {
-    let entries = match fs::read_dir(logical_path) {
-        Ok(entries) => entries
-            .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
-            .collect::<Vec<_>>(),
+    let entries = match read_directory_names(&directory) {
+        Ok(entries) => entries,
         Err(_) => return,
     };
     after_read_dir(logical_path);
@@ -347,22 +407,26 @@ fn walk_opened_directory<F, G, H>(
                 walk_opened_directory(
                     &path,
                     child,
-                    allow_linked_skill_roots && !child_is_skill_root,
-                    linked_skill_roots,
+                    WalkPolicy {
+                        allow_linked_skill_roots: policy.allow_linked_skill_roots
+                            && !child_is_skill_root,
+                        ..policy
+                    },
                     should_descend,
                     visit_file,
                     after_read_dir,
                 );
                 continue;
             }
-            if allow_linked_skill_roots {
+            if policy.allow_linked_skill_roots {
                 if let Ok(child) = open_child_linked_skill_directory(&directory, &name) {
-                    linked_skill_roots.push(path.clone());
                     walk_opened_directory(
                         &path,
                         child,
-                        false,
-                        linked_skill_roots,
+                        WalkPolicy {
+                            allow_linked_skill_roots: false,
+                            inside_linked_skill_root: true,
+                        },
                         should_descend,
                         visit_file,
                         after_read_dir,
@@ -373,9 +437,157 @@ fn walk_opened_directory<F, G, H>(
         }
         if is_child_regular_file(&directory, &name).unwrap_or(false) {
             let mut open_for_read = || open_child_regular_file(&directory, &name);
-            visit_file(&path, &mut open_for_read);
+            visit_file(
+                &path,
+                policy.inside_linked_skill_root,
+                &directory,
+                &mut open_for_read,
+            );
         }
     }
+}
+
+fn read_confined_file_from_opened(
+    skill_dir: &OpenedSkillDirectory,
+    relative: &Path,
+    limit: ReadLimit,
+) -> io::Result<String> {
+    let components = validated_relative_components(relative)?;
+    let (file_name, ancestors) = components.split_last().unwrap();
+    let mut directory = skill_dir.0.try_clone()?;
+    for ancestor in ancestors {
+        directory = open_child_directory(&directory, ancestor)?;
+    }
+    read_opened_file(open_child_regular_file(&directory, file_name)?, limit)
+}
+
+#[cfg(unix)]
+fn read_directory_names(directory: &fs::File) -> io::Result<Vec<std::ffi::OsString>> {
+    use std::ffi::{CStr, OsString};
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStringExt;
+
+    let descriptor = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            c".".as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
+    if descriptor < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let stream = unsafe { libc::fdopendir(descriptor) };
+    if stream.is_null() {
+        unsafe { libc::close(descriptor) };
+        return Err(io::Error::last_os_error());
+    }
+
+    let mut names = Vec::new();
+    loop {
+        let entry = unsafe { libc::readdir(stream) };
+        if entry.is_null() {
+            break;
+        }
+        let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+        if name != b"." && name != b".." {
+            names.push(OsString::from_vec(name.to_vec()));
+        }
+    }
+    if unsafe { libc::closedir(stream) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(names)
+}
+
+#[cfg(windows)]
+fn read_directory_names(directory: &fs::File) -> io::Result<Vec<std::ffi::OsString>> {
+    use ntapi::ntioapi::{
+        FileNamesInformation, NtQueryDirectoryFile, FILE_NAMES_INFORMATION, IO_STATUS_BLOCK,
+    };
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use winapi::shared::ntdef::{HANDLE, NT_SUCCESS};
+    use winapi::shared::ntstatus::STATUS_NO_MORE_FILES;
+
+    let mut names = Vec::new();
+    let mut buffer = vec![0_u64; 8 * 1024];
+    let buffer_bytes = std::mem::size_of_val(buffer.as_slice());
+    let mut restart_scan = 1;
+    loop {
+        let mut io_status: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+        let status = unsafe {
+            NtQueryDirectoryFile(
+                directory.as_raw_handle() as HANDLE,
+                std::ptr::null_mut(),
+                None,
+                std::ptr::null_mut(),
+                &mut io_status,
+                buffer.as_mut_ptr().cast(),
+                buffer_bytes as u32,
+                FileNamesInformation,
+                0,
+                std::ptr::null_mut(),
+                restart_scan,
+            )
+        };
+        if status == STATUS_NO_MORE_FILES {
+            break;
+        }
+        if !NT_SUCCESS(status) {
+            return Err(windows_nt_status_error(status));
+        }
+        restart_scan = 0;
+
+        let mut offset = 0_usize;
+        loop {
+            let entry = unsafe {
+                &*buffer
+                    .as_ptr()
+                    .cast::<u8>()
+                    .add(offset)
+                    .cast::<FILE_NAMES_INFORMATION>()
+            };
+            let name_bytes = entry.FileNameLength as usize;
+            if name_bytes % std::mem::size_of::<u16>() != 0
+                || offset
+                    .checked_add(std::mem::offset_of!(FILE_NAMES_INFORMATION, FileName))
+                    .and_then(|start| start.checked_add(name_bytes))
+                    .is_none_or(|end| end > buffer_bytes)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "directory query returned an invalid entry",
+                ));
+            }
+            let name =
+                unsafe { std::slice::from_raw_parts(entry.FileName.as_ptr(), name_bytes / 2) };
+            if name != [b'.' as u16] && name != [b'.' as u16, b'.' as u16] {
+                names.push(std::ffi::OsString::from_wide(name));
+            }
+            if entry.NextEntryOffset == 0 {
+                break;
+            }
+            offset = offset
+                .checked_add(entry.NextEntryOffset as usize)
+                .filter(|offset| *offset < buffer_bytes)
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "directory query returned an invalid entry offset",
+                    )
+                })?;
+        }
+    }
+    Ok(names)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn read_directory_names(_directory: &fs::File) -> io::Result<Vec<std::ffi::OsString>> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure skill discovery is not supported on this platform",
+    ))
 }
 
 #[cfg(unix)]
@@ -844,8 +1056,8 @@ fn open_skill_root(
     use std::os::windows::fs::OpenOptionsExt;
     use winapi::um::winbase::{FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT};
     use winapi::um::winnt::{
-        FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
-        SYNCHRONIZE,
+        FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+        FILE_SHARE_WRITE, FILE_TRAVERSE, SYNCHRONIZE,
     };
 
     let root_anchor = skill_dir
@@ -872,7 +1084,7 @@ fn open_skill_root(
 
     let mut options = fs::OpenOptions::new();
     options
-        .access_mode(FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
+        .access_mode(FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT);
     let mut directory = options.open(root_anchor)?;
@@ -1024,7 +1236,9 @@ fn windows_open_at(
     use ntapi::ntioapi::{
         FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_SYNCHRONOUS_IO_NONALERT,
     };
-    use winapi::um::winnt::{FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_TRAVERSE, SYNCHRONIZE};
+    use winapi::um::winnt::{
+        FILE_GENERIC_READ, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_TRAVERSE, SYNCHRONIZE,
+    };
 
     let mut create_options = FILE_SYNCHRONOUS_IO_NONALERT;
     if !follow_reparse_point {
@@ -1034,7 +1248,7 @@ fn windows_open_at(
         create_options |= FILE_DIRECTORY_FILE;
     }
     let desired_access = if directory_only {
-        FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
+        FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
     } else if read_file {
         FILE_GENERIC_READ
     } else {
