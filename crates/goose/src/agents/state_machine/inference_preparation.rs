@@ -81,8 +81,10 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
         let mut prompt_manager = self.prompt_manager.lock().await;
-        let reservation =
-            prompt_manager.hint_output_reservation(!input.prompt_parts.is_empty(), goose_mode);
+        let reservation = prompt_manager.hint_output_reservation(
+            input.prompt_parts.iter().map(|(key, _)| key.as_str()),
+            goose_mode,
+        );
         let hint_snapshot =
             reconstructed_hint_snapshot(conversation, &session.working_dir, reservation);
         let system_prompt = prompt_manager.build_system_prompt_from_snapshot(
@@ -244,7 +246,10 @@ mod tests {
         let mut prompt_manager = PromptManager::new();
         prompt_manager
             .add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
-        let reservation = prompt_manager.hint_output_reservation(true, GooseMode::Auto);
+        let reservation = prompt_manager.hint_output_reservation(
+            prompt_parts.iter().map(|(key, _)| key.as_str()),
+            GooseMode::Auto,
+        );
         assert_eq!(reservation.root_only, HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(
             reservation.with_subdirectories,
@@ -281,6 +286,91 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn colliding_prompt_part_uses_final_hint_boundary_count() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        let nested_hints = nested.join(GOOSE_HINTS_FILENAME);
+        let marker = "COLLIDING_EXTENSION_BOUNDARY";
+        fs::write(&nested_hints, marker).unwrap();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
+            "read-nested",
+            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
+        )]);
+        let prompt_parts = vec![("extensions".to_string(), "operation extensions".to_string())];
+        let mut prompt_manager = PromptManager::new();
+        prompt_manager.add_system_prompt_extra("first".to_string(), "CALLER_FIRST".to_string());
+        prompt_manager
+            .add_system_prompt_extra("extensions".to_string(), "caller extensions".to_string());
+        prompt_manager.add_system_prompt_extra("last".to_string(), "CALLER_LAST".to_string());
+
+        let legacy_reservation =
+            prompt_manager.hint_output_reservation(std::iter::empty(), GooseMode::Auto);
+        let state_machine_reservation = prompt_manager.hint_output_reservation(
+            prompt_parts.iter().map(|(key, _)| key.as_str()),
+            GooseMode::Auto,
+        );
+        let measured =
+            reconstructed_hint_snapshot(&conversation, project.path(), legacy_reservation);
+        let framing_bytes = measured.subdirectories[0].1.len() - marker.len();
+        let hint_output_bytes = MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES;
+        let content_bytes = hint_output_bytes - framing_bytes;
+        fs::write(
+            &nested_hints,
+            format!("{marker}{}", "n".repeat(content_bytes - marker.len())),
+        )
+        .unwrap();
+
+        let legacy_snapshot =
+            reconstructed_hint_snapshot(&conversation, project.path(), legacy_reservation);
+        let state_machine_snapshot =
+            reconstructed_hint_snapshot(&conversation, project.path(), state_machine_reservation);
+
+        assert_eq!(legacy_snapshot.subdirectories.len(), 1);
+        assert_eq!(
+            state_machine_snapshot.subdirectories.len(),
+            1,
+            "a colliding prompt key must not reserve a separator absent from the final prompt"
+        );
+        assert_eq!(
+            state_machine_reservation.root_only,
+            legacy_reservation.root_only
+        );
+        assert_eq!(
+            state_machine_reservation.subdirectories_only,
+            legacy_reservation.subdirectories_only
+        );
+        assert_eq!(
+            state_machine_reservation.with_subdirectories,
+            legacy_reservation.with_subdirectories
+        );
+
+        let prompt = prompt_manager.build_system_prompt_from_snapshot(
+            prompt_parts,
+            GooseMode::Auto,
+            state_machine_snapshot,
+        );
+        let first = prompt.find("CALLER_FIRST").unwrap();
+        let extensions = prompt.find("operation extensions").unwrap();
+        let last = prompt.find("CALLER_LAST").unwrap();
+        let hints = prompt.find(marker).unwrap();
+        assert!(first < extensions && extensions < last && last < hints);
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn state_machine_chat_subdirectory_hints_ignore_nonadjacent_chat_boundary() {
         let config_root = tempfile::tempdir().unwrap();
         let _guard = env_lock::lock_env([
@@ -305,7 +395,7 @@ mod tests {
             Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
         )]);
         let mut prompt_manager = PromptManager::new();
-        let reservation = prompt_manager.hint_output_reservation(true, GooseMode::Chat);
+        let reservation = prompt_manager.hint_output_reservation(["extensions"], GooseMode::Chat);
         assert_eq!(reservation.root_only, 2 * HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(reservation.subdirectories_only, HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(
@@ -374,7 +464,10 @@ mod tests {
         let mut prompt_manager = PromptManager::new();
         prompt_manager
             .add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
-        let auto_reservation = prompt_manager.hint_output_reservation(true, GooseMode::Auto);
+        let auto_reservation = prompt_manager.hint_output_reservation(
+            prompt_parts.iter().map(|(key, _)| key.as_str()),
+            GooseMode::Auto,
+        );
         assert_eq!(auto_reservation.root_only, HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(
             auto_reservation.subdirectories_only,
@@ -384,7 +477,10 @@ mod tests {
             auto_reservation.with_subdirectories,
             2 * HINT_EXTRA_SEPARATOR_BYTES
         );
-        let reservation = prompt_manager.hint_output_reservation(true, GooseMode::Chat);
+        let reservation = prompt_manager.hint_output_reservation(
+            prompt_parts.iter().map(|(key, _)| key.as_str()),
+            GooseMode::Chat,
+        );
         assert_eq!(reservation.root_only, 2 * HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(
             reservation.subdirectories_only,
@@ -429,7 +525,8 @@ mod tests {
         assert!(prompt.contains("NESTED_BOUNDARY"));
         assert!(prompt.contains("operation prompt instruction"));
         assert!(prompt.contains("ROOT_BOUNDARY"));
-        let final_reservation = prompt_manager.hint_output_reservation(true, GooseMode::Chat);
+        let final_reservation =
+            prompt_manager.hint_output_reservation(["extensions"], GooseMode::Chat);
         assert_eq!(final_reservation.root_only, reservation.root_only);
         assert_eq!(
             final_reservation.with_subdirectories,

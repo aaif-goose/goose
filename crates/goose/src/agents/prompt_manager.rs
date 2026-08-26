@@ -268,25 +268,70 @@ impl PromptManager {
         changed
     }
 
-    pub(crate) fn hint_output_reservation(
+    pub(crate) fn hint_output_reservation<'a>(
         &self,
-        has_prompt_parts: bool,
+        prompt_part_keys: impl IntoIterator<Item = &'a str>,
         goose_mode: GooseMode,
     ) -> HintOutputReservation {
-        let has_caller_owned_extra = self
-            .system_prompt_extras
-            .keys()
-            .any(|key| !self.generated_subdirectory_hint_keys.contains(key));
-        let has_chat_mode = goose_mode == GooseMode::Chat;
-        let chat_boundary_count = usize::from(has_chat_mode);
-        let root_only_boundary_count =
-            usize::from(has_prompt_parts || has_caller_owned_extra) + chat_boundary_count;
-        let subdirectories_only_boundary_count = usize::from(has_prompt_parts)
-            + usize::from(has_caller_owned_extra)
-            + usize::from(has_chat_mode && !has_prompt_parts);
-        let with_subdirectories_boundary_count = usize::from(has_prompt_parts)
-            + usize::from(has_caller_owned_extra)
-            + chat_boundary_count;
+        #[derive(Hash, PartialEq, Eq)]
+        enum ReservationKey {
+            Extra(String),
+            SubdirectoryHints,
+            RootHints,
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum ReservationPart {
+            Extra,
+            Hint,
+        }
+
+        let prompt_part_keys = prompt_part_keys.into_iter().collect::<Vec<_>>();
+        let boundary_count = |include_subdirectories: bool, include_root: bool| {
+            let mut parts = IndexMap::new();
+            for key in self
+                .system_prompt_extras
+                .keys()
+                .filter(|key| !self.generated_subdirectory_hint_keys.contains(*key))
+            {
+                parts.insert(ReservationKey::Extra(key.clone()), ReservationPart::Extra);
+            }
+            if include_subdirectories {
+                parts.insert(ReservationKey::SubdirectoryHints, ReservationPart::Hint);
+            }
+            for key in &prompt_part_keys {
+                parts.insert(
+                    ReservationKey::Extra((*key).to_string()),
+                    ReservationPart::Extra,
+                );
+            }
+            if include_root {
+                parts.shift_remove(&ReservationKey::Extra("hints".to_string()));
+                parts.insert(ReservationKey::RootHints, ReservationPart::Hint);
+            }
+            if goose_mode == GooseMode::Chat {
+                parts.insert(
+                    ReservationKey::Extra("chat_mode".to_string()),
+                    ReservationPart::Extra,
+                );
+            }
+
+            let hint_boundaries = parts
+                .values()
+                .copied()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .filter(|pair| pair.contains(&ReservationPart::Hint))
+                .count();
+            // Hint loading already charges separators between generated hint groups.
+            let charged_hint_boundaries =
+                (usize::from(include_subdirectories) + usize::from(include_root)).saturating_sub(1);
+            hint_boundaries.saturating_sub(charged_hint_boundaries)
+        };
+
+        let root_only_boundary_count = boundary_count(false, true);
+        let subdirectories_only_boundary_count = boundary_count(true, false);
+        let with_subdirectories_boundary_count = boundary_count(true, true);
         HintOutputReservation::new(
             root_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
             subdirectories_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
@@ -300,7 +345,8 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        let reservation = self.hint_output_reservation(!prompt_parts.is_empty(), goose_mode);
+        let reservation = self
+            .hint_output_reservation(prompt_parts.iter().map(|(key, _)| key.as_str()), goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
             .load_snapshot(working_dir, reservation);
@@ -327,7 +373,7 @@ impl PromptManager {
         working_dir: &Path,
         goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
-        let reservation = self.hint_output_reservation(false, goose_mode);
+        let reservation = self.hint_output_reservation(std::iter::empty(), goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
             .load_snapshot(working_dir, reservation);
@@ -446,7 +492,7 @@ mod tests {
         manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
         manager.add_system_prompt_extra("last".to_string(), "CALLER_LAST".to_string());
 
-        let reservation = manager.hint_output_reservation(false, GooseMode::Auto);
+        let reservation = manager.hint_output_reservation(std::iter::empty(), GooseMode::Auto);
         let hint_content_bytes =
             MAX_HINT_OUTPUT_BYTES - reservation.with_subdirectories - HINT_EXTRA_SEPARATOR_BYTES;
         let root_len = hint_content_bytes / 2;
@@ -751,7 +797,7 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let mut manager = PromptManager::new();
         manager.add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
-        let reservation = manager.hint_output_reservation(true, GooseMode::Auto);
+        let reservation = manager.hint_output_reservation(["extensions"], GooseMode::Auto);
         assert_eq!(reservation.root_only, HINT_EXTRA_SEPARATOR_BYTES);
         assert_eq!(
             reservation.with_subdirectories,
