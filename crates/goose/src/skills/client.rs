@@ -179,18 +179,17 @@ impl McpClientTrait for SkillsClient {
                         continue;
                     }
 
-                    let result = match super::load_supporting_file(
-                        &skill.load_path,
-                        rel,
-                        skill_name,
-                        skill.linked_skill_root,
-                    ) {
-                        Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
-                        Err(e) => CallToolResult::error(vec![ContentBlock::text(format!(
-                            "Failed to read '{}': {}",
-                            skill_name, e
-                        ))]),
-                    };
+                    let result =
+                        match super::load_supporting_file(&skill.load_path, rel, skill_name, false)
+                        {
+                            Ok(content) => {
+                                CallToolResult::success(vec![ContentBlock::text(content)])
+                            }
+                            Err(e) => CallToolResult::error(vec![ContentBlock::text(format!(
+                                "Failed to read '{}': {}",
+                                skill_name, e
+                            ))]),
+                        };
                     return Ok(result);
                 }
 
@@ -600,6 +599,80 @@ mod tests {
         };
 
         tokio::join!(updater, reader);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn nested_skill_under_linked_root_loads_only_regular_supporting_files() {
+        let project = TempDir::new().unwrap();
+        let working_dir = project.path().canonicalize().unwrap();
+        let skill_root = working_dir.join(".agents/skills");
+        fs::create_dir_all(&skill_root).unwrap();
+        let external_skill = working_dir.join("external-skill");
+        fs::create_dir_all(external_skill.join("nested")).unwrap();
+        fs::write(
+            external_skill.join("SKILL.md"),
+            "---\nname: outer-skill\ndescription: Outer skill\n---\nOuter body",
+        )
+        .unwrap();
+        fs::write(
+            external_skill.join("nested/SKILL.md"),
+            "---\nname: nested-skill\ndescription: Nested skill\n---\nNested body",
+        )
+        .unwrap();
+        fs::write(external_skill.join("nested/guide.md"), "Nested guidance.").unwrap();
+        let escaped = working_dir.join("escaped");
+        fs::create_dir(&escaped).unwrap();
+        fs::write(escaped.join("secret.md"), "outside secret").unwrap();
+        std::os::unix::fs::symlink(&escaped, external_skill.join("nested/escaped")).unwrap();
+        std::os::unix::fs::symlink(&external_skill, skill_root.join("linked-skill")).unwrap();
+
+        let session = Arc::new(crate::session::Session {
+            working_dir,
+            ..crate::session::Session::default()
+        });
+        let client = SkillsClient::new(PlatformExtensionContext {
+            extension_manager: None,
+            session_manager: Arc::new(crate::session::SessionManager::instance()),
+            scheduler: None,
+            session: Some(session),
+            use_login_shell_path: false,
+        })
+        .unwrap()
+        .with_builtin_skills(false);
+        let ctx = ToolCallContext::new("test".to_string(), None, None);
+
+        let guide_args = serde_json::from_value(serde_json::json!({
+            "name": "nested-skill/guide.md"
+        }))
+        .unwrap();
+        let guide = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(guide_args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(!guide.is_error.unwrap_or(false));
+        assert!(result_text(&guide).contains("Nested guidance."));
+
+        let escaped_args = serde_json::from_value(serde_json::json!({
+            "name": "nested-skill/escaped/secret.md"
+        }))
+        .unwrap();
+        let escaped = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(escaped_args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(escaped.is_error.unwrap_or(false));
+        assert!(!result_text(&escaped).contains("outside secret"));
     }
 
     #[tokio::test]
