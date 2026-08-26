@@ -205,6 +205,7 @@ fn read_opened_file(file: fs::File, limit: ReadLimit) -> io::Result<String> {
 
 pub(super) fn walk_regular_files_no_follow_with_hook<F, G, H>(
     root: &Path,
+    linked_skill_root: bool,
     should_descend: &mut G,
     visit_file: &mut F,
     after_read_dir: &mut H,
@@ -215,9 +216,14 @@ where
     H: FnMut(&Path),
 {
     let mut linked_skill_roots = Vec::new();
+    let root_link_policy = if linked_skill_root {
+        RootLinkPolicy::FollowFinal
+    } else {
+        RootLinkPolicy::Reject
+    };
     walk_regular_files_no_follow_impl(
         root,
-        RootLinkPolicy::FollowFinal,
+        root_link_policy,
         false,
         &mut linked_skill_roots,
         should_descend,

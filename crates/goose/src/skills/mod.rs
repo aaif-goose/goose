@@ -621,8 +621,10 @@ where
         {
             if !seen.contains(&source.name) {
                 let mut files = Vec::new();
+                let linked_skill_root = linked_skill_dirs.contains(skill_dir);
                 let _ = walk_regular_files_no_follow_with_hook(
                     skill_dir,
+                    linked_skill_root,
                     &mut |path| !should_skip_dir(path) && !skill_dirs.contains(path),
                     &mut |path, _open_for_read| {
                         if path.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
@@ -642,7 +644,7 @@ where
 
                 seen.insert(source.name.clone());
                 sources.push(DiscoveredSkill {
-                    linked_skill_root: linked_skill_dirs.contains(skill_dir),
+                    linked_skill_root,
                     load_path: skill_dir.to_path_buf(),
                     source,
                 });
@@ -1537,6 +1539,35 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn supporting_file_enumeration_rejects_regular_root_swapped_after_marker_discovery() {
+        use std::os::unix::fs::symlink;
+
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_root = temp_root.join("skills");
+        let skill_dir = skill_root.join("regular-skill");
+        let moved_skill_dir = skill_root.join("moved-skill");
+        write_skill(&skill_dir, "regular-skill");
+        std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("outside.md"), "outside secret").unwrap();
+        std::fs::rename(&skill_dir, &moved_skill_dir).unwrap();
+        symlink(outside.path(), &skill_dir).unwrap();
+
+        let mut published = Vec::new();
+        let _ = walk_regular_files_no_follow_with_hook(
+            &skill_dir,
+            false,
+            &mut |_| true,
+            &mut |path, _open_for_read| published.push(path.to_path_buf()),
+            &mut |_| {},
+        );
+
+        assert!(published.is_empty());
     }
 
     #[cfg(unix)]
