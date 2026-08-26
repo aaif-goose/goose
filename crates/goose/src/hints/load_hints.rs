@@ -66,6 +66,7 @@ pub fn get_context_filenames() -> Vec<String> {
 
 pub struct SubdirectoryHintTracker {
     loaded_dirs: Vec<PathBuf>,
+    loaded_dir_set: HashSet<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
     emitted_hint_keys: HashSet<String>,
@@ -81,6 +82,7 @@ impl SubdirectoryHintTracker {
     pub fn new() -> Self {
         Self {
             loaded_dirs: Vec::new(),
+            loaded_dir_set: HashSet::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
             emitted_hint_keys: HashSet::new(),
@@ -162,7 +164,7 @@ impl SubdirectoryHintTracker {
             if !dir.starts_with(&canonical_working_dir) || dir == canonical_working_dir {
                 continue;
             }
-            if self.loaded_dirs.contains(&dir) {
+            if !self.loaded_dir_set.insert(dir.clone()) {
                 continue;
             }
             self.loaded_dirs.push(dir);
@@ -1453,6 +1455,44 @@ End of hints"#;
         assert_eq!(hints.len(), 1);
         assert!(hints[0].1.contains("nested hints"));
         assert_eq!(tracker.loaded_dirs.len(), 1);
+    }
+
+    #[test]
+    fn tracker_preserves_first_seen_order_with_companion_membership_set() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+        for directory in ["second", "first", "third"] {
+            let path = project_root.join(directory);
+            fs::create_dir(&path).unwrap();
+            fs::write(
+                path.join(GOOSE_HINTS_FILENAME),
+                format!("{directory} hints"),
+            )
+            .unwrap();
+        }
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for directory in ["second", "first", "third", "second", "first"] {
+            let arguments = serde_json::json!({
+                "path": format!("{directory}/file.rs")
+            })
+            .as_object()
+            .cloned();
+            tracker.record_tool_arguments(&arguments, &project_root);
+        }
+        let hints = tracker.load_hints(&project_root);
+        let expected = ["second", "first", "third"]
+            .map(|directory| project_root.join(directory).canonicalize().unwrap());
+
+        assert_eq!(tracker.loaded_dirs, expected);
+        assert_eq!(tracker.loaded_dir_set.len(), expected.len());
+        assert!(expected
+            .iter()
+            .all(|directory| tracker.loaded_dir_set.contains(directory)));
+        assert_eq!(hints.len(), expected.len());
+        for (hint, directory) in hints.iter().zip(["second", "first", "third"]) {
+            assert!(hint.1.contains(&format!("{directory} hints")));
+        }
     }
 
     #[test]
