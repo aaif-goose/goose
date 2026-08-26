@@ -138,9 +138,19 @@ impl SubdirectoryHintTracker {
         let reservation = reservation.into();
         let pending = std::mem::take(&mut self.pending_dirs);
         let lexical_working_dir = working_dir;
+        self.hints_filenames = get_context_filenames();
+        let ignore_patterns = build_gitignore(lexical_working_dir);
+        let top_level_output_limit = MAX_HINT_OUTPUT_BYTES.saturating_sub(reservation.root_only);
+        let top_level_hints = load_hint_files_with_limit(
+            lexical_working_dir,
+            &self.hints_filenames,
+            &ignore_patterns,
+            top_level_output_limit,
+        );
+        after_top_level_read();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
             return HintSnapshot {
-                top_level: String::new(),
+                top_level: top_level_hints,
                 subdirectories: Vec::new(),
             };
         };
@@ -158,16 +168,6 @@ impl SubdirectoryHintTracker {
             self.loaded_dirs.push(dir);
         }
 
-        self.hints_filenames = get_context_filenames();
-        let ignore_patterns = build_gitignore(lexical_working_dir);
-        let top_level_output_limit = MAX_HINT_OUTPUT_BYTES.saturating_sub(reservation.root_only);
-        let top_level_hints = load_hint_files_with_limit(
-            lexical_working_dir,
-            &self.hints_filenames,
-            &ignore_patterns,
-            top_level_output_limit,
-        );
-        after_top_level_read();
         let has_top_level_hints = !top_level_hints.is_empty();
         let initial_reservation = if has_top_level_hints {
             reservation.root_only
@@ -695,6 +695,34 @@ mod tests {
         std::env::remove_var("GOOSE_PATH_ROOT");
 
         assert!(!hints.contains("Global agents home instructions"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_loads_global_hints_when_working_directory_is_missing() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        fs::create_dir(config_root.path().join("config")).unwrap();
+        fs::write(
+            config_root.path().join("config").join(GOOSE_HINTS_FILENAME),
+            "GLOBAL_HINT_AFTER_PROJECT_REMOVAL",
+        )
+        .unwrap();
+        let missing_working_dir = config_root.path().join("removed-project");
+
+        let snapshot = SubdirectoryHintTracker::new().load_snapshot(&missing_working_dir, 0);
+
+        assert!(snapshot
+            .top_level
+            .contains("GLOBAL_HINT_AFTER_PROJECT_REMOVAL"));
+        assert!(snapshot.top_level.len() <= MAX_HINT_OUTPUT_BYTES);
+        assert!(snapshot.subdirectories.is_empty());
     }
 
     #[test]
