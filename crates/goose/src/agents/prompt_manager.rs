@@ -165,6 +165,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
 
         // Add hints if provided
         if let Some(hints) = self.hints {
+            system_prompt_extras.shift_remove("hints");
             system_prompt_extras.insert("hints".to_string(), hints);
         }
 
@@ -435,6 +436,65 @@ mod tests {
 
         assert!(with_contribution.contains("temporary instruction"));
         assert!(!without_contribution.contains("temporary instruction"));
+    }
+
+    #[test]
+    fn caller_hints_key_does_not_fragment_generated_hint_budget() {
+        let mut manager = PromptManager::new();
+        manager.set_system_prompt_override("base prompt".to_string());
+        manager.add_system_prompt_extra("first".to_string(), "CALLER_FIRST".to_string());
+        manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
+        manager.add_system_prompt_extra("last".to_string(), "CALLER_LAST".to_string());
+
+        let reservation = manager.hint_output_reservation(false, GooseMode::Auto);
+        let hint_content_bytes =
+            MAX_HINT_OUTPUT_BYTES - reservation.with_subdirectories - HINT_EXTRA_SEPARATOR_BYTES;
+        let root_len = hint_content_bytes / 2;
+        let subdirectory_len = hint_content_bytes - root_len;
+        let root_hints = format!("ROOT_HINT{}", "r".repeat(root_len - "ROOT_HINT".len()));
+        let subdirectory_hints = format!(
+            "SUBDIRECTORY_HINT{}",
+            "s".repeat(subdirectory_len - "SUBDIRECTORY_HINT".len())
+        );
+        let snapshot = HintSnapshot {
+            top_level: root_hints.clone(),
+            subdirectories: vec![(
+                "subdir_hints:nested".to_string(),
+                subdirectory_hints.clone(),
+            )],
+        };
+
+        assert_eq!(
+            root_hints.len()
+                + subdirectory_hints.len()
+                + HINT_EXTRA_SEPARATOR_BYTES
+                + reservation.with_subdirectories,
+            MAX_HINT_OUTPUT_BYTES
+        );
+
+        let prompt =
+            manager.build_system_prompt_from_snapshot(Vec::new(), GooseMode::Auto, snapshot);
+        let extras = prompt
+            .split_once("# Additional Instructions:\n\n")
+            .unwrap()
+            .1
+            .split("\n\n")
+            .collect::<Vec<_>>();
+        let is_generated_hint =
+            |extra: &str| extra.starts_with("ROOT_HINT") || extra.starts_with("SUBDIRECTORY_HINT");
+        let hint_boundary_count = extras
+            .windows(2)
+            .filter(|pair| is_generated_hint(pair[0]) || is_generated_hint(pair[1]))
+            .count();
+        let actual_hint_output_bytes = root_hints.len()
+            + subdirectory_hints.len()
+            + hint_boundary_count * HINT_EXTRA_SEPARATOR_BYTES;
+
+        assert!(actual_hint_output_bytes <= MAX_HINT_OUTPUT_BYTES);
+        assert_eq!(extras[0], "CALLER_FIRST");
+        assert_eq!(extras[1], "CALLER_LAST");
+        assert_eq!(extras[2], subdirectory_hints);
+        assert_eq!(extras[3], root_hints);
     }
 
     #[test]
