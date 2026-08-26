@@ -471,6 +471,7 @@ mod tests {
             model_doc_link: None,
             setup_steps: vec![],
             fast_model: None,
+            toolshim: false,
             preserves_thinking: true,
             emit_clear_thinking: false,
             setup: None,

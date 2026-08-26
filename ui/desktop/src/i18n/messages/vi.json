@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Thêm"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Luôn sử dụng Toolshim cho nhà cung cấp này"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Tương thích Anthropic"
   },

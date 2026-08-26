@@ -93,6 +93,7 @@ function updateRequestToCreate(
     requiresAuth: request.requires_auth ?? true,
     catalogProviderId: request.catalog_provider_id ?? null,
     basePath: request.base_path ?? null,
+    toolshim: request.toolshim,
     preservesThinking: request.preserves_thinking ?? null,
   };
 }

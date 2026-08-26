@@ -1243,6 +1243,7 @@ pub struct CustomProviderConfigDto {
     pub catalog_provider_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_path: Option<String>,
+    pub toolshim: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
     pub api_key_set: bool,
@@ -1282,6 +1283,7 @@ pub struct CustomProviderUpsertDto {
 pub struct CustomProviderCreateRequest {
     #[serde(flatten)]
     pub provider: CustomProviderUpsertDto,
+    pub toolshim: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -1322,6 +1324,7 @@ pub struct CustomProviderUpdateRequest {
     pub provider_id: String,
     #[serde(flatten)]
     pub provider: CustomProviderUpsertDto,
+    pub toolshim: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]

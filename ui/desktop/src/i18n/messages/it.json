@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Aggiungi"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Usa sempre Toolshim per questo provider"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Compatibile con Anthropic"
   },

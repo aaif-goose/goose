@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "添加"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "始终为此提供商使用 Toolshim"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic 兼容"
   },

@@ -144,6 +144,7 @@ pub struct CreateCustomProviderParams {
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
     pub base_path: Option<String>,
+    pub toolshim: bool,
     pub preserves_thinking: Option<bool>,
 }
 
@@ -160,6 +161,7 @@ pub struct UpdateCustomProviderParams {
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
     pub base_path: Option<String>,
+    pub toolshim: bool,
     pub preserves_thinking: Option<bool>,
 }
 
@@ -214,6 +216,7 @@ pub fn create_custom_provider(
         model_doc_link: None,
         setup_steps: vec![],
         fast_model: None,
+        toolshim: params.toolshim,
         preserves_thinking,
         emit_clear_thinking: false,
         setup: None,
@@ -231,15 +234,15 @@ pub fn create_custom_provider(
 
 pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> {
     let loaded_provider = load_provider(&params.id)?;
-    let existing_config = loaded_provider.config;
+    let mut provider_config = loaded_provider.config;
     let editable = loaded_provider.is_editable;
 
     let config = Config::global();
     let api_key_env = if params.requires_auth {
-        let api_key_name = if existing_config.api_key_env.is_empty() {
+        let api_key_name = if provider_config.api_key_env.is_empty() {
             generate_api_key_name(&params.id)
         } else {
-            existing_config.api_key_env.clone()
+            provider_config.api_key_env.clone()
         };
         if let Some(api_key) = params.api_key.as_deref() {
             config.set_secret(&api_key_name, &api_key)?;
@@ -250,8 +253,8 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         }
         api_key_name
     } else {
-        if existing_config.api_key_env == generate_api_key_name(&params.id) {
-            config.delete_secret(&existing_config.api_key_env)?;
+        if provider_config.api_key_env == generate_api_key_name(&params.id) {
+            config.delete_secret(&provider_config.api_key_env)?;
         }
         String::new()
     };
@@ -261,7 +264,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             .models
             .into_iter()
             .map(|name| {
-                existing_config
+                provider_config
                     .models
                     .iter()
                     .find(|existing| existing.name == name)
@@ -273,43 +276,32 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
         let engine = ProviderEngine::from_str(&params.engine)?;
         let preserves_thinking = match params.preserves_thinking {
             Some(value) => value,
-            None if existing_config.engine != engine => {
+            None if provider_config.engine != engine => {
                 should_preserve_thinking_by_default(&engine)
             }
-            None => existing_config.preserves_thinking,
+            None => provider_config.preserves_thinking,
         };
 
-        let updated_config = DeclarativeProviderConfig {
-            name: params.id.clone(),
-            engine,
-            display_name: params.display_name,
-            description: existing_config.description,
-            api_key_env,
-            base_url: params.api_url,
-            models: model_infos,
-            headers: match params.headers {
-                Some(h) if h.is_empty() => None,
-                Some(h) => Some(h),
-                None => existing_config.headers,
-            },
-            timeout_seconds: existing_config.timeout_seconds,
-            supports_streaming: params.supports_streaming,
-            requires_auth: params.requires_auth,
-            catalog_provider_id: params.catalog_provider_id,
-            base_path: params.base_path,
-            env_vars: existing_config.env_vars,
-            dynamic_models: existing_config.dynamic_models,
-            skip_canonical_filtering: existing_config.skip_canonical_filtering,
-            model_doc_link: existing_config.model_doc_link,
-            setup_steps: existing_config.setup_steps,
-            fast_model: existing_config.fast_model.clone(),
-            preserves_thinking,
-            emit_clear_thinking: existing_config.emit_clear_thinking,
-            setup: existing_config.setup,
+        provider_config.name = params.id;
+        provider_config.engine = engine;
+        provider_config.display_name = params.display_name;
+        provider_config.api_key_env = api_key_env;
+        provider_config.base_url = params.api_url;
+        provider_config.models = model_infos;
+        provider_config.headers = match params.headers {
+            Some(headers) if headers.is_empty() => None,
+            Some(headers) => Some(headers),
+            None => provider_config.headers,
         };
+        provider_config.supports_streaming = params.supports_streaming;
+        provider_config.requires_auth = params.requires_auth;
+        provider_config.catalog_provider_id = params.catalog_provider_id;
+        provider_config.base_path = params.base_path;
+        provider_config.toolshim = params.toolshim;
+        provider_config.preserves_thinking = preserves_thinking;
 
-        let file_path = custom_provider_file_path(&updated_config.name)?;
-        let json_content = serde_json::to_string_pretty(&updated_config)?;
+        let file_path = custom_provider_file_path(&provider_config.name)?;
+        let json_content = serde_json::to_string_pretty(&provider_config)?;
         std::fs::write(file_path, json_content)?;
     }
     Ok(())
@@ -575,10 +567,29 @@ mod tests {
             model_doc_link: None,
             setup_steps: Vec::new(),
             fast_model: None,
+            toolshim: false,
             preserves_thinking: true,
             emit_clear_thinking: false,
             setup: None,
         }
+    }
+
+    #[test]
+    fn toolshim_changes_declarative_inventory_identity() {
+        let _guard = env_lock::lock_env([("GOOSE_TOOLSHIM", None::<&str>)]);
+        let mut config = test_huggingface_config();
+
+        let native = declarative_inventory_identity(&config)
+            .unwrap()
+            .into_identity()
+            .unwrap();
+        config.toolshim = true;
+        let toolshim = declarative_inventory_identity(&config)
+            .unwrap()
+            .into_identity()
+            .unwrap();
+
+        assert_ne!(native.inventory_key, toolshim.inventory_key);
     }
 
     #[test]
@@ -787,6 +798,7 @@ mod tests {
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
+            toolshim: false,
             preserves_thinking: None,
         })
         .unwrap();
@@ -942,6 +954,7 @@ mod tests {
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
+            toolshim: false,
             preserves_thinking: None,
         })
         .unwrap();

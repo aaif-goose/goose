@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Ekle"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Bu sağlayıcı için her zaman Toolshim kullan"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic Uyumlu"
   },

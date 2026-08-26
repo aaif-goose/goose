@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Tambah"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Sentiasa gunakan Toolshim untuk pembekal ini"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Serasi Anthropic"
   },

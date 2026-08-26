@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "追加"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "このプロバイダーでは常にToolshimを使用する"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic互換"
   },

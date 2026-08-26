@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "추가"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "이 제공업체에 항상 Toolshim 사용"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic 호환"
   },

@@ -151,6 +151,8 @@ pub struct DeclarativeProviderConfig {
     #[serde(default, deserialize_with = "deserialize_non_empty_string")]
     pub fast_model: Option<String>,
     #[serde(default)]
+    pub toolshim: bool,
+    #[serde(default)]
     pub preserves_thinking: bool,
     /// Enables Z.AI's `clear_thinking` field, which Anthropic does not support.
     #[serde(default)]

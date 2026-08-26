@@ -165,6 +165,7 @@ pub struct RefreshSkip {
 pub(crate) struct RefreshJob {
     pub provider_id: String,
     pub identity: InventoryIdentity,
+    pub toolshim: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -275,6 +276,7 @@ struct ProviderDescriptor {
     config_keys: Vec<ConfigKey>,
     setup_steps: Vec<String>,
     supports_refresh: bool,
+    toolshim: bool,
     static_models: Vec<ModelInfo>,
     model_selection_hint: Option<String>,
 }
@@ -442,6 +444,7 @@ impl ProviderInventoryService {
             plan.started.push(RefreshJob {
                 provider_id: descriptor.provider_id,
                 identity: descriptor.identity,
+                toolshim: descriptor.toolshim,
             });
         }
 
@@ -628,16 +631,15 @@ impl ProviderInventoryService {
                     .find(|job| job.provider_id == provider_id);
                 if let Some(refresh_job) = refresh_job {
                     let mut refresh_guard = self.refresh_guard(&refresh_job.identity);
+                    let toolshim = refresh_job.toolshim;
                     let fetch_result: Result<Vec<String>> =
                         match ensure_refresh_identity_current(&provider_id, &refresh_job.identity)
                             .await
                         {
                             Ok(()) => {
-                                match AssertUnwindSafe(provider.fetch_recommended_models(
-                                    crate::model_config::global_toolshim(),
-                                ))
-                                .catch_unwind()
-                                .await
+                                match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
+                                    .catch_unwind()
+                                    .await
                                 {
                                     Ok(Ok(models)) => Ok(models),
                                     Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
@@ -753,6 +755,7 @@ impl ProviderInventoryService {
             config_keys: metadata.config_keys.clone(),
             setup_steps: metadata.setup_steps.clone(),
             supports_refresh: entry.supports_inventory_refresh(),
+            toolshim: entry.toolshim_enabled(crate::model_config::global_toolshim()),
             static_models: metadata.known_models,
             model_selection_hint: metadata.model_selection_hint,
         }))
@@ -967,6 +970,10 @@ pub fn declarative_inventory_identity(
     identity.public_inputs.insert(
         "skip_canonical_filtering".to_string(),
         config.skip_canonical_filtering.to_string(),
+    );
+    identity.public_inputs.insert(
+        "toolshim".to_string(),
+        (config.toolshim || crate::model_config::global_toolshim()).to_string(),
     );
     if !config.models.is_empty() {
         identity.public_inputs.insert(
