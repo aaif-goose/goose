@@ -179,18 +179,7 @@ impl McpClientTrait for SkillsClient {
                         continue;
                     }
 
-                    let result =
-                        match super::load_supporting_file(&skill.load_path, rel, skill_name, false)
-                        {
-                            Ok(content) => {
-                                CallToolResult::success(vec![ContentBlock::text(content)])
-                            }
-                            Err(e) => CallToolResult::error(vec![ContentBlock::text(format!(
-                                "Failed to read '{}': {}",
-                                skill_name, e
-                            ))]),
-                        };
-                    return Ok(result);
+                    return Ok(load_supporting_file(skill, skill_name, rel));
                 }
 
                 let available: Vec<String> = skill
@@ -279,6 +268,20 @@ impl McpClientTrait for SkillsClient {
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
         let (_tx, rx) = mpsc::channel(1);
         rx
+    }
+}
+
+pub(super) fn load_supporting_file(
+    skill: &super::DiscoveredSkill,
+    skill_name: &str,
+    relative: &Path,
+) -> CallToolResult {
+    match skill.load_supporting_file(relative, skill_name) {
+        Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
+        Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
+            "Failed to read '{}': {}",
+            skill_name, error
+        ))]),
     }
 }
 

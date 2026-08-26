@@ -145,7 +145,7 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
     }
 }
 
-fn load_supporting_file(
+pub(crate) fn load_supporting_file(
     skill: &crate::skills::DiscoveredSkill,
     skill_name: &str,
     relative_path: &str,
@@ -159,12 +159,7 @@ fn load_supporting_file(
         if relative.to_string_lossy().replace('\\', "/") != relative_path {
             continue;
         }
-        return match crate::skills::load_supporting_file(
-            &skill.load_path,
-            relative,
-            skill_name,
-            false,
-        ) {
+        return match skill.load_supporting_file(relative, skill_name) {
             Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
             Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
                 "Failed to read '{skill_name}': {error}"
@@ -416,8 +411,8 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
         let file = nested.join("guide.md");
         std::fs::write(&file, "Nested guidance.").unwrap();
-        let skill = crate::skills::DiscoveredSkill {
-            source: SourceEntry {
+        let skill = crate::skills::DiscoveredSkill::new(
+            SourceEntry {
                 source_type: SourceType::Skill,
                 name: "test-skill".to_string(),
                 description: String::new(),
@@ -428,8 +423,8 @@ mod tests {
                 supporting_files: vec![file.to_string_lossy().into_owned()],
                 properties: HashMap::new(),
             },
-            load_path: skill_dir,
-        };
+            skill_dir,
+        );
 
         let result = load_supporting_file(&skill, "test-skill/nested/guide.md", "nested/guide.md");
 
