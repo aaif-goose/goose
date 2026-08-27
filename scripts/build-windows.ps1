@@ -81,10 +81,12 @@ Write-Host "  Dependencies installed." -ForegroundColor Green
 Write-Host ""
 
 # Step 4: Build desktop assets
-Write-Host "[5/7] Building Goose SDK, clearing Vite cache, and compiling i18n messages..." -ForegroundColor Yellow
-pnpm run build-goose-sdk
+Write-Host "[5/7] Building Goose SDK and compiling i18n messages..." -ForegroundColor Yellow
+# :force, not the freshness-gated script: this builds an artifact, and the gate's input list is a
+# hand-maintained restatement of what the SDK build reads. See ui/desktop/scripts/README.md.
+pnpm run build-goose-sdk:force
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Goose SDK build or Vite cache cleanup failed!" -ForegroundColor Red
+    Write-Host "Goose SDK build failed!" -ForegroundColor Red
     Pop-Location
     exit 1
 }
