@@ -47,6 +47,7 @@ tokio-stream = { workspace = true, features = ["io-util"] }
 tokio-util = { workspace = true, features = ["compat"] }
 url = { workspace = true }
 urlencoding = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
 sec1 = { version = "0.8", default-features = false, features = ["der", "std"], optional = true }

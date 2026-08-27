@@ -5554,12 +5554,13 @@ dependencies = [
  "tracing",
  "url",
  "urlencoding",
+ "uuid",
  "wiremock",
 ]
 
 [[package]]
 name = "goose-roaming"
-version = "1.47.0"
+version = "1.48.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",

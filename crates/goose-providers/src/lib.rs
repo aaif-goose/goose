@@ -16,6 +16,8 @@ pub mod local_inference;
 pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
+pub mod openai_live;
+pub mod voice;
 
 pub use declarative::declarative_providers::*;
 
