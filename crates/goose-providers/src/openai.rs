@@ -1879,13 +1879,17 @@ mod tests {
         assert!(cerebras_config().preserves_thinking);
     }
 
-    #[test]
-    fn eurouter_base_url_derives_api_v1_paths() {
-        let config = crate::declarative::fixed_provider_configs()
+    fn eurouter_config() -> DeclarativeProviderConfig {
+        crate::declarative::fixed_provider_configs()
             .expect("bundled providers should load")
             .into_iter()
             .find(|config| config.name == "eurouter")
-            .expect("eurouter should be bundled");
+            .expect("eurouter should be bundled")
+    }
+
+    #[test]
+    fn eurouter_base_url_derives_api_v1_paths() {
+        let config = eurouter_config();
 
         let base_path = derive_base_path(
             url::Url::parse(&config.base_url)
@@ -1898,6 +1902,21 @@ mod tests {
             OpenAiProvider::map_base_path(&base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH),
             "api/v1/models"
         );
+    }
+
+    /// EUrouter's `/models` response carries no capability metadata, so a dynamic
+    /// refresh would replace the curated list with every id it returns, including
+    /// models without tool support and without a known context limit.
+    #[test]
+    fn eurouter_pins_static_models_with_context_limits() {
+        let config = eurouter_config();
+
+        assert_eq!(config.dynamic_models, Some(false));
+        assert!(!config.models.is_empty());
+        assert!(config
+            .models
+            .iter()
+            .all(|model| model.context_limit.is_some()));
     }
 
     #[test]

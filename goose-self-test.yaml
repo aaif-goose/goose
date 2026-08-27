@@ -178,6 +178,7 @@ prompt: |
   When running from a goose source checkout:
   1. Run `cargo test -p goose test_eurouter_provider_registry_wiring` to verify EUrouter is registered with the correct name, display name, default model (`mistral-large-3`), and a required secret `EUROUTER_API_KEY` config key.
   2. Run `cargo test -p goose-providers eurouter_base_url_derives_api_v1_paths` to verify the non-standard `/api/v1` base URL derives `api/v1/chat/completions` for requests and `api/v1/models` for model discovery.
+  3. Run `cargo test -p goose-providers eurouter_pins_static_models_with_context_limits` to verify the catalogue stays on the static list, so tool-incapable models are not pulled in and every offered model has a context limit.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md
