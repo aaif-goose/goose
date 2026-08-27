@@ -11,8 +11,7 @@
   "scripts": {
     "postinstall": "pnpm run build-goose-sdk",
     "typecheck": "tsc --noEmit",
-    "build-goose-sdk": "pnpm --filter @aaif/goose-sdk run build && pnpm run clean-vite-cache",
-    "clean-vite-cache": "node scripts/clean-vite-cache.js",
+    "build-goose-sdk": "pnpm --filter @aaif/goose-sdk run build",
     "start-gui": "pnpm run build-goose-sdk && pnpm run i18n:compile && electron-forge start",
     "start-gui-debug": "pnpm run build-goose-sdk && pnpm run i18n:compile && electron-forge start -- --inspect=9229",
     "start": "cd ../.. && just run-ui",
