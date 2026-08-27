@@ -22,6 +22,31 @@ Then launch Goose again and your deeplinks should work from the latest launched 
 node scripts/unregister-deeplink-protocols.js
 ```
 
+# Building the goose SDK
+
+`build-goose-sdk.js` builds `@aaif/goose-sdk` (`ui/sdk`) and is what `postinstall` and `start-gui`
+call. It skips the build when the SDK's inputs — the ACP schemas, `ui/sdk/src` (bar
+`src/generated`, which the build writes), its tsconfig and package manifest, and the lockfile —
+hash the same as the last successful build, so a launch that changed nothing does no work. If one
+of those inputs is saved while a build is running, the stamp is dropped rather than written, so the
+next launch rebuilds instead of skipping over an edit that never reached `dist`.
+
+`package` and `make` call it with `--force` instead, and should keep doing so. The input list above
+is a hand-maintained restatement of what the build reads; nothing enforces that it stays complete
+as the SDK grows. Skipping a launch's rebuild on a stale list costs seconds; skipping an artifact's
+costs a UI whose generated ACP dispatch disagrees with the backend schema, which `typecheck` will
+not catch because it typechecks against the stale generated types. Ten seconds on a run that
+already spends minutes on Rust and signing is not a trade worth making.
+
+To rebuild anyway:
+
+```bash
+pnpm run build-goose-sdk:force   # or: node scripts/build-goose-sdk.js --force
+```
+
+`GOOSE_SDK_FORCE_BUILD=1` does the same thing, for callers that can only set an environment
+variable.
+
 # Vite directories
 
 Nothing here clears either of them, and both omissions are deliberate.
@@ -36,4 +61,3 @@ seconds per launch.
 directory first, so a file that stops being emitted cannot survive into a `start`, a `package` or a
 `make`. A cleanup step here would be doing nothing except adding a way for the recursive delete to
 fail the run.
-
