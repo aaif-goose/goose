@@ -128,6 +128,7 @@ Create, list, update, pause, resume, and remove scheduled recipe runs, and inspe
 
 
 You have these skills at your disposal, when it is clear they can help you solve a problem or you are asked to use them:
+• gdk - Build programs on the goose Development Kit (GDK). Use when writing Rust, Python, or Kotlin code that calls models through goose providers (streaming, completion, compaction, tool calls), or when embedding the whole goose agent in another program over the Agent Client Protocol (ACP). Covers install, the provider API surface, the ACP server, and the failure modes that matter.
 • goose-doc-guide - Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST read the relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
 • web-search - Search the web and extract page content using DuckDuckGo (no API key required), Tavily, or SearXNG. Use whenever the task needs current information, facts not in training data, or content from a specific URL.
 ## summarize
