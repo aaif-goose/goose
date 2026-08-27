@@ -346,6 +346,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_eurouter_provider_registry_wiring() {
+        let eurouter = get_from_registry("eurouter")
+            .await
+            .expect("eurouter provider should be registered");
+        let meta = eurouter.metadata();
+
+        assert_eq!(meta.name, "eurouter");
+        assert_eq!(meta.display_name, "EUrouter");
+        assert_eq!(meta.default_model, "mistral-large-3");
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "EUROUTER_API_KEY" && key.secret && key.required));
+    }
+
+    #[tokio::test]
     async fn test_openai_compatible_providers_config_keys() {
         let providers_list = providers().await;
         let required_api_key_cases = vec![
