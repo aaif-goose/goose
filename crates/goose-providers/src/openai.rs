@@ -1880,6 +1880,27 @@ mod tests {
     }
 
     #[test]
+    fn eurouter_base_url_derives_api_v1_paths() {
+        let config = crate::declarative::fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "eurouter")
+            .expect("eurouter should be bundled");
+
+        let base_path = derive_base_path(
+            url::Url::parse(&config.base_url)
+                .expect("eurouter base_url should parse")
+                .path(),
+        );
+
+        assert_eq!(base_path, "api/v1/chat/completions");
+        assert_eq!(
+            OpenAiProvider::map_base_path(&base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH),
+            "api/v1/models"
+        );
+    }
+
+    #[test]
     fn apply_declared_request_params_skips_reserved_keys() {
         let mut payload = json!({
             "model": "zai-glm-4.7",
