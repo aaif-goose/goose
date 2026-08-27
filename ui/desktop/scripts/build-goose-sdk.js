@@ -175,10 +175,25 @@ fs.rmSync(stampPath, { force: true });
 
 runPnpm(['--filter', '@aaif/goose-sdk', 'run', 'build']);
 
-// An input saved while the build was running was compiled from its older bytes, but a stamp
-// describing the newer ones would make every later launch skip over a dist that never saw the
-// edit. The stamp is already gone; leave it that way and let the next launch rebuild.
+// An input saved while the build was running was compiled from its older bytes, so dist may not
+// match the tree. The stamp is already gone, which is the whole fix on a launch: nothing describes
+// the newer bytes, so the next one rebuilds instead of skipping over an edit dist never saw.
+//
+// A forced build cannot end there. --force is what `package`, `make` and scripts/build-windows.ps1
+// use precisely because an artifact must be built from the current inputs, and we have just found
+// that it might not be. Exiting 0 would let the `&&` chain package that SDK anyway, which is the
+// failure the force path exists to prevent. Fail instead of retrying: a rebuild would race the
+// same editor, and a packaging run that starts while the tree is still moving is worth stopping
+// rather than papering over.
 if (hashInputs() !== inputsBefore) {
+  if (force) {
+    console.error(
+      'goose SDK inputs changed while the build was running, so ui/sdk/dist may not match them. ' +
+        'Nothing was stamped and no artifact should be built from this. Re-run once the tree ' +
+        'has settled.'
+    );
+    process.exit(1);
+  }
   console.log('goose SDK inputs changed during the build — not stamping; next launch rebuilds');
   process.exit(0);
 }
