@@ -1164,7 +1164,10 @@ mod tests {
         run_git(root, &["config", "user.name", "Test"]);
         fs::write(root.join("tracked.txt"), "before\n").unwrap();
         run_git(root, &["add", "tracked.txt"]);
-        run_git(root, &["commit", "--quiet", "-m", "initial"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "initial"],
+        );
         dir
     }
 
@@ -1307,7 +1310,10 @@ mod tests {
         )
         .unwrap();
         run_git(root, &["add", ".gitattributes"]);
-        run_git(root, &["commit", "--quiet", "-m", "add attributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
         run_git(
             root,
             &[
