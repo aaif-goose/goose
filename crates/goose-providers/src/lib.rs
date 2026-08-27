@@ -18,6 +18,8 @@ pub mod openai;
 pub mod openai_compatible;
 pub mod openai_live;
 pub mod voice;
+#[cfg(feature = "voice-websocket")]
+pub mod voice_transport_websocket;
 
 pub use declarative::declarative_providers::*;
 

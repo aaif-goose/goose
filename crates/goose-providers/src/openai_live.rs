@@ -1,35 +1,33 @@
-//! OpenAI GPT-Live alpha voice provider.
+//! OpenAI GPT-Live alpha protocol support.
 //!
-//! This module intentionally models the unreleased protocol without coupling it
-//! to a browser or native audio stack. The caller owns WebRTC and sends/receives
-//! JSON events on its data channel.
+//! This unreleased API supports browser-owned WebRTC and backend WebSocket
+//! transports. The provider owns configuration and event semantics; transport
+//! implementations own media and byte delivery.
 
-use crate::voice::{
-    VoiceContext, VoiceContextChannel, VoiceDelegation, VoiceDelegationMode, VoiceEvent,
-    VoiceMessageRole, VoiceProvider, VoiceSessionAnswer, VoiceSessionConfig, VoiceSessionOffer,
-};
+use crate::voice::*;
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-pub const DEFAULT_OPENAI_LIVE_URL: &str = "https://api.openai.com/v1/live";
-pub const DEFAULT_OPENAI_LIVE_ALPHA_SELECTOR: &str = "live=v1";
+pub const DEFAULT_OPENAI_LIVE_HTTP_URL: &str = "https://api.openai.com/v1/live";
+pub const DEFAULT_OPENAI_LIVE_WEBSOCKET_URL: &str = "wss://api.openai.com/v1/live";
+pub const DEFAULT_OPENAI_LIVE_ALPHA_SELECTOR: &str = "quicksilver=v2";
 
-/// Client for the unreleased OpenAI GPT-Live WebRTC signaling and event API.
 pub struct OpenAiLiveProvider {
-    client: reqwest::Client,
     api_key: String,
-    endpoint: String,
+    http_endpoint: String,
+    websocket_endpoint: String,
     alpha_selector: String,
 }
 
 impl OpenAiLiveProvider {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
             api_key: api_key.into(),
-            endpoint: DEFAULT_OPENAI_LIVE_URL.into(),
+            http_endpoint: DEFAULT_OPENAI_LIVE_HTTP_URL.into(),
+            websocket_endpoint: DEFAULT_OPENAI_LIVE_WEBSOCKET_URL.into(),
             alpha_selector: DEFAULT_OPENAI_LIVE_ALPHA_SELECTOR.into(),
         }
     }
@@ -42,11 +40,14 @@ impl OpenAiLiveProvider {
         Ok(Self::new(key))
     }
 
-    pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
-        self.endpoint = endpoint.into();
+    pub fn with_http_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.http_endpoint = endpoint.into();
         self
     }
-
+    pub fn with_websocket_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.websocket_endpoint = endpoint.into();
+        self
+    }
     pub fn with_alpha_selector(mut self, selector: impl Into<String>) -> Self {
         self.alpha_selector = selector.into();
         self
@@ -54,6 +55,38 @@ impl OpenAiLiveProvider {
 
     fn event_id() -> String {
         format!("event_{}", Uuid::new_v4())
+    }
+
+    fn session_json(config: &VoiceSessionConfig, include_model: bool) -> Value {
+        let initial_items = config.initial_items.iter().map(|message| {
+            let role = match message.role {
+                VoiceMessageRole::User => "user",
+                VoiceMessageRole::Assistant => "assistant",
+                VoiceMessageRole::Developer => "developer",
+            };
+            json!({ "type": "message", "role": role, "content": [{ "type": "input_text", "text": message.text }] })
+        }).collect::<Vec<_>>();
+        let mut session = json!({
+            "instructions": config.instructions,
+            "initial_items": initial_items,
+        });
+        if include_model {
+            session["model"] = json!(config.model);
+        }
+        if let Some(voice) = &config.voice {
+            session["audio"] = json!({ "output": { "voice": voice } });
+        }
+        if !matches!(config.delegation, VoiceDelegationMode::Disabled) {
+            session["delegation"] = match config.delegation {
+                VoiceDelegationMode::Client => json!({ "type": "client" }),
+                VoiceDelegationMode::Provider => json!({ "type": "responses" }),
+                VoiceDelegationMode::Disabled => unreachable!(),
+            };
+        }
+        if let Some(object) = session.as_object_mut() {
+            object.extend(config.extra.clone());
+        }
+        session
     }
 }
 
@@ -63,82 +96,41 @@ impl VoiceProvider for OpenAiLiveProvider {
         "openai-live"
     }
 
-    async fn create_session(
+    fn transport_request(
         &self,
         config: &VoiceSessionConfig,
-        offer: VoiceSessionOffer,
-    ) -> Result<VoiceSessionAnswer> {
-        if offer.sdp.trim().is_empty() {
-            bail!("WebRTC SDP offer is empty");
-        }
-        let initial_items = config
-            .initial_items
-            .iter()
-            .map(|message| {
-                let role = match message.role {
-                    VoiceMessageRole::User => "user",
-                    VoiceMessageRole::Assistant => "assistant",
-                    VoiceMessageRole::Developer => "developer",
-                };
-                json!({
-                    "type": "message",
-                    "role": role,
-                    "content": [{ "type": "input_text", "text": message.text }]
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut session = json!({
-            "model": config.model,
-            "instructions": config.instructions,
-            "initial_items": initial_items,
-        });
-        if let Some(voice) = &config.voice {
-            session["audio"] = json!({ "output": { "voice": voice } });
-        }
-        session["delegation"] = match config.delegation {
-            VoiceDelegationMode::Disabled => Value::Null,
-            VoiceDelegationMode::Client => json!({ "type": "client" }),
-            VoiceDelegationMode::Provider => json!({ "type": "responses" }),
-        };
-        if let Some(object) = session.as_object_mut() {
-            object.extend(config.extra.clone());
-        }
-
-        let response = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(&self.api_key)
-            .header("OpenAI-Alpha", &self.alpha_selector)
-            .header(reqwest::header::ACCEPT, "application/sdp")
-            .multipart(
-                reqwest::multipart::Form::new()
-                    .text("sdp", offer.sdp)
-                    .text("session", session.to_string()),
-            )
-            .send()
-            .await
-            .context("failed to create OpenAI Live session")?;
-        let status = response.status();
-        let session_id = response
-            .headers()
-            .get("openai-session-id")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned);
-        let body = response.text().await?;
-        if !status.is_success() {
-            let detail = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|value| value.pointer("/error/message")?.as_str().map(str::to_owned))
-                .unwrap_or(body);
-            bail!("OpenAI Live session creation failed ({status}): {detail}");
-        }
-        if body.trim().is_empty() {
-            bail!("OpenAI Live returned an empty SDP answer");
-        }
-        Ok(VoiceSessionAnswer {
-            sdp: body,
-            session_id,
-            model: config.model.clone(),
+        bootstrap: VoiceSessionBootstrap,
+    ) -> Result<VoiceTransportRequest> {
+        let headers = vec![
+            ("Authorization".into(), format!("Bearer {}", self.api_key)),
+            ("OpenAI-Alpha".into(), self.alpha_selector.clone()),
+        ];
+        Ok(match bootstrap {
+            VoiceSessionBootstrap::WebRtcOffer { sdp } => {
+                if sdp.trim().is_empty() {
+                    bail!("WebRTC SDP offer is empty");
+                }
+                VoiceTransportRequest {
+                    endpoint: self.http_endpoint.clone(),
+                    headers,
+                    bootstrap: VoiceSessionBootstrap::WebRtcOffer { sdp },
+                    initial_event: Some(Self::session_json(config, true)),
+                }
+            }
+            VoiceSessionBootstrap::Direct => VoiceTransportRequest {
+                endpoint: format!(
+                    "{}?model={}",
+                    self.websocket_endpoint,
+                    urlencoding::encode(&config.model)
+                ),
+                headers,
+                bootstrap: VoiceSessionBootstrap::Direct,
+                initial_event: Some(json!({
+                    "type": "session.update",
+                    "event_id": Self::event_id(),
+                    "session": Self::session_json(config, false),
+                })),
+            },
         })
     }
 
@@ -168,26 +160,35 @@ impl VoiceProvider for OpenAiLiveProvider {
                 VoiceEvent::InputTranscriptCompleted { text: text() }
             }
             "turn.done" => VoiceEvent::OutputTranscriptCompleted { text: text() },
+            "output_audio.delta" => VoiceEvent::OutputAudioDelta {
+                audio: event
+                    .get("audio")
+                    .or_else(|| event.get("delta"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .into(),
+                start_ms: event.get("start_ms").and_then(Value::as_u64),
+                end_ms: event.get("end_ms").and_then(Value::as_u64),
+            },
             "delegation.created" => {
                 let item = event
                     .get("item")
                     .context("delegation.created is missing item")?;
-                let id = item
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .context("delegation is missing id")?;
-                let prompt = item
-                    .get("content")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|part| part.get("text").and_then(Value::as_str))
-                    .collect::<Vec<_>>()
-                    .join("\n");
                 VoiceEvent::DelegationCreated {
                     delegation: VoiceDelegation {
-                        id: id.into(),
-                        prompt,
+                        id: item
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .context("delegation is missing id")?
+                            .into(),
+                        prompt: item
+                            .get("content")
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|part| part.get("text").and_then(Value::as_str))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
                         user_turn_id: item
                             .get("user_bidi_turn_id")
                             .and_then(Value::as_str)
@@ -223,47 +224,60 @@ impl VoiceProvider for OpenAiLiveProvider {
     }
 
     fn append_context_event(&self, context: VoiceContext) -> Result<Value> {
-        let channel = context_channel(context.channel, true)?;
-        Ok(json!({
-            "type": "session.context.append",
-            "event_id": Self::event_id(),
-            "channel": channel,
-            "content": [{ "type": "input_text", "text": context.text }]
-        }))
+        Ok(text_event("session.context.append", None, context, true)?)
     }
-
-    fn complete_delegation_event(
-        &self,
-        delegation_id: &str,
-        context: VoiceContext,
-    ) -> Result<Value> {
-        if delegation_id.trim().is_empty() {
+    fn complete_delegation_event(&self, id: &str, context: VoiceContext) -> Result<Value> {
+        if id.trim().is_empty() {
             bail!("delegation ID is empty");
         }
-        let channel = context_channel(context.channel, false)?;
-        Ok(json!({
-            "type": "delegation.context.append",
-            "event_id": Self::event_id(),
-            "delegation_item_id": delegation_id,
-            "channel": channel,
-            "content": [{ "type": "input_text", "text": context.text }]
-        }))
+        Ok(text_event(
+            "delegation.context.append",
+            Some(id),
+            context,
+            false,
+        )?)
     }
-
+    fn append_audio_event(&self, audio: &[u8]) -> Result<Value> {
+        if audio.is_empty() {
+            bail!("audio payload is empty");
+        }
+        Ok(
+            json!({ "type": "input_audio.append", "event_id": Self::event_id(), "audio": BASE64.encode(audio) }),
+        )
+    }
+    fn pause_input_event(&self) -> Value {
+        json!({ "type": "input_audio.pause", "event_id": Self::event_id() })
+    }
+    fn resume_input_event(&self) -> Value {
+        json!({ "type": "input_audio.resume", "event_id": Self::event_id() })
+    }
     fn close_event(&self) -> Value {
         json!({ "type": "session.close", "event_id": Self::event_id() })
     }
 }
 
-fn context_channel(channel: VoiceContextChannel, allow_developer: bool) -> Result<&'static str> {
-    Ok(match channel {
+fn text_event(
+    kind: &str,
+    delegation_id: Option<&str>,
+    context: VoiceContext,
+    allow_developer: bool,
+) -> Result<Value> {
+    let channel = match context.channel {
         VoiceContextChannel::Speakable => "speakable",
         VoiceContextChannel::Commentary => "commentary",
         VoiceContextChannel::Developer if allow_developer => "developer",
         VoiceContextChannel::Developer => {
             bail!("developer channel is not valid for delegation context")
         }
-    })
+    };
+    let mut event = json!({
+        "type": kind, "event_id": OpenAiLiveProvider::event_id(), "channel": channel,
+        "content": [{ "type": "input_text", "text": context.text }]
+    });
+    if let Some(id) = delegation_id {
+        event["delegation_item_id"] = json!(id);
+    }
+    Ok(event)
 }
 
 #[cfg(test)]
@@ -271,25 +285,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decodes_client_delegation() {
+    fn websocket_bootstrap_places_model_in_url() {
         let provider = OpenAiLiveProvider::new("test");
-        let event = provider.decode_event(json!({
-            "type": "delegation.created",
-            "item": { "id": "item_1", "user_bidi_turn_id": "turn_1", "content": [{ "type": "input_text", "text": "inspect this" }] }
-        })).unwrap();
-        match event {
-            VoiceEvent::DelegationCreated { delegation } => {
-                assert_eq!(delegation.id, "item_1");
-                assert_eq!(delegation.prompt, "inspect this");
-            }
-            _ => panic!("wrong event"),
-        }
+        let request = provider
+            .transport_request(
+                &VoiceSessionConfig {
+                    model: "gpt-live-1-marble-alpha".into(),
+                    instructions: "help".into(),
+                    voice: None,
+                    initial_items: vec![],
+                    delegation: VoiceDelegationMode::Client,
+                    extra: Default::default(),
+                },
+                VoiceSessionBootstrap::Direct,
+            )
+            .unwrap();
+        assert!(request.endpoint.contains("model=gpt-live-1-marble-alpha"));
+        assert!(request.initial_event.unwrap()["session"]["model"].is_null());
     }
 
     #[test]
-    fn encodes_delegation_result() {
+    fn encodes_and_decodes_delegation() {
         let provider = OpenAiLiveProvider::new("test");
-        let event = provider
+        let decoded = provider
+            .decode_event(json!({ "type": "delegation.created", "item": {
+                "id": "item_1", "content": [{ "type": "input_text", "text": "inspect this" }]
+            }}))
+            .unwrap();
+        assert!(matches!(decoded, VoiceEvent::DelegationCreated { .. }));
+        let encoded = provider
             .complete_delegation_event(
                 "item_1",
                 VoiceContext {
@@ -298,7 +322,6 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(event["type"], "delegation.context.append");
-        assert_eq!(event["delegation_item_id"], "item_1");
+        assert_eq!(encoded["delegation_item_id"], "item_1");
     }
 }
