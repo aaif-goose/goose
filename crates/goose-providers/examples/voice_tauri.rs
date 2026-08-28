@@ -156,12 +156,14 @@ async fn start_voice(
 
 #[tauri::command]
 async fn voice_incoming(state: State<'_, VoiceState>, event: Value) -> Result<(), String> {
-    let session = state.session.lock().await;
-    let session = session
+    let connection = state
+        .session
+        .lock()
+        .await
         .as_ref()
+        .map(|session| session.connection.clone())
         .ok_or_else(|| "voice session is not active".to_string())?;
-    session
-        .connection
+    connection
         .push_incoming(event)
         .await
         .map_err(|error| error.to_string())
@@ -169,12 +171,14 @@ async fn voice_incoming(state: State<'_, VoiceState>, event: Value) -> Result<()
 
 #[tauri::command]
 async fn append_voice_context(state: State<'_, VoiceState>, text: String) -> Result<(), String> {
-    let session = state.session.lock().await;
-    let session = session
+    let session = state
+        .session
+        .lock()
+        .await
         .as_ref()
+        .map(|session| session.session.clone())
         .ok_or_else(|| "voice session is not active".to_string())?;
     session
-        .session
         .append_context(VoiceContext {
             text,
             channel: VoiceContextChannel::Commentary,
@@ -188,12 +192,14 @@ async fn complete_voice_delegation(
     state: State<'_, VoiceState>,
     request: CompleteDelegationRequest,
 ) -> Result<(), String> {
-    let session = state.session.lock().await;
-    let session = session
+    let session = state
+        .session
+        .lock()
+        .await
         .as_ref()
+        .map(|session| session.session.clone())
         .ok_or_else(|| "voice session is not active".to_string())?;
     session
-        .session
         .complete_delegation(
             &request.delegation_id,
             VoiceContext {
@@ -207,11 +213,14 @@ async fn complete_voice_delegation(
 
 #[tauri::command]
 async fn voice_session_id(state: State<'_, VoiceState>) -> Result<Option<String>, String> {
-    let session = state.session.lock().await;
-    let session = session
+    let session = state
+        .session
+        .lock()
+        .await
         .as_ref()
+        .map(|session| session.session.clone())
         .ok_or_else(|| "voice session is not active".to_string())?;
-    Ok(session.session.session_id().await)
+    Ok(session.session_id().await)
 }
 
 #[tauri::command]

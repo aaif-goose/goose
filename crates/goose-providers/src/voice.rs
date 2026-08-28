@@ -4,12 +4,15 @@
 //! signalers execute authenticated WebRTC negotiation, while connections own
 //! only established live event delivery.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::{
+    sync::{Mutex, broadcast, mpsc, watch},
+    time::{Duration, timeout},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceSessionConfig {
@@ -237,10 +240,19 @@ impl From<&NegotiatedWebRtcSession> for VoiceSessionMetadata {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VoiceSessionState {
+    Open,
+    Closing,
+    Closed,
+}
+
 pub struct VoiceSession {
     provider: Arc<dyn VoiceProvider>,
     connection: Arc<dyn VoiceConnection>,
-    metadata: Mutex<VoiceSessionMetadata>,
+    model: String,
+    session_id: Mutex<Option<String>>,
+    state_tx: watch::Sender<VoiceSessionState>,
     events: broadcast::Sender<VoiceEvent>,
 }
 
@@ -251,16 +263,23 @@ impl VoiceSession {
         metadata: VoiceSessionMetadata,
     ) -> Arc<Self> {
         let (events, _) = broadcast::channel(256);
+        let (state_tx, _) = watch::channel(VoiceSessionState::Open);
         Arc::new(Self {
             provider,
             connection,
-            metadata: Mutex::new(metadata),
+            model: metadata.model,
+            session_id: Mutex::new(metadata.session_id),
+            state_tx,
             events,
         })
     }
 
     pub async fn session_id(&self) -> Option<String> {
-        self.metadata.lock().await.session_id.clone()
+        self.session_id.lock().await.clone()
+    }
+
+    pub fn model(&self) -> &str {
+        &self.model
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<VoiceEvent> {
@@ -270,7 +289,7 @@ impl VoiceSession {
     pub async fn handle_incoming(&self, raw: Value) -> Result<VoiceEvent> {
         let event = self.provider.decode_event(raw)?;
         if let VoiceEventKind::SessionStarted { session_id } = &event.kind {
-            self.metadata.lock().await.session_id = session_id.clone();
+            *self.session_id.lock().await = session_id.clone();
         }
         let _ = self.events.send(event.clone());
         Ok(event)
@@ -282,9 +301,11 @@ impl VoiceSession {
                 self.handle_incoming(raw).await?.kind,
                 VoiceEventKind::SessionClosed
             ) {
+                let _ = self.state_tx.send(VoiceSessionState::Closed);
                 return Ok(());
             }
         }
+        let _ = self.state_tx.send(VoiceSessionState::Closed);
         let _ = self
             .events
             .send(VoiceEvent::session(VoiceEventKind::SessionClosed));
@@ -319,15 +340,34 @@ impl VoiceSession {
     }
 
     pub async fn close(&self) -> Result<()> {
-        let event_result = self.send_raw(self.provider.close_event()).await;
-        let close_result = self.connection.close().await;
-        let result = event_result.and(close_result);
-        if result.is_ok() {
+        if *self.state_tx.borrow() == VoiceSessionState::Closed {
+            return Ok(());
+        }
+
+        let mut state_rx = self.state_tx.subscribe();
+        if *state_rx.borrow() == VoiceSessionState::Open {
+            let _ = self.state_tx.send(VoiceSessionState::Closing);
+            self.send_raw(self.provider.close_event()).await?;
+        }
+
+        let confirmed = timeout(Duration::from_secs(5), async {
+            while *state_rx.borrow_and_update() != VoiceSessionState::Closed {
+                if state_rx.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
+        .await
+        .is_ok();
+
+        self.connection.close().await?;
+        if !confirmed {
+            let _ = self.state_tx.send(VoiceSessionState::Closed);
             let _ = self
                 .events
                 .send(VoiceEvent::session(VoiceEventKind::SessionClosed));
         }
-        result
+        Ok(())
     }
 }
 
