@@ -1,17 +1,16 @@
 //! End-to-end Tauri/browser WebRTC integration example.
 //!
-//! This file shows the Rust half. Copy the TypeScript companion from
-//! `examples/voice_tauri.ts` into the Tauri frontend. Add these commands and
-//! managed state to the application's builder as shown in `run()` below.
-//! The project API key remains in Rust; the browser owns WebRTC media.
+//! Rust owns authenticated signaling and the provider session. The browser owns
+//! microphone capture, playback, RTCPeerConnection, and RTCDataChannel.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_providers::{
     openai_live::OpenAiLiveProvider,
     voice::{
-        NegotiatedWebRtcSession, VoiceContext, VoiceContextChannel, VoiceEvent, VoiceMessage,
-        VoiceMessageRole, VoiceProvider, VoiceSessionConfig, VoiceSignaler, WebRtcSignalingPlan,
+        BridgedVoiceConnection, NegotiatedWebRtcSession, VoiceContext, VoiceContextChannel,
+        VoiceMessage, VoiceMessageRole, VoiceProvider, VoiceSession, VoiceSessionConfig,
+        VoiceSessionMetadata, VoiceSignaler, WebRtcSignalingPlan,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -25,7 +24,10 @@ struct VoiceState {
     session: Mutex<Option<BrowserVoiceSession>>,
 }
 
-struct BrowserVoiceSession;
+struct BrowserVoiceSession {
+    connection: Arc<BridgedVoiceConnection>,
+    session: Arc<VoiceSession>,
+}
 
 struct OpenAiWebRtcSignaler {
     client: reqwest::Client,
@@ -86,10 +88,9 @@ struct CompleteDelegationRequest {
     text: String,
 }
 
-/// Brokers the authenticated WebRTC offer/answer exchange in Rust, keeping the
-/// project API key out of the WebView.
 #[tauri::command]
 async fn start_voice(
+    app: tauri::AppHandle,
     state: State<'_, VoiceState>,
     request: StartVoiceRequest,
 ) -> Result<StartVoiceResponse, String> {
@@ -114,7 +115,38 @@ async fn start_voice(
     .negotiate(plan)
     .await
     .map_err(|error| error.to_string())?;
-    *state.session.lock().await = Some(BrowserVoiceSession);
+
+    let connection = Arc::new(BridgedVoiceConnection::new());
+    let mut outbound = connection
+        .take_outbound()
+        .await
+        .map_err(|error| error.to_string())?;
+    let session = VoiceSession::new(
+        state.provider.clone(),
+        connection.clone(),
+        VoiceSessionMetadata::from(&negotiated),
+    );
+
+    let command_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(command) = outbound.recv().await {
+            let _ = command_app.emit("voice-command", command);
+        }
+    });
+
+    let mut events = session.subscribe();
+    let event_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Ok(event) = events.recv().await {
+            let _ = event_app.emit("voice-event", event);
+        }
+    });
+    tauri::async_runtime::spawn(session.clone().run());
+
+    *state.session.lock().await = Some(BrowserVoiceSession {
+        connection,
+        session,
+    });
     Ok(StartVoiceResponse {
         sdp: negotiated.answer_sdp,
         session_id: negotiated.session_id,
@@ -122,66 +154,81 @@ async fn start_voice(
     })
 }
 
-/// Decodes an event received by RTCDataChannel.onmessage in the frontend.
-/// The normalized event is returned and also emitted for Rust/Tauri consumers.
 #[tauri::command]
-async fn voice_incoming(
-    app: tauri::AppHandle,
-    state: State<'_, VoiceState>,
-    event: Value,
-) -> Result<VoiceEvent, String> {
-    let decoded = state
-        .provider
-        .decode_event(event)
-        .map_err(|e| e.to_string())?;
-    app.emit("voice-event", &decoded)
-        .map_err(|e| e.to_string())?;
-    Ok(decoded)
+async fn voice_incoming(state: State<'_, VoiceState>, event: Value) -> Result<(), String> {
+    let session = state.session.lock().await;
+    let session = session
+        .as_ref()
+        .ok_or_else(|| "voice session is not active".to_string())?;
+    session
+        .connection
+        .push_incoming(event)
+        .await
+        .map_err(|error| error.to_string())
 }
 
-/// Returns provider JSON for RTCDataChannel.send in the frontend.
 #[tauri::command]
-async fn append_voice_context(state: State<'_, VoiceState>, text: String) -> Result<Value, String> {
-    state
-        .provider
-        .append_context_event(VoiceContext {
+async fn append_voice_context(state: State<'_, VoiceState>, text: String) -> Result<(), String> {
+    let session = state.session.lock().await;
+    let session = session
+        .as_ref()
+        .ok_or_else(|| "voice session is not active".to_string())?;
+    session
+        .session
+        .append_context(VoiceContext {
             text,
             channel: VoiceContextChannel::Commentary,
         })
-        .map_err(|e| e.to_string())
+        .await
+        .map_err(|error| error.to_string())
 }
 
-/// Returns a client-delegation result for RTCDataChannel.send.
 #[tauri::command]
 async fn complete_voice_delegation(
     state: State<'_, VoiceState>,
     request: CompleteDelegationRequest,
-) -> Result<Value, String> {
-    state
-        .provider
-        .complete_delegation_event(
+) -> Result<(), String> {
+    let session = state.session.lock().await;
+    let session = session
+        .as_ref()
+        .ok_or_else(|| "voice session is not active".to_string())?;
+    session
+        .session
+        .complete_delegation(
             &request.delegation_id,
             VoiceContext {
                 text: request.text,
                 channel: VoiceContextChannel::Speakable,
             },
         )
-        .map_err(|e| e.to_string())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-async fn close_voice(state: State<'_, VoiceState>) -> Result<Value, String> {
-    *state.session.lock().await = None;
-    Ok(state.provider.close_event())
+async fn voice_session_id(state: State<'_, VoiceState>) -> Result<Option<String>, String> {
+    let session = state.session.lock().await;
+    let session = session
+        .as_ref()
+        .ok_or_else(|| "voice session is not active".to_string())?;
+    Ok(session.session.session_id().await)
 }
 
-/// Call this from your Tauri application's `run()` function:
-///
-/// ```ignore
-/// tauri::Builder::default()
-///     .manage(voice_state()?)
-///     .invoke_handler(voice_invoke_handler());
-/// ```
+#[tauri::command]
+async fn close_voice(state: State<'_, VoiceState>) -> Result<(), String> {
+    let session = state
+        .session
+        .lock()
+        .await
+        .take()
+        .ok_or_else(|| "voice session is not active".to_string())?;
+    session
+        .session
+        .close()
+        .await
+        .map_err(|error| error.to_string())
+}
+
 fn voice_state() -> Result<VoiceState> {
     Ok(VoiceState {
         provider: Arc::new(OpenAiLiveProvider::from_env()?),
@@ -196,13 +243,12 @@ fn voice_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + S
         voice_incoming,
         append_voice_context,
         complete_voice_delegation,
+        voice_session_id,
         close_voice,
     ]
 }
 
 fn main() {
-    // This example is intended to be copied into a Tauri application, where
-    // generate_context! can use that application's tauri.conf.json.
     let _ = voice_state;
     let _ = voice_invoke_handler;
 }

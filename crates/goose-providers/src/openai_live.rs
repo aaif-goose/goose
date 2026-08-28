@@ -5,9 +5,9 @@
 //! implementations own media and byte delivery.
 
 use crate::voice::*;
-use anyhow::{Context, Result, bail};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use serde_json::{Value, json};
+use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 pub const DEFAULT_OPENAI_LIVE_HTTP_URL: &str = "https://api.openai.com/v1/live";
@@ -148,20 +148,20 @@ impl VoiceProvider for OpenAiLiveProvider {
                 .unwrap_or_default()
                 .to_owned()
         };
-        Ok(match event_type {
-            "session.started" => VoiceEvent::SessionStarted {
+        let kind = match event_type {
+            "session.started" => VoiceEventKind::SessionStarted {
                 session_id: event
                     .pointer("/session/id")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
             },
-            "input_transcript.added" => VoiceEvent::InputTranscriptDelta { text: text() },
-            "output_transcript.added" => VoiceEvent::OutputTranscriptDelta { text: text() },
+            "input_transcript.added" => VoiceEventKind::InputTranscriptDelta { text: text() },
+            "output_transcript.added" => VoiceEventKind::OutputTranscriptDelta { text: text() },
             "turn.done" if event.pointer("/turn/role").and_then(Value::as_str) == Some("user") => {
-                VoiceEvent::InputTranscriptCompleted { text: text() }
+                VoiceEventKind::InputTranscriptCompleted { text: text() }
             }
-            "turn.done" => VoiceEvent::OutputTranscriptCompleted { text: text() },
-            "output_audio.delta" => VoiceEvent::OutputAudioDelta {
+            "turn.done" => VoiceEventKind::OutputTranscriptCompleted { text: text() },
+            "output_audio.delta" => VoiceEventKind::OutputAudioDelta {
                 audio: event
                     .get("audio")
                     .or_else(|| event.get("delta"))
@@ -175,7 +175,7 @@ impl VoiceProvider for OpenAiLiveProvider {
                 let item = event
                     .get("item")
                     .context("delegation.created is missing item")?;
-                VoiceEvent::DelegationCreated {
+                VoiceEventKind::DelegationCreated {
                     delegation: VoiceDelegation {
                         id: item
                             .get("id")
@@ -197,31 +197,31 @@ impl VoiceProvider for OpenAiLiveProvider {
                     },
                 }
             }
-            "session.context.appended" => VoiceEvent::ContextAppended,
-            "delegation.context.appended" => VoiceEvent::DelegationContextAppended {
+            "session.context.appended" => VoiceEventKind::ContextAppended,
+            "delegation.context.appended" => VoiceEventKind::DelegationContextAppended {
                 delegation_id: event
                     .get("delegation_item_id")
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .into(),
             },
-            "session.usage.updated" => VoiceEvent::Usage {
+            "session.usage.updated" => VoiceEventKind::Usage {
                 usage: event.clone(),
             },
-            "session.closed" => VoiceEvent::SessionClosed,
-            "error" | "response.error" | "response.failed" => VoiceEvent::Error {
+            "session.closed" => VoiceEventKind::SessionClosed,
+            "error" | "response.error" | "response.failed" => VoiceEventKind::Error {
                 message: event
                     .pointer("/error/message")
                     .and_then(Value::as_str)
                     .unwrap_or("OpenAI Live reported an error")
                     .into(),
-                raw: Some(event),
+                raw: Some(event.clone()),
             },
-            _ => VoiceEvent::Other {
+            _ => VoiceEventKind::Other {
                 event_type: event_type.into(),
-                payload: event,
             },
-        })
+        };
+        Ok(VoiceEvent::provider(kind, event))
     }
 
     fn append_context_event(&self, context: VoiceContext) -> Result<Value> {
@@ -305,7 +305,11 @@ mod tests {
                 "id": "item_1", "content": [{ "type": "input_text", "text": "inspect this" }]
             }}))
             .unwrap();
-        assert!(matches!(decoded, VoiceEvent::DelegationCreated { .. }));
+        assert!(matches!(
+            decoded.kind,
+            VoiceEventKind::DelegationCreated { .. }
+        ));
+        assert!(decoded.raw.is_some());
         let encoded = provider
             .complete_delegation_event(
                 "item_1",

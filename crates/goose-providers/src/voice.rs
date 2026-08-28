@@ -4,12 +4,12 @@
 //! signalers execute authenticated WebRTC negotiation, while connections own
 //! only established live event delivery.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceSessionConfig {
@@ -71,8 +71,28 @@ pub struct VoiceDelegation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceEvent {
+    pub kind: VoiceEventKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Value>,
+}
+
+impl VoiceEvent {
+    pub fn provider(kind: VoiceEventKind, raw: Value) -> Self {
+        Self {
+            kind,
+            raw: Some(raw),
+        }
+    }
+
+    pub fn session(kind: VoiceEventKind) -> Self {
+        Self { kind, raw: None }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum VoiceEvent {
+pub enum VoiceEventKind {
     SessionStarted {
         session_id: Option<String>,
     },
@@ -110,7 +130,6 @@ pub enum VoiceEvent {
     SessionClosed,
     Other {
         event_type: String,
-        payload: Value,
     },
 }
 
@@ -204,25 +223,44 @@ pub trait VoiceProvider: Send + Sync {
     fn close_event(&self) -> Value;
 }
 
+pub struct VoiceSessionMetadata {
+    pub session_id: Option<String>,
+    pub model: String,
+}
+
+impl From<&NegotiatedWebRtcSession> for VoiceSessionMetadata {
+    fn from(session: &NegotiatedWebRtcSession) -> Self {
+        Self {
+            session_id: session.session_id.clone(),
+            model: session.model.clone(),
+        }
+    }
+}
+
 pub struct VoiceSession {
     provider: Arc<dyn VoiceProvider>,
     connection: Arc<dyn VoiceConnection>,
+    metadata: Mutex<VoiceSessionMetadata>,
     events: broadcast::Sender<VoiceEvent>,
-    session_id: Mutex<Option<String>>,
 }
 
 impl VoiceSession {
     pub fn new(
         provider: Arc<dyn VoiceProvider>,
         connection: Arc<dyn VoiceConnection>,
+        metadata: VoiceSessionMetadata,
     ) -> Arc<Self> {
         let (events, _) = broadcast::channel(256);
         Arc::new(Self {
             provider,
             connection,
+            metadata: Mutex::new(metadata),
             events,
-            session_id: Mutex::new(None),
         })
+    }
+
+    pub async fn session_id(&self) -> Option<String> {
+        self.metadata.lock().await.session_id.clone()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<VoiceEvent> {
@@ -231,8 +269,8 @@ impl VoiceSession {
 
     pub async fn handle_incoming(&self, raw: Value) -> Result<VoiceEvent> {
         let event = self.provider.decode_event(raw)?;
-        if let VoiceEvent::SessionStarted { session_id } = &event {
-            *self.session_id.lock().await = session_id.clone();
+        if let VoiceEventKind::SessionStarted { session_id } = &event.kind {
+            self.metadata.lock().await.session_id = session_id.clone();
         }
         let _ = self.events.send(event.clone());
         Ok(event)
@@ -240,11 +278,16 @@ impl VoiceSession {
 
     pub async fn run(self: Arc<Self>) -> Result<()> {
         while let Some(raw) = self.connection.receive().await? {
-            if matches!(self.handle_incoming(raw).await?, VoiceEvent::SessionClosed) {
+            if matches!(
+                self.handle_incoming(raw).await?.kind,
+                VoiceEventKind::SessionClosed
+            ) {
                 return Ok(());
             }
         }
-        let _ = self.events.send(VoiceEvent::SessionClosed);
+        let _ = self
+            .events
+            .send(VoiceEvent::session(VoiceEventKind::SessionClosed));
         Ok(())
     }
 
@@ -280,7 +323,9 @@ impl VoiceSession {
         let close_result = self.connection.close().await;
         let result = event_result.and(close_result);
         if result.is_ok() {
-            let _ = self.events.send(VoiceEvent::SessionClosed);
+            let _ = self
+                .events
+                .send(VoiceEvent::session(VoiceEventKind::SessionClosed));
         }
         result
     }

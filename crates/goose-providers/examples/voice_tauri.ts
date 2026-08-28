@@ -1,9 +1,10 @@
 // Browser half of `voice_tauri.rs`.
 //
 // The browser owns microphone capture, audio playback, RTCPeerConnection, and
-// RTCDataChannel. Rust owns credentials and OpenAI event encoding/decoding.
+// RTCDataChannel. Rust owns credentials, provider protocol, and session state.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 interface StartVoiceResponse {
   sdp: string;
@@ -11,9 +12,16 @@ interface StartVoiceResponse {
   model: string;
 }
 
+interface VoiceEvent {
+  kind: Record<string, unknown> & { type: string };
+  raw?: unknown;
+}
+
 let peer: RTCPeerConnection | undefined;
 let dataChannel: RTCDataChannel | undefined;
 let microphone: MediaStream | undefined;
+let unlistenCommand: UnlistenFn | undefined;
+let unlistenEvent: UnlistenFn | undefined;
 
 export async function startVoice(initialContext: string, audio: HTMLAudioElement) {
   peer = new RTCPeerConnection();
@@ -26,18 +34,21 @@ export async function startVoice(initialContext: string, audio: HTMLAudioElement
   };
 
   dataChannel = peer.createDataChannel("oai-events");
-  dataChannel.onmessage = async ({ data }) => {
-    const normalized = await invoke<Record<string, unknown>>("voice_incoming", {
-      event: JSON.parse(data),
-    });
-
-    if (normalized.type === "delegation_created") {
-      const delegation = normalized.delegation as { id: string; prompt: string };
-      // Replace this with ACP, goose-agent, or an application-specific delegate.
-      const answer = await runDelegate(delegation.prompt);
-      await completeDelegation(delegation.id, answer);
-    }
+  dataChannel.onmessage = ({ data }) => {
+    void invoke("voice_incoming", { event: JSON.parse(data) });
   };
+
+  unlistenCommand = await listen<Record<string, unknown>>("voice-command", ({ payload }) => {
+    sendEvent(payload);
+  });
+  unlistenEvent = await listen<VoiceEvent>("voice-event", ({ payload }) => {
+    if (payload.kind.type === "delegation_created") {
+      const delegation = payload.kind.delegation as { id: string; prompt: string };
+      void runDelegate(delegation.prompt).then((answer) =>
+        completeDelegation(delegation.id, answer),
+      );
+    }
+  });
 
   const offer = await peer.createOffer();
   await peer.setLocalDescription(offer);
@@ -49,32 +60,30 @@ export async function startVoice(initialContext: string, audio: HTMLAudioElement
       initialContext,
     },
   });
-
-  // Rust brokers the HTTP request, so OPENAI_API_KEY never enters the WebView.
   await peer.setRemoteDescription({ type: "answer", sdp: signaling.sdp });
 }
 
 export async function appendContext(text: string) {
-  const event = await invoke<Record<string, unknown>>("append_voice_context", { text });
-  sendEvent(event);
+  await invoke("append_voice_context", { text });
 }
 
 export async function completeDelegation(delegationId: string, text: string) {
-  const event = await invoke<Record<string, unknown>>("complete_voice_delegation", {
+  await invoke("complete_voice_delegation", {
     request: { delegationId, text },
   });
-  sendEvent(event);
 }
 
 export async function stopVoice() {
-  if (dataChannel?.readyState === "open") {
-    sendEvent(await invoke<Record<string, unknown>>("close_voice"));
-  }
+  await invoke("close_voice");
   peer?.close();
   microphone?.getTracks().forEach((track) => track.stop());
+  unlistenCommand?.();
+  unlistenEvent?.();
   peer = undefined;
   dataChannel = undefined;
   microphone = undefined;
+  unlistenCommand = undefined;
+  unlistenEvent = undefined;
 }
 
 function sendEvent(event: Record<string, unknown>) {

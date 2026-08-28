@@ -11,7 +11,7 @@ use goose_providers::{
     openai_live::OpenAiLiveProvider,
     voice::{
         BridgedVoiceConnection, NegotiatedWebRtcSession, VoiceDelegationMode, VoiceProvider,
-        VoiceSession, VoiceSessionConfig, VoiceSignaler, WebRtcSignalingPlan,
+        VoiceSession, VoiceSessionConfig, VoiceSessionMetadata, VoiceSignaler, WebRtcSignalingPlan,
     },
 };
 use std::sync::Arc;
@@ -47,15 +47,19 @@ async fn main() -> Result<()> {
         "offer-from-browser".into(),
     )?;
     let negotiated = BrowserSignaler.negotiate(plan).await?;
-    println!("install SDP answer: {}", negotiated.answer_sdp);
+    println!("install SDP answer: {}", &negotiated.answer_sdp);
 
     let connection = Arc::new(BridgedVoiceConnection::new());
     let mut outbound = connection.take_outbound().await?;
-    let session = VoiceSession::new(provider, connection.clone());
+    let session = VoiceSession::new(
+        provider,
+        connection.clone(),
+        VoiceSessionMetadata::from(&negotiated),
+    );
 
     // Tauri forwards `outbound.recv()` payloads to RTCDataChannel.send().
     tokio::spawn(async move {
-        while let Ok(event) = outbound.recv().await {
+        while let Some(event) = outbound.recv().await {
             println!("send over browser data channel: {event}");
         }
     });
