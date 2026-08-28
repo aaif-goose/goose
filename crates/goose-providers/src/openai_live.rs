@@ -5,10 +5,10 @@
 //! implementations own media and byte delivery.
 
 use crate::voice::*;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use serde_json::{json, Value};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub const DEFAULT_OPENAI_LIVE_HTTP_URL: &str = "https://api.openai.com/v1/live";
@@ -224,18 +224,13 @@ impl VoiceProvider for OpenAiLiveProvider {
     }
 
     fn append_context_event(&self, context: VoiceContext) -> Result<Value> {
-        Ok(text_event("session.context.append", None, context, true)?)
+        text_event("session.context.append", None, context, true)
     }
     fn complete_delegation_event(&self, id: &str, context: VoiceContext) -> Result<Value> {
         if id.trim().is_empty() {
             bail!("delegation ID is empty");
         }
-        Ok(text_event(
-            "delegation.context.append",
-            Some(id),
-            context,
-            false,
-        )?)
+        text_event("delegation.context.append", Some(id), context, false)
     }
     fn append_audio_event(&self, audio: &[u8]) -> Result<Value> {
         if audio.is_empty() {

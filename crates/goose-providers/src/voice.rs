@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceSessionConfig {
@@ -140,12 +140,33 @@ pub enum VoiceSessionAnswerBootstrap {
 }
 
 /// Provider-specific connection metadata used by a transport.
-#[derive(Debug, Clone)]
 pub struct VoiceTransportRequest {
-    pub endpoint: String,
-    pub headers: Vec<(String, String)>,
+    pub(crate) endpoint: String,
+    pub(crate) headers: Vec<(String, String)>,
     pub bootstrap: VoiceSessionBootstrap,
     pub initial_event: Option<Value>,
+}
+
+impl VoiceTransportRequest {
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    pub fn take_connection_parts(
+        self,
+    ) -> (
+        String,
+        Vec<(String, String)>,
+        VoiceSessionBootstrap,
+        Option<Value>,
+    ) {
+        (
+            self.endpoint,
+            self.headers,
+            self.bootstrap,
+            self.initial_event,
+        )
+    }
 }
 
 /// Raw bidirectional transport. Implementations may be a browser/Tauri bridge,
@@ -197,7 +218,8 @@ impl VoiceSession {
         transport: Arc<dyn VoiceTransport>,
         config: VoiceSessionConfig,
         bootstrap: VoiceSessionBootstrap,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<(Arc<Self>, VoiceSessionAnswer)> {
+        let model = config.model.clone();
         let request = provider.transport_request(&config, bootstrap)?;
         let answer_bootstrap = transport.connect(request).await?;
         let (events, _) = broadcast::channel(256);
@@ -207,10 +229,12 @@ impl VoiceSession {
             events,
             session_id: Mutex::new(None),
         });
-        // The answer is transport-owned. Browser bridges expose it while
-        // connecting; direct transports report Connected.
-        let _ = answer_bootstrap;
-        Ok(session)
+        let answer = VoiceSessionAnswer {
+            bootstrap: answer_bootstrap,
+            session_id: None,
+            model,
+        };
+        Ok((session, answer))
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<VoiceEvent> {
@@ -232,9 +256,10 @@ impl VoiceSession {
         while let Some(raw) = self.transport.receive().await? {
             let closed = matches!(self.handle_incoming(raw).await?, VoiceEvent::SessionClosed);
             if closed {
-                break;
+                return Ok(());
             }
         }
+        let _ = self.events.send(VoiceEvent::SessionClosed);
         Ok(())
     }
 
@@ -268,14 +293,19 @@ impl VoiceSession {
     pub async fn close(&self) -> Result<()> {
         let event_result = self.send_raw(self.provider.close_event()).await;
         let close_result = self.transport.close().await;
-        event_result.and(close_result)
+        let result = event_result.and(close_result);
+        if result.is_ok() {
+            let _ = self.events.send(VoiceEvent::SessionClosed);
+        }
+        result
     }
 }
 
 /// Channel-backed transport for Tauri and other foreign runtimes. The host owns
 /// WebRTC; Rust owns the provider protocol and event processor.
 pub struct BridgedVoiceTransport {
-    outbound: broadcast::Sender<Value>,
+    outbound_tx: mpsc::Sender<Value>,
+    outbound_rx: Mutex<Option<mpsc::Receiver<Value>>>,
     incoming_tx: tokio::sync::mpsc::Sender<Value>,
     incoming_rx: Mutex<tokio::sync::mpsc::Receiver<Value>>,
     connect_handler: Arc<
@@ -294,18 +324,23 @@ impl BridgedVoiceTransport {
         F: Fn(VoiceTransportRequest) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<VoiceSessionAnswerBootstrap>> + Send + 'static,
     {
-        let (outbound, _) = broadcast::channel(256);
-        let (incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(256);
+        let (outbound_tx, outbound_rx) = mpsc::channel(256);
+        let (incoming_tx, incoming_rx) = mpsc::channel(256);
         Self {
-            outbound,
+            outbound_tx,
+            outbound_rx: Mutex::new(Some(outbound_rx)),
             incoming_tx,
             incoming_rx: Mutex::new(incoming_rx),
             connect_handler: Arc::new(move |request| Box::pin(connect_handler(request))),
         }
     }
 
-    pub fn outbound(&self) -> broadcast::Receiver<Value> {
-        self.outbound.subscribe()
+    pub async fn take_outbound(&self) -> Result<mpsc::Receiver<Value>> {
+        self.outbound_rx
+            .lock()
+            .await
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("outbound voice receiver was already taken"))
     }
 
     pub async fn push_incoming(&self, event: Value) -> Result<()> {
@@ -319,8 +354,7 @@ impl VoiceTransport for BridgedVoiceTransport {
         (self.connect_handler)(request).await
     }
     async fn send(&self, event: Value) -> Result<()> {
-        self.outbound.send(event)?;
-        Ok(())
+        self.outbound_tx.send(event).await.map_err(Into::into)
     }
     async fn receive(&self) -> Result<Option<Value>> {
         Ok(self.incoming_rx.lock().await.recv().await)

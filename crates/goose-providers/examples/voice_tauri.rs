@@ -73,12 +73,7 @@ async fn start_voice(
             VoiceSessionBootstrap::WebRtcOffer { sdp: request.sdp },
         )
         .map_err(|error| error.to_string())?;
-    let VoiceTransportRequest {
-        endpoint,
-        headers,
-        bootstrap,
-        initial_event,
-    } = transport;
+    let (endpoint, headers, bootstrap, initial_event) = transport.take_connection_parts();
     let VoiceSessionBootstrap::WebRtcOffer { sdp } = bootstrap else {
         return Err("OpenAI did not produce a WebRTC bootstrap".into());
     };

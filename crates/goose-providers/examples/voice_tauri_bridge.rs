@@ -25,14 +25,14 @@ async fn main() -> Result<()> {
     // 3. installs the SDP answer, and
     // 4. returns the answer below.
     let transport = Arc::new(BridgedVoiceTransport::new(|request| async move {
-        println!("bridge this request to WebRTC: {}", request.endpoint);
+        println!("bridge this request to WebRTC: {}", request.endpoint());
         Ok(VoiceSessionAnswerBootstrap::WebRtcAnswer {
             sdp: "answer-from-browser".into(),
         })
     }));
-    let mut outbound = transport.outbound();
+    let mut outbound = transport.take_outbound().await?;
 
-    let session = VoiceSession::connect(
+    let (session, answer) = VoiceSession::connect(
         provider,
         transport.clone(),
         VoiceSessionConfig {
@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
         },
     )
     .await?;
+    println!("negotiated voice bootstrap: {:?}", answer.bootstrap);
 
     // Tauri forwards `outbound.recv()` payloads to RTCDataChannel.send().
     tokio::spawn(async move {
