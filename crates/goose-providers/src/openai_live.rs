@@ -6,7 +6,6 @@
 
 use crate::voice::*;
 use anyhow::{Context, Result, bail};
-use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -57,6 +56,13 @@ impl OpenAiLiveProvider {
         format!("event_{}", Uuid::new_v4())
     }
 
+    fn headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Authorization".into(), format!("Bearer {}", self.api_key)),
+            ("OpenAI-Alpha".into(), self.alpha_selector.clone()),
+        ]
+    }
+
     fn session_json(config: &VoiceSessionConfig, include_model: bool) -> Value {
         let initial_items = config.initial_items.iter().map(|message| {
             let role = match message.role {
@@ -90,47 +96,42 @@ impl OpenAiLiveProvider {
     }
 }
 
-#[async_trait]
 impl VoiceProvider for OpenAiLiveProvider {
     fn name(&self) -> &str {
         "openai-live"
     }
 
-    fn transport_request(
+    fn prepare_webrtc(
         &self,
         config: &VoiceSessionConfig,
-        bootstrap: VoiceSessionBootstrap,
-    ) -> Result<VoiceTransportRequest> {
-        let headers = vec![
-            ("Authorization".into(), format!("Bearer {}", self.api_key)),
-            ("OpenAI-Alpha".into(), self.alpha_selector.clone()),
-        ];
-        Ok(match bootstrap {
-            VoiceSessionBootstrap::WebRtcOffer { sdp } => {
-                if sdp.trim().is_empty() {
-                    bail!("WebRTC SDP offer is empty");
-                }
-                VoiceTransportRequest {
-                    endpoint: self.http_endpoint.clone(),
-                    headers,
-                    bootstrap: VoiceSessionBootstrap::WebRtcOffer { sdp },
-                    initial_event: Some(Self::session_json(config, true)),
-                }
-            }
-            VoiceSessionBootstrap::Direct => VoiceTransportRequest {
-                endpoint: format!(
-                    "{}?model={}",
-                    self.websocket_endpoint,
-                    urlencoding::encode(&config.model)
-                ),
-                headers,
-                bootstrap: VoiceSessionBootstrap::Direct,
-                initial_event: Some(json!({
-                    "type": "session.update",
-                    "event_id": Self::event_id(),
-                    "session": Self::session_json(config, false),
-                })),
-            },
+        offer_sdp: String,
+    ) -> Result<WebRtcSignalingPlan> {
+        if offer_sdp.trim().is_empty() {
+            bail!("WebRTC SDP offer is empty");
+        }
+        Ok(WebRtcSignalingPlan {
+            endpoint: self.http_endpoint.clone(),
+            headers: self.headers(),
+            offer_sdp,
+            session: Self::session_json(config, true),
+            model: config.model.clone(),
+        })
+    }
+
+    fn prepare_websocket(&self, config: &VoiceSessionConfig) -> Result<WebSocketConnectionPlan> {
+        Ok(WebSocketConnectionPlan {
+            endpoint: format!(
+                "{}?model={}",
+                self.websocket_endpoint,
+                urlencoding::encode(&config.model)
+            ),
+            headers: self.headers(),
+            after_connect: vec![json!({
+                "type": "session.update",
+                "event_id": Self::event_id(),
+                "session": Self::session_json(config, false),
+            })],
+            model: config.model.clone(),
         })
     }
 
@@ -283,20 +284,17 @@ mod tests {
     fn websocket_bootstrap_places_model_in_url() {
         let provider = OpenAiLiveProvider::new("test");
         let request = provider
-            .transport_request(
-                &VoiceSessionConfig {
-                    model: "gpt-live-1-marble-alpha".into(),
-                    instructions: "help".into(),
-                    voice: None,
-                    initial_items: vec![],
-                    delegation: VoiceDelegationMode::Client,
-                    extra: Default::default(),
-                },
-                VoiceSessionBootstrap::Direct,
-            )
+            .prepare_websocket(&VoiceSessionConfig {
+                model: "gpt-live-1-marble-alpha".into(),
+                instructions: "help".into(),
+                voice: None,
+                initial_items: vec![],
+                delegation: VoiceDelegationMode::Client,
+                extra: Default::default(),
+            })
             .unwrap();
-        assert!(request.endpoint.contains("model=gpt-live-1-marble-alpha"));
-        assert!(request.initial_event.unwrap()["session"]["model"].is_null());
+        assert!(request.endpoint().contains("model=gpt-live-1-marble-alpha"));
+        assert!(request.after_connect()[0]["session"]["model"].is_null());
     }
 
     #[test]

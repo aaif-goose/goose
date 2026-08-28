@@ -1,7 +1,7 @@
-//! Native backend WebSocket transport for voice providers.
+//! Native backend WebSocket connection for voice providers.
 //! Enable with the `voice-websocket` feature.
 
-use crate::voice::{VoiceSessionAnswerBootstrap, VoiceTransport, VoiceTransportRequest};
+use crate::voice::{VoiceConnection, WebSocketConnectionPlan};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
@@ -14,30 +14,14 @@ type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 type SocketSink = SplitSink<Socket, Message>;
 type SocketStream = SplitStream<Socket>;
 
-pub struct WebSocketVoiceTransport {
-    sink: Mutex<Option<SocketSink>>,
-    stream: Mutex<Option<SocketStream>>,
+pub struct WebSocketVoiceConnection {
+    sink: Mutex<SocketSink>,
+    stream: Mutex<SocketStream>,
 }
 
-impl WebSocketVoiceTransport {
-    pub fn new() -> Self {
-        Self {
-            sink: Mutex::new(None),
-            stream: Mutex::new(None),
-        }
-    }
-}
-
-impl Default for WebSocketVoiceTransport {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl VoiceTransport for WebSocketVoiceTransport {
-    async fn connect(&self, request: VoiceTransportRequest) -> Result<VoiceSessionAnswerBootstrap> {
-        let (endpoint, headers, _, initial_event) = request.take_connection_parts();
+impl WebSocketVoiceConnection {
+    pub async fn connect(plan: WebSocketConnectionPlan) -> Result<Self> {
+        let (endpoint, headers, after_connect, _) = plan.take_parts();
         let mut builder = Request::builder().uri(&endpoint);
         for (name, value) in headers {
             builder = builder.header(name, value);
@@ -47,20 +31,22 @@ impl VoiceTransport for WebSocketVoiceTransport {
             .await
             .context("voice WebSocket connection failed")?;
         let (mut sink, stream) = socket.split();
-        if let Some(initial) = initial_event {
-            sink.send(Message::Text(initial.to_string().into())).await?;
+        for event in after_connect {
+            sink.send(Message::Text(event.to_string().into())).await?;
         }
-        *self.sink.lock().await = Some(sink);
-        *self.stream.lock().await = Some(stream);
-        Ok(VoiceSessionAnswerBootstrap::Connected)
+        Ok(Self {
+            sink: Mutex::new(sink),
+            stream: Mutex::new(stream),
+        })
     }
+}
 
+#[async_trait]
+impl VoiceConnection for WebSocketVoiceConnection {
     async fn send(&self, event: Value) -> Result<()> {
         self.sink
             .lock()
             .await
-            .as_mut()
-            .context("voice WebSocket is not connected")?
             .send(Message::Text(event.to_string().into()))
             .await?;
         Ok(())
@@ -68,9 +54,6 @@ impl VoiceTransport for WebSocketVoiceTransport {
 
     async fn receive(&self) -> Result<Option<Value>> {
         let stream = &mut *self.stream.lock().await;
-        let stream = stream
-            .as_mut()
-            .context("voice WebSocket is not connected")?;
         while let Some(message) = stream.next().await {
             match message? {
                 Message::Text(text) => return Ok(Some(serde_json::from_str(&text)?)),
@@ -83,9 +66,7 @@ impl VoiceTransport for WebSocketVoiceTransport {
     }
 
     async fn close(&self) -> Result<()> {
-        if let Some(sink) = self.sink.lock().await.as_mut() {
-            sink.close().await?;
-        }
+        self.sink.lock().await.close().await?;
         Ok(())
     }
 }

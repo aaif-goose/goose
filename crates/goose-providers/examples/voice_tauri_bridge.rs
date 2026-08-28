@@ -2,40 +2,41 @@
 //!
 //! The host's `RTCPeerConnection` creates the SDP offer and forwards every data
 //! channel message to `push_incoming`. Rust processes events through
-//! `VoiceSession`; outbound JSON is read from `outbound()` and sent with
+//! `VoiceSession`; outbound JSON is read from `take_outbound()` and sent with
 //! `RTCDataChannel.send`.
 
 use anyhow::Result;
+use async_trait::async_trait;
 use goose_providers::{
     openai_live::OpenAiLiveProvider,
     voice::{
-        BridgedVoiceTransport, VoiceDelegationMode, VoiceProvider, VoiceSession,
-        VoiceSessionAnswerBootstrap, VoiceSessionBootstrap, VoiceSessionConfig,
+        BridgedVoiceConnection, NegotiatedWebRtcSession, VoiceDelegationMode, VoiceProvider,
+        VoiceSession, VoiceSessionConfig, VoiceSignaler, WebRtcSignalingPlan,
     },
 };
 use std::sync::Arc;
+
+struct BrowserSignaler;
+
+#[async_trait]
+impl VoiceSignaler for BrowserSignaler {
+    async fn negotiate(&self, plan: WebRtcSignalingPlan) -> Result<NegotiatedWebRtcSession> {
+        println!("bridge signaling through trusted Rust: {}", plan.endpoint());
+        let (_, _, _, _, model) = plan.take_parts();
+        Ok(NegotiatedWebRtcSession {
+            answer_sdp: "answer-from-provider".into(),
+            session_id: None,
+            model,
+        })
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let provider: Arc<dyn VoiceProvider> = Arc::new(OpenAiLiveProvider::from_env()?);
 
-    // In Tauri, this callback invokes frontend code which:
-    // 1. creates/configures RTCPeerConnection,
-    // 2. POSTs or relays the provider's transport request,
-    // 3. installs the SDP answer, and
-    // 4. returns the answer below.
-    let transport = Arc::new(BridgedVoiceTransport::new(|request| async move {
-        println!("bridge this request to WebRTC: {}", request.endpoint());
-        Ok(VoiceSessionAnswerBootstrap::WebRtcAnswer {
-            sdp: "answer-from-browser".into(),
-        })
-    }));
-    let mut outbound = transport.take_outbound().await?;
-
-    let (session, answer) = VoiceSession::connect(
-        provider,
-        transport.clone(),
-        VoiceSessionConfig {
+    let plan = provider.prepare_webrtc(
+        &VoiceSessionConfig {
             model: "gpt-live-1-marble-alpha".into(),
             instructions: "Be concise.".into(),
             voice: Some("marin".into()),
@@ -43,12 +44,14 @@ async fn main() -> Result<()> {
             delegation: VoiceDelegationMode::Client,
             extra: Default::default(),
         },
-        VoiceSessionBootstrap::WebRtcOffer {
-            sdp: "offer-from-browser".into(),
-        },
-    )
-    .await?;
-    println!("negotiated voice bootstrap: {:?}", answer.bootstrap);
+        "offer-from-browser".into(),
+    )?;
+    let negotiated = BrowserSignaler.negotiate(plan).await?;
+    println!("install SDP answer: {}", negotiated.answer_sdp);
+
+    let connection = Arc::new(BridgedVoiceConnection::new());
+    let mut outbound = connection.take_outbound().await?;
+    let session = VoiceSession::new(provider, connection.clone());
 
     // Tauri forwards `outbound.recv()` payloads to RTCDataChannel.send().
     tokio::spawn(async move {
@@ -58,7 +61,7 @@ async fn main() -> Result<()> {
     });
 
     // The frontend's data-channel onmessage callback calls this method.
-    transport
+    connection
         .push_incoming(serde_json::json!({ "type": "session.started" }))
         .await?;
     let _runner = tokio::spawn(session.run());
