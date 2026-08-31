@@ -31,6 +31,7 @@ pub fn get_context_filenames() -> Vec<String> {
 pub struct SubdirectoryHintTracker {
     loaded_dirs: Vec<PathBuf>,
     loaded_dir_set: HashSet<PathBuf>,
+    emitted_dir_set: HashSet<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
 }
@@ -46,6 +47,7 @@ impl SubdirectoryHintTracker {
         Self {
             loaded_dirs: Vec::new(),
             loaded_dir_set: HashSet::new(),
+            emitted_dir_set: HashSet::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
         }
@@ -159,6 +161,7 @@ impl SubdirectoryHintTracker {
         };
 
         let mut results = Vec::new();
+        let mut attempted_dirs = HashSet::new();
         for dir in pending {
             let Ok(dir) = dir.canonicalize() else {
                 continue;
@@ -166,16 +169,19 @@ impl SubdirectoryHintTracker {
             if !dir.starts_with(&canonical_working_dir) || dir == canonical_working_dir {
                 continue;
             }
-            if !self.loaded_dir_set.insert(dir.clone()) {
+            if !attempted_dirs.insert(dir.clone()) || self.emitted_dir_set.contains(&dir) {
                 continue;
             }
-            self.loaded_dirs.push(dir.clone());
+            if self.loaded_dir_set.insert(dir.clone()) {
+                self.loaded_dirs.push(dir.clone());
+            }
             if let Some(content) = load_hints_from_directory(
                 &dir,
                 &canonical_working_dir,
                 &self.hints_filenames,
                 MAX_HINT_OUTPUT_BYTES,
             ) {
+                self.emitted_dir_set.insert(dir.clone());
                 results.push((format!("subdir_hints:{}", dir.display()), content));
             }
         }
@@ -1118,6 +1124,37 @@ End of hints"#;
         assert_eq!(first.len(), 1);
         assert!(first[0].1.contains("nested hints"));
         assert!(tracker.load_new_hints(project_root.path()).is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_load_new_hints_retries_content_that_was_too_large() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let nested = project_root.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        let hints_path = nested.join(GOOSE_HINTS_FILENAME);
+        fs::write(&hints_path, "x".repeat(MAX_HINT_OUTPUT_BYTES)).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
+
+        fs::write(&hints_path, "now admissible").unwrap();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+        let retried = tracker.load_new_hints(project_root.path());
+        assert_eq!(retried.len(), 1);
+        assert!(retried[0].1.contains("now admissible"));
     }
 
     #[test]
