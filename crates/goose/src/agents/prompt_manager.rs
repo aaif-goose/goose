@@ -246,13 +246,6 @@ impl PromptManager {
         let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
         self.pending_hint_snapshot = changed.then(|| (snapshot.clone(), output_limit));
         self.last_hint_snapshot = Some(snapshot.clone());
-        if snapshot.is_empty() {
-            self.system_prompt_extras.shift_remove("hints");
-        } else {
-            self.system_prompt_extras.shift_remove("hints");
-            self.system_prompt_extras
-                .insert("hints".to_string(), snapshot);
-        }
         changed
     }
 
@@ -475,7 +468,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn load_subdirectory_hints_remains_visible_to_builder() {
+    fn load_subdirectory_hints_is_used_by_the_next_fresh_builder() {
         let config_root = tempfile::tempdir().unwrap();
         let _guard = env_lock::lock_env([
             (
@@ -500,8 +493,48 @@ mod tests {
         manager.record_tool_arguments(&arguments, project.path());
 
         assert!(manager.load_subdirectory_hints(project.path()));
-        assert!(manager.builder().build().contains("NESTED_HINT"));
+        assert!(manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build()
+            .contains("NESTED_HINT"));
         assert!(!manager.load_subdirectory_hints(project.path()));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_hint_refresh_preserves_caller_owned_hints_extra() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let hints_path = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
+        let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
+
+        assert!(manager.load_subdirectory_hints(project.path()));
+        assert!(manager.builder().build().contains("CALLER_HINTS"));
+
+        std::fs::write(&hints_path, "GENERATED_HINTS").unwrap();
+        assert!(manager.load_subdirectory_hints(project.path()));
+        let generated = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build();
+        assert!(generated.contains("GENERATED_HINTS"));
+        assert!(!generated.contains("CALLER_HINTS"));
+        assert!(manager.builder().build().contains("CALLER_HINTS"));
+
+        std::fs::remove_file(hints_path).unwrap();
+        assert!(manager.load_subdirectory_hints(project.path()));
+        let restored = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build();
+        assert!(restored.contains("CALLER_HINTS"));
+        assert!(!restored.contains("GENERATED_HINTS"));
     }
 
     #[test]
