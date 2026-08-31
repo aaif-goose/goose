@@ -8,7 +8,9 @@ use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
+use crate::hints::{
+    get_context_filenames, load_hint_files, SubdirectoryHintTracker, MAX_HINT_OUTPUT_BYTES,
+};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -16,13 +18,15 @@ use crate::{
 };
 use std::path::Path;
 
+const PROMPT_EXTRA_SEPARATOR: &str = "\n\n";
+
 pub struct PromptManager {
     system_prompt_override: Option<String>,
     system_prompt_extras: IndexMap<String, String>,
     current_date_timestamp: String,
     subdirectory_hint_tracker: SubdirectoryHintTracker,
     last_hint_snapshot: Option<String>,
-    pending_hint_snapshot: Option<String>,
+    pending_hint_snapshot: Option<(String, usize)>,
 }
 
 impl Default for PromptManager {
@@ -182,7 +186,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             format!(
                 "{}\n\n# Additional Instructions:\n\n{}",
                 base_prompt,
-                sanitized_system_prompt_extras.join("\n\n")
+                sanitized_system_prompt_extras.join(PROMPT_EXTRA_SEPARATOR)
             )
         }
     }
@@ -234,21 +238,52 @@ impl PromptManager {
     }
 
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
+        let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
+        let output_limit = self.hint_output_limit(&[], goose_mode);
         let snapshot = self
             .subdirectory_hint_tracker
-            .load_prompt_snapshot(working_dir);
+            .load_prompt_snapshot(working_dir, output_limit);
         let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
-        self.pending_hint_snapshot = changed.then_some(snapshot);
+        self.pending_hint_snapshot = changed.then(|| (snapshot.clone(), output_limit));
+        self.last_hint_snapshot = Some(snapshot.clone());
+        if snapshot.is_empty() {
+            self.system_prompt_extras.shift_remove("hints");
+        } else {
+            self.system_prompt_extras.shift_remove("hints");
+            self.system_prompt_extras
+                .insert("hints".to_string(), snapshot);
+        }
         changed
     }
 
-    fn take_fresh_hint_snapshot(&mut self, working_dir: &Path) -> String {
-        let snapshot = self.pending_hint_snapshot.take().unwrap_or_else(|| {
-            self.subdirectory_hint_tracker
-                .load_prompt_snapshot(working_dir)
-        });
+    fn take_fresh_hint_snapshot(&mut self, working_dir: &Path, output_limit: usize) -> String {
+        let snapshot = match self.pending_hint_snapshot.take() {
+            Some((snapshot, pending_limit)) if pending_limit == output_limit => snapshot,
+            _ => self
+                .subdirectory_hint_tracker
+                .load_prompt_snapshot(working_dir, output_limit),
+        };
         self.last_hint_snapshot = Some(snapshot.clone());
         snapshot
+    }
+
+    pub(crate) fn hint_output_limit(
+        &self,
+        prompt_parts: &[(String, String)],
+        goose_mode: GooseMode,
+    ) -> usize {
+        let mut extras = self.system_prompt_extras.clone();
+        extras.extend(prompt_parts.iter().cloned());
+        extras.shift_remove("hints");
+        extras.insert("hints".to_string(), String::new());
+        if goose_mode == GooseMode::Chat {
+            extras.insert("chat_mode".to_string(), String::new());
+        }
+
+        let hint_index = extras.get_index_of("hints").unwrap();
+        let adjacent_separators =
+            usize::from(hint_index > 0) + usize::from(hint_index + 1 < extras.len());
+        MAX_HINT_OUTPUT_BYTES.saturating_sub(adjacent_separators * PROMPT_EXTRA_SEPARATOR.len())
     }
 
     pub fn build_system_prompt(
@@ -257,7 +292,8 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        let snapshot = self.take_fresh_hint_snapshot(working_dir);
+        let output_limit = self.hint_output_limit(&prompt_parts, goose_mode);
+        let snapshot = self.take_fresh_hint_snapshot(working_dir, output_limit);
         self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
     }
 
@@ -280,7 +316,8 @@ impl PromptManager {
         working_dir: &Path,
         goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
-        let snapshot = self.take_fresh_hint_snapshot(working_dir);
+        let output_limit = self.hint_output_limit(&[], goose_mode);
+        let snapshot = self.take_fresh_hint_snapshot(working_dir, output_limit);
         self.builder()
             .with_hint_snapshot(snapshot)
             .with_goose_mode(goose_mode)
@@ -434,6 +471,37 @@ mod tests {
             .build();
         assert!(reread.contains("ROOT_V4"));
         assert!(!reread.contains("ROOT_V3"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn load_subdirectory_hints_remains_visible_to_builder() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let nested = project.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(
+            nested.join(crate::hints::GOOSE_HINTS_FILENAME),
+            "NESTED_HINT",
+        )
+        .unwrap();
+
+        let mut manager = PromptManager::new();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        manager.record_tool_arguments(&arguments, project.path());
+
+        assert!(manager.load_subdirectory_hints(project.path()));
+        assert!(manager.builder().build().contains("NESTED_HINT"));
+        assert!(!manager.load_subdirectory_hints(project.path()));
     }
 
     #[test]

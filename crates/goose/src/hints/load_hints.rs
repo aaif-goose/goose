@@ -14,7 +14,6 @@ const GLOBAL_HINTS_HEADER: &str = "\n### Global Hints\nThese are my global goose
 const PROJECT_HINTS_HEADER: &str =
     "### Project Hints\nThese are hints for working on the project in this directory.\n";
 const HINT_SEPARATOR: &str = "\n\n";
-pub(crate) const PROMPT_HINT_BOUNDARY_BYTES: usize = HINT_SEPARATOR.len() * 2;
 
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
@@ -91,8 +90,12 @@ impl SubdirectoryHintTracker {
         self.load_snapshot_with_limit_and_hook(working_dir, MAX_HINT_OUTPUT_BYTES, || {})
     }
 
-    pub(crate) fn load_prompt_snapshot(&mut self, working_dir: &Path) -> String {
-        self.load_prompt_snapshot_with_hook(working_dir, || {})
+    pub(crate) fn load_prompt_snapshot(
+        &mut self,
+        working_dir: &Path,
+        output_limit: usize,
+    ) -> String {
+        self.load_prompt_snapshot_with_hook(working_dir, output_limit, || {})
     }
 
     #[cfg(test)]
@@ -103,13 +106,10 @@ impl SubdirectoryHintTracker {
     pub(crate) fn load_prompt_snapshot_with_hook(
         &mut self,
         working_dir: &Path,
+        output_limit: usize,
         after_top_level_read: impl FnOnce(),
     ) -> String {
-        self.load_snapshot_with_limit_and_hook(
-            working_dir,
-            MAX_HINT_OUTPUT_BYTES.saturating_sub(PROMPT_HINT_BOUNDARY_BYTES),
-            after_top_level_read,
-        )
+        self.load_snapshot_with_limit_and_hook(working_dir, output_limit, after_top_level_read)
     }
 
     fn load_snapshot_with_limit_and_hook(

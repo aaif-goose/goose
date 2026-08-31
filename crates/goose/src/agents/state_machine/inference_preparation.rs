@@ -20,13 +20,15 @@ use tokio::sync::Mutex;
 pub(super) fn reconstructed_hint_snapshot(
     conversation: &Conversation,
     working_dir: &std::path::Path,
+    output_limit: usize,
 ) -> String {
-    reconstructed_hint_snapshot_with_hook(conversation, working_dir, || {})
+    reconstructed_hint_snapshot_with_hook(conversation, working_dir, output_limit, || {})
 }
 
 fn reconstructed_hint_snapshot_with_hook(
     conversation: &Conversation,
     working_dir: &std::path::Path,
+    output_limit: usize,
     after_top_level_read: impl FnOnce(),
 ) -> String {
     let mut hints = SubdirectoryHintTracker::new();
@@ -39,7 +41,7 @@ fn reconstructed_hint_snapshot_with_hook(
             }
         }
     }
-    hints.load_prompt_snapshot_with_hook(working_dir, after_top_level_read)
+    hints.load_prompt_snapshot_with_hook(working_dir, output_limit, after_top_level_read)
 }
 
 pub struct GooseInferenceRequestPreparer<'a> {
@@ -76,12 +78,15 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         }
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
-        let hint_snapshot = reconstructed_hint_snapshot(conversation, &session.working_dir);
-        let system_prompt = self
-            .prompt_manager
-            .lock()
-            .await
-            .build_system_prompt_from_snapshot(input.prompt_parts, goose_mode, hint_snapshot);
+        let mut prompt_manager = self.prompt_manager.lock().await;
+        let hint_output_limit = prompt_manager.hint_output_limit(&input.prompt_parts, goose_mode);
+        let hint_snapshot =
+            reconstructed_hint_snapshot(conversation, &session.working_dir, hint_output_limit);
+        let system_prompt = prompt_manager.build_system_prompt_from_snapshot(
+            input.prompt_parts,
+            goose_mode,
+            hint_snapshot,
+        );
         let turn = messages_since_kickoff(conversation)?;
         let turn_start = turn
             .first()
@@ -114,7 +119,6 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hints::load_hints::PROMPT_HINT_BOUNDARY_BYTES;
     use crate::hints::{GOOSE_HINTS_FILENAME, MAX_HINT_OUTPUT_BYTES};
     use rmcp::model::CallToolRequestParams;
     use std::fs;
@@ -137,9 +141,12 @@ mod tests {
             Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
         )]);
 
-        let snapshot = reconstructed_hint_snapshot_with_hook(&conversation, project.path(), || {
-            fs::write(&root_hints, format!("{}ROOT_V2", "v".repeat(700 * 1024))).unwrap()
-        });
+        let snapshot = reconstructed_hint_snapshot_with_hook(
+            &conversation,
+            project.path(),
+            MAX_HINT_OUTPUT_BYTES,
+            || fs::write(&root_hints, format!("{}ROOT_V2", "v".repeat(700 * 1024))).unwrap(),
+        );
         fs::write(&root_hints, "ROOT_V3").unwrap();
 
         let prompt = PromptManager::new().build_system_prompt_from_snapshot(
@@ -157,7 +164,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn prompt_snapshots_reserve_both_adjacent_separators() {
+    fn prompt_snapshots_reserve_only_actual_adjacent_separators() {
         let config_root = tempfile::tempdir().unwrap();
         let _guard = env_lock::lock_env([
             (
@@ -174,8 +181,7 @@ mod tests {
             .load_snapshot(project.path())
             .len()
             - MARKER.len();
-        let allowed_content_bytes =
-            MAX_HINT_OUTPUT_BYTES - PROMPT_HINT_BOUNDARY_BYTES - framing_bytes;
+        let allowed_content_bytes = MAX_HINT_OUTPUT_BYTES - framing_bytes;
         fs::write(
             &hints_path,
             format!(
@@ -187,16 +193,33 @@ mod tests {
         .unwrap();
 
         let conversation = Conversation::new_unvalidated(Vec::<Message>::new());
-        let snapshot = reconstructed_hint_snapshot(&conversation, project.path());
-        assert_eq!(
-            snapshot.len() + PROMPT_HINT_BOUNDARY_BYTES,
-            MAX_HINT_OUTPUT_BYTES
-        );
-
         let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap();
+        let mut bare = PromptManager::with_timestamp(timestamp);
+        bare.set_system_prompt_override("base".to_string());
+        let bare_limit = bare.hint_output_limit(&[], GooseMode::Auto);
+        assert_eq!(bare_limit, MAX_HINT_OUTPUT_BYTES);
+        let bare_snapshot = reconstructed_hint_snapshot(&conversation, project.path(), bare_limit);
+        assert_eq!(bare_snapshot.len(), MAX_HINT_OUTPUT_BYTES);
+        assert!(bare
+            .build_system_prompt_from_snapshot(Vec::new(), GooseMode::Auto, bare_snapshot)
+            .contains(MARKER));
+
         let mut state_machine = PromptManager::with_timestamp(timestamp);
         state_machine.set_system_prompt_override("base".to_string());
         state_machine.add_system_prompt_extra("caller".to_string(), "CALLER".to_string());
+        let crowded_limit = state_machine.hint_output_limit(&[], GooseMode::Chat);
+        assert_eq!(crowded_limit, MAX_HINT_OUTPUT_BYTES - 4);
+        fs::write(
+            &hints_path,
+            format!(
+                "{}{}",
+                "x".repeat(crowded_limit - framing_bytes - MARKER.len()),
+                MARKER
+            ),
+        )
+        .unwrap();
+        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), crowded_limit);
+        assert_eq!(snapshot.len(), crowded_limit);
         let state_machine_prompt =
             state_machine.build_system_prompt_from_snapshot(Vec::new(), GooseMode::Chat, snapshot);
         assert!(state_machine_prompt.contains(MARKER));
@@ -213,12 +236,14 @@ mod tests {
             &hints_path,
             format!(
                 "{}{}",
-                "x".repeat(allowed_content_bytes + 1 - MARKER.len()),
+                "x".repeat(crowded_limit - framing_bytes + 1 - MARKER.len()),
                 MARKER
             ),
         )
         .unwrap();
-        assert!(reconstructed_hint_snapshot(&conversation, project.path()).is_empty());
+        assert!(
+            reconstructed_hint_snapshot(&conversation, project.path(), crowded_limit).is_empty()
+        );
         let mut legacy = PromptManager::with_timestamp(timestamp);
         legacy.set_system_prompt_override("base".to_string());
         legacy.add_system_prompt_extra("caller".to_string(), "CALLER".to_string());
@@ -266,7 +291,8 @@ mod tests {
         state_machine.set_system_prompt_override("base".to_string());
         state_machine.add_system_prompt_extra("caller".to_string(), "CALLER_EXTRA".to_string());
         state_machine.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
-        let snapshot = reconstructed_hint_snapshot(&conversation, project.path());
+        let output_limit = state_machine.hint_output_limit(&[], GooseMode::Auto);
+        let snapshot = reconstructed_hint_snapshot(&conversation, project.path(), output_limit);
         assert!(snapshot.find("ROOT_HINT").unwrap() < snapshot.find("NESTED_HINT").unwrap());
         let state_machine_prompt =
             state_machine.build_system_prompt_from_snapshot(Vec::new(), GooseMode::Auto, snapshot);
