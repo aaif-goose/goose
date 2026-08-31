@@ -5,7 +5,9 @@ use std::{
 };
 
 use crate::config::paths::Paths;
-use crate::hints::import_files::{read_referenced_files_with_limit, MAX_HINT_OUTPUT_BYTES};
+use crate::hints::import_files::{
+    read_referenced_files_with_limit_and_input_budget, HintInputBudget, MAX_HINT_OUTPUT_BYTES,
+};
 use crate::utils::sanitize_unicode_tags;
 
 pub const GOOSE_HINTS_FILENAME: &str = ".goosehints";
@@ -121,11 +123,13 @@ impl SubdirectoryHintTracker {
         let pending = std::mem::take(&mut self.pending_dirs);
         self.hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
-        let mut snapshot = load_hint_files_with_limit(
+        let mut input_budget = HintInputBudget::new();
+        let mut snapshot = load_hint_files_with_limit_and_input_budget(
             working_dir,
             &self.hints_filenames,
             &ignore_patterns,
             output_limit,
+            &mut input_budget,
         );
         after_top_level_read();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -162,6 +166,7 @@ impl SubdirectoryHintTracker {
                 &canonical_working_dir,
                 &self.hints_filenames,
                 directory_output_limit,
+                &mut input_budget,
             ) {
                 snapshot.push_str(separator);
                 snapshot.push_str(&content);
@@ -177,11 +182,13 @@ impl SubdirectoryHintTracker {
         }
 
         self.hints_filenames = get_context_filenames();
-        let top_level_output_bytes = load_hint_files_with_limit(
+        let mut input_budget = HintInputBudget::new();
+        let top_level_output_bytes = load_hint_files_with_limit_and_input_budget(
             working_dir,
             &self.hints_filenames,
             &build_gitignore(working_dir),
             MAX_HINT_OUTPUT_BYTES,
+            &mut input_budget,
         )
         .len();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -226,6 +233,7 @@ impl SubdirectoryHintTracker {
                 &canonical_working_dir,
                 &self.hints_filenames,
                 output_limit,
+                &mut input_budget,
             ) {
                 self.incremental_output_bytes += incremental_separator_len + content.len();
                 self.emitted_dir_set.insert(dir.clone());
@@ -251,6 +259,7 @@ fn load_hints_from_directory(
     working_dir: &Path,
     hints_filenames: &[String],
     output_limit: usize,
+    input_budget: &mut HintInputBudget,
 ) -> Option<String> {
     if !directory.is_dir() || !directory.is_absolute() {
         return None;
@@ -286,6 +295,7 @@ fn load_hints_from_directory(
                     import_boundary,
                     &gitignore,
                     output_limit,
+                    input_budget,
                 ) {
                     has_hints = true;
                 }
@@ -310,6 +320,7 @@ fn append_hint_file(
     import_boundary: &Path,
     ignore_patterns: &Gitignore,
     output_limit: usize,
+    input_budget: &mut HintInputBudget,
 ) -> bool {
     let Some(used_with_framing) = output.len().checked_add(framing.len()) else {
         return false;
@@ -319,13 +330,14 @@ fn append_hint_file(
     };
 
     let mut visited = HashSet::new();
-    let expanded = read_referenced_files_with_limit(
+    let expanded = read_referenced_files_with_limit_and_input_budget(
         hints_path,
         import_boundary,
         &mut visited,
         0,
         ignore_patterns,
         available,
+        input_budget,
     );
     if expanded.is_empty() {
         return false;
@@ -412,6 +424,22 @@ pub(crate) fn load_hint_files_with_limit(
     ignore_patterns: &Gitignore,
     output_limit: usize,
 ) -> String {
+    load_hint_files_with_limit_and_input_budget(
+        cwd,
+        hints_filenames,
+        ignore_patterns,
+        output_limit,
+        &mut HintInputBudget::new(),
+    )
+}
+
+fn load_hint_files_with_limit_and_input_budget(
+    cwd: &Path,
+    hints_filenames: &[String],
+    ignore_patterns: &Gitignore,
+    output_limit: usize,
+    input_budget: &mut HintInputBudget,
+) -> String {
     let mut global_hints_paths: Vec<PathBuf> = hints_filenames
         .iter()
         .map(|name| Paths::in_config_dir(name))
@@ -443,6 +471,7 @@ pub(crate) fn load_hint_files_with_limit(
                 hints_dir,
                 &global_ignore_patterns,
                 output_limit,
+                input_budget,
             ) {
                 has_global_hints = true;
             }
@@ -472,6 +501,7 @@ pub(crate) fn load_hint_files_with_limit(
                     import_boundary,
                     ignore_patterns,
                     output_limit,
+                    input_budget,
                 ) {
                     has_local_hints = true;
                 }
@@ -551,6 +581,7 @@ mod tests {
 
         let gitignore = create_dummy_gitignore();
         let mut output = String::new();
+        let mut input_budget = HintInputBudget::new();
         let appended = append_hint_file(
             &mut output,
             "header\n",
@@ -558,6 +589,7 @@ mod tests {
             dir.path(),
             &gitignore,
             64,
+            &mut input_budget,
         );
 
         assert!(appended);
@@ -589,6 +621,33 @@ mod tests {
         assert_eq!(hints.matches("A1").count(), 300 * 1024);
         assert!(!hints.contains("B2"));
         assert!(hints.ends_with("third hint"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn top_level_hint_files_share_one_raw_input_budget() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([(
+            "GOOSE_PATH_ROOT",
+            Some(config_root.path().to_str().unwrap()),
+        )]);
+        let dir = TempDir::new().unwrap();
+        let tag_only_half_budget = "\u{E0001}".repeat(MAX_HINT_OUTPUT_BYTES / 8);
+        fs::write(dir.path().join("first.md"), &tag_only_half_budget).unwrap();
+        fs::write(dir.path().join("second.md"), &tag_only_half_budget).unwrap();
+        fs::write(dir.path().join("third.md"), "MUST_NOT_BE_READ").unwrap();
+
+        let hints = load_hint_files(
+            dir.path(),
+            &[
+                "first.md".to_string(),
+                "second.md".to_string(),
+                "third.md".to_string(),
+            ],
+            &create_dummy_gitignore(),
+        );
+
+        assert!(!hints.contains("MUST_NOT_BE_READ"));
     }
 
     #[test]

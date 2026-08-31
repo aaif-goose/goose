@@ -19,6 +19,18 @@ pub(crate) const MAX_HINT_OUTPUT_BYTES: usize = 1024 * 1024;
 const MAX_GIT_POINTER_BYTES: u64 = 4096;
 const MAX_HINT_INPUT_BYTES: usize = MAX_HINT_OUTPUT_BYTES;
 
+pub(crate) struct HintInputBudget {
+    remaining_bytes: usize,
+}
+
+impl HintInputBudget {
+    pub(crate) fn new() -> Self {
+        Self {
+            remaining_bytes: MAX_HINT_INPUT_BYTES,
+        }
+    }
+}
+
 struct FileReference {
     path: PathBuf,
     start: usize,
@@ -38,10 +50,15 @@ struct ImportBoundary {
 }
 
 impl ExpansionBudget {
+    #[cfg(test)]
     fn new(operations: usize, output_bytes: usize) -> Self {
+        Self::with_input_limit(operations, MAX_HINT_INPUT_BYTES, output_bytes)
+    }
+
+    fn with_input_limit(operations: usize, input_bytes: usize, output_bytes: usize) -> Self {
         Self {
             remaining_operations: operations,
-            remaining_input_bytes: MAX_HINT_INPUT_BYTES,
+            remaining_input_bytes: input_bytes,
             remaining_output_bytes: output_bytes,
             exhausted: false,
         }
@@ -581,15 +598,42 @@ pub(crate) fn read_referenced_files_with_limit(
     ignore_patterns: &Gitignore,
     output_limit: usize,
 ) -> String {
-    let mut budget = ExpansionBudget::new(MAX_REFERENCE_OPERATIONS, output_limit);
-    read_referenced_files_with_budget(
+    let mut input_budget = HintInputBudget::new();
+    read_referenced_files_with_limit_and_input_budget(
+        file_path,
+        import_boundary,
+        visited,
+        depth,
+        ignore_patterns,
+        output_limit,
+        &mut input_budget,
+    )
+}
+
+pub(crate) fn read_referenced_files_with_limit_and_input_budget(
+    file_path: &Path,
+    import_boundary: &Path,
+    visited: &mut HashSet<PathBuf>,
+    depth: usize,
+    ignore_patterns: &Gitignore,
+    output_limit: usize,
+    input_budget: &mut HintInputBudget,
+) -> String {
+    let mut budget = ExpansionBudget::with_input_limit(
+        MAX_REFERENCE_OPERATIONS,
+        input_budget.remaining_bytes,
+        output_limit,
+    );
+    let result = read_referenced_files_with_budget(
         file_path,
         import_boundary,
         visited,
         depth,
         ignore_patterns,
         &mut budget,
-    )
+    );
+    input_budget.remaining_bytes = budget.remaining_input_bytes;
+    result
 }
 
 #[cfg(test)]
