@@ -590,7 +590,8 @@ fn read_referenced_files_with_budget(
     )
 }
 
-pub(crate) fn read_referenced_files_with_limit(
+#[cfg(test)]
+fn read_referenced_files_with_limit(
     file_path: &Path,
     import_boundary: &Path,
     visited: &mut HashSet<PathBuf>,

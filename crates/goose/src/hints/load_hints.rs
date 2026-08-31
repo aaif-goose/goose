@@ -17,6 +17,20 @@ const PROJECT_HINTS_HEADER: &str =
     "### Project Hints\nThese are hints for working on the project in this directory.\n";
 const HINT_SEPARATOR: &str = "\n\n";
 
+struct HintLoadState {
+    input_budget: HintInputBudget,
+    loaded_hint_files: HashSet<PathBuf>,
+}
+
+impl HintLoadState {
+    fn new() -> Self {
+        Self {
+            input_budget: HintInputBudget::new(),
+            loaded_hint_files: HashSet::new(),
+        }
+    }
+}
+
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
 
@@ -121,13 +135,13 @@ impl SubdirectoryHintTracker {
         let pending = std::mem::take(&mut self.pending_dirs);
         self.hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
-        let mut input_budget = HintInputBudget::new();
-        let mut snapshot = load_hint_files_with_limit_and_input_budget(
+        let mut load_state = HintLoadState::new();
+        let mut snapshot = load_hint_files_with_state(
             working_dir,
             &self.hints_filenames,
             &ignore_patterns,
             output_limit,
-            &mut input_budget,
+            &mut load_state,
         );
         after_top_level_read();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -164,7 +178,7 @@ impl SubdirectoryHintTracker {
                 &canonical_working_dir,
                 &self.hints_filenames,
                 directory_output_limit,
-                &mut input_budget,
+                &mut load_state,
             ) {
                 snapshot.push_str(separator);
                 snapshot.push_str(&content);
@@ -178,13 +192,13 @@ impl SubdirectoryHintTracker {
     pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
         let pending = std::mem::take(&mut self.pending_dirs);
         self.hints_filenames = get_context_filenames();
-        let mut input_budget = HintInputBudget::new();
-        let top_level_output_bytes = load_hint_files_with_limit_and_input_budget(
+        let mut load_state = HintLoadState::new();
+        let top_level_output_bytes = load_hint_files_with_state(
             working_dir,
             &self.hints_filenames,
             &build_gitignore(working_dir),
             MAX_HINT_OUTPUT_BYTES,
-            &mut input_budget,
+            &mut load_state,
         )
         .len();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -229,11 +243,11 @@ impl SubdirectoryHintTracker {
                 continue;
             };
             if let Some(content) = load_hints_from_directory(
-                &dir,
+                dir,
                 &canonical_working_dir,
                 &self.hints_filenames,
                 output_limit,
-                &mut input_budget,
+                &mut load_state,
             ) {
                 incremental_output_bytes += incremental_separator_len + content.len();
                 next_emitted_hints.insert(dir.clone(), content);
@@ -271,7 +285,7 @@ fn load_hints_from_directory(
     working_dir: &Path,
     hints_filenames: &[String],
     output_limit: usize,
-    input_budget: &mut HintInputBudget,
+    load_state: &mut HintLoadState,
 ) -> Option<String> {
     if !directory.is_dir() || !directory.is_absolute() {
         return None;
@@ -307,7 +321,7 @@ fn load_hints_from_directory(
                     import_boundary,
                     &gitignore,
                     output_limit,
-                    input_budget,
+                    load_state,
                 ) {
                     has_hints = true;
                 }
@@ -332,8 +346,14 @@ fn append_hint_file(
     import_boundary: &Path,
     ignore_patterns: &Gitignore,
     output_limit: usize,
-    input_budget: &mut HintInputBudget,
+    load_state: &mut HintLoadState,
 ) -> bool {
+    if !load_state
+        .loaded_hint_files
+        .insert(hints_path.to_path_buf())
+    {
+        return false;
+    }
     let Some(used_with_framing) = output.len().checked_add(framing.len()) else {
         return false;
     };
@@ -349,7 +369,7 @@ fn append_hint_file(
         0,
         ignore_patterns,
         available,
-        input_budget,
+        &mut load_state.input_budget,
     );
     if expanded.is_empty() {
         return false;
@@ -436,21 +456,21 @@ pub(crate) fn load_hint_files_with_limit(
     ignore_patterns: &Gitignore,
     output_limit: usize,
 ) -> String {
-    load_hint_files_with_limit_and_input_budget(
+    load_hint_files_with_state(
         cwd,
         hints_filenames,
         ignore_patterns,
         output_limit,
-        &mut HintInputBudget::new(),
+        &mut HintLoadState::new(),
     )
 }
 
-fn load_hint_files_with_limit_and_input_budget(
+fn load_hint_files_with_state(
     cwd: &Path,
     hints_filenames: &[String],
     ignore_patterns: &Gitignore,
     output_limit: usize,
-    input_budget: &mut HintInputBudget,
+    load_state: &mut HintLoadState,
 ) -> String {
     let mut global_hints_paths: Vec<PathBuf> = hints_filenames
         .iter()
@@ -483,7 +503,7 @@ fn load_hint_files_with_limit_and_input_budget(
                 hints_dir,
                 &global_ignore_patterns,
                 output_limit,
-                input_budget,
+                load_state,
             ) {
                 has_global_hints = true;
             }
@@ -513,7 +533,7 @@ fn load_hint_files_with_limit_and_input_budget(
                     import_boundary,
                     ignore_patterns,
                     output_limit,
-                    input_budget,
+                    load_state,
                 ) {
                     has_local_hints = true;
                 }
@@ -593,7 +613,7 @@ mod tests {
 
         let gitignore = create_dummy_gitignore();
         let mut output = String::new();
-        let mut input_budget = HintInputBudget::new();
+        let mut load_state = HintLoadState::new();
         let appended = append_hint_file(
             &mut output,
             "header\n",
@@ -601,7 +621,7 @@ mod tests {
             dir.path(),
             &gitignore,
             64,
-            &mut input_budget,
+            &mut load_state,
         );
 
         assert!(appended);
@@ -1499,6 +1519,102 @@ End of hints"#;
         assert!(hints.contains("A1"));
         assert!(!hints.contains("B2"));
         assert!(hints.contains("third hint"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_emits_ancestor_hint_file_once_before_near_budget_descendant() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let ancestor = project_root.path().join("a");
+        let descendant = ancestor.join("b");
+        fs::create_dir_all(&descendant).unwrap();
+
+        const ANCESTOR_MARKER: &str = "ANCESTOR_MARKER";
+        const DESCENDANT_MARKER: &str = "DESCENDANT_MARKER";
+        let ancestor_payload_len = 500 * 1024;
+        fs::write(
+            ancestor.join(GOOSE_HINTS_FILENAME),
+            format!(
+                "{}{}",
+                "a".repeat(ancestor_payload_len - ANCESTOR_MARKER.len()),
+                ANCESTOR_MARKER
+            ),
+        )
+        .unwrap();
+
+        let ancestor_output_len = subdirectory_hints_header(&ancestor.canonicalize().unwrap())
+            .len()
+            + ancestor_payload_len;
+        let descendant_header_len =
+            subdirectory_hints_header(&descendant.canonicalize().unwrap()).len();
+        let descendant_payload_len = MAX_HINT_OUTPUT_BYTES
+            - ancestor_output_len
+            - HINT_SEPARATOR.len()
+            - descendant_header_len;
+        fs::write(
+            descendant.join(GOOSE_HINTS_FILENAME),
+            format!(
+                "{}{}",
+                "b".repeat(descendant_payload_len - DESCENDANT_MARKER.len()),
+                DESCENDANT_MARKER
+            ),
+        )
+        .unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for path in ["a/file.rs", "a/b/file.rs"] {
+            let arguments = serde_json::json!({ "path": path }).as_object().cloned();
+            tracker.record_tool_arguments(&arguments, project_root.path());
+        }
+        let hints = tracker.load_snapshot(project_root.path());
+
+        assert_eq!(hints.len(), MAX_HINT_OUTPUT_BYTES);
+        assert_eq!(hints.matches(ANCESTOR_MARKER).count(), 1);
+        assert!(hints.contains(DESCENDANT_MARKER));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    #[serial_test::serial]
+    fn tracker_preserves_lexical_scope_for_symlinked_hint_files() {
+        use std::os::unix::fs::symlink;
+
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let first = project_root.path().join("a");
+        let second = project_root.path().join("b");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        fs::write(project_root.path().join("shared-hints"), "@policy.md").unwrap();
+        fs::write(first.join("policy.md"), "FIRST_SCOPED_POLICY").unwrap();
+        fs::write(second.join("policy.md"), "SECOND_SCOPED_POLICY").unwrap();
+        symlink("../shared-hints", first.join(GOOSE_HINTS_FILENAME)).unwrap();
+        symlink("../shared-hints", second.join(GOOSE_HINTS_FILENAME)).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for path in ["a/file.rs", "b/file.rs"] {
+            let arguments = serde_json::json!({ "path": path }).as_object().cloned();
+            tracker.record_tool_arguments(&arguments, project_root.path());
+        }
+        let hints = tracker.load_snapshot(project_root.path());
+
+        assert!(hints.contains("FIRST_SCOPED_POLICY"));
+        assert!(hints.contains("SECOND_SCOPED_POLICY"));
     }
 
     #[test]
