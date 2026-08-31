@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::hints::load_hint_files;
+#[cfg(test)]
 use chrono::DateTime;
 use chrono::Utc;
 use indexmap::IndexMap;
@@ -7,16 +9,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
-use crate::hints::load_hints::build_gitignore;
-use crate::hints::{
-    get_context_filenames, load_hint_files, SubdirectoryHintTracker, MAX_HINT_OUTPUT_BYTES,
-};
+use crate::hints::load_hints::{build_gitignore, load_hint_files_with_limit};
+use crate::hints::{get_context_filenames, SubdirectoryHintTracker, MAX_HINT_OUTPUT_BYTES};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
     utils::sanitize_unicode_tags,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const PROMPT_EXTRA_SEPARATOR: &str = "\n\n";
 
@@ -55,6 +55,7 @@ pub struct SystemPromptBuilder<'a, M> {
     prompt_extras: IndexMap<String, String>,
     subagents_enabled: bool,
     hints: Option<String>,
+    hints_working_dir: Option<PathBuf>,
     code_execution_mode: bool,
     include_extensions: bool,
     goose_mode: Option<GooseMode>,
@@ -92,17 +93,13 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     }
 
     pub fn with_hints(mut self, working_dir: &Path) -> Self {
-        let hints_filenames = get_context_filenames();
-        let ignore_patterns = build_gitignore(working_dir);
-        let hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
-
-        if !hints.is_empty() {
-            self.hints = Some(hints);
-        }
+        self.hints = None;
+        self.hints_working_dir = Some(working_dir.to_path_buf());
         self
     }
 
     fn with_hint_snapshot(mut self, hints: String) -> Self {
+        self.hints_working_dir = None;
         if !hints.is_empty() {
             self.hints = Some(hints);
         }
@@ -137,6 +134,26 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             .goose_mode
             .unwrap_or_else(|| Config::global().get_goose_mode().unwrap_or_default());
 
+        let hints = if let Some(working_dir) = self.hints_working_dir.as_deref() {
+            let prompt_parts = self
+                .prompt_extras
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<Vec<_>>();
+            let output_limit = self.manager.hint_output_limit(&prompt_parts, goose_mode);
+            let hints_filenames = get_context_filenames();
+            let ignore_patterns = build_gitignore(working_dir);
+            let hints = load_hint_files_with_limit(
+                working_dir,
+                &hints_filenames,
+                &ignore_patterns,
+                output_limit,
+            );
+            (!hints.is_empty()).then_some(hints)
+        } else {
+            self.hints
+        };
+
         let context = SystemPromptContext {
             extensions: sanitized_extensions_info,
             current_date_time: self.manager.current_date_timestamp.clone(),
@@ -162,7 +179,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         system_prompt_extras.extend(self.prompt_extras);
 
         // Add hints if provided
-        if let Some(hints) = self.hints {
+        if let Some(hints) = hints {
             system_prompt_extras.shift_remove("hints");
             system_prompt_extras.insert("hints".to_string(), hints);
         }
@@ -333,6 +350,7 @@ impl PromptManager {
             prompt_extras: IndexMap::new(),
             subagents_enabled: false,
             hints: None,
+            hints_working_dir: None,
             code_execution_mode: false,
             include_extensions: true,
             goose_mode: None,
@@ -535,6 +553,84 @@ mod tests {
             .build();
         assert!(restored.contains("CALLER_HINTS"));
         assert!(!restored.contains("GENERATED_HINTS"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn public_with_hints_uses_the_final_prompt_layout_budget() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let hints_path = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
+        const MARKER: &str = "BOUNDARY_MARKER";
+        std::fs::write(&hints_path, MARKER).unwrap();
+        let hints_filenames = vec![crate::hints::GOOSE_HINTS_FILENAME.to_string()];
+        let ignore_patterns = build_gitignore(project.path());
+        let framing_bytes = load_hint_files_with_limit(
+            project.path(),
+            &hints_filenames,
+            &ignore_patterns,
+            MAX_HINT_OUTPUT_BYTES,
+        )
+        .len()
+            - MARKER.len();
+
+        let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
+        manager.add_system_prompt_extra("caller".to_string(), "CALLER_EXTRA".to_string());
+        let output_limit = manager.hint_output_limit(
+            &[("hints".to_string(), "PROMPT_HINTS".to_string())],
+            GooseMode::Chat,
+        );
+        assert_eq!(output_limit, MAX_HINT_OUTPUT_BYTES - 4);
+        std::fs::write(
+            &hints_path,
+            format!(
+                "{}{}",
+                "x".repeat(output_limit - framing_bytes - MARKER.len()),
+                MARKER
+            ),
+        )
+        .unwrap();
+
+        let exact = manager
+            .builder()
+            .with_hints(project.path())
+            .with_prompt_extras([("hints".to_string(), "PROMPT_HINTS".to_string())])
+            .with_goose_mode(GooseMode::Chat)
+            .build();
+        assert!(exact.contains(MARKER));
+        assert!(exact.contains("CALLER_EXTRA"));
+        assert!(!exact.contains("CALLER_HINTS"));
+        assert!(!exact.contains("PROMPT_HINTS"));
+
+        std::fs::write(
+            &hints_path,
+            format!(
+                "{}{}",
+                "x".repeat(output_limit + 1 - framing_bytes - MARKER.len()),
+                MARKER
+            ),
+        )
+        .unwrap();
+        let oversized = manager
+            .builder()
+            .with_hints(project.path())
+            .with_prompt_extras([("hints".to_string(), "PROMPT_HINTS".to_string())])
+            .with_goose_mode(GooseMode::Chat)
+            .build();
+        assert!(!oversized.contains(MARKER));
+        assert!(oversized.contains("PROMPT_HINTS"));
+
+        let caller_only = manager.builder().build();
+        assert!(caller_only.contains("CALLER_HINTS"));
+        assert!(!caller_only.contains("PROMPT_HINTS"));
     }
 
     #[test]
