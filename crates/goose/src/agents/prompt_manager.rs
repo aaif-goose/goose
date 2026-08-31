@@ -4,17 +4,11 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
-#[cfg(test)]
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::load_hints::{HintOutputReservation, HintSnapshot, HINT_EXTRA_SEPARATOR_BYTES};
-use crate::hints::SubdirectoryHintTracker;
-#[cfg(test)]
-use crate::hints::MAX_HINT_OUTPUT_BYTES;
-#[cfg(test)]
-use crate::hints::{get_context_filenames, load_hint_files};
+use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -27,7 +21,8 @@ pub struct PromptManager {
     system_prompt_extras: IndexMap<String, String>,
     current_date_timestamp: String,
     subdirectory_hint_tracker: SubdirectoryHintTracker,
-    generated_subdirectory_hint_keys: HashSet<String>,
+    last_hint_snapshot: Option<String>,
+    pending_hint_snapshot: Option<String>,
 }
 
 impl Default for PromptManager {
@@ -92,7 +87,6 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         self
     }
 
-    #[cfg(test)]
     pub fn with_hints(mut self, working_dir: &Path) -> Self {
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
@@ -203,7 +197,8 @@ impl PromptManager {
             // Filtering to an hour to balance user time accuracy and multi session prompt cache hits.
             current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00 %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
-            generated_subdirectory_hint_keys: HashSet::new(),
+            last_hint_snapshot: None,
+            pending_hint_snapshot: None,
         }
     }
 
@@ -214,19 +209,18 @@ impl PromptManager {
             system_prompt_extras: IndexMap::new(),
             current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
-            generated_subdirectory_hint_keys: HashSet::new(),
+            last_hint_snapshot: None,
+            pending_hint_snapshot: None,
         }
     }
 
     /// Add an additional instruction to the system prompt with a key
     /// Using the same key will replace the previous instruction
     pub fn add_system_prompt_extra(&mut self, key: String, instruction: String) {
-        self.generated_subdirectory_hint_keys.remove(&key);
         self.system_prompt_extras.insert(key, instruction);
     }
 
     pub fn remove_system_prompt_extra(&mut self, key: &str) {
-        self.generated_subdirectory_hint_keys.remove(key);
         self.system_prompt_extras.shift_remove(key);
     }
 
@@ -240,103 +234,19 @@ impl PromptManager {
     }
 
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
-        let hints = self.subdirectory_hint_tracker.load_hints(working_dir);
-        self.apply_subdirectory_hints(hints)
-    }
-
-    fn apply_subdirectory_hints(&mut self, hints: Vec<(String, String)>) -> bool {
-        let previous_hints: Vec<_> = self
-            .system_prompt_extras
-            .iter()
-            .filter(|(key, _)| self.generated_subdirectory_hint_keys.contains(*key))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
-
-        self.system_prompt_extras
-            .retain(|key, _| !self.generated_subdirectory_hint_keys.contains(key));
-        self.generated_subdirectory_hint_keys.clear();
-        let applied_hints: Vec<_> = hints
-            .into_iter()
-            .filter(|(key, _)| !self.system_prompt_extras.contains_key(key))
-            .collect();
-        let changed = previous_hints != applied_hints;
-
-        for (key, content) in applied_hints {
-            self.generated_subdirectory_hint_keys.insert(key.clone());
-            self.system_prompt_extras.insert(key, content);
-        }
+        let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir);
+        let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
+        self.pending_hint_snapshot = Some(snapshot);
         changed
     }
 
-    pub(crate) fn hint_output_reservation<'a>(
-        &self,
-        prompt_part_keys: impl IntoIterator<Item = &'a str>,
-        goose_mode: GooseMode,
-    ) -> HintOutputReservation {
-        #[derive(Hash, PartialEq, Eq)]
-        enum ReservationKey {
-            Extra(String),
-            SubdirectoryHints,
-            RootHints,
-        }
-
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        enum ReservationPart {
-            Extra,
-            Hint,
-        }
-
-        let prompt_part_keys = prompt_part_keys.into_iter().collect::<Vec<_>>();
-        let boundary_count = |include_subdirectories: bool, include_root: bool| {
-            let mut parts = IndexMap::new();
-            for key in self
-                .system_prompt_extras
-                .keys()
-                .filter(|key| !self.generated_subdirectory_hint_keys.contains(*key))
-            {
-                parts.insert(ReservationKey::Extra(key.clone()), ReservationPart::Extra);
-            }
-            if include_subdirectories {
-                parts.insert(ReservationKey::SubdirectoryHints, ReservationPart::Hint);
-            }
-            for key in &prompt_part_keys {
-                parts.insert(
-                    ReservationKey::Extra((*key).to_string()),
-                    ReservationPart::Extra,
-                );
-            }
-            if include_root {
-                parts.shift_remove(&ReservationKey::Extra("hints".to_string()));
-                parts.insert(ReservationKey::RootHints, ReservationPart::Hint);
-            }
-            if goose_mode == GooseMode::Chat {
-                parts.insert(
-                    ReservationKey::Extra("chat_mode".to_string()),
-                    ReservationPart::Extra,
-                );
-            }
-
-            let hint_boundaries = parts
-                .values()
-                .copied()
-                .collect::<Vec<_>>()
-                .windows(2)
-                .filter(|pair| pair.contains(&ReservationPart::Hint))
-                .count();
-            // Hint loading already charges separators between generated hint groups.
-            let charged_hint_boundaries =
-                (usize::from(include_subdirectories) + usize::from(include_root)).saturating_sub(1);
-            hint_boundaries.saturating_sub(charged_hint_boundaries)
-        };
-
-        let root_only_boundary_count = boundary_count(false, true);
-        let subdirectories_only_boundary_count = boundary_count(true, false);
-        let with_subdirectories_boundary_count = boundary_count(true, true);
-        HintOutputReservation::new(
-            root_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
-            subdirectories_only_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
-            with_subdirectories_boundary_count * HINT_EXTRA_SEPARATOR_BYTES,
-        )
+    fn take_fresh_hint_snapshot(&mut self, working_dir: &Path) -> String {
+        let snapshot = self
+            .pending_hint_snapshot
+            .take()
+            .unwrap_or_else(|| self.subdirectory_hint_tracker.load_snapshot(working_dir));
+        self.last_hint_snapshot = Some(snapshot.clone());
+        snapshot
     }
 
     pub fn build_system_prompt(
@@ -345,11 +255,7 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        let reservation = self
-            .hint_output_reservation(prompt_parts.iter().map(|(key, _)| key.as_str()), goose_mode);
-        let snapshot = self
-            .subdirectory_hint_tracker
-            .load_snapshot(working_dir, reservation);
+        let snapshot = self.take_fresh_hint_snapshot(working_dir);
         self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
     }
 
@@ -357,11 +263,10 @@ impl PromptManager {
         &mut self,
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
-        snapshot: HintSnapshot,
+        snapshot: String,
     ) -> String {
-        self.apply_subdirectory_hints(snapshot.subdirectories);
         self.builder()
-            .with_hint_snapshot(snapshot.top_level)
+            .with_hint_snapshot(snapshot)
             .with_prompt_extras(prompt_parts)
             .with_goose_mode(goose_mode)
             .without_extensions()
@@ -373,13 +278,9 @@ impl PromptManager {
         working_dir: &Path,
         goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
-        let reservation = self.hint_output_reservation(std::iter::empty(), goose_mode);
-        let snapshot = self
-            .subdirectory_hint_tracker
-            .load_snapshot(working_dir, reservation);
-        self.apply_subdirectory_hints(snapshot.subdirectories);
+        let snapshot = self.take_fresh_hint_snapshot(working_dir);
         self.builder()
-            .with_hint_snapshot(snapshot.top_level)
+            .with_hint_snapshot(snapshot)
             .with_goose_mode(goose_mode)
     }
 
@@ -416,18 +317,8 @@ impl PromptManager {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
-    use std::fs;
 
     use super::*;
-
-    const PROJECT_HINTS_HEADER: &str =
-        "### Project Hints\nThese are hints for working on the project in this directory.\n";
-
-    fn write_root_hints_with_output_len(project: &Path, output_len: usize, marker: &str) {
-        let content_len = output_len - PROJECT_HINTS_HEADER.len();
-        let content = format!("{marker}{}", "h".repeat(content_len - marker.len()));
-        fs::write(project.join(crate::hints::GOOSE_HINTS_FILENAME), content).unwrap();
-    }
 
     #[test]
     fn test_build_system_prompt_sanitizes_override() {
@@ -485,67 +376,8 @@ mod tests {
     }
 
     #[test]
-    fn caller_hints_key_does_not_fragment_generated_hint_budget() {
-        let mut manager = PromptManager::new();
-        manager.set_system_prompt_override("base prompt".to_string());
-        manager.add_system_prompt_extra("first".to_string(), "CALLER_FIRST".to_string());
-        manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
-        manager.add_system_prompt_extra("last".to_string(), "CALLER_LAST".to_string());
-
-        let reservation = manager.hint_output_reservation(std::iter::empty(), GooseMode::Auto);
-        let hint_content_bytes =
-            MAX_HINT_OUTPUT_BYTES - reservation.with_subdirectories - HINT_EXTRA_SEPARATOR_BYTES;
-        let root_len = hint_content_bytes / 2;
-        let subdirectory_len = hint_content_bytes - root_len;
-        let root_hints = format!("ROOT_HINT{}", "r".repeat(root_len - "ROOT_HINT".len()));
-        let subdirectory_hints = format!(
-            "SUBDIRECTORY_HINT{}",
-            "s".repeat(subdirectory_len - "SUBDIRECTORY_HINT".len())
-        );
-        let snapshot = HintSnapshot {
-            top_level: root_hints.clone(),
-            subdirectories: vec![(
-                "subdir_hints:nested".to_string(),
-                subdirectory_hints.clone(),
-            )],
-        };
-
-        assert_eq!(
-            root_hints.len()
-                + subdirectory_hints.len()
-                + HINT_EXTRA_SEPARATOR_BYTES
-                + reservation.with_subdirectories,
-            MAX_HINT_OUTPUT_BYTES
-        );
-
-        let prompt =
-            manager.build_system_prompt_from_snapshot(Vec::new(), GooseMode::Auto, snapshot);
-        let extras = prompt
-            .split_once("# Additional Instructions:\n\n")
-            .unwrap()
-            .1
-            .split("\n\n")
-            .collect::<Vec<_>>();
-        let is_generated_hint =
-            |extra: &str| extra.starts_with("ROOT_HINT") || extra.starts_with("SUBDIRECTORY_HINT");
-        let hint_boundary_count = extras
-            .windows(2)
-            .filter(|pair| is_generated_hint(pair[0]) || is_generated_hint(pair[1]))
-            .count();
-        let actual_hint_output_bytes = root_hints.len()
-            + subdirectory_hints.len()
-            + hint_boundary_count * HINT_EXTRA_SEPARATOR_BYTES;
-
-        assert!(actual_hint_output_bytes <= MAX_HINT_OUTPUT_BYTES);
-        assert_eq!(extras[0], "CALLER_FIRST");
-        assert_eq!(extras[1], "CALLER_LAST");
-        assert_eq!(extras[2], subdirectory_hints);
-        assert_eq!(extras[3], root_hints);
-    }
-
-    #[test]
     #[serial_test::serial]
-    fn hint_refresh_preserves_caller_owned_keys_and_removes_stale_generated_keys() {
+    fn legacy_hint_refresh_hands_the_same_snapshot_to_the_next_build() {
         let config_root = tempfile::tempdir().unwrap();
         let _guard = env_lock::lock_env([
             (
@@ -555,272 +387,43 @@ mod tests {
             ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
         ]);
         let project = tempfile::tempdir().unwrap();
-        let first = project.path().join("first");
-        let second = project.path().join("second");
-        fs::create_dir(&first).unwrap();
-        fs::create_dir(&second).unwrap();
-        let first_hints = first.join(crate::hints::GOOSE_HINTS_FILENAME);
-        let second_hints = second.join(crate::hints::GOOSE_HINTS_FILENAME);
-        fs::write(&first_hints, "first generated hints").unwrap();
-        fs::write(&second_hints, "second generated hints").unwrap();
-
-        let mut manager = PromptManager::new();
-        manager.add_system_prompt_extra(
-            "subdir_hints:caller".to_string(),
-            "caller namespace content".to_string(),
-        );
-        for path in ["first/file.rs", "second/file.rs"] {
-            let arguments = serde_json::json!({ "path": path }).as_object().cloned();
-            manager.record_tool_arguments(&arguments, project.path());
-        }
-        assert!(manager.load_subdirectory_hints(project.path()));
-
-        let first_key = format!("subdir_hints:{}", first.canonicalize().unwrap().display());
-        let second_key = format!("subdir_hints:{}", second.canonicalize().unwrap().display());
-        assert!(manager
-            .generated_subdirectory_hint_keys
-            .contains(&first_key));
-        assert!(manager
-            .generated_subdirectory_hint_keys
-            .contains(&second_key));
-
-        manager.add_system_prompt_extra(first_key.clone(), "caller override".to_string());
-        fs::remove_file(first_hints).unwrap();
-        fs::remove_file(second_hints).unwrap();
-        assert!(manager.load_subdirectory_hints(project.path()));
-
-        assert_eq!(
-            manager
-                .system_prompt_extras
-                .get("subdir_hints:caller")
-                .map(String::as_str),
-            Some("caller namespace content")
-        );
-        assert_eq!(
-            manager
-                .system_prompt_extras
-                .get(&first_key)
-                .map(String::as_str),
-            Some("caller override")
-        );
-        assert!(!manager.system_prompt_extras.contains_key(&second_key));
-        assert!(manager.generated_subdirectory_hint_keys.is_empty());
-    }
-
-    #[test]
-    fn root_and_subdirectory_hints_share_one_output_limit() {
-        let project = tempfile::tempdir().unwrap();
         let nested = project.path().join("nested");
-        fs::create_dir(&nested).unwrap();
-        fs::write(
-            project.path().join(crate::hints::GOOSE_HINTS_FILENAME),
-            format!("{}ROOT_MARKER", "r".repeat(600 * 1024)),
-        )
-        .unwrap();
-        fs::write(
-            nested.join(crate::hints::GOOSE_HINTS_FILENAME),
-            format!("{}NESTED_MARKER", "n".repeat(600 * 1024)),
-        )
-        .unwrap();
-
-        let mut manager = PromptManager::new();
-        let arguments = serde_json::json!({ "path": "nested/file.txt" })
-            .as_object()
-            .cloned();
-        manager.record_tool_arguments(&arguments, project.path());
-        assert!(!manager.load_subdirectory_hints(project.path()));
-
-        let prompt = manager.builder().with_hints(project.path()).build();
-        let hints_filenames = get_context_filenames();
-        let ignore_patterns = build_gitignore(project.path());
-        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
-        let subdirectory_hint_bytes: usize = manager
-            .system_prompt_extras
-            .iter()
-            .filter(|(key, _)| key.starts_with("subdir_hints:"))
-            .map(|(_, value)| value.len())
-            .sum();
-        let hint_count = usize::from(!top_level_hints.is_empty())
-            + manager
-                .system_prompt_extras
-                .keys()
-                .filter(|key| key.starts_with("subdir_hints:"))
-                .count();
-        let separator_bytes = hint_count.saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
-
-        assert!(
-            top_level_hints.len() + subdirectory_hint_bytes + separator_bytes
-                <= MAX_HINT_OUTPUT_BYTES
-        );
-        assert!(prompt.contains("ROOT_MARKER"));
-        assert!(!prompt.contains("NESTED_MARKER"));
-    }
-
-    #[test]
-    fn growing_root_hints_reclaims_subdirectory_output_budget() {
-        let project = tempfile::tempdir().unwrap();
-        let nested = project.path().join("nested");
-        fs::create_dir(&nested).unwrap();
+        std::fs::create_dir(&nested).unwrap();
         let root_hints = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
-        fs::write(&root_hints, "initial root hints").unwrap();
-        fs::write(
+        std::fs::write(&root_hints, "ROOT_V1").unwrap();
+        std::fs::write(
             nested.join(crate::hints::GOOSE_HINTS_FILENAME),
-            format!("{}NESTED_MARKER", "n".repeat(400 * 1024)),
+            format!("{}NESTED_HINT", "n".repeat(400 * 1024)),
         )
         .unwrap();
 
         let mut manager = PromptManager::new();
-        let arguments = serde_json::json!({ "path": "nested/file.txt" })
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
             .as_object()
             .cloned();
         manager.record_tool_arguments(&arguments, project.path());
-        assert!(manager.load_subdirectory_hints(project.path()));
-
-        fs::write(
-            &root_hints,
-            format!("{}ROOT_MARKER", "r".repeat(700 * 1024)),
-        )
-        .unwrap();
-        let prompt = manager
+        let initial = manager
             .builder_with_fresh_hints(project.path(), GooseMode::Auto)
             .build();
-        let hints_filenames = get_context_filenames();
-        let ignore_patterns = build_gitignore(project.path());
-        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
-        let subdirectory_hint_bytes: usize = manager
-            .system_prompt_extras
-            .iter()
-            .filter(|(key, _)| key.starts_with("subdir_hints:"))
-            .map(|(_, value)| value.len())
-            .sum();
-        let hint_count = usize::from(!top_level_hints.is_empty())
-            + manager
-                .system_prompt_extras
-                .keys()
-                .filter(|key| key.starts_with("subdir_hints:"))
-                .count();
-        let separator_bytes = hint_count.saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
+        assert!(initial.contains("ROOT_V1"));
+        assert!(initial.contains("NESTED_HINT"));
 
-        assert!(
-            top_level_hints.len() + subdirectory_hint_bytes + separator_bytes
-                <= MAX_HINT_OUTPUT_BYTES
-        );
-        assert!(prompt.contains("ROOT_MARKER"));
-        assert!(!prompt.contains("NESTED_MARKER"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn legacy_chat_hints_reserve_trailing_separator_at_exact_limit() {
-        let config_root = tempfile::tempdir().unwrap();
-        let _guard = env_lock::lock_env([
-            (
-                "GOOSE_PATH_ROOT",
-                Some(config_root.path().to_str().unwrap()),
-            ),
-            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
-        ]);
-        let project = tempfile::tempdir().unwrap();
-        write_root_hints_with_output_len(
-            project.path(),
-            MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES,
-            "CHAT_BOUNDARY",
-        );
-
-        let mut manager = PromptManager::new();
-        let builder = manager.builder_with_fresh_hints(project.path(), GooseMode::Chat);
-        assert_eq!(
-            builder.hints.as_ref().unwrap().len() + HINT_EXTRA_SEPARATOR_BYTES,
-            MAX_HINT_OUTPUT_BYTES
-        );
-        assert!(builder.build().contains("CHAT_BOUNDARY"));
-
-        write_root_hints_with_output_len(project.path(), MAX_HINT_OUTPUT_BYTES, "CHAT_OVERFLOW");
-        let prompt = manager
-            .builder_with_fresh_hints(project.path(), GooseMode::Chat)
+        std::fs::write(&root_hints, format!("{}ROOT_V2", "r".repeat(700 * 1024))).unwrap();
+        assert!(manager.load_subdirectory_hints(project.path()));
+        std::fs::write(&root_hints, "ROOT_V3").unwrap();
+        let retained = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
             .build();
-        assert!(!prompt.contains("CHAT_OVERFLOW"));
-    }
+        assert!(retained.contains("ROOT_V2"));
+        assert!(!retained.contains("ROOT_V3"));
+        assert!(!retained.contains("NESTED_HINT"));
 
-    #[test]
-    #[serial_test::serial]
-    fn legacy_chat_hints_reserve_caller_extra_boundary_at_exact_limit() {
-        let config_root = tempfile::tempdir().unwrap();
-        let _guard = env_lock::lock_env([
-            (
-                "GOOSE_PATH_ROOT",
-                Some(config_root.path().to_str().unwrap()),
-            ),
-            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
-        ]);
-        let project = tempfile::tempdir().unwrap();
-        let reserved_output_bytes = HINT_EXTRA_SEPARATOR_BYTES * 2;
-        write_root_hints_with_output_len(
-            project.path(),
-            MAX_HINT_OUTPUT_BYTES - reserved_output_bytes,
-            "CALLER_BOUNDARY",
-        );
-
-        let mut manager = PromptManager::new();
-        manager.add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
-        let builder = manager.builder_with_fresh_hints(project.path(), GooseMode::Chat);
-        assert_eq!(
-            builder.hints.as_ref().unwrap().len() + reserved_output_bytes,
-            MAX_HINT_OUTPUT_BYTES
-        );
-        let prompt = builder.build();
-        assert!(prompt.contains("caller instruction"));
-        assert!(prompt.contains("CALLER_BOUNDARY"));
-
-        write_root_hints_with_output_len(
-            project.path(),
-            MAX_HINT_OUTPUT_BYTES - HINT_EXTRA_SEPARATOR_BYTES,
-            "CALLER_OVERFLOW",
-        );
-        let prompt = manager
-            .builder_with_fresh_hints(project.path(), GooseMode::Chat)
+        assert!(manager.load_subdirectory_hints(project.path()));
+        let refreshed = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
             .build();
-        assert!(!prompt.contains("CALLER_OVERFLOW"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn legacy_root_hints_share_one_boundary_with_contiguous_prompt_extras() {
-        let config_root = tempfile::tempdir().unwrap();
-        let _guard = env_lock::lock_env([
-            (
-                "GOOSE_PATH_ROOT",
-                Some(config_root.path().to_str().unwrap()),
-            ),
-            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
-        ]);
-        let project = tempfile::tempdir().unwrap();
-        let mut manager = PromptManager::new();
-        manager.add_system_prompt_extra("caller".to_string(), "caller instruction".to_string());
-        let reservation = manager.hint_output_reservation(["extensions"], GooseMode::Auto);
-        assert_eq!(reservation.root_only, HINT_EXTRA_SEPARATOR_BYTES);
-        assert_eq!(
-            reservation.with_subdirectories,
-            2 * HINT_EXTRA_SEPARATOR_BYTES
-        );
-        write_root_hints_with_output_len(
-            project.path(),
-            MAX_HINT_OUTPUT_BYTES - reservation.root_only,
-            "ROOT_ONLY_BOUNDARY",
-        );
-
-        let prompt = manager.build_system_prompt(
-            project.path(),
-            vec![(
-                "extensions".to_string(),
-                "operation prompt instruction".to_string(),
-            )],
-            GooseMode::Auto,
-        );
-
-        assert!(prompt.contains("caller instruction"));
-        assert!(prompt.contains("operation prompt instruction"));
-        assert!(prompt.contains("ROOT_ONLY_BOUNDARY"));
+        assert!(refreshed.contains("ROOT_V3"));
+        assert!(refreshed.contains("NESTED_HINT"));
     }
 
     #[test]

@@ -29,19 +29,6 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
 
-#[cfg(test)]
-fn reconstructed_subdirectory_hints(
-    conversation: &Conversation,
-    working_dir: &std::path::Path,
-) -> Vec<(String, String)> {
-    super::inference_preparation::reconstructed_hint_snapshot(
-        conversation,
-        working_dir,
-        crate::hints::HINT_EXTRA_SEPARATOR_BYTES,
-    )
-    .subdirectories
-}
-
 #[derive(Clone, Copy)]
 enum ToolCategory {
     Shell,
@@ -1030,11 +1017,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hints::{
-        build_gitignore, get_context_filenames, load_hint_files, GOOSE_HINTS_FILENAME,
-        HINT_EXTRA_SEPARATOR_BYTES, MAX_HINT_OUTPUT_BYTES,
-    };
-    use std::fs;
 
     #[test]
     fn externally_dispatched_observations_are_not_pending_execution() {
@@ -1085,91 +1067,5 @@ mod tests {
             notification.params,
             Some(serde_json::json!({ "event_type": "app_updated" }))
         );
-    }
-
-    #[test]
-    fn reconstructed_hints_reserve_the_top_level_output_budget() {
-        let project = tempfile::tempdir().unwrap();
-        let nested = project.path().join("nested");
-        fs::create_dir(&nested).unwrap();
-        fs::write(
-            project.path().join(GOOSE_HINTS_FILENAME),
-            format!("{}ROOT_MARKER", "r".repeat(600 * 1024)),
-        )
-        .unwrap();
-        fs::write(
-            nested.join(GOOSE_HINTS_FILENAME),
-            format!("{}NESTED_MARKER", "n".repeat(600 * 1024)),
-        )
-        .unwrap();
-
-        let arguments = serde_json::json!({ "path": "nested/file.rs" })
-            .as_object()
-            .unwrap()
-            .clone();
-        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
-            "read-nested",
-            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
-        )]);
-
-        let subdirectory_hints = reconstructed_subdirectory_hints(&conversation, project.path());
-        let hints_filenames = get_context_filenames();
-        let ignore_patterns = build_gitignore(project.path());
-        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
-        let subdirectory_hint_bytes: usize = subdirectory_hints
-            .iter()
-            .map(|(_, content)| content.len())
-            .sum();
-        let hint_count = usize::from(!top_level_hints.is_empty()) + subdirectory_hints.len();
-        let separator_bytes = hint_count.saturating_sub(1) * HINT_EXTRA_SEPARATOR_BYTES;
-
-        assert!(
-            top_level_hints.len() + subdirectory_hint_bytes + separator_bytes
-                <= MAX_HINT_OUTPUT_BYTES
-        );
-        assert!(top_level_hints.contains("ROOT_MARKER"));
-        assert!(subdirectory_hints.is_empty());
-    }
-
-    #[test]
-    fn reconstructed_hints_reserve_separators_around_non_hint_extras() {
-        let project = tempfile::tempdir().unwrap();
-        let nested = project.path().join("nested");
-        fs::create_dir(&nested).unwrap();
-        fs::write(project.path().join(GOOSE_HINTS_FILENAME), "root hints").unwrap();
-
-        let arguments = serde_json::json!({ "path": "nested/file.rs" })
-            .as_object()
-            .unwrap()
-            .clone();
-        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
-            "read-nested",
-            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments)),
-        )]);
-        let hints_filenames = get_context_filenames();
-        let ignore_patterns = build_gitignore(project.path());
-        let top_level_hints = load_hint_files(project.path(), &hints_filenames, &ignore_patterns);
-        let header_bytes = format!(
-            "### Subdirectory Hints ({})\n",
-            nested.canonicalize().unwrap().display()
-        )
-        .len();
-        let nested_content_bytes = MAX_HINT_OUTPUT_BYTES
-            - top_level_hints.len()
-            - 2 * HINT_EXTRA_SEPARATOR_BYTES
-            - header_bytes;
-        let nested_hints = nested.join(GOOSE_HINTS_FILENAME);
-        fs::write(&nested_hints, "n".repeat(nested_content_bytes)).unwrap();
-
-        let subdirectory_hints = reconstructed_subdirectory_hints(&conversation, project.path());
-
-        assert_eq!(subdirectory_hints.len(), 1);
-        assert_eq!(
-            top_level_hints.len() + subdirectory_hints[0].1.len() + 2 * HINT_EXTRA_SEPARATOR_BYTES,
-            MAX_HINT_OUTPUT_BYTES
-        );
-
-        fs::write(&nested_hints, "n".repeat(nested_content_bytes + 1)).unwrap();
-        assert!(reconstructed_subdirectory_hints(&conversation, project.path()).is_empty());
     }
 }
