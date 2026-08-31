@@ -236,7 +236,7 @@ impl PromptManager {
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
         let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir);
         let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
-        self.pending_hint_snapshot = Some(snapshot);
+        self.pending_hint_snapshot = changed.then_some(snapshot);
         changed
     }
 
@@ -424,6 +424,14 @@ mod tests {
             .build();
         assert!(refreshed.contains("ROOT_V3"));
         assert!(refreshed.contains("NESTED_HINT"));
+
+        assert!(!manager.load_subdirectory_hints(project.path()));
+        std::fs::write(&root_hints, "ROOT_V4").unwrap();
+        let reread = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build();
+        assert!(reread.contains("ROOT_V4"));
+        assert!(!reread.contains("ROOT_V3"));
     }
 
     #[test]
