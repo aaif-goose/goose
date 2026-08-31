@@ -1,6 +1,6 @@
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -33,8 +33,7 @@ pub fn get_context_filenames() -> Vec<String> {
 pub struct SubdirectoryHintTracker {
     loaded_dirs: Vec<PathBuf>,
     loaded_dir_set: HashSet<PathBuf>,
-    emitted_dir_set: HashSet<PathBuf>,
-    incremental_output_bytes: usize,
+    emitted_hints: HashMap<PathBuf, String>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
 }
@@ -50,8 +49,7 @@ impl SubdirectoryHintTracker {
         Self {
             loaded_dirs: Vec::new(),
             loaded_dir_set: HashSet::new(),
-            emitted_dir_set: HashSet::new(),
-            incremental_output_bytes: 0,
+            emitted_hints: HashMap::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
         }
@@ -175,12 +173,10 @@ impl SubdirectoryHintTracker {
         snapshot
     }
 
+    /// Returns changed subdirectory extras. An empty value retracts the content previously
+    /// emitted for that key when the current root snapshot no longer leaves room for it.
     pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
         let pending = std::mem::take(&mut self.pending_dirs);
-        if pending.is_empty() {
-            return Vec::new();
-        }
-
         self.hints_filenames = get_context_filenames();
         let mut input_budget = HintInputBudget::new();
         let top_level_output_bytes = load_hint_files_with_limit_and_input_budget(
@@ -195,7 +191,6 @@ impl SubdirectoryHintTracker {
             return Vec::new();
         };
 
-        let mut results = Vec::new();
         let mut attempted_dirs = HashSet::new();
         for dir in pending {
             let Ok(dir) = dir.canonicalize() else {
@@ -204,18 +199,23 @@ impl SubdirectoryHintTracker {
             if !dir.starts_with(&canonical_working_dir) || dir == canonical_working_dir {
                 continue;
             }
-            if !attempted_dirs.insert(dir.clone()) || self.emitted_dir_set.contains(&dir) {
+            if !attempted_dirs.insert(dir.clone()) {
                 continue;
             }
             if self.loaded_dir_set.insert(dir.clone()) {
                 self.loaded_dirs.push(dir.clone());
             }
+        }
+
+        let mut incremental_output_bytes = 0;
+        let mut next_emitted_hints = HashMap::new();
+        for dir in &self.loaded_dirs {
             let root_separator_len = if top_level_output_bytes > 0 {
                 HINT_SEPARATOR.len()
             } else {
                 0
             };
-            let incremental_separator_len = if self.incremental_output_bytes > 0 {
+            let incremental_separator_len = if incremental_output_bytes > 0 {
                 HINT_SEPARATOR.len()
             } else {
                 0
@@ -223,7 +223,7 @@ impl SubdirectoryHintTracker {
             let Some(output_limit) = MAX_HINT_OUTPUT_BYTES
                 .checked_sub(top_level_output_bytes)
                 .and_then(|remaining| remaining.checked_sub(root_separator_len))
-                .and_then(|remaining| remaining.checked_sub(self.incremental_output_bytes))
+                .and_then(|remaining| remaining.checked_sub(incremental_output_bytes))
                 .and_then(|remaining| remaining.checked_sub(incremental_separator_len))
             else {
                 continue;
@@ -235,11 +235,23 @@ impl SubdirectoryHintTracker {
                 output_limit,
                 &mut input_budget,
             ) {
-                self.incremental_output_bytes += incremental_separator_len + content.len();
-                self.emitted_dir_set.insert(dir.clone());
-                results.push((format!("subdir_hints:{}", dir.display()), content));
+                incremental_output_bytes += incremental_separator_len + content.len();
+                next_emitted_hints.insert(dir.clone(), content);
             }
         }
+
+        let mut results = Vec::new();
+        for dir in &self.loaded_dirs {
+            let previous = self.emitted_hints.get(dir);
+            let current = next_emitted_hints.get(dir);
+            if previous != current {
+                results.push((
+                    format!("subdir_hints:{}", dir.display()),
+                    current.cloned().unwrap_or_default(),
+                ));
+            }
+        }
+        self.emitted_hints = next_emitted_hints;
         results
     }
 }
@@ -1367,6 +1379,43 @@ End of hints"#;
             top_level_output_len + HINT_SEPARATOR.len() + retried[0].1.len(),
             MAX_HINT_OUTPUT_BYTES
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_load_new_hints_retracts_emitted_content_when_root_grows() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let nested = project_root.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join(GOOSE_HINTS_FILENAME), "n".repeat(600 * 1024)).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+        let emitted = tracker.load_new_hints(project_root.path());
+        assert_eq!(emitted.len(), 1);
+        assert!(emitted[0].1.len() > 600 * 1024);
+
+        fs::write(
+            project_root.path().join(GOOSE_HINTS_FILENAME),
+            "r".repeat(600 * 1024),
+        )
+        .unwrap();
+        let updates = tracker.load_new_hints(project_root.path());
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, emitted[0].0);
+        assert!(updates[0].1.is_empty());
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
     }
 
     #[test]
