@@ -177,6 +177,13 @@ impl SubdirectoryHintTracker {
         }
 
         self.hints_filenames = get_context_filenames();
+        let top_level_output_bytes = load_hint_files_with_limit(
+            working_dir,
+            &self.hints_filenames,
+            &build_gitignore(working_dir),
+            MAX_HINT_OUTPUT_BYTES,
+        )
+        .len();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
             return Vec::new();
         };
@@ -196,14 +203,21 @@ impl SubdirectoryHintTracker {
             if self.loaded_dir_set.insert(dir.clone()) {
                 self.loaded_dirs.push(dir.clone());
             }
-            let separator_len = if self.incremental_output_bytes == 0 {
-                0
-            } else {
+            let root_separator_len = if top_level_output_bytes > 0 {
                 HINT_SEPARATOR.len()
+            } else {
+                0
+            };
+            let incremental_separator_len = if self.incremental_output_bytes > 0 {
+                HINT_SEPARATOR.len()
+            } else {
+                0
             };
             let Some(output_limit) = MAX_HINT_OUTPUT_BYTES
-                .checked_sub(self.incremental_output_bytes)
-                .and_then(|remaining| remaining.checked_sub(separator_len))
+                .checked_sub(top_level_output_bytes)
+                .and_then(|remaining| remaining.checked_sub(root_separator_len))
+                .and_then(|remaining| remaining.checked_sub(self.incremental_output_bytes))
+                .and_then(|remaining| remaining.checked_sub(incremental_separator_len))
             else {
                 continue;
             };
@@ -213,7 +227,7 @@ impl SubdirectoryHintTracker {
                 &self.hints_filenames,
                 output_limit,
             ) {
-                self.incremental_output_bytes += separator_len + content.len();
+                self.incremental_output_bytes += incremental_separator_len + content.len();
                 self.emitted_dir_set.insert(dir.clone());
                 results.push((format!("subdir_hints:{}", dir.display()), content));
             }
@@ -1239,6 +1253,59 @@ End of hints"#;
         assert_eq!(retried.len(), 1);
         assert_eq!(
             first_output_len + HINT_SEPARATOR.len() + retried[0].1.len(),
+            MAX_HINT_OUTPUT_BYTES
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_load_new_hints_includes_top_level_hints_in_output_budget() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let nested = project_root.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(
+            project_root.path().join(GOOSE_HINTS_FILENAME),
+            "r".repeat(600 * 1024),
+        )
+        .unwrap();
+        let nested_hints = nested.join(GOOSE_HINTS_FILENAME);
+        fs::write(&nested_hints, "n".repeat(600 * 1024)).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
+
+        let top_level_output_len = load_hint_files(
+            project_root.path(),
+            &[GOOSE_HINTS_FILENAME.to_string()],
+            &build_gitignore(project_root.path()),
+        )
+        .len();
+        let nested_header_len = subdirectory_hints_header(&nested.canonicalize().unwrap()).len();
+        let exact_payload_len =
+            MAX_HINT_OUTPUT_BYTES - top_level_output_len - HINT_SEPARATOR.len() - nested_header_len;
+
+        fs::write(&nested_hints, "n".repeat(exact_payload_len + 1)).unwrap();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
+
+        fs::write(&nested_hints, "n".repeat(exact_payload_len)).unwrap();
+        tracker.record_tool_arguments(&arguments, project_root.path());
+        let retried = tracker.load_new_hints(project_root.path());
+        assert_eq!(retried.len(), 1);
+        assert_eq!(
+            top_level_output_len + HINT_SEPARATOR.len() + retried[0].1.len(),
             MAX_HINT_OUTPUT_BYTES
         );
     }
