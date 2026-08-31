@@ -32,6 +32,7 @@ pub struct SubdirectoryHintTracker {
     loaded_dirs: Vec<PathBuf>,
     loaded_dir_set: HashSet<PathBuf>,
     emitted_dir_set: HashSet<PathBuf>,
+    incremental_output_bytes: usize,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
 }
@@ -48,6 +49,7 @@ impl SubdirectoryHintTracker {
             loaded_dirs: Vec::new(),
             loaded_dir_set: HashSet::new(),
             emitted_dir_set: HashSet::new(),
+            incremental_output_bytes: 0,
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
         }
@@ -175,12 +177,24 @@ impl SubdirectoryHintTracker {
             if self.loaded_dir_set.insert(dir.clone()) {
                 self.loaded_dirs.push(dir.clone());
             }
+            let separator_len = if self.incremental_output_bytes == 0 {
+                0
+            } else {
+                HINT_SEPARATOR.len()
+            };
+            let Some(output_limit) = MAX_HINT_OUTPUT_BYTES
+                .checked_sub(self.incremental_output_bytes)
+                .and_then(|remaining| remaining.checked_sub(separator_len))
+            else {
+                continue;
+            };
             if let Some(content) = load_hints_from_directory(
                 &dir,
                 &canonical_working_dir,
                 &self.hints_filenames,
-                MAX_HINT_OUTPUT_BYTES,
+                output_limit,
             ) {
+                self.incremental_output_bytes += separator_len + content.len();
                 self.emitted_dir_set.insert(dir.clone());
                 results.push((format!("subdir_hints:{}", dir.display()), content));
             }
@@ -1159,6 +1173,61 @@ End of hints"#;
 
     #[test]
     #[serial_test::serial]
+    fn tracker_load_new_hints_shares_output_budget_across_calls() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project_root = TempDir::new().unwrap();
+        let first = project_root.path().join("first");
+        let second = project_root.path().join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        fs::write(first.join(GOOSE_HINTS_FILENAME), "a".repeat(600 * 1024)).unwrap();
+        let second_hints = second.join(GOOSE_HINTS_FILENAME);
+        fs::write(&second_hints, "b".repeat(600 * 1024)).unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let first_arguments = serde_json::json!({ "path": "first/file.rs" })
+            .as_object()
+            .cloned();
+        let second_arguments = serde_json::json!({ "path": "second/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&first_arguments, project_root.path());
+        tracker.record_tool_arguments(&second_arguments, project_root.path());
+
+        let initial = tracker.load_new_hints(project_root.path());
+        assert_eq!(initial.len(), 1);
+        let first_output_len = initial[0].1.len();
+
+        let second_header_len = subdirectory_hints_header(&second.canonicalize().unwrap()).len();
+        let payload_without_separator =
+            MAX_HINT_OUTPUT_BYTES - first_output_len - second_header_len;
+        fs::write(&second_hints, "b".repeat(payload_without_separator)).unwrap();
+        tracker.record_tool_arguments(&second_arguments, project_root.path());
+        assert!(tracker.load_new_hints(project_root.path()).is_empty());
+
+        fs::write(
+            &second_hints,
+            "b".repeat(payload_without_separator - HINT_SEPARATOR.len()),
+        )
+        .unwrap();
+        tracker.record_tool_arguments(&second_arguments, project_root.path());
+        let retried = tracker.load_new_hints(project_root.path());
+        assert_eq!(retried.len(), 1);
+        assert_eq!(
+            first_output_len + HINT_SEPARATOR.len() + retried[0].1.len(),
+            MAX_HINT_OUTPUT_BYTES
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn tracker_refreshes_context_filenames_before_building_snapshot() {
         let config_root = TempDir::new().unwrap();
         let _guard = env_lock::lock_env([
@@ -1439,7 +1508,8 @@ End of hints"#;
             serde_json::from_str(r#"{"path": "alias/file.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &project_root);
 
-        assert!(tracker.load_hints(&project_root).is_empty());
+        let hints = tracker.load_hints(&project_root);
+        assert!(!hints.contains("outside hints"));
     }
 
     #[cfg(unix)]
