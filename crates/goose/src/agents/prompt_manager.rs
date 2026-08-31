@@ -234,17 +234,19 @@ impl PromptManager {
     }
 
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
-        let snapshot = self.subdirectory_hint_tracker.load_snapshot(working_dir);
+        let snapshot = self
+            .subdirectory_hint_tracker
+            .load_prompt_snapshot(working_dir);
         let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
         self.pending_hint_snapshot = changed.then_some(snapshot);
         changed
     }
 
     fn take_fresh_hint_snapshot(&mut self, working_dir: &Path) -> String {
-        let snapshot = self
-            .pending_hint_snapshot
-            .take()
-            .unwrap_or_else(|| self.subdirectory_hint_tracker.load_snapshot(working_dir));
+        let snapshot = self.pending_hint_snapshot.take().unwrap_or_else(|| {
+            self.subdirectory_hint_tracker
+                .load_prompt_snapshot(working_dir)
+        });
         self.last_hint_snapshot = Some(snapshot.clone());
         snapshot
     }

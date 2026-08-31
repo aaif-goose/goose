@@ -39,7 +39,7 @@ fn reconstructed_hint_snapshot_with_hook(
             }
         }
     }
-    hints.load_snapshot_with_hook(working_dir, after_top_level_read)
+    hints.load_prompt_snapshot_with_hook(working_dir, after_top_level_read)
 }
 
 pub struct GooseInferenceRequestPreparer<'a> {
@@ -114,6 +114,7 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hints::load_hints::PROMPT_HINT_BOUNDARY_BYTES;
     use crate::hints::{GOOSE_HINTS_FILENAME, MAX_HINT_OUTPUT_BYTES};
     use rmcp::model::CallToolRequestParams;
     use std::fs;
@@ -152,6 +153,79 @@ mod tests {
         assert!(prompt.contains("NESTED_MARKER"));
         assert!(!prompt.contains("ROOT_V2"));
         assert!(!prompt.contains("ROOT_V3"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn prompt_snapshots_reserve_both_adjacent_separators() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let hints_path = project.path().join(GOOSE_HINTS_FILENAME);
+        const MARKER: &str = "BOUNDARY_MARKER";
+        fs::write(&hints_path, MARKER).unwrap();
+        let framing_bytes = SubdirectoryHintTracker::new()
+            .load_snapshot(project.path())
+            .len()
+            - MARKER.len();
+        let allowed_content_bytes =
+            MAX_HINT_OUTPUT_BYTES - PROMPT_HINT_BOUNDARY_BYTES - framing_bytes;
+        fs::write(
+            &hints_path,
+            format!(
+                "{}{}",
+                "x".repeat(allowed_content_bytes - MARKER.len()),
+                MARKER
+            ),
+        )
+        .unwrap();
+
+        let conversation = Conversation::new_unvalidated(Vec::<Message>::new());
+        let snapshot = reconstructed_hint_snapshot(&conversation, project.path());
+        assert_eq!(
+            snapshot.len() + PROMPT_HINT_BOUNDARY_BYTES,
+            MAX_HINT_OUTPUT_BYTES
+        );
+
+        let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap();
+        let mut state_machine = PromptManager::with_timestamp(timestamp);
+        state_machine.set_system_prompt_override("base".to_string());
+        state_machine.add_system_prompt_extra("caller".to_string(), "CALLER".to_string());
+        let state_machine_prompt =
+            state_machine.build_system_prompt_from_snapshot(Vec::new(), GooseMode::Chat, snapshot);
+        assert!(state_machine_prompt.contains(MARKER));
+
+        let mut legacy = PromptManager::with_timestamp(timestamp);
+        legacy.set_system_prompt_override("base".to_string());
+        legacy.add_system_prompt_extra("caller".to_string(), "CALLER".to_string());
+        let legacy_prompt = legacy
+            .builder_with_fresh_hints(project.path(), GooseMode::Chat)
+            .build();
+        assert_eq!(legacy_prompt, state_machine_prompt);
+
+        fs::write(
+            &hints_path,
+            format!(
+                "{}{}",
+                "x".repeat(allowed_content_bytes + 1 - MARKER.len()),
+                MARKER
+            ),
+        )
+        .unwrap();
+        assert!(reconstructed_hint_snapshot(&conversation, project.path()).is_empty());
+        let mut legacy = PromptManager::with_timestamp(timestamp);
+        legacy.set_system_prompt_override("base".to_string());
+        legacy.add_system_prompt_extra("caller".to_string(), "CALLER".to_string());
+        assert!(!legacy
+            .builder_with_fresh_hints(project.path(), GooseMode::Chat)
+            .build()
+            .contains(MARKER));
     }
 
     #[test]

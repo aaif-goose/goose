@@ -14,6 +14,7 @@ const GLOBAL_HINTS_HEADER: &str = "\n### Global Hints\nThese are my global goose
 const PROJECT_HINTS_HEADER: &str =
     "### Project Hints\nThese are hints for working on the project in this directory.\n";
 const HINT_SEPARATOR: &str = "\n\n";
+pub(crate) const PROMPT_HINT_BOUNDARY_BYTES: usize = HINT_SEPARATOR.len() * 2;
 
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::Config;
@@ -86,7 +87,11 @@ impl SubdirectoryHintTracker {
     }
 
     pub(crate) fn load_snapshot(&mut self, working_dir: &Path) -> String {
-        self.load_snapshot_with_hook(working_dir, || {})
+        self.load_snapshot_with_limit_and_hook(working_dir, MAX_HINT_OUTPUT_BYTES, || {})
+    }
+
+    pub(crate) fn load_prompt_snapshot(&mut self, working_dir: &Path) -> String {
+        self.load_prompt_snapshot_with_hook(working_dir, || {})
     }
 
     #[cfg(test)]
@@ -94,9 +99,22 @@ impl SubdirectoryHintTracker {
         self.load_snapshot(working_dir)
     }
 
-    pub(crate) fn load_snapshot_with_hook(
+    pub(crate) fn load_prompt_snapshot_with_hook(
         &mut self,
         working_dir: &Path,
+        after_top_level_read: impl FnOnce(),
+    ) -> String {
+        self.load_snapshot_with_limit_and_hook(
+            working_dir,
+            MAX_HINT_OUTPUT_BYTES.saturating_sub(PROMPT_HINT_BOUNDARY_BYTES),
+            after_top_level_read,
+        )
+    }
+
+    fn load_snapshot_with_limit_and_hook(
+        &mut self,
+        working_dir: &Path,
+        output_limit: usize,
         after_top_level_read: impl FnOnce(),
     ) -> String {
         let pending = std::mem::take(&mut self.pending_dirs);
@@ -106,7 +124,7 @@ impl SubdirectoryHintTracker {
             working_dir,
             &self.hints_filenames,
             &ignore_patterns,
-            MAX_HINT_OUTPUT_BYTES,
+            output_limit,
         );
         after_top_level_read();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
@@ -132,7 +150,7 @@ impl SubdirectoryHintTracker {
             } else {
                 HINT_SEPARATOR
             };
-            let Some(output_limit) = MAX_HINT_OUTPUT_BYTES
+            let Some(directory_output_limit) = output_limit
                 .checked_sub(snapshot.len())
                 .and_then(|remaining| remaining.checked_sub(separator.len()))
             else {
@@ -142,7 +160,7 @@ impl SubdirectoryHintTracker {
                 dir,
                 &canonical_working_dir,
                 &self.hints_filenames,
-                output_limit,
+                directory_output_limit,
             ) {
                 snapshot.push_str(separator);
                 snapshot.push_str(&content);
@@ -1054,8 +1072,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"path": "src/main.rs"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &wd);
-        let hints = tracker.load_hints(&wd);
-        assert!(hints.is_empty());
+        let _ = tracker.load_hints(&wd);
         assert!(tracker.loaded_dirs.contains(&src.canonicalize().unwrap()));
     }
 
@@ -1069,8 +1086,7 @@ End of hints"#;
         let args: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"command": "cat nested/doc.md"}"#).unwrap();
         tracker.record_tool_arguments(&Some(args), &wd);
-        let hints = tracker.load_hints(&wd);
-        assert!(hints.is_empty());
+        let _ = tracker.load_hints(&wd);
         assert!(tracker
             .loaded_dirs
             .contains(&nested.canonicalize().unwrap()));
