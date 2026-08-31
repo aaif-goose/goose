@@ -86,6 +86,7 @@ impl SubdirectoryHintTracker {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn load_snapshot(&mut self, working_dir: &Path) -> String {
         self.load_snapshot_with_limit_and_hook(working_dir, MAX_HINT_OUTPUT_BYTES, || {})
     }
