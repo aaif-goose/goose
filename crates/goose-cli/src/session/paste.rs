@@ -154,7 +154,7 @@ enum PeekedBurst {
 fn peek_pending_chars() -> Option<PeekedBurst> {
     use winapi::um::processenv::GetStdHandle;
     use winapi::um::winbase::STD_INPUT_HANDLE;
-    use winapi::um::wincon::{PeekConsoleInputW, INPUT_RECORD};
+    use winapi::um::wincon::{INPUT_RECORD, PeekConsoleInputW};
 
     const PEEK_CAP: u32 = 512;
     let pending = console_pending_events();
@@ -383,17 +383,46 @@ fn expand_pastes(line: &str, pastes: &[Paste]) -> String {
     result
 }
 
+enum PasteSubmission {
+    Ready(String),
+    NeedsReview(String),
+}
+
+fn prepare_paste_submission(line: &str, pastes: &[Paste]) -> PasteSubmission {
+    let contained_chip = pastes.iter().any(|paste| line.contains(&paste.marker));
+    let expanded = expand_pastes(line, pastes);
+    if contained_chip && expanded.starts_with('/') {
+        PasteSubmission::NeedsReview(expanded)
+    } else {
+        PasteSubmission::Ready(expanded)
+    }
+}
+
 pub(super) fn read_paste_aware_input(
     editor: &mut Editor<GooseCompleter, rustyline::history::DefaultHistory>,
     paste_state: Arc<std::sync::RwLock<PasteState>>,
 ) -> rustyline::Result<String> {
-    let input = editor.readline("> ")?;
-    let expanded = paste_state
-        .read()
-        .ok()
-        .map(|state| expand_pastes(&input, &state.pastes))
-        .unwrap_or(input);
-    Ok(expanded)
+    let mut prefill: Option<String> = None;
+    loop {
+        let input = match prefill.take() {
+            Some(text) => editor.readline_with_initial("> ", (&text, ""))?,
+            None => editor.readline("> ")?,
+        };
+        let submission = paste_state
+            .read()
+            .ok()
+            .map(|state| prepare_paste_submission(&input, &state.pastes))
+            .unwrap_or(PasteSubmission::Ready(input));
+        match submission {
+            PasteSubmission::Ready(expanded) => return Ok(expanded),
+            PasteSubmission::NeedsReview(expanded) => {
+                if let Ok(mut state) = paste_state.write() {
+                    state.pastes.clear();
+                }
+                prefill = Some(expanded);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -424,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn test_paste_marker_keeps_slash_commands_visible() {
+    fn test_paste_marker_keeps_direct_and_split_slash_commands_visible() {
         assert_eq!(marker("/extension example\nignored", 4), None);
 
         let long = format!("/mode auto {}", "x".repeat(PASTE_CHIP_MIN_CHARS));
@@ -532,6 +561,42 @@ mod tests {
             },
         ];
         assert_eq!(expand_pastes("[Pasted 2 lines #2]", &pastes), "CURRENT");
+    }
+
+    #[test]
+    fn test_prepare_paste_submission_reviews_hidden_slash_after_edit() {
+        let pasted_slash = vec![Paste {
+            marker: "[Pasted 2 lines #1]".to_string(),
+            content: "/extension example\ncontinued".to_string(),
+        }];
+        assert!(matches!(
+            prepare_paste_submission("[Pasted 2 lines #1]", &pasted_slash),
+            PasteSubmission::NeedsReview(input)
+                if input == "/extension example\ncontinued"
+        ));
+
+        let pasted_command = vec![Paste {
+            marker: "[Pasted 2 lines #2]".to_string(),
+            content: "extension example\ncontinued".to_string(),
+        }];
+        assert!(matches!(
+            prepare_paste_submission("/[Pasted 2 lines #2]", &pasted_command),
+            PasteSubmission::NeedsReview(input)
+                if input == "/extension example\ncontinued"
+        ));
+    }
+
+    #[test]
+    fn test_prepare_paste_submission_preserves_legitimate_chips() {
+        let pastes = vec![Paste {
+            marker: "[Pasted 2 lines #1]".to_string(),
+            content: "/extension example\ncontinued".to_string(),
+        }];
+        assert!(matches!(
+            prepare_paste_submission("explain [Pasted 2 lines #1]", &pastes),
+            PasteSubmission::Ready(input)
+                if input == "explain /extension example\ncontinued"
+        ));
     }
 
     #[test]
