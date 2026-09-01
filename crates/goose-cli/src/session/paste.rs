@@ -154,7 +154,7 @@ enum PeekedBurst {
 fn peek_pending_chars() -> Option<PeekedBurst> {
     use winapi::um::processenv::GetStdHandle;
     use winapi::um::winbase::STD_INPUT_HANDLE;
-    use winapi::um::wincon::{INPUT_RECORD, PeekConsoleInputW};
+    use winapi::um::wincon::{PeekConsoleInputW, INPUT_RECORD};
 
     const PEEK_CAP: u32 = 512;
     let pending = console_pending_events();
