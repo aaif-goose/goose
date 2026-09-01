@@ -232,6 +232,8 @@ fn console_has_pending_char() -> bool {
 fn capture_paste(
     state: &Arc<std::sync::RwLock<PasteState>>,
     first: char,
+    editor_line: &str,
+    cursor_position: usize,
 ) -> Option<rustyline::Cmd> {
     if console_pending_events() < PASTE_QUEUE_THRESHOLD {
         return None;
@@ -248,15 +250,17 @@ fn capture_paste(
     let content = drain_console_paste(first);
     let mut state = state.write().ok()?;
     let id = state.next_id + 1;
-    Some(match paste_marker(&content, id) {
-        Some(marker) => {
-            state.next_id = id;
-            let cmd = rustyline::Cmd::Insert(1, marker.clone());
-            state.pastes.push(Paste { marker, content });
-            cmd
-        }
-        None => rustyline::Cmd::Insert(1, content),
-    })
+    Some(
+        match paste_marker(&content, id, editor_line, cursor_position) {
+            Some(marker) => {
+                state.next_id = id;
+                let cmd = rustyline::Cmd::Insert(1, marker.clone());
+                state.pastes.push(Paste { marker, content });
+                cmd
+            }
+            None => rustyline::Cmd::Insert(1, content),
+        },
+    )
 }
 
 /// Intercepts printable characters so a pasted burst is captured into
@@ -277,7 +281,7 @@ impl rustyline::ConditionalEventHandler for PasteCaptureHandler {
         event: &rustyline::Event,
         _n: u16,
         _positive: bool,
-        _ctx: &rustyline::EventContext,
+        ctx: &rustyline::EventContext,
     ) -> Option<rustyline::Cmd> {
         let ch = match event.get(0)? {
             rustyline::KeyEvent(rustyline::KeyCode::Char(c), m)
@@ -288,7 +292,7 @@ impl rustyline::ConditionalEventHandler for PasteCaptureHandler {
             rustyline::KeyEvent(rustyline::KeyCode::Tab, rustyline::Modifiers::NONE) => '\t',
             _ => return None,
         };
-        capture_paste(&self.paste_state, ch)
+        capture_paste(&self.paste_state, ch, ctx.line(), ctx.pos())
     }
 }
 
@@ -310,9 +314,12 @@ impl rustyline::ConditionalEventHandler for PasteAwareEnterHandler {
         _event: &rustyline::Event,
         _n: u16,
         _positive: bool,
-        _ctx: &rustyline::EventContext,
+        ctx: &rustyline::EventContext,
     ) -> Option<rustyline::Cmd> {
-        Some(capture_paste(&self.paste_state, '\n').unwrap_or(rustyline::Cmd::AcceptLine))
+        Some(
+            capture_paste(&self.paste_state, '\n', ctx.line(), ctx.pos())
+                .unwrap_or(rustyline::Cmd::AcceptLine),
+        )
     }
 }
 
@@ -321,12 +328,23 @@ fn normalize_paste_text(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-/// Build the chip shown in place of a pasted block, or `None` when the paste must
-/// remain visible. `id` makes the marker unique to this paste instance so a
-/// cleared chip can never be expanded into a later, identical-looking one (see
-/// [`expand_pastes`]).
-fn paste_marker(content: &str, id: usize) -> Option<String> {
-    if content.starts_with('/') {
+/// Build the chip shown in place of a pasted block, or `None` when inserting the
+/// paste would make the full editor buffer a slash command. `id` makes the
+/// marker unique to this paste instance so a cleared chip can never be expanded
+/// into a later, identical-looking one (see [`expand_pastes`]).
+fn paste_marker(
+    content: &str,
+    id: usize,
+    editor_line: &str,
+    cursor_position: usize,
+) -> Option<String> {
+    let (before, after) = editor_line.split_at(cursor_position);
+    let first_after_insert = before
+        .chars()
+        .next()
+        .or_else(|| content.chars().next())
+        .or_else(|| after.chars().next());
+    if first_after_insert == Some('/') {
         return None;
     }
 
@@ -382,35 +400,61 @@ pub(super) fn read_paste_aware_input(
 mod tests {
     use super::*;
 
+    fn marker(content: &str, id: usize) -> Option<String> {
+        paste_marker(content, id, "", 0)
+    }
+
     #[test]
     fn test_paste_marker() {
-        assert_eq!(paste_marker("single line", 1), None);
+        assert_eq!(marker("single line", 1), None);
         assert_eq!(
-            paste_marker("line one\nline two", 1),
+            marker("line one\nline two", 1),
             Some("[Pasted 2 lines #1]".to_string())
         );
         // Trailing newline is not counted as an extra line.
         assert_eq!(
-            paste_marker("line one\nline two\n", 2),
+            marker("line one\nline two\n", 2),
             Some("[Pasted 2 lines #2]".to_string())
         );
         let long = "x".repeat(PASTE_CHIP_MIN_CHARS);
         assert_eq!(
-            paste_marker(&long, 3),
+            marker(&long, 3),
             Some(format!("[Pasted {PASTE_CHIP_MIN_CHARS} chars #3]"))
         );
     }
 
     #[test]
     fn test_paste_marker_keeps_slash_commands_visible() {
-        assert_eq!(paste_marker("/extension example\nignored", 4), None);
+        assert_eq!(marker("/extension example\nignored", 4), None);
 
         let long = format!("/mode auto {}", "x".repeat(PASTE_CHIP_MIN_CHARS));
-        assert_eq!(paste_marker(&long, 5), None);
+        assert_eq!(marker(&long, 5), None);
 
+        assert_eq!(paste_marker("extension example\nignored", 6, "/", 1), None);
         assert_eq!(
-            paste_marker("explain /extension\ncontinued", 6),
-            Some("[Pasted 2 lines #6]".to_string())
+            paste_marker(
+                &format!("mode auto {}", "x".repeat(PASTE_CHIP_MIN_CHARS)),
+                7,
+                "/",
+                1,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_paste_marker_preserves_non_command_chips() {
+        assert_eq!(
+            marker("explain /extension\ncontinued", 8),
+            Some("[Pasted 2 lines #8]".to_string())
+        );
+        assert_eq!(
+            paste_marker("/extension example\ncontinued", 9, "explain ", 8),
+            Some("[Pasted 2 lines #9]".to_string())
+        );
+        assert_eq!(
+            paste_marker("extension example\ncontinued", 10, "explain /", 9),
+            Some("[Pasted 2 lines #10]".to_string())
         );
     }
 
@@ -495,7 +539,7 @@ mod tests {
         // Off Windows (and on Windows with no queued burst) there is nothing to
         // drain, so ordinary keystrokes are never captured as a paste.
         let state = Arc::new(std::sync::RwLock::new(PasteState::default()));
-        assert!(capture_paste(&state, 'a').is_none());
+        assert!(capture_paste(&state, 'a', "", 0).is_none());
         assert!(state.read().unwrap().pastes.is_empty());
     }
 }
