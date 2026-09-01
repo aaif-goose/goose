@@ -185,6 +185,7 @@ impl OpenAiLiveClient {
         ConnectedOpenAiLiveSession {
             session: OpenAiLiveSession(session),
             events,
+            pending_events: Default::default(),
         }
     }
 
@@ -281,30 +282,7 @@ impl OpenAiLiveWebSocketConnector {
             crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
                 .await?,
         );
-        let mut connected = client.connect_transport(transport);
-        loop {
-            match connected.events.recv().await? {
-                LiveSessionEvent::Message(event)
-                    if matches!(event.kind, OpenAiLiveEventKind::SessionStarted { .. }) =>
-                {
-                    return Ok(connected);
-                }
-                LiveSessionEvent::Message(event)
-                    if matches!(event.kind, OpenAiLiveEventKind::Error { .. }) =>
-                {
-                    if let OpenAiLiveEventKind::Error { message } = event.kind {
-                        bail!("OpenAI Live startup failed: {message}");
-                    }
-                }
-                LiveSessionEvent::Ended { error, .. } => {
-                    if let Some(error) = error {
-                        return Err(anyhow::anyhow!(error.to_string()));
-                    }
-                    bail!("OpenAI Live session ended before startup");
-                }
-                LiveSessionEvent::Message(_) => {}
-            }
-        }
+        client.connect_transport(transport).ready().await
     }
 }
 
@@ -397,6 +375,45 @@ pub type OpenAiLiveSessionEvent = LiveSessionEvent<OpenAiLiveEvent>;
 pub struct ConnectedOpenAiLiveSession {
     pub session: OpenAiLiveSession,
     pub events: broadcast::Receiver<OpenAiLiveSessionEvent>,
+    pending_events: std::collections::VecDeque<OpenAiLiveSessionEvent>,
+}
+
+impl ConnectedOpenAiLiveSession {
+    /// Waits for OpenAI to confirm startup while buffering earlier events.
+    pub async fn ready(mut self) -> Result<Self> {
+        loop {
+            match self.events.recv().await? {
+                LiveSessionEvent::Message(event)
+                    if matches!(event.kind, OpenAiLiveEventKind::SessionStarted { .. }) =>
+                {
+                    return Ok(self);
+                }
+                LiveSessionEvent::Message(event)
+                    if matches!(event.kind, OpenAiLiveEventKind::Error { .. }) =>
+                {
+                    if let OpenAiLiveEventKind::Error { message } = event.kind {
+                        bail!("OpenAI Live startup failed: {message}");
+                    }
+                }
+                LiveSessionEvent::Ended { error, .. } => {
+                    if let Some(error) = error {
+                        return Err(anyhow::anyhow!(error.to_string()));
+                    }
+                    bail!("OpenAI Live session ended before startup");
+                }
+                event @ LiveSessionEvent::Message(_) => {
+                    self.pending_events.push_back(event);
+                }
+            }
+        }
+    }
+
+    pub async fn recv(&mut self) -> Result<OpenAiLiveSessionEvent> {
+        if let Some(event) = self.pending_events.pop_front() {
+            return Ok(event);
+        }
+        Ok(self.events.recv().await?)
+    }
 }
 
 impl OpenAiLiveSession {
@@ -612,6 +629,39 @@ fn text_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use tokio::sync::{mpsc, Mutex};
+
+    struct TestLiveTransport {
+        incoming: Mutex<mpsc::Receiver<Value>>,
+    }
+
+    impl TestLiveTransport {
+        fn new() -> (Arc<Self>, mpsc::Sender<Value>) {
+            let (incoming_tx, incoming_rx) = mpsc::channel(8);
+            (
+                Arc::new(Self {
+                    incoming: Mutex::new(incoming_rx),
+                }),
+                incoming_tx,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl LiveTransport for TestLiveTransport {
+        async fn send(&self, _message: Value) -> Result<()> {
+            Ok(())
+        }
+
+        async fn receive(&self) -> Result<Option<Value>> {
+            Ok(self.incoming.lock().await.recv().await)
+        }
+
+        async fn close(&self) -> Result<()> {
+            Ok(())
+        }
+    }
 
     fn config() -> OpenAiLiveSessionConfig {
         OpenAiLiveSessionConfig {
@@ -654,6 +704,29 @@ mod tests {
                 expected_content_type
             );
         }
+    }
+
+    #[tokio::test]
+    async fn ready_buffers_events_before_session_started() {
+        let (transport, incoming) = TestLiveTransport::new();
+        let connected = OpenAiLiveClient::new("test").connect_transport(transport);
+        incoming
+            .send(json!({ "type": "session.usage.updated", "usage": {} }))
+            .await
+            .unwrap();
+        incoming
+            .send(json!({ "type": "session.started", "session": { "id": "session_1" } }))
+            .await
+            .unwrap();
+
+        let mut connected = connected.ready().await.unwrap();
+        assert!(matches!(
+            connected.recv().await.unwrap(),
+            LiveSessionEvent::Message(OpenAiLiveEvent {
+                kind: OpenAiLiveEventKind::Usage { .. },
+                ..
+            })
+        ));
     }
 
     #[test]
