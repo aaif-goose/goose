@@ -127,7 +127,8 @@ impl<P: LiveProtocol> LiveSession<P> {
         let mut state = self.state.subscribe();
         let owns_shutdown = {
             let _guard = self.transition_lock.lock().await;
-            match *self.state.borrow() {
+            let current = *self.state.borrow();
+            match current {
                 LiveSessionState::Open => {
                     self.state.send_replace(LiveSessionState::Closing);
                     true
@@ -153,11 +154,21 @@ impl<P: LiveProtocol> LiveSession<P> {
         };
 
         if graceful_result.is_ok() && waits_for_acknowledgement {
-            let _ = timeout(CLOSE_ACKNOWLEDGEMENT_TIMEOUT, wait_until_ended(&mut state)).await;
+            let _ = timeout(CLOSE_ACKNOWLEDGEMENT_TIMEOUT, async {
+                loop {
+                    if matches!(*state.borrow(), LiveSessionState::Ended(_)) {
+                        break;
+                    }
+                    if state.changed().await.is_err() {
+                        break;
+                    }
+                }
+            })
+            .await;
         }
 
-        let transport_result = self.transport.close().await;
         finish(&self.state, &self.events, LiveSessionEnd::Closed, None);
+        let transport_result = self.transport.close().await;
         graceful_result.and(transport_result)
     }
 }
@@ -170,7 +181,8 @@ impl<P: LiveProtocol> Drop for LiveSession<P> {
 
 async fn wait_until_ended(state: &mut watch::Receiver<LiveSessionState>) -> LiveSessionEnd {
     loop {
-        if let LiveSessionState::Ended(reason) = *state.borrow_and_update() {
+        let current = *state.borrow_and_update();
+        if let LiveSessionState::Ended(reason) = current {
             return reason;
         }
         if state.changed().await.is_err() {
@@ -200,7 +212,7 @@ async fn receive_loop<P: LiveProtocol>(
     state: watch::Sender<LiveSessionState>,
 ) {
     loop {
-        if session.upgrade().is_none() {
+        if session.strong_count() == 0 {
             return;
         }
         let (reason, error) = match transport.receive().await {

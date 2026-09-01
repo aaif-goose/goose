@@ -221,24 +221,35 @@ async fn concurrent_close_has_one_owner() {
         let session = session.clone();
         async move { session.close().await }
     });
-    let second = tokio::spawn({
-        let session = session.clone();
-        async move { session.close().await }
-    });
 
     assert_eq!(
         controls.sent.recv().await.unwrap(),
         json!({ "text": "close" })
     );
+
+    let second = tokio::spawn({
+        let session = session.clone();
+        async move { session.close().await }
+    });
+    tokio::task::yield_now().await;
     assert!(controls.sent.try_recv().is_err());
+
     controls
         .incoming
         .send(Ok(Some(json!({ "text": "closed" }))))
         .await
         .unwrap();
 
-    first.await.unwrap().unwrap();
-    second.await.unwrap().unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), first)
+        .await
+        .expect("owner timed out")
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), second)
+        .await
+        .expect("waiter timed out")
+        .unwrap()
+        .unwrap();
     assert_eq!(controls.close_count(), 1);
 }
 
