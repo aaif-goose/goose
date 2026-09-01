@@ -25,8 +25,6 @@ pub struct OpenAiLiveSessionConfig {
     #[serde(default)]
     pub initial_items: Vec<OpenAiLiveMessage>,
     #[serde(default)]
-    pub delegation: OpenAiLiveDelegationMode,
-    #[serde(default)]
     pub experimental: BTreeMap<String, Value>,
 }
 
@@ -39,18 +37,10 @@ pub struct OpenAiLiveMessage {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OpenAiLiveMessageRole {
+    System,
     User,
     Assistant,
     Developer,
-}
-
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OpenAiLiveDelegationMode {
-    #[default]
-    Disabled,
-    Client,
-    Provider,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -58,7 +48,6 @@ pub enum OpenAiLiveDelegationMode {
 pub enum OpenAiLiveContextChannel {
     Speakable,
     Commentary,
-    Developer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,7 +66,7 @@ pub struct OpenAiLiveDelegation {
 
 pub enum OpenAiLiveCommand {
     AppendContext(OpenAiLiveContext),
-    CompleteDelegation {
+    AppendDelegationContext {
         delegation_id: String,
         context: OpenAiLiveContext,
     },
@@ -191,11 +180,12 @@ impl OpenAiLiveClient {
         }
     }
 
-    pub fn connect_transport(&self, transport: Arc<dyn LiveTransport>) -> OpenAiLiveSession {
-        OpenAiLiveSession(LiveSession::connect(
-            Arc::new(OpenAiLiveProtocol),
-            transport,
-        ))
+    fn connect_transport(&self, transport: Arc<dyn LiveTransport>) -> ConnectedOpenAiLiveSession {
+        let (session, events) = LiveSession::connect(Arc::new(OpenAiLiveProtocol), transport);
+        ConnectedOpenAiLiveSession {
+            session: OpenAiLiveSession(session),
+            events,
+        }
     }
 
     fn headers(&self) -> Vec<(String, String)> {
@@ -222,11 +212,13 @@ impl OpenAiLiveClient {
         }
         let initial_items = config.initial_items.iter().map(|message| {
             let role = match message.role {
+                OpenAiLiveMessageRole::System => "system",
                 OpenAiLiveMessageRole::User => "user",
                 OpenAiLiveMessageRole::Assistant => "assistant",
                 OpenAiLiveMessageRole::Developer => "developer",
             };
-            json!({ "type": "message", "role": role, "content": [{ "type": "input_text", "text": message.text }] })
+            let content_type = if matches!(message.role, OpenAiLiveMessageRole::Assistant) { "output_text" } else { "input_text" };
+            json!({ "type": "message", "role": role, "content": [{ "type": content_type, "text": message.text }] })
         }).collect::<Vec<_>>();
         let mut session = json!({
             "instructions": config.instructions,
@@ -238,13 +230,7 @@ impl OpenAiLiveClient {
         if let Some(voice) = &config.voice {
             session["audio"] = json!({ "output": { "voice": voice } });
         }
-        if !matches!(config.delegation, OpenAiLiveDelegationMode::Disabled) {
-            session["delegation"] = match config.delegation {
-                OpenAiLiveDelegationMode::Client => json!({ "type": "client" }),
-                OpenAiLiveDelegationMode::Provider => json!({ "type": "responses" }),
-                OpenAiLiveDelegationMode::Disabled => unreachable!(),
-            };
-        }
+        session["delegation"] = json!({ "type": "client" });
         session
             .as_object_mut()
             .unwrap()
@@ -289,13 +275,36 @@ impl OpenAiLiveWebSocketConnector {
     }
 
     #[cfg(feature = "live-websocket")]
-    pub async fn connect(self) -> Result<OpenAiLiveSession> {
+    pub async fn connect(self) -> Result<ConnectedOpenAiLiveSession> {
         let client = self.client.clone();
         let transport = Arc::new(
             crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
                 .await?,
         );
-        Ok(client.connect_transport(transport))
+        let mut connected = client.connect_transport(transport);
+        loop {
+            match connected.events.recv().await? {
+                LiveSessionEvent::Message(event)
+                    if matches!(event.kind, OpenAiLiveEventKind::SessionStarted { .. }) =>
+                {
+                    return Ok(connected);
+                }
+                LiveSessionEvent::Message(event)
+                    if matches!(event.kind, OpenAiLiveEventKind::Error { .. }) =>
+                {
+                    if let OpenAiLiveEventKind::Error { message } = event.kind {
+                        bail!("OpenAI Live startup failed: {message}");
+                    }
+                }
+                LiveSessionEvent::Ended { error, .. } => {
+                    if let Some(error) = error {
+                        return Err(anyhow::anyhow!(error.to_string()));
+                    }
+                    bail!("OpenAI Live session ended before startup");
+                }
+                LiveSessionEvent::Message(_) => {}
+            }
+        }
     }
 }
 
@@ -320,7 +329,7 @@ pub struct OpenAiLiveWebRtcNegotiation {
 }
 
 impl OpenAiLiveWebRtcNegotiation {
-    pub fn bind(self, transport: Arc<dyn LiveTransport>) -> OpenAiLiveSession {
+    pub fn bind(self, transport: Arc<dyn LiveTransport>) -> ConnectedOpenAiLiveSession {
         self.client.connect_transport(transport)
     }
 }
@@ -381,9 +390,14 @@ impl OpenAiLiveWebRtcConnector {
 /// An established OpenAI Live session. Wraps the generic session runtime so
 /// callers name one concrete type instead of `LiveSession<OpenAiLiveProtocol>`.
 #[derive(Clone)]
-pub struct OpenAiLiveSession(Arc<LiveSession<OpenAiLiveProtocol>>);
+pub struct OpenAiLiveSession(LiveSession<OpenAiLiveProtocol>);
 
 pub type OpenAiLiveSessionEvent = LiveSessionEvent<OpenAiLiveEvent>;
+
+pub struct ConnectedOpenAiLiveSession {
+    pub session: OpenAiLiveSession,
+    pub events: broadcast::Receiver<OpenAiLiveSessionEvent>,
+}
 
 impl OpenAiLiveSession {
     pub fn subscribe(&self) -> broadcast::Receiver<OpenAiLiveSessionEvent> {
@@ -402,12 +416,12 @@ impl OpenAiLiveSession {
         self.send(OpenAiLiveCommand::AppendContext(context)).await
     }
 
-    pub async fn complete_delegation(
+    pub async fn append_delegation_context(
         &self,
         delegation_id: impl Into<String>,
         context: OpenAiLiveContext,
     ) -> Result<()> {
-        self.send(OpenAiLiveCommand::CompleteDelegation {
+        self.send(OpenAiLiveCommand::AppendDelegationContext {
             delegation_id: delegation_id.into(),
             context,
         })
@@ -441,21 +455,16 @@ impl LiveProtocol for OpenAiLiveProtocol {
     fn encode(&self, command: Self::Command) -> Result<Value> {
         match command {
             OpenAiLiveCommand::AppendContext(context) => {
-                text_event("session.context.append", None, context, true)
+                text_event("session.context.append", None, context)
             }
-            OpenAiLiveCommand::CompleteDelegation {
+            OpenAiLiveCommand::AppendDelegationContext {
                 delegation_id,
                 context,
             } => {
                 if delegation_id.trim().is_empty() {
                     bail!("delegation ID is empty");
                 }
-                text_event(
-                    "delegation.context.append",
-                    Some(&delegation_id),
-                    context,
-                    false,
-                )
+                text_event("delegation.context.append", Some(&delegation_id), context)
             }
             OpenAiLiveCommand::AppendAudio(audio) => {
                 if audio.is_empty() {
@@ -588,15 +597,10 @@ fn text_event(
     kind: &str,
     delegation_id: Option<&str>,
     context: OpenAiLiveContext,
-    allow_developer: bool,
 ) -> Result<Value> {
     let channel = match context.channel {
         OpenAiLiveContextChannel::Speakable => "speakable",
         OpenAiLiveContextChannel::Commentary => "commentary",
-        OpenAiLiveContextChannel::Developer if allow_developer => "developer",
-        OpenAiLiveContextChannel::Developer => {
-            bail!("developer channel is not valid for delegation context")
-        }
     };
     let mut event = json!({ "type": kind, "event_id": event_id(), "channel": channel, "content": [{ "type": "input_text", "text": context.text }] });
     if let Some(id) = delegation_id {
@@ -615,7 +619,6 @@ mod tests {
             instructions: "help".into(),
             voice: None,
             initial_items: vec![],
-            delegation: OpenAiLiveDelegationMode::Client,
             experimental: Default::default(),
         }
     }
@@ -631,6 +634,29 @@ mod tests {
     }
 
     #[test]
+    fn initial_message_roles_use_valid_content_types() {
+        let roles = [
+            (OpenAiLiveMessageRole::System, "system", "input_text"),
+            (OpenAiLiveMessageRole::Developer, "developer", "input_text"),
+            (OpenAiLiveMessageRole::User, "user", "input_text"),
+            (OpenAiLiveMessageRole::Assistant, "assistant", "output_text"),
+        ];
+        for (role, expected_role, expected_content_type) in roles {
+            let mut config = config();
+            config.initial_items.push(OpenAiLiveMessage {
+                role,
+                text: "hello".into(),
+            });
+            let session = OpenAiLiveClient::session_json(&config, true).unwrap();
+            assert_eq!(session["initial_items"][0]["role"], expected_role);
+            assert_eq!(
+                session["initial_items"][0]["content"][0]["type"],
+                expected_content_type
+            );
+        }
+    }
+
+    #[test]
     fn encodes_and_decodes_delegation() {
         let protocol = OpenAiLiveProtocol;
         let decoded = protocol.decode(json!({ "type": "delegation.created", "item": { "id": "item_1", "content": [{ "type": "input_text", "text": "inspect this" }] }})).unwrap();
@@ -639,7 +665,7 @@ mod tests {
             OpenAiLiveEventKind::DelegationCreated { .. }
         ));
         let encoded = protocol
-            .encode(OpenAiLiveCommand::CompleteDelegation {
+            .encode(OpenAiLiveCommand::AppendDelegationContext {
                 delegation_id: "item_1".into(),
                 context: OpenAiLiveContext {
                     text: "done".into(),

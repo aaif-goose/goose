@@ -4,10 +4,13 @@ use crate::{live::LiveTransport, openai_live::OpenAiLiveWebSocketRequest};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
-use http::Request;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 
 type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 type SocketSink = SplitSink<Socket, Message>;
@@ -20,11 +23,14 @@ pub struct WebSocketLiveTransport {
 
 impl WebSocketLiveTransport {
     pub async fn connect(request: OpenAiLiveWebSocketRequest) -> Result<Self> {
-        let mut builder = Request::builder().uri(&request.endpoint);
+        let mut websocket_request = request.endpoint.into_client_request()?;
         for (name, value) in request.headers {
-            builder = builder.header(name, value);
+            websocket_request.headers_mut().insert(
+                http::header::HeaderName::try_from(name)?,
+                http::header::HeaderValue::try_from(value)?,
+            );
         }
-        let (socket, _) = connect_async(builder.body(())?)
+        let (socket, _) = connect_async(websocket_request)
             .await
             .context("live WebSocket connection failed")?;
         let (mut sink, stream) = socket.split();

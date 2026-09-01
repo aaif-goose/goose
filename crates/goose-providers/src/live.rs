@@ -1,15 +1,14 @@
 //! Runtime primitives for provider-specific live sessions.
 //!
-//! A protocol translates typed commands and events, while a transport only
-//! delivers provider wire messages. Connected sessions own their receive task.
+//! A single actor owns transport I/O and lifecycle transitions so sends,
+//! shutdown, and incoming events have deterministic ordering.
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::{
-    sync::{broadcast, watch, Mutex},
-    task::JoinHandle,
+    sync::{broadcast, mpsc, oneshot, watch},
     time::{timeout, Duration},
 };
 
@@ -28,12 +27,7 @@ pub trait LiveProtocol: Send + Sync + 'static {
 
     fn encode(&self, command: Self::Command) -> Result<Value>;
     fn decode(&self, message: Value) -> Result<Self::Event>;
-
-    /// Command requesting a graceful shutdown, sent by [`LiveSession::close`].
-    /// Protocols without one return `None` and are closed at the transport.
     fn close_command(&self) -> Option<Self::Command>;
-
-    /// Whether the provider has acknowledged that the session is over.
     fn is_close_acknowledgement(&self, event: &Self::Event) -> bool;
 }
 
@@ -62,43 +56,55 @@ impl<E> LiveSessionEvent<E> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LiveSessionState {
-    Open,
-    Closing,
-    Ended(LiveSessionEnd),
+enum ActorCommand<C> {
+    Send {
+        command: C,
+        result: oneshot::Sender<Result<()>>,
+    },
+    Close {
+        result: oneshot::Sender<Result<()>>,
+    },
 }
 
 pub struct LiveSession<P: LiveProtocol> {
-    protocol: Arc<P>,
-    transport: Arc<dyn LiveTransport>,
+    commands: mpsc::Sender<ActorCommand<P::Command>>,
     events: broadcast::Sender<LiveSessionEvent<P::Event>>,
-    state: watch::Sender<LiveSessionState>,
-    transition_lock: Mutex<()>,
-    receive_task: JoinHandle<()>,
+    ended: watch::Receiver<Option<LiveSessionEnd>>,
+}
+
+impl<P: LiveProtocol> Clone for LiveSession<P> {
+    fn clone(&self) -> Self {
+        Self {
+            commands: self.commands.clone(),
+            events: self.events.clone(),
+            ended: self.ended.clone(),
+        }
+    }
 }
 
 impl<P: LiveProtocol> LiveSession<P> {
-    pub fn connect(protocol: Arc<P>, transport: Arc<dyn LiveTransport>) -> Arc<Self> {
-        let (events, _) = broadcast::channel(256);
-        let (state, _) = watch::channel(LiveSessionState::Open);
-        Arc::new_cyclic(|weak: &std::sync::Weak<Self>| {
-            let receive_task = tokio::spawn(receive_loop(
-                weak.clone(),
-                protocol.clone(),
-                transport.clone(),
-                events.clone(),
-                state.clone(),
-            ));
+    pub fn connect(
+        protocol: Arc<P>,
+        transport: Arc<dyn LiveTransport>,
+    ) -> (Self, broadcast::Receiver<LiveSessionEvent<P::Event>>) {
+        let (commands, command_rx) = mpsc::channel(256);
+        let (events, initial_events) = broadcast::channel(256);
+        let (ended_tx, ended) = watch::channel(None);
+        tokio::spawn(run_actor(
+            protocol,
+            transport,
+            command_rx,
+            events.clone(),
+            ended_tx,
+        ));
+        (
             Self {
-                protocol,
-                transport,
+                commands,
                 events,
-                state,
-                transition_lock: Mutex::new(()),
-                receive_task,
-            }
-        })
+                ended,
+            },
+            initial_events,
+        )
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<LiveSessionEvent<P::Event>> {
@@ -106,131 +112,123 @@ impl<P: LiveProtocol> LiveSession<P> {
     }
 
     pub fn end_reason(&self) -> Option<LiveSessionEnd> {
-        match *self.state.borrow() {
-            LiveSessionState::Ended(reason) => Some(reason),
-            LiveSessionState::Open | LiveSessionState::Closing => None,
-        }
+        *self.ended.borrow()
     }
 
     pub async fn send(&self, command: P::Command) -> Result<()> {
-        match *self.state.borrow() {
-            LiveSessionState::Open => {}
-            LiveSessionState::Closing => bail!("live session is closing"),
-            LiveSessionState::Ended(reason) => bail!("live session ended ({reason:?})"),
+        if let Some(reason) = self.end_reason() {
+            bail!("live session ended ({reason:?})");
         }
-        self.transport.send(self.protocol.encode(command)?).await
+        let (result_tx, result_rx) = oneshot::channel();
+        self.commands
+            .send(ActorCommand::Send {
+                command,
+                result: result_tx,
+            })
+            .await
+            .map_err(|_| anyhow!("live session ended"))?;
+        result_rx.await.map_err(|_| anyhow!("live session ended"))?
     }
 
-    /// Requests graceful shutdown and closes the transport. Concurrent callers
-    /// share one shutdown operation and wait for the same terminal state.
     pub async fn close(&self) -> Result<()> {
-        let mut state = self.state.subscribe();
-        let owns_shutdown = {
-            let _guard = self.transition_lock.lock().await;
-            let current = *self.state.borrow();
-            match current {
-                LiveSessionState::Open => {
-                    self.state.send_replace(LiveSessionState::Closing);
-                    true
-                }
-                LiveSessionState::Closing => false,
-                LiveSessionState::Ended(_) => return Ok(()),
-            }
-        };
-
-        if !owns_shutdown {
-            wait_until_ended(&mut state).await;
+        if self.end_reason().is_some() {
             return Ok(());
         }
-
-        let close_command = self.protocol.close_command();
-        let waits_for_acknowledgement = close_command.is_some();
-        let graceful_result = match close_command {
-            Some(command) => match self.protocol.encode(command) {
-                Ok(message) => self.transport.send(message).await,
-                Err(error) => Err(error),
-            },
-            None => Ok(()),
-        };
-
-        if graceful_result.is_ok() && waits_for_acknowledgement {
-            let _ = timeout(CLOSE_ACKNOWLEDGEMENT_TIMEOUT, async {
-                loop {
-                    if matches!(*state.borrow(), LiveSessionState::Ended(_)) {
-                        break;
-                    }
-                    if state.changed().await.is_err() {
-                        break;
-                    }
-                }
-            })
-            .await;
-        }
-
-        finish(&self.state, &self.events, LiveSessionEnd::Closed, None);
-        let transport_result = self.transport.close().await;
-        graceful_result.and(transport_result)
+        let (result_tx, result_rx) = oneshot::channel();
+        self.commands
+            .send(ActorCommand::Close { result: result_tx })
+            .await
+            .map_err(|_| anyhow!("live session ended"))?;
+        result_rx.await.map_err(|_| anyhow!("live session ended"))?
     }
 }
 
-impl<P: LiveProtocol> Drop for LiveSession<P> {
-    fn drop(&mut self) {
-        self.receive_task.abort();
-    }
-}
-
-async fn wait_until_ended(state: &mut watch::Receiver<LiveSessionState>) -> LiveSessionEnd {
-    loop {
-        let current = *state.borrow_and_update();
-        if let LiveSessionState::Ended(reason) = current {
-            return reason;
-        }
-        if state.changed().await.is_err() {
-            return LiveSessionEnd::Closed;
-        }
-    }
-}
-
-fn finish<E: Clone>(
-    state: &watch::Sender<LiveSessionState>,
-    events: &broadcast::Sender<LiveSessionEvent<E>>,
-    reason: LiveSessionEnd,
-    error: Option<anyhow::Error>,
-) {
-    if matches!(*state.borrow(), LiveSessionState::Ended(_)) {
-        return;
-    }
-    state.send_replace(LiveSessionState::Ended(reason));
-    let _ = events.send(LiveSessionEvent::ended(reason, error));
-}
-
-async fn receive_loop<P: LiveProtocol>(
-    session: std::sync::Weak<LiveSession<P>>,
+async fn run_actor<P: LiveProtocol>(
     protocol: Arc<P>,
     transport: Arc<dyn LiveTransport>,
+    mut commands: mpsc::Receiver<ActorCommand<P::Command>>,
     events: broadcast::Sender<LiveSessionEvent<P::Event>>,
-    state: watch::Sender<LiveSessionState>,
+    ended: watch::Sender<Option<LiveSessionEnd>>,
 ) {
-    loop {
-        if session.strong_count() == 0 {
-            return;
-        }
-        let (reason, error) = match transport.receive().await {
-            Ok(Some(message)) => match protocol.decode(message) {
-                Ok(event) => {
-                    let acknowledged = protocol.is_close_acknowledgement(&event);
-                    let _ = events.send(LiveSessionEvent::Message(event));
-                    if !acknowledged {
-                        continue;
+    let mut close_waiters = Vec::new();
+    let mut closing = false;
+    let close_timeout = tokio::time::sleep(CLOSE_ACKNOWLEDGEMENT_TIMEOUT);
+    tokio::pin!(close_timeout);
+
+    let (reason, error) = loop {
+        tokio::select! {
+            command = commands.recv() => match command {
+                Some(ActorCommand::Send { command, result }) if !closing => {
+                    let encoded = protocol.encode(command);
+                    let send_result = match encoded {
+                        Ok(message) => transport.send(message).await,
+                        Err(error) => Err(error),
+                    };
+                    let failed = send_result.is_err();
+                    let error = send_result.as_ref().err().map(|error| anyhow!(error.to_string()));
+                    let _ = result.send(send_result);
+                    if failed {
+                        break (LiveSessionEnd::TransportFailed, error);
                     }
-                    (LiveSessionEnd::Closed, None)
                 }
-                Err(error) => (LiveSessionEnd::DecodeFailed, Some(error)),
+                Some(ActorCommand::Send { result, .. }) => {
+                    let _ = result.send(Err(anyhow!("live session is closing")));
+                }
+                Some(ActorCommand::Close { result }) => {
+                    close_waiters.push(result);
+                    if !closing {
+                        closing = true;
+                        close_timeout.as_mut().reset(tokio::time::Instant::now() + CLOSE_ACKNOWLEDGEMENT_TIMEOUT);
+                        if let Some(command) = protocol.close_command() {
+                            let close_result = match protocol.encode(command) {
+                                Ok(message) => transport.send(message).await,
+                                Err(error) => Err(error),
+                            };
+                            if let Err(error) = close_result {
+                                break (LiveSessionEnd::TransportFailed, Some(error));
+                            }
+                        } else {
+                            break (LiveSessionEnd::Closed, None);
+                        }
+                    }
+                }
+                None => break (LiveSessionEnd::Closed, None),
             },
-            Ok(None) => (LiveSessionEnd::Closed, None),
-            Err(error) => (LiveSessionEnd::TransportFailed, Some(error)),
+            incoming = transport.receive() => match incoming {
+                Ok(Some(message)) => match protocol.decode(message) {
+                    Ok(event) => {
+                        let acknowledged = protocol.is_close_acknowledgement(&event);
+                        let _ = events.send(LiveSessionEvent::Message(event));
+                        if acknowledged {
+                            break (LiveSessionEnd::Closed, None);
+                        }
+                    }
+                    Err(error) => break (LiveSessionEnd::DecodeFailed, Some(error)),
+                },
+                Ok(None) => break (LiveSessionEnd::Closed, None),
+                Err(error) => break (LiveSessionEnd::TransportFailed, Some(error)),
+            },
+            _ = &mut close_timeout, if closing => break (LiveSessionEnd::Closed, None),
+        }
+    };
+
+    let close_result = timeout(CLOSE_ACKNOWLEDGEMENT_TIMEOUT, transport.close()).await;
+    let close_error = match close_result {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(_) => Some(anyhow!("live transport close timed out")),
+    };
+    let final_error = error.or(close_error);
+    ended.send_replace(Some(reason));
+    let _ = events.send(LiveSessionEvent::ended(
+        reason,
+        final_error.as_ref().map(|error| anyhow!(error.to_string())),
+    ));
+    for waiter in close_waiters {
+        let result = match &final_error {
+            Some(error) => Err(anyhow!(error.to_string())),
+            None => Ok(()),
         };
-        finish(&state, &events, reason, error);
-        return;
+        let _ = waiter.send(result);
     }
 }

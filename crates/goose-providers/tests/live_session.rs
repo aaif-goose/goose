@@ -107,9 +107,9 @@ impl LiveTransport for TestTransport {
     }
 }
 
-fn session(graceful: bool) -> (Arc<LiveSession<TestProtocol>>, Controls) {
+fn session(graceful: bool) -> (LiveSession<TestProtocol>, Controls) {
     let (transport, controls) = TestTransport::new();
-    let session = LiveSession::connect(Arc::new(TestProtocol { graceful }), transport);
+    let (session, _events) = LiveSession::connect(Arc::new(TestProtocol { graceful }), transport);
     (session, controls)
 }
 
@@ -287,17 +287,13 @@ async fn messages_are_delivered_before_end() {
 }
 
 #[tokio::test]
-async fn dropping_session_stops_receive_task() {
+async fn dropping_session_stops_actor() {
     let (transport, controls) = TestTransport::new();
-    let session = LiveSession::connect(Arc::new(TestProtocol { graceful: true }), transport);
-    let mut events = session.subscribe();
+    let (session, events) =
+        LiveSession::connect(Arc::new(TestProtocol { graceful: true }), transport);
     drop(session);
+    drop(events);
 
-    assert!(controls
-        .incoming
-        .send(Ok(Some(json!({ "text": "hi" }))))
-        .await
-        .is_ok());
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    assert!(events.try_recv().is_err());
+    assert!(controls.close_count() >= 1);
 }

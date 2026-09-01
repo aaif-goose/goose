@@ -7,13 +7,16 @@ use crate::live::LiveTransport;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::{mpsc, Mutex, Notify};
 
 pub struct BrowserLiveTransport {
     outbound_tx: mpsc::Sender<Value>,
     outbound_rx: Mutex<Option<mpsc::Receiver<Value>>>,
     incoming_tx: mpsc::Sender<Value>,
     incoming_rx: Mutex<mpsc::Receiver<Value>>,
+    closed: AtomicBool,
+    closed_notify: Notify,
 }
 
 impl BrowserLiveTransport {
@@ -25,6 +28,8 @@ impl BrowserLiveTransport {
             outbound_rx: Mutex::new(Some(outbound_rx)),
             incoming_tx,
             incoming_rx: Mutex::new(incoming_rx),
+            closed: AtomicBool::new(false),
+            closed_notify: Notify::new(),
         }
     }
 
@@ -37,6 +42,9 @@ impl BrowserLiveTransport {
     }
 
     pub async fn push_incoming(&self, message: Value) -> Result<()> {
+        if self.closed.load(Ordering::Acquire) {
+            anyhow::bail!("browser live transport is closed");
+        }
         self.incoming_tx.send(message).await.map_err(Into::into)
     }
 }
@@ -54,10 +62,20 @@ impl LiveTransport for BrowserLiveTransport {
     }
 
     async fn receive(&self) -> Result<Option<Value>> {
-        Ok(self.incoming_rx.lock().await.recv().await)
+        if self.closed.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        let mut incoming = self.incoming_rx.lock().await;
+        tokio::select! {
+            message = incoming.recv() => Ok(message),
+            () = self.closed_notify.notified() => Ok(None),
+        }
     }
 
     async fn close(&self) -> Result<()> {
+        if !self.closed.swap(true, Ordering::AcqRel) {
+            self.closed_notify.notify_waiters();
+        }
         Ok(())
     }
 }
