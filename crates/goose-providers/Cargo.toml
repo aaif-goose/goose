@@ -22,9 +22,6 @@ rustls-tls = [
     "rmcp/reqwest",
 ]
 live-websocket = ["dep:tokio-tungstenite", "dep:http"]
-voice-websocket = ["live-websocket"]
-live-tauri = ["dep:tauri", "reqwest/rustls"]
-voice-tauri = ["live-tauri"]
 native-tls = [
     "dep:pem",
     "dep:pkcs8",
@@ -55,7 +52,6 @@ uuid = { workspace = true, features = ["v4"] }
 base64 = { workspace = true }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"], optional = true }
 http = { workspace = true, optional = true }
-tauri = { version = "2", optional = true }
 pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
 sec1 = { version = "0.8", default-features = false, features = ["der", "std"], optional = true }
@@ -74,11 +70,3 @@ reqwest = { workspace = true, features = ["gzip"] }
 [[example]]
 name = "streaming"
 required-features = ["rustls-tls"]
-
-[[example]]
-name = "live_tauri_bridge"
-required-features = ["rustls-tls"]
-
-[[example]]
-name = "live_tauri"
-required-features = ["live-tauri"]

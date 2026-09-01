@@ -3,12 +3,13 @@
 //! The client owns OpenAI configuration and protocol semantics. WebSocket and
 //! WebRTC connectors own their distinct connection establishment flows.
 
-use crate::live::{LiveProtocol, LiveSession, LiveTransport};
+use crate::live::{LiveProtocol, LiveSession, LiveSessionEnd, LiveSessionEvent, LiveTransport};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Arc};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 pub const DEFAULT_OPENAI_LIVE_HTTP_URL: &str = "https://api.openai.com/v1/live";
@@ -190,11 +191,11 @@ impl OpenAiLiveClient {
         }
     }
 
-    pub fn connect_transport(
-        &self,
-        transport: Arc<dyn LiveTransport>,
-    ) -> Arc<LiveSession<OpenAiLiveProtocol>> {
-        LiveSession::connect(Arc::new(OpenAiLiveProtocol), transport)
+    pub fn connect_transport(&self, transport: Arc<dyn LiveTransport>) -> OpenAiLiveSession {
+        OpenAiLiveSession(LiveSession::connect(
+            Arc::new(OpenAiLiveProtocol),
+            transport,
+        ))
     }
 
     fn headers(&self) -> Vec<(String, String)> {
@@ -288,7 +289,7 @@ impl OpenAiLiveWebSocketConnector {
     }
 
     #[cfg(feature = "live-websocket")]
-    pub async fn connect(self) -> Result<Arc<LiveSession<OpenAiLiveProtocol>>> {
+    pub async fn connect(self) -> Result<OpenAiLiveSession> {
         let client = self.client.clone();
         let transport = Arc::new(
             crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
@@ -319,7 +320,7 @@ pub struct OpenAiLiveWebRtcNegotiation {
 }
 
 impl OpenAiLiveWebRtcNegotiation {
-    pub fn bind(self, transport: Arc<dyn LiveTransport>) -> Arc<LiveSession<OpenAiLiveProtocol>> {
+    pub fn bind(self, transport: Arc<dyn LiveTransport>) -> OpenAiLiveSession {
         self.client.connect_transport(transport)
     }
 }
@@ -374,6 +375,60 @@ impl OpenAiLiveWebRtcConnector {
             model: request.model,
             client,
         })
+    }
+}
+
+/// An established OpenAI Live session. Wraps the generic session runtime so
+/// callers name one concrete type instead of `LiveSession<OpenAiLiveProtocol>`.
+#[derive(Clone)]
+pub struct OpenAiLiveSession(Arc<LiveSession<OpenAiLiveProtocol>>);
+
+pub type OpenAiLiveSessionEvent = LiveSessionEvent<OpenAiLiveEvent>;
+
+impl OpenAiLiveSession {
+    pub fn subscribe(&self) -> broadcast::Receiver<OpenAiLiveSessionEvent> {
+        self.0.subscribe()
+    }
+
+    pub fn end_reason(&self) -> Option<LiveSessionEnd> {
+        self.0.end_reason()
+    }
+
+    pub async fn send(&self, command: OpenAiLiveCommand) -> Result<()> {
+        self.0.send(command).await
+    }
+
+    pub async fn append_context(&self, context: OpenAiLiveContext) -> Result<()> {
+        self.send(OpenAiLiveCommand::AppendContext(context)).await
+    }
+
+    pub async fn complete_delegation(
+        &self,
+        delegation_id: impl Into<String>,
+        context: OpenAiLiveContext,
+    ) -> Result<()> {
+        self.send(OpenAiLiveCommand::CompleteDelegation {
+            delegation_id: delegation_id.into(),
+            context,
+        })
+        .await
+    }
+
+    pub async fn append_audio(&self, audio: Vec<u8>) -> Result<()> {
+        self.send(OpenAiLiveCommand::AppendAudio(audio)).await
+    }
+
+    pub async fn pause_input(&self) -> Result<()> {
+        self.send(OpenAiLiveCommand::PauseInput).await
+    }
+
+    pub async fn resume_input(&self) -> Result<()> {
+        self.send(OpenAiLiveCommand::ResumeInput).await
+    }
+
+    /// Requests graceful shutdown and closes the transport.
+    pub async fn close(&self) -> Result<()> {
+        self.0.close().await
     }
 }
 
@@ -516,14 +571,11 @@ impl LiveProtocol for OpenAiLiveProtocol {
         })
     }
 
-    fn closed_event(&self) -> Self::Event {
-        OpenAiLiveEvent {
-            kind: OpenAiLiveEventKind::SessionClosed,
-            raw: None,
-        }
+    fn close_command(&self) -> Option<Self::Command> {
+        Some(OpenAiLiveCommand::Close)
     }
 
-    fn is_closed(&self, event: &Self::Event) -> bool {
+    fn is_close_acknowledgement(&self, event: &Self::Event) -> bool {
         matches!(event.kind, OpenAiLiveEventKind::SessionClosed)
     }
 }
