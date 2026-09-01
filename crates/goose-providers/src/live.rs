@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::{
-    sync::{broadcast, watch},
+    sync::{broadcast, watch, Mutex},
     task::JoinHandle,
     time::{timeout, Duration},
 };
@@ -37,19 +37,13 @@ pub trait LiveProtocol: Send + Sync + 'static {
     fn is_close_acknowledgement(&self, event: &Self::Event) -> bool;
 }
 
-/// Why a live session stopped delivering provider events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveSessionEnd {
-    /// The provider acknowledged shutdown, or the transport closed cleanly.
     Closed,
-    /// The transport failed.
     TransportFailed,
-    /// A provider message could not be decoded.
     DecodeFailed,
 }
 
-/// Session lifecycle wrapped around protocol events, so consumers can tell a
-/// clean shutdown from a failure without inspecting provider event payloads.
 #[derive(Debug, Clone)]
 pub enum LiveSessionEvent<E> {
     Message(E),
@@ -68,31 +62,40 @@ impl<E> LiveSessionEvent<E> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiveSessionState {
+    Open,
+    Closing,
+    Ended(LiveSessionEnd),
+}
+
 pub struct LiveSession<P: LiveProtocol> {
     protocol: Arc<P>,
     transport: Arc<dyn LiveTransport>,
     events: broadcast::Sender<LiveSessionEvent<P::Event>>,
-    ended: watch::Sender<Option<LiveSessionEnd>>,
+    state: watch::Sender<LiveSessionState>,
+    transition_lock: Mutex<()>,
     receive_task: JoinHandle<()>,
 }
 
 impl<P: LiveProtocol> LiveSession<P> {
     pub fn connect(protocol: Arc<P>, transport: Arc<dyn LiveTransport>) -> Arc<Self> {
         let (events, _) = broadcast::channel(256);
-        let (ended, _) = watch::channel(None);
+        let (state, _) = watch::channel(LiveSessionState::Open);
         Arc::new_cyclic(|weak: &std::sync::Weak<Self>| {
             let receive_task = tokio::spawn(receive_loop(
                 weak.clone(),
                 protocol.clone(),
                 transport.clone(),
                 events.clone(),
-                ended.clone(),
+                state.clone(),
             ));
             Self {
                 protocol,
                 transport,
                 events,
-                ended,
+                state,
+                transition_lock: Mutex::new(()),
                 receive_task,
             }
         })
@@ -103,39 +106,59 @@ impl<P: LiveProtocol> LiveSession<P> {
     }
 
     pub fn end_reason(&self) -> Option<LiveSessionEnd> {
-        *self.ended.borrow()
+        match *self.state.borrow() {
+            LiveSessionState::Ended(reason) => Some(reason),
+            LiveSessionState::Open | LiveSessionState::Closing => None,
+        }
     }
 
     pub async fn send(&self, command: P::Command) -> Result<()> {
-        if let Some(reason) = self.end_reason() {
-            bail!("live session ended ({reason:?})");
+        match *self.state.borrow() {
+            LiveSessionState::Open => {}
+            LiveSessionState::Closing => bail!("live session is closing"),
+            LiveSessionState::Ended(reason) => bail!("live session ended ({reason:?})"),
         }
         self.transport.send(self.protocol.encode(command)?).await
     }
 
-    /// Requests graceful shutdown, waits briefly for the provider to
-    /// acknowledge, then closes the transport. Safe to call more than once.
+    /// Requests graceful shutdown and closes the transport. Concurrent callers
+    /// share one shutdown operation and wait for the same terminal state.
     pub async fn close(&self) -> Result<()> {
-        if self.end_reason().is_some() {
-            return self.transport.close().await;
-        }
-
-        let mut ended = self.ended.subscribe();
-        if let Some(command) = self.protocol.close_command() {
-            self.send(command).await?;
-            let _ = timeout(CLOSE_ACKNOWLEDGEMENT_TIMEOUT, async {
-                while ended.borrow_and_update().is_none() {
-                    if ended.changed().await.is_err() {
-                        break;
-                    }
+        let mut state = self.state.subscribe();
+        let owns_shutdown = {
+            let _guard = self.transition_lock.lock().await;
+            match *self.state.borrow() {
+                LiveSessionState::Open => {
+                    self.state.send_replace(LiveSessionState::Closing);
+                    true
                 }
-            })
-            .await;
+                LiveSessionState::Closing => false,
+                LiveSessionState::Ended(_) => return Ok(()),
+            }
+        };
+
+        if !owns_shutdown {
+            wait_until_ended(&mut state).await;
+            return Ok(());
         }
 
-        let result = self.transport.close().await;
-        finish(&self.ended, &self.events, LiveSessionEnd::Closed, None);
-        result
+        let close_command = self.protocol.close_command();
+        let waits_for_acknowledgement = close_command.is_some();
+        let graceful_result = match close_command {
+            Some(command) => match self.protocol.encode(command) {
+                Ok(message) => self.transport.send(message).await,
+                Err(error) => Err(error),
+            },
+            None => Ok(()),
+        };
+
+        if graceful_result.is_ok() && waits_for_acknowledgement {
+            let _ = timeout(CLOSE_ACKNOWLEDGEMENT_TIMEOUT, wait_until_ended(&mut state)).await;
+        }
+
+        let transport_result = self.transport.close().await;
+        finish(&self.state, &self.events, LiveSessionEnd::Closed, None);
+        graceful_result.and(transport_result)
     }
 }
 
@@ -145,16 +168,27 @@ impl<P: LiveProtocol> Drop for LiveSession<P> {
     }
 }
 
+async fn wait_until_ended(state: &mut watch::Receiver<LiveSessionState>) -> LiveSessionEnd {
+    loop {
+        if let LiveSessionState::Ended(reason) = *state.borrow_and_update() {
+            return reason;
+        }
+        if state.changed().await.is_err() {
+            return LiveSessionEnd::Closed;
+        }
+    }
+}
+
 fn finish<E: Clone>(
-    ended: &watch::Sender<Option<LiveSessionEnd>>,
+    state: &watch::Sender<LiveSessionState>,
     events: &broadcast::Sender<LiveSessionEvent<E>>,
     reason: LiveSessionEnd,
     error: Option<anyhow::Error>,
 ) {
-    if ended.borrow().is_some() {
+    if matches!(*state.borrow(), LiveSessionState::Ended(_)) {
         return;
     }
-    ended.send_replace(Some(reason));
+    state.send_replace(LiveSessionState::Ended(reason));
     let _ = events.send(LiveSessionEvent::ended(reason, error));
 }
 
@@ -163,7 +197,7 @@ async fn receive_loop<P: LiveProtocol>(
     protocol: Arc<P>,
     transport: Arc<dyn LiveTransport>,
     events: broadcast::Sender<LiveSessionEvent<P::Event>>,
-    ended: watch::Sender<Option<LiveSessionEnd>>,
+    state: watch::Sender<LiveSessionState>,
 ) {
     loop {
         if session.upgrade().is_none() {
@@ -184,7 +218,7 @@ async fn receive_loop<P: LiveProtocol>(
             Ok(None) => (LiveSessionEnd::Closed, None),
             Err(error) => (LiveSessionEnd::TransportFailed, Some(error)),
         };
-        finish(&ended, &events, reason, error);
+        finish(&state, &events, reason, error);
         return;
     }
 }

@@ -210,8 +210,36 @@ async fn close_is_idempotent() {
     session.close().await.unwrap();
     session.close().await.unwrap();
 
-    assert_eq!(controls.close_count(), 2);
+    assert_eq!(controls.close_count(), 1);
     assert_eq!(session.end_reason(), Some(LiveSessionEnd::Closed));
+}
+
+#[tokio::test]
+async fn concurrent_close_has_one_owner() {
+    let (session, mut controls) = session(true);
+    let first = tokio::spawn({
+        let session = session.clone();
+        async move { session.close().await }
+    });
+    let second = tokio::spawn({
+        let session = session.clone();
+        async move { session.close().await }
+    });
+
+    assert_eq!(
+        controls.sent.recv().await.unwrap(),
+        json!({ "text": "close" })
+    );
+    assert!(controls.sent.try_recv().is_err());
+    controls
+        .incoming
+        .send(Ok(Some(json!({ "text": "closed" }))))
+        .await
+        .unwrap();
+
+    first.await.unwrap().unwrap();
+    second.await.unwrap().unwrap();
+    assert_eq!(controls.close_count(), 1);
 }
 
 #[tokio::test]
