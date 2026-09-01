@@ -321,11 +321,15 @@ fn normalize_paste_text(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-/// Build the chip shown in place of a pasted block, or `None` when the paste is
-/// small enough to keep inline. `id` makes the marker unique to this paste
-/// instance so a cleared chip can never be expanded into a later, identical-
-/// looking one (see [`expand_pastes`]).
+/// Build the chip shown in place of a pasted block, or `None` when the paste must
+/// remain visible. `id` makes the marker unique to this paste instance so a
+/// cleared chip can never be expanded into a later, identical-looking one (see
+/// [`expand_pastes`]).
 fn paste_marker(content: &str, id: usize) -> Option<String> {
+    if content.starts_with('/') {
+        return None;
+    }
+
     let lines = content.trim_end_matches('\n').matches('\n').count() + 1;
     if lines >= PASTE_CHIP_MIN_LINES {
         Some(format!("[Pasted {lines} lines #{id}]"))
@@ -394,6 +398,19 @@ mod tests {
         assert_eq!(
             paste_marker(&long, 3),
             Some(format!("[Pasted {PASTE_CHIP_MIN_CHARS} chars #3]"))
+        );
+    }
+
+    #[test]
+    fn test_paste_marker_keeps_slash_commands_visible() {
+        assert_eq!(paste_marker("/extension example\nignored", 4), None);
+
+        let long = format!("/mode auto {}", "x".repeat(PASTE_CHIP_MIN_CHARS));
+        assert_eq!(paste_marker(&long, 5), None);
+
+        assert_eq!(
+            paste_marker("explain /extension\ncontinued", 6),
+            Some("[Pasted 2 lines #6]".to_string())
         );
     }
 
