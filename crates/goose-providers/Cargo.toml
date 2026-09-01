@@ -70,3 +70,6 @@ reqwest = { workspace = true, features = ["gzip"] }
 [[example]]
 name = "streaming"
 required-features = ["rustls-tls"]
+
+[[example]]
+name = "openai_live"

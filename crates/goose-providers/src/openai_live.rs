@@ -9,12 +9,16 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Arc};
-use tokio::sync::broadcast;
+use tokio::{
+    sync::broadcast,
+    time::{timeout, Duration},
+};
 use uuid::Uuid;
 
 pub const DEFAULT_OPENAI_LIVE_HTTP_URL: &str = "https://api.openai.com/v1/live";
 pub const DEFAULT_OPENAI_LIVE_WEBSOCKET_URL: &str = "wss://api.openai.com/v1/live";
 pub const DEFAULT_OPENAI_LIVE_ALPHA_SELECTOR: &str = "quicksilver=v2";
+const SESSION_START_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAiLiveSessionConfig {
@@ -56,18 +60,42 @@ pub struct OpenAiLiveContext {
     pub channel: OpenAiLiveContextChannel,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpenAiLiveSessionId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpenAiLiveDelegationId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpenAiLiveTurnId(pub String);
+
+impl From<String> for OpenAiLiveDelegationId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for OpenAiLiveDelegationId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAiLiveDelegation {
-    pub id: String,
+    pub id: OpenAiLiveDelegationId,
     pub prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user_turn_id: Option<String>,
+    pub user_turn_id: Option<OpenAiLiveTurnId>,
 }
 
 pub enum OpenAiLiveCommand {
     AppendContext(OpenAiLiveContext),
     AppendDelegationContext {
-        delegation_id: String,
+        delegation_id: OpenAiLiveDelegationId,
         context: OpenAiLiveContext,
     },
     AppendAudio(Vec<u8>),
@@ -87,7 +115,7 @@ pub struct OpenAiLiveEvent {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OpenAiLiveEventKind {
     SessionStarted {
-        session_id: Option<String>,
+        session_id: Option<OpenAiLiveSessionId>,
     },
     InputTranscriptDelta {
         text: String,
@@ -111,7 +139,7 @@ pub enum OpenAiLiveEventKind {
     },
     ContextAppended,
     DelegationContextAppended {
-        delegation_id: String,
+        delegation_id: OpenAiLiveDelegationId,
     },
     Usage {
         usage: Value,
@@ -301,7 +329,7 @@ pub struct OpenAiLiveWebRtcRequest {
 
 pub struct OpenAiLiveWebRtcNegotiation {
     pub answer_sdp: String,
-    pub session_id: Option<String>,
+    pub session_id: Option<OpenAiLiveSessionId>,
     pub model: String,
     client: OpenAiLiveClient,
 }
@@ -351,7 +379,7 @@ impl OpenAiLiveWebRtcConnector {
             .headers()
             .get("openai-session-id")
             .and_then(|value| value.to_str().ok())
-            .map(str::to_owned);
+            .map(|value| OpenAiLiveSessionId(value.to_owned()));
         let answer_sdp = response.text().await?;
         if !status.is_success() {
             bail!("OpenAI Live signaling failed ({status}): {answer_sdp}");
@@ -374,38 +402,42 @@ pub type OpenAiLiveSessionEvent = LiveSessionEvent<OpenAiLiveEvent>;
 
 pub struct ConnectedOpenAiLiveSession {
     pub session: OpenAiLiveSession,
-    pub events: broadcast::Receiver<OpenAiLiveSessionEvent>,
+    events: broadcast::Receiver<OpenAiLiveSessionEvent>,
     pending_events: std::collections::VecDeque<OpenAiLiveSessionEvent>,
 }
 
 impl ConnectedOpenAiLiveSession {
     /// Waits for OpenAI to confirm startup while buffering earlier events.
     pub async fn ready(mut self) -> Result<Self> {
-        loop {
-            match self.events.recv().await? {
-                LiveSessionEvent::Message(event)
-                    if matches!(event.kind, OpenAiLiveEventKind::SessionStarted { .. }) =>
-                {
-                    return Ok(self);
-                }
-                LiveSessionEvent::Message(event)
-                    if matches!(event.kind, OpenAiLiveEventKind::Error { .. }) =>
-                {
-                    if let OpenAiLiveEventKind::Error { message } = event.kind {
-                        bail!("OpenAI Live startup failed: {message}");
+        timeout(SESSION_START_TIMEOUT, async {
+            loop {
+                match self.events.recv().await? {
+                    LiveSessionEvent::Message(event)
+                        if matches!(event.kind, OpenAiLiveEventKind::SessionStarted { .. }) =>
+                    {
+                        return Ok(self);
                     }
-                }
-                LiveSessionEvent::Ended { error, .. } => {
-                    if let Some(error) = error {
-                        return Err(anyhow::anyhow!(error.to_string()));
+                    LiveSessionEvent::Message(event)
+                        if matches!(event.kind, OpenAiLiveEventKind::Error { .. }) =>
+                    {
+                        if let OpenAiLiveEventKind::Error { message } = event.kind {
+                            bail!("OpenAI Live startup failed: {message}");
+                        }
                     }
-                    bail!("OpenAI Live session ended before startup");
-                }
-                event @ LiveSessionEvent::Message(_) => {
-                    self.pending_events.push_back(event);
+                    LiveSessionEvent::Ended { error, .. } => {
+                        if let Some(error) = error {
+                            return Err(anyhow::anyhow!(error.to_string()));
+                        }
+                        bail!("OpenAI Live session ended before startup");
+                    }
+                    event @ LiveSessionEvent::Message(_) => {
+                        self.pending_events.push_back(event);
+                    }
                 }
             }
-        }
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("OpenAI Live session startup timed out"))?
     }
 
     pub async fn recv(&mut self) -> Result<OpenAiLiveSessionEvent> {
@@ -435,7 +467,7 @@ impl OpenAiLiveSession {
 
     pub async fn append_delegation_context(
         &self,
-        delegation_id: impl Into<String>,
+        delegation_id: impl Into<OpenAiLiveDelegationId>,
         context: OpenAiLiveContext,
     ) -> Result<()> {
         self.send(OpenAiLiveCommand::AppendDelegationContext {
@@ -478,7 +510,7 @@ impl LiveProtocol for OpenAiLiveProtocol {
                 delegation_id,
                 context,
             } => {
-                if delegation_id.trim().is_empty() {
+                if delegation_id.0.trim().is_empty() {
                     bail!("delegation ID is empty");
                 }
                 text_event("delegation.context.append", Some(&delegation_id), context)
@@ -521,7 +553,7 @@ impl LiveProtocol for OpenAiLiveProtocol {
                 session_id: event
                     .pointer("/session/id")
                     .and_then(Value::as_str)
-                    .map(str::to_owned),
+                    .map(|value| OpenAiLiveSessionId(value.to_owned())),
             },
             "input_transcript.added" => OpenAiLiveEventKind::InputTranscriptDelta { text: text()? },
             "output_transcript.added" => {
@@ -552,6 +584,7 @@ impl LiveProtocol for OpenAiLiveProtocol {
                             .get("id")
                             .and_then(Value::as_str)
                             .context("delegation is missing id")?
+                            .to_owned()
                             .into(),
                         prompt: item
                             .get("content")
@@ -564,7 +597,7 @@ impl LiveProtocol for OpenAiLiveProtocol {
                         user_turn_id: item
                             .get("user_bidi_turn_id")
                             .and_then(Value::as_str)
-                            .map(str::to_owned),
+                            .map(|value| OpenAiLiveTurnId(value.to_owned())),
                     },
                 }
             }
@@ -574,6 +607,7 @@ impl LiveProtocol for OpenAiLiveProtocol {
                     .get("delegation_item_id")
                     .and_then(Value::as_str)
                     .context("delegation.context.appended is missing delegation_item_id")?
+                    .to_owned()
                     .into(),
             },
             "session.usage.updated" => OpenAiLiveEventKind::Usage {
@@ -612,7 +646,7 @@ fn event_id() -> String {
 
 fn text_event(
     kind: &str,
-    delegation_id: Option<&str>,
+    delegation_id: Option<&OpenAiLiveDelegationId>,
     context: OpenAiLiveContext,
 ) -> Result<Value> {
     let channel = match context.channel {
@@ -621,7 +655,7 @@ fn text_event(
     };
     let mut event = json!({ "type": kind, "event_id": event_id(), "channel": channel, "content": [{ "type": "input_text", "text": context.text }] });
     if let Some(id) = delegation_id {
-        event["delegation_item_id"] = json!(id);
+        event["delegation_item_id"] = json!(id.0);
     }
     Ok(event)
 }
@@ -739,7 +773,7 @@ mod tests {
         ));
         let encoded = protocol
             .encode(OpenAiLiveCommand::AppendDelegationContext {
-                delegation_id: "item_1".into(),
+                delegation_id: OpenAiLiveDelegationId("item_1".into()),
                 context: OpenAiLiveContext {
                     text: "done".into(),
                     channel: OpenAiLiveContextChannel::Speakable,
