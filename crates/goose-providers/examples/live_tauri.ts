@@ -1,4 +1,4 @@
-// Browser half of `voice_tauri.rs`.
+// Browser half of `live_tauri.rs`.
 //
 // The browser owns microphone capture, audio playback, RTCPeerConnection, and
 // RTCDataChannel. Rust owns credentials, provider protocol, and session state.
@@ -6,13 +6,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-interface StartVoiceResponse {
+interface StartLiveResponse {
   sdp: string;
   sessionId?: string;
   model: string;
 }
 
-interface VoiceEvent {
+interface LiveEvent {
   kind: Record<string, unknown> & { type: string };
   raw?: unknown;
 }
@@ -23,7 +23,7 @@ let microphone: MediaStream | undefined;
 let unlistenCommand: UnlistenFn | undefined;
 let unlistenEvent: UnlistenFn | undefined;
 
-export async function startVoice(initialContext: string, audio: HTMLAudioElement) {
+export async function startLive(initialContext: string, audio: HTMLAudioElement) {
   peer = new RTCPeerConnection();
   microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
   for (const track of microphone.getTracks()) peer.addTrack(track, microphone);
@@ -35,13 +35,13 @@ export async function startVoice(initialContext: string, audio: HTMLAudioElement
 
   dataChannel = peer.createDataChannel("oai-events");
   dataChannel.onmessage = ({ data }) => {
-    void invoke("voice_incoming", { event: JSON.parse(data) });
+    void invoke("live_incoming", { event: JSON.parse(data) });
   };
 
-  unlistenCommand = await listen<Record<string, unknown>>("voice-command", ({ payload }) => {
+  unlistenCommand = await listen<Record<string, unknown>>("live-command", ({ payload }) => {
     sendEvent(payload);
   });
-  unlistenEvent = await listen<VoiceEvent>("voice-event", ({ payload }) => {
+  unlistenEvent = await listen<LiveEvent>("live-event", ({ payload }) => {
     if (payload.kind.type === "delegation_created") {
       const delegation = payload.kind.delegation as { id: string; prompt: string };
       void runDelegate(delegation.prompt).then((answer) =>
@@ -54,7 +54,7 @@ export async function startVoice(initialContext: string, audio: HTMLAudioElement
   await peer.setLocalDescription(offer);
   await waitForIceGathering(peer);
 
-  const signaling = await invoke<StartVoiceResponse>("start_voice", {
+  const signaling = await invoke<StartLiveResponse>("start_live", {
     request: {
       sdp: peer.localDescription!.sdp,
       initialContext,
@@ -64,17 +64,17 @@ export async function startVoice(initialContext: string, audio: HTMLAudioElement
 }
 
 export async function appendContext(text: string) {
-  await invoke("append_voice_context", { text });
+  await invoke("append_live_context", { text });
 }
 
 export async function completeDelegation(delegationId: string, text: string) {
-  await invoke("complete_voice_delegation", {
+  await invoke("complete_live_delegation", {
     request: { delegationId, text },
   });
 }
 
-export async function stopVoice() {
-  await invoke("close_voice");
+export async function stopLive() {
+  await invoke("close_live");
   peer?.close();
   microphone?.getTracks().forEach((track) => track.stop());
   unlistenCommand?.();
@@ -87,7 +87,7 @@ export async function stopVoice() {
 }
 
 function sendEvent(event: Record<string, unknown>) {
-  if (dataChannel?.readyState !== "open") throw new Error("Voice data channel is not open");
+  if (dataChannel?.readyState !== "open") throw new Error("Live data channel is not open");
   dataChannel.send(JSON.stringify(event));
 }
 

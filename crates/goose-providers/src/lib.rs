@@ -9,17 +9,18 @@ pub use goose_provider_types::{
     base, cache_semantics, canonical, conversation, errors, formats, goose_mode, images, json,
     model, permission, request_log, retry, thinking, utils,
 };
+pub mod browser_live_transport;
 pub mod declarative;
 pub mod http_status;
+pub mod live;
+#[cfg(feature = "live-websocket")]
+pub mod live_transport_websocket;
 #[cfg(feature = "local-inference")]
 pub mod local_inference;
 pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openai_live;
-pub mod voice;
-#[cfg(feature = "voice-websocket")]
-pub mod voice_transport_websocket;
 
 pub use declarative::declarative_providers::*;
 

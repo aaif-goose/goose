@@ -1,7 +1,6 @@
-//! Native backend WebSocket connection for voice providers.
-//! Enable with the `voice-websocket` feature.
+//! Native WebSocket transport for OpenAI Live sessions.
 
-use crate::voice::{VoiceConnection, WebSocketConnectionPlan};
+use crate::{live::LiveTransport, openai_live::OpenAiLiveWebSocketRequest};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
@@ -14,25 +13,23 @@ type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 type SocketSink = SplitSink<Socket, Message>;
 type SocketStream = SplitStream<Socket>;
 
-pub struct WebSocketVoiceConnection {
+pub struct WebSocketLiveTransport {
     sink: Mutex<SocketSink>,
     stream: Mutex<SocketStream>,
 }
 
-impl WebSocketVoiceConnection {
-    pub async fn connect(plan: WebSocketConnectionPlan) -> Result<Self> {
-        let (endpoint, headers, after_connect, _) = plan.take_parts();
-        let mut builder = Request::builder().uri(&endpoint);
-        for (name, value) in headers {
+impl WebSocketLiveTransport {
+    pub async fn connect(request: OpenAiLiveWebSocketRequest) -> Result<Self> {
+        let mut builder = Request::builder().uri(&request.endpoint);
+        for (name, value) in request.headers {
             builder = builder.header(name, value);
         }
-        let request = builder.body(())?;
-        let (socket, _) = connect_async(request)
+        let (socket, _) = connect_async(builder.body(())?)
             .await
-            .context("voice WebSocket connection failed")?;
+            .context("live WebSocket connection failed")?;
         let (mut sink, stream) = socket.split();
-        for event in after_connect {
-            sink.send(Message::Text(event.to_string().into())).await?;
+        for message in request.initial_messages {
+            sink.send(Message::Text(message.to_string().into())).await?;
         }
         Ok(Self {
             sink: Mutex::new(sink),
@@ -42,12 +39,12 @@ impl WebSocketVoiceConnection {
 }
 
 #[async_trait]
-impl VoiceConnection for WebSocketVoiceConnection {
-    async fn send(&self, event: Value) -> Result<()> {
+impl LiveTransport for WebSocketLiveTransport {
+    async fn send(&self, message: Value) -> Result<()> {
         self.sink
             .lock()
             .await
-            .send(Message::Text(event.to_string().into()))
+            .send(Message::Text(message.to_string().into()))
             .await?;
         Ok(())
     }

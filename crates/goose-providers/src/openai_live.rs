@@ -1,27 +1,149 @@
-//! OpenAI GPT-Live alpha protocol support.
+//! OpenAI GPT Live alpha API.
 //!
-//! This unreleased API supports browser-owned WebRTC and backend WebSocket
-//! transports. The provider owns configuration and event semantics; transport
-//! implementations own media and byte delivery.
+//! The client owns OpenAI configuration and protocol semantics. WebSocket and
+//! WebRTC connectors own their distinct connection establishment flows.
 
-use crate::voice::*;
+use crate::live::{LiveProtocol, LiveSession, LiveTransport};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::{collections::BTreeMap, sync::Arc};
 use uuid::Uuid;
 
 pub const DEFAULT_OPENAI_LIVE_HTTP_URL: &str = "https://api.openai.com/v1/live";
 pub const DEFAULT_OPENAI_LIVE_WEBSOCKET_URL: &str = "wss://api.openai.com/v1/live";
 pub const DEFAULT_OPENAI_LIVE_ALPHA_SELECTOR: &str = "quicksilver=v2";
 
-pub struct OpenAiLiveProvider {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiLiveSessionConfig {
+    pub model: String,
+    pub instructions: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<String>,
+    #[serde(default)]
+    pub initial_items: Vec<OpenAiLiveMessage>,
+    #[serde(default)]
+    pub delegation: OpenAiLiveDelegationMode,
+    #[serde(default)]
+    pub experimental: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiLiveMessage {
+    pub role: OpenAiLiveMessageRole,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenAiLiveMessageRole {
+    User,
+    Assistant,
+    Developer,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiLiveDelegationMode {
+    #[default]
+    Disabled,
+    Client,
+    Provider,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenAiLiveContextChannel {
+    Speakable,
+    Commentary,
+    Developer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiLiveContext {
+    pub text: String,
+    pub channel: OpenAiLiveContextChannel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiLiveDelegation {
+    pub id: String,
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_turn_id: Option<String>,
+}
+
+pub enum OpenAiLiveCommand {
+    AppendContext(OpenAiLiveContext),
+    CompleteDelegation {
+        delegation_id: String,
+        context: OpenAiLiveContext,
+    },
+    AppendAudio(Vec<u8>),
+    PauseInput,
+    ResumeInput,
+    Close,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiLiveEvent {
+    pub kind: OpenAiLiveEventKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OpenAiLiveEventKind {
+    SessionStarted {
+        session_id: Option<String>,
+    },
+    InputTranscriptDelta {
+        text: String,
+    },
+    InputTranscriptCompleted {
+        text: String,
+    },
+    OutputTranscriptDelta {
+        text: String,
+    },
+    OutputTranscriptCompleted {
+        text: String,
+    },
+    OutputAudioDelta {
+        audio: Vec<u8>,
+        start_ms: Option<u64>,
+        end_ms: Option<u64>,
+    },
+    DelegationCreated {
+        delegation: OpenAiLiveDelegation,
+    },
+    ContextAppended,
+    DelegationContextAppended {
+        delegation_id: String,
+    },
+    Usage {
+        usage: Value,
+    },
+    Error {
+        message: String,
+    },
+    SessionClosed,
+    Other {
+        event_type: String,
+    },
+}
+
+#[derive(Clone)]
+pub struct OpenAiLiveClient {
     api_key: String,
     http_endpoint: String,
     websocket_endpoint: String,
     alpha_selector: String,
 }
 
-impl OpenAiLiveProvider {
+impl OpenAiLiveClient {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
@@ -43,17 +165,36 @@ impl OpenAiLiveProvider {
         self.http_endpoint = endpoint.into();
         self
     }
+
     pub fn with_websocket_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.websocket_endpoint = endpoint.into();
         self
     }
+
     pub fn with_alpha_selector(mut self, selector: impl Into<String>) -> Self {
         self.alpha_selector = selector.into();
         self
     }
 
-    fn event_id() -> String {
-        format!("event_{}", Uuid::new_v4())
+    pub fn websocket(&self, config: OpenAiLiveSessionConfig) -> OpenAiLiveWebSocketConnector {
+        OpenAiLiveWebSocketConnector {
+            client: self.clone(),
+            config,
+        }
+    }
+
+    pub fn webrtc(&self, config: OpenAiLiveSessionConfig) -> OpenAiLiveWebRtcConnector {
+        OpenAiLiveWebRtcConnector {
+            client: self.clone(),
+            config,
+        }
+    }
+
+    pub fn connect_transport(
+        &self,
+        transport: Arc<dyn LiveTransport>,
+    ) -> Arc<LiveSession<OpenAiLiveProtocol>> {
+        LiveSession::connect(Arc::new(OpenAiLiveProtocol), transport)
     }
 
     fn headers(&self) -> Vec<(String, String)> {
@@ -63,12 +204,26 @@ impl OpenAiLiveProvider {
         ]
     }
 
-    fn session_json(config: &VoiceSessionConfig, include_model: bool) -> Value {
+    fn session_json(config: &OpenAiLiveSessionConfig, include_model: bool) -> Result<Value> {
+        const RESERVED: &[&str] = &[
+            "model",
+            "instructions",
+            "initial_items",
+            "audio",
+            "delegation",
+        ];
+        if let Some(field) = config
+            .experimental
+            .keys()
+            .find(|field| RESERVED.contains(&field.as_str()))
+        {
+            bail!("experimental session field `{field}` conflicts with typed configuration");
+        }
         let initial_items = config.initial_items.iter().map(|message| {
             let role = match message.role {
-                VoiceMessageRole::User => "user",
-                VoiceMessageRole::Assistant => "assistant",
-                VoiceMessageRole::Developer => "developer",
+                OpenAiLiveMessageRole::User => "user",
+                OpenAiLiveMessageRole::Assistant => "assistant",
+                OpenAiLiveMessageRole::Developer => "developer",
             };
             json!({ "type": "message", "role": role, "content": [{ "type": "input_text", "text": message.text }] })
         }).collect::<Vec<_>>();
@@ -82,92 +237,227 @@ impl OpenAiLiveProvider {
         if let Some(voice) = &config.voice {
             session["audio"] = json!({ "output": { "voice": voice } });
         }
-        if !matches!(config.delegation, VoiceDelegationMode::Disabled) {
+        if !matches!(config.delegation, OpenAiLiveDelegationMode::Disabled) {
             session["delegation"] = match config.delegation {
-                VoiceDelegationMode::Client => json!({ "type": "client" }),
-                VoiceDelegationMode::Provider => json!({ "type": "responses" }),
-                VoiceDelegationMode::Disabled => unreachable!(),
+                OpenAiLiveDelegationMode::Client => json!({ "type": "client" }),
+                OpenAiLiveDelegationMode::Provider => json!({ "type": "responses" }),
+                OpenAiLiveDelegationMode::Disabled => unreachable!(),
             };
         }
-        if let Some(object) = session.as_object_mut() {
-            object.extend(config.extra.clone());
-        }
         session
+            .as_object_mut()
+            .unwrap()
+            .extend(config.experimental.clone());
+        Ok(session)
     }
 }
 
-impl VoiceProvider for OpenAiLiveProvider {
-    fn name(&self) -> &str {
-        "openai-live"
+pub struct OpenAiLiveWebSocketConnector {
+    client: OpenAiLiveClient,
+    config: OpenAiLiveSessionConfig,
+}
+
+pub struct OpenAiLiveWebSocketRequest {
+    pub endpoint: String,
+    pub headers: Vec<(String, String)>,
+    pub initial_messages: Vec<Value>,
+    pub model: String,
+}
+
+impl OpenAiLiveWebSocketConnector {
+    pub fn request(self) -> Result<OpenAiLiveWebSocketRequest> {
+        let separator = if self.client.websocket_endpoint.contains('?') {
+            '&'
+        } else {
+            '?'
+        };
+        Ok(OpenAiLiveWebSocketRequest {
+            endpoint: format!(
+                "{}{separator}model={}",
+                self.client.websocket_endpoint,
+                urlencoding::encode(&self.config.model)
+            ),
+            headers: self.client.headers(),
+            initial_messages: vec![json!({
+                "type": "session.update",
+                "event_id": event_id(),
+                "session": OpenAiLiveClient::session_json(&self.config, false)?,
+            })],
+            model: self.config.model,
+        })
     }
 
-    fn prepare_webrtc(
-        &self,
-        config: &VoiceSessionConfig,
-        offer_sdp: String,
-    ) -> Result<WebRtcSignalingPlan> {
+    #[cfg(feature = "live-websocket")]
+    pub async fn connect(self) -> Result<Arc<LiveSession<OpenAiLiveProtocol>>> {
+        let client = self.client.clone();
+        let transport = Arc::new(
+            crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
+                .await?,
+        );
+        Ok(client.connect_transport(transport))
+    }
+}
+
+pub struct OpenAiLiveWebRtcConnector {
+    client: OpenAiLiveClient,
+    config: OpenAiLiveSessionConfig,
+}
+
+pub struct OpenAiLiveWebRtcRequest {
+    pub endpoint: String,
+    pub headers: Vec<(String, String)>,
+    pub offer_sdp: String,
+    pub session: Value,
+    pub model: String,
+}
+
+pub struct OpenAiLiveWebRtcNegotiation {
+    pub answer_sdp: String,
+    pub session_id: Option<String>,
+    pub model: String,
+    client: OpenAiLiveClient,
+}
+
+impl OpenAiLiveWebRtcNegotiation {
+    pub fn bind(self, transport: Arc<dyn LiveTransport>) -> Arc<LiveSession<OpenAiLiveProtocol>> {
+        self.client.connect_transport(transport)
+    }
+}
+
+impl OpenAiLiveWebRtcConnector {
+    pub fn request(self, offer_sdp: impl Into<String>) -> Result<OpenAiLiveWebRtcRequest> {
+        let offer_sdp = offer_sdp.into();
         if offer_sdp.trim().is_empty() {
             bail!("WebRTC SDP offer is empty");
         }
-        Ok(WebRtcSignalingPlan {
-            endpoint: self.http_endpoint.clone(),
-            headers: self.headers(),
+        Ok(OpenAiLiveWebRtcRequest {
+            endpoint: self.client.http_endpoint.clone(),
+            headers: self.client.headers(),
             offer_sdp,
-            session: Self::session_json(config, true),
-            model: config.model.clone(),
+            session: OpenAiLiveClient::session_json(&self.config, true)?,
+            model: self.config.model,
         })
     }
 
-    fn prepare_websocket(&self, config: &VoiceSessionConfig) -> Result<WebSocketConnectionPlan> {
-        Ok(WebSocketConnectionPlan {
-            endpoint: format!(
-                "{}?model={}",
-                self.websocket_endpoint,
-                urlencoding::encode(&config.model)
-            ),
-            headers: self.headers(),
-            after_connect: vec![json!({
-                "type": "session.update",
-                "event_id": Self::event_id(),
-                "session": Self::session_json(config, false),
-            })],
-            model: config.model.clone(),
+    pub async fn negotiate(
+        self,
+        offer_sdp: impl Into<String>,
+    ) -> Result<OpenAiLiveWebRtcNegotiation> {
+        let client = self.client.clone();
+        let request = self.request(offer_sdp)?;
+        let form = reqwest::multipart::Form::new()
+            .text("sdp", request.offer_sdp)
+            .text("session", request.session.to_string());
+        let mut http_request = reqwest::Client::new()
+            .post(request.endpoint)
+            .multipart(form);
+        for (name, value) in request.headers {
+            http_request = http_request.header(name, value);
+        }
+        let response = http_request
+            .header(reqwest::header::ACCEPT, "application/sdp")
+            .send()
+            .await?;
+        let status = response.status();
+        let session_id = response
+            .headers()
+            .get("openai-session-id")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let answer_sdp = response.text().await?;
+        if !status.is_success() {
+            bail!("OpenAI Live signaling failed ({status}): {answer_sdp}");
+        }
+        Ok(OpenAiLiveWebRtcNegotiation {
+            answer_sdp,
+            session_id,
+            model: request.model,
+            client,
         })
     }
+}
 
-    fn decode_event(&self, event: Value) -> Result<VoiceEvent> {
+pub struct OpenAiLiveProtocol;
+
+impl LiveProtocol for OpenAiLiveProtocol {
+    type Command = OpenAiLiveCommand;
+    type Event = OpenAiLiveEvent;
+
+    fn encode(&self, command: Self::Command) -> Result<Value> {
+        match command {
+            OpenAiLiveCommand::AppendContext(context) => {
+                text_event("session.context.append", None, context, true)
+            }
+            OpenAiLiveCommand::CompleteDelegation {
+                delegation_id,
+                context,
+            } => {
+                if delegation_id.trim().is_empty() {
+                    bail!("delegation ID is empty");
+                }
+                text_event(
+                    "delegation.context.append",
+                    Some(&delegation_id),
+                    context,
+                    false,
+                )
+            }
+            OpenAiLiveCommand::AppendAudio(audio) => {
+                if audio.is_empty() {
+                    bail!("audio payload is empty");
+                }
+                Ok(
+                    json!({ "type": "input_audio.append", "event_id": event_id(), "audio": BASE64.encode(audio) }),
+                )
+            }
+            OpenAiLiveCommand::PauseInput => {
+                Ok(json!({ "type": "input_audio.pause", "event_id": event_id() }))
+            }
+            OpenAiLiveCommand::ResumeInput => {
+                Ok(json!({ "type": "input_audio.resume", "event_id": event_id() }))
+            }
+            OpenAiLiveCommand::Close => {
+                Ok(json!({ "type": "session.close", "event_id": event_id() }))
+            }
+        }
+    }
+
+    fn decode(&self, event: Value) -> Result<Self::Event> {
         let event_type = event
             .get("type")
             .and_then(Value::as_str)
-            .unwrap_or_default();
+            .context("OpenAI Live event is missing type")?;
         let text = || {
             event
                 .pointer("/item/text")
                 .or_else(|| event.pointer("/turn/transcript"))
                 .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned()
+                .context("OpenAI Live transcript event is missing text")
+                .map(str::to_owned)
         };
         let kind = match event_type {
-            "session.started" => VoiceEventKind::SessionStarted {
+            "session.started" => OpenAiLiveEventKind::SessionStarted {
                 session_id: event
                     .pointer("/session/id")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
             },
-            "input_transcript.added" => VoiceEventKind::InputTranscriptDelta { text: text() },
-            "output_transcript.added" => VoiceEventKind::OutputTranscriptDelta { text: text() },
-            "turn.done" if event.pointer("/turn/role").and_then(Value::as_str) == Some("user") => {
-                VoiceEventKind::InputTranscriptCompleted { text: text() }
+            "input_transcript.added" => OpenAiLiveEventKind::InputTranscriptDelta { text: text()? },
+            "output_transcript.added" => {
+                OpenAiLiveEventKind::OutputTranscriptDelta { text: text()? }
             }
-            "turn.done" => VoiceEventKind::OutputTranscriptCompleted { text: text() },
-            "output_audio.delta" => VoiceEventKind::OutputAudioDelta {
-                audio: event
-                    .get("audio")
-                    .or_else(|| event.get("delta"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
+            "turn.done" if event.pointer("/turn/role").and_then(Value::as_str) == Some("user") => {
+                OpenAiLiveEventKind::InputTranscriptCompleted { text: text()? }
+            }
+            "turn.done" => OpenAiLiveEventKind::OutputTranscriptCompleted { text: text()? },
+            "output_audio.delta" => OpenAiLiveEventKind::OutputAudioDelta {
+                audio: BASE64.decode(
+                    event
+                        .get("audio")
+                        .or_else(|| event.get("delta"))
+                        .and_then(Value::as_str)
+                        .context("output_audio.delta is missing audio")?,
+                )?,
                 start_ms: event.get("start_ms").and_then(Value::as_u64),
                 end_ms: event.get("end_ms").and_then(Value::as_u64),
             },
@@ -175,8 +465,8 @@ impl VoiceProvider for OpenAiLiveProvider {
                 let item = event
                     .get("item")
                     .context("delegation.created is missing item")?;
-                VoiceEventKind::DelegationCreated {
-                    delegation: VoiceDelegation {
+                OpenAiLiveEventKind::DelegationCreated {
+                    delegation: OpenAiLiveDelegation {
                         id: item
                             .get("id")
                             .and_then(Value::as_str)
@@ -197,79 +487,66 @@ impl VoiceProvider for OpenAiLiveProvider {
                     },
                 }
             }
-            "session.context.appended" => VoiceEventKind::ContextAppended,
-            "delegation.context.appended" => VoiceEventKind::DelegationContextAppended {
+            "session.context.appended" => OpenAiLiveEventKind::ContextAppended,
+            "delegation.context.appended" => OpenAiLiveEventKind::DelegationContextAppended {
                 delegation_id: event
                     .get("delegation_item_id")
                     .and_then(Value::as_str)
-                    .unwrap_or_default()
+                    .context("delegation.context.appended is missing delegation_item_id")?
                     .into(),
             },
-            "session.usage.updated" => VoiceEventKind::Usage {
+            "session.usage.updated" => OpenAiLiveEventKind::Usage {
                 usage: event.clone(),
             },
-            "session.closed" => VoiceEventKind::SessionClosed,
-            "error" | "response.error" | "response.failed" => VoiceEventKind::Error {
+            "session.closed" => OpenAiLiveEventKind::SessionClosed,
+            "error" | "response.error" | "response.failed" => OpenAiLiveEventKind::Error {
                 message: event
                     .pointer("/error/message")
                     .and_then(Value::as_str)
                     .unwrap_or("OpenAI Live reported an error")
                     .into(),
-                raw: Some(event.clone()),
             },
-            _ => VoiceEventKind::Other {
+            _ => OpenAiLiveEventKind::Other {
                 event_type: event_type.into(),
             },
         };
-        Ok(VoiceEvent::provider(kind, event))
+        Ok(OpenAiLiveEvent {
+            kind,
+            raw: Some(event),
+        })
     }
 
-    fn append_context_event(&self, context: VoiceContext) -> Result<Value> {
-        text_event("session.context.append", None, context, true)
-    }
-    fn complete_delegation_event(&self, id: &str, context: VoiceContext) -> Result<Value> {
-        if id.trim().is_empty() {
-            bail!("delegation ID is empty");
+    fn closed_event(&self) -> Self::Event {
+        OpenAiLiveEvent {
+            kind: OpenAiLiveEventKind::SessionClosed,
+            raw: None,
         }
-        text_event("delegation.context.append", Some(id), context, false)
     }
-    fn append_audio_event(&self, audio: &[u8]) -> Result<Value> {
-        if audio.is_empty() {
-            bail!("audio payload is empty");
-        }
-        Ok(
-            json!({ "type": "input_audio.append", "event_id": Self::event_id(), "audio": BASE64.encode(audio) }),
-        )
+
+    fn is_closed(&self, event: &Self::Event) -> bool {
+        matches!(event.kind, OpenAiLiveEventKind::SessionClosed)
     }
-    fn pause_input_event(&self) -> Value {
-        json!({ "type": "input_audio.pause", "event_id": Self::event_id() })
-    }
-    fn resume_input_event(&self) -> Value {
-        json!({ "type": "input_audio.resume", "event_id": Self::event_id() })
-    }
-    fn close_event(&self) -> Value {
-        json!({ "type": "session.close", "event_id": Self::event_id() })
-    }
+}
+
+fn event_id() -> String {
+    format!("event_{}", Uuid::new_v4())
 }
 
 fn text_event(
     kind: &str,
     delegation_id: Option<&str>,
-    context: VoiceContext,
+    context: OpenAiLiveContext,
     allow_developer: bool,
 ) -> Result<Value> {
     let channel = match context.channel {
-        VoiceContextChannel::Speakable => "speakable",
-        VoiceContextChannel::Commentary => "commentary",
-        VoiceContextChannel::Developer if allow_developer => "developer",
-        VoiceContextChannel::Developer => {
+        OpenAiLiveContextChannel::Speakable => "speakable",
+        OpenAiLiveContextChannel::Commentary => "commentary",
+        OpenAiLiveContextChannel::Developer if allow_developer => "developer",
+        OpenAiLiveContextChannel::Developer => {
             bail!("developer channel is not valid for delegation context")
         }
     };
-    let mut event = json!({
-        "type": kind, "event_id": OpenAiLiveProvider::event_id(), "channel": channel,
-        "content": [{ "type": "input_text", "text": context.text }]
-    });
+    let mut event = json!({ "type": kind, "event_id": event_id(), "channel": channel, "content": [{ "type": "input_text", "text": context.text }] });
     if let Some(id) = delegation_id {
         event["delegation_item_id"] = json!(id);
     }
@@ -280,44 +557,43 @@ fn text_event(
 mod tests {
     use super::*;
 
+    fn config() -> OpenAiLiveSessionConfig {
+        OpenAiLiveSessionConfig {
+            model: "gpt-live-1-marble-alpha".into(),
+            instructions: "help".into(),
+            voice: None,
+            initial_items: vec![],
+            delegation: OpenAiLiveDelegationMode::Client,
+            experimental: Default::default(),
+        }
+    }
+
     #[test]
     fn websocket_bootstrap_places_model_in_url() {
-        let provider = OpenAiLiveProvider::new("test");
-        let request = provider
-            .prepare_websocket(&VoiceSessionConfig {
-                model: "gpt-live-1-marble-alpha".into(),
-                instructions: "help".into(),
-                voice: None,
-                initial_items: vec![],
-                delegation: VoiceDelegationMode::Client,
-                extra: Default::default(),
-            })
+        let request = OpenAiLiveClient::new("test")
+            .websocket(config())
+            .request()
             .unwrap();
-        assert!(request.endpoint().contains("model=gpt-live-1-marble-alpha"));
-        assert!(request.after_connect()[0]["session"]["model"].is_null());
+        assert!(request.endpoint.contains("model=gpt-live-1-marble-alpha"));
+        assert!(request.initial_messages[0]["session"]["model"].is_null());
     }
 
     #[test]
     fn encodes_and_decodes_delegation() {
-        let provider = OpenAiLiveProvider::new("test");
-        let decoded = provider
-            .decode_event(json!({ "type": "delegation.created", "item": {
-                "id": "item_1", "content": [{ "type": "input_text", "text": "inspect this" }]
-            }}))
-            .unwrap();
+        let protocol = OpenAiLiveProtocol;
+        let decoded = protocol.decode(json!({ "type": "delegation.created", "item": { "id": "item_1", "content": [{ "type": "input_text", "text": "inspect this" }] }})).unwrap();
         assert!(matches!(
             decoded.kind,
-            VoiceEventKind::DelegationCreated { .. }
+            OpenAiLiveEventKind::DelegationCreated { .. }
         ));
-        assert!(decoded.raw.is_some());
-        let encoded = provider
-            .complete_delegation_event(
-                "item_1",
-                VoiceContext {
+        let encoded = protocol
+            .encode(OpenAiLiveCommand::CompleteDelegation {
+                delegation_id: "item_1".into(),
+                context: OpenAiLiveContext {
                     text: "done".into(),
-                    channel: VoiceContextChannel::Speakable,
+                    channel: OpenAiLiveContextChannel::Speakable,
                 },
-            )
+            })
             .unwrap();
         assert_eq!(encoded["delegation_item_id"], "item_1");
     }

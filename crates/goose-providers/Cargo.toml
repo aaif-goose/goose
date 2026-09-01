@@ -21,8 +21,10 @@ rustls-tls = [
     "reqwest/rustls",
     "rmcp/reqwest",
 ]
-voice-websocket = ["dep:tokio-tungstenite", "dep:http"]
-voice-tauri = ["dep:tauri", "reqwest/rustls"]
+live-websocket = ["dep:tokio-tungstenite", "dep:http"]
+voice-websocket = ["live-websocket"]
+live-tauri = ["dep:tauri", "reqwest/rustls"]
+voice-tauri = ["live-tauri"]
 native-tls = [
     "dep:pem",
     "dep:pkcs8",
@@ -74,9 +76,9 @@ name = "streaming"
 required-features = ["rustls-tls"]
 
 [[example]]
-name = "voice_tauri_bridge"
+name = "live_tauri_bridge"
 required-features = ["rustls-tls"]
 
 [[example]]
-name = "voice_tauri"
-required-features = ["voice-tauri"]
+name = "live_tauri"
+required-features = ["live-tauri"]
