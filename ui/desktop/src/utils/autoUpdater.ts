@@ -292,13 +292,21 @@ export function registerUpdateIpcHandlers() {
       const result = await githubUpdater.installUpdate(downloadPath);
       if (!result.success) {
         log.error('Error installing GitHub update:', result.error);
+        if ((result as { needsPermission?: boolean }).needsPermission) {
+          const notif = new Notification({
+            title: 'Update needs permission',
+            body: result.error || 'Please move Goose to /Applications or check write permission and try again.',
+          });
+          notif.show();
+        }
         throw new Error(result.error || 'Failed to install update');
       }
 
+      // Keep cached zip for rollback (githubUpdater keeps it), swap script cleans staging
       log.info('Quitting app so the update swap can complete...');
       setTimeout(() => app.quit(), 0);
     } else {
-      // Use electron-updater's built-in install
+      // Use electron-updater's built-in install (in-place Squirrel replacement)
       trackUpdateInstallInitiated(
         lastUpdateState?.latestVersion || 'unknown',
         'electron-updater',
@@ -643,16 +651,16 @@ export function setupAutoUpdater(tray?: Tray) {
     trackUpdateDownloadCompleted(true, info.version, 'electron-updater');
     sendStatusToWindow('update-downloaded', info);
 
-    // Show native notification
+    // Show Restart now notification (user-confirmed in-place restart)
     const notification = new Notification({
       title: 'Update Ready',
-      body: `Version ${info.version} will be installed when you quit Goose. Click to install now.`,
+      body: `Version ${info.version} is ready. Click "Restart now" to replace the app and relaunch.`,
     });
     notification.show();
 
-    // Optional: Add click handler to install immediately
     notification.on('click', () => {
       trackUpdateInstallInitiated(info.version, 'electron-updater', 'quit_and_install');
+      // electron-updater's quitAndInstall does in-place Squirrel replacement on macOS/Windows
       autoUpdater.quitAndInstall(false, true);
     });
   });
@@ -699,6 +707,32 @@ async function githubAutoDownload(
       githubUpdateInfo.extractedPath = downloadResult.extractedPath;
       trackUpdateDownloadCompleted(true, latestVersion, 'github-fallback');
       sendStatusToWindow('update-downloaded', { version: latestVersion });
+      // Show Restart now notification for GitHub-fallback path as well
+      try {
+        const notif = new Notification({
+          title: 'Update Ready',
+          body: `Version ${latestVersion} is ready. Click to restart and install now.`,
+        });
+        notif.show();
+        notif.on('click', async () => {
+          try {
+            const res = await githubUpdater.installUpdate(downloadResult.downloadPath!);
+            if (!res.success) {
+              if ((res as { needsPermission?: boolean }).needsPermission) {
+                const permNotif = new Notification({
+                  title: 'Update needs permission',
+                  body: res.error || 'Check write permission and try again.',
+                });
+                permNotif.show();
+              }
+              throw new Error(res.error);
+            }
+            setTimeout(() => app.quit(), 0);
+          } catch (e) {
+            log.error('Failed to install on notification click:', e);
+          }
+        });
+      } catch {}
     } else {
       trackUpdateDownloadCompleted(false, latestVersion, 'github-fallback', downloadResult.error);
       log.error(
