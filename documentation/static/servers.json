@@ -827,6 +827,18 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "x402-list",
+    "name": "x402-list",
+    "description": "Directory of x402-payable APIs and services: find and verify x402 endpoints before an agent pays",
+    "type": "streamable-http",
+    "url": "https://mcp.x402-list.com/mcp",
+    "link": "https://x402-list.com",
+    "installation_notes": "Streamable HTTP extension. No API key or environment variables required.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  }
 
 ]
