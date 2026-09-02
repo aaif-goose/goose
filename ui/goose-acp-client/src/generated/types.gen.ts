@@ -2738,7 +2738,7 @@ export type MessageUsageData = {
 /**
  * Wire mirror of the conversation `CostSource`.
  */
-export type CostSourceData = 'provider_reported' | 'estimated';
+export type CostSourceData = 'provider_reported' | 'user_configured' | 'estimated';
 
 /**
  * Per-message token usage/cost/timing, keyed by the message id used for

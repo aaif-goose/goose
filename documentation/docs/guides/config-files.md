@@ -16,6 +16,7 @@ The configuration files allow you to set default behaviors, configure language m
 ## Configuration Files
 
 - **config.yaml** - Provider, model, extensions, and general settings
+- **pricing.yaml** - Optional negotiated model pricing overrides
 - **permission.yaml** - Tool permission levels configured via `goose configure`
 - **secrets.yaml** - API keys and secrets (when goose is using [file-based secret storage](#security-considerations))
 - **permissions/tool_permissions.json** - Runtime permission decisions (auto-managed)
@@ -24,6 +25,24 @@ The configuration files allow you to set default behaviors, configure language m
 In addition to editing configuration files directly, many settings can be managed from goose Desktop and goose CLI:
 - **goose Desktop**: From the `Settings` page and the bottom toolbar
 - **goose CLI**: Run the `goose configure` command
+
+## Pricing Overrides
+
+goose automatically loads `pricing.yaml` from its configuration directory. Run `goose info` and use the **Pricing yaml** path to find the correct OS-specific location. No custom provider or environment variable is needed to activate the file.
+
+Each entry matches an exact provider name and the model resolved by that provider. Rates are USD per million tokens; `input` and `output` are required, while `cache_read` and `cache_write` are optional. For example, an Azure Foundry deployment that resolves to `gpt-5.6-sol` can use:
+
+```yaml title="pricing.yaml"
+GOOSE_PRICING_OVERRIDES:
+  - provider: azure_foundry
+    model: gpt-5.6-sol
+    input_usd_per_million_tokens: 5.0
+    output_usd_per_million_tokens: 30.0
+    cache_read_usd_per_million_tokens: 0.5
+    cache_write_usd_per_million_tokens: 6.25
+```
+
+The provider and resolved model must both match exactly; a deployment alias is not a match for its underlying model. Provider-reported cost takes precedence over this override. Otherwise, a matching override takes precedence over built-in, custom-provider, and catalog pricing. For configuration loading, environment values and `config.yaml` take precedence over `pricing.yaml`, which takes precedence over additional and system configuration files.
 
 ## Provider Configuration
 

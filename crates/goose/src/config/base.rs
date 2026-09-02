@@ -32,6 +32,7 @@ const KEYRING_SERVICE: &str = "goose";
 #[cfg(feature = "system-keyring")]
 const KEYRING_USERNAME: &str = "secrets";
 pub const CONFIG_YAML_NAME: &str = "config.yaml";
+pub const PRICING_YAML_NAME: &str = "pricing.yaml";
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -80,9 +81,14 @@ impl From<keyring::Error> for ConfigError {
 /// - Hot reloading of configuration changes
 /// - Secure secret storage in system keyring
 ///
-/// Configuration values are loaded with the following precedence:
+/// General configuration values are loaded with the following precedence:
 /// 1. Environment variables (exact key match)
-/// 2. Configuration file (~/.config/goose/config.yaml by default)
+/// 2. User configuration (~/.config/goose/config.yaml by default)
+/// 3. Additional configuration files from GOOSE_ADDITIONAL_CONFIG_FILES
+/// 4. System configuration
+///
+/// Pricing overrides additionally read the isolated pricing.yaml between the user and
+/// additional configuration layers.
 ///
 /// Secrets are loaded with the following precedence:
 /// 1. Environment variables (exact key match)
@@ -121,6 +127,7 @@ pub struct Config {
     /// Later entries take precedence over earlier ones.
     /// The last entry is where changes will be written.
     config_paths: Vec<PathBuf>,
+    pricing_config_path: Option<PathBuf>,
     secrets: SecretStorage,
     guard: Mutex<()>,
     secrets_cache: Arc<Mutex<Option<HashMap<String, Value>>>>,
@@ -198,6 +205,7 @@ fn metadata_is_symlink_or_reparse_point(metadata: &std::fs::Metadata) -> bool {
 impl Default for Config {
     fn default() -> Self {
         let config_dir = Paths::config_dir();
+        let pricing_config_path = config_dir.join(PRICING_YAML_NAME);
         let user_config_path = config_dir.join(CONFIG_YAML_NAME);
 
         let mut config_paths = vec![system_config_path()];
@@ -206,6 +214,7 @@ impl Default for Config {
 
         let no_secrets_config = Self {
             config_paths: config_paths.clone(),
+            pricing_config_path: None,
             secrets: SecretStorage::File {
                 path: Default::default(),
             },
@@ -220,6 +229,7 @@ impl Default for Config {
         let secrets = secret_storage(&config_dir, keyring_disabled, default_keyring_service());
         Self {
             config_paths,
+            pricing_config_path: Some(pricing_config_path),
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
@@ -414,6 +424,17 @@ fn secret_storage(config_dir: &Path, _keyring_disabled: bool, _service: &str) ->
     }
 }
 
+fn merge_config_path(merged: &mut Mapping, path: &Path) -> Result<(), ConfigError> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let layer = parse_yaml_content(&content)?;
+    merge_config_values(merged, layer);
+    Ok(())
+}
+
 impl Config {
     /// Get the global configuration instance.
     ///
@@ -438,6 +459,7 @@ impl Config {
         let secrets = secret_storage(&config_dir, keyring_disabled, service);
         Ok(Config {
             config_paths: vec![config_path],
+            pricing_config_path: None,
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
@@ -454,6 +476,7 @@ impl Config {
     ) -> Result<Self, ConfigError> {
         Ok(Config {
             config_paths: vec![config_path.as_ref().to_path_buf()],
+            pricing_config_path: None,
             secrets: SecretStorage::File {
                 path: secrets_path.as_ref().to_path_buf(),
             },
@@ -468,6 +491,7 @@ impl Config {
     ) -> Result<Self, ConfigError> {
         Ok(Config {
             config_paths,
+            pricing_config_path: None,
             secrets: SecretStorage::File {
                 path: secrets_path.as_ref().to_path_buf(),
             },
@@ -784,6 +808,34 @@ impl Config {
                 serde_json::from_value(parsed).map_err(|_| yaml_err.into())
             }
         }
+    }
+
+    pub(crate) fn get_pricing_param<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+    ) -> Result<T, ConfigError> {
+        let env_key = key.to_uppercase();
+        if let Ok(value) = env::var(&env_key) {
+            let value = Self::parse_env_value(&value)?;
+            return Ok(serde_json::from_value(value)?);
+        }
+
+        let mut merged = Mapping::new();
+        for (index, path) in self.config_paths.iter().enumerate() {
+            if index + 1 == self.config_paths.len() {
+                if let Some(pricing_path) = &self.pricing_config_path {
+                    merge_config_path(&mut merged, pricing_path)?;
+                }
+            }
+            if let Err(error) = merge_config_path(&mut merged, path) {
+                tracing::warn!("Failed to load config {:?}: {}. Skipping.", path, error);
+            }
+        }
+
+        let value = merged
+            .get(key)
+            .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+        Ok(serde_yaml::from_value(value.clone())?)
     }
 
     pub(crate) fn get_param_source_values<T: for<'de> Deserialize<'de>>(
@@ -2545,6 +2597,95 @@ mod tests {
         assert_eq!(provider, "openai");
 
         Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn default_config_discovers_pricing_yaml_without_additional_config_env() {
+        let root = TempDir::new().unwrap();
+        let root_path = root.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(root_path)),
+            ("GOOSE_ADDITIONAL_CONFIG_FILES", None::<&str>),
+        ]);
+        let config_dir = Paths::config_dir();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join(PRICING_YAML_NAME),
+            "GOOSE_PRICING_OVERRIDES:\n  - { provider: openai, model: negotiated, input_usd_per_million_tokens: 1, output_usd_per_million_tokens: 2 }\n",
+        )
+        .unwrap();
+
+        let config = Config::default();
+        let overrides: Vec<serde_yaml::Value> =
+            config.get_pricing_param("GOOSE_PRICING_OVERRIDES").unwrap();
+        assert_eq!(overrides[0]["model"], "negotiated");
+        assert!(matches!(
+            config.get_param::<Vec<serde_yaml::Value>>("GOOSE_PRICING_OVERRIDES"),
+            Err(ConfigError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn malformed_pricing_yaml_does_not_affect_general_config() {
+        let root = TempDir::new().unwrap();
+        let root_path = root.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(root_path)),
+            ("GOOSE_ADDITIONAL_CONFIG_FILES", None::<&str>),
+            ("GOOSE_MODE", None::<&str>),
+        ]);
+        let config_dir = Paths::config_dir();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(config_dir.join(CONFIG_YAML_NAME), "GOOSE_MODE: approve\n").unwrap();
+        std::fs::write(config_dir.join(PRICING_YAML_NAME), "not: [valid").unwrap();
+
+        let config = Config::default();
+        assert_eq!(config.get_goose_mode_strict().unwrap(), GooseMode::Approve);
+        assert!(config
+            .get_pricing_param::<Vec<serde_yaml::Value>>("GOOSE_PRICING_OVERRIDES")
+            .is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn user_config_keeps_precedence_over_pricing_yaml() {
+        let root = TempDir::new().unwrap();
+        let root_path = root.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(root_path)),
+            ("GOOSE_ADDITIONAL_CONFIG_FILES", None::<&str>),
+        ]);
+        let config_dir = Paths::config_dir();
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let pricing_yaml = config_dir.join(PRICING_YAML_NAME);
+        std::fs::write(
+            &pricing_yaml,
+            "GOOSE_PRICING_OVERRIDES:\n  - { provider: openai, model: dedicated, input_usd_per_million_tokens: 1, output_usd_per_million_tokens: 2 }\n",
+        )
+        .unwrap();
+        let additional_yaml = root.path().join("additional.yaml");
+        std::fs::write(
+            &additional_yaml,
+            "GOOSE_PRICING_OVERRIDES:\n  - { provider: openai, model: additional, input_usd_per_million_tokens: 2, output_usd_per_million_tokens: 3 }\n",
+        )
+        .unwrap();
+        std::env::set_var("GOOSE_ADDITIONAL_CONFIG_FILES", &additional_yaml);
+
+        let config = Config::default();
+        let overrides: Vec<serde_yaml::Value> =
+            config.get_pricing_param("GOOSE_PRICING_OVERRIDES").unwrap();
+        assert_eq!(overrides[0]["model"], "dedicated");
+
+        std::fs::write(
+            config_dir.join(CONFIG_YAML_NAME),
+            "GOOSE_PRICING_OVERRIDES:\n  - { provider: openai, model: user, input_usd_per_million_tokens: 3, output_usd_per_million_tokens: 4 }\n",
+        )
+        .unwrap();
+        let overrides: Vec<serde_yaml::Value> =
+            config.get_pricing_param("GOOSE_PRICING_OVERRIDES").unwrap();
+        assert_eq!(overrides[0]["model"], "user");
     }
 
     #[test]

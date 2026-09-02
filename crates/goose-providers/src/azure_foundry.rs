@@ -1112,10 +1112,11 @@ mod tests {
 
         let provider = project_provider(&server);
         let config = ModelConfig::new("production-chat").with_temperature(Some(0.7));
-        provider
+        let (_, usage) = provider
             .complete(&config, "system", &[], &[])
             .await
             .unwrap();
+        assert_eq!(usage.model, "gpt-5");
         let requests = server.received_requests().await.unwrap();
         let payload: serde_json::Value = requests
             .iter()

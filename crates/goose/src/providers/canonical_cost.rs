@@ -2,11 +2,12 @@
 //!
 //! Price resolution precedence (highest first):
 //! 1. provider-reported costs (handled by callers before this module)
-//! 2. prices the user declared in a custom provider config file — users of
+//! 2. exact provider/model prices in the automatically loaded pricing.yaml
+//! 3. prices the user declared in a custom provider config file — users of
 //!    custom endpoints (negotiated rates, gateways, self-hosting) know their
 //!    real prices better than a name-matched catalog entry
-//! 3. the bundled canonical registry
-//! 4. prices declared in bundled declarative provider definitions, which only
+//! 4. the bundled canonical registry
+//! 5. prices declared in bundled declarative provider definitions, which only
 //!    fill registry gaps — they are vendored and may lag registry syncs. A
 //!    registry price that is unset or zero (e.g. a name-inferred cross-provider
 //!    match against a free listing) counts as a gap here.
@@ -16,18 +17,20 @@
 //! higher negotiated rate than the inferred catalog row). Demoting inferred
 //! matches belongs in the canonical mapping layer, not here.
 //!
-//! Canonical cache rates are kept whenever the winning source does not declare
-//! cache pricing, so cached tokens are not overestimated at the full input
-//! rate. Config files are read live (price edits take effect immediately);
-//! bundled definitions are immutable and cached for the process.
+//! Custom-provider declarations retain canonical cache rates for compatibility.
+//! Pricing overrides are complete replacements: omitted cache rates remain unset.
+//! Config files are read live (price edits take effect immediately); bundled
+//! definitions are immutable and cached for the process.
 
 use crate::config::declarative_providers::{
     custom_provider_file_path, deserialize_provider_config, fixed_provider_configs,
     DeclarativeProviderConfig,
 };
+use crate::config::pricing::get_pricing_overrides;
+use crate::config::Config;
 use crate::providers::base::ModelInfo;
 use goose_providers::canonical::{maybe_get_canonical_model, Pricing};
-use goose_providers::conversation::token_usage::Usage;
+use goose_providers::conversation::token_usage::{CostSource, Usage};
 use std::sync::OnceLock;
 use tracing::warn;
 
@@ -35,12 +38,74 @@ const DEFAULT_CURRENCY: &str = "$";
 
 /// Estimate the USD cost of a model invocation.
 pub fn estimate_model_cost(provider: &str, model: &str, usage: &Usage) -> Option<f64> {
-    resolve_pricing(provider, model).and_then(|pricing| pricing.estimate_cost(usage))
+    estimate_model_cost_with_source(provider, model, usage).map(|(cost, _)| cost)
+}
+
+pub fn estimate_model_cost_with_source(
+    provider: &str,
+    model: &str,
+    usage: &Usage,
+) -> Option<(f64, CostSource)> {
+    let (pricing, source) = resolve_pricing_with_source(provider, model);
+    pricing.and_then(|pricing| pricing.estimate_cost(usage).map(|cost| (cost, source)))
+}
+
+/// Resolve a provider usage cost using provider-reported cost before configured estimates.
+pub fn resolve_usage_cost(
+    provider: Option<&str>,
+    usage: &goose_providers::conversation::token_usage::ProviderUsage,
+) -> (Option<f64>, Option<CostSource>) {
+    resolve_usage_cost_with_config(Config::global(), provider, usage)
+}
+
+fn resolve_usage_cost_with_config(
+    config: &Config,
+    provider: Option<&str>,
+    usage: &goose_providers::conversation::token_usage::ProviderUsage,
+) -> (Option<f64>, Option<CostSource>) {
+    if let Some(cost) = usage.cost {
+        return (Some(cost), Some(CostSource::ProviderReported));
+    }
+    let Some(provider) = provider else {
+        return (None, None);
+    };
+    let (pricing, source) = resolve_pricing_with_config(config, provider, &usage.model);
+    match pricing.and_then(|pricing| pricing.estimate_cost(&usage.usage)) {
+        Some(cost) => (Some(cost), Some(source)),
+        None => (None, None),
+    }
 }
 
 /// Resolve the pricing for a provider/model honoring the precedence described
 /// in this module's documentation.
 pub(crate) fn resolve_pricing(provider: &str, model: &str) -> Option<Pricing> {
+    resolve_pricing_with_config(Config::global(), provider, model).0
+}
+
+fn resolve_pricing_with_source(provider: &str, model: &str) -> (Option<Pricing>, CostSource) {
+    resolve_pricing_with_config(Config::global(), provider, model)
+}
+
+fn resolve_pricing_with_config(
+    config: &Config,
+    provider: &str,
+    model: &str,
+) -> (Option<Pricing>, CostSource) {
+    match get_pricing_overrides(config) {
+        Ok(overrides) => {
+            if let Some(entry) = overrides
+                .iter()
+                .find(|entry| entry.provider == provider && entry.model == model)
+            {
+                return (Some(entry.pricing()), CostSource::UserConfigured);
+            }
+        }
+        Err(error) => {
+            warn!(error = %error, "pricing overrides are invalid; cost estimation disabled");
+            return (None, CostSource::Estimated);
+        }
+    }
+
     let canonical = maybe_get_canonical_model(provider, model).map(|c| c.cost);
     let bundled =
         bundled_model_info(provider, model).and_then(|info| pricing_from_model_info(&info));
@@ -60,11 +125,12 @@ pub(crate) fn resolve_pricing(provider: &str, model: &str) -> Option<Pricing> {
 
     let declared =
         custom_file_model_info(provider, model).and_then(|info| pricing_from_model_info(&info));
-    match (declared, base) {
+    let pricing = match (declared, base) {
         (Some(declared), Some(base)) => Some(merge_pricing(declared, &base)),
         (Some(declared), None) => Some(declared),
         (None, base) => base,
-    }
+    };
+    (pricing, CostSource::Estimated)
 }
 
 /// [`ModelInfo`] for a pricing-declared model — custom provider config file
@@ -363,6 +429,132 @@ mod tests {
         // otherwise print verbatim as "USD0.01".
         info.currency = Some("usd".to_string());
         assert_eq!(display_currency(Some(&info)), "$");
+    }
+
+    #[test]
+    fn provider_reported_cost_wins_over_user_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        std::fs::write(
+            &path,
+            r#"GOOSE_PRICING_OVERRIDES:
+  - { provider: openai, model: gpt-5, input_usd_per_million_tokens: 1, output_usd_per_million_tokens: 2 }
+"#,
+        )
+        .unwrap();
+        let config = Config::new_with_file_secrets(&path, dir.path().join("secrets.yaml")).unwrap();
+        let mut provider_usage = goose_providers::conversation::token_usage::ProviderUsage::new(
+            "gpt-5".to_string(),
+            usage(Some(1_000_000), Some(1_000_000), None),
+        );
+        provider_usage.cost = Some(0.42);
+        assert_eq!(
+            resolve_usage_cost_with_config(&config, Some("openai"), &provider_usage),
+            (Some(0.42), Some(CostSource::ProviderReported))
+        );
+    }
+
+    #[test]
+    fn exact_override_wins_without_inheriting_catalog_cache_prices() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        std::fs::write(
+            &path,
+            r#"GOOSE_PRICING_OVERRIDES:
+  - provider: openai
+    model: gpt-5
+    input_usd_per_million_tokens: 1
+    output_usd_per_million_tokens: 2
+"#,
+        )
+        .unwrap();
+        let config = Config::new_with_file_secrets(&path, dir.path().join("secrets.yaml")).unwrap();
+
+        let (pricing, source) = resolve_pricing_with_config(&config, "openai", "gpt-5");
+        let pricing = pricing.unwrap();
+        assert_eq!(source, CostSource::UserConfigured);
+        assert_eq!(pricing.input, Some(1.0));
+        assert_eq!(pricing.output, Some(2.0));
+        assert_eq!(pricing.cache_read, None);
+        assert_eq!(pricing.cache_write, None);
+    }
+
+    #[test]
+    fn override_matching_is_exact_for_azure_deployments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        std::fs::write(
+            &path,
+            r#"GOOSE_PRICING_OVERRIDES:
+  - provider: azure_foundry
+    model: deployment-a
+    input_usd_per_million_tokens: 1
+    output_usd_per_million_tokens: 2
+"#,
+        )
+        .unwrap();
+        let config = Config::new_with_file_secrets(&path, dir.path().join("secrets.yaml")).unwrap();
+
+        assert_eq!(
+            resolve_pricing_with_config(&config, "azure_foundry", "deployment-a").1,
+            CostSource::UserConfigured
+        );
+        assert_ne!(
+            resolve_pricing_with_config(&config, "azure_foundry", "deployment-b").1,
+            CostSource::UserConfigured
+        );
+        assert_ne!(
+            resolve_pricing_with_config(&config, "openai", "deployment-a").1,
+            CostSource::UserConfigured
+        );
+    }
+
+    #[test]
+    fn override_cache_rates_are_used_in_cost_estimation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        std::fs::write(
+            &path,
+            r#"GOOSE_PRICING_OVERRIDES:
+  - provider: openai
+    model: negotiated
+    input_usd_per_million_tokens: 1
+    output_usd_per_million_tokens: 2
+    cache_read_usd_per_million_tokens: 0.1
+    cache_write_usd_per_million_tokens: 0.5
+"#,
+        )
+        .unwrap();
+        let config = Config::new_with_file_secrets(&path, dir.path().join("secrets.yaml")).unwrap();
+        let provider_usage = goose_providers::conversation::token_usage::ProviderUsage::new(
+            "negotiated".to_string(),
+            Usage::new(Some(1_000_000), Some(100_000), None)
+                .with_cache_tokens(Some(200_000), Some(300_000)),
+        );
+
+        let (cost, source) =
+            resolve_usage_cost_with_config(&config, Some("openai"), &provider_usage);
+        assert!((cost.unwrap() - 0.87).abs() < 1e-12);
+        assert_eq!(source, Some(CostSource::UserConfigured));
+    }
+
+    #[test]
+    fn invalid_override_config_disables_catalog_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        std::fs::write(
+            &path,
+            r#"GOOSE_PRICING_OVERRIDES:
+  - provider: openai
+    model: gpt-5
+    input_usd_per_million_tokens: 1
+"#,
+        )
+        .unwrap();
+        let config = Config::new_with_file_secrets(&path, dir.path().join("secrets.yaml")).unwrap();
+        assert!(resolve_pricing_with_config(&config, "openai", "gpt-5")
+            .0
+            .is_none());
     }
 
     #[test]

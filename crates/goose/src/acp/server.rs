@@ -1775,6 +1775,7 @@ fn message_usage_update(
             cost: usage.cost,
             cost_source: usage.cost_source.map(|source| match source {
                 CostSource::ProviderReported => CostSourceData::ProviderReported,
+                CostSource::UserConfigured => CostSourceData::UserConfigured,
                 CostSource::Estimated => CostSourceData::Estimated,
             }),
             elapsed_ms: usage.elapsed_ms,

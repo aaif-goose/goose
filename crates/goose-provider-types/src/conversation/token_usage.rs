@@ -27,6 +27,7 @@ pub struct ProviderUsage {
 #[serde(rename_all = "snake_case")]
 pub enum CostSource {
     ProviderReported,
+    UserConfigured,
     Estimated,
 }
 

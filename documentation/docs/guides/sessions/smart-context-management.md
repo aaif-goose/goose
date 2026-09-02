@@ -377,9 +377,9 @@ To manage live cost tracking:
 
 The session cost is shown at the bottom of the goose window and updates dynamically as tokens are consumed. Hover over the cost to see a detailed breakdown of token usage. If multiple models are used in the session, this includes a cost breakdown by model. Ollama and local deployments always show a cost of $0.00.
 
-Pricing data is regularly fetched from the OpenRouter API and cached locally. The `Advanced settings` tab shows when the data was last updated and allows you to refresh. 
+Displayed costs use provider-reported costs when available. Otherwise, goose uses an exact [user-configured negotiated rate](/docs/guides/config-files#pricing-overrides), then falls back to catalog or provider configuration pricing. Public catalog pricing is regularly fetched from the OpenRouter API and cached locally; the `Advanced settings` tab shows when it was last updated and allows you to refresh it.
 
-These costs are estimates only, and not connected to your actual provider bill. The cost shown is an approximation based on token counts and public pricing data.
+Costs derived from configured or public rates are estimates and may differ from your provider bill.
 </TabItem>
     <TabItem value="cli" label="goose CLI">
     Show estimated cost in the goose CLI by setting the `GOOSE_CLI_SHOW_COST` [environment variable](/docs/guides/environment-variables.md#session-management) or including it in the [configuration file](/docs/guides/config-files.md).
