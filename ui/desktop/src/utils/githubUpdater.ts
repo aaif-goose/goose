@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { constants as fsConstants } from 'fs';
 import { compareVersions } from 'compare-versions';
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
@@ -55,6 +56,69 @@ function runCommand(command: string, args: string[]): Promise<void> {
 
 function powershellQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+
+export function getUpdateCacheDir(): string {
+  return path.join(app.getPath('userData'), 'update-cache');
+}
+
+export async function ensureCacheDir(): Promise<string> {
+  const dir = getUpdateCacheDir();
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function pruneCache(keep = 2): Promise<void> {
+  try {
+    const dir = getUpdateCacheDir();
+    const entries = await fs.readdir(dir);
+    const zipEntries = entries.filter((e) => e.toLowerCase().endsWith('.zip'));
+    if (zipEntries.length <= keep) return;
+    const withStats = await Promise.all(
+      zipEntries.map(async (name) => {
+        const full = path.join(dir, name);
+        try {
+          const stat = await fs.stat(full);
+          return { name, full, mtime: stat.mtimeMs };
+        } catch {
+          return { name, full, mtime: 0 };
+        }
+      })
+    );
+    withStats.sort((a, b) => b.mtime - a.mtime);
+    const toDelete = withStats.slice(keep);
+    for (const entry of toDelete) {
+      try {
+        await fs.unlink(entry.full);
+        log.info(`pruneCache: removed old cached update ${entry.name}`);
+      } catch {}
+    }
+  } catch {}
+}
+
+export async function isTargetWritable(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath, fsConstants.W_OK);
+    return true;
+  } catch {
+    try {
+      await fs.access(path.dirname(targetPath), fsConstants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function verifyCodeSign(targetPath: string): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  try {
+    await runCommand('codesign', ['--verify', '--deep', '--strict', targetPath]);
+    log.info(`codesign verify passed for ${targetPath}`);
+  } catch (e) {
+    log.warn(`codesign verify failed for ${targetPath}: ${errorMessage(e, 'unknown')}`);
+  }
 }
 
 function shellQuote(value: string): string {
@@ -679,10 +743,12 @@ export class GitHubUpdater {
       const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
       log.info(`GitHubUpdater: Buffer created - ${buffer.length} bytes`);
 
+      const cacheDir = await ensureCacheDir();
+      const fileName = `${this.bundleName}-${latestVersion}.zip`;
+      const downloadPath = path.join(cacheDir, fileName);
+      // Staging dir is still needed for extraction, keep it in tmp
       const stagingDir = path.join(os.tmpdir(), `goose-update-${latestVersion}-${Date.now()}`);
       await fs.mkdir(stagingDir, { recursive: true });
-      const fileName = `${this.bundleName}-${latestVersion}.zip`;
-      const downloadPath = path.join(stagingDir, fileName);
 
       log.info(`GitHubUpdater: Writing file to ${downloadPath}...`);
       await fs.writeFile(downloadPath, buffer);
@@ -708,7 +774,9 @@ export class GitHubUpdater {
     }
   }
 
-  async installUpdate(downloadPath: string): Promise<{ success: boolean; error?: string }> {
+  async installUpdate(
+    downloadPath: string
+  ): Promise<{ success: boolean; error?: string; needsPermission?: boolean }> {
     try {
       log.info('=== GitHubUpdater: STARTING AUTOMATIC INSTALL ===');
       log.info(`GitHubUpdater: Download path: ${downloadPath}`);
@@ -719,6 +787,17 @@ export class GitHubUpdater {
         app.getPath('exe')
       );
       log.info(`GitHubUpdater: Install target: ${targetPath}`);
+
+      if (!(await isTargetWritable(targetPath))) {
+        log.warn(`GitHubUpdater: target not writable: ${targetPath}`);
+        return {
+          success: false,
+          error: `Update location is not writable: ${targetPath}. Please move Goose to /Applications (macOS) or ensure you have write permission, then try again.`,
+          needsPermission: true,
+        };
+      }
+
+      await verifyCodeSign(targetPath).catch(() => {});
 
       const swap = await prepareUpdateInstall({
         archivePath: downloadPath,
@@ -731,6 +810,8 @@ export class GitHubUpdater {
       launchSwapScript(swap);
 
       log.info('=== GitHubUpdater: SWAP SCRIPT LAUNCHED, app will quit ===');
+      // Keep cached zip for rollback, prune old ones, but swap script will clean stagingDir
+      await pruneCache(2).catch(() => {});
       return { success: true };
     } catch (error) {
       log.error('GitHubUpdater: Error installing update:', error);
