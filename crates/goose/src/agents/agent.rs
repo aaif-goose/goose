@@ -3169,8 +3169,6 @@ impl Agent {
                                 }
 
                                 no_tools_called = false;
-                                // Agent is actively working — re-check goal when it next finishes
-                                goal_check_pending = false;
                             }
                         }
                         #[allow(unused_variables)]

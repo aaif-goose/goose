@@ -2213,7 +2213,8 @@ mod tests {
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::Tool;
+        use rmcp::model::{CallToolRequestParams, Tool};
+        use rmcp::object;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicU32, Ordering};
         use tempfile::TempDir;
@@ -2369,6 +2370,163 @@ mod tests {
             );
 
             // Goal should be cleared after being met
+            assert_eq!(
+                agent.get_goal().await,
+                None,
+                "Goal should be cleared after the agent finishes with it met"
+            );
+
+            Ok(())
+        }
+
+        /// Provider that alternates: a tool call on every even invocation (0, 2, 4…)
+        /// and a plain-text "goal is met" on every odd invocation (1, 3, 5…).
+        ///
+        /// This models the common real-world case where, after being nudged to check
+        /// the goal, the model makes another tool call before finally stopping. Each
+        /// tool call is exactly the path that (before the fix) reset goal_check_pending
+        /// back to false, so the nudge re-fired on the next stop and the agent looped
+        /// until max_turns.
+        struct GoalToolProvider {
+            call_count: AtomicU32,
+        }
+
+        impl GoalToolProvider {
+            fn new() -> Self {
+                Self {
+                    call_count: AtomicU32::new(0),
+                }
+            }
+        }
+
+        impl goose::providers::base::ProviderDescriptor for GoalToolProvider {
+            fn metadata() -> ProviderMetadata {
+                ProviderMetadata {
+                    name: "goal-tool-mock".to_string(),
+                    display_name: "Goal Tool Mock Provider".to_string(),
+                    description: "Mock provider for goal + tool call testing".to_string(),
+                    default_model: "mock-model".to_string(),
+                    known_models: vec![],
+                    model_doc_link: "".to_string(),
+                    config_keys: vec![],
+                    setup_steps: vec![],
+                    model_selection_hint: None,
+                    fast_model: None,
+                    setup: None,
+                    deprecated: None,
+                }
+            }
+        }
+
+        impl ProviderDef for GoalToolProvider {
+            type Provider = Self;
+
+            fn from_env(
+                _extensions: Vec<goose::config::ExtensionConfig>,
+                _tls_config: Option<goose::providers::api_client::TlsConfig>,
+            ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+                Box::pin(async { Ok(Self::new()) })
+            }
+        }
+
+        #[async_trait]
+        impl Provider for GoalToolProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _system_prompt: &str,
+                _messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                let count = self.call_count.fetch_add(1, Ordering::SeqCst);
+                let usage = ProviderUsage::new(
+                    "mock-model".to_string(),
+                    Usage::new(Some(10), Some(5), Some(15)),
+                );
+                if count.is_multiple_of(2) {
+                    // Even turns: make a tool call so the agent "works". After a goal
+                    // nudge the model makes another tool call, which (before the fix)
+                    // reset goal_check_pending and caused the nudge to fire again.
+                    let tool_call = CallToolRequestParams::new("test_tool")
+                        .with_arguments(object!({"param": "value"}));
+                    let message = Message::assistant()
+                        .with_tool_request(format!("call_g{count}"), Ok(tool_call));
+                    Ok(stream_from_single_message(message, usage))
+                } else {
+                    // Odd turns (right after a nudge): plain text, no tools — the goal is
+                    // considered met, so the agent should be able to exit here.
+                    let message = Message::assistant().with_text("Done, the goal is met.");
+                    Ok(stream_from_single_message(message, usage))
+                }
+            }
+
+            fn get_name(&self) -> &str {
+                "goal-tool-mock"
+            }
+        }
+
+        #[tokio::test]
+        async fn test_goal_does_not_loop_after_tool_calls() -> Result<()> {
+            let temp_dir = TempDir::new()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let provider = Arc::new(GoalToolProvider::new());
+
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "goal-tool-test".to_string(),
+                    SessionType::Hidden,
+                    GooseMode::default(),
+                )
+                .await?;
+
+            agent
+                .update_provider(
+                    provider.clone(),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
+                .await?;
+            agent
+                .set_goal(Some("Ensure the sky is blue".to_string()))
+                .await;
+
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                schedule_id: None,
+                max_turns: Some(10),
+                retry_config: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text("Hello"), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+
+            while let Some(event) = reply_stream.next().await {
+                match event {
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let call_count = provider.call_count.load(Ordering::SeqCst);
+            // Before the fix, each tool call reset goal_check_pending, so the nudge
+            // re-fired after every tool call and the loop ran until max_turns (10).
+            // After the fix the nudge fires at most once per goal: a bounded number of
+            // provider calls, never the full max_turns budget.
+            assert!(
+                call_count <= 4,
+                "Goal loop did not terminate promptly after a tool call — expected at most 4 \
+                 provider calls, got {call_count}"
+            );
+            assert!(
+                call_count > 1,
+                "Expected at least the initial tool call plus a follow-up, got {call_count}"
+            );
+
+            // Goal should be cleared once the model stops with no tool calls.
             assert_eq!(
                 agent.get_goal().await,
                 None,
