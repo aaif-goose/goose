@@ -63,10 +63,39 @@ impl ProviderDef for ClaudeAcpProvider {
     ) -> BoxFuture<'static, Result<AcpProvider>> {
         Box::pin(async move {
             let config = Config::global();
+            eprintln!(
+                "[issue-10872] resolving Claude ACP command binary={} pathext={:?}",
+                CLAUDE_ACP_BINARY,
+                std::env::var_os("PATHEXT")
+            );
+            #[cfg(windows)]
+            if let Some(npm_dir) = dirs::data_dir().map(|dir| dir.join("npm")) {
+                for suffix in ["", ".cmd", ".exe", ".bat", ".ps1"] {
+                    let candidate = npm_dir.join(format!("{CLAUDE_ACP_BINARY}{suffix}"));
+                    eprintln!(
+                        "[issue-10872] npm command candidate path={} exists={} is_file={}",
+                        candidate.display(),
+                        candidate.exists(),
+                        candidate.is_file()
+                    );
+                }
+            }
             // with_npm() includes npm global bin dir (desktop app PATH may not)
-            let resolved_command = SearchPaths::builder()
-                .with_npm()
-                .resolve(CLAUDE_ACP_BINARY)?;
+            let resolved_command =
+                match SearchPaths::builder().with_npm().resolve(CLAUDE_ACP_BINARY) {
+                    Ok(command) => {
+                        eprintln!(
+                            "[issue-10872] resolved Claude ACP command path={} extension={:?}",
+                            command.display(),
+                            command.extension()
+                        );
+                        command
+                    }
+                    Err(error) => {
+                        eprintln!("[issue-10872] failed to resolve Claude ACP command: {error:#}");
+                        return Err(error);
+                    }
+                };
             let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
 
             let mode_mapping = HashMap::from([

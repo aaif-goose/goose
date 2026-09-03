@@ -649,6 +649,8 @@ async fn configure_session_prompts(
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
+    eprintln!("[issue-10872] CLI session build started");
+
     #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("cli", session_config.resume);
 
@@ -708,8 +710,22 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             }
         };
 
+    let diagnose_claude_acp = resolved.provider_name == "claude-acp";
+    if diagnose_claude_acp {
+        eprintln!("[issue-10872] CLI starting Claude ACP provider creation");
+    }
+    let provider_result = create(&resolved.provider_name, extensions_for_provider.clone()).await;
+    if diagnose_claude_acp {
+        match &provider_result {
+            Ok(_) => eprintln!("[issue-10872] CLI Claude ACP provider creation succeeded"),
+            Err(error) => eprintln!(
+                "[issue-10872] CLI Claude ACP provider creation returned an error: {error:#}"
+            ),
+        }
+    }
+
     let (new_provider, effective_provider_name, effective_model_name, effective_model_config) =
-        match create(&resolved.provider_name, extensions_for_provider.clone()).await {
+        match provider_result {
             Ok(provider) => (
                 provider,
                 resolved.provider_name.clone(),

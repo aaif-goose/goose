@@ -413,12 +413,26 @@ impl AcpProvider {
             thread: Some(loop_thread),
         };
 
-        let _init_response = init_rx
-            .await
-            .context("ACP client initialization cancelled")??;
+        eprintln!("[issue-10872] waiting for ACP initialize response provider={name}");
+        let init_result = init_rx.await;
+        match &init_result {
+            Ok(Ok(_)) => {
+                eprintln!("[issue-10872] ACP initialize succeeded provider={name}");
+            }
+            Ok(Err(error)) => {
+                eprintln!(
+                    "[issue-10872] ACP initialize returned an error provider={name}: {error:#}"
+                );
+            }
+            Err(error) => {
+                eprintln!("[issue-10872] ACP initialize channel closed provider={name}: {error}");
+            }
+        }
+        let _init_response = init_result.context("ACP client initialization cancelled")??;
 
         // Create the ACP session eagerly during connect.
         let (session_tx, session_rx) = oneshot::channel();
+        eprintln!("[issue-10872] requesting new ACP session provider={name}");
         client_loop_guard
             .tx
             .as_ref()
@@ -428,9 +442,24 @@ impl AcpProvider {
             })
             .await
             .context("ACP client is unavailable")?;
-        let response = session_rx
-            .await
-            .context("ACP session creation cancelled")??;
+        eprintln!("[issue-10872] waiting for new ACP session provider={name}");
+        let session_result = session_rx.await;
+        match &session_result {
+            Ok(Ok(_)) => {
+                eprintln!("[issue-10872] ACP session creation succeeded provider={name}");
+            }
+            Ok(Err(error)) => {
+                eprintln!(
+                    "[issue-10872] ACP session creation returned an error provider={name}: {error:#}"
+                );
+            }
+            Err(error) => {
+                eprintln!(
+                    "[issue-10872] ACP session creation channel closed provider={name}: {error}"
+                );
+            }
+        }
+        let response = session_result.context("ACP session creation cancelled")??;
 
         let session = AcpSession {
             id: response.session_id.clone(),
@@ -1153,15 +1182,24 @@ impl AcpClientLoop {
         let child = match spawn_acp_process(&self.config).await {
             Ok(c) => c,
             Err(e) => {
-                let _ = init_tx.send(Err(anyhow::anyhow!("{e}")));
+                let init_error_delivered = init_tx.send(Err(anyhow::anyhow!("{e}"))).is_ok();
+                eprintln!(
+                    "[issue-10872] ACP client loop exiting after spawn failure init_error_delivered={init_error_delivered}"
+                );
                 tracing::error!("failed to spawn ACP process: {e}");
                 return;
             }
         };
 
         match self.run_with_child(child, &mut rx, init_tx).await {
-            Ok(()) => tracing::debug!("ACP protocol loop exited cleanly"),
-            Err(e) => tracing::error!(error = %e, "ACP protocol loop error"),
+            Ok(()) => {
+                eprintln!("[issue-10872] ACP protocol loop exited cleanly");
+                tracing::debug!("ACP protocol loop exited cleanly");
+            }
+            Err(e) => {
+                eprintln!("[issue-10872] ACP protocol loop exited with an error: {e}");
+                tracing::error!(error = %e, "ACP protocol loop error");
+            }
         }
     }
 
@@ -1173,14 +1211,61 @@ impl AcpClientLoop {
     ) -> Result<()> {
         let stdin = child.stdin.take().context("no stdin")?;
         let stdout = child.stdout.take().context("no stdout")?;
-        if let Some(stderr) = child.stderr.take() {
-            tokio::spawn(forward_child_stderr(stderr));
-        }
+        let stderr_task = child
+            .stderr
+            .take()
+            .map(|stderr| tokio::spawn(forward_child_stderr(stderr)));
         let transport =
             agent_client_protocol::ByteStreams::new(stdin.compat_write(), stdout.compat());
         let result = self.run(transport, rx, init_tx).await;
-        let _ = child.kill().await;
-        let _ = child.wait().await;
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                eprintln!(
+                    "[issue-10872] ACP child exited before cleanup status={status} success={}",
+                    status.success()
+                );
+            }
+            Ok(None) => {
+                eprintln!("[issue-10872] ACP child still running; Goose is terminating it");
+                match child.kill().await {
+                    Ok(()) => eprintln!("[issue-10872] ACP child termination succeeded"),
+                    Err(error) => {
+                        eprintln!("[issue-10872] ACP child termination failed: {error}")
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("[issue-10872] failed to read ACP child status: {error}");
+                match child.kill().await {
+                    Ok(()) => eprintln!("[issue-10872] ACP child termination succeeded"),
+                    Err(error) => {
+                        eprintln!("[issue-10872] ACP child termination failed: {error}")
+                    }
+                }
+            }
+        }
+
+        match child.wait().await {
+            Ok(status) => eprintln!(
+                "[issue-10872] final ACP child status={status} success={}",
+                status.success()
+            ),
+            Err(error) => eprintln!("[issue-10872] failed waiting for ACP child: {error}"),
+        }
+
+        if let Some(mut stderr_task) = stderr_task {
+            match tokio::time::timeout(std::time::Duration::from_secs(2), &mut stderr_task).await {
+                Ok(Ok(())) => eprintln!("[issue-10872] ACP child stderr fully drained"),
+                Ok(Err(error)) => {
+                    eprintln!("[issue-10872] ACP child stderr task failed: {error}")
+                }
+                Err(_) => {
+                    eprintln!("[issue-10872] timed out draining ACP child stderr");
+                    stderr_task.abort();
+                }
+            }
+        }
         result
     }
 
@@ -1473,11 +1558,18 @@ fn emit_stderr_line(line: &mut Vec<u8>) {
         return;
     }
     let trimmed = line.strip_suffix(b"\r").unwrap_or(line);
-    tracing::info!(target: "goose::acp::child::stderr", "{}", String::from_utf8_lossy(trimmed));
+    let text = String::from_utf8_lossy(trimmed);
+    tracing::info!(target: "goose::acp::child::stderr", "{text}");
+    eprintln!("[issue-10872] ACP child stderr: {text}");
     line.clear();
 }
 
 async fn spawn_acp_process(config: &AcpProviderConfig) -> Result<Child> {
+    eprintln!(
+        "[issue-10872] spawning ACP process command={} arg_count={}",
+        config.command.display(),
+        config.args.len()
+    );
     let mut cmd = Command::new(&config.command);
     cmd.args(&config.args)
         .stdin(Stdio::piped())
@@ -1508,7 +1600,24 @@ async fn spawn_acp_process(config: &AcpProviderConfig) -> Result<Child> {
     }
 
     configure_subprocess(&mut cmd);
-    cmd.spawn().context("failed to spawn ACP process")
+    match cmd.spawn() {
+        Ok(child) => {
+            eprintln!(
+                "[issue-10872] ACP process spawn succeeded command={} pid={:?}",
+                config.command.display(),
+                child.id()
+            );
+            Ok(child)
+        }
+        Err(error) => {
+            eprintln!(
+                "[issue-10872] ACP process spawn failed command={} raw_os_error={:?}: {error}",
+                config.command.display(),
+                error.raw_os_error()
+            );
+            Err(error).context("failed to spawn ACP process")
+        }
+    }
 }
 
 fn log_undelivered<E: std::fmt::Debug>(result: Result<(), E>, method: &str) {
@@ -1534,6 +1643,7 @@ async fn handle_requests(
     let mut init_tx = Some(init_tx);
 
     let client_capabilities = ClientCapabilities::new();
+    eprintln!("[issue-10872] dispatching ACP initialize request");
     let init_response: InitializeResponse = cx
         .send_request(
             InitializeRequest::new(ProtocolVersion::V1).client_capabilities(client_capabilities),
@@ -1541,12 +1651,14 @@ async fn handle_requests(
         .block_task()
         .await
         .map_err(|err| {
+            eprintln!("[issue-10872] ACP initialize request failed: {err}");
             let message = format!("ACP {} failed: {err}", AGENT_METHOD_NAMES.initialize);
             if let Some(tx) = init_tx.take() {
                 let _ = tx.send(Err(anyhow::anyhow!(message.clone())));
             }
             agent_client_protocol::Error::internal_error().data(message)
         })?;
+    eprintln!("[issue-10872] ACP initialize response succeeded");
 
     let supports_close = init_response
         .agent_capabilities
@@ -1565,6 +1677,10 @@ async fn handle_requests(
         match request {
             ClientRequest::NewSession { response_tx } => {
                 let mcp_servers = filter_supported_servers(&config.mcp_servers, &mcp_capabilities);
+                eprintln!(
+                    "[issue-10872] dispatching ACP session/new request mcp_server_count={}",
+                    mcp_servers.len()
+                );
                 let session = cx
                     .send_request(
                         NewSessionRequest::new(config.work_dir.clone()).mcp_servers(mcp_servers),
@@ -1573,6 +1689,7 @@ async fn handle_requests(
                     .await;
                 let result = match session {
                     Ok(session) => {
+                        eprintln!("[issue-10872] ACP session/new response succeeded");
                         *session_state.active_id.lock().unwrap() = Some(session.session_id.clone());
                         session_ids.push(session.session_id.clone());
                         if let Some(config_options) = session.config_options.as_deref() {
@@ -1587,7 +1704,10 @@ async fn handle_requests(
                         .await?;
                         apply_session_mode(&config, &goose_mode, &cx, session).await
                     }
-                    Err(error) => Err(acp_method_error(AGENT_METHOD_NAMES.session_new, error)),
+                    Err(error) => {
+                        eprintln!("[issue-10872] ACP session/new request failed: {error}");
+                        Err(acp_method_error(AGENT_METHOD_NAMES.session_new, error))
+                    }
                 };
                 log_undelivered(response_tx.send(result), AGENT_METHOD_NAMES.session_new);
             }
