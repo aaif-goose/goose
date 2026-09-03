@@ -65,6 +65,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Tetrate Agent Router Service](https://router.tetrate.ai)                   | Unified API gateway for AI models including Claude, Gemini, GPT, open-weight models, and others. Supports PKCE authentication flow for secure API key generation.                                                                                | `TETRATE_API_KEY`, `TETRATE_HOST` (optional)                                                                                                                                        |
 | [TrustedRouter](https://trustedrouter.com)                                  | Models from OpenAI, Anthropic, Google, DeepSeek and others via TrustedRouter's OpenAI-compatible API, with per-request routing and failover.                                                                                                     | `TRUSTEDROUTER_API_KEY`                                                                                                                                                             |
 | [Venice AI](https://venice.ai/home)                                         | Provides access to open source models like Llama, Mistral, and Qwen while prioritizing user privacy. **Requires an account and an [API key](https://docs.venice.ai/overview/guides/generating-api-key)**.                 | `VENICE_API_KEY`, `VENICE_HOST` (optional), `VENICE_BASE_PATH` (optional), `VENICE_MODELS_PATH` (optional)                                                                          |
+| [Volcengine Ark](https://www.volcengine.com/product/ark)                    | ByteDance's model platform. Serves the Doubao family plus hosted DeepSeek and GLM models through an OpenAI-compatible API. Set `ARK_BASE_URL` to reach BytePlus outside China Mainland.                                                                 | `ARK_API_KEY`, `ARK_BASE_URL` (optional)                                                                                   |
 | [Cerebras](https://cerebras.ai/)                                            | Fast inference on Cerebras wafer-scale engines with models like Llama, Qwen, and others.                                                                                                                                  | `CEREBRAS_API_KEY`                                                                                                                                                                  |
 | [xAI](https://x.ai/)                                                        | Access to xAI's Grok models including grok-3, grok-3-mini, and grok-3-fast with 131,072 token context window.                                                                                                            | `XAI_API_KEY`, `XAI_HOST` (optional)                                                                                                                                                |
 
@@ -957,6 +958,46 @@ To set up SayGM with goose, follow these steps:
     3. Follow the prompts to choose `SayGM` as the provider.
     4. Enter your API key when prompted.
     5. Select the SayGM model of your choice.
+  </TabItem>
+</Tabs>
+
+### Volcengine Ark
+[Volcengine Ark](https://www.volcengine.com/product/ark) (火山方舟) is ByteDance's model platform. It serves the Doubao model family alongside hosted DeepSeek and GLM models through an OpenAI-compatible API. To use Ark with goose, you need an API key from the [Ark console](https://console.volcengine.com/ark/region:cn-beijing/apiKey).
+
+Ark supports many models, including:
+- **doubao-seed-2-1-pro-260628** — flagship Doubao model, 256k context
+- **doubao-seed-evolving** — rolling alias tracking the newest Seed release, 1M context
+- **deepseek-v4-pro-ga-260813** — DeepSeek V4 Pro hosted on Ark, 1M context
+- **glm-5-2-260617** — GLM-5.2 hosted on Ark, 1M context
+
+Model IDs must be fully versioned. The short names shown in the Ark console (for example `doubao-seed-2.1-pro`) return `InvalidEndpointOrModel.NotFound`; `doubao-seed-evolving` is the one rolling alias that resolves without a date suffix.
+
+`ARK_BASE_URL` defaults to the China Mainland endpoint. Set it to `https://ark.ap-southeast.bytepluses.com/api/v3` to use BytePlus from outside China Mainland.
+
+To set up Volcengine Ark with goose, follow these steps:
+
+<Tabs groupId="interface">
+  <TabItem value="ui" label="goose Desktop" default>
+  **To update your LLM provider and API key:**
+
+    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+    2. Click the `Settings` button on the sidebar.
+    3. Click the `Models` tab.
+    4. Click `Configure Providers`
+    5. Choose `Volcengine Ark` as provider from the list.
+    6. Click `Configure`, enter your API key, and click `Submit`.
+    7. Select the Ark model of your choice.
+
+  </TabItem>
+  <TabItem value="cli" label="goose CLI">
+    1. Run:
+    ```sh
+    goose configure
+    ```
+    2. Select `Configure Providers` from the menu.
+    3. Follow the prompts to choose `Volcengine Ark` as the provider.
+    4. Enter your API key when prompted.
+    5. Select the Ark model of your choice.
   </TabItem>
 </Tabs>
 

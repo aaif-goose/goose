@@ -1,0 +1,37 @@
+{
+  "name": "volcengine",
+  "engine": "openai",
+  "display_name": "Volcengine Ark",
+  "description": "ByteDance Doubao models plus hosted DeepSeek and GLM via Volcengine Ark's OpenAI-compatible API. Set ARK_BASE_URL to override the default endpoint (e.g. https://ark.ap-southeast.bytepluses.com/api/v3 for BytePlus outside China Mainland).",
+  "api_key_env": "ARK_API_KEY",
+  "base_url": "${ARK_BASE_URL}",
+  "env_vars": [
+    {
+      "name": "ARK_BASE_URL",
+      "required": false,
+      "secret": false,
+      "default": "https://ark.cn-beijing.volces.com/api/v3",
+      "description": "Volcengine Ark API base URL. Use https://ark.ap-southeast.bytepluses.com/api/v3 for BytePlus access outside China Mainland."
+    }
+  ],
+  "catalog_provider_id": "volcengine",
+  "dynamic_models": false,
+  "models": [
+    {"name": "doubao-seed-2-1-pro-260628", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-2-1-turbo-260628", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-evolving", "context_limit": 1048576, "reasoning": true},
+    {"name": "doubao-seed-2-0-pro-260215", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-2-0-lite-260428", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-2-0-mini-260428", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-2-0-code-preview-260215", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-character-260628", "context_limit": 131072, "reasoning": true},
+    {"name": "doubao-seed-1-8-251228", "context_limit": 262144, "reasoning": true},
+    {"name": "doubao-seed-1-6-251015", "context_limit": 262144, "reasoning": true},
+    {"name": "deepseek-v4-pro-ga-260813", "context_limit": 1048576, "reasoning": true},
+    {"name": "deepseek-v4-flash-ga-260731", "context_limit": 1048576, "reasoning": true},
+    {"name": "glm-5-2-260617", "context_limit": 1048576, "reasoning": true}
+  ],
+  "preserves_thinking": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://www.volcengine.com/docs/82379/1330310"
+}
