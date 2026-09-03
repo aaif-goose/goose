@@ -93,6 +93,7 @@ libc = { version = "0.2.182", default-features = false, features = ["std"] }
 [features]
 default = [
     "code-mode",
+    "tree-sitter",
     "local-inference",
     "aws-providers",
     "telemetry",
@@ -104,6 +105,7 @@ default = [
 ]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
+tree-sitter = ["goose/tree-sitter"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]
