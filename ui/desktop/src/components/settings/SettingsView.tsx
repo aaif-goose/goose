@@ -17,6 +17,7 @@ import {
   Keyboard,
   HardDrive,
   KeyRound,
+  Server,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import ChatSettingsSection from './chat/ChatSettingsSection';
@@ -48,8 +49,12 @@ const i18n = defineMessages({
     defaultMessage: 'Chat',
   },
   tabAgent: {
-    id: 'settingsView.tabExternalBackend',
+    id: 'settingsView.tabAgent',
     defaultMessage: 'Agent',
+  },
+  tabRemoteBackend: {
+    id: 'settingsView.tabRemoteBackend',
+    defaultMessage: 'Remote Backend',
   },
   tabPrompts: {
     id: 'settingsView.tabPrompts',
@@ -98,6 +103,7 @@ export default function SettingsView({
     'local-inference': intl.formatMessage(i18n.tabLocalInference),
     chat: intl.formatMessage(i18n.tabChat),
     sharing: intl.formatMessage(i18n.tabAgent),
+    'remote-backend': intl.formatMessage(i18n.tabRemoteBackend),
     prompts: intl.formatMessage(i18n.tabPrompts),
     keyboard: intl.formatMessage(i18n.tabKeyboard),
     auth: intl.formatMessage(i18n.tabAuth),
@@ -121,6 +127,7 @@ export default function SettingsView({
         styles: 'chat',
         tools: 'chat',
         agent: 'sharing',
+        'remote-backend': 'remote-backend',
         app: 'app',
         chat: 'chat',
         prompts: 'prompts',
@@ -221,6 +228,14 @@ export default function SettingsView({
                 {intl.formatMessage(i18n.tabAgent)}
               </TabsTrigger>
               <TabsTrigger
+                value="remote-backend"
+                className={settingsTabClass}
+                data-testid="settings-remote-backend-tab"
+              >
+                <Server className="h-5 w-5 text-text-secondary" />
+                {intl.formatMessage(i18n.tabRemoteBackend)}
+              </TabsTrigger>
+              <TabsTrigger
                 value="prompts"
                 className={settingsTabClass}
                 data-testid="settings-prompts-tab"
@@ -294,6 +309,14 @@ export default function SettingsView({
               >
                 <div className="space-y-4 pb-8">
                   <AgentLoopSettings />
+                </div>
+              </TabsContent>
+
+              <TabsContent
+                value="remote-backend"
+                className="mt-0 focus-visible:outline-none focus-visible:ring-0"
+              >
+                <div className="space-y-4 pb-8">
                   <ExternalBackendSection />
                 </div>
               </TabsContent>

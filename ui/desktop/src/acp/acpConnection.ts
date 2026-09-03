@@ -16,6 +16,7 @@ import {
 } from './gooseAcpClient';
 import { requestAcpPermission } from './permissionRequests';
 import { requestAcpRecipeParams } from './recipeParamRequests';
+import { AppEvents } from '../constants/events';
 
 type AcpConnection = {
   client: GooseAcpClient;
@@ -45,6 +46,19 @@ export async function getAcpInitializeResponse(): Promise<InitializeResponse> {
 
 export function reconnectAcpAfterSystemResume(): void {
   recoverConnection(true);
+}
+
+// Resolves once the new backend has completed an ACP initialize, so callers that
+// just switched backends can report the real connection's failure to the user.
+export async function reconnectAcpToNewBackend(): Promise<void> {
+  connectionGeneration += 1;
+  const previousConnection = currentConnection;
+  currentConnection = null;
+  pendingConnection = null;
+  setRecovering(false);
+  previousConnection?.client.connection.close();
+  window.dispatchEvent(new CustomEvent(AppEvents.BACKEND_SWITCHED));
+  await getConnection();
 }
 
 export function isAcpRecovering(): boolean {
@@ -161,7 +175,7 @@ async function openConnection(generation: number): Promise<AcpConnection> {
         },
       }),
       ACP_INITIALIZE_TIMEOUT_MS,
-      `ACP initialize timed out after ${ACP_INITIALIZE_TIMEOUT_MS}ms`
+      `ACP initialize with ${redactAcpUrl(wsUrl)} timed out after ${ACP_INITIALIZE_TIMEOUT_MS}ms`
     );
 
     if (generation !== connectionGeneration) {
@@ -179,7 +193,65 @@ async function openConnection(generation: number): Promise<AcpConnection> {
     return connection;
   } catch (error) {
     client.connection.close(error);
-    throw error;
+    throw describeConnectionFailure(error, wsUrl);
+  }
+}
+
+const WEBSOCKET_READY_STATES = ['connecting', 'open', 'closing', 'closed'] as const;
+
+// The WebSocket transport rejects with a DOM Event, which stringifies to
+// "[object Event]", so the endpoint and socket state have to be read off the
+// event to leave the user with something actionable.
+function describeConnectionFailure(error: unknown, wsUrl: string): unknown {
+  if (!isErrorEvent(error)) {
+    return error;
+  }
+
+  const endpoint = redactAcpUrl(wsUrl);
+  const details = [
+    isCloseEvent(error) ? `code ${error.code}` : undefined,
+    isCloseEvent(error) && error.reason ? `reason "${error.reason}"` : undefined,
+    typeof error.message === 'string' && error.message ? error.message : undefined,
+    readyStateLabel(error),
+  ].filter((detail): detail is string => detail !== undefined);
+
+  const suffix = details.length > 0 ? ` (${details.join(', ')})` : '';
+  return new Error(`WebSocket connection to ${endpoint} failed${suffix}`, { cause: error });
+}
+
+function isErrorEvent(error: unknown): error is Event & {
+  message?: unknown;
+  target?: unknown;
+} {
+  return typeof Event === 'function' && error instanceof Event;
+}
+
+function isCloseEvent(error: Event): error is CloseEvent {
+  return typeof CloseEvent === 'function' && error instanceof CloseEvent;
+}
+
+function readyStateLabel(error: Event & { target?: unknown }): string | undefined {
+  const target = error.target;
+  if (typeof target !== 'object' || target === null || !('readyState' in target)) {
+    return undefined;
+  }
+
+  const readyState = (target as { readyState: unknown }).readyState;
+  if (typeof readyState !== 'number') {
+    return undefined;
+  }
+
+  return `socket ${WEBSOCKET_READY_STATES[readyState] ?? `state ${readyState}`}`;
+}
+
+// The ACP URL carries the backend secret as a query parameter.
+function redactAcpUrl(wsUrl: string): string {
+  try {
+    const url = new URL(wsUrl);
+    url.search = '';
+    return url.toString();
+  } catch {
+    return wsUrl;
   }
 }
 
