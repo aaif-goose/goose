@@ -1217,14 +1217,35 @@
   "externalBackendSection.certFingerprintPlaceholder": {
     "defaultMessage": "AA:BB:CC:... or sha256/base64"
   },
+  "externalBackendSection.connect": {
+    "defaultMessage": "Connect"
+  },
+  "externalBackendSection.connectFailed": {
+    "defaultMessage": "Could not connect: {error}"
+  },
+  "externalBackendSection.connected": {
+    "defaultMessage": "This window is now using the external backend."
+  },
+  "externalBackendSection.connecting": {
+    "defaultMessage": "Connecting…"
+  },
   "externalBackendSection.description": {
     "defaultMessage": "By default Goose starts a local backend. Use this to connect to an external ACP-compatible backend."
   },
+  "externalBackendSection.disconnect": {
+    "defaultMessage": "Disconnect"
+  },
+  "externalBackendSection.disconnectFailed": {
+    "defaultMessage": "Could not disconnect: {error}"
+  },
+  "externalBackendSection.disconnected": {
+    "defaultMessage": "This window is now using the local backend."
+  },
+  "externalBackendSection.disconnecting": {
+    "defaultMessage": "Disconnecting…"
+  },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
-  },
-  "externalBackendSection.restartNote": {
-    "defaultMessage": "Changes apply to new chat windows. Restart Goose to update existing windows."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Secret Key"
@@ -1252,12 +1273,6 @@
   },
   "externalBackendSection.urlProtocolError": {
     "defaultMessage": "URL must use http or https protocol"
-  },
-  "externalBackendSection.useExternalServer": {
-    "defaultMessage": "Use external backend"
-  },
-  "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "Connect to an ACP-compatible backend running elsewhere."
   },
   "externalBackendSection.workingDir": {
     "defaultMessage": "Remote Working Directory (optional)"
@@ -2444,8 +2459,17 @@
   "onboardingGuard.checkProviderErrorTitle": {
     "defaultMessage": "Unable to connect to Goose server"
   },
+  "onboardingGuard.externalBackendErrorTitle": {
+    "defaultMessage": "Unable to connect to the external backend"
+  },
   "onboardingGuard.retry": {
     "defaultMessage": "Retry"
+  },
+  "onboardingGuard.retrying": {
+    "defaultMessage": "Retrying…"
+  },
+  "onboardingGuard.switchToLocal": {
+    "defaultMessage": "Switch to Local"
   },
   "onboardingGuard.welcomeDescription": {
     "defaultMessage": "Your local AI agent. Connect an AI model provider to get started."
@@ -4238,6 +4262,9 @@
   "settings.version.title": {
     "defaultMessage": "Version"
   },
+  "settingsView.tabAgent": {
+    "defaultMessage": "Agent"
+  },
   "settingsView.tabApp": {
     "defaultMessage": "App"
   },
@@ -4246,9 +4273,6 @@
   },
   "settingsView.tabChat": {
     "defaultMessage": "Chat"
-  },
-  "settingsView.tabExternalBackend": {
-    "defaultMessage": "Agent"
   },
   "settingsView.tabKeyboard": {
     "defaultMessage": "Keyboard"
@@ -4261,6 +4285,9 @@
   },
   "settingsView.tabPrompts": {
     "defaultMessage": "Prompts"
+  },
+  "settingsView.tabRemoteBackend": {
+    "defaultMessage": "Remote Backend"
   },
   "settingsView.title": {
     "defaultMessage": "Settings"

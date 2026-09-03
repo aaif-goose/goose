@@ -26,8 +26,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync, spawn, execFile } from 'child_process';
 import 'dotenv/config';
-import { connectRemoteBackend } from './remoteBackends';
+import { acpWebSocketUrl } from './remoteBackends';
 import { installBackendCertificateVerifiers } from './backendCertificateVerifier';
+import { applyBrowserRequestHeaders } from './backendBrowserHeaders';
 import { configureProxy } from './proxy';
 import { startGooseServe } from './gooseServe';
 import { getLoginShellPath } from './loginShellPath';
@@ -386,6 +387,15 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
   callback(verifyBackendCertificate(parsed.hostname, certificate.fingerprint));
 });
 
+// Electron's default is to send the first certificate matching the server's
+// acceptable-CA list, which is what we want; this only logs the selection.
+app.on('select-client-certificate', (_event, _webContents, url, certificates) => {
+  const [certificate] = certificates;
+  if (certificate) {
+    log.info(`[Main] Sending client certificate "${certificate.subjectName}" to ${url}`);
+  }
+});
+
 app.whenReady().then(() => {
   appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
 });
@@ -399,6 +409,7 @@ app.whenReady().then(() => {
       verify: verifyBackendCertificate,
     }
   );
+  applyBrowserRequestHeaders(session.fromPartition('persist:goose'));
 });
 
 if (process.env.ENABLE_PLAYWRIGHT) {
@@ -977,6 +988,7 @@ let appConfig = {
   GOOSE_EXTERNAL_BACKEND: false,
   GOOSE_EXTERNAL_BACKEND_URL: '',
   GOOSE_EXTERNAL_BACKEND_SOURCE: '',
+  GOOSE_EXTERNAL_BACKEND_ERROR: '',
   // Start with the env-var override; the OS region locale is filled in after app.ready
   // (see updateLocaleFromSystem below) since getSystemLocale() cannot be called earlier.
   GOOSE_LOCALE: process.env.GOOSE_LOCALE || undefined,
@@ -1019,6 +1031,104 @@ const windowPowerSaveBlockers = new Map<number, number>(); // windowId -> blocke
 // Track pending initial messages per window
 const pendingInitialMessages = new Map<number, string>(); // windowId -> initialMessage
 const pendingInitialMessageNoAutoSubmit = new Set<number>(); // windowIds whose initialMessage should NOT auto-submit
+
+type ExternalBackendLease = { ok: true; lease: GooseServeLease } | { ok: false; error: string };
+
+const createExternalBackendLease = async (
+  externalBackend: ExternalBackend,
+  workingDir: string
+): Promise<ExternalBackendLease> => {
+  let certificateTrust: BackendCertificateTrustRegistration | null = null;
+
+  try {
+    const wsUrl = acpWebSocketUrl(externalBackend.url, externalBackend.secret);
+    const { protocol, hostname } = new URL(normalizeAcpHttpBaseUrl(externalBackend.url));
+    if (protocol === 'https:') {
+      certificateTrust = trustBackendCertificate(hostname, externalBackend.certFingerprint ?? null);
+    }
+
+    const originLease = leaseBackendOrigin(wsUrl);
+    const trust = certificateTrust;
+    return {
+      ok: true,
+      lease: gooseServeLeases.createExternal(
+        wsUrl,
+        externalBackend.secret,
+        workingDir,
+        async () => {
+          originLease.release();
+          trust?.release();
+        }
+      ),
+    };
+  } catch (error) {
+    certificateTrust?.release();
+    return { ok: false, error: errorMessage(error) };
+  }
+};
+
+type LocalBackendLease =
+  { ok: true; lease: GooseServeLease; workingDir: string } | { ok: false; error: string };
+
+const createLocalBackendLease = async (
+  serverSecret: string,
+  requestedWorkingDir: string
+): Promise<LocalBackendLease> => {
+  const localCertificateTrust = trustBackendCertificate('127.0.0.1', null);
+  const loginShellPath = await getLoginShellPath(log);
+
+  let gooseServeResult: Awaited<ReturnType<typeof startGooseServe>>;
+  try {
+    gooseServeResult = await startGooseServe({
+      serverSecret,
+      dir: requestedWorkingDir,
+      tls: true,
+      env: {
+        GOOSE_PATH_ROOT: appConfig.GOOSE_PATH_ROOT as string | undefined,
+      },
+      loginShellPath,
+      isPackaged: app.isPackaged,
+      resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+      logger: log,
+      diagnosticsDir: STARTUP_LOGS_DIR,
+      readinessFetch: net.fetch as unknown as typeof globalThis.fetch,
+    });
+    if (!gooseServeResult.certFingerprint) {
+      await gooseServeResult.cleanup();
+      throw new Error('goose serve started with TLS but did not return a certificate fingerprint');
+    }
+
+    const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
+    if (
+      localCertificateTrust.trust.fingerprint &&
+      localCertificateTrust.trust.fingerprint !== localCertFingerprint
+    ) {
+      await gooseServeResult.cleanup();
+      throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
+    }
+    localCertificateTrust.trust.fingerprint = localCertFingerprint;
+  } catch (error) {
+    localCertificateTrust.release();
+    log.error('goose serve failed to start', error);
+    return { ok: false, error: errorMessage(error) };
+  }
+
+  const workingDir = gooseServeResult.workingDir;
+  const cleanupGooseServe = gooseServeResult.cleanup;
+  gooseServeResult.cleanup = async () => {
+    try {
+      await cleanupGooseServe();
+    } finally {
+      localCertificateTrust.release();
+    }
+  };
+
+  return {
+    ok: true,
+    workingDir,
+    lease: gooseServeLeases.create(gooseServeResult, serverSecret, workingDir),
+  };
+};
 
 interface CreateChatOptions {
   initialMessage?: string;
@@ -1064,172 +1174,48 @@ const createChat = async (
     return;
   }
 
+  let externalBackendError: string | null = null;
+
   if (externalBackend?.certFingerprint) {
-    const url = externalBackend.url;
     const usesHttps = (() => {
       try {
-        return new URL(url).protocol === 'https:';
+        return new URL(externalBackend.url).protocol === 'https:';
       } catch {
         return false;
       }
     })();
 
     if (!usesHttps) {
-      const response = dialog.showMessageBoxSync({
-        type: 'error',
-        title: 'External Backend Misconfigured',
-        message: 'Certificate fingerprint requires an HTTPS external backend URL.',
-        detail: 'Use an https:// URL or remove the configured certificate fingerprint.',
-        buttons: ['Disable External Backend & Retry', 'Quit'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-
-      if (response === 0) {
-        updateSettings((s) => {
-          if (s.externalGoosed) {
-            s.externalGoosed.enabled = false;
-          }
-        });
-        return createChat(app, options);
-      }
-
-      app.quit();
-      return;
+      externalBackendError =
+        'Certificate fingerprint requires an https:// external backend URL. Use an https:// URL or remove the configured certificate fingerprint.';
+      log.error(externalBackendError);
+      externalBackend = null;
     }
   }
 
-  const serverSecret = externalBackend ? externalBackend.secret : GENERATED_SECRET;
+  let serverSecret = externalBackend ? externalBackend.secret : GENERATED_SECRET;
   let workingDir = resolveWorkingDir(externalBackend?.workingDir, dir, os.homedir());
   let gooseServeLease: GooseServeLease | null = null;
 
   if (externalBackend) {
-    let externalCertificateTrust: BackendCertificateTrustRegistration | null = null;
+    const attempt = await createExternalBackendLease(externalBackend, workingDir);
 
-    try {
-      const externalBaseUrl = normalizeAcpHttpBaseUrl(externalBackend.url);
-      const externalBase = new URL(externalBaseUrl);
-      if (externalBase.protocol === 'https:') {
-        externalCertificateTrust = trustBackendCertificate(
-          externalBase.hostname,
-          externalBackend.certFingerprint ?? null
-        );
-      }
-
-      const externalBackendCheck = await connectRemoteBackend({
-        baseUrl: externalBaseUrl,
-        serverSecret,
-        pinnedHostname: externalBackend.certFingerprint ? externalBase.hostname : null,
-      });
-      if (!externalBackendCheck.ok) {
-        externalCertificateTrust?.release();
-        log.error(`External backend check failed: ${externalBackendCheck.failure}`);
-        const canDisableExternalBackend = externalBackend.source === 'settings';
-        const response = dialog.showMessageBoxSync({
-          type: 'error',
-          title: 'External Backend Unreachable',
-          message: `Could not connect to external backend at ${externalBaseUrl}`,
-          detail: externalBackendCheck.failure ?? undefined,
-          buttons: canDisableExternalBackend
-            ? ['Disable External Backend & Retry', 'Quit']
-            : ['Quit'],
-          defaultId: 0,
-          cancelId: canDisableExternalBackend ? 1 : 0,
-        });
-
-        if (canDisableExternalBackend && response === 0) {
-          updateSettings((s) => {
-            if (s.externalGoosed) {
-              s.externalGoosed.enabled = false;
-            }
-          });
-          return createChat(app, options);
-        }
-
-        app.quit();
-        return;
-      }
-
-      const resolvedAcpUrl = externalBackendCheck.acpUrl;
-      if (!resolvedAcpUrl) {
-        throw new Error('External backend check did not resolve an ACP endpoint');
-      }
-
-      const originLease = leaseBackendOrigin(resolvedAcpUrl);
-      const leaseCertificateTrust = externalCertificateTrust;
-      externalCertificateTrust = null;
-      gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret, async () => {
-        originLease.release();
-        leaseCertificateTrust?.release();
-      });
-    } catch (error) {
-      externalCertificateTrust?.release();
-      log.error('External ACP backend is misconfigured', error);
-      const canDisableExternalBackend = externalBackend.source === 'settings';
-      const response = dialog.showMessageBoxSync({
-        type: 'error',
-        title: 'External Backend Misconfigured',
-        message: 'The external backend URL is invalid.',
-        detail: errorMessage(error),
-        buttons: canDisableExternalBackend
-          ? ['Disable External Backend & Retry', 'Quit']
-          : ['Quit'],
-        defaultId: 0,
-        cancelId: canDisableExternalBackend ? 1 : 0,
-      });
-
-      if (canDisableExternalBackend && response === 0) {
-        updateSettings((s) => {
-          if (s.externalGoosed) {
-            s.externalGoosed.enabled = false;
-          }
-        });
-        return createChat(app, options);
-      }
-
-      app.quit();
-      return;
+    if (attempt.ok) {
+      gooseServeLease = attempt.lease;
+    } else {
+      // Start on the local backend instead of blocking startup, and let the
+      // renderer offer Retry / Switch to Local.
+      externalBackendError = `Could not connect to external backend at ${externalBackend.url}\n\n${attempt.error}`;
+      log.error(`External backend is unavailable: ${attempt.error}`);
+      externalBackend = null;
+      serverSecret = GENERATED_SECRET;
+      workingDir = resolveWorkingDir(undefined, dir, os.homedir());
     }
-  } else {
-    const localCertificateTrust = trustBackendCertificate('127.0.0.1', null);
+  }
 
-    const loginShellPath = await getLoginShellPath(log);
-
-    let gooseServeResult: Awaited<ReturnType<typeof startGooseServe>>;
-    try {
-      gooseServeResult = await startGooseServe({
-        serverSecret,
-        dir: workingDir,
-        tls: true,
-        env: {
-          GOOSE_PATH_ROOT: appConfig.GOOSE_PATH_ROOT as string | undefined,
-        },
-        loginShellPath,
-        isPackaged: app.isPackaged,
-        resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
-        logger: log,
-        diagnosticsDir: STARTUP_LOGS_DIR,
-        readinessFetch: net.fetch as unknown as typeof globalThis.fetch,
-      });
-      if (!gooseServeResult.certFingerprint) {
-        await gooseServeResult.cleanup();
-        throw new Error(
-          'goose serve started with TLS but did not return a certificate fingerprint'
-        );
-      }
-
-      const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
-      if (
-        localCertificateTrust.trust.fingerprint &&
-        localCertificateTrust.trust.fingerprint !== localCertFingerprint
-      ) {
-        await gooseServeResult.cleanup();
-        throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
-      }
-      localCertificateTrust.trust.fingerprint = localCertFingerprint;
-    } catch (error) {
-      localCertificateTrust.release();
-      log.error('goose serve failed to start', error);
+  if (!gooseServeLease) {
+    const local = await createLocalBackendLease(serverSecret, workingDir);
+    if (!local.ok) {
       dialog.showMessageBoxSync({
         type: 'error',
         title: 'Goose Failed to Start',
@@ -1237,7 +1223,7 @@ const createChat = async (
         detail: [
           'Backend: goose serve',
           'Readiness check: HTTPS GET /status',
-          `Startup error:\n${errorMessage(error)}`,
+          `Startup error:\n${local.error}`,
         ].join('\n\n'),
         buttons: ['OK'],
       });
@@ -1245,16 +1231,8 @@ const createChat = async (
       return;
     }
 
-    workingDir = gooseServeResult.workingDir;
-    const cleanupGooseServe = gooseServeResult.cleanup;
-    gooseServeResult.cleanup = async () => {
-      try {
-        await cleanupGooseServe();
-      } finally {
-        localCertificateTrust.release();
-      }
-    };
-    gooseServeLease = gooseServeLeases.create(gooseServeResult, serverSecret);
+    workingDir = local.workingDir;
+    gooseServeLease = local.lease;
   }
 
   const cleanupUnregisteredGooseServeLease = async () => {
@@ -1307,6 +1285,7 @@ const createChat = async (
             GOOSE_EXTERNAL_BACKEND: externalBackend !== null,
             GOOSE_EXTERNAL_BACKEND_URL: externalBackend?.url ?? '',
             GOOSE_EXTERNAL_BACKEND_SOURCE: externalBackend?.source ?? '',
+            GOOSE_EXTERNAL_BACKEND_ERROR: externalBackendError ?? '',
             REQUEST_DIR: dir,
             GOOSE_VERSION: version,
             recipeDeeplink: recipeDeeplink,
@@ -2024,6 +2003,66 @@ ipcMain.handle('get-acp-url', async (event) => {
     return null;
   }
   return gooseServeLeases.getAcpUrl(windowId) ?? null;
+});
+
+ipcMain.handle('get-working-dir', (event) => {
+  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+  return windowId ? gooseServeLeases.getWorkingDir(windowId) : null;
+});
+
+ipcMain.handle('switch-backend', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) {
+    return { ok: false, error: 'This window is no longer available.' };
+  }
+
+  let externalBackend: ExternalBackend | null;
+  try {
+    externalBackend = getActiveExternalBackend(getSettings());
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+
+  if (!externalBackend) {
+    return { ok: false, error: 'Enable the external backend before connecting.' };
+  }
+
+  const workingDir = resolveWorkingDir(externalBackend.workingDir, undefined, os.homedir());
+  const attempt = await createExternalBackendLease(externalBackend, workingDir);
+  if (!attempt.ok) {
+    log.error(`Failed to switch this window to the external backend: ${attempt.error}`);
+    return { ok: false, error: attempt.error };
+  }
+
+  await gooseServeLeases.releaseWindow(window.id);
+  gooseServeLeases.attachWindow(window.id, attempt.lease);
+  await desktopFileAccess.bindWindow(window.id, workingDir);
+  return { ok: true, workingDir };
+});
+
+ipcMain.handle('disconnect-backend', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) {
+    return { ok: false, error: 'This window is no longer available.' };
+  }
+
+  updateSettings((s) => {
+    if (s.externalGoosed) {
+      s.externalGoosed.enabled = false;
+    }
+  });
+
+  const workingDir = resolveWorkingDir(undefined, undefined, os.homedir());
+  const local = await createLocalBackendLease(GENERATED_SECRET, workingDir);
+  if (!local.ok) {
+    log.error(`Failed to switch this window to the local backend: ${local.error}`);
+    return { ok: false, error: local.error };
+  }
+
+  await gooseServeLeases.releaseWindow(window.id);
+  gooseServeLeases.attachWindow(window.id, local.lease);
+  await desktopFileAccess.bindWindow(window.id, local.workingDir);
+  return { ok: true, workingDir: local.workingDir };
 });
 
 // Handle menu bar icon visibility

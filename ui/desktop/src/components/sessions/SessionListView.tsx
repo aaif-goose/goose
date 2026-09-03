@@ -492,6 +492,20 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     };
   }, [loadSessions, debouncedSearchTerm, includeAcpSessions]);
 
+  // Sessions belong to the backend that served them, so drop the old list and
+  // reload from the new one.
+  useEffect(() => {
+    const handleBackendSwitched = () => {
+      loadGenerationRef.current += 1;
+      hasLoadedRef.current = false;
+      setSessions([]);
+      void loadSessions();
+    };
+
+    window.addEventListener(AppEvents.BACKEND_SWITCHED, handleBackendSwitched);
+    return () => window.removeEventListener(AppEvents.BACKEND_SWITCHED, handleBackendSwitched);
+  }, [loadSessions]);
+
   // Hide Nostr sharing when explicitly disabled via env var (restricted/enterprise bundles)
   useEffect(() => {
     const config = window.electron.getConfig();

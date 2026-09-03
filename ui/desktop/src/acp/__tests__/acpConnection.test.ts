@@ -235,6 +235,41 @@ describe('ACP connection ownership', () => {
     expect(mockClientFactory.instances).toHaveLength(2);
   });
 
+  it('surfaces the new backend failure when switching backends', async () => {
+    mockClientFactory.initialize
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('backend rejected the connection'));
+    const { getAcpClient, reconnectAcpToNewBackend } = await import('../acpConnection');
+    await getAcpClient();
+
+    await expect(reconnectAcpToNewBackend()).rejects.toThrow('backend rejected the connection');
+
+    expect(mockClientFactory.instances[0].client.connection.close).toHaveBeenCalledOnce();
+  });
+
+  it('resolves once the new backend is connected', async () => {
+    const { getAcpClient, reconnectAcpToNewBackend } = await import('../acpConnection');
+    const first = await getAcpClient();
+
+    await reconnectAcpToNewBackend();
+
+    expect(mockClientFactory.instances).toHaveLength(2);
+    expect(await getAcpClient()).not.toBe(first);
+  });
+
+  it('does not retry a failed backend switch in the background', async () => {
+    mockClientFactory.initialize
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('backend rejected the connection'));
+    const { getAcpClient, reconnectAcpToNewBackend } = await import('../acpConnection');
+    await getAcpClient();
+
+    await expect(reconnectAcpToNewBackend()).rejects.toThrow('backend rejected the connection');
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockClientFactory.instances).toHaveLength(2);
+  });
+
   it('notifies subscribers while reconnecting and after recovery', async () => {
     const { getAcpClient, subscribeToAcpRecovery } = await import('../acpConnection');
     const listener = vi.fn();

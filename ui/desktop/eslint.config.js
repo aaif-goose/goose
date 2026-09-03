@@ -81,6 +81,8 @@ module.exports = [
         HTMLCanvasElement: 'readonly',
         HTMLIFrameElement: 'readonly',
         MessageEvent: 'readonly',
+        WebSocket: 'readonly',
+        CloseEvent: 'readonly',
         StorageEvent: 'readonly',
         File: 'readonly',
         FileList: 'readonly',
