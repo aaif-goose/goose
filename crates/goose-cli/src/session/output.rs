@@ -561,7 +561,7 @@ fn should_show_thinking() -> bool {
 }
 
 fn render_thinking(text: &str, theme: Theme) {
-    if should_show_thinking() {
+    if should_show_thinking() && !text.is_empty() {
         println!("\n{}", style("Thinking:").dim().italic());
         print_markdown(text, theme);
     }
@@ -573,7 +573,7 @@ fn render_thinking_streaming(
     header_shown: &mut bool,
     theme: Theme,
 ) {
-    if should_show_thinking() {
+    if should_show_thinking() && !text.is_empty() {
         flush_markdown_buffer(buffer, theme);
         if !*header_shown {
             println!("\n{}", style("Thinking:").dim().italic());
