@@ -59,7 +59,7 @@ import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { WEB_PROTOCOLS } from './utils/urlSecurity';
 import { openExternalUrl } from './utils/openExternalUrl';
-import { buildCSP } from './utils/csp';
+import { allowBackendOrigin, buildCSP } from './utils/csp';
 import { resolveWorkingDir } from './utils/workingDir';
 import {
   DesktopFileAccess,
@@ -1150,10 +1150,13 @@ const createChat = async (
         return;
       }
 
+      const resolvedBaseUrl = externalBackendCheck.resolvedBaseUrl ?? externalBaseUrl;
+      allowBackendOrigin(resolvedBaseUrl);
+
       const leaseCertificateTrust = externalCertificateTrust;
       externalCertificateTrust = null;
       gooseServeLease = gooseServeLeases.createExternal(
-        acpWebSocketUrlFromHttpBase(externalBaseUrl, serverSecret),
+        acpWebSocketUrlFromHttpBase(resolvedBaseUrl, serverSecret),
         serverSecret,
         leaseCertificateTrust ? async () => leaseCertificateTrust.release() : undefined
       );
