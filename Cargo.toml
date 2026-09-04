@@ -93,7 +93,7 @@ opentelemetry-stdout = { version = "0.32", default-features = false, features = 
 tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
 
 rayon = { version = "1.10", default-features = false }
-tree-sitter = { version = "0.26", default-features = false, features = ["std"] }
+tree-sitter = { version = "0.27", default-features = false, features = ["std"] }
 tree-sitter-go = { version = "0.25", default-features = false }
 tree-sitter-java = { version = "0.23", default-features = false }
 tree-sitter-javascript = { version = "0.25", default-features = false }
