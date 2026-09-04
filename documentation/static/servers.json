@@ -827,6 +827,16 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "compartment",
+    "name": "Compartment",
+    "description": "Encrypted, fully offline long-term memory for AI agents, shared by every MCP client on the machine",
+    "command": "uvx compartment --caller goose serve",
+    "link": "https://github.com/MaxFreedomPollard/Compartment",
+    "installation_notes": "Requires Python 3.11+ and uv. Run `uvx compartment init` once to create the encrypted vault and choose its passphrase. Unlock it with the Compartment menu bar app or the memory_unlock tool; everything stays on your machine and no network access is needed.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  }
 ]
