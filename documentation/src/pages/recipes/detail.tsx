@@ -10,6 +10,7 @@ import { getRecipeById } from "@site/src/utils/recipes";
 import type { Recipe } from "@site/src/components/recipe-card";
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
+import { buildRecipeCliCommand } from "@site/src/utils/recipe-command";
 
 const colorMap: { [key: string]: string } = {
   "GitHub MCP": "bg-yellow-100 text-yellow-800 border-yellow-200",
@@ -59,28 +60,31 @@ export default function RecipeDetailPage(): JSX.Element {
 
   const allParams = recipe?.parameters || [];
   const requiredParams = allParams.filter((p) => p.requirement === "required");
+  const cliCommand = recipe ? buildRecipeCliCommand(recipe.localPath) : null;
 
   const handleCopyCLI = () => {
+    if (!cliCommand) return;
+
     if (allParams.length > 0) {
       setParamValues({});
       setShowParamsPrompt(true);
       return;
     }
 
-    const command = `goose run --recipe ${recipe?.localPath}`;
-    navigator.clipboard.writeText(command);
+    navigator.clipboard.writeText(cliCommand);
     toast.success("CLI command copied!");
   };
 
   const handleSubmitParams = () => {
+    if (!recipe) return;
+
     const filledParams = Object.entries(paramValues)
       .filter(([, val]) => val !== "")
       .map(([key, val]) => `${key}=${val}`)
       .join(" ");
 
-    const command = `goose run --recipe ${recipe?.localPath}${
-      filledParams ? ` --params ${filledParams}` : ""
-    }`;
+    const command = buildRecipeCliCommand(recipe.localPath, filledParams);
+    if (!command) return;
 
     navigator.clipboard.writeText(command);
     toast.success("CLI command copied with params!");
@@ -235,25 +239,27 @@ export default function RecipeDetailPage(): JSX.Element {
               >
                 Launch in Goose Desktop →
               </Link>
-              <div className="relative group inline-block">
-                <button
-                  onClick={handleCopyCLI}
-                  className="text-sm font-medium px-6 py-2 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-                >
-                  Copy Goose CLI Command
-                </button>
+              {cliCommand && (
+                <div className="relative group inline-block">
+                  <button
+                    onClick={handleCopyCLI}
+                    className="text-sm font-medium px-6 py-2 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                  >
+                    Copy Goose CLI Command
+                  </button>
 
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-zinc-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">
-                  Copies the CLI command to run this recipe
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-zinc-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">
+                    Copies the CLI command to run this recipe
+                  </div>
                 </div>
-              </div>
+              )}
 
             </div>
           </div>
         </div>
       </div>
 
-      {showParamsPrompt && (
+      {cliCommand && showParamsPrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
           <div className="bg-white dark:bg-zinc-800 p-6 rounded-lg w-full max-w-md">
             <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-white">Fill in parameters</h3>

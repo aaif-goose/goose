@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import toast from "react-hot-toast";
 import Link from "@docusaurus/Link";
+import { buildRecipeCliCommand } from "@site/src/utils/recipe-command";
 
 export type Recipe = {
   id: string;
@@ -10,6 +11,7 @@ export type Recipe = {
   extensions: string[];
   activities: string[];
   recipeUrl: string;
+  localPath: string;
   action?: string;
   author?: {
     contact?: string;
@@ -26,15 +28,17 @@ export function RecipeCard({ recipe }: { recipe: Recipe }) {
   const requiredParams = recipe.parameters?.filter((p) => p.requirement === "required") || [];
   const optionalParams = recipe.parameters?.filter((p) => p.requirement !== "required") || [];
   const hasRequiredParams = requiredParams.length > 0;
+  const cliCommand = buildRecipeCliCommand(recipe.localPath);
 
   const handleCopyCLI = () => {
+    if (!cliCommand) return;
+
     if (hasRequiredParams) {
       setParamValues({});
       setShowParamPrompt(true);
       return;
     }
-    const command = `goose run --recipe documentation/src/pages/recipes/data/recipes/${recipe.id}.yaml`;
-    navigator.clipboard.writeText(command);
+    navigator.clipboard.writeText(cliCommand);
     toast.success("CLI command copied!");
   };
 
@@ -42,7 +46,9 @@ export function RecipeCard({ recipe }: { recipe: Recipe }) {
     const filledParams = Object.entries(paramValues)
       .map(([key, val]) => `${key}=${val}`)
       .join(" ");
-    const command = `goose run --recipe documentation/src/pages/recipes/data/recipes/${recipe.id}.yaml --params ${filledParams}`;
+    const command = buildRecipeCliCommand(recipe.localPath, filledParams);
+    if (!command) return;
+
     navigator.clipboard.writeText(command);
     setShowParamPrompt(false);
     toast.success("CLI command copied with params!");
@@ -106,22 +112,24 @@ export function RecipeCard({ recipe }: { recipe: Recipe }) {
               Launch in goose Desktop →
             </a>
 
-            <div className="relative group">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleCopyCLI();
-                }}
-                className="text-sm font-medium text-zinc-700 bg-zinc-200 dark:bg-zinc-700 dark:text-white dark:hover:bg-zinc-600 px-3 py-1 rounded hover:bg-zinc-300 cursor-pointer"
-              >
-                Copy CLI Command
-              </button>
+            {cliCommand && (
+              <div className="relative group">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCopyCLI();
+                  }}
+                  className="text-sm font-medium text-zinc-700 bg-zinc-200 dark:bg-zinc-700 dark:text-white dark:hover:bg-zinc-600 px-3 py-1 rounded hover:bg-zinc-300 cursor-pointer"
+                >
+                  Copy CLI Command
+                </button>
 
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-zinc-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">
-                Copies the CLI command to run this recipe
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-zinc-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">
+                  Copies the CLI command to run this recipe
+                </div>
               </div>
-            </div>
+            )}
 
 
             {authorHandle && (
@@ -145,7 +153,7 @@ export function RecipeCard({ recipe }: { recipe: Recipe }) {
         </div>
       </Link>
 
-      {showParamPrompt && (
+      {cliCommand && showParamPrompt && (
         <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-70 flex justify-center items-center z-50">
           <div className="bg-white dark:bg-zinc-800 p-6 rounded-lg w-full max-w-md">
             <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-white">Fill in parameters</h3>
