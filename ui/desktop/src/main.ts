@@ -1102,7 +1102,8 @@ const createExternalBackendLease = async (
     };
   } catch (error) {
     certificateTrust?.release();
-    return { ok: false, error: errorMessage(error), steps: [] };
+    const detail = errorMessage(error);
+    return { ok: false, error: detail, steps: [{ name: 'URL', ok: false, detail }] };
   }
 };
 
