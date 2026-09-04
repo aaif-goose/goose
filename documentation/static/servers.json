@@ -827,6 +827,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "anyapi",
+    "name": "AnyAPI",
+    "description": "Hundreds of scraping and data APIs through one gateway - one key, USD pay-per-request, automatic failover",
+    "type": "streamable-http",
+    "url": "https://api.getanyapi.com/mcp",
+    "link": "https://getanyapi.com/docs/mcp-server",
+    "installation_notes": "Streamable HTTP extension with OAuth browser authentication to your AnyAPI account.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  }
 ]
