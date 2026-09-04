@@ -827,6 +827,18 @@
       "required": false
     }
   ]
+},
+{
+  "id": "melaya",
+  "name": "Melaya",
+  "description": "Operate a paired Android phone and browser, and run agent pipelines reaching 6k+ tools",
+  "url": "https://api.melaya.org/mcp",
+  "link": "https://melaya.org/en/product/mcp",
+  "installation_notes": "Hosted remote server. Sign in with your Melaya account via OAuth on first connect; the client registers itself, so there is no API key and no environment variables to set. The agent can only touch phone apps and browser origins you have allow-listed in Melaya.",
+  "is_builtin": false,
+  "endorsed": false,
+  "environmentVariables": [],
+  "type": "streamable-http"
 }
 
 ]
