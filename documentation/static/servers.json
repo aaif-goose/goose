@@ -606,6 +606,26 @@
     ]
   },
   {
+    "id": "qveris",
+    "name": "QVeris",
+    "description": "Discover, inspect, and call 10,000+ real-world API capabilities through one MCP server",
+    "url": "https://mcp.qveris.ai/mcp",
+    "link": "https://github.com/QVerisAI/qveris-agent-toolkit",
+    "installation_notes": "Hosted Streamable HTTP extension. Requires a QVeris API key from https://qveris.ai/account?page=api-keys sent as an Authorization header: Bearer <YOUR_QVERIS_API_KEY>.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Bearer <YOUR_QVERIS_API_KEY>",
+        "required": true
+      }
+    ],
+    "show_install_command": false,
+    "type": "streamable-http"
+  },
+  {
     "id": "reddit-mcp",
     "name": "Reddit",
     "description": "Reddit API integration for posts and comments",
