@@ -5227,7 +5227,7 @@ dependencies = [
  "pastey",
  "pctx_code_mode",
  "pem 4.0.0",
- "process-wrap",
+ "process-wrap 10.0.0",
  "rand 0.10.2",
  "rayon",
  "rcgen",
@@ -5455,7 +5455,7 @@ dependencies = [
  "indoc",
  "lopdf",
  "once_cell",
- "process-wrap",
+ "process-wrap 10.0.0",
  "rmcp 3.2.0",
  "schemars 1.2.2",
  "serde",
@@ -9608,6 +9608,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "process-wrap"
+version = "10.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e3f4237d0e4741eb50bc5584db701f1299c85fa31ff0274dd6445e79dc42d12"
+dependencies = [
+ "indexmap 2.14.1",
+ "nix",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10280,7 +10290,7 @@ dependencies = [
  "http 1.5.0",
  "pastey",
  "pin-project-lite",
- "process-wrap",
+ "process-wrap 9.1.0",
  "reqwest 0.13.4",
  "rmcp-macros 1.8.0",
  "schemars 1.2.2",
@@ -10314,7 +10324,7 @@ dependencies = [
  "oauth2",
  "pastey",
  "pin-project-lite",
- "process-wrap",
+ "process-wrap 9.1.0",
  "rand 0.10.2",
  "reqwest 0.13.4",
  "rmcp-macros 3.2.0",
