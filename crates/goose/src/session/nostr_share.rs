@@ -18,7 +18,7 @@ const DEFAULT_RELAYS: &[&str] = &[
     "wss://nos.lol",
     "wss://relay.nostr.band",
 ];
-const MAX_IMPORT_RELAYS: usize = 16;
+const MAX_RELAYS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NostrShare {
@@ -159,6 +159,9 @@ where
     if relays.is_empty() {
         return Err(anyhow!("At least one Nostr relay is required"));
     }
+    if relays.len() > MAX_RELAYS {
+        return Err(anyhow!("Too many Nostr relays (maximum {MAX_RELAYS})"));
+    }
     let relay_urls = relays
         .iter()
         .map(|relay| RelayUrl::parse(relay))
@@ -286,9 +289,9 @@ fn normalize_import_relays(relays: impl IntoIterator<Item = String>) -> Result<V
         if relay.is_empty() || normalized.iter().any(|existing| existing == relay) {
             continue;
         }
-        if normalized.len() == MAX_IMPORT_RELAYS {
+        if normalized.len() == MAX_RELAYS {
             return Err(anyhow!(
-                "Shared session link includes too many relays (maximum {MAX_IMPORT_RELAYS})"
+                "Shared session link includes too many relays (maximum {MAX_RELAYS})"
             ));
         }
         normalized.push(relay.to_string());
@@ -392,24 +395,27 @@ mod tests {
 
     #[tokio::test]
     async fn import_rejects_too_many_unique_relays_before_fetch() {
-        let event = Arc::new(Mutex::new(None));
-        let publisher = RecordingPublisher {
-            event: event.clone(),
-            relays: Arc::new(Mutex::new(Vec::new())),
-        };
-        let relay_hints = (0..=MAX_IMPORT_RELAYS)
-            .map(|index| format!("wss://relay-{index}.example"))
-            .collect();
-        let share = publish_session_json_with("{}", relay_hints, &publisher)
-            .await
+        let event = EventBuilder::new(Kind::Custom(EVENT_KIND), "encrypted")
+            .finalize(&Keys::generate())
             .unwrap();
+        let relay_hints = (0..=MAX_RELAYS)
+            .map(|index| format!("wss://relay-{index}.example"))
+            .map(|relay| RelayUrl::parse(&relay).unwrap())
+            .collect::<Vec<_>>();
+        let nevent = Nip19Event::new(event.id)
+            .author(event.pubkey)
+            .kind(Kind::Custom(EVENT_KIND))
+            .relays(relay_hints)
+            .to_bech32()
+            .unwrap();
+        let share_link = build_deeplink(&nevent, &SecretKey::generate().to_secret_hex());
         let fetched_relays = Arc::new(Mutex::new(Vec::new()));
         let fetcher = RecordingFetcher {
-            event: event.lock().unwrap().clone().unwrap(),
+            event,
             relays: fetched_relays.clone(),
         };
 
-        let error = import_session_json_from_deeplink_with(&share.deeplink, &fetcher)
+        let error = import_session_json_from_deeplink_with(&share_link, &fetcher)
             .await
             .unwrap_err();
 
@@ -418,6 +424,27 @@ mod tests {
             "Shared session link includes too many relays (maximum 16)"
         );
         assert!(fetched_relays.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_too_many_unique_relays_before_publish() {
+        let event = Arc::new(Mutex::new(None));
+        let published_relays = Arc::new(Mutex::new(Vec::new()));
+        let publisher = RecordingPublisher {
+            event: event.clone(),
+            relays: published_relays.clone(),
+        };
+        let relays = (0..=MAX_RELAYS)
+            .map(|index| format!("wss://relay-{index}.example"))
+            .collect();
+
+        let error = publish_session_json_with("{}", relays, &publisher)
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "Too many Nostr relays (maximum 16)");
+        assert!(event.lock().unwrap().is_none());
+        assert!(published_relays.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
