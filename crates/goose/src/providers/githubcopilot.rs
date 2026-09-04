@@ -185,6 +185,13 @@ impl DiskCache {
         Self { cache_path }
     }
 
+    fn has_state(&self) -> bool {
+        std::fs::read_to_string(&self.cache_path)
+            .ok()
+            .and_then(|contents| serde_json::from_str::<CopilotState>(&contents).ok())
+            .is_some()
+    }
+
     async fn load(&self) -> Option<CopilotState> {
         if let Ok(contents) = tokio::fs::read_to_string(&self.cache_path).await {
             if let Ok(info) = serde_json::from_str::<CopilotState>(&contents) {
@@ -229,6 +236,15 @@ pub struct GithubCopilotProvider {
 }
 
 impl GithubCopilotProvider {
+    pub(crate) fn has_oauth_state() -> bool {
+        let host = normalize_host(
+            &Config::global()
+                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
+        );
+        DiskCache::new(&host).has_state()
+    }
+
     pub async fn cleanup() -> Result<()> {
         let config = Config::global();
         let host = normalize_host(

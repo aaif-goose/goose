@@ -285,10 +285,14 @@ impl ProviderRegistry {
             deprecated: None,
         };
         let inventory_config_keys = custom_metadata.config_keys.clone();
+        let inventory_provider_id = custom_metadata.name.clone();
+        let declaration_is_configuration = !config.requires_auth || config.auth.is_some();
         let default_inventory_configured = Arc::new(move || {
             super::inventory::default_inventory_configured(
+                &inventory_provider_id,
                 &inventory_config_keys,
                 crate::config::Config::global(),
+                declaration_is_configuration,
             )
         });
 
