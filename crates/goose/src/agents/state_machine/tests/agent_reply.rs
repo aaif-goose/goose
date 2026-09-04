@@ -528,3 +528,78 @@ async fn bang_shell_visibility_is_enforced_when_state_machine_is_enabled() -> Re
     let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
     assert_bang_shell_uses_only_user_visible_content().await
 }
+
+async fn assert_prompt_freezes_after_the_first_assistant_turn() -> Result<()> {
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    api.on("hello").reply("hi");
+
+    reply_messages(
+        &agent,
+        session_id.clone(),
+        Message::user().with_text("hello"),
+    )
+    .await?;
+    agent
+        .extend_system_prompt(
+            "fruit".to_string(),
+            "Always end with PINEAPPLE.".to_string(),
+        )
+        .await;
+    reply_messages(
+        &agent,
+        session_id.clone(),
+        Message::user().with_text("hello"),
+    )
+    .await?;
+    reply_messages(
+        &agent,
+        session_id.clone(),
+        Message::user().with_text("hello"),
+    )
+    .await?;
+
+    let calls = api.calls();
+    assert_eq!(calls.len(), 3);
+    let frozen = &calls[0].system_messages()[0];
+    assert!(!frozen.contains("PINEAPPLE"));
+    for call in &calls[1..] {
+        let system_messages = call.system_messages();
+        assert_eq!(
+            &system_messages[0], frozen,
+            "system prompt must stay frozen"
+        );
+        assert_eq!(system_messages.len(), 2, "exactly one update is replayed");
+        assert!(system_messages[1].contains("PINEAPPLE"));
+    }
+    assert_eq!(calls[1].last_role().as_deref(), Some("system"));
+    assert_eq!(calls[2].last_role().as_deref(), Some("user"));
+
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_id, true)
+        .await?;
+    let persisted_updates = session
+        .conversation
+        .expect("session conversation")
+        .messages()
+        .iter()
+        .filter(|message| message.is_system_update())
+        .count();
+    assert_eq!(persisted_updates, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_freezes_after_the_first_assistant_turn_when_state_machine_is_disabled() -> Result<()>
+{
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", None::<&str>)]);
+    assert_prompt_freezes_after_the_first_assistant_turn().await
+}
+
+#[tokio::test]
+async fn prompt_freezes_after_the_first_assistant_turn_when_state_machine_is_enabled() -> Result<()>
+{
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    assert_prompt_freezes_after_the_first_assistant_turn().await
+}

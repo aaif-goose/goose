@@ -12,6 +12,7 @@ use goose_providers::{
     anthropic::{self, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION},
     api_client::{ApiClient, AuthMethod, TlsConfig},
     base::ProviderDescriptor,
+    formats::anthropic::{AnthropicFormatOptions, PrefixMismatchBehavior},
 };
 
 pub struct AnthropicProviderDef;
@@ -51,6 +52,20 @@ async fn from_env(
         .get_param("ANTHROPIC_TIMEOUT")
         .unwrap_or(crate::providers::base::DEFAULT_PROVIDER_TIMEOUT_SECS);
 
+    let prefix_mismatch_behavior = match config
+        .get_param::<String>("ANTHROPIC_PREFIX_MISMATCH_BEHAVIOR")
+        .ok()
+        .as_deref()
+    {
+        None => Some(PrefixMismatchBehavior::DropBlock),
+        Some("off") => None,
+        Some(value) => Some(
+            value
+                .parse::<PrefixMismatchBehavior>()
+                .map_err(|e| anyhow::anyhow!("invalid ANTHROPIC_PREFIX_MISMATCH_BEHAVIOR: {e}"))?,
+        ),
+    };
+
     let auth = AuthMethod::ApiKey {
         header_name: "x-api-key".to_string(),
         key: api_key,
@@ -65,7 +80,13 @@ async fn from_env(
     .with_request_builder(crate::session_context::session_id_request_builder())
     .with_header("anthropic-version", ANTHROPIC_API_VERSION)?;
 
-    Ok(AnthropicProviderBuilder::new(api_client).build())
+    Ok(AnthropicProviderBuilder::new(api_client)
+        .format_options(AnthropicFormatOptions {
+            prefix_mismatch_behavior,
+            system_messages: true,
+            ..Default::default()
+        })
+        .build())
 }
 
 pub fn from_custom_config(

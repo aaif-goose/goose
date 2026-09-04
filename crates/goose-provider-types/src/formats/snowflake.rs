@@ -1,3 +1,4 @@
+use crate::conversation::merge_system_updates_for_request;
 use crate::conversation::message::{Message, MessageContentBlock};
 use crate::conversation::token_usage::Usage;
 use crate::documents::{unsupported_document_text, UNSUPPORTED_PROVIDER_REASON};
@@ -14,7 +15,7 @@ use std::collections::HashSet;
 pub fn format_messages(messages: &[Message]) -> Vec<Value> {
     let mut snowflake_messages = Vec::new();
 
-    for message in messages {
+    for message in &merge_system_updates_for_request(messages) {
         let role = match message.role {
             Role::User => "user",
             Role::Assistant => "assistant",

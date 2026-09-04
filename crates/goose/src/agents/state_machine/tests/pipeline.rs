@@ -177,6 +177,9 @@ impl TestPipeline {
             prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit: self.model_config.context_limit(),
+            session_manager: self.session_manager.clone(),
+            provider_manages_own_context: self.provider.manages_own_context(),
+            toolshim: self.model_config.toolshim,
         };
         let status_operation = Arc::new(StatusOperation::new(
             provider.clone(),

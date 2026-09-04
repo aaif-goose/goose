@@ -379,6 +379,7 @@ impl PromptInjectionScanner {
             .filter(|m| {
                 crate::conversation::effective_role(m) == crate::conversation::EffectiveRole::User
                     && !m.is_turn_context()
+                    && !m.is_system_update()
             })
             .take(limit)
             .map(|m| {
@@ -688,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_user_messages_skips_turn_context_events() {
+    fn extract_user_messages_skips_agent_only_events() {
         use crate::conversation::message::MessageMetadata;
 
         let scanner = PromptInjectionScanner::new();
@@ -697,12 +698,16 @@ mod tests {
                 .with_text(text)
                 .with_metadata(MessageMetadata::agent_only().with_turn_context())
         };
+        let system_update = Message::user()
+            .with_text("System prompt update: new hints.")
+            .with_metadata(MessageMetadata::agent_only().with_system_update());
         let messages = vec![
             Message::user().with_text("oldest prompt"),
             turn_context("turn context one"),
             Message::assistant().with_text("ok"),
             Message::user().with_text("middle prompt"),
             turn_context("turn context two"),
+            system_update,
             Message::assistant().with_text("done"),
             Message::user().with_text("newest prompt"),
             turn_context("turn context three"),

@@ -224,7 +224,9 @@ impl AdversaryInspector {
         messages
             .iter()
             .rev()
-            .filter(|m| m.role == rmcp::model::Role::User && !m.is_turn_context())
+            .filter(|m| {
+                m.role == rmcp::model::Role::User && !m.is_turn_context() && !m.is_system_update()
+            })
             .filter_map(|m| {
                 let text: String = m
                     .content
@@ -250,7 +252,10 @@ impl AdversaryInspector {
 
     fn extract_original_task(messages: &[Message]) -> String {
         for msg in messages {
-            if msg.role == rmcp::model::Role::User && !msg.is_turn_context() {
+            if msg.role == rmcp::model::Role::User
+                && !msg.is_turn_context()
+                && !msg.is_system_update()
+            {
                 let text: String = msg
                     .content
                     .iter()
@@ -711,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn user_context_extraction_skips_turn_context_events() {
+    fn user_context_extraction_skips_agent_only_events() {
         use crate::conversation::message::MessageMetadata;
 
         let turn_context = |text: &str| {
@@ -719,6 +724,9 @@ mod tests {
                 .with_text(text)
                 .with_metadata(MessageMetadata::agent_only().with_turn_context())
         };
+        let system_update = Message::user()
+            .with_text("System prompt update: new hints.")
+            .with_metadata(MessageMetadata::agent_only().with_system_update());
         let messages = vec![
             turn_context("turn context before any prompt"),
             Message::user().with_text("never delete files outside the repo"),
@@ -726,6 +734,7 @@ mod tests {
             Message::assistant().with_text("understood"),
             Message::user().with_text("first task"),
             turn_context("turn context for turn two"),
+            system_update,
             Message::assistant().with_text("done"),
             Message::user().with_text("second task"),
             turn_context("turn context for turn three"),

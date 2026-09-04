@@ -158,6 +158,22 @@ impl ApiCall {
         request_system(&self.body).contains(needle)
     }
 
+    pub(super) fn system_messages(&self) -> Vec<String> {
+        self.body["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|message| message["role"] == "system")
+            .filter_map(|message| message["content"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    pub(super) fn last_role(&self) -> Option<String> {
+        self.body["messages"].as_array()?.last()?["role"]
+            .as_str()
+            .map(str::to_string)
+    }
+
     pub(super) fn advertises_tool(&self, name: &str) -> bool {
         self.body["tools"]
             .as_array()

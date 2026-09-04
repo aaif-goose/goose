@@ -20061,6 +20061,39 @@
     }
   },
   {
+    "id": "anthropic/claude-fable-5.1",
+    "name": "Claude Fable 5.1",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "thinking_mode": "always_on_adaptive",
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-08-31",
+    "last_updated": "2026-08-31",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 10.0,
+      "output": 50.0,
+      "cache_read": 1.0,
+      "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "anthropic/claude-haiku-4.5",
     "name": "Claude Haiku 4.5 (latest)",
     "family": "claude-haiku",

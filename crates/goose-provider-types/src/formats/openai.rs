@@ -1,4 +1,5 @@
 use crate::base::ThinkingPreservationFormat;
+use crate::conversation::merge_system_updates_for_request;
 use crate::conversation::message::{Message, MessageContentBlock, ProviderMetadata};
 use crate::conversation::token_usage::{CostSource, ProviderUsage, Usage};
 use crate::documents::{
@@ -72,6 +73,9 @@ pub struct OpenAiFormatOptions {
     pub preserve_thinking_context: bool,
     pub supports_vision: bool,
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
+    /// Chat templates behind OpenAI-compatible endpoints often accept a system
+    /// message only at the start, so only the native API lowers updates to it.
+    pub system_messages: bool,
 }
 
 fn merge_reasoning_text(prefix: &str, suffix: &str) -> String {
@@ -214,6 +218,13 @@ pub fn format_messages_with_options(
     image_format: &ImageFormat,
     options: OpenAiFormatOptions,
 ) -> Vec<Value> {
+    let folded;
+    let messages = if options.system_messages {
+        messages
+    } else {
+        folded = merge_system_updates_for_request(messages);
+        folded.as_slice()
+    };
     let mut messages_spec = Vec::new();
     let mut pending_assistant_reasoning = String::new();
     // Reasoning to propagate across consecutive tool-call messages in the same turn.
@@ -247,9 +258,12 @@ pub fn format_messages_with_options(
             saw_tool_response = false;
         }
 
-        let mut converted = json!({
-            "role": message.role
-        });
+        let role = if options.system_messages && message.is_system_update() {
+            json!("system")
+        } else {
+            json!(message.role)
+        };
+        let mut converted = json!({ "role": role });
 
         let mut output = Vec::new();
         let mut content_array = Vec::new();
@@ -2234,6 +2248,37 @@ mod tests {
         assert_eq!(spec[0]["role"], "user");
         assert_eq!(spec[0]["content"], "Hello");
         Ok(())
+    }
+
+    #[test]
+    fn system_updates_carry_the_system_role_only_when_enabled() {
+        let messages = [
+            Message::user().with_text("Hello"),
+            Message::user()
+                .with_text("System prompt update.")
+                .with_metadata(
+                    crate::conversation::message::MessageMetadata::agent_only()
+                        .with_system_update(),
+                ),
+        ];
+
+        let native = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                system_messages: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(native[1]["role"], "system");
+        assert_eq!(native[1]["content"], "System prompt update.");
+
+        let compatible = format_messages(&messages, &ImageFormat::OpenAi);
+        assert_eq!(compatible.len(), 1);
+        assert_eq!(compatible[0]["role"], "user");
+        assert!(compatible[0]["content"]
+            .to_string()
+            .contains("System prompt update."));
     }
 
     #[test]
@@ -5548,6 +5593,7 @@ data: [DONE]"#;
                 preserve_thinking_context: true,
                 supports_vision: false,
                 thinking_preservation_format: Some(format),
+                ..Default::default()
             },
         )
     }

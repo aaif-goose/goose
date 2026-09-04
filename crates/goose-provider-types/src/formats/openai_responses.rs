@@ -406,6 +406,7 @@ pub enum ContentBlockPart {
 fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message], supports_vision: bool) {
     for message in messages.iter().filter(|m| m.is_agent_visible()) {
         let role = match message.role {
+            Role::User if message.is_system_update() => "system",
             Role::User => "user",
             Role::Assistant => "assistant",
         };
@@ -1225,6 +1226,23 @@ mod document_tests {
         let mut items = Vec::new();
         add_message_items(&mut items, messages, true);
         items
+    }
+
+    #[test]
+    fn system_updates_carry_the_system_role() {
+        let items = format(&[
+            Message::user().with_text("Hello"),
+            Message::user()
+                .with_text("System prompt update.")
+                .with_metadata(
+                    crate::conversation::message::MessageMetadata::agent_only()
+                        .with_system_update(),
+                ),
+        ]);
+
+        assert_eq!(items[0]["role"], "user");
+        assert_eq!(items[1]["role"], "system");
+        assert_eq!(items[1]["content"][0]["type"], "input_text");
     }
 
     #[test]

@@ -38,6 +38,7 @@ pub fn get_thought_signature(metadata: &Option<ProviderMetadata>) -> Option<&str
 
 fn is_user_loop_boundary(message: &Message) -> bool {
     message.role == Role::User
+        && !message.is_system_update()
         && message
             .content
             .iter()
@@ -1326,6 +1327,41 @@ mod tests {
 
     fn tool_result(text: &str) -> CallToolResult {
         CallToolResult::success(vec![ContentBlock::text(text)])
+    }
+
+    #[test]
+    fn system_update_does_not_start_a_new_tool_loop() {
+        const SIG: &str = "thought_sig_update";
+        let assistant = response_to_message(google_response(vec![json!({
+            "functionCall": {"name": "shell", "args": {"cmd": "ls"}},
+            "thoughtSignature": SIG
+        })]))
+        .unwrap();
+        let request = assistant.content[0].as_tool_request().unwrap();
+        let mut tool_response = Message::user();
+        tool_response.add_tool_response_with_metadata(
+            request.id.clone(),
+            Ok(tool_result("output")),
+            request.metadata.as_ref(),
+        );
+        let update = Message::user()
+            .with_text("System prompt update.")
+            .with_metadata(
+                crate::conversation::message::MessageMetadata::agent_only().with_system_update(),
+            );
+
+        let out = format_messages(
+            &[
+                set_up_text_message("List files", Role::User),
+                assistant.clone(),
+                tool_response,
+                update,
+            ],
+            false,
+        );
+
+        assert_eq!(out[1]["parts"][0]["thoughtSignature"], SIG);
+        assert_eq!(out[2]["parts"][0]["thoughtSignature"], SIG);
     }
 
     #[test]

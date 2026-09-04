@@ -1,4 +1,5 @@
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
+use crate::conversation::merge_system_updates_for_request;
 use crate::conversation::message::{Message, MessageContentBlock};
 use crate::formats::anthropic::{
     adaptive_output_effort, model_supports_temperature, requires_explicit_thinking_disable,
@@ -130,7 +131,7 @@ fn format_messages(
     supports_vision: bool,
 ) -> Vec<DatabricksMessage> {
     let mut result = Vec::new();
-    for message in messages {
+    for message in &merge_system_updates_for_request(messages) {
         let thinking_is_stale = thinking_block_is_stale(message, current_model);
         let mut converted = DatabricksMessage {
             content: Value::Null,

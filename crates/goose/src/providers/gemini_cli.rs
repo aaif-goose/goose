@@ -71,7 +71,7 @@ impl GeminiCliProvider {
         messages
             .iter()
             .rev()
-            .find(|m| m.role == Role::User)
+            .find(|m| m.role == Role::User && !m.is_system_update())
             .map(|m| m.as_concat_text())
             .unwrap_or_default()
     }
@@ -380,6 +380,27 @@ mod tests {
         ];
         let prompt = provider.build_prompt("You are helpful.", &messages);
         assert_eq!(prompt, "Follow up question");
+    }
+
+    #[test]
+    fn trailing_system_update_is_not_the_prompt() {
+        let provider = make_provider();
+        let _ = provider.cli_session_id.set("session-123".to_string());
+        let messages = vec![
+            Message::new(Role::User, 0, vec![MessageContent::text("Hello")]),
+            Message::new(Role::Assistant, 0, vec![MessageContent::text("Hi!")]),
+            Message::new(Role::User, 0, vec![MessageContent::text("What changed?")]),
+            Message::new(
+                Role::User,
+                0,
+                vec![MessageContent::text("System prompt update.")],
+            )
+            .with_metadata(
+                crate::conversation::message::MessageMetadata::agent_only().with_system_update(),
+            ),
+        ];
+        let prompt = provider.build_prompt("You are helpful.", &messages);
+        assert_eq!(prompt, "What changed?");
     }
 
     #[cfg(unix)]

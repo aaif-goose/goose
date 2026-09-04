@@ -1931,7 +1931,6 @@ fn messages_to_prompt(messages: &[Message], handoff_memo: Option<String>) -> Vec
             _ => {}
         }
     }
-
     let Some(memo) = handoff_memo else {
         return current_prompt_blocks;
     };
@@ -1945,9 +1944,12 @@ fn messages_to_prompt(messages: &[Message], handoff_memo: Option<String>) -> Vec
 }
 
 fn last_user_message_index(messages: &[Message]) -> Option<usize> {
-    messages
-        .iter()
-        .rposition(|m| m.role == Role::User && m.is_agent_visible() && !m.is_turn_context())
+    messages.iter().rposition(|m| {
+        m.role == Role::User
+            && m.is_agent_visible()
+            && !m.is_turn_context()
+            && !m.is_system_update()
+    })
 }
 
 fn has_handoff_context(messages: &[Message]) -> bool {
@@ -2529,6 +2531,22 @@ mod tests {
     #[tokio::test]
     async fn messages_to_prompt_without_prior_history_preserves_current_prompt() {
         let messages = vec![Message::user().with_text("current request")];
+
+        let blocks = prompt_with_handoff(&messages).await;
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(prompt_text(&blocks[0]), "current request");
+    }
+
+    #[tokio::test]
+    async fn trailing_system_update_is_not_the_prompt() {
+        use crate::conversation::message::MessageMetadata;
+        let messages = vec![
+            Message::user().with_text("current request"),
+            Message::user()
+                .with_text("System prompt update.")
+                .with_metadata(MessageMetadata::agent_only().with_system_update()),
+        ];
 
         let blocks = prompt_with_handoff(&messages).await;
 

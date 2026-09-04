@@ -278,7 +278,11 @@ impl ClaudeCodeProvider {
     /// Build content blocks from the last user message only. The CLI maintains
     /// conversation context internally per session_id.
     fn last_user_content_blocks(&self, messages: &[Message]) -> Vec<Value> {
-        let msgs = match messages.iter().rev().find(|m| m.role == Role::User) {
+        let msgs = match messages
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::User && !m.is_system_update())
+        {
             Some(msg) => std::slice::from_ref(msg),
             None => messages,
         };
@@ -1180,6 +1184,15 @@ mod tests {
         vec![Message::new(Role::User, 0, vec![MessageContent::text("hidden input")]).user_only()],
         &[json!({"type":"text","text":"Human: hidden input"})]
         ; "user_only_message_not_dropped"
+    )]
+    #[test_case(
+        vec![
+            Message::new(Role::User, 0, vec![MessageContent::text("What changed?")]),
+            Message::new(Role::User, 0, vec![MessageContent::text("System prompt update.")])
+                .with_metadata(crate::conversation::message::MessageMetadata::agent_only().with_system_update()),
+        ],
+        &[json!({"type":"text","text":"Human: What changed?"})]
+        ; "trailing_system_update_is_not_the_prompt"
     )]
     fn test_last_user_content_blocks(messages: Vec<Message>, expected: &[Value]) {
         let provider = make_provider();

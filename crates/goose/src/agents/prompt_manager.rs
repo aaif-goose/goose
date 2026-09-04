@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
+use crate::agents::system_prompt_state::SystemPromptSections;
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
 use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
@@ -108,6 +109,10 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     }
 
     pub fn build(self) -> String {
+        self.build_sections().render()
+    }
+
+    pub fn build_sections(self) -> SystemPromptSections {
         let mut extensions_info = self.extensions_info;
 
         // Stable tool ordering is important for multi session prompt caching.
@@ -162,19 +167,12 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             );
         }
 
-        if system_prompt_extras.is_empty() {
-            base_prompt
-        } else {
-            let sanitized_system_prompt_extras: Vec<String> = system_prompt_extras
-                .into_values()
-                .map(|extra| sanitize_unicode_tags(&extra))
-                .collect();
-
-            format!(
-                "{}\n\n# Additional Instructions:\n\n{}",
-                base_prompt,
-                sanitized_system_prompt_extras.join("\n\n")
-            )
+        SystemPromptSections {
+            base: base_prompt,
+            extras: system_prompt_extras
+                .into_iter()
+                .map(|(key, extra)| (key, sanitize_unicode_tags(&extra)))
+                .collect(),
         }
     }
 }
@@ -235,13 +233,23 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
+        self.build_system_prompt_sections(working_dir, prompt_parts, goose_mode)
+            .render()
+    }
+
+    pub fn build_system_prompt_sections(
+        &mut self,
+        working_dir: &Path,
+        prompt_parts: Vec<(String, String)>,
+        goose_mode: GooseMode,
+    ) -> SystemPromptSections {
         self.load_subdirectory_hints(working_dir);
         self.builder()
             .with_prompt_extras(prompt_parts)
             .with_hints(working_dir)
             .with_goose_mode(goose_mode)
             .without_extensions()
-            .build()
+            .build_sections()
     }
 
     /// Override the system prompt with custom text

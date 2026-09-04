@@ -523,6 +523,29 @@ pub fn merge_consecutive_messages_for_request(messages: Vec<Message>) -> Vec<Mes
     merge_consecutive(messages, true).0
 }
 
+/// For formatters that send system updates as plain user text: folds each
+/// update into the surrounding user messages so role alternation survives.
+pub fn merge_system_updates_for_request(messages: &[Message]) -> Vec<Message> {
+    let mut merged: Vec<Message> = Vec::new();
+    let mut folding = false;
+    for message in messages.iter().cloned() {
+        if let Some(last) = merged.last_mut() {
+            if message.role == Role::User
+                && last.role == Role::User
+                && (folding || message.is_system_update() || last.is_system_update())
+            {
+                last.content.extend(message.content);
+                last.metadata.system_update = false;
+                folding = true;
+                continue;
+            }
+        }
+        folding = false;
+        merged.push(message);
+    }
+    merged
+}
+
 fn merge_consecutive(
     messages: Vec<Message>,
     across_visibility: bool,
@@ -534,6 +557,8 @@ fn merge_consecutive(
         if let Some(last) = merged_messages.last_mut() {
             let effective = effective_role(&message);
             if effective_role(last) == effective
+                && !last.is_system_update()
+                && !message.is_system_update()
                 && (across_visibility
                     || (last.metadata.user_visible == message.metadata.user_visible
                         && last.metadata.turn_context == message.metadata.turn_context))
@@ -722,7 +747,10 @@ mod tests {
     use crate::conversation::message::{
         InferenceMetadata, Message, MessageContentBlock, MessageMetadata,
     };
-    use crate::conversation::{debug_conversation_fix, fix_conversation, Conversation};
+    use crate::conversation::{
+        debug_conversation_fix, fix_conversation, merge_consecutive_messages_for_request,
+        merge_system_updates_for_request, Conversation,
+    };
     use rmcp::model::{CallToolRequestParams, Role};
     use rmcp::object;
 
@@ -878,6 +906,32 @@ mod tests {
             "the request form merges to satisfy role alternation"
         );
         assert_eq!(merged[0].content.len(), 2);
+    }
+
+    #[test]
+    fn system_updates_are_never_merged_into_neighbours() {
+        let messages = vec![
+            Message::user().with_text("prompt"),
+            Message::user()
+                .with_text("update")
+                .with_metadata(MessageMetadata::agent_only().with_system_update()),
+            Message::user()
+                .with_text("<turn-context/>")
+                .with_metadata(MessageMetadata::agent_only().with_turn_context()),
+        ];
+
+        let (fixed, _) = fix_conversation(Conversation::new_unvalidated(messages.clone()));
+        assert_eq!(fixed.messages().len(), 3);
+        assert!(fixed.messages()[1].is_system_update());
+
+        let merged = merge_consecutive_messages_for_request(messages);
+        assert_eq!(merged.len(), 3);
+        assert!(merged[1].is_system_update());
+        assert_eq!(merged[1].as_concat_text(), "update");
+
+        let folded = merge_system_updates_for_request(&merged);
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0].content.len(), 3);
     }
 
     #[test]

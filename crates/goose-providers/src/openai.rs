@@ -820,6 +820,7 @@ impl Provider for OpenAiProvider {
                         || thinking_preservation_format.is_some(),
                     supports_vision: model_config.supports_vision.unwrap_or_default(),
                     thinking_preservation_format,
+                    system_messages: true,
                 },
             )?;
 

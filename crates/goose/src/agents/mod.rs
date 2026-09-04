@@ -19,6 +19,7 @@ pub mod state_machine;
 pub mod subagent_execution_tool;
 pub(crate) mod subagent_handler;
 pub(crate) mod subagent_task_config;
+pub mod system_prompt_state;
 mod tool_confirmation_coordinator;
 mod tool_confirmation_router;
 pub mod tool_execution;

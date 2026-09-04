@@ -59,7 +59,7 @@ pub(crate) fn build_handoff_context_memo(
     let visible: Vec<Message> = Conversation::new_unvalidated(prior_messages.iter().cloned())
         .agent_visible_messages()
         .iter()
-        .filter(|message| !message.is_turn_context())
+        .filter(|message| !message.is_turn_context() && !message.is_system_update())
         .map(|message| message.agent_visible_content())
         .collect();
 

@@ -97,6 +97,7 @@ pub async fn compact_messages(
         let found_msg = messages.iter().enumerate().rev().find_map(|(idx, msg)| {
             if !msg.is_agent_visible()
                 || msg.is_turn_context()
+                || msg.is_system_update()
                 || !matches!(msg.role, rmcp::model::Role::User)
             {
                 return None;
@@ -119,7 +120,9 @@ pub async fn compact_messages(
         });
 
         if let Some((idx, msg)) = found_msg {
-            let is_last = messages[idx + 1..].iter().all(Message::is_turn_context);
+            let is_last = messages[idx + 1..]
+                .iter()
+                .all(|message| message.is_turn_context() || message.is_system_update());
             (Some(msg), Some(idx), is_last)
         } else {
             (None, None, false)
@@ -955,6 +958,38 @@ mod tests {
             continuation.contains(CONVERSATION_CONTINUATION_TEXT),
             "a trailing turn-context event must not demote the compaction to a tool-loop continuation"
         );
+    }
+
+    #[tokio::test]
+    async fn preserved_user_message_skips_system_updates() {
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("the real current request"),
+            Message::user()
+                .with_text("System prompt update: end with PINEAPPLE.")
+                .with_metadata(MessageMetadata::agent_only().with_system_update()),
+        ]);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+
+        let compacted = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await
+        .unwrap()
+        .conversation;
+
+        let user_prompt = compacted
+            .messages()
+            .iter()
+            .rfind(|message| message.is_agent_visible() && message.role == Role::User)
+            .unwrap();
+        assert!(user_prompt
+            .as_concat_text()
+            .contains("the real current request"));
+        assert!(!user_prompt.is_system_update());
     }
 
     #[tokio::test]

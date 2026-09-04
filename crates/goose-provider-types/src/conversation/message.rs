@@ -844,6 +844,8 @@ pub struct MessageMetadata {
     /// Whether this message is a per-turn context event appended by the agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub turn_context: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub system_update: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
     /// What an operation did to this message, keyed by operation name. Read back
@@ -862,6 +864,7 @@ impl Default for MessageMetadata {
             output_token_limit_reached: false,
             steer: false,
             turn_context: false,
+            system_update: false,
             usage: None,
             operations: None,
         }
@@ -952,6 +955,11 @@ impl MessageMetadata {
 
     pub fn with_turn_context(mut self) -> Self {
         self.turn_context = true;
+        self
+    }
+
+    pub fn with_system_update(mut self) -> Self {
+        self.system_update = true;
         self
     }
 }
@@ -1340,6 +1348,10 @@ impl Message {
 
     pub fn is_turn_context(&self) -> bool {
         self.metadata.turn_context
+    }
+
+    pub fn is_system_update(&self) -> bool {
+        self.metadata.system_update
     }
 }
 

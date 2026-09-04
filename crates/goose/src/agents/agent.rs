@@ -187,6 +187,7 @@ pub struct ReplyContext {
     pub tools: Vec<Tool>,
     pub toolshim_tools: Vec<Tool>,
     pub system_prompt: String,
+    pub system_update: Option<super::system_prompt_state::PendingSystemUpdate>,
     pub goose_mode: GooseMode,
     pub tool_call_cut_off: usize,
     pub model_config: goose_providers::model::ModelConfig,
@@ -838,25 +839,10 @@ impl Agent {
         }
         Ok(result)
     }
-    async fn load_project_instructions(&self, session: &Session) -> Option<String> {
-        let project_id = session.project_id.as_deref()?;
-        let entry = crate::sources::read_project(project_id).ok()?;
-        let mut parts = Vec::new();
-        parts.push(format!("# Project: {}", entry.name));
-        if !entry.description.is_empty() {
-            parts.push(entry.description.clone());
-        }
-        if !entry.content.is_empty() {
-            parts.push(entry.content.clone());
-        }
-        Some(parts.join("\n\n"))
-    }
-
     async fn prepare_reply_context(
         &self,
-        session_id: &str,
+        session: &Session,
         unfixed_conversation: Conversation,
-        working_dir: &std::path::Path,
     ) -> Result<ReplyContext> {
         let unfixed_messages = unfixed_conversation.messages().clone();
         let (conversation, issues) = fix_conversation(unfixed_conversation.clone());
@@ -870,8 +856,30 @@ impl Agent {
                 )
             );
         }
-        let (tools, toolshim_tools, system_prompt, model_config) = self
-            .prepare_tools_and_prompt(session_id, working_dir)
+        // A resumed session has to rediscover subdirectory hints from its earlier tool calls.
+        {
+            let mut prompt_manager = self.prompt_manager.lock().await;
+            for message in conversation.messages() {
+                for content in &message.content {
+                    if let MessageContent::ToolRequest(request) = content {
+                        if let Ok(tool_call) = &request.tool_call {
+                            prompt_manager
+                                .record_tool_arguments(&tool_call.arguments, &session.working_dir);
+                        }
+                    }
+                }
+            }
+            prompt_manager.load_subdirectory_hints(&session.working_dir);
+        }
+
+        let super::reply_parts::PreparedPrompt {
+            tools,
+            toolshim_tools,
+            system_prompt,
+            system_update,
+            model_config,
+        } = self
+            .prepare_tools_and_prompt(session, &conversation)
             .await?;
 
         let goose_mode = *self.current_goose_mode.lock().await;
@@ -901,6 +909,7 @@ impl Agent {
             tools,
             toolshim_tools,
             system_prompt,
+            system_update,
             goose_mode,
             tool_call_cut_off,
             model_config,
@@ -1715,6 +1724,9 @@ impl Agent {
             prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit,
+            session_manager: self.config.session_manager.clone(),
+            provider_manages_own_context: manages_own_context,
+            toolshim: model_config.toolshim,
         };
         let status_operation =
             Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
@@ -2393,22 +2405,17 @@ impl Agent {
         cancel_token: Option<CancellationToken>,
         reply_span: tracing::Span,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let context = self
-            .prepare_reply_context(&session.id, conversation, session.working_dir.as_path())
-            .await?;
+        let context = self.prepare_reply_context(&session, conversation).await?;
         let ReplyContext {
             mut conversation,
             mut tools,
             mut toolshim_tools,
             mut system_prompt,
+            mut system_update,
             tool_call_cut_off,
             goose_mode,
             model_config,
         } = context;
-
-        if let Some(project_addendum) = self.load_project_instructions(&session).await {
-            system_prompt = format!("{system_prompt}\n\n{project_addendum}");
-        }
 
         self.reset_retry_attempts().await;
 
@@ -2552,8 +2559,22 @@ impl Agent {
                 )
                 .await?;
             }
+
+            // A system update has to be the last message before the assistant turn.
+            if let Some(pending) = system_update.take() {
+                let message = pending.message.clone();
+                pending.commit(&session_manager, &session_config.id).await?;
+                persist_and_push_message_with_id(
+                    &session_manager,
+                    &session_config.id,
+                    &mut conversation,
+                    message,
+                )
+                .await?;
+            }
             // Snapshot after the turn-context append so a retry keeps the sent prefix.
             let initial_messages = conversation.messages().clone();
+            let mut rebuild_prompt = false;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -2646,6 +2667,26 @@ impl Agent {
                     last_assistant_text = MAX_TURNS_MESSAGE.to_string();
                     yield AgentEvent::Message(Message::assistant().with_text(last_assistant_text.clone()));
                     break;
+                }
+
+                if rebuild_prompt {
+                    let prepared = self
+                        .prepare_tools_and_prompt(&session, &conversation)
+                        .await?;
+                    tools = prepared.tools;
+                    toolshim_tools = prepared.toolshim_tools;
+                    system_prompt = prepared.system_prompt;
+                    if let Some(pending) = prepared.system_update {
+                        let message = pending.message.clone();
+                        pending.commit(&session_manager, &session_config.id).await?;
+                        persist_and_push_message_with_id(
+                            &session_manager,
+                            &session_config.id,
+                            &mut conversation,
+                            message,
+                        )
+                        .await?;
+                    }
                 }
 
                 let mut stream = crate::agents::reply_parts::stream_response_from_provider(
@@ -3241,22 +3282,12 @@ impl Agent {
                 }
                 can_drain_pending_steers = true;
 
-                if tools_updated {
-                    (tools, toolshim_tools, system_prompt, _) =
-                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                }
-
-                {
-                    let has_new_hints = self
-                        .prompt_manager
-                        .lock()
-                        .await
-                        .load_subdirectory_hints(&working_dir);
-                    if has_new_hints && !tools_updated {
-                        (tools, toolshim_tools, system_prompt, _) =
-                            self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                    }
-                }
+                let has_new_hints = self
+                    .prompt_manager
+                    .lock()
+                    .await
+                    .load_subdirectory_hints(&working_dir);
+                rebuild_prompt = tools_updated || has_new_hints || did_recovery_compact_this_iteration;
 
                 // An empty provider response — no tool calls, no text, and no error
                 // or recovery compaction that legitimately produces no assistant
@@ -3352,6 +3383,7 @@ impl Agent {
                                 Ok(RetryResult::Retried) => {
                                     info!("Retry logic triggered, restarting agent loop");
                                     messages_to_add = Conversation::default();
+                                    rebuild_prompt = true;
                                     session_manager.replace_conversation(&session_config.id, &conversation).await?;
                                     yield AgentEvent::HistoryReplaced(conversation.clone());
                                 }
@@ -4136,7 +4168,7 @@ fn recipe_conversation_history(messages: &Conversation) -> Vec<Message> {
     messages
         .agent_visible_messages()
         .into_iter()
-        .filter(|message| !message.is_turn_context())
+        .filter(|message| !message.is_turn_context() && !message.is_system_update())
         .collect()
 }
 

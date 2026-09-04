@@ -13,6 +13,7 @@ use super::gen_ai_telemetry;
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 #[cfg(feature = "code-mode")]
 use crate::agents::platform_extensions::code_execution;
+use crate::agents::system_prompt_state::{self, PendingSystemUpdate};
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{Message, MessageContent, MessageUsage, ToolRequest};
 use crate::conversation::{fix_conversation, merge_consecutive_messages_for_request, Conversation};
@@ -21,8 +22,9 @@ use crate::providers::base::stream_from_single_message;
 use crate::providers::base::{MessageStream, Provider};
 use crate::providers::toolshim::{
     augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
-    modify_system_prompt_for_tool_json, sanitize_residual_markers,
+    sanitize_residual_markers, tool_json_instructions,
 };
+use crate::session::Session;
 use goose_providers::conversation::token_usage::{CostSource, ProviderStats, ProviderUsage, Usage};
 use goose_providers::model::ModelConfig;
 use rmcp::model::{ErrorData, Tool};
@@ -193,12 +195,35 @@ fn ensure_unique_tool_names(tools: &[Tool]) -> Result<()> {
     Ok(())
 }
 
+pub struct PreparedPrompt {
+    pub tools: Vec<Tool>,
+    pub toolshim_tools: Vec<Tool>,
+    pub system_prompt: String,
+    pub system_update: Option<PendingSystemUpdate>,
+    pub model_config: ModelConfig,
+}
+
+fn project_instructions(session: &Session) -> Option<String> {
+    let project_id = session.project_id.as_deref()?;
+    let entry = crate::sources::read_project(project_id).ok()?;
+    let mut parts = vec![format!("# Project: {}", entry.name)];
+    if !entry.description.is_empty() {
+        parts.push(entry.description.clone());
+    }
+    if !entry.content.is_empty() {
+        parts.push(entry.content.clone());
+    }
+    Some(parts.join("\n\n"))
+}
+
 impl Agent {
     pub async fn prepare_tools_and_prompt(
         &self,
-        session_id: &str,
-        working_dir: &std::path::Path,
-    ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
+        session: &Session,
+        conversation: &Conversation,
+    ) -> Result<PreparedPrompt> {
+        let session_id = session.id.as_str();
+        let working_dir = session.working_dir.as_path();
         let tools = self.list_tools(session_id, None).await;
         ensure_unique_tool_names(&tools)?;
 
@@ -225,19 +250,46 @@ impl Agent {
             self.tool_inspection_manager.apply_tool_annotations(&tools);
         }
 
-        let prompt_manager = self.prompt_manager.lock().await;
-        let system_prompt = prompt_manager
-            .builder()
-            .with_extensions(extensions_info.into_iter())
-            .with_code_execution_mode(code_execution_active)
-            .with_hints(working_dir)
-            .with_goose_mode(goose_mode)
-            .build();
+        let sections = {
+            let prompt_manager = self.prompt_manager.lock().await;
+            prompt_manager
+                .builder()
+                .with_extensions(extensions_info.into_iter())
+                .with_code_execution_mode(code_execution_active)
+                .with_prompt_extras(
+                    project_instructions(session).map(|text| ("project".to_string(), text)),
+                )
+                .with_prompt_extras(toolshim_instructions(&tools, &model_config))
+                .with_hints(working_dir)
+                .with_goose_mode(goose_mode)
+                .build_sections()
+        };
 
-        let (tools, toolshim_tools, system_prompt) =
-            prepare_tools_for_provider(tools, system_prompt, &model_config);
+        let provider = self.provider().await?;
+        // A provider that owns the conversation context replays nothing, so there
+        // is no prefix to keep stable and a fresh CLI context needs the live prompt.
+        let (system_prompt, system_update) = if provider.manages_own_context() {
+            (sections.render(), None)
+        } else {
+            let frozen = system_prompt_state::freeze(
+                &self.config.session_manager,
+                session_id,
+                sections,
+                conversation,
+            )
+            .await?;
+            (frozen.system, frozen.update)
+        };
 
-        Ok((tools, toolshim_tools, system_prompt, model_config))
+        let (tools, toolshim_tools) = split_toolshim_tools(tools, &model_config);
+
+        Ok(PreparedPrompt {
+            tools,
+            toolshim_tools,
+            system_prompt,
+            system_update,
+            model_config,
+        })
     }
 }
 
@@ -303,16 +355,23 @@ pub(crate) fn prepare_inference_tools(
     tools
 }
 
-pub(crate) fn prepare_tools_for_provider(
-    tools: Vec<Tool>,
-    system_prompt: String,
+pub(crate) fn toolshim_instructions(
+    tools: &[Tool],
     model_config: &ModelConfig,
-) -> (Vec<Tool>, Vec<Tool>, String) {
+) -> Option<(String, String)> {
+    model_config
+        .toolshim
+        .then(|| ("tools".to_string(), tool_json_instructions(tools)))
+}
+
+pub(crate) fn split_toolshim_tools(
+    tools: Vec<Tool>,
+    model_config: &ModelConfig,
+) -> (Vec<Tool>, Vec<Tool>) {
     if model_config.toolshim {
-        let system_prompt = modify_system_prompt_for_tool_json(&system_prompt, &tools);
-        (Vec::new(), tools, system_prompt)
+        (Vec::new(), tools)
     } else {
-        (tools, Vec::new(), system_prompt)
+        (tools, Vec::new())
     }
 }
 

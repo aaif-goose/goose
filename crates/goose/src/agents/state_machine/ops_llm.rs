@@ -118,12 +118,8 @@ impl Provider for GooseInferenceProvider {
         tools: &[rmcp::model::Tool],
     ) -> Result<MessageStream, ProviderError> {
         let messages = enrich_unclaimed_tool_errors(messages, tools);
-        let (tools, toolshim_tools, system_prompt) =
-            crate::agents::reply_parts::prepare_tools_for_provider(
-                tools.to_vec(),
-                system.to_string(),
-                model_config,
-            );
+        let (tools, toolshim_tools) =
+            crate::agents::reply_parts::split_toolshim_tools(tools.to_vec(), model_config);
         let advertised_tool_descriptors = tools
             .iter()
             .chain(toolshim_tools.iter())
@@ -146,7 +142,7 @@ impl Provider for GooseInferenceProvider {
             self.inner.clone(),
             model_config.clone(),
             &session_id,
-            &system_prompt,
+            system,
             &messages,
             &tools,
             &toolshim_tools,
