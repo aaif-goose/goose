@@ -205,10 +205,10 @@ fn uses_template_inheritance(content: &str) -> bool {
     re.is_match(content)
 }
 
-pub fn parse_recipe_content(
+pub(crate) fn prepare_recipe_template(
     content: &str,
     recipe_dir: Option<String>,
-) -> Result<(Recipe, HashSet<String>)> {
+) -> Result<(String, HashSet<String>)> {
     // Pre-process template variables to handle invalid variable names
     let preprocessed_content = preprocess_template_variables(content)?;
 
@@ -230,6 +230,14 @@ pub fn parse_recipe_content(
         preprocessed_content
     };
 
+    Ok((recipe_content, template_variables))
+}
+
+pub fn parse_recipe_content(
+    content: &str,
+    recipe_dir: Option<String>,
+) -> Result<(Recipe, HashSet<String>)> {
+    let (recipe_content, template_variables) = prepare_recipe_template(content, recipe_dir)?;
     let recipe = Recipe::from_content(&recipe_content)?;
     // return recipe (without loading any variables) and the variable names that are in the recipe
     Ok((recipe, template_variables))
