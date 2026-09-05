@@ -827,6 +827,16 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "asyntai",
+    "name": "Asyntai",
+    "description": "Run your website's Asyntai AI support agent: manage its knowledge base and instructions, read conversations and leads, reply live to visitors, and check plan usage. OAuth sign-in, free plan works.",
+    "url": "https://asyntai.com/mcp",
+    "link": "https://github.com/asyntai/mcp-bridge",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
