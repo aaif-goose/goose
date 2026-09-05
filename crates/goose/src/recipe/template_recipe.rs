@@ -205,10 +205,10 @@ fn uses_template_inheritance(content: &str) -> bool {
     re.is_match(content)
 }
 
-pub fn parse_recipe_content(
+pub fn prepare_recipe_template(
     content: &str,
     recipe_dir: Option<String>,
-) -> Result<(Recipe, HashSet<String>)> {
+) -> Result<(String, HashSet<String>)> {
     // Pre-process template variables to handle invalid variable names
     let preprocessed_content = preprocess_template_variables(content)?;
 
@@ -220,16 +220,22 @@ pub fn parse_recipe_content(
     let template = env.get_template(CURRENT_TEMPLATE_NAME).unwrap();
 
     // Detect if template uses inheritance or includes
-    let recipe_content = if uses_template_inheritance(&preprocessed_content) {
+    if uses_template_inheritance(&preprocessed_content) {
         // Must render to resolve inheritance
-        template
+        let rendered = template
             .render(())
-            .map_err(|e| anyhow::anyhow!("Failed to parse the recipe {}", e))?
+            .map_err(|e| anyhow::anyhow!("Failed to parse the recipe {}", e))?;
+        Ok((rendered, template_variables))
     } else {
-        // Preserve conditionals and variables as-is
-        preprocessed_content
-    };
+        Ok((preprocessed_content, template_variables))
+    }
+}
 
+pub fn parse_recipe_content(
+    content: &str,
+    recipe_dir: Option<String>,
+) -> Result<(Recipe, HashSet<String>)> {
+    let (recipe_content, template_variables) = prepare_recipe_template(content, recipe_dir)?;
     let recipe = Recipe::from_content(&recipe_content)?;
     // return recipe (without loading any variables) and the variable names that are in the recipe
     Ok((recipe, template_variables))

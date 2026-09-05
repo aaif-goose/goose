@@ -139,6 +139,61 @@ async fn parse_errors_do_not_reflect_recipe_contents() {
         assert!(!message.contains(secret));
     }
 
+    // Enum/tag deserialization errors are surfaced as a field-path diagnostic
+    // that names the position but never the offending value from the file.
+    let enum_secret = "yaml-secret-242";
+    let enum_recipe = format!(
+        "title: Test\ndescription: hi\nprompt: hi\nparameters:\n  - key: foo\n    input_type: {enum_secret}\n    requirement: required\n    description: hi\n"
+    );
+    let path = temp_dir.path().join("enum_invalid.yaml");
+    std::fs::write(&path, enum_recipe).unwrap();
+    let message = create_schedule(&tool, &path).await.unwrap_err();
+    assert_eq!(
+        message,
+        "Invalid recipe: parameters[0].input_type is invalid"
+    );
+    assert!(!message.contains(enum_secret));
+
+    // Substring bypass: scalar containing "missing field" must not be reflected.
+    let bypass_secret = "yaml-secret-242";
+    let bypass_content = format!("missing field {bypass_secret}");
+    let path = temp_dir.path().join("bypass_missing_field.yaml");
+    std::fs::write(&path, bypass_content).unwrap();
+    let message = create_schedule(&tool, &path).await.unwrap_err();
+    assert_eq!(message, "Invalid YAML recipe");
+    assert!(!message.contains(bypass_secret));
+
+    // Semantic validation errors are surfaced as field-path diagnostics that
+    // never include offending values from the file.
+    let dynamic_secret = "yaml-secret-242";
+    let dynamic_recipe = format!(
+        "title: Test\ndescription: hi\nprompt: hi\nparameters:\n  - key: {dynamic_secret}\n    input_type: string\n    requirement: required\n    description: hi\n"
+    );
+    let path = temp_dir.path().join("dynamic_validation.yaml");
+    std::fs::write(&path, dynamic_recipe).unwrap();
+    let message = create_schedule(&tool, &path).await.unwrap_err();
+    assert_eq!(
+        message,
+        "Invalid recipe: unnecessary parameter definitions at parameters[0]"
+    );
+    assert!(!message.contains(dynamic_secret));
+
+    assert!(scheduler.jobs.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn reports_actionable_recipe_validation_errors() {
+    let temp_dir = TempDir::new().unwrap();
+    let scheduler = Arc::new(MockScheduler::new());
+    let tool = schedule_tool(&temp_dir, scheduler.clone());
+    let path = temp_dir.path().join("missing-title.yaml");
+    std::fs::write(&path, "description: Missing title\nprompt: Run safely\n").unwrap();
+
+    let message = create_schedule(&tool, &path).await.unwrap_err();
+
+    assert_eq!(message, "Invalid recipe: missing field `title`");
+    assert!(!message.contains("description: Missing title"));
+
     assert!(scheduler.jobs.lock().await.is_empty());
 }
 

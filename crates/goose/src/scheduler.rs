@@ -22,6 +22,7 @@ use crate::conversation::Conversation;
 use crate::posthog;
 use crate::providers::create;
 use crate::recipe::build_recipe::build_recipe_from_template;
+use crate::recipe::validate_recipe::{recipe_file_format, validate_recipe_for_scheduling};
 use crate::recipe::Recipe;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::session::session_manager::SessionType;
@@ -74,10 +75,10 @@ pub(crate) fn open_regular_schedule_recipe(path: &Path) -> io::Result<File> {
 }
 
 fn copy_bounded_schedule_recipe(source: &Path, destination: &Path) -> Result<(), SchedulerError> {
-    let source = open_regular_schedule_recipe(source).map_err(|error| {
+    let mut source_file = open_regular_schedule_recipe(source).map_err(|error| {
         SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
     })?;
-    let metadata = source.metadata().map_err(|error| {
+    let metadata = source_file.metadata().map_err(|error| {
         SchedulerError::RecipeLoadError(format!("Cannot inspect recipe file: {error}"))
     })?;
     if !metadata.is_file() {
@@ -92,7 +93,7 @@ fn copy_bounded_schedule_recipe(source: &Path, destination: &Path) -> Result<(),
     }
 
     let mut bytes = Vec::new();
-    source
+    Read::by_ref(&mut source_file)
         .take(MAX_SCHEDULE_RECIPE_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| {
@@ -103,6 +104,15 @@ fn copy_bounded_schedule_recipe(source: &Path, destination: &Path) -> Result<(),
             "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
         )));
     }
+
+    let content = std::str::from_utf8(&bytes).map_err(|error| {
+        SchedulerError::RecipeLoadError(format!("Recipe file must be valid UTF-8: {error}"))
+    })?;
+    let recipe_dir = source
+        .parent()
+        .map(|path| path.to_string_lossy().into_owned());
+    validate_recipe_for_scheduling(content, recipe_dir, recipe_file_format(source))
+        .map_err(|error| SchedulerError::RecipeLoadError(error.to_string()))?;
 
     write_schedule_recipe_bytes(destination, &bytes)
 }
@@ -1360,6 +1370,25 @@ mod tests {
         assert!(!destination.exists());
     }
 
+    #[test]
+    fn bounded_recipe_copy_rejects_invalid_recipe_before_writing() {
+        let temp_dir = tempdir().unwrap();
+        let source = temp_dir.path().join("invalid.yaml");
+        let destination = temp_dir.path().join("destination.yaml");
+        fs::write(
+            &source,
+            "description: Missing required title\nprompt: Run safely\n",
+        )
+        .unwrap();
+
+        let error = copy_bounded_schedule_recipe(&source, &destination).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Invalid recipe: missing field `title`"));
+        assert!(!destination.exists());
+    }
+
     #[tokio::test]
     async fn validated_recipe_bytes_and_base_are_persisted_after_source_replacement() {
         let temp_dir = tempdir().unwrap();
@@ -1677,13 +1706,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_job_with_no_prompt_does_not_panic() {
-        let _guard = env_lock::lock_env([
-            ("GOOSE_PROVIDER", Some("openai")),
-            ("GOOSE_MODEL", Some("gpt-4o")),
-            ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-            ("OPENAI_CUSTOM_HEADERS", Some("")),
-        ]);
+    async fn test_job_with_no_prompt_is_rejected_at_add_time() {
         let temp_dir = tempdir().unwrap();
         let recipe_path = temp_dir.path().join("no_prompt.yaml");
         fs::write(
@@ -1709,15 +1732,15 @@ mod tests {
             recipe_base_dir: None,
         };
 
-        // Schedule the job and let it run — should not panic
-        scheduler.add_scheduled_job(job, true).await.unwrap();
-        sleep(Duration::from_millis(1500)).await;
-
-        // The job should have attempted to run (last_run set) but not crashed the scheduler
-        let jobs = scheduler.list_scheduled_jobs().await;
+        let err = scheduler.add_scheduled_job(job, true).await.unwrap_err();
         assert!(
-            jobs[0].last_run.is_some(),
-            "Job should have attempted to run without panicking"
+            err.to_string()
+                .contains("Invalid recipe: Recipe must specify at least one"),
+            "expected add-time validation error, got: {err}"
+        );
+        assert!(
+            scheduler.list_scheduled_jobs().await.is_empty(),
+            "invalid recipe should not be scheduled"
         );
     }
 }
