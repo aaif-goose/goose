@@ -11,6 +11,7 @@ use crate::providers::private_file::write_private_file;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
+use goose_providers::stream_idle_timeout::with_idle_timeout_from_env;
 
 const GEMINI_OAUTH_DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 use crate::providers::retry::ProviderRetry;
@@ -1005,6 +1006,7 @@ impl Provider for GeminiOAuthProvider {
             let raw_lines = FramedRead::new(stream_reader, LinesCodec::new())
                 .map_ok(|line| unwrap_code_assist_sse_line(&line))
                 .map_err(anyhow::Error::from);
+            let raw_lines = with_idle_timeout_from_env(raw_lines);
 
             let message_stream = response_to_streaming_message(raw_lines);
             pin!(message_stream);

@@ -19,6 +19,7 @@ use futures::{StreamExt, TryStreamExt};
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai_responses::responses_api_to_streaming_message;
 use goose_providers::model::ModelConfig;
+use goose_providers::stream_idle_timeout::with_idle_timeout_from_env;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use rmcp::model::{ContentBlock, Role, Tool};
@@ -1023,6 +1024,7 @@ impl Provider for ChatGptCodexProvider {
         Ok(Box::pin(try_stream! {
             let stream_reader = StreamReader::new(stream);
             let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
+            let framed = with_idle_timeout_from_env(framed);
 
             let message_stream = responses_api_to_streaming_message(framed);
             pin!(message_stream);

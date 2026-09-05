@@ -4,6 +4,7 @@ use crate::conversation::message::Message;
 use crate::errors::ProviderError;
 use crate::openai_compatible::{handle_status, map_http_error_to_provider_error, sanitize_url};
 use crate::retry::ProviderRetry;
+use crate::stream_idle_timeout::with_idle_timeout_from_env;
 
 use crate::base::{ConfigKey, Provider, ProviderMetadata};
 use crate::formats::google::{create_request_with_thinking_budget, response_to_streaming_message};
@@ -203,6 +204,7 @@ impl Provider for GoogleProvider {
             let stream_reader = StreamReader::new(stream);
             let framed = FramedRead::new(stream_reader, LinesCodec::new())
                 .map_err(anyhow::Error::from);
+            let framed = with_idle_timeout_from_env(framed);
 
             let message_stream = response_to_streaming_message(framed);
             pin!(message_stream);

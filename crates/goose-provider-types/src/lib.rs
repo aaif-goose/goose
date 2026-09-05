@@ -14,5 +14,6 @@ pub mod model;
 pub mod permission;
 pub mod request_log;
 pub mod retry;
+pub mod stream_idle_timeout;
 pub mod thinking;
 pub mod utils;

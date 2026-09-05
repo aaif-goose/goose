@@ -32,6 +32,7 @@ use futures::future::BoxFuture;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
+use goose_providers::stream_idle_timeout::with_idle_timeout_from_env;
 use rmcp::model::Tool;
 
 const KIMI_CODE_PROVIDER_NAME: &str = "kimi_code";
@@ -455,6 +456,7 @@ impl Provider for KimiCodeProvider {
                 tokio_util::codec::LinesCodec::new(),
             )
             .map_err(anyhow::Error::from);
+            let framed = with_idle_timeout_from_env(framed);
 
             let message_stream = response_to_streaming_message(framed);
             pin!(message_stream);

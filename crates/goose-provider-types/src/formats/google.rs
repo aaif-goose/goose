@@ -484,8 +484,10 @@ where
                 continue;
             }
 
-            let data_part = if line.starts_with("data: ") {
-                line.strip_prefix("data: ").unwrap()
+            let data_part = if let Some(value) = line.strip_prefix("data: ") {
+                value
+            } else if let Some(value) = line.strip_prefix("data:") {
+                value
             } else if line.starts_with("event:") || line.starts_with("id:") || line.starts_with("retry:") {
                 continue;
             } else if incomplete_data.is_some() {
@@ -1669,6 +1671,8 @@ data: {"candidates": [{"content": {"role": "model", "parts": [{"text": "Hello"}]
 event: message
 data: {"candidates": [{"content": {"role": "model", "parts": [{"text": " world"}]}}]}
 
+data:{"candidates": [{"content": {"role": "model", "parts": [{"text": "!"}]}}]}
+
 data: [DONE]"#;
         let lines: Vec<Result<String, anyhow::Error>> =
             sse_stream.lines().map(|l| Ok(l.to_string())).collect();
@@ -1686,7 +1690,7 @@ data: [DONE]"#;
             }
         }
 
-        assert_eq!(text_parts, vec!["Hello", " world"]);
+        assert_eq!(text_parts, vec!["Hello", " world", "!"]);
     }
 
     #[tokio::test]

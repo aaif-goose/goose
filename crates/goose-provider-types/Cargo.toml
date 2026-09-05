@@ -36,5 +36,5 @@ uuid = { workspace = true, features = ["v4", "std"] }
 env-lock = { workspace = true }
 tempfile = { workspace = true }
 test-case = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 tokio-stream = { workspace = true }

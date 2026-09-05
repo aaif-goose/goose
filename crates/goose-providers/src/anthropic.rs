@@ -23,6 +23,7 @@ use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
+use crate::stream_idle_timeout::with_idle_timeout_from_env;
 use rmcp::model::Tool;
 
 pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
@@ -201,6 +202,7 @@ impl AnthropicProvider {
         Ok(Box::pin(try_stream! {
             let reader = StreamReader::new(stream);
             let framed = tokio_util::codec::FramedRead::new(reader, tokio_util::codec::LinesCodec::new()).map_err(anyhow::Error::from);
+            let framed = with_idle_timeout_from_env(framed);
             let messages = response_to_streaming_message(framed);
             pin!(messages);
             while let Some(message) = futures::StreamExt::next(&mut messages).await {

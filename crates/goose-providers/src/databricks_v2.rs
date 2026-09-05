@@ -34,6 +34,7 @@ use crate::retry::{
     RetryConfig, DEFAULT_BACKOFF_MULTIPLIER, DEFAULT_INITIAL_RETRY_INTERVAL_MS,
     DEFAULT_MAX_RETRIES, DEFAULT_MAX_RETRY_INTERVAL_MS,
 };
+use crate::stream_idle_timeout::with_idle_timeout_from_env;
 use rmcp::model::Tool;
 
 const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
@@ -438,6 +439,7 @@ impl DatabricksV2Provider {
             let stream_reader = StreamReader::new(stream);
             let framed = tokio_util::codec::FramedRead::new(stream_reader, tokio_util::codec::LinesCodec::new())
                 .map_err(anyhow::Error::from);
+            let framed = with_idle_timeout_from_env(framed);
 
             let message_stream = anthropic::response_to_streaming_message(framed);
             pin!(message_stream);
