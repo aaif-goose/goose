@@ -827,6 +827,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "toolrouter",
+    "name": "ToolRouter",
+    "description": "The OpenRouter for tools. One connection to 250+ hosted specialist tools for web search, scraping, image and video generation, SEO, finance and more",
+    "url": "https://api.toolrouter.com/mcp",
+    "link": "https://github.com/Humanleap/toolrouter-mcp",
+    "installation_notes": "Hosted remote server. No credentials are needed to connect — free tools run immediately and a free account is provisioned on first use. Paid tools are pay per call.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
