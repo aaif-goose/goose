@@ -870,6 +870,14 @@ impl Agent {
                 )
             );
         }
+        // Rebuild subdirectory-hint state from the conversation before the
+        // first system prompt is rendered, so a resumed session keeps the
+        // hints its earlier tool calls pulled in (#10330).
+        self.prompt_manager
+            .lock()
+            .await
+            .record_tool_arguments_from_history(conversation.messages(), working_dir);
+
         let (tools, toolshim_tools, system_prompt, model_config) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
