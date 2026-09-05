@@ -2544,12 +2544,21 @@ impl SessionStorage {
 
     async fn truncate_conversation(&self, session_id: &str, timestamp: i64) -> Result<()> {
         let pool = self.pool().await?;
-        sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
-            .bind(session_id)
-            .bind(timestamp)
-            .execute(pool)
-            .await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
+        let result =
+            sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
+                .bind(session_id)
+                .bind(timestamp)
+                .execute(&mut *tx)
+                .await?;
+
+        if result.rows_affected() > 0 {
+            self.clear_conversation_derived_extension_data(session_id, &mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -2579,9 +2588,29 @@ impl SessionStorage {
             .bind(boundary_id)
             .execute(&mut *tx)
             .await?;
+
+            self.clear_conversation_derived_extension_data(session_id, &mut *tx)
+                .await?;
         }
 
         tx.commit().await?;
+        Ok(())
+    }
+
+    async fn clear_conversation_derived_extension_data<'e, E>(
+        &self,
+        session_id: &str,
+        executor: E,
+    ) -> Result<()>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
+        sqlx::query(
+            "UPDATE sessions SET extension_data = json_remove(extension_data, '$.\"todo.v0\"') WHERE id = ?",
+        )
+        .bind(session_id)
+        .execute(executor)
+        .await?;
         Ok(())
     }
 
@@ -3285,6 +3314,181 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].id.as_deref(), Some("assistant"));
         assert_eq!(messages[0].as_concat_text(), "assistant reply");
+    }
+
+    #[tokio::test]
+    async fn test_truncate_conversation_clears_todo_but_keeps_enabled_extensions() {
+        use crate::session::extension_data::{EnabledExtensionsState, ExtensionState, TodoState};
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Extension data truncation".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let mut ext_data = session.extension_data.clone();
+        TodoState::new("- Buy milk".to_string())
+            .to_extension_data(&mut ext_data)
+            .unwrap();
+        EnabledExtensionsState::new(vec![])
+            .to_extension_data(&mut ext_data)
+            .unwrap();
+
+        sm.update(&session.id)
+            .extension_data(ext_data)
+            .apply()
+            .await
+            .unwrap();
+
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("hello").with_id("msg1"),
+        )
+        .await
+        .unwrap();
+
+        sm.add_message(
+            &session.id,
+            &Message::assistant().with_text("hi").with_id("msg2"),
+        )
+        .await
+        .unwrap();
+
+        set_message_timestamp(&sm, &session.id, "msg1", "2026-01-01T00:00:00Z").await;
+        set_message_timestamp(&sm, &session.id, "msg2", "2026-01-01T00:00:01Z").await;
+
+        let before = sm.get_session(&session.id, false).await.unwrap();
+        assert!(TodoState::from_extension_data(&before.extension_data).is_some());
+        assert!(EnabledExtensionsState::from_extension_data(&before.extension_data).is_some());
+
+        // Truncate at the first message's timestamp (seconds) — deletes both messages.
+        let truncate_ts = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .timestamp();
+        sm.truncate_conversation(&session.id, truncate_ts)
+            .await
+            .unwrap();
+
+        let after = sm.get_session(&session.id, false).await.unwrap();
+        assert!(
+            TodoState::from_extension_data(&after.extension_data).is_none(),
+            "todo state should be cleared after truncation"
+        );
+        assert!(
+            EnabledExtensionsState::from_extension_data(&after.extension_data).is_some(),
+            "enabled_extensions should be preserved after truncation"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_truncate_conversation_preserves_todo_when_no_messages_deleted() {
+        use crate::session::extension_data::{ExtensionState, TodoState};
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "No-op truncation".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let mut ext_data = session.extension_data.clone();
+        TodoState::new("- Important task".to_string())
+            .to_extension_data(&mut ext_data)
+            .unwrap();
+
+        sm.update(&session.id)
+            .extension_data(ext_data)
+            .apply()
+            .await
+            .unwrap();
+
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("hello").with_id("msg1"),
+        )
+        .await
+        .unwrap();
+
+        set_message_timestamp(&sm, &session.id, "msg1", "2026-01-01T00:00:00Z").await;
+
+        // Truncate with a future timestamp that matches no messages.
+        let future_ts = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+            .unwrap()
+            .timestamp();
+        sm.truncate_conversation(&session.id, future_ts)
+            .await
+            .unwrap();
+
+        let after = sm.get_session(&session.id, true).await.unwrap();
+        assert!(
+            TodoState::from_extension_data(&after.extension_data).is_some(),
+            "todo state should be preserved when no messages were deleted"
+        );
+        let msgs = after.conversation.unwrap().messages().to_vec();
+        assert_eq!(msgs.len(), 1, "message should still exist");
+    }
+
+    #[tokio::test]
+    async fn test_truncate_conversation_from_message_clears_todo() {
+        use crate::session::extension_data::{ExtensionState, TodoState};
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "From-message truncation".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let mut ext_data = session.extension_data.clone();
+        TodoState::new("- Task A".to_string())
+            .to_extension_data(&mut ext_data)
+            .unwrap();
+
+        sm.update(&session.id)
+            .extension_data(ext_data)
+            .apply()
+            .await
+            .unwrap();
+
+        sm.add_message(
+            &session.id,
+            &Message::assistant().with_text("reply").with_id("a1"),
+        )
+        .await
+        .unwrap();
+
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("edit me").with_id("u1"),
+        )
+        .await
+        .unwrap();
+
+        sm.truncate_conversation_from_message(&session.id, "u1")
+            .await
+            .unwrap();
+
+        let after = sm.get_session(&session.id, false).await.unwrap();
+        assert!(
+            TodoState::from_extension_data(&after.extension_data).is_none(),
+            "todo state should be cleared after truncation from message"
+        );
     }
 
     #[tokio::test]

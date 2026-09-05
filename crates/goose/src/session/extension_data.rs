@@ -37,6 +37,15 @@ impl ExtensionData {
         let key = format!("{}.{}", extension_name, version);
         self.extension_states.insert(key, state);
     }
+
+    /// Remove extension state that is derived from conversation content.
+    ///
+    /// Session-scoped configuration (e.g. enabled_extensions) is preserved;
+    /// only keys whose meaning depends on the messages in the conversation
+    /// are cleared.
+    pub fn clear_conversation_derived_state(&mut self) {
+        self.extension_states.remove("todo.v0");
+    }
 }
 
 /// Helper trait for extension-specific state management
@@ -238,6 +247,35 @@ mod tests {
         let retrieved = TodoState::from_extension_data(&extension_data);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().content, "- Task 1\n- Task 2");
+    }
+
+    #[test]
+    fn test_clear_conversation_derived_state() {
+        let mut extension_data = ExtensionData::new();
+
+        let todo = TodoState::new("- Task 1".to_string());
+        todo.to_extension_data(&mut extension_data).unwrap();
+        EnabledExtensionsState::new(vec![test_extension()])
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+
+        assert!(extension_data.get_extension_state("todo", "v0").is_some());
+        assert!(extension_data
+            .get_extension_state("enabled_extensions", "v0")
+            .is_some());
+
+        extension_data.clear_conversation_derived_state();
+
+        assert!(
+            extension_data.get_extension_state("todo", "v0").is_none(),
+            "todo should be cleared"
+        );
+        assert!(
+            extension_data
+                .get_extension_state("enabled_extensions", "v0")
+                .is_some(),
+            "enabled_extensions should be preserved"
+        );
     }
 
     #[test]
