@@ -509,6 +509,7 @@ impl GatewayHandler {
         agent.load_extensions_from_session(&session).await;
 
         let cancel = CancellationToken::new();
+        let cancel_for_reply = cancel.clone();
         let user_message = Message::user().with_text(&message.text);
 
         // Cap tool-calling loops so the agent doesn't run away doing
@@ -533,7 +534,12 @@ impl GatewayHandler {
         };
 
         let mut stream = match agent
-            .reply(user_message, session_config, Some(cancel.clone()))
+            .reply(
+                user_message,
+                session_config,
+                crate::agents::state_machine::enabled(),
+                Some(cancel_for_reply),
+            )
             .await
         {
             Ok(s) => s,

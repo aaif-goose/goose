@@ -61,6 +61,14 @@ const i18n = defineMessages({
     id: 'settings.costTracking.description',
     defaultMessage: 'Show model pricing and usage costs',
   },
+  legacyAgentLoop: {
+    id: 'settings.legacyAgentLoop.title',
+    defaultMessage: 'Use Legacy Agent Loop',
+  },
+  legacyAgentLoopDesc: {
+    id: 'settings.legacyAgentLoop.description',
+    defaultMessage: 'Fall back to the classic agent loop if the new one causes issues',
+  },
   themeTitle: { id: 'settings.theme.title', defaultMessage: 'Theme' },
   themeDesc: {
     id: 'settings.theme.description',
@@ -188,6 +196,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
   const [language, setLanguage] = useState<LanguageSetting>('system');
+  const [useLegacyAgentLoop, setUseLegacyAgentLoop] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const updateSectionRef = useRef<HTMLDivElement>(null);
   const shouldShowUpdates = !window.appConfig.get('GOOSE_VERSION');
@@ -215,6 +224,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   useEffect(() => {
     window.electron.getSetting('showPricing').then(setShowPricing);
     window.electron.getSetting('language').then((value) => setLanguage(value ?? 'system'));
+    window.electron.getSetting('useLegacyAgentLoop').then((value) => setUseLegacyAgentLoop(value ?? false));
   }, []);
 
   useEffect(() => {
@@ -300,6 +310,11 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
     setNotificationsEnabled(checked);
     await window.electron.setSetting('enableNotifications', checked);
     trackSettingToggled('task_notifications', checked);
+  };
+
+  const handleLegacyAgentLoopToggle = async (checked: boolean) => {
+    setUseLegacyAgentLoop(checked);
+    await window.electron.setSetting('useLegacyAgentLoop', checked);
   };
 
   const handleShowPricingToggle = async (checked: boolean) => {
@@ -440,6 +455,24 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
               <Switch
                 checked={wakelockEnabled}
                 onCheckedChange={handleWakelockToggle}
+                variant="mono"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-text-primary text-xs">
+                {intl.formatMessage(i18n.legacyAgentLoop)}
+              </h3>
+              <p className="text-xs text-text-secondary max-w-md mt-[2px]">
+                {intl.formatMessage(i18n.legacyAgentLoopDesc)}
+              </p>
+            </div>
+            <div className="flex items-center">
+              <Switch
+                checked={useLegacyAgentLoop}
+                onCheckedChange={handleLegacyAgentLoopToggle}
                 variant="mono"
               />
             </div>

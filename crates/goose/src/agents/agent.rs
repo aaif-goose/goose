@@ -349,10 +349,6 @@ fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
 }
 
-fn user_visible_message_text(message: &Message) -> String {
-    message.user_visible_content().as_concat_text()
-}
-
 fn attach_turn_usage(
     messages: &mut Conversation,
     usage: &ProviderUsage,
@@ -1609,6 +1605,27 @@ impl Agent {
         false
     }
 
+    pub async fn handle_confirmation(
+        &self,
+        session_id: &str,
+        request_id: String,
+        confirmation: PermissionConfirmation,
+    ) {
+        if self
+            .try_route_tool_confirmation_to_provider(&request_id, &confirmation)
+            .await
+        {
+            return;
+        }
+        if !self
+            .tool_confirmation_router
+            .deliver(session_id, &request_id, confirmation)
+            .await
+        {
+            error!("Failed to deliver confirmation");
+        }
+    }
+
     pub async fn supports_action_required_permissions(&self) -> bool {
         if let Some(provider) = self.provider.lock().await.as_ref() {
             return provider.permission_routing() == PermissionRouting::ActionRequired;
@@ -2003,7 +2020,7 @@ impl Agent {
     }
 
     #[instrument(
-        skip(self, user_message, session_config, cancel_token),
+        skip(self, user_message, session_config, use_state_machine, cancel_token),
         fields(
             user_message,
             trace_input,
@@ -2021,11 +2038,17 @@ impl Agent {
         &self,
         user_message: Message,
         session_config: SessionConfig,
+        use_state_machine: bool,
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let reply_span = tracing::Span::current();
         let events = self
-            .reply_impl(user_message, session_config, cancel_token)
+            .reply_impl(
+                user_message,
+                session_config,
+                use_state_machine,
+                cancel_token,
+            )
             .await?;
 
         // This is the single live-event identity boundary. Callers that intentionally stream
@@ -2041,6 +2064,7 @@ impl Agent {
         &self,
         user_message: Message,
         session_config: SessionConfig,
+        use_state_machine: bool,
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let user_message = user_message.with_generated_id_if_missing();
@@ -2093,10 +2117,7 @@ impl Agent {
             }
         }
 
-        if super::state_machine::enabled()
-            || super::state_machine::bang_shell_command(&user_visible_message_text(&user_message))
-                .is_some()
-        {
+        if use_state_machine {
             tracing::info!("dispatching reply via experimental state machine");
             return self
                 .reply_with_state_machine(user_message, session_config, cancel_token)
@@ -5245,7 +5266,12 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         };
 
         let reply_stream = agent
-            .reply(Message::user().with_text("hi"), session_config, None)
+            .reply(
+                Message::user().with_text("hi"),
+                session_config,
+                crate::agents::state_machine::enabled(),
+                None,
+            )
             .await?;
         tokio::pin!(reply_stream);
         let mut emitted_refusal_id = None;
@@ -5355,6 +5381,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .reply(
                 Message::user().with_text("input-super-secret-token"),
                 session_config,
+                false,
                 None,
             )
             .await?;
@@ -5438,7 +5465,12 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             retry_config: None,
         };
         let reply_stream = agent
-            .reply(Message::user().with_text(text), session_config, None)
+            .reply(
+                Message::user().with_text(text),
+                session_config,
+                crate::agents::state_machine::enabled(),
+                None,
+            )
             .await?;
         tokio::pin!(reply_stream);
 
@@ -5574,6 +5606,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .reply(
                 Message::user().with_content(user_only_content),
                 session_config,
+                crate::agents::state_machine::enabled(),
                 None,
             )
             .await?;
@@ -5600,6 +5633,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .reply(
                 Message::user().with_text("agent-visible"),
                 visible_session_config,
+                crate::agents::state_machine::enabled(),
                 None,
             )
             .await?;
@@ -5619,6 +5653,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .reply(
                 Message::user().with_text("second-agent-visible"),
                 final_session_config,
+                crate::agents::state_machine::enabled(),
                 None,
             )
             .await?;
@@ -6046,16 +6081,11 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         }
     }
 
-    const RECORD_PRE_SCRIPT: &str =
-        "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/pre.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/pre.log\"\nexit 0\n";
-    const RECORD_RESULT_SCRIPT: &str =
-        "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/result.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/result.log\"\nexit 0\n";
-    const RECORD_POST_SCRIPT: &str =
-        "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/post.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/post.log\"\nexit 0\n";
-    const RECORD_POST_FAILURE_SCRIPT: &str =
-        "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/postfail.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/postfail.log\"\nexit 0\n";
-    const DENY_AND_RECORD_SCRIPT: &str =
-        "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/pre.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/pre.log\"\necho \"blocked by test policy\" >&2\nexit 2\n";
+    const RECORD_PRE_SCRIPT: &str = "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/pre.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/pre.log\"\nexit 0\n";
+    const RECORD_RESULT_SCRIPT: &str = "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/result.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/result.log\"\nexit 0\n";
+    const RECORD_POST_SCRIPT: &str = "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/post.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/post.log\"\nexit 0\n";
+    const RECORD_POST_FAILURE_SCRIPT: &str = "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/postfail.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/postfail.log\"\nexit 0\n";
+    const DENY_AND_RECORD_SCRIPT: &str = "#!/bin/sh\ncat >> \"$PLUGIN_ROOT/pre.log\"\nprintf '\\n' >> \"$PLUGIN_ROOT/pre.log\"\necho \"blocked by test policy\" >&2\nexit 2\n";
     /// Logs its stdin like the others, writes nothing to stdout, and exits
     /// non-zero. That is a hook that ran but never returned a decision.
     const ABNORMAL_EXIT_AND_RECORD_SCRIPT: &str =
