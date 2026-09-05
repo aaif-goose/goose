@@ -1,0 +1,47 @@
+{
+  "name": "openllm",
+  "engine": "openai",
+  "display_name": "OpenLLM",
+  "description": "OpenLLM — one endpoint across every provider. Requires its service running; install: curl -fsSL https://www.openllm.sh/install | bash",
+  "api_key_env": "",
+  "base_url": "${OPENLLM_HOST}/v1",
+  "env_vars": [
+    {
+      "name": "OPENLLM_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://127.0.0.1:8787",
+      "description": "Base URL of the OpenLLM service (default: http://127.0.0.1:8787)"
+    }
+  ],
+  "models": [
+    { "name": "ultra", "context_limit": 1000000 },
+    { "name": "plus", "context_limit": 1000000 },
+    { "name": "lite", "context_limit": 1000000 }
+  ],
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "preserves_thinking": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true,
+  "setup_steps": [
+    "Install OpenLLM: curl -fsSL https://www.openllm.sh/install | bash",
+    "The installer starts the local service on http://127.0.0.1:8787",
+    "Pick a fallback chain such as ultra, plus, or lite as your model"
+  ],
+  "setup": {
+    "category": "model",
+    "setup_method": "config_fields",
+    "group": "additional",
+    "docs_url": "https://www.openllm.sh",
+    "field_overrides": [
+      {
+        "key": "OPENLLM_HOST",
+        "label": "Host URL",
+        "placeholder": "http://127.0.0.1:8787",
+        "default_value": "http://127.0.0.1:8787"
+      }
+    ]
+  }
+}

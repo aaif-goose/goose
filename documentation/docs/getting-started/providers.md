@@ -52,6 +52,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Ollama](https://ollama.com/)                                               | Local model runner supporting Qwen, Llama, DeepSeek, and other open-source models. **Because this provider runs locally, you must first [download and run a model](#local-llms).**  | `OLLAMA_HOST`                                                                                                                                                                       |
 | [Ollama Cloud](https://ollama.com/)                                         | Access hosted models on ollama.com via OpenAI-compatible API. Requires an Ollama account and API key.  | `OLLAMA_CLOUD_API_KEY`                                                                                                                                                                       |
 | [OpenAI](https://platform.openai.com/api-keys)                              | Provides gpt-4o, o1, and other advanced language models. Also supports OpenAI-compatible endpoints (e.g., self-hosted LLaMA, vLLM, KServe). **o1-mini and o1-preview are not supported because goose uses tool calling.** | `OPENAI_API_KEY`, `OPENAI_HOST` (optional), `OPENAI_ORGANIZATION` (optional), `OPENAI_PROJECT` (optional), `OPENAI_CUSTOM_HEADERS` (optional)                                       |
+| [OpenLLM](https://openllm.sh/)                                              | Manages BYOK and subscription providers through configurable fallback chains. Requires the local OpenLLM service. | None |
 | [OpenRouter](https://openrouter.ai/)                                        | API gateway for unified access to various models with features like rate-limiting management.                                                                                                                             | `OPENROUTER_API_KEY`, `OPENROUTER_HOST` (optional), `OPENROUTER_PARAMETERS` (optional)                                                                                              |
 | [Perplexity](https://www.perplexity.ai/)                                    | Chat models with built-in real-time web search grounding. OpenAI-compatible chat completions API at `https://api.perplexity.ai`.                                                                                          | `PERPLEXITY_API_KEY`                                                                                                                                                                |
 | [OVHcloud AI](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/)       | Provides access to open-source models including Qwen, Llama, Mistral, and DeepSeek through AI Endpoints service.                                                       | `OVHCLOUD_API_KEY`                                                                                                                                                                  |
@@ -276,6 +277,20 @@ To configure your chosen provider, see available options, or select a model, vis
 
   </TabItem>
 </Tabs>
+
+### OpenLLM
+
+[OpenLLM](https://openllm.sh/) manages both BYOK API providers and subscription providers for goose. You arrange them into fallback chains, then select a chain such as `ultra`, `plus`, or `lite` as your model. If the first provider is unavailable, rate-limited, or cannot fit the request, OpenLLM tries the next one without changing your goose configuration.
+
+Install OpenLLM (the installer also starts its local service):
+
+```sh
+curl -fsSL https://www.openllm.sh/install | bash
+```
+
+Then choose **OpenLLM** in goose and select `ultra`, `plus`, `lite`, or another model returned by OpenLLM. No API key is needed. The service listens on `http://127.0.0.1:8787` by default; set `OPENLLM_HOST` if it runs elsewhere. You can create and reorder fallback chains in the OpenLLM dashboard. Since goose refers to the chain by name, you can change the models behind it without updating goose.
+
+To add semantic code search and persistent memory, see the [OpenLLM extension guide](/docs/mcp/openllm-mcp).
 
 ### Using Custom OpenAI Endpoints
 
