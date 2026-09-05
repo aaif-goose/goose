@@ -40,9 +40,11 @@ const MUSE_CODE_DOC_URL: &str = "https://ai.developer.meta.com/docs/muse-code/su
 const MUSE_CODE_USER_AGENT: &str = "goose-muse-code";
 
 const MUSE_CODE_KNOWN_MODELS: &[&str] = &[
+    "muse-spark-1.3",
     "muse-spark-1.2",
     "muse-spark-1.1",
     "muse-spark-1.2-contributor",
+    "muse-spark-1.3-contributor",
 ];
 
 const REFRESH_THRESHOLD_SECS: i64 = 300;
@@ -453,7 +455,7 @@ impl MuseCodeAuth {
             Err(error) => {
                 let mapped = muse_refresh_error(error);
                 if matches!(mapped, ProviderError::Authentication(_)) {
-                    self.cache.clear();
+                    let _ = self.cache.clear();
                     return Err(mapped);
                 }
                 if token.expires_at > Utc::now() {
@@ -535,7 +537,7 @@ impl ProviderDescriptor for MuseCodeProviderDef {
             MUSE_CODE_PROVIDER_NAME,
             "Meta Muse Code",
             "Muse Spark models from a Meta Muse Code subscription",
-            "muse-spark-1.2",
+            "muse-spark-1.3",
             known_models(),
             MUSE_CODE_DOC_URL,
             vec![
@@ -650,7 +652,7 @@ mod tests {
     fn metadata_declares_subscription_models_and_oauth() {
         let metadata = MuseCodeProviderDef::metadata();
         assert_eq!(metadata.name, "muse_code");
-        assert_eq!(metadata.default_model, "muse-spark-1.2");
+        assert_eq!(metadata.default_model, "muse-spark-1.3");
         assert_eq!(
             metadata
                 .known_models
@@ -658,9 +660,11 @@ mod tests {
                 .map(|model| model.name.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "muse-spark-1.3",
                 "muse-spark-1.2",
                 "muse-spark-1.1",
-                "muse-spark-1.2-contributor"
+                "muse-spark-1.2-contributor",
+                "muse-spark-1.3-contributor"
             ]
         );
         assert_eq!(
@@ -669,7 +673,13 @@ mod tests {
                 .iter()
                 .map(|model| model.context_limit)
                 .collect::<Vec<_>>(),
-            vec![Some(1_048_576), Some(1_000_000), Some(1_048_576)]
+            vec![
+                Some(1_048_576),
+                Some(1_048_576),
+                Some(1_000_000),
+                Some(1_048_576),
+                Some(1_048_576)
+            ]
         );
         assert!(
             metadata.known_models.iter().all(|model| model.reasoning),
@@ -683,6 +693,26 @@ mod tests {
         assert!(key.oauth_flow);
         assert!(key.device_code_flow);
         assert!(key.secret);
+    }
+
+    #[test]
+    fn spark_models_resolve_output_limits_via_canonical_registry() {
+        // Spark reasons before emitting content; without a max_tokens from the
+        // canonical registry the wire omits it and Meta falls back to 4096,
+        // which reasoning exhausts before returning any visible content.
+        for model in [
+            "muse-spark-1.3",
+            "muse-spark-1.2",
+            "muse-spark-1.2-contributor",
+            "muse-spark-1.3-contributor",
+        ] {
+            let config = ModelConfig::new(model).with_canonical_limits(MUSE_CODE_PROVIDER_NAME);
+            assert_eq!(
+                config.max_tokens,
+                Some(131_072),
+                "{model} should resolve its canonical output limit"
+            );
+        }
     }
 
     #[tokio::test]
