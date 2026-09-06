@@ -827,6 +827,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "zetesis",
+    "name": "Zetesis",
+    "description": "Check whether a scientific claim holds up against the published record. Returns the questions a domain reviewer would ask, the failure patterns that caught comparable claims before, and evidence from Europe PMC, ClinicalTrials.gov, openFDA, NIH RePORTER and SEC EDGAR with an identifier on every source. Retrieval can be fenced to a year, so a claim is judged on what was knowable at the time.",
+    "url": "https://api.zetesis.science/mcp",
+    "link": "https://github.com/reutavidan/zetesis",
+    "installation_notes": "No account, key or token. The two retrieval tools call no language model and send nothing to any model provider.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
