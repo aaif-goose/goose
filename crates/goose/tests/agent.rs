@@ -847,11 +847,10 @@ mod tests {
     }
 
     #[cfg(test)]
-    mod tool_pair_summarization_tests {
+    mod tool_pair_immutability_tests {
         use super::*;
         use async_trait::async_trait;
         use goose::agents::{AgentConfig, SessionConfig};
-        use goose::config::base::Config;
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -864,30 +863,16 @@ mod tests {
         use goose_providers::model::ModelConfig;
         use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
         use std::path::PathBuf;
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
 
-        /// Mock provider that returns text for the main reply and summaries for
-        /// summarization calls. Distinguishes by checking if tools are empty
-        /// (summarization calls pass no tools).
-        struct SummarizationTestProvider {
-            summary_count: AtomicUsize,
-        }
+        struct SimpleTestProvider;
 
-        impl SummarizationTestProvider {
-            fn new() -> Self {
-                Self {
-                    summary_count: AtomicUsize::new(0),
-                }
-            }
-        }
-
-        impl goose::providers::base::ProviderDescriptor for SummarizationTestProvider {
+        impl goose::providers::base::ProviderDescriptor for SimpleTestProvider {
             fn metadata() -> ProviderMetadata {
                 ProviderMetadata {
-                    name: "mock-summarization".to_string(),
-                    display_name: "Mock Summarization Provider".to_string(),
-                    description: "Mock provider for summarization tests".to_string(),
+                    name: "mock-simple".to_string(),
+                    display_name: "Mock Simple Provider".to_string(),
+                    description: "Mock provider for immutability tests".to_string(),
                     default_model: "mock-model".to_string(),
                     known_models: vec![],
                     model_doc_link: "".to_string(),
@@ -899,35 +884,27 @@ mod tests {
             }
         }
 
-        impl ProviderDef for SummarizationTestProvider {
+        impl ProviderDef for SimpleTestProvider {
             type Provider = Self;
 
             fn from_env(
                 _extensions: Vec<goose::config::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
-                Box::pin(async { Ok(Self::new()) })
+                Box::pin(async { Ok(Self) })
             }
         }
 
         #[async_trait]
-        impl Provider for SummarizationTestProvider {
+        impl Provider for SimpleTestProvider {
             async fn stream(
                 &self,
                 _model_config: &ModelConfig,
-                system_prompt: &str,
+                _system_prompt: &str,
                 _messages: &[Message],
                 _tools: &[Tool],
             ) -> Result<MessageStream, ProviderError> {
-                let message = if system_prompt.contains("summarize a tool call") {
-                    // Summarization call — return a unique summary
-                    let n = self.summary_count.fetch_add(1, Ordering::SeqCst);
-                    Message::assistant().with_text(format!("Summary of tool call #{}", n))
-                } else {
-                    // Main agent reply — return plain text so the loop exits
-                    Message::assistant().with_text("Done processing.")
-                };
-
+                let message = Message::assistant().with_text("Done processing.");
                 let usage = ProviderUsage::new(
                     "mock-model".to_string(),
                     Usage::new(Some(10), Some(5), Some(15)),
@@ -936,24 +913,12 @@ mod tests {
             }
 
             fn get_name(&self) -> &str {
-                "mock-summarization"
+                "mock-simple"
             }
         }
 
-        /// Test that batch tool pair summarization preserves all summaries.
-        ///
-        /// Pre-populates a session with enough tool call/response pairs to trigger
-        /// batch summarization, runs agent.reply(), then verifies:
-        /// - All 10 summaries are present in the final conversation
-        /// - The original tool pairs are marked invisible
         #[tokio::test]
-        async fn test_batch_summarization_preserves_all_summaries() -> Result<()> {
-            // Set a low cutoff so we don't need hundreds of tool pairs.
-            // cutoff=2 means we need >2+10=12 visible tool pairs to trigger.
-            Config::global()
-                .set_param("GOOSE_TOOL_CALL_CUTOFF", 2)
-                .unwrap();
-
+        async fn tool_pairs_remain_agent_visible_between_full_compactions() -> Result<()> {
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
             let agent = Agent::with_config(AgentConfig::new(
@@ -964,23 +929,24 @@ mod tests {
                 true,
                 GoosePlatform::GooseCli,
             ));
-            let provider = Arc::new(SummarizationTestProvider::new());
 
             let session = session_manager
                 .create_session(
                     PathBuf::from("."),
-                    "summarization-test".to_string(),
+                    "immutability-test".to_string(),
                     SessionType::Hidden,
                     GooseMode::Auto,
                 )
                 .await?;
 
             agent
-                .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+                .update_provider(
+                    Arc::new(SimpleTestProvider),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
                 .await?;
 
-            // Pre-populate 13 tool pairs (need > cutoff + batch_size = 12 to trigger).
-            // Timestamps in the past so DB ordering places summaries before current turn.
             let base_ts = chrono::Utc::now().timestamp() - 100;
 
             let mut initial_msg = Message::user().with_text("help me read some files");
@@ -989,7 +955,7 @@ mod tests {
                 .add_message(&session.id, &initial_msg)
                 .await?;
 
-            for i in 0..13 {
+            for i in 0..40 {
                 let call_id = format!("precall_{}", i);
                 let mut req_msg = Message::assistant()
                     .with_tool_request(&call_id, Ok(CallToolRequestParams::new("read_file")))
@@ -1010,9 +976,7 @@ mod tests {
                 session_manager.add_message(&session.id, &resp_msg).await?;
             }
 
-            // Send a user message to trigger the reply loop
-            let user_message = Message::user().with_text("summarize what you found");
-
+            let user_message = Message::user().with_text("what did you find?");
             let session_config = SessionConfig {
                 id: session.id.clone(),
                 schedule_id: None,
@@ -1022,89 +986,38 @@ mod tests {
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
             tokio::pin!(reply_stream);
-
-            // Drain the stream
             while let Some(event) = reply_stream.next().await {
                 match event {
-                    Ok(AgentEvent::Message(_)) => {}
-                    Ok(_) => {}
+                    Ok(AgentEvent::Message(_)) | Ok(_) => {}
                     Err(e) => return Err(e),
                 }
             }
 
-            // Load the final session and inspect the conversation
             let final_session = session_manager.get_session(&session.id, true).await?;
             let conversation = final_session
                 .conversation
                 .expect("Session should have a conversation");
             let messages = conversation.messages();
 
-            // Count summaries: messages that are agent-visible, not user-visible,
-            // and contain our summary text pattern
-            let summaries: Vec<&Message> = messages
-                .iter()
-                .filter(|m| {
-                    m.metadata.agent_visible
-                        && !m.metadata.user_visible
-                        && m.as_concat_text().starts_with("Summary of tool call #")
-                })
-                .collect();
-
-            assert_eq!(
-                summaries.len(),
-                10,
-                "Expected 10 summaries (one full batch), got {}. Summary texts: {:?}",
-                summaries.len(),
-                summaries
-                    .iter()
-                    .map(|m| m.as_concat_text())
-                    .collect::<Vec<_>>()
-            );
-
-            // Verify each summary is unique
-            let summary_texts: std::collections::HashSet<String> =
-                summaries.iter().map(|m| m.as_concat_text()).collect();
-            assert_eq!(summary_texts.len(), 10, "All 10 summaries should be unique");
-
-            // Count invisible tool pairs: original pairs that were summarized
-            // should have agent_visible=false
-            let invisible_tool_msgs: Vec<&Message> = messages
+            let invisible_tool_msgs = messages
                 .iter()
                 .filter(|m| !m.metadata.agent_visible && (m.is_tool_call() || m.is_tool_response()))
-                .collect();
+                .count();
 
-            // Each summarized pair = 2 invisible messages (request + response)
             assert_eq!(
-                invisible_tool_msgs.len(),
-                20, // 10 pairs × 2 messages
-                "Expected 20 invisible tool messages (10 summarized pairs), got {}",
-                invisible_tool_msgs.len()
+                invisible_tool_msgs, 0,
+                "Tool pairs must remain agent-visible between full compactions"
             );
 
-            // Summaries must appear before the current turn's reply, not after it
-            let agent_visible: Vec<&Message> = messages
+            let visible_tool_pairs = messages
                 .iter()
-                .filter(|m| m.metadata.agent_visible)
-                .collect();
+                .filter(|m| m.metadata.agent_visible && (m.is_tool_call() || m.is_tool_response()))
+                .count();
 
-            let last_summary_pos = agent_visible
-                .iter()
-                .rposition(|m| m.as_concat_text().starts_with("Summary of tool call #"))
-                .expect("Should have at least one summary");
-            let agent_reply_pos = agent_visible
-                .iter()
-                .position(|m| m.as_concat_text().contains("Done processing."))
-                .expect("Should have the agent reply");
-
-            assert!(
-                last_summary_pos < agent_reply_pos,
-                "Summaries appeared after the current turn's reply: last_summary={}, reply={}",
-                last_summary_pos,
-                agent_reply_pos,
+            assert_eq!(
+                visible_tool_pairs, 80,
+                "All 40 tool pairs (80 messages) must stay visible"
             );
-
-            // Clean up the config override
-            Config::global().delete("GOOSE_TOOL_CALL_CUTOFF").unwrap();
 
             Ok(())
         }

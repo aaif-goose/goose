@@ -20,7 +20,7 @@ use crate::agents::state_machine::{
     InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
     RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
     SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
+    ToolExecutionOperation, UnknownToolOperation,
 };
 use crate::agents::AgentEvent;
 use crate::config::permission::{PermissionLevel, PermissionManager};
@@ -113,10 +113,6 @@ impl TestPipeline {
         cancel: CancellationToken,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let provider = self.provider.clone();
-        let tool_call_cutoff = crate::context_mgmt::compute_tool_call_cutoff(
-            self.model_config.context_limit(),
-            COMPACTION_THRESHOLD,
-        );
         let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(SteerOperation::new(
                 self.steer_queue.clone(),
@@ -134,12 +130,6 @@ impl TestPipeline {
             )));
         }
         let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-            Arc::new(ToolPairCompactionOperation::new(
-                provider.clone(),
-                self.model_config.clone(),
-                tool_call_cutoff,
-                !self.provider_features.manages_own_context,
-            )),
             Arc::new(ToolApprovalOperation::new(
                 &self.goose_mode,
                 &self.tool_inspection_manager,

@@ -45,10 +45,6 @@ When you reach the auto-compaction threshold:
 You can customize how goose summarizes conversations during compaction by editing the `compaction.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
 
-:::tip Tool Output Summarization
-To help maintain efficient context usage, goose summarizes older tool call outputs in the background while keeping recent calls in full detail. By default, goose computes the cutoff from the model context limit and auto-compaction threshold. For advanced tuning, see [`GOOSE_TOOL_CALL_CUTOFF`](/docs/guides/environment-variables#session-management).
-:::
-
 ### Manual Compaction
 You can also trigger compaction manually before reaching context or token limits:
 

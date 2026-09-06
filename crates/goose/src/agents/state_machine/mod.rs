@@ -23,7 +23,6 @@ mod ops_status;
 mod ops_steer;
 mod ops_stop_hook;
 mod ops_tool_approval;
-mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod ops_unknown_tool;
 mod session;
@@ -66,7 +65,6 @@ pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
 pub(super) use ops_stop_hook::StopHookOperation;
 pub(super) use ops_tool_approval::ToolApprovalOperation;
-pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
 pub(super) use ops_unknown_tool::UnknownToolOperation;
 

@@ -39,8 +39,8 @@ use crate::agents::state_machine::{
     GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
     Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
     SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation, MAX_TURNS_MESSAGE,
+    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, UnknownToolOperation,
+    MAX_TURNS_MESSAGE,
 };
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
@@ -188,7 +188,6 @@ pub struct ReplyContext {
     pub toolshim_tools: Vec<Tool>,
     pub system_prompt: String,
     pub goose_mode: GooseMode,
-    pub tool_call_cut_off: usize,
     pub model_config: goose_providers::model::ModelConfig,
 }
 
@@ -876,33 +875,12 @@ impl Agent {
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
-        let tool_call_cut_off = match Config::global().get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
-        {
-            Ok(v) => v,
-            Err(_) => {
-                let context_limit = match self.provider().await {
-                    Ok(provider) => crate::context_limit::get_context_limit(
-                        provider.as_ref(),
-                        &model_config.model_name,
-                    )
-                    .await
-                    .unwrap_or(goose_providers::model::DEFAULT_CONTEXT_LIMIT),
-                    Err(_) => goose_providers::model::DEFAULT_CONTEXT_LIMIT,
-                };
-                let compaction_threshold = Config::global()
-                    .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-                    .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD);
-                crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
-            }
-        };
-
         Ok(ReplyContext {
             conversation,
             tools,
             toolshim_tools,
             system_prompt,
             goose_mode,
-            tool_call_cut_off,
             model_config,
         })
     }
@@ -1649,14 +1627,7 @@ impl Agent {
         let compaction_threshold = Config::global()
             .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
             .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
-        let tool_call_cutoff = Config::global()
-            .get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
-            .unwrap_or_else(|_| {
-                crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
-            });
         let manages_own_context = provider.manages_own_context();
-        let tool_pair_compaction_enabled =
-            crate::context_mgmt::tool_pair_summarization_enabled() && !manages_own_context;
 
         let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(SteerOperation::new(steer_queue, self.hook_manager.clone())),
@@ -1672,12 +1643,6 @@ impl Agent {
             )));
         }
         let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-            Arc::new(ToolPairCompactionOperation::new(
-                provider.clone(),
-                model_config.clone(),
-                tool_call_cutoff,
-                tool_pair_compaction_enabled,
-            )),
             Arc::new(ToolApprovalOperation::new(
                 &self.current_goose_mode,
                 &self.tool_inspection_manager,
@@ -2401,7 +2366,6 @@ impl Agent {
             mut tools,
             mut toolshim_tools,
             mut system_prompt,
-            tool_call_cut_off,
             goose_mode,
             model_config,
         } = context;
@@ -2463,15 +2427,6 @@ impl Agent {
             });
         }
 
-        // Count tool calls present before this reply — everything added during
-        // the reply loop is part of the current turn and should not be summarized.
-        let pre_turn_tool_count = conversation
-            .messages()
-            .iter()
-            .flat_map(|m| m.content.iter())
-            .filter(|c| matches!(c, MessageContent::ToolRequest(_)))
-            .count();
-
         let working_dir = session.working_dir.clone();
         let reply_stream_span = tracing::info_span!(
             parent: &reply_span,
@@ -2523,7 +2478,6 @@ impl Agent {
             let mut last_assistant_text = String::new();
             let mut turn_total_usage = Usage::default();
             let mut goal_check_pending = false;
-            let mut tool_pair_summarization_done = false;
             let mut stop_hook_handled_for_exit = false;
             let mut retrying_after_stop_hook_denial = false;
             let mut consecutive_stop_hook_blocks = 0u32;
@@ -2658,25 +2612,6 @@ impl Agent {
                     &toolshim_tools,
                 ).await?;
                 last_assistant_text.clear();
-
-                let current_turn_tool_count = conversation.messages().iter()
-                    .flat_map(|m| m.content.iter())
-                    .filter(|c| matches!(c, MessageContent::ToolRequest(_)))
-                    .count()
-                    .saturating_sub(pre_turn_tool_count);
-
-                let tool_pair_summarization_task = if tool_pair_summarization_done {
-                    None
-                } else {
-                    crate::context_mgmt::maybe_summarize_tool_pairs(
-                        self.provider().await?,
-                        model_config.clone(),
-                        session_config.id.clone(),
-                        conversation.clone(),
-                        tool_call_cut_off,
-                        current_turn_tool_count,
-                    )
-                };
 
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
@@ -3479,43 +3414,6 @@ impl Agent {
                                     );
                                     exit_chat = true;
                                 }
-                            }
-                        }
-                    }
-                }
-
-                if is_token_cancelled(&cancel_token) {
-                    if let Some(ref task) = tool_pair_summarization_task {
-                        task.abort();
-                    }
-                }
-
-                if let Some(task) = tool_pair_summarization_task {
-                    tool_pair_summarization_done = true;
-                    if let Ok(summaries) = task.await {
-                        for (summary_msg, tool_id) in summaries {
-                            let matching_ids: Vec<String> = conversation.messages()
-                                .iter()
-                                .filter(|msg| {
-                                    msg.id.is_some() && msg.content.iter().any(|c| match c {
-                                        MessageContent::ToolRequest(req) => req.id == tool_id,
-                                        MessageContent::ToolResponse(resp) => resp.id == tool_id,
-                                        _ => false,
-                                    })
-                                })
-                                .filter_map(|msg| msg.id.clone())
-                                .collect();
-
-                            if matching_ids.len() == 2 {
-                                for id in &matching_ids {
-                                    session_manager.update_message_metadata(&session_config.id, id, |metadata| {
-                                        metadata.with_agent_invisible()
-                                    }).await?;
-                                }
-                                session_manager.add_message(&session_config.id, &summary_msg).await?;
-                            } else {
-                                warn!("Expected a tool request/reply pair, but found {} matching messages",
-                                    matching_ids.len());
                             }
                         }
                     }

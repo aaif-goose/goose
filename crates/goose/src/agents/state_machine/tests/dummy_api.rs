@@ -69,7 +69,6 @@ struct ApiRule {
 
 enum ApiMatcher {
     InputContains(String),
-    SystemContains(String),
 }
 
 struct DummyApiState {
@@ -211,13 +210,6 @@ impl DummyApi {
         ApiRuleBuilder {
             api: self,
             matcher: ApiMatcher::InputContains(needle.into()),
-        }
-    }
-
-    pub(super) fn on_system(&self, needle: impl Into<String>) -> ApiRuleBuilder<'_> {
-        ApiRuleBuilder {
-            api: self,
-            matcher: ApiMatcher::SystemContains(needle.into()),
         }
     }
 
@@ -450,7 +442,6 @@ impl DummyApiState {
                 .rev()
                 .find(|rule| match &rule.matcher {
                     ApiMatcher::InputContains(needle) => input.contains(needle),
-                    ApiMatcher::SystemContains(needle) => system.contains(needle),
                 })
                 .unwrap_or_else(|| {
                     panic!("dummy API has no rule matching input {input:?}, system {system:?}")
