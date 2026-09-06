@@ -99,6 +99,7 @@ pub struct ReadResourceResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GooseToolCallRequest {
     pub session_id: String,
+    pub extension_name: String,
     pub name: String,
     #[serde(default)]
     pub arguments: serde_json::Value,
