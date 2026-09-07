@@ -13,6 +13,7 @@ workspace = true
 
 [features]
 default = []
+test-utils = []
 local-inference = ["dep:goose-local-inference"]
 cuda = ["local-inference", "goose-local-inference/cuda"]
 vulkan = ["local-inference", "goose-local-inference/vulkan"]

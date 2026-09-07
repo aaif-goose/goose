@@ -15,6 +15,7 @@ pub mod http_status;
 pub mod live;
 #[cfg(feature = "live-websocket")]
 pub mod live_transport_websocket;
+pub mod live_voice_provider;
 #[cfg(feature = "local-inference")]
 pub mod local_inference;
 pub mod ollama;
