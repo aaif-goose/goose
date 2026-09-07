@@ -60,7 +60,7 @@ include_dir = { workspace = true }
 [dev-dependencies]
 test-case = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "test-util", "time"] }
 tokio-stream = { workspace = true }
 env-lock = { workspace = true }
 wiremock.workspace = true

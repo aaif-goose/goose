@@ -1,14 +1,14 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use goose_providers::live::{
-    LiveProtocol, LiveSession, LiveSessionEnd, LiveSessionEvent, LiveTransport,
+    LiveProtocol, LiveSession, LiveSessionEndReason, LiveSessionEvent, LiveTransport,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TestEvent {
@@ -25,6 +25,9 @@ impl LiveProtocol for TestProtocol {
     type Event = TestEvent;
 
     fn encode(&self, command: Self::Command) -> Result<Value> {
+        if command == "invalid" {
+            return Err(anyhow!("invalid command"));
+        }
         Ok(json!({ "text": command }))
     }
 
@@ -53,6 +56,7 @@ struct TestTransport {
     incoming: Mutex<mpsc::Receiver<Result<Option<Value>>>>,
     sent: mpsc::UnboundedSender<Value>,
     closes: Arc<AtomicUsize>,
+    stall_sends: bool,
 }
 
 /// Test-side handles for driving and observing a `TestTransport`.
@@ -70,6 +74,10 @@ impl Controls {
 
 impl TestTransport {
     fn new() -> (Arc<Self>, Controls) {
+        Self::with_stalled_sends(false)
+    }
+
+    fn with_stalled_sends(stall_sends: bool) -> (Arc<Self>, Controls) {
         let (incoming_tx, incoming_rx) = mpsc::channel(16);
         let (sent_tx, sent_rx) = mpsc::unbounded_channel();
         let closes = Arc::new(AtomicUsize::new(0));
@@ -77,6 +85,7 @@ impl TestTransport {
             incoming: Mutex::new(incoming_rx),
             sent: sent_tx,
             closes: closes.clone(),
+            stall_sends,
         });
         let controls = Controls {
             incoming: incoming_tx,
@@ -90,6 +99,9 @@ impl TestTransport {
 #[async_trait]
 impl LiveTransport for TestTransport {
     async fn send(&self, message: Value) -> Result<()> {
+        if self.stall_sends {
+            return std::future::pending().await;
+        }
         self.sent.send(message)?;
         Ok(())
     }
@@ -126,12 +138,15 @@ async fn transport_failure_is_reported_not_swallowed() {
 
     match events.recv().await.unwrap() {
         LiveSessionEvent::Ended { reason, error } => {
-            assert_eq!(reason, LiveSessionEnd::TransportFailed);
+            assert_eq!(reason, LiveSessionEndReason::TransportFailed);
             assert_eq!(error.unwrap().to_string(), "socket exploded");
         }
         other => panic!("expected Ended, got {other:?}"),
     }
-    assert_eq!(session.end_reason(), Some(LiveSessionEnd::TransportFailed));
+    assert_eq!(
+        session.end_reason(),
+        Some(LiveSessionEndReason::TransportFailed)
+    );
 }
 
 #[tokio::test]
@@ -147,7 +162,7 @@ async fn decode_failure_is_reported_not_swallowed() {
 
     match events.recv().await.unwrap() {
         LiveSessionEvent::Ended { reason, error } => {
-            assert_eq!(reason, LiveSessionEnd::DecodeFailed);
+            assert_eq!(reason, LiveSessionEndReason::DecodeFailed);
             assert!(error.is_some());
         }
         other => panic!("expected Ended, got {other:?}"),
@@ -155,15 +170,21 @@ async fn decode_failure_is_reported_not_swallowed() {
 }
 
 #[tokio::test]
-async fn clean_transport_shutdown_reports_closed_without_error() {
-    let (session, controls) = session(true);
+async fn clean_transport_shutdown_is_not_a_graceful_acknowledgement() {
+    let (session, mut controls) = session(true);
     let mut events = session.subscribe();
 
-    controls.incoming.send(Ok(None)).await.unwrap();
+    let close = session.close();
+    let disconnect = async {
+        controls.sent.recv().await.unwrap();
+        controls.incoming.send(Ok(None)).await.unwrap();
+    };
+    let (result, ()) = tokio::join!(close, disconnect);
+    assert!(result.is_err());
 
     match events.recv().await.unwrap() {
         LiveSessionEvent::Ended { reason, error } => {
-            assert_eq!(reason, LiveSessionEnd::Closed);
+            assert_eq!(reason, LiveSessionEndReason::TransportClosed);
             assert!(error.is_none());
         }
         other => panic!("expected Ended, got {other:?}"),
@@ -173,24 +194,40 @@ async fn clean_transport_shutdown_reports_closed_without_error() {
 #[tokio::test]
 async fn close_sends_protocol_close_command_then_closes_transport() {
     let (session, mut controls) = session(true);
+    let mut events = session.subscribe();
 
-    let incoming = controls.incoming.clone();
-    let acknowledge = tokio::spawn(async move {
-        incoming
-            .send(Ok(Some(json!({ "text": "closed" }))))
-            .await
-            .unwrap();
+    let close = tokio::spawn({
+        let session = session.clone();
+        async move { session.close().await }
     });
-
-    session.close().await.unwrap();
-    acknowledge.await.unwrap();
 
     assert_eq!(
         controls.sent.recv().await.unwrap(),
         json!({ "text": "close" })
     );
+    controls
+        .incoming
+        .send(Ok(Some(json!({ "text": "final message" }))))
+        .await
+        .unwrap();
+    controls
+        .incoming
+        .send(Ok(Some(json!({ "text": "closed" }))))
+        .await
+        .unwrap();
+
+    close.await.unwrap().unwrap();
+
+    assert!(matches!(
+        events.recv().await.unwrap(),
+        LiveSessionEvent::Message(TestEvent::Message(message)) if message == "final message"
+    ));
+    assert!(matches!(
+        events.recv().await.unwrap(),
+        LiveSessionEvent::Message(TestEvent::Closed)
+    ));
     assert_eq!(controls.close_count(), 1);
-    assert_eq!(session.end_reason(), Some(LiveSessionEnd::Closed));
+    assert_eq!(session.end_reason(), Some(LiveSessionEndReason::Closed));
 }
 
 #[tokio::test]
@@ -211,7 +248,7 @@ async fn close_is_idempotent() {
     session.close().await.unwrap();
 
     assert_eq!(controls.close_count(), 1);
-    assert_eq!(session.end_reason(), Some(LiveSessionEnd::Closed));
+    assert_eq!(session.end_reason(), Some(LiveSessionEndReason::Closed));
 }
 
 #[tokio::test]
@@ -262,6 +299,66 @@ async fn send_after_end_fails() {
     events.recv().await.unwrap();
 
     assert!(session.send("hello".into()).await.is_err());
+}
+
+#[tokio::test]
+async fn invalid_command_does_not_end_a_healthy_session() {
+    let (session, mut controls) = session(false);
+
+    let error = session.send("invalid".into()).await.unwrap_err();
+    assert_eq!(error.to_string(), "invalid command");
+    assert_eq!(session.end_reason(), None);
+
+    session.send("valid".into()).await.unwrap();
+    assert_eq!(
+        controls.sent.recv().await.unwrap(),
+        json!({ "text": "valid" })
+    );
+    session.close().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn stalled_send_times_out_and_releases_transport() {
+    let (transport, controls) = TestTransport::with_stalled_sends(true);
+    let (session, mut events) =
+        LiveSession::connect(Arc::new(TestProtocol { graceful: true }), transport);
+
+    let error = session.send("blocked".into()).await.unwrap_err();
+    assert_eq!(error.to_string(), "live transport send timed out");
+
+    match events.recv().await.unwrap() {
+        LiveSessionEvent::Ended { reason, error } => {
+            assert_eq!(reason, LiveSessionEndReason::TransportFailed);
+            assert_eq!(error.unwrap().to_string(), "live transport send timed out");
+        }
+        other => panic!("expected Ended, got {other:?}"),
+    }
+    assert_eq!(controls.close_count(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn missing_close_acknowledgement_is_reported_as_timeout() {
+    let (session, mut controls) = session(true);
+
+    let close = tokio::spawn({
+        let session = session.clone();
+        async move { session.close().await }
+    });
+    assert_eq!(
+        controls.sent.recv().await.unwrap(),
+        json!({ "text": "close" })
+    );
+
+    let error = close.await.unwrap().unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "live session close acknowledgement timed out"
+    );
+    assert_eq!(
+        session.end_reason(),
+        Some(LiveSessionEndReason::CloseTimedOut)
+    );
+    assert_eq!(controls.close_count(), 1);
 }
 
 #[tokio::test]
