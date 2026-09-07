@@ -4,15 +4,15 @@
 //! WebRTC connectors own their distinct connection establishment flows.
 
 use crate::live::{LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport};
-use anyhow::{Context, Result, bail};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::{
     sync::{broadcast, broadcast::error::RecvError},
-    time::{Duration, timeout},
+    time::{timeout, Duration},
 };
 use uuid::Uuid;
 
@@ -868,11 +868,9 @@ mod tests {
         }
 
         let error = connected.recv().await.unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("authoritative event receiver lagged")
-        );
+        assert!(error
+            .to_string()
+            .contains("authoritative event receiver lagged"));
     }
 
     #[test]

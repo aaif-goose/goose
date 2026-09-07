@@ -440,11 +440,12 @@ pub mod fake {
             let _ = driver.next_close().await.unwrap().send(Ok(()));
             first_close.await.unwrap().unwrap();
             connection.control.close().await.unwrap();
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(10), driver.next_close())
-                    .await
-                    .is_err()
-            );
+            assert!(tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                driver.next_close()
+            )
+            .await
+            .is_err());
         }
 
         #[tokio::test]
@@ -460,11 +461,12 @@ pub mod fake {
                 .await;
 
             assert_eq!(result, ProviderDispatchResult::Rejected("rejected".into()));
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(10), driver.next_command())
-                    .await
-                    .is_err()
-            );
+            assert!(tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                driver.next_command()
+            )
+            .await
+            .is_err());
         }
 
         #[tokio::test]
@@ -479,11 +481,12 @@ pub mod fake {
             close_response.send(Ok(())).unwrap();
 
             connection.control.close().await.unwrap();
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(10), driver.next_close())
-                    .await
-                    .is_err()
-            );
+            assert!(tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                driver.next_close()
+            )
+            .await
+            .is_err());
         }
     }
 }

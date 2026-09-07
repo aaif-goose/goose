@@ -1,14 +1,14 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use goose_providers::live::{
     LiveProtocol, LiveSession, LiveSessionEndReason, LiveSessionEvent, LiveTransport,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TestEvent {

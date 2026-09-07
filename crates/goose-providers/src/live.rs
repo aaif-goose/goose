@@ -3,13 +3,13 @@
 //! A single actor owns transport I/O and lifecycle transitions so sends,
 //! shutdown, and incoming events have deterministic ordering.
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::{
     sync::{broadcast, mpsc, oneshot, watch},
-    time::{Duration, timeout},
+    time::{timeout, Duration},
 };
 
 const TRANSPORT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
