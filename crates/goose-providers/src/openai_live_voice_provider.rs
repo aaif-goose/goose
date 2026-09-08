@@ -87,6 +87,14 @@ impl OpenAiLiveVoiceProvider {
             config,
         })
     }
+
+    pub fn is_enabled(&self) -> bool {
+        self.config.enabled
+    }
+
+    pub fn is_configured(&self) -> bool {
+        self.client.is_some()
+    }
 }
 
 #[async_trait]
