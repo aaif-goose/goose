@@ -126,14 +126,19 @@ pub enum ProviderCommand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProviderDispatchResult {
+    /// The command was sent locally; provider acceptance arrives as an event.
     Dispatched,
+    /// The command could not be sent locally.
     Rejected(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProviderEvent {
+    /// Provider control is ready. Desktop media readiness is tracked separately.
     Ready,
+    /// Confirmed provider transcript text.
     TranscriptFragment(TranscriptFragment),
+    /// Provider-supplied projected turn text, which may be incremental.
     ProjectedTurn(ProjectedTurn),
     DelegationRequested(ProviderDelegation),
     InputPaused {
@@ -146,9 +151,15 @@ pub enum ProviderEvent {
         command_id: ProviderCommandId,
         delegation_id: ProviderDelegationId,
     },
-    CommandRejected(Option<ProviderCommandId>, String),
-    OutputActivityChanged(bool),
+    CommandRejected {
+        command_id: Option<ProviderCommandId>,
+        reason: String,
+    },
+    OutputActivityChanged {
+        active: bool,
+    },
     UsageUpdated(ProviderUsage),
+    /// Provider acknowledgement of remote session closure.
     RemoteClosed {
         reason: Option<String>,
         usage: Option<ProviderUsage>,
@@ -157,6 +168,7 @@ pub enum ProviderEvent {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProviderEventStreamError {
+    /// The authoritative native event receiver lost this many events.
     Lagged(u64),
     Failed(String),
 }
@@ -214,25 +226,25 @@ pub mod fake {
     use std::sync::{Arc, Mutex};
     use tokio::sync::{mpsc, oneshot};
 
-    pub fn channel(
+    pub fn provider_channel(
         capabilities: LiveVoiceCapabilities,
     ) -> (
         Arc<FakeLiveVoiceProvider>,
         mpsc::UnboundedReceiver<FakeStartRequest>,
     ) {
-        let (start_sender, start_receiver) = mpsc::unbounded_channel();
+        let (start_tx, start_rx) = mpsc::unbounded_channel();
         (
             Arc::new(FakeLiveVoiceProvider {
                 capabilities,
-                start_sender,
+                start_tx,
             }),
-            start_receiver,
+            start_rx,
         )
     }
 
     pub struct FakeLiveVoiceProvider {
         capabilities: LiveVoiceCapabilities,
-        start_sender: mpsc::UnboundedSender<FakeStartRequest>,
+        start_tx: mpsc::UnboundedSender<FakeStartRequest>,
     }
 
     #[async_trait]
@@ -246,15 +258,15 @@ pub mod fake {
             config: LiveVoiceConfig,
             media: LiveVoiceMediaRequest,
         ) -> Result<ProviderConnection> {
-            let (response_sender, response_receiver) = oneshot::channel();
-            self.start_sender
+            let (response_tx, response_rx) = oneshot::channel();
+            self.start_tx
                 .send(FakeStartRequest {
                     config,
                     media,
-                    response_sender,
+                    response_tx,
                 })
                 .map_err(|_| anyhow::anyhow!("fake provider driver dropped"))?;
-            response_receiver
+            response_rx
                 .await
                 .map_err(|_| anyhow::anyhow!("fake provider start response dropped"))?
         }
@@ -263,57 +275,57 @@ pub mod fake {
     pub struct FakeStartRequest {
         pub config: LiveVoiceConfig,
         pub media: LiveVoiceMediaRequest,
-        response_sender: oneshot::Sender<Result<ProviderConnection>>,
+        response_tx: oneshot::Sender<Result<ProviderConnection>>,
     }
 
     impl FakeStartRequest {
         pub fn accept(self, media_answer: LiveVoiceMediaAnswer) -> Result<FakeConnectionDriver> {
-            let (event_sender, event_receiver) = mpsc::unbounded_channel();
-            let (command_sender, command_receiver) = mpsc::unbounded_channel();
-            let (close_sender, close_receiver) = mpsc::unbounded_channel();
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
+            let (command_tx, command_rx) = mpsc::unbounded_channel();
+            let (close_request_tx, close_request_rx) = mpsc::unbounded_channel();
             let dispatch_result = Arc::new(Mutex::new(ProviderDispatchResult::Dispatched));
-            let close = async move {
-                let (response_sender, response_receiver) = oneshot::channel();
-                close_sender
-                    .send(response_sender)
+            let close_future = async move {
+                let (response_tx, response_rx) = oneshot::channel();
+                close_request_tx
+                    .send(response_tx)
                     .map_err(|_| "fake provider driver dropped".to_string())?;
-                response_receiver
+                response_rx
                     .await
                     .map_err(|_| "fake provider close response dropped".to_string())?
             }
             .boxed()
             .shared();
             let control = Arc::new(FakeProviderControl {
-                command_sender,
+                command_tx,
                 dispatch_result: dispatch_result.clone(),
-                close,
+                close_future,
             });
-            self.response_sender
+            self.response_tx
                 .send(Ok(ProviderConnection {
                     media_answer,
                     control,
-                    events: ProviderEventReceiver::new(event_receiver),
+                    events: ProviderEventReceiver::new(event_rx),
                 }))
                 .map_err(|_| anyhow::anyhow!("fake provider start caller dropped"))?;
             Ok(FakeConnectionDriver {
-                event_sender,
-                command_receiver,
-                close_receiver,
+                event_tx,
+                command_rx,
+                close_request_rx,
                 dispatch_result,
             })
         }
 
         pub fn reject(self, message: impl Into<String>) -> Result<()> {
-            self.response_sender
+            self.response_tx
                 .send(Err(anyhow::anyhow!(message.into())))
                 .map_err(|_| anyhow::anyhow!("fake provider start caller dropped"))
         }
     }
 
     pub struct FakeConnectionDriver {
-        event_sender: mpsc::UnboundedSender<ProviderEventResult>,
-        command_receiver: mpsc::UnboundedReceiver<ProviderCommand>,
-        close_receiver: mpsc::UnboundedReceiver<oneshot::Sender<Result<(), String>>>,
+        event_tx: mpsc::UnboundedSender<ProviderEventResult>,
+        command_rx: mpsc::UnboundedReceiver<ProviderCommand>,
+        close_request_rx: mpsc::UnboundedReceiver<oneshot::Sender<Result<(), String>>>,
         dispatch_result: Arc<Mutex<ProviderDispatchResult>>,
     }
 
@@ -327,7 +339,7 @@ pub mod fake {
         }
 
         fn send_event(&self, event: ProviderEventResult) -> Result<()> {
-            self.event_sender
+            self.event_tx
                 .send(event)
                 .map_err(|_| anyhow::anyhow!("fake provider event receiver dropped"))
         }
@@ -340,18 +352,18 @@ pub mod fake {
         }
 
         pub async fn next_command(&mut self) -> Option<ProviderCommand> {
-            self.command_receiver.recv().await
+            self.command_rx.recv().await
         }
 
-        pub async fn next_close(&mut self) -> Option<oneshot::Sender<Result<(), String>>> {
-            self.close_receiver.recv().await
+        pub async fn next_close_request(&mut self) -> Option<oneshot::Sender<Result<(), String>>> {
+            self.close_request_rx.recv().await
         }
     }
 
     struct FakeProviderControl {
-        command_sender: mpsc::UnboundedSender<ProviderCommand>,
+        command_tx: mpsc::UnboundedSender<ProviderCommand>,
         dispatch_result: Arc<Mutex<ProviderDispatchResult>>,
-        close: Shared<BoxFuture<'static, Result<(), String>>>,
+        close_future: Shared<BoxFuture<'static, Result<(), String>>>,
     }
 
     #[async_trait]
@@ -365,14 +377,18 @@ pub mod fake {
             if let ProviderDispatchResult::Rejected(_) = dispatch_result {
                 return dispatch_result;
             }
-            if self.command_sender.send(command).is_err() {
+            if self.command_tx.send(command).is_err() {
                 return ProviderDispatchResult::Rejected("fake provider driver dropped".into());
             }
             ProviderDispatchResult::Dispatched
         }
 
         async fn close(&self) -> Result<()> {
-            self.close.clone().await.map_err(anyhow::Error::msg)
+            let cleanup_owner = self.close_future.clone();
+            tokio::spawn(async move {
+                let _ = cleanup_owner.await;
+            });
+            self.close_future.clone().await.map_err(anyhow::Error::msg)
         }
     }
 
@@ -380,9 +396,9 @@ pub mod fake {
     mod tests {
         use super::*;
 
-        async fn connect() -> (ProviderConnection, FakeConnectionDriver) {
-            let (provider, mut starts) = channel(LiveVoiceCapabilities::default());
-            let start = tokio::spawn(async move {
+        async fn connect_fake_provider() -> (ProviderConnection, FakeConnectionDriver) {
+            let (provider, mut start_requests) = provider_channel(LiveVoiceCapabilities::default());
+            let start_task = tokio::spawn(async move {
                 provider
                     .start(
                         LiveVoiceConfig::default(),
@@ -393,7 +409,7 @@ pub mod fake {
                     .await
                     .unwrap()
             });
-            let driver = starts
+            let driver = start_requests
                 .recv()
                 .await
                 .unwrap()
@@ -401,15 +417,15 @@ pub mod fake {
                     answer_sdp: "answer".into(),
                 })
                 .unwrap();
-            (start.await.unwrap(), driver)
+            (start_task.await.unwrap(), driver)
         }
 
         #[tokio::test]
-        async fn receiver_and_control_are_channel_driven() {
-            let (mut connection, driver) = connect().await;
+        async fn connection_routes_events_commands_and_close() {
+            let (mut connection, driver) = connect_fake_provider().await;
             driver.emit(ProviderEvent::Ready).unwrap();
             driver
-                .emit(ProviderEvent::OutputActivityChanged(true))
+                .emit(ProviderEvent::OutputActivityChanged { active: true })
                 .unwrap();
             assert_eq!(
                 connection.events.recv().await.unwrap().unwrap(),
@@ -417,7 +433,7 @@ pub mod fake {
             );
             assert_eq!(
                 connection.events.recv().await.unwrap().unwrap(),
-                ProviderEvent::OutputActivityChanged(true)
+                ProviderEvent::OutputActivityChanged { active: true }
             );
 
             let mut driver = driver;
@@ -437,20 +453,22 @@ pub mod fake {
 
             let first_control = connection.control.clone();
             let first_close = tokio::spawn(async move { first_control.close().await });
-            let _ = driver.next_close().await.unwrap().send(Ok(()));
+            let _ = driver.next_close_request().await.unwrap().send(Ok(()));
             first_close.await.unwrap().unwrap();
             connection.control.close().await.unwrap();
-            assert!(tokio::time::timeout(
-                std::time::Duration::from_millis(10),
-                driver.next_close()
-            )
-            .await
-            .is_err());
+            assert!(matches!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    driver.next_close_request()
+                )
+                .await,
+                Ok(None)
+            ));
         }
 
         #[tokio::test]
         async fn rejected_command_is_not_dispatched() {
-            let (connection, mut driver) = connect().await;
+            let (connection, mut driver) = connect_fake_provider().await;
             driver.set_dispatch_result(ProviderDispatchResult::Rejected("rejected".into()));
 
             let result = connection
@@ -471,22 +489,24 @@ pub mod fake {
 
         #[tokio::test]
         async fn close_continues_after_the_caller_is_cancelled() {
-            let (connection, mut driver) = connect().await;
+            let (connection, mut driver) = connect_fake_provider().await;
             let control = connection.control.clone();
             let first_close = tokio::spawn(async move { control.close().await });
-            let close_response = driver.next_close().await.unwrap();
+            let close_response = driver.next_close_request().await.unwrap();
 
             first_close.abort();
             assert!(first_close.await.unwrap_err().is_cancelled());
             close_response.send(Ok(())).unwrap();
 
             connection.control.close().await.unwrap();
-            assert!(tokio::time::timeout(
-                std::time::Duration::from_millis(10),
-                driver.next_close()
-            )
-            .await
-            .is_err());
+            assert!(matches!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    driver.next_close_request()
+                )
+                .await,
+                Ok(None)
+            ));
         }
     }
 }

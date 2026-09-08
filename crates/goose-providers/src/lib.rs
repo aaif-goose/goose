@@ -22,6 +22,8 @@ pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openai_live;
+#[cfg(feature = "live-websocket")]
+pub mod openai_live_voice_provider;
 
 pub use declarative::declarative_providers::*;
 

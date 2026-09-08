@@ -116,12 +116,17 @@ pub enum OpenAiLiveProjectedTurnUpdateKind {
 pub enum OpenAiLiveCommand {
     AppendContext(OpenAiLiveContext),
     AppendDelegationContext {
+        event_id: String,
         delegation_id: OpenAiLiveDelegationId,
         context: OpenAiLiveContext,
     },
     AppendAudio(Vec<u8>),
-    PauseInput,
-    ResumeInput,
+    PauseInput {
+        event_id: String,
+    },
+    ResumeInput {
+        event_id: String,
+    },
     Close,
 }
 
@@ -239,6 +244,16 @@ impl OpenAiLiveClient {
         }
     }
 
+    pub fn existing_session(
+        &self,
+        session_id: OpenAiLiveSessionId,
+    ) -> OpenAiLiveExistingSessionConnector {
+        OpenAiLiveExistingSessionConnector {
+            client: self.clone(),
+            session_id,
+        }
+    }
+
     pub fn webrtc(&self, config: OpenAiLiveSessionConfig) -> OpenAiLiveWebRtcConnector {
         OpenAiLiveWebRtcConnector {
             client: self.clone(),
@@ -246,7 +261,10 @@ impl OpenAiLiveClient {
         }
     }
 
-    fn connect_transport(&self, transport: Arc<dyn LiveTransport>) -> ConnectedOpenAiLiveSession {
+    pub(crate) fn connect_transport(
+        &self,
+        transport: Arc<dyn LiveTransport>,
+    ) -> ConnectedOpenAiLiveSession {
         let (session, events) = LiveSession::connect(Arc::new(OpenAiLiveProtocol), transport);
         ConnectedOpenAiLiveSession {
             session,
@@ -306,6 +324,38 @@ impl OpenAiLiveClient {
     }
 }
 
+pub struct OpenAiLiveExistingSessionConnector {
+    client: OpenAiLiveClient,
+    session_id: OpenAiLiveSessionId,
+}
+
+impl OpenAiLiveExistingSessionConnector {
+    pub fn request(self) -> Result<OpenAiLiveWebSocketRequest> {
+        if self.session_id.0.trim().is_empty() {
+            bail!("OpenAI Live session ID is empty");
+        }
+        Ok(OpenAiLiveWebSocketRequest {
+            endpoint: format!(
+                "{}/{}",
+                self.client.websocket_endpoint.trim_end_matches('/'),
+                urlencoding::encode(&self.session_id.0)
+            ),
+            headers: self.client.headers(),
+            initial_messages: Vec::new(),
+        })
+    }
+
+    #[cfg(feature = "live-websocket")]
+    pub async fn connect(self) -> Result<ConnectedOpenAiLiveSession> {
+        let client = self.client.clone();
+        let transport = Arc::new(
+            crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
+                .await?,
+        );
+        Ok(client.connect_transport(transport))
+    }
+}
+
 pub struct OpenAiLiveWebSocketConnector {
     client: OpenAiLiveClient,
     config: OpenAiLiveSessionConfig,
@@ -315,7 +365,6 @@ pub struct OpenAiLiveWebSocketRequest {
     pub endpoint: String,
     pub headers: Vec<(String, String)>,
     pub initial_messages: Vec<Value>,
-    pub model: String,
 }
 
 impl OpenAiLiveWebSocketConnector {
@@ -337,7 +386,6 @@ impl OpenAiLiveWebSocketConnector {
                 "event_id": event_id(),
                 "session": OpenAiLiveClient::session_json(&self.config, false)?,
             })],
-            model: self.config.model,
         })
     }
 
@@ -362,13 +410,11 @@ pub struct OpenAiLiveWebRtcRequest {
     pub headers: Vec<(String, String)>,
     pub offer_sdp: String,
     pub session: Value,
-    pub model: String,
 }
 
 pub struct OpenAiLiveWebRtcNegotiation {
     pub answer_sdp: String,
     pub session_id: Option<OpenAiLiveSessionId>,
-    pub model: String,
     client: OpenAiLiveClient,
 }
 
@@ -389,7 +435,6 @@ impl OpenAiLiveWebRtcConnector {
             headers: self.client.headers(),
             offer_sdp,
             session: OpenAiLiveClient::session_json(&self.config, true)?,
-            model: self.config.model,
         })
     }
 
@@ -425,7 +470,6 @@ impl OpenAiLiveWebRtcConnector {
         Ok(OpenAiLiveWebRtcNegotiation {
             answer_sdp,
             session_id,
-            model: request.model,
             client,
         })
     }
@@ -445,27 +489,33 @@ impl ConnectedOpenAiLiveSession {
     pub async fn ready(mut self) -> Result<Self> {
         timeout(SESSION_START_TIMEOUT, async {
             loop {
-                match receive_authoritative_event(&mut self.events).await? {
-                    LiveSessionEvent::Message(event)
+                match self.events.recv().await {
+                    Ok(LiveSessionEvent::Message(event))
                         if matches!(event.kind, OpenAiLiveEventKind::SessionStarted { .. }) =>
                     {
                         return Ok(self);
                     }
-                    LiveSessionEvent::Message(event)
+                    Ok(LiveSessionEvent::Message(event))
                         if matches!(event.kind, OpenAiLiveEventKind::Error { .. }) =>
                     {
                         if let OpenAiLiveEventKind::Error { message, .. } = event.kind {
                             bail!("OpenAI Live startup failed: {message}");
                         }
                     }
-                    LiveSessionEvent::Ended { error, .. } => {
+                    Ok(LiveSessionEvent::Ended { error, .. }) => {
                         if let Some(error) = error {
                             return Err(anyhow::anyhow!(error.to_string()));
                         }
                         bail!("OpenAI Live session ended before startup");
                     }
-                    event @ LiveSessionEvent::Message(_) => {
+                    Ok(event @ LiveSessionEvent::Message(_)) => {
                         self.pending_events.push_back(event);
+                    }
+                    Err(RecvError::Lagged(count)) => {
+                        bail!("OpenAI Live authoritative event receiver lagged by {count} events")
+                    }
+                    Err(RecvError::Closed) => {
+                        bail!("OpenAI Live authoritative event stream closed")
                     }
                 }
             }
@@ -474,23 +524,11 @@ impl ConnectedOpenAiLiveSession {
         .map_err(|_| anyhow::anyhow!("OpenAI Live session startup timed out"))?
     }
 
-    pub async fn recv(&mut self) -> Result<OpenAiLiveSessionEvent> {
+    pub async fn recv(&mut self) -> std::result::Result<OpenAiLiveSessionEvent, RecvError> {
         if let Some(event) = self.pending_events.pop_front() {
             return Ok(event);
         }
-        receive_authoritative_event(&mut self.events).await
-    }
-}
-
-async fn receive_authoritative_event(
-    events: &mut broadcast::Receiver<OpenAiLiveSessionEvent>,
-) -> Result<OpenAiLiveSessionEvent> {
-    match events.recv().await {
-        Ok(event) => Ok(event),
-        Err(RecvError::Lagged(count)) => {
-            bail!("OpenAI Live authoritative event receiver lagged by {count} events")
-        }
-        Err(RecvError::Closed) => bail!("OpenAI Live authoritative event stream closed"),
+        self.events.recv().await
     }
 }
 
@@ -503,16 +541,22 @@ impl LiveProtocol for OpenAiLiveProtocol {
     fn encode(&self, command: Self::Command) -> Result<Value> {
         match command {
             OpenAiLiveCommand::AppendContext(context) => {
-                text_event("session.context.append", None, context)
+                text_event("session.context.append", None, None, context)
             }
             OpenAiLiveCommand::AppendDelegationContext {
+                event_id: client_event_id,
                 delegation_id,
                 context,
             } => {
                 if delegation_id.0.trim().is_empty() {
                     bail!("delegation ID is empty");
                 }
-                text_event("delegation.context.append", Some(&delegation_id), context)
+                text_event(
+                    "delegation.context.append",
+                    Some(client_event_id),
+                    Some(&delegation_id),
+                    context,
+                )
             }
             OpenAiLiveCommand::AppendAudio(audio) => {
                 if audio.is_empty() {
@@ -522,11 +566,11 @@ impl LiveProtocol for OpenAiLiveProtocol {
                     json!({ "type": "input_audio.append", "event_id": event_id(), "audio": BASE64.encode(audio) }),
                 )
             }
-            OpenAiLiveCommand::PauseInput => {
-                Ok(json!({ "type": "input_audio.pause", "event_id": event_id() }))
+            OpenAiLiveCommand::PauseInput { event_id } => {
+                Ok(json!({ "type": "input_audio.pause", "event_id": event_id }))
             }
-            OpenAiLiveCommand::ResumeInput => {
-                Ok(json!({ "type": "input_audio.resume", "event_id": event_id() }))
+            OpenAiLiveCommand::ResumeInput { event_id } => {
+                Ok(json!({ "type": "input_audio.resume", "event_id": event_id }))
             }
             OpenAiLiveCommand::Close => {
                 Ok(json!({ "type": "session.close", "event_id": event_id() }))
@@ -766,6 +810,7 @@ fn event_id() -> String {
 
 fn text_event(
     kind: &str,
+    client_event_id: Option<String>,
     delegation_id: Option<&OpenAiLiveDelegationId>,
     context: OpenAiLiveContext,
 ) -> Result<Value> {
@@ -773,7 +818,7 @@ fn text_event(
         OpenAiLiveContextChannel::Speakable => "speakable",
         OpenAiLiveContextChannel::Commentary => "commentary",
     };
-    let mut event = json!({ "type": kind, "event_id": event_id(), "channel": channel, "content": [{ "type": "input_text", "text": context.text }] });
+    let mut event = json!({ "type": kind, "event_id": client_event_id.unwrap_or_else(event_id), "channel": channel, "content": [{ "type": "input_text", "text": context.text }] });
     if let Some(id) = delegation_id {
         event["delegation_item_id"] = json!(id.0);
     }
@@ -797,6 +842,20 @@ mod tests {
 
     fn decode(event: Value) -> OpenAiLiveEventKind {
         OpenAiLiveProtocol.decode(event).unwrap().kind
+    }
+
+    #[test]
+    fn existing_session_sideband_is_authenticated_without_primary_bootstrap() {
+        let request = OpenAiLiveClient::new("test-key")
+            .existing_session(OpenAiLiveSessionId("session/a".into()))
+            .request()
+            .unwrap();
+        assert!(request.endpoint.ends_with("/session%2Fa"));
+        assert!(request
+            .headers
+            .iter()
+            .any(|(name, value)| name == "Authorization" && value == "Bearer test-key"));
+        assert!(request.initial_messages.is_empty());
     }
 
     #[test]
@@ -867,10 +926,7 @@ mod tests {
                 .unwrap();
         }
 
-        let error = connected.recv().await.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("authoritative event receiver lagged"));
+        assert!(matches!(connected.recv().await, Err(RecvError::Lagged(_))));
     }
 
     #[test]
@@ -1076,6 +1132,7 @@ mod tests {
         let protocol = OpenAiLiveProtocol;
         let encoded = protocol
             .encode(OpenAiLiveCommand::AppendDelegationContext {
+                event_id: "client_event_1".into(),
                 delegation_id: OpenAiLiveDelegationId("item_1".into()),
                 context: OpenAiLiveContext {
                     text: "done".into(),
@@ -1084,5 +1141,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(encoded["delegation_item_id"], "item_1");
+        assert_eq!(encoded["event_id"], "client_event_1");
     }
 }
