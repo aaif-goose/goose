@@ -827,6 +827,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "clipwave",
+    "name": "Clipwave",
+    "description": "Generate video and images, then cut them on a multi-track timeline and export an MP4",
+    "url": "https://clipwave.io/api/mcp",
+    "link": "https://clipwave.io/mcp",
+    "installation_notes": "Hosted remote server. Sign in with your Clipwave account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
