@@ -1,241 +1,97 @@
-//! Provider-neutral commands and ordered events for a long-lived voice connection.
+//! The application-facing boundary for live voice providers.
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum LiveVoiceMediaKind {
-    #[default]
-    WebRtc,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct LiveVoiceCapabilities {
-    pub available: bool,
-    pub audio_input: bool,
-    pub audio_output: bool,
-    pub interruption: bool,
-    pub transcription: bool,
-    pub client_delegation: bool,
-    pub typed_input: bool,
-    pub media: LiveVoiceMediaKind,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct LiveVoiceConfig {
-    pub instructions: String,
-}
+const MAX_SDP_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LiveVoiceMediaRequest {
-    WebRtc { offer_sdp: String },
-}
+pub struct WebRtcOffer(String);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LiveVoiceMediaAnswer {
-    WebRtc { answer_sdp: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ProviderCommandId(pub String);
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ProviderDelegationId(pub String);
-
-pub type ProviderTranscriptItemId = String;
-pub type ProviderTurnId = String;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LiveVoiceRole {
-    User,
-    Assistant,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Opaque identity interpreted and validated only by the provider adapter.
-pub struct ProviderStartupObservation(pub String);
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProviderDelegationTarget {
-    Client,
-    Unsupported(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProviderDelegation {
-    pub id: ProviderDelegationId,
-    pub target: ProviderDelegationTarget,
-    pub task: String,
-    pub source_turn_id: Option<ProviderTurnId>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProjectedTurnUpdateKind {
-    Created,
-    Delta,
-    Done,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TranscriptFragment {
-    pub item_id: ProviderTranscriptItemId,
-    pub role: LiveVoiceRole,
-    pub text: String,
-    pub start_ms: u64,
-    pub end_ms: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProjectedTurn {
-    pub turn_id: ProviderTurnId,
-    pub role: Option<LiveVoiceRole>,
-    /// A delta when `kind` is `Delta`; otherwise the provider's supplied text.
-    pub text: String,
-    pub start_ms: u64,
-    pub end_ms: u64,
-    pub kind: ProjectedTurnUpdateKind,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ProviderUsage {
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
-    pub total_tokens: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProviderCommand {
-    ValidateStartupObservation {
-        command_id: ProviderCommandId,
-        observation: ProviderStartupObservation,
-    },
-    PauseInput {
-        command_id: ProviderCommandId,
-    },
-    ResumeInput {
-        command_id: ProviderCommandId,
-    },
-    DeliverDelegationResult {
-        command_id: ProviderCommandId,
-        delegation_id: ProviderDelegationId,
-        result: String,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProviderDispatchResult {
-    /// The command was sent locally; provider acceptance arrives as an event.
-    Dispatched,
-    /// The command could not be sent locally.
-    Rejected(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProviderEvent {
-    /// Provider control is ready. Desktop media readiness is tracked separately.
-    Ready,
-    /// Confirmed provider transcript text.
-    TranscriptFragment(TranscriptFragment),
-    /// Provider-supplied projected turn text, which may be incremental.
-    ProjectedTurn(ProjectedTurn),
-    DelegationRequested(ProviderDelegation),
-    InputPaused {
-        command_id: ProviderCommandId,
-    },
-    InputResumed {
-        command_id: ProviderCommandId,
-    },
-    DelegationResultAccepted {
-        command_id: ProviderCommandId,
-        delegation_id: ProviderDelegationId,
-    },
-    CommandRejected {
-        command_id: Option<ProviderCommandId>,
-        reason: String,
-    },
-    OutputActivityChanged {
-        active: bool,
-    },
-    UsageUpdated(ProviderUsage),
-    /// Provider acknowledgement of remote session closure.
-    RemoteClosed {
-        reason: Option<String>,
-        usage: Option<ProviderUsage>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProviderEventStreamError {
-    /// The authoritative native event receiver lost this many events.
-    Lagged(u64),
-    Failed(String),
-}
-
-pub type ProviderEventResult = std::result::Result<ProviderEvent, ProviderEventStreamError>;
-
-/// The single authoritative receiver installed before provider start returns.
-/// It is not cloneable or subscribable, and may already contain queued events.
-pub struct ProviderEventReceiver {
-    receiver: mpsc::UnboundedReceiver<ProviderEventResult>,
-}
-
-impl ProviderEventReceiver {
-    pub fn new(receiver: mpsc::UnboundedReceiver<ProviderEventResult>) -> Self {
-        Self { receiver }
+impl WebRtcOffer {
+    pub fn new(sdp: String) -> Option<Self> {
+        valid_sdp(&sdp).then_some(Self(sdp))
     }
 
-    pub async fn recv(&mut self) -> Option<ProviderEventResult> {
-        self.receiver.recv().await
+    pub fn into_sdp(self) -> String {
+        self.0
     }
 }
 
-pub struct ProviderConnection {
-    pub media_answer: LiveVoiceMediaAnswer,
-    pub control: Arc<dyn ProviderControl>,
-    pub events: ProviderEventReceiver,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WebRtcAnswer(String);
+
+impl WebRtcAnswer {
+    pub fn new(sdp: String) -> Option<Self> {
+        valid_sdp(&sdp).then_some(Self(sdp))
+    }
+
+    pub fn into_sdp(self) -> String {
+        self.0
+    }
+}
+
+fn valid_sdp(sdp: &str) -> bool {
+    !sdp.is_empty() && sdp.len() <= MAX_SDP_BYTES
 }
 
 #[async_trait]
-pub trait ProviderControl: Send + Sync {
-    /// Reports only whether the command was dispatched or rejected locally.
-    /// Provider acceptance or rejection arrives later through `ProviderEvent`.
-    async fn dispatch(&self, command: ProviderCommand) -> ProviderDispatchResult;
+pub trait ProviderConnection: Send {
+    async fn stop(&mut self) -> Result<()>;
+}
 
-    /// Initiates bounded, idempotent cleanup. Success is not remote acknowledgement;
-    /// only `ProviderEvent::RemoteClosed` confirms the remote close.
-    async fn close(&self) -> Result<()>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiveVoiceProviderAvailability {
+    Ready,
+    Disabled,
+    Unavailable,
 }
 
 #[async_trait]
 pub trait LiveVoiceProvider: Send + Sync {
-    fn capabilities(&self) -> LiveVoiceCapabilities;
+    fn availability(&self) -> LiveVoiceProviderAvailability;
 
     async fn start(
         &self,
-        config: LiveVoiceConfig,
-        media: LiveVoiceMediaRequest,
-    ) -> Result<ProviderConnection>;
+        offer: WebRtcOffer,
+    ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sdp_values_must_be_present_and_bounded() {
+        assert!(WebRtcOffer::new(String::new()).is_none());
+        assert!(WebRtcOffer::new("x".repeat(MAX_SDP_BYTES + 1)).is_none());
+        assert!(WebRtcOffer::new("offer".into()).is_some());
+        assert!(WebRtcAnswer::new("answer".into()).is_some());
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod fake {
     use super::*;
-    use futures::future::{BoxFuture, FutureExt, Shared};
-    use std::sync::{Arc, Mutex};
     use tokio::sync::{mpsc, oneshot};
 
-    pub fn provider_channel(
-        capabilities: LiveVoiceCapabilities,
+    pub fn provider_channel() -> (
+        std::sync::Arc<FakeLiveVoiceProvider>,
+        mpsc::UnboundedReceiver<FakeStartRequest>,
+    ) {
+        provider_channel_with_availability(LiveVoiceProviderAvailability::Ready)
+    }
+
+    pub fn provider_channel_with_availability(
+        availability: LiveVoiceProviderAvailability,
     ) -> (
-        Arc<FakeLiveVoiceProvider>,
+        std::sync::Arc<FakeLiveVoiceProvider>,
         mpsc::UnboundedReceiver<FakeStartRequest>,
     ) {
         let (start_tx, start_rx) = mpsc::unbounded_channel();
         (
-            Arc::new(FakeLiveVoiceProvider {
-                capabilities,
+            std::sync::Arc::new(FakeLiveVoiceProvider {
+                availability,
                 start_tx,
             }),
             start_rx,
@@ -243,28 +99,23 @@ pub mod fake {
     }
 
     pub struct FakeLiveVoiceProvider {
-        capabilities: LiveVoiceCapabilities,
+        availability: LiveVoiceProviderAvailability,
         start_tx: mpsc::UnboundedSender<FakeStartRequest>,
     }
 
     #[async_trait]
     impl LiveVoiceProvider for FakeLiveVoiceProvider {
-        fn capabilities(&self) -> LiveVoiceCapabilities {
-            self.capabilities.clone()
+        fn availability(&self) -> LiveVoiceProviderAvailability {
+            self.availability
         }
 
         async fn start(
             &self,
-            config: LiveVoiceConfig,
-            media: LiveVoiceMediaRequest,
-        ) -> Result<ProviderConnection> {
+            offer: WebRtcOffer,
+        ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
             let (response_tx, response_rx) = oneshot::channel();
             self.start_tx
-                .send(FakeStartRequest {
-                    config,
-                    media,
-                    response_tx,
-                })
+                .send(FakeStartRequest { offer, response_tx })
                 .map_err(|_| anyhow::anyhow!("fake provider driver dropped"))?;
             response_rx
                 .await
@@ -273,46 +124,20 @@ pub mod fake {
     }
 
     pub struct FakeStartRequest {
-        pub config: LiveVoiceConfig,
-        pub media: LiveVoiceMediaRequest,
-        response_tx: oneshot::Sender<Result<ProviderConnection>>,
+        pub offer: WebRtcOffer,
+        response_tx: oneshot::Sender<Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>>,
     }
 
     impl FakeStartRequest {
-        pub fn accept(self, media_answer: LiveVoiceMediaAnswer) -> Result<FakeConnectionDriver> {
-            let (event_tx, event_rx) = mpsc::unbounded_channel();
-            let (command_tx, command_rx) = mpsc::unbounded_channel();
-            let (close_request_tx, close_request_rx) = mpsc::unbounded_channel();
-            let dispatch_result = Arc::new(Mutex::new(ProviderDispatchResult::Dispatched));
-            let close_future = async move {
-                let (response_tx, response_rx) = oneshot::channel();
-                close_request_tx
-                    .send(response_tx)
-                    .map_err(|_| "fake provider driver dropped".to_string())?;
-                response_rx
-                    .await
-                    .map_err(|_| "fake provider close response dropped".to_string())?
-            }
-            .boxed()
-            .shared();
-            let control = Arc::new(FakeProviderControl {
-                command_tx,
-                dispatch_result: dispatch_result.clone(),
-                close_future,
-            });
+        pub fn accept(self, answer: WebRtcAnswer) -> Result<FakeConnectionDriver> {
+            let (stop_request_tx, stop_request_rx) = mpsc::unbounded_channel();
             self.response_tx
-                .send(Ok(ProviderConnection {
-                    media_answer,
-                    control,
-                    events: ProviderEventReceiver::new(event_rx),
-                }))
+                .send(Ok((
+                    answer,
+                    Box::new(FakeProviderConnection { stop_request_tx }),
+                )))
                 .map_err(|_| anyhow::anyhow!("fake provider start caller dropped"))?;
-            Ok(FakeConnectionDriver {
-                event_tx,
-                command_rx,
-                close_request_rx,
-                dispatch_result,
-            })
+            Ok(FakeConnectionDriver { stop_request_rx })
         }
 
         pub fn reject(self, message: impl Into<String>) -> Result<()> {
@@ -323,190 +148,30 @@ pub mod fake {
     }
 
     pub struct FakeConnectionDriver {
-        event_tx: mpsc::UnboundedSender<ProviderEventResult>,
-        command_rx: mpsc::UnboundedReceiver<ProviderCommand>,
-        close_request_rx: mpsc::UnboundedReceiver<oneshot::Sender<Result<(), String>>>,
-        dispatch_result: Arc<Mutex<ProviderDispatchResult>>,
+        stop_request_rx: mpsc::UnboundedReceiver<oneshot::Sender<Result<(), String>>>,
     }
 
     impl FakeConnectionDriver {
-        pub fn emit(&self, event: ProviderEvent) -> Result<()> {
-            self.send_event(Ok(event))
-        }
-
-        pub fn fail(&self, error: ProviderEventStreamError) -> Result<()> {
-            self.send_event(Err(error))
-        }
-
-        fn send_event(&self, event: ProviderEventResult) -> Result<()> {
-            self.event_tx
-                .send(event)
-                .map_err(|_| anyhow::anyhow!("fake provider event receiver dropped"))
-        }
-
-        pub fn set_dispatch_result(&self, result: ProviderDispatchResult) {
-            *self
-                .dispatch_result
-                .lock()
-                .expect("fake provider lock poisoned") = result;
-        }
-
-        pub async fn next_command(&mut self) -> Option<ProviderCommand> {
-            self.command_rx.recv().await
-        }
-
-        pub async fn next_close_request(&mut self) -> Option<oneshot::Sender<Result<(), String>>> {
-            self.close_request_rx.recv().await
+        pub async fn next_stop_request(&mut self) -> Option<oneshot::Sender<Result<(), String>>> {
+            self.stop_request_rx.recv().await
         }
     }
 
-    struct FakeProviderControl {
-        command_tx: mpsc::UnboundedSender<ProviderCommand>,
-        dispatch_result: Arc<Mutex<ProviderDispatchResult>>,
-        close_future: Shared<BoxFuture<'static, Result<(), String>>>,
+    struct FakeProviderConnection {
+        stop_request_tx: mpsc::UnboundedSender<oneshot::Sender<Result<(), String>>>,
     }
 
     #[async_trait]
-    impl ProviderControl for FakeProviderControl {
-        async fn dispatch(&self, command: ProviderCommand) -> ProviderDispatchResult {
-            let dispatch_result = self
-                .dispatch_result
-                .lock()
-                .expect("fake provider lock poisoned")
-                .clone();
-            if let ProviderDispatchResult::Rejected(_) = dispatch_result {
-                return dispatch_result;
-            }
-            if self.command_tx.send(command).is_err() {
-                return ProviderDispatchResult::Rejected("fake provider driver dropped".into());
-            }
-            ProviderDispatchResult::Dispatched
-        }
-
-        async fn close(&self) -> Result<()> {
-            let cleanup_owner = self.close_future.clone();
-            tokio::spawn(async move {
-                let _ = cleanup_owner.await;
-            });
-            self.close_future.clone().await.map_err(anyhow::Error::msg)
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        async fn connect_fake_provider() -> (ProviderConnection, FakeConnectionDriver) {
-            let (provider, mut start_requests) = provider_channel(LiveVoiceCapabilities::default());
-            let start_task = tokio::spawn(async move {
-                provider
-                    .start(
-                        LiveVoiceConfig::default(),
-                        LiveVoiceMediaRequest::WebRtc {
-                            offer_sdp: "offer".into(),
-                        },
-                    )
-                    .await
-                    .unwrap()
-            });
-            let driver = start_requests
-                .recv()
+    impl ProviderConnection for FakeProviderConnection {
+        async fn stop(&mut self) -> Result<()> {
+            let (response_tx, response_rx) = oneshot::channel();
+            self.stop_request_tx
+                .send(response_tx)
+                .map_err(|_| anyhow::anyhow!("fake provider driver dropped"))?;
+            response_rx
                 .await
-                .unwrap()
-                .accept(LiveVoiceMediaAnswer::WebRtc {
-                    answer_sdp: "answer".into(),
-                })
-                .unwrap();
-            (start_task.await.unwrap(), driver)
-        }
-
-        #[tokio::test]
-        async fn connection_routes_events_commands_and_close() {
-            let (mut connection, driver) = connect_fake_provider().await;
-            driver.emit(ProviderEvent::Ready).unwrap();
-            driver
-                .emit(ProviderEvent::OutputActivityChanged { active: true })
-                .unwrap();
-            assert_eq!(
-                connection.events.recv().await.unwrap().unwrap(),
-                ProviderEvent::Ready
-            );
-            assert_eq!(
-                connection.events.recv().await.unwrap().unwrap(),
-                ProviderEvent::OutputActivityChanged { active: true }
-            );
-
-            let mut driver = driver;
-
-            let dispatch = connection
-                .control
-                .dispatch(ProviderCommand::PauseInput {
-                    command_id: ProviderCommandId("pause-1".to_string()),
-                })
-                .await;
-            let command = driver.next_command().await.unwrap();
-            assert!(matches!(
-                &command,
-                ProviderCommand::PauseInput { command_id } if command_id.0 == "pause-1"
-            ));
-            assert_eq!(dispatch, ProviderDispatchResult::Dispatched);
-
-            let first_control = connection.control.clone();
-            let first_close = tokio::spawn(async move { first_control.close().await });
-            let _ = driver.next_close_request().await.unwrap().send(Ok(()));
-            first_close.await.unwrap().unwrap();
-            connection.control.close().await.unwrap();
-            assert!(matches!(
-                tokio::time::timeout(
-                    std::time::Duration::from_millis(10),
-                    driver.next_close_request()
-                )
-                .await,
-                Ok(None)
-            ));
-        }
-
-        #[tokio::test]
-        async fn rejected_command_is_not_dispatched() {
-            let (connection, mut driver) = connect_fake_provider().await;
-            driver.set_dispatch_result(ProviderDispatchResult::Rejected("rejected".into()));
-
-            let result = connection
-                .control
-                .dispatch(ProviderCommand::PauseInput {
-                    command_id: ProviderCommandId("pause-1".into()),
-                })
-                .await;
-
-            assert_eq!(result, ProviderDispatchResult::Rejected("rejected".into()));
-            assert!(tokio::time::timeout(
-                std::time::Duration::from_millis(10),
-                driver.next_command()
-            )
-            .await
-            .is_err());
-        }
-
-        #[tokio::test]
-        async fn close_continues_after_the_caller_is_cancelled() {
-            let (connection, mut driver) = connect_fake_provider().await;
-            let control = connection.control.clone();
-            let first_close = tokio::spawn(async move { control.close().await });
-            let close_response = driver.next_close_request().await.unwrap();
-
-            first_close.abort();
-            assert!(first_close.await.unwrap_err().is_cancelled());
-            close_response.send(Ok(())).unwrap();
-
-            connection.control.close().await.unwrap();
-            assert!(matches!(
-                tokio::time::timeout(
-                    std::time::Duration::from_millis(10),
-                    driver.next_close_request()
-                )
-                .await,
-                Ok(None)
-            ));
+                .map_err(|_| anyhow::anyhow!("fake provider stop response dropped"))?
+                .map_err(anyhow::Error::msg)
         }
     }
 }
