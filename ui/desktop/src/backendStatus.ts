@@ -44,11 +44,14 @@ const delay = (timeoutMs: number): Promise<void> =>
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const baseUrlFromStatusUrl = (statusUrl: string): string | undefined => {
+const baseUrlFromEndpointUrl = (
+  endpointUrl: string,
+  endpoint: '/status' | '/acp'
+): string | undefined => {
   try {
-    const url = new URL(statusUrl);
-    return url.pathname.endsWith('/status')
-      ? `${url.origin}${url.pathname.slice(0, -'/status'.length)}`
+    const url = new URL(endpointUrl);
+    return url.pathname.endsWith(endpoint)
+      ? `${url.origin}${url.pathname.slice(0, -endpoint.length)}`
       : undefined;
   } catch {
     return undefined;
@@ -95,7 +98,7 @@ const probeStatus = (
             ok: true,
             detail: `GET /status returned ${response.status}.`,
             retryable: false,
-            resolvedBaseUrl: baseUrlFromStatusUrl(response.url),
+            resolvedBaseUrl: baseUrlFromEndpointUrl(response.url, '/status'),
           }
         : {
             ok: false,
@@ -111,7 +114,12 @@ const probeSecret = (
 ): Promise<Probe> =>
   request(fetch, acpHttpUrlFromHttpBase(baseUrl, secret), {}, (response) => {
     if (response.status === 406) {
-      return { ok: true, detail: 'The backend accepted the secret key.', retryable: false };
+      return {
+        ok: true,
+        detail: 'The backend accepted the secret key.',
+        retryable: false,
+        resolvedBaseUrl: baseUrlFromEndpointUrl(response.url, '/acp'),
+      };
     }
     if (response.status === 401 || response.status === 403) {
       return {
@@ -167,11 +175,14 @@ export const checkBackendStatus = async ({
       probeStatus(fetch, normalizedBaseUrl, serverSecret)
     );
     if (reachable.ok) {
-      resolvedBaseUrl = reachable.resolvedBaseUrl ?? normalizedBaseUrl;
-      if (resolvedBaseUrl !== normalizedBaseUrl) {
+      const statusBaseUrl = reachable.resolvedBaseUrl ?? normalizedBaseUrl;
+      const accepted = await run('Secret key', () =>
+        probeSecret(fetch, statusBaseUrl, serverSecret)
+      );
+      resolvedBaseUrl = accepted.resolvedBaseUrl ?? statusBaseUrl;
+      if (accepted.ok && resolvedBaseUrl !== normalizedBaseUrl) {
         steps.push({ name: 'Redirect', ok: true, detail: `Followed to ${resolvedBaseUrl}.` });
       }
-      await run('Secret key', () => probeSecret(fetch, resolvedBaseUrl!, serverSecret));
     }
   }
 

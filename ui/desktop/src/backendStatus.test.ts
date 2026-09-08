@@ -41,6 +41,35 @@ describe('checkBackendStatus', () => {
     ]);
   });
 
+  it('derives the resolved base URL from the redirected /acp probe', async () => {
+    const fetch = vi.fn(async (input: FetchInput) => {
+      const url = fetchInputUrl(input);
+      if (url === 'https://example.com/status') {
+        const response = new Response(null, { status: 200 });
+        Object.defineProperty(response, 'url', { value: 'https://backend.example.com/status' });
+        return response;
+      }
+      if (url === 'https://backend.example.com/acp?token=test-secret') {
+        const response = new Response(null, { status: 406 });
+        Object.defineProperty(response, 'url', {
+          value: 'https://backend.example.com/goose/acp?token=test-secret',
+        });
+        return response;
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const result = await checkBackendStatus({
+      baseUrl: 'https://example.com',
+      serverSecret: 'test-secret',
+      fetch,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.resolvedBaseUrl).toBe('https://backend.example.com/goose');
+  });
+
   it('reports the rejected secret without retrying', async () => {
     const fetch = vi.fn(async (input: FetchInput) => {
       const url = fetchInputUrl(input);
