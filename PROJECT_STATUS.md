@@ -198,6 +198,31 @@ usage; kończy się dopiero, gdy po późniejszej assistant odpowiedzi zaczyna s
 nowy user-visible, nie-steer turn. Dzięki temu tool result jest liczony przed
 następną inference, lecz nie po inference, która już go zużyła.
 
+## Handoff — 2026-09-09
+
+HEAD to `b857833` na branchu `work/mid-turn-auto-compact`; commit jest
+wypchnięty do `origin`. Wszystkie wcześniejsze review threads są rozwiązane,
+ale pojawił się nowy otwarty P2 `PRRT_kwDOMneZ986gvZqm`
+(`discussion_r3970649254`): granica suffix accounting wymaga obecnie
+`is_user_visible()`, przez co agent-only continuation dodana po późniejszej
+inference (np. retry albo stop-hook) nie kończy suffixu. State machine może
+wtedy ponownie policzyć już zużyty tool result przed prepared-request hookiem.
+
+Następny wykonawca powinien poprawić wyłącznie tę granicę w
+`context_tokens_since_last_inference` w `crates/goose/src/context_mgmt/mod.rs`:
+agent-only, nie-tool-response i nie-steer continuation po późniejszej
+assistant inference musi być traktowana jako kolejny request boundary.
+Trzeba zachować rozróżnienie od wiadomości należących do tego samego tool
+streamu oraz dodać deterministyczną regresję state-machine dla retry lub
+stop-hook. Legacy nadal wymaga parzystego sprawdzenia, nawet gdy dokładne
+prepared-request count chroni je przed tym samym skutkiem.
+
+W momencie handoffu nowa macierz CI dla `b857833` nadal wykonuje trzy joby:
+`Build and Test Rust Project`, `Build and Test TLS Backend (native-tls)` i
+`Build and Test TLS Backend (rustls-tls)`; wszystkie ukończone joby są
+zielone. Ukończona macierz dla `16514c7` była całkowicie zielona.
+Szczegółowy prompt przekazania jest w `LLM_HANDOFF.md`.
+
 ## Checklista przed merge
 
 - [x] Naprawić P1 dotyczący późnego queued steer.
@@ -210,4 +235,4 @@ następną inference, lecz nie po inference, która już go zużyła.
 - [x] CI dla `cced800` jest zielone.
 - [x] CI dla `5e16ce3` jest zielone.
 - [x] CI dla `16514c7` jest zielone.
-- [ ] Wypchnąć poprawkę granicy inference suffix accounting i sprawdzić CI.
+- [ ] Naprawić otwarty P2 agent-only continuation boundary, wypchnąć i sprawdzić CI.
