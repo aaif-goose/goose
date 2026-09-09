@@ -107,6 +107,23 @@ pub enum ThinkingMode {
     AlwaysOnAdaptive,
 }
 
+impl ThinkingMode {
+    pub fn for_model(canonical_id: &str) -> Option<Self> {
+        match canonical_id {
+            "anthropic/claude-fable-5" | "anthropic/claude-fable-5.1" => {
+                Some(Self::AlwaysOnAdaptive)
+            }
+            "anthropic/claude-opus-5"
+            | "anthropic/claude-opus-4.6"
+            | "anthropic/claude-opus-4.7"
+            | "anthropic/claude-opus-4.8"
+            | "anthropic/claude-sonnet-4.6"
+            | "anthropic/claude-sonnet-5" => Some(Self::Adaptive),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanonicalModel {
     /// Model identifier (e.g., "anthropic/claude-3-5-sonnet")

@@ -17,6 +17,10 @@ use tokio_util::io::StreamReader;
 
 use crate::api_client::{ApiClient, AuthMethod, TlsConfig};
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
+use crate::canonical::{maybe_get_canonical_model, ThinkingMode};
+use crate::thinking::{
+    ThinkingEffort, ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
+};
 const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
 use crate::conversation::message::Message;
 use crate::databricks_auth::{
@@ -105,6 +109,8 @@ pub struct DatabricksV2Provider {
     refresh_hook: Option<DatabricksRefreshHook>,
     #[serde(skip)]
     gateway_path: String,
+    #[serde(skip)]
+    effort_support: Mutex<ThinkingEffortSupport>,
 }
 
 impl DatabricksV2Provider {
@@ -152,6 +158,7 @@ impl DatabricksV2Provider {
             token_cache,
             refresh_hook,
             gateway_path: DATABRICKS_V2_DEFAULT_GATEWAY_PATH.to_string(),
+            effort_support: Mutex::new(ThinkingEffortSupport::Unspecified),
         })
     }
 
@@ -234,6 +241,22 @@ impl DatabricksV2Provider {
         } else {
             DatabricksV2Route::MlflowChatCompletions
         }
+    }
+
+    fn claude_model_service_config(model_config: &ModelConfig) -> Option<ModelConfig> {
+        if !Self::is_model_service_fqn(&model_config.model_name) {
+            return None;
+        }
+        let service_name = model_config.model_name.rsplit('.').next()?;
+        let canonical = maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, service_name)?;
+        if !canonical.id.starts_with("anthropic/")
+            || model_config.reasoning.or(canonical.reasoning) != Some(true)
+        {
+            return None;
+        }
+        let mut config = model_config.clone();
+        config.model_name = service_name.to_string();
+        Some(config)
     }
 
     fn is_model_service_fqn(model_name: &str) -> bool {
@@ -377,6 +400,19 @@ impl DatabricksV2Provider {
         if payload.get("max_tokens").is_none() {
             payload["max_tokens"] = Value::from(model_config.max_output_tokens());
         }
+        if let Some(config) = Self::claude_model_service_config(model_config) {
+            payload.as_object_mut().unwrap().remove("budget_tokens");
+            if !anthropic::model_supports_temperature(DATABRICKS_V2_PROVIDER_NAME, &config) {
+                payload.as_object_mut().unwrap().remove("temperature");
+            }
+            anthropic::apply_thinking_config(
+                &mut payload,
+                DATABRICKS_V2_PROVIDER_NAME,
+                &config,
+                config.max_output_tokens(),
+                AnthropicFormatOptions::default(),
+            );
+        }
         let mut log = start_log(model_config, &payload)?;
 
         let response = self
@@ -469,6 +505,77 @@ impl crate::base::ProviderDescriptor for DatabricksV2Provider {
 
 #[async_trait]
 impl Provider for DatabricksV2Provider {
+    fn thinking_effort_support(&self) -> ThinkingEffortSupport {
+        self.effort_support.lock().unwrap().clone()
+    }
+
+    async fn apply_model_selection(&self, model_config: &ModelConfig) -> Result<(), ProviderError> {
+        let support = if let Some(config) = Self::claude_model_service_config(model_config) {
+            let always_on =
+                maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, &config.model_name)
+                    .is_some_and(|model| {
+                        model.thinking_mode == Some(ThinkingMode::AlwaysOnAdaptive)
+                    });
+            let values = [
+                ThinkingEffort::Off,
+                ThinkingEffort::Low,
+                ThinkingEffort::Medium,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]
+            .into_iter()
+            .map(|effort| ThinkingEffortOption {
+                value: effort.to_string(),
+                label: if always_on && effort == ThinkingEffort::Off {
+                    "Default (high)".to_string()
+                } else {
+                    effort.to_string()
+                },
+            })
+            .collect();
+            let current = config
+                .thinking_effort()
+                .unwrap_or(ThinkingEffort::Off)
+                .to_string();
+            ThinkingEffortSupport::Options(ThinkingEffortCapability {
+                option_id: "thinking_effort".to_string(),
+                values,
+                current: Some(current),
+            })
+        } else if Self::is_model_service_fqn(&model_config.model_name)
+            && Self::route_for_model(&model_config.model_name)
+                == DatabricksV2Route::MlflowChatCompletions
+        {
+            ThinkingEffortSupport::Unsupported
+        } else {
+            ThinkingEffortSupport::Unspecified
+        };
+        *self.effort_support.lock().unwrap() = support;
+        Ok(())
+    }
+
+    async fn set_thinking_effort(
+        &self,
+        _session_id: &str,
+        value: &str,
+    ) -> Result<bool, ProviderError> {
+        match self.thinking_effort_support() {
+            ThinkingEffortSupport::Options(capability)
+                if !capability.values.iter().any(|option| option.value == value) =>
+            {
+                Err(ProviderError::InvalidValue(format!(
+                    "Thinking effort '{value}' is not supported by this model service"
+                )))
+            }
+            ThinkingEffortSupport::Unsupported if value != "off" => {
+                Err(ProviderError::InvalidValue(
+                    "Thinking effort is not supported by this model service".to_string(),
+                ))
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn get_name(&self) -> &str {
         &self.name
     }

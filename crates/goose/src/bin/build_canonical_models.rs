@@ -351,20 +351,7 @@ fn get_thinking_mode(canonical_id: &str, value: &Value) -> Option<ThinkingMode> 
         .get("thinking_mode")
         .and_then(|v| v.as_str())
         .and_then(|mode| serde_json::from_value(Value::String(mode.to_string())).ok())
-        .or_else(|| inferred_thinking_mode(canonical_id))
-}
-
-fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
-    match canonical_id {
-        "anthropic/claude-fable-5" => Some(ThinkingMode::AlwaysOnAdaptive),
-        "anthropic/claude-opus-5" => Some(ThinkingMode::Adaptive),
-        "anthropic/claude-opus-4.6" => Some(ThinkingMode::Adaptive),
-        "anthropic/claude-opus-4.7" => Some(ThinkingMode::Adaptive),
-        "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
-        "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
-        "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
-        _ => None,
-    }
+        .or_else(|| ThinkingMode::for_model(canonical_id))
 }
 
 fn parse_modalities(model_data: &Value, field: &str) -> Vec<Modality> {
