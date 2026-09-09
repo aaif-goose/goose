@@ -13,6 +13,18 @@ supportedArchitectures:
 overrides:
   react: ^19.2.8
   react-dom: ^19.2.8
+  # Radix pins this to an EXACT version inside every primitive, so a single
+  # dependency shipping its own primitives is enough to install a second copy —
+  # and DismissableLayer keeps `originalBodyPointerEvents` and its open-layer
+  # Sets in MODULE-LEVEL state. Two copies means two bookkeepers writing the
+  # same document.body while blind to each other: one saves `none` as the
+  # "original" value and then restores it on every close, stranding
+  # pointer-events:none on <body>. Every click in the app is then silently
+  # discarded, the window looks completely normal, and only a reload recovers
+  # it. See #11762. 1.1.19 also fixes a delete/restore ordering bug still
+  # present in 1.1.11.
+  # Enforced by desktop/src/test/radixSingleVersion.test.ts.
+  '@radix-ui/react-dismissable-layer': 1.1.19
 allowBuilds:
   '@modelcontextprotocol/ext-apps': true
   electron: true
