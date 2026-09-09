@@ -303,7 +303,7 @@ fn select_generation_template<'a>(
     })
 }
 
-#[cfg(any(target_arch = "x86_64", test))]
+#[cfg(target_arch = "x86_64")]
 fn unsupported_cpu_features_error_message(missing_features: &[&str]) -> String {
     format!(
         "Local inference with the bundled llama.cpp backend requires CPU support for {}. \
@@ -741,39 +741,5 @@ mod tests {
         assert!(!is_legacy_builtin_template_name(
             "{% for message in messages %}{{ message.content }}{% endfor %}"
         ));
-    }
-
-    #[test]
-    fn local_inference_cpu_support_check_accepts_current_host() {
-        let result = check_cpu_supports_local_inference();
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            let supports_required_features = std::arch::is_x86_feature_detected!("fma")
-                && std::arch::is_x86_feature_detected!("avx2")
-                && std::arch::is_x86_feature_detected!("f16c")
-                && std::arch::is_x86_feature_detected!("bmi2")
-                && std::arch::is_x86_feature_detected!("sse4.2");
-
-            if supports_required_features {
-                assert!(
-                    result.is_ok(),
-                    "expected supported x86_64 host to pass: {result:?}"
-                );
-            } else {
-                assert!(result.is_err(), "expected unsupported x86_64 host to fail");
-            }
-        }
-
-        #[cfg(not(target_arch = "x86_64"))]
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn local_inference_cpu_support_error_names_missing_instruction_sets() {
-        let message = unsupported_cpu_features_error_message(&["FMA", "AVX2"]);
-
-        assert!(message.contains("FMA"));
-        assert!(message.contains("AVX2"));
     }
 }

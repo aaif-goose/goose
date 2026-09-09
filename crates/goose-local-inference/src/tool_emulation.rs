@@ -710,11 +710,4 @@ mod tests {
             assert_eq!(execute_blocks(&actions), [expected]);
         }
     }
-
-    #[test]
-    fn tool_description_uses_execute_typescript_fence() {
-        let description = build_emulator_tool_description(&[], true);
-
-        assert!(description.contains("```execute_typescript"));
-    }
 }

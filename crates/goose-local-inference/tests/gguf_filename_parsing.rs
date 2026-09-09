@@ -11,6 +11,10 @@ fn quant(filename: &str) -> String {
 
 #[test]
 fn parses_conventional_trailing_quant_tags() {
+    assert_eq!(quant("Model-Q8_0.gguf"), "Q8_0");
+    assert_eq!(quant("Model-F16.gguf"), "F16");
+    assert_eq!(quant("Model-UD-TQ1_0.gguf"), "TQ1_0");
+    assert_eq!(quant("Wan2_1-InfiniteTalk_Multi_Q4_K_M.gguf"), "Q4_K_M");
     assert_eq!(quant("Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"), "Q4_K_M");
     assert_eq!(quant("Qwen3.6-27B-IQ4_NL.gguf"), "IQ4_NL");
     assert_eq!(quant("Qwen3.6-35B-A3B-MXFP4_MOE.gguf"), "MXFP4_MOE");
@@ -34,7 +38,8 @@ fn parses_quant_tags_buried_mid_filename() {
 }
 
 #[test]
-fn canonicalizes_quant_case_so_lookups_match_the_quant_table() {
+fn canonicalizes_quant_case() {
+    assert_eq!(quant("Model-q6_k_l.gguf"), "Q6_K_L");
     assert_eq!(quant("Model-q4_k_m.gguf"), "Q4_K_M");
     assert_eq!(quant("Gemma-3-1B-Heretic_Q3_k_m.gguf"), "Q3_K_M");
 }

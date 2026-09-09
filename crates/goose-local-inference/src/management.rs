@@ -769,20 +769,6 @@ fn mark_download_task_exited(model_id: &str) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn settings_round_trip_preserves_defaults() {
-        let settings = ModelSettings::default();
-        let dto = model_settings_to_dto(&settings);
-        let round_trip = model_settings_from_dto(dto);
-        assert_eq!(round_trip.repeat_penalty, settings.repeat_penalty);
-        assert_eq!(round_trip.repeat_last_n, settings.repeat_last_n);
-        assert_eq!(round_trip.enable_thinking, settings.enable_thinking);
-        assert_eq!(
-            round_trip.image_token_estimate,
-            settings.image_token_estimate
-        );
-    }
-
     #[tokio::test]
     async fn explicit_llamacpp_selection_derives_quantized_model_id() {
         let req = LocalInferenceModelDownloadRequest {

@@ -165,7 +165,8 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
             .collect();
         assert!(text.to_lowercase().contains("blue"));
     }
-    if phase == "all" || phase == "reasoning" {
+    // Reasoning is an explicit phase because some native checkpoints cannot emit it.
+    if phase == "reasoning" {
         let mut thinking = settings.clone();
         thinking.enable_thinking = Some(true);
         *SETTINGS.lock().unwrap() = Some(thinking);
@@ -178,12 +179,12 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
             &[],
         )
         .await;
-        println!(
-            "reasoning_observed={}",
+        assert!(
             reasoning
                 .iter()
                 .flat_map(|m| &m.content)
-                .any(|c| matches!(c, MessageContent::Thinking(_)))
+                .any(|c| matches!(c, MessageContent::Thinking(t) if !t.thinking.trim().is_empty())),
+            "the reasoning phase requires a checkpoint that emits reasoning"
         );
     }
     if phase == "all" || phase == "remaining" || phase == "emulation" {

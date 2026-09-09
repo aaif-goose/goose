@@ -320,7 +320,12 @@ fn unicode_hidden_reasoning_stop_sequences_and_eos_stream_once() {
 fn native_tools_validate_completed_arguments_and_preserve_schema_keywords() {
     let schema = json!({"type":"object","properties":{"count":{"type":"integer","minimum":1},"optional":{"type":["string","null"]},"nested":{"anyOf":[{"type":"array","items":{"type":"object","properties":{"x":{"type":"number"}},"required":["x"]}},{"type":"null"}]}},"required":["count"]});
     for (arguments, valid) in [
-        ("{\"count\":2,\"optional\":null}", true),
+        (r#"{"count":2,"optional":null,"nested":[{"x":1.5}]}"#, true),
+        (r#"{"count":2,"optional":"value","nested":null}"#, true),
+        (r#"{"count":2,"nested":[{}]}"#, false),
+        (r#"{"count":2,"nested":[{"x":"wrong type"}]}"#, false),
+        (r#"{"count":2,"nested":{}}"#, false),
+        (r#"{"count":2,"optional":42}"#, false),
         ("{\"count\":0}", false),
         ("{\"count\":", false),
     ] {
@@ -334,17 +339,26 @@ fn native_tools_validate_completed_arguments_and_preserve_schema_keywords() {
             schema.as_object().unwrap().clone(),
         )];
         let (result, messages) = run(&worker, req);
-        let executable = messages
+        let executable: Vec<_> = messages
             .iter()
             .flat_map(|message| &message.content)
-            .filter(|content| matches!(content, MessageContent::ToolRequest(_)))
-            .count();
+            .filter_map(|content| match content {
+                MessageContent::ToolRequest(call) => Some(call),
+                _ => None,
+            })
+            .collect();
         if valid {
             result.unwrap();
-            assert_eq!(executable, 1);
+            assert_eq!(executable.len(), 1, "arguments: {arguments}");
+            let call = executable[0].tool_call.as_ref().unwrap();
+            assert_eq!(call.name, "delegate");
+            assert_eq!(
+                serde_json::to_value(call.arguments.as_ref().unwrap()).unwrap(),
+                serde_json::from_str::<serde_json::Value>(arguments).unwrap()
+            );
         } else {
-            assert_eq!(executable, 0);
-            assert!(result.is_err());
+            assert!(executable.is_empty(), "arguments: {arguments}");
+            assert!(result.is_err(), "arguments: {arguments}");
         }
     }
 }
@@ -482,24 +496,28 @@ fn prepared_speculation_streams_committed_output_and_maps_statistics() {
             assert!(matches!(
                 worker.report.plan.drafting(),
                 eredu_core::DraftingPlan::Embedded {
-                    max_draft_tokens: 1,
+                    max_draft_tokens: 2,
                     ..
                 }
             ));
             let mut req = request();
             req.settings = settings;
             req.settings.sampling = sampling;
-            req.model.max_tokens = Some(3);
+            req.model.max_tokens = Some(8);
             let (usage, messages) = run(&worker, req);
             let usage = usage.unwrap();
-            assert_eq!(text(&messages), "ab");
-            assert_eq!(usage.usage.output_tokens, Some(3));
+            assert_eq!(text(&messages), "abc");
+            assert_eq!(usage.usage.output_tokens, Some(4));
             let stats = usage.stats.unwrap();
             let draft = stats.draft.unwrap();
-            assert_eq!(draft.draft_tokens, 1);
+            assert_eq!(draft.draft_tokens, 4);
             assert_eq!(draft.accepted_tokens, 1);
-            assert_eq!(draft.accept_rate, 1.0);
-            assert_eq!(draft.rounds, 1);
+            assert_eq!(
+                draft.target_tokens,
+                usage.usage.input_tokens.unwrap() as usize + 6
+            );
+            assert_eq!(draft.accept_rate, 0.25);
+            assert_eq!(draft.rounds, 2);
             assert!(stats.time_to_first_token_ms.is_some());
             assert_eq!(calls.lock().unwrap().configs.len(), 1);
         }
@@ -652,12 +670,18 @@ fn auto_native_preserves_parallel_calls_and_multiturn_results() {
 
 #[test]
 fn auto_fallback_and_force_emulated_choose_once_before_generation() {
-    for mode in [ToolCallingMode::Auto, ToolCallingMode::ForceEmulated] {
+    for (mode, chat_template) in [
+        (
+            ToolCallingMode::Auto,
+            ChatTemplate::CustomInline {
+                template: include_str!("support/plain.jinja").into(),
+            },
+        ),
+        (ToolCallingMode::ForceEmulated, ChatTemplate::default()),
+    ] {
         let settings = ModelSettings {
             tool_calling: mode,
-            chat_template: ChatTemplate::CustomInline {
-                template: "{% for m in messages %}{{ m.content }}{% endfor %}assistant:".into(),
-            },
+            chat_template,
             ..Default::default()
         };
         let (_dir, worker, calls) = worker(

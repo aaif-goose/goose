@@ -175,7 +175,7 @@ impl AutomaticPlanningBackend for MockBackend {
             "normalized architecture fixture",
         );
         profile.embedded_draft_capacity =
-            Observed::exact(usize::from(self.embedded_draft), "fixture");
+            Observed::exact(2 * usize::from(self.embedded_draft), "fixture");
         profile.stored_tensor_bytes = Observed::exact(4, "conformance fixture");
         profile.largest_stored_tensor_bytes = Observed::exact(4, "conformance fixture");
         profile.materialized_parameter_bytes =

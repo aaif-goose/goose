@@ -16,7 +16,7 @@ impl SpeculativeExecutor for MockSpeculativeExecutor {
     type Error = io::Error;
 
     fn max_proposals(&self) -> usize {
-        1
+        2
     }
 
     fn prefill<'a>(
@@ -42,10 +42,11 @@ impl SpeculativeExecutor for MockSpeculativeExecutor {
     fn proposal_logits<'a>(
         &mut self,
         _: &mut Self::DraftState,
-        _: u32,
+        previous: u32,
         _: Self::Context<'a>,
     ) -> Result<Self::Logits, Self::Error> {
-        Ok(encode("b")[0])
+        // Accept b after a, then reject x in this round and the following round.
+        Ok(encode(if previous == encode("a")[0] { "b" } else { "x" })[0])
     }
 
     fn checkpoint(&self, cache: &Self::Cache) -> Result<Self::CacheCheckpoint, Self::Error> {
@@ -69,8 +70,16 @@ impl SpeculativeExecutor for MockSpeculativeExecutor {
         _: Self::Context<'a>,
     ) -> Result<Submission<Self::Verification, Self::Completion>, Self::Error> {
         *cache += input_tokens.len();
+        let target = encode("abc<|im_end|>");
+        let start = target
+            .iter()
+            .position(|token| *token == input_tokens[0])
+            .unwrap()
+            + 1;
         Ok(Submission {
-            output: vec![encode("b")[0], 1],
+            output: (start..start + input_tokens.len())
+                .map(|index| target.get(index).copied().unwrap_or(1))
+                .collect(),
             completion: Done,
         })
     }
@@ -212,7 +221,7 @@ impl SpeculativeSampling for MockSpeculativeSampling {
     where
         Self: 'a,
     {
-        Ok(0.0)
+        Ok(0.5)
     }
 
     fn positive_probability_difference<'a>(

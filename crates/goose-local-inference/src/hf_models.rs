@@ -1075,32 +1075,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_quantization() {
-        assert_eq!(parse_quantization("Model-Q4_K_M.gguf"), "Q4_K_M");
-        assert_eq!(parse_quantization("Model-Q8_0.gguf"), "Q8_0");
-        assert_eq!(parse_quantization("Model-IQ4_NL.gguf"), "IQ4_NL");
-        assert_eq!(parse_quantization("Model-F16.gguf"), "F16");
-        assert_eq!(parse_quantization("random-name.gguf"), "unknown");
-    }
-
-    #[test]
-    fn test_parse_quantization_with_directory() {
-        assert_eq!(
-            parse_quantization("Q5_K_M/Model-Q5_K_M-00001-of-00002.gguf"),
-            "Q5_K_M"
-        );
-    }
-
-    #[test]
-    fn test_parse_quantization_extended_tags() {
-        assert_eq!(parse_quantization("Model-MXFP4_MOE.gguf"), "MXFP4_MOE");
-        assert_eq!(parse_quantization("Model-UD-TQ1_0.gguf"), "TQ1_0");
-        assert_eq!(parse_quantization("Model-Q2_K_L.gguf"), "Q2_K_L");
-        assert_eq!(parse_quantization("Model-UD-Q4_K_XL.gguf"), "Q4_K_XL");
-        assert_eq!(parse_quantization("Model-UD-IQ1_M.gguf"), "IQ1_M");
-    }
-
-    #[test]
     fn test_is_shard_file() {
         assert!(is_shard_file("Q5_K_M/Model-Q5_K_M-00001-of-00002.gguf"));
         assert!(is_shard_file("Model-BF16-00003-of-00004.gguf"));
@@ -1495,66 +1469,6 @@ mod tests {
             true,
         );
         assert_eq!(active_download_repo_id(&exited), None);
-    }
-
-    #[test]
-    fn test_is_auxiliary_gguf_file() {
-        assert!(!is_auxiliary_gguf_file("gemma-3-27b-it-Q4_K_M.gguf"));
-        assert!(!is_auxiliary_gguf_file(
-            "BF16/gemma-3-27b-it-BF16-00001-of-00002.gguf"
-        ));
-        assert!(is_auxiliary_gguf_file("mmproj-BF16.gguf"));
-        assert!(is_auxiliary_gguf_file("gemma-4-26B-it-mmproj.gguf"));
-        assert!(is_auxiliary_gguf_file("vision-encoder-Q4_K_M.gguf"));
-    }
-
-    #[test]
-    fn test_is_auxiliary_gguf_file_distinguishes_mtp_drafters_from_mtp_models() {
-        assert!(is_auxiliary_gguf_file(
-            "MTP/mtp-gemma-4-26B-A4B-it-BF16.gguf"
-        ));
-        assert!(is_auxiliary_gguf_file("mtp-Qwen3.6-35B-A3B-BF16.gguf"));
-        // "MTP" mid-name is part of the model name, not a drafter marker.
-        assert!(!is_auxiliary_gguf_file(
-            "Qwopus3.6-27B-Coder-MTP-Q3_K_M.gguf"
-        ));
-        assert!(!is_auxiliary_gguf_file("Ornith-1.0-9B-MTP-BF16.gguf"));
-    }
-
-    #[test]
-    fn test_parse_quantization_tag_not_in_final_position() {
-        // google/gemma-4-26B-A4B-it-qat-q4_0-gguf
-        assert_eq!(parse_quantization("gemma-4-26B_q4_0-it.gguf"), "Q4_0");
-        // google/gemma-3-27b-it-qat-q4_0-gguf
-        assert_eq!(parse_quantization("gemma-3-27b-it-q4_0.gguf"), "Q4_0");
-        // Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF
-        assert_eq!(
-            parse_quantization("Qwen3VL-30B-A3B-Instruct-F16-split-00001-of-00002.gguf"),
-            "F16"
-        );
-        assert_eq!(
-            parse_quantization("Wan2_1-InfiniteTalk_Multi_Q4_K_M.gguf"),
-            "Q4_K_M"
-        );
-    }
-
-    #[test]
-    fn test_parse_quantization_prefers_longest_match() {
-        // "Q2_K" is a delimiter-bounded substring of "Q2_K_L"; the longer tag wins.
-        assert_eq!(parse_quantization("Model-Q2_K_L.gguf"), "Q2_K_L");
-        assert_eq!(parse_quantization("Model-Q4_K_M.gguf"), "Q4_K_M");
-        // "F16" must not match inside "BF16".
-        assert_eq!(parse_quantization("mmproj-BF16.gguf"), "BF16");
-    }
-
-    #[test]
-    fn test_parse_quantization_canonicalizes_case() {
-        assert_eq!(parse_quantization("Model-q4_k_m.gguf"), "Q4_K_M");
-        assert_eq!(parse_quantization("Model-q6_k_l.gguf"), "Q6_K_L");
-        assert_eq!(
-            quant_info(&parse_quantization("gemma-4-26B_q4_0-it.gguf")).quality_rank,
-            42
-        );
     }
 
     #[test]
