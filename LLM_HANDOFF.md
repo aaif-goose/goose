@@ -5,8 +5,8 @@
 - Repository: `/home/itlk/projekty/trwajace/goose_ai`
 - Branch: `work/mid-turn-auto-compact`
 - PR: https://github.com/aaif-goose/goose/pull/11903
-- HEAD: `31ace88 Document compaction handoff status` (pushed); ostatnia
-  kodowa zmiana to `b857833 Bound compaction suffix to tool inference`.
+- Ostatnia kodowa zmiana: `b857833 Bound compaction suffix to tool inference`;
+  późniejsze commity dokumentują handoff i są wypchnięte.
 - Read `AGENTS.md` and `PROJECT_STATUS.md` before changing code.
 - This is maintainer-directed work; do not block on Ready status of issue #11072.
 
