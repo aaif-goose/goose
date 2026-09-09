@@ -9,7 +9,8 @@ repository.workspace = true
 description.workspace = true
 
 [features]
-default = []
+default = ["bundled-model-catalog"]
+bundled-model-catalog = ["goose-providers/bundled-model-catalog"]
 telemetry = []
 otel = [
     "dep:tracing-opentelemetry",
@@ -93,7 +94,7 @@ portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
 platform-apps = []
 chat-recall = []
-scheduler = []
+scheduler = ["dep:tokio-cron-scheduler"]
 acp-http = ["dep:agent-client-protocol-http"]
 
 [lints]
@@ -158,7 +159,7 @@ goose-download-manager = { path = "../goose-download-manager" }
 goose-sdk-types = { path = "../goose-sdk-types" }
 goose-agent = { path = "../goose-agent" }
 rand = { workspace = true }
-tokio-cron-scheduler = { version = "0.15", default-features = false }
+tokio-cron-scheduler = { version = "0.15", default-features = false, optional = true }
 urlencoding = { workspace = true }
 v_htmlescape = { version = "0.17", default-features = false, features = ["std"] }
 sqlx = { version = "0.9.0", default-features = false, features = [
