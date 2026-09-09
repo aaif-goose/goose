@@ -1430,6 +1430,8 @@ impl CliSession {
         )
         .await?;
 
+        output::emit_attention_bell();
+
         match planner_response_type {
             PlannerResponseType::Plan => {
                 println!();
