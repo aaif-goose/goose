@@ -70,6 +70,7 @@ rustls-tls = [
     "oauth2/reqwest",
     "oauth2/rustls-tls",
     "goose-providers/rustls-tls",
+    "goose-context-management/rustls-tls",
 ]
 native-tls = [
     "dep:rcgen",
@@ -88,6 +89,7 @@ native-tls = [
     "oauth2/reqwest",
     "oauth2/native-tls",
     "goose-providers/native-tls",
+    "goose-context-management/native-tls",
 ]
 system-keyring = ["dep:keyring"]
 portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
@@ -301,6 +303,10 @@ path = "examples/databricks_oauth.rs"
 name = "test_whisper"
 path = "examples/test_whisper.rs"
 required-features = ["local-inference"]
+
+[[bin]]
+name = "goose-acp"
+path = "src/bin/goose-acp.rs"
 
 [[bin]]
 name = "analyze_cli"

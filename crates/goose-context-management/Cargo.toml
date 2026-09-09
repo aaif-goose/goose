@@ -11,8 +11,13 @@ description = "Conversation compaction for Goose"
 [lints]
 workspace = true
 
+[features]
+default = []
+rustls-tls = ["goose-providers/rustls-tls"]
+native-tls = ["goose-providers/native-tls"]
+
 [dependencies]
-goose-providers = { version = "0.1.0-alpha.8", path = "../goose-providers", default-features = false, features = ["rustls-tls"] }
+goose-providers = { version = "0.1.0-alpha.8", path = "../goose-providers", default-features = false }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 include_dir = { workspace = true }
