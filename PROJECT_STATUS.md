@@ -191,11 +191,12 @@ zapisany, a image/document-only fallback zachowuje indeks początku turnu,
 aby przenieść jego turn-context. Regresje sprawdzają oba przypadki w
 `context_mgmt`, które jest współdzielone przez legacy i state machine.
 
-Kolejny P2 uszczelnił tę kotwicę dla state machine: gdy tool result został już
-zużyty przez późniejszą, zakończoną inference, jej usage ledger na ostatniej
-assistant wiadomości zatrzymuje suffix accounting. Dzięki temu nie dochodzi
-do podwójnego liczenia i zbędnej compaction na następnym user turnie; późny
-chunk tego samego streamu nadal nie ma tego ledgeru i pozostaje liczony.
+Kolejne P1/P2 rozróżniają późny chunk tej samej inference od późniejszej
+inference według kolejności historii: suffix zawiera tylko wiadomości inne niż
+assistant po tool request, więc nie dubluje już outputu objętego provider
+usage; kończy się dopiero, gdy po późniejszej assistant odpowiedzi zaczyna się
+nowy user-visible, nie-steer turn. Dzięki temu tool result jest liczony przed
+następną inference, lecz nie po inference, która już go zużyła.
 
 ## Checklista przed merge
 
@@ -209,4 +210,4 @@ chunk tego samego streamu nadal nie ma tego ledgeru i pozostaje liczony.
 - [x] CI dla `cced800` jest zielone.
 - [x] CI dla `5e16ce3` jest zielone.
 - [x] CI dla `16514c7` jest zielone.
-- [ ] Wypchnąć poprawkę zakończonej inference suffix accounting i sprawdzić CI.
+- [ ] Wypchnąć poprawkę granicy inference suffix accounting i sprawdzić CI.

@@ -1,9 +1,9 @@
 pub use goose_context_management::structured;
 
 use crate::conversation::message::MessageMetadata;
-use crate::conversation::message::{Message, MessageContent};
 #[cfg(test)]
 use crate::conversation::message::MessageUsage;
+use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::providers::base::Provider;
 #[cfg(test)]
@@ -271,14 +271,22 @@ pub(crate) async fn context_tokens_since_last_inference(
     };
 
     if latest_assistant > tool_calling_assistant
-        && messages[latest_assistant].metadata.usage.is_some()
+        && messages[latest_assistant + 1..].iter().any(|message| {
+            message.role == Role::User
+                && message.is_user_visible()
+                && !message.is_tool_response()
+                && !message.metadata.steer
+        })
     {
         return Ok(None);
     }
 
     let added_messages =
         Conversation::new_unvalidated(messages[tool_calling_assistant + 1..].iter().cloned())
-            .agent_visible_messages();
+            .agent_visible_messages()
+            .into_iter()
+            .filter(|message| message.role != Role::Assistant)
+            .collect::<Vec<_>>();
     if !added_messages.iter().any(Message::is_tool_response) {
         return Ok(None);
     }
@@ -987,24 +995,34 @@ mod tests {
 
     #[tokio::test]
     async fn suffix_accounting_anchors_to_the_tool_call_when_a_later_chunk_is_persisted() {
+        let tool_request = Message::assistant()
+            .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file")));
+        let tool_response = Message::user().with_tool_response(
+            "call_0",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                ContentBlock::text("large tool result"),
+            ])),
+        );
         let conversation = Conversation::new_unvalidated([
+            tool_request.clone(),
+            tool_response.clone(),
             Message::assistant()
-                .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file"))),
-            Message::user().with_tool_response(
-                "call_0",
-                Ok(rmcp::model::CallToolResult::success(vec![
-                    ContentBlock::text("large tool result"),
-                ])),
-            ),
-            Message::assistant().with_text("a later chunk from the same inference"),
+                .with_text("a later chunk from the same inference")
+                .with_metadata(MessageMetadata {
+                    usage: Some(Box::new(MessageUsage::default())),
+                    ..Default::default()
+                }),
         ]);
+        let without_later_chunk = Conversation::new_unvalidated([tool_request, tool_response]);
 
-        assert!(
+        assert_eq!(
             context_tokens_since_last_inference(&conversation)
                 .await
-                .unwrap()
-                .is_some(),
-            "the tool response must remain part of the post-inference suffix"
+                .unwrap(),
+            context_tokens_since_last_inference(&without_later_chunk)
+                .await
+                .unwrap(),
+            "same-inference output is already covered by provider usage"
         );
     }
 
@@ -1025,6 +1043,7 @@ mod tests {
                     usage: Some(Box::new(MessageUsage::default())),
                     ..Default::default()
                 }),
+            Message::user().with_text("next request"),
         ]);
 
         assert!(
