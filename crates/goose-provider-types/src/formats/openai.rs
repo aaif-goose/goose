@@ -1841,14 +1841,15 @@ pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
 /// True when the model should use the OpenAI Responses API.
 ///
 /// The Responses API is backwards-compatible with all OpenAI reasoning
-/// models, so every `o`-series (`o1`, `o3`, `o4`, …) and `gpt-5` variant
+/// models, so every `o`-series (`o1`, `o3`, `o4`, …), `gpt-5`, and `gpt-6` variant
 /// routes here. The matcher intentionally scans the full model identifier so
 /// hosted aliases like `databricks-gpt-5.4`, `goose-o3-mini`, or
 /// `headless-goose-o3-mini` work without provider-specific normalization.
 pub fn is_openai_responses_model(model_name: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re =
-        RE.get_or_init(|| Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-5(?:$|[-.]))").unwrap());
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-(?:5|6)(?:$|[-.]))").unwrap()
+    });
     re.is_match(model_name)
 }
 
@@ -1919,7 +1920,7 @@ pub fn openai_reasoning_effort_for_thinking(
 pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
     let normalized = model_name.to_ascii_lowercase();
 
-    if normalized.contains("gpt-5") {
+    if normalized.contains("gpt-5") || normalized.contains("gpt-6") {
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
         } else if normalized.contains("gpt-5.4")
@@ -1928,6 +1929,7 @@ pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [
             || normalized.contains("gpt-5-5")
             || normalized.contains("gpt-5.6")
             || normalized.contains("gpt-5-6")
+            || normalized.contains("gpt-6")
         {
             &["none", "low", "medium", "high", "xhigh"]
         } else {
@@ -5292,7 +5294,7 @@ data: [DONE]"#;
     }
 
     #[test]
-    fn test_is_openai_responses_model_matches_o_and_gpt5_families() {
+    fn test_is_openai_responses_model_matches_openai_reasoning_families() {
         for model in [
             "o3",
             "o3-mini",
@@ -5305,6 +5307,8 @@ data: [DONE]"#;
             "gpt-5-2-pro",
             "databricks-gpt-5.4",
             "goose-gpt-5.4-high",
+            "gpt-6-astra",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
             "headless-goose-o3-mini",
         ] {
             assert!(is_openai_responses_model(model), "{model} should match");

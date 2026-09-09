@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Agregar"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Usar siempre Toolshim para este proveedor"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Compatible con Anthropic"
   },
@@ -926,8 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "No se pudo actualizar el directorio de trabajo"
   },
@@ -1757,13 +1758,10 @@
     "defaultMessage": "¿Eliminar este modelo? Podrás volver a descargarlo más tarde."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Descarga y gestiona modelos LLM locales para inferencia sin claves API. Busca cualquier modelo GGUF en HuggingFace o usa las opciones destacadas de abajo."
+    "defaultMessage": "Descarga y gestiona modelos LLM locales para inferencia sin claves API. Busca modelos GGUF o MLX en Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Descartar"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Descargar"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "Descarga cancelada"
@@ -1782,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Modelos destacados"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Inicia sesión para aumentar los límites de uso al buscar y descargar modelos, y para acceder a repositorios de Hugging Face privados o restringidos."
@@ -1809,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Reintentar"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Mostrar todos los destacados ({count} más)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Mostrar solo los recomendados"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Modelos de inferencia local"

@@ -48,7 +48,9 @@ use strum::VariantNames;
 
 use goose::config::paths::Paths;
 use goose::config::providers;
-use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
+use goose::conversation::message::{
+    ActionRequiredData, Message, MessageContent, ToolConfirmationRequest,
+};
 use goose::providers::inventory::ProviderInventoryService;
 use goose::session::SessionManager;
 use rustyline::EditMode;
@@ -645,7 +647,7 @@ impl CliSession {
             println!(
                 "\n  {} {}",
                 console::style("●").red(),
-                console::style(format!("session closed · {}", &self.session_id)).dim()
+                console::style(format!("session closed · {}", self.session_id)).dim()
             );
         }
 
@@ -1586,9 +1588,9 @@ impl CliSession {
                             if first_token_at.is_none() && message_has_text(&message) {
                                 first_token_at = Some(Instant::now());
                             }
-                            if let Some((id, security_prompt)) = find_tool_confirmation(&message) {
+                            if let Some(confirmation_request) = find_tool_confirmation(&message) {
                                 let selected_permission = if interactive {
-                                    prompt_tool_confirmation(&security_prompt)?
+                                    prompt_tool_confirmation(&confirmation_request)?
                                 } else {
                                     // Non-interactive/headless mode: refuse to run in
                                     // Approve/SmartApprove modes since auto-allowing would
@@ -1617,14 +1619,14 @@ impl CliSession {
                                 self.agent
                                     .submit_tool_confirmation(
                                         &self.session_id,
-                                        &id,
+                                        &confirmation_request.id,
                                         selected_permission,
                                     )
                                     .await?;
                                 if cancelled_by_user {
                                     let mut response_message = Message::user();
                                     response_message.content.push(MessageContent::tool_response(
-                                        id,
+                                        confirmation_request.id,
                                         Err(ErrorData {
                                             code: ErrorCode::INVALID_REQUEST,
                                             message: std::borrow::Cow::from(
@@ -2408,17 +2410,21 @@ fn emit_stream_event(event: &StreamEvent) {
 }
 
 /// Prompt user for tool call confirmation, returns the Permission selected
-fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permission> {
+fn prompt_tool_confirmation(request: &ToolConfirmationRequest) -> Result<Permission> {
     output::hide_thinking();
 
-    let prompt = if let Some(security_message) = security_prompt {
-        println!("\n{}", security_message);
+    output::render_tool_confirmation(
+        &request.tool_name,
+        &request.arguments,
+        request.prompt.as_deref(),
+    );
+    let prompt = if request.prompt.is_some() {
         "Do you allow this tool call?".to_string()
     } else {
         "Goose would like to call the above tool, do you allow?".to_string()
     };
 
-    let permission_result = if security_prompt.is_none() {
+    let permission_result = if request.prompt.is_none() {
         cliclack::select(prompt)
             .item(Permission::AllowOnce, "Allow", "Allow the tool call once")
             .item(
@@ -2458,11 +2464,22 @@ fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permissi
 }
 
 /// Extract tool confirmation request from a message
-fn find_tool_confirmation(message: &Message) -> Option<(String, Option<String>)> {
+fn find_tool_confirmation(message: &Message) -> Option<ToolConfirmationRequest> {
     message.content.iter().find_map(|content| {
         if let MessageContent::ActionRequired(action) = content {
-            if let ActionRequiredData::ToolConfirmation { id, prompt, .. } = &action.data {
-                return Some((id.clone(), prompt.clone()));
+            if let ActionRequiredData::ToolConfirmation {
+                id,
+                tool_name,
+                arguments,
+                prompt,
+            } = &action.data
+            {
+                return Some(ToolConfirmationRequest {
+                    id: id.clone(),
+                    tool_name: tool_name.clone(),
+                    arguments: arguments.clone(),
+                    prompt: prompt.clone(),
+                });
             }
         }
         None
@@ -2905,9 +2922,31 @@ mod tests {
     use super::*;
     use goose::agents::extension::Envs;
     use goose::config::ExtensionConfig;
+    use serde_json::json;
     use std::collections::HashMap;
     use std::time::Duration;
     use test_case::test_case;
+
+    #[test]
+    fn provider_only_confirmation_preserves_authoritative_request() {
+        let arguments = json!({"command": "cat ~/.ssh/id_rsa"})
+            .as_object()
+            .unwrap()
+            .clone();
+        let message = Message::assistant().with_action_required(
+            "provider-request",
+            "Bash".to_string(),
+            arguments.clone(),
+            Some("Review this request".to_string()),
+        );
+
+        let request = find_tool_confirmation(&message).unwrap();
+
+        assert_eq!(request.id, "provider-request");
+        assert_eq!(request.tool_name, "Bash");
+        assert_eq!(request.arguments, arguments);
+        assert_eq!(request.prompt.as_deref(), Some("Review this request"));
+    }
 
     #[test]
     fn planner_classification_excludes_user_only_content() {

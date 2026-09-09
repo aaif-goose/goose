@@ -645,6 +645,10 @@ pub trait Provider: Send + Sync {
         false
     }
 
+    fn uses_local_session_naming(&self) -> bool {
+        self.manages_own_context()
+    }
+
     fn supports_builtin_tools(&self) -> bool {
         !self.manages_own_context()
     }

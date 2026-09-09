@@ -8,8 +8,9 @@ const OUTPUT_FILE = path.join(
   ROOT,
   'documentation',
   'docs',
-  'reference',
-  'goose-acp-reference.md'
+  'gdk',
+  'acp',
+  'reference.md'
 );
 const UNSUPPORTED_KEYWORDS = [
   'contains',
@@ -239,7 +240,8 @@ function renderDocumentation(schemas, meta, gooseVersion = 'Preview') {
   const output = [
     '---',
     'title: goose ACP Reference',
-    'sidebar_label: goose ACP Reference',
+    'sidebar_label: Reference',
+    'sidebar_position: 2',
     '---',
     '',
     '# goose ACP Reference',

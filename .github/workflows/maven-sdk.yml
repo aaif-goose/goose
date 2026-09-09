@@ -8,12 +8,22 @@ on:
         required: false
         default: false
         type: boolean
+      smoke-test:
+        description: "Run the Kotlin GDK smoke test"
+        required: false
+        default: true
+        type: boolean
   workflow_dispatch:
     inputs:
       publish:
         description: "Publish gdk to Maven Central after building"
         required: true
         default: false
+        type: boolean
+      smoke-test:
+        description: "Run the Kotlin GDK smoke test"
+        required: true
+        default: true
         type: boolean
 
 permissions:
@@ -146,6 +156,7 @@ jobs:
   smoke-test-linux-aarch64:
     name: Smoke test Kotlin GDK (linux-aarch64)
     needs: package
+    if: inputs.smoke-test
     runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout code
@@ -172,7 +183,7 @@ jobs:
           version=$(grep -m1 '^version =' crates/goose-sdk/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')
           target="$HOME/.m2/repository/io/github/aaif-goose/gdk/$version"
           mkdir -p "$target"
-          find maven-artifacts -type f -exec cp {} "$target/" +
+          find maven-artifacts -type f -exec cp -t "$target" {} +
 
       - name: Load native library in an ARM64 JVM
         shell: bash
@@ -192,7 +203,7 @@ jobs:
     name: Publish to Maven Central
     needs: [package, smoke-test-linux-aarch64]
     runs-on: ubuntu-latest
-    if: inputs.publish
+    if: inputs.publish && !cancelled() && needs.package.result == 'success' && (!inputs.smoke-test || needs.smoke-test-linux-aarch64.result == 'success')
     environment: maven-central
     concurrency:
       group: gdk-maven-release-${{ needs.package.outputs.version }}

@@ -2,23 +2,10 @@ name: Python GDK Wheels
 
 on:
   workflow_call:
-    inputs:
-      publish:
-        description: "Publish wheels to PyPI after building"
-        required: false
-        default: false
-        type: boolean
   workflow_dispatch:
-    inputs:
-      publish:
-        description: "Publish wheels to PyPI after building"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   build-wheels:
@@ -57,7 +44,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
@@ -106,23 +93,3 @@ jobs:
           name: goose-sdk-wheel-${{ matrix.name }}
           path: crates/goose-sdk/python/dist/*.whl
           if-no-files-found: error
-
-  publish:
-    name: Publish wheels to PyPI
-    needs: build-wheels
-    runs-on: ubuntu-latest
-    if: inputs.publish
-    environment: pypi
-    steps:
-      - name: Download wheel artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: goose-sdk-wheel-*
-          path: dist
-          merge-multiple: true
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        with:
-          packages-dir: dist
-          skip-existing: true

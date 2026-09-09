@@ -428,6 +428,7 @@ You can control each signal (traces, metrics, logs) independently with `OTEL_{SI
 | `OTEL_EXPORTER_OTLP_{SIGNAL}_ENDPOINT` | Override endpoint for a specific signal | URL |
 | `OTEL_{SIGNAL}_EXPORTER` | Exporter type per signal | `otlp`, `console`, `none` |
 | `OTEL_SDK_DISABLED` | Disable all OTel export | `true` |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Include model messages and tool arguments/results in exported traces | `true`, `false` (default) |
 
 Additional variables like `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`,
 and `OTEL_EXPORTER_OTLP_TIMEOUT` are also supported.

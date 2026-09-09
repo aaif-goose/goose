@@ -18,9 +18,9 @@ importers:
 
   desktop:
     dependencies:
-      '@aaif/goose-sdk':
+      '@aaif/goose-acp-client':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../goose-acp-client
       '@agentclientprotocol/sdk':
         specifier: 1.3.0
         version: 1.3.0(zod@4.4.3)
@@ -332,17 +332,35 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(@vitest/ui@4.1.10)(jsdom@28.1.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.8.2))
 
-  goose-binary/goose-binary-darwin-arm64: {}
+  goose-acp:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+    optionalDependencies:
+      '@aaif/goose-binary-darwin-arm64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-darwin-arm64
+      '@aaif/goose-binary-darwin-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-darwin-x64
+      '@aaif/goose-binary-linux-arm64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-linux-arm64
+      '@aaif/goose-binary-linux-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-linux-x64
+      '@aaif/goose-binary-win32-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-win32-x64
 
-  goose-binary/goose-binary-darwin-x64: {}
-
-  goose-binary/goose-binary-linux-arm64: {}
-
-  goose-binary/goose-binary-linux-x64: {}
-
-  goose-binary/goose-binary-win32-x64: {}
-
-  sdk:
+  goose-acp-client:
     dependencies:
       '@modelcontextprotocol/ext-apps':
         specifier: ^0.3.1
@@ -372,22 +390,16 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-    optionalDependencies:
-      '@aaif/goose-binary-darwin-arm64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-arm64
-      '@aaif/goose-binary-darwin-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-x64
-      '@aaif/goose-binary-linux-arm64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-arm64
-      '@aaif/goose-binary-linux-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-x64
-      '@aaif/goose-binary-win32-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-win32-x64
+
+  goose-binary/goose-binary-darwin-arm64: {}
+
+  goose-binary/goose-binary-darwin-x64: {}
+
+  goose-binary/goose-binary-linux-arm64: {}
+
+  goose-binary/goose-binary-linux-x64: {}
+
+  goose-binary/goose-binary-win32-x64: {}
 
 packages:
 

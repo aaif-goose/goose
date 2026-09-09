@@ -330,10 +330,10 @@
     "defaultMessage": "Goose 请求用户输入前的最大 agent 轮次"
   },
   "costTracker.costUnavailable": {
-    "defaultMessage": "无法获取 {model} 的费用数据（输入 {inputTokens}、输出 {outputTokens} 令牌）"
+    "defaultMessage": "无法获取 {model} 的费用数据（输入 {inputTokens}、输出 {outputTokens} 词元）"
   },
   "costTracker.inputOutputTooltip": {
-    "defaultMessage": "输入：{inputTokens} 令牌（{inputCost}）| 输出：{outputTokens} 令牌（{outputCost}）"
+    "defaultMessage": "输入：{inputTokens} 词元（{inputCost}）| 输出：{outputTokens} 词元（{outputCost}）"
   },
   "costTracker.pricingUnavailable": {
     "defaultMessage": "无法获取 {model} 的定价数据"
@@ -616,6 +616,9 @@
   },
   "customProviderForm.add": {
     "defaultMessage": "添加"
+  },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "始终为此提供商使用 Toolshim"
   },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic 兼容"
@@ -926,8 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "更新工作目录失败"
   },
@@ -1757,13 +1758,10 @@
     "defaultMessage": "删除此模型？之后可以重新下载。"
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "下载和管理用于本地推理的大模型，无需 API 密钥。在 HuggingFace 搜索任意 GGUF 模型，或使用下方推荐。"
+    "defaultMessage": "下载和管理用于本地推理的大模型，无需 API 密钥。在 Hugging Face 搜索 GGUF 或 MLX 模型。"
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "关闭"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "下载"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "下载已取消"
@@ -1782,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "推荐模型"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "登录后可在搜索和下载模型时提高速率限制，并访问私有或受限的 Hugging Face 仓库。"
@@ -1809,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "重试"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "显示全部推荐（还有 {count} 个）"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "仅显示推荐"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "本地推理模型"
@@ -2051,7 +2040,7 @@
     "defaultMessage": "（估算）"
   },
   "messageUsageStats.firstToken": {
-    "defaultMessage": "首个令牌"
+    "defaultMessage": "首个词元"
   },
   "messageUsageStats.input": {
     "defaultMessage": "输入"
@@ -2228,10 +2217,10 @@
     "defaultMessage": "防止模型被交换到磁盘"
   },
   "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "最大输出令牌"
+    "defaultMessage": "最大输出词元"
   },
   "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "生成令牌上限"
+    "defaultMessage": "生成词元上限"
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
@@ -2255,7 +2244,7 @@
     "defaultMessage": "重复窗口"
   },
   "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "回看的令牌数"
+    "defaultMessage": "回看的词元数"
   },
   "modelSettingsPanel.repetitionPenalty": {
     "defaultMessage": "重复惩罚"
@@ -2591,7 +2580,7 @@
     "defaultMessage": "使用的提供商和模型"
   },
   "privacyInfoModal.collectSession": {
-    "defaultMessage": "会话指标（时长、交互次数、令牌用量）"
+    "defaultMessage": "会话指标（时长、交互次数、词元用量）"
   },
   "privacyInfoModal.collectVersion": {
     "defaultMessage": "goose 版本和安装方式"
@@ -4319,7 +4308,7 @@
     "defaultMessage": "中 - 适度思考"
   },
   "switchModelModal.claudeEnabled": {
-    "defaultMessage": "启用 - 固定思考令牌预算"
+    "defaultMessage": "启用 - 固定思考词元预算"
   },
   "switchModelModal.couldNotContactProvider": {
     "defaultMessage": "无法连接提供商"
@@ -4385,7 +4374,7 @@
     "defaultMessage": "选择思考模式"
   },
   "switchModelModal.thinkingBudget": {
-    "defaultMessage": "思考预算（令牌）"
+    "defaultMessage": "思考预算（词元）"
   },
   "switchModelModal.thinkingEffort": {
     "defaultMessage": "思考努力"

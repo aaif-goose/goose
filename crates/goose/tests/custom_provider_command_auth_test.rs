@@ -35,6 +35,7 @@ fn custom_config_with_auth(base_url: &str, auth: AuthConfig) -> DeclarativeProvi
         skip_canonical_filtering: false,
         model_doc_link: None,
         setup_steps: vec![],
+        toolshim: false,
         preserves_thinking: false,
         emit_clear_thinking: false,
         setup: None,

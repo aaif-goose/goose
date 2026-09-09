@@ -125,7 +125,7 @@ pub(crate) async fn generate_session_name(
         SESSION_NAME_SUFFIX,
     );
     let message = Message::user().with_text(&user_text);
-    let result = if provider.manages_own_context() {
+    let result = if provider.uses_local_session_naming() {
         crate::providers::cli_common::generate_simple_session_description(
             provider.get_name(),
             &[message],

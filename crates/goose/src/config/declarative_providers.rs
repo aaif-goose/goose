@@ -144,6 +144,7 @@ pub struct CreateCustomProviderParams {
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
     pub base_path: Option<String>,
+    pub toolshim: bool,
     pub preserves_thinking: Option<bool>,
     /// Alternative to `api_key`; mutually exclusive with it.
     pub auth: Option<AuthConfig>,
@@ -162,6 +163,7 @@ pub struct UpdateCustomProviderParams {
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
     pub base_path: Option<String>,
+    pub toolshim: bool,
     pub preserves_thinking: Option<bool>,
     /// Alternative to `api_key`; mutually exclusive with it.
     pub auth: Option<AuthConfig>,
@@ -225,6 +227,7 @@ pub fn create_custom_provider(
         skip_canonical_filtering: false,
         model_doc_link: None,
         setup_steps: vec![],
+        toolshim: params.toolshim,
         preserves_thinking,
         emit_clear_thinking: false,
         setup: None,
@@ -343,6 +346,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             skip_canonical_filtering: existing_config.skip_canonical_filtering,
             model_doc_link: existing_config.model_doc_link,
             setup_steps: existing_config.setup_steps,
+            toolshim: params.toolshim,
             preserves_thinking,
             emit_clear_thinking: existing_config.emit_clear_thinking,
             setup: existing_config.setup,
@@ -619,10 +623,29 @@ mod tests {
             skip_canonical_filtering: false,
             model_doc_link: None,
             setup_steps: Vec::new(),
+            toolshim: false,
             preserves_thinking: true,
             emit_clear_thinking: false,
             setup: None,
         }
+    }
+
+    #[test]
+    fn toolshim_changes_declarative_inventory_identity() {
+        let _guard = env_lock::lock_env([("GOOSE_TOOLSHIM", None::<&str>)]);
+        let mut config = test_huggingface_config();
+
+        let native = declarative_inventory_identity(&config)
+            .unwrap()
+            .into_identity()
+            .unwrap();
+        config.toolshim = true;
+        let toolshim = declarative_inventory_identity(&config)
+            .unwrap()
+            .into_identity()
+            .unwrap();
+
+        assert_ne!(native.inventory_key, toolshim.inventory_key);
     }
 
     #[test]
@@ -770,6 +793,7 @@ mod tests {
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
+            toolshim: false,
             preserves_thinking: None,
             auth: None,
         })
@@ -787,6 +811,7 @@ mod tests {
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
+            toolshim: false,
             preserves_thinking: None,
             auth: None,
         })
@@ -904,6 +929,7 @@ mod tests {
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
+            toolshim: false,
             preserves_thinking: None,
             auth: None,
         })

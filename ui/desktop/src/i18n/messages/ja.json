@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "追加"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "このプロバイダーでは常にToolshimを使用する"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic互換"
   },
@@ -926,8 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "作業ディレクトリの更新に失敗しました"
   },
@@ -1757,13 +1758,10 @@
     "defaultMessage": "このモデルを削除しますか？後で再ダウンロードできます。"
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "APIキーなしで推論できるローカルLLMモデルをダウンロード・管理します。Hugging Faceで任意のGGUFモデルを検索するか、以下の注目モデルを使用できます。"
+    "defaultMessage": "APIキーなしで推論できるローカルLLMモデルをダウンロード・管理します。Hugging FaceでGGUFまたはMLXモデルを検索できます。"
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "閉じる"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "ダウンロード"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "ダウンロードがキャンセルされました"
@@ -1782,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "注目モデル"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "モデルの検索・ダウンロード時のレート制限を緩和し、非公開またはゲート付きHugging Faceリポジトリにアクセスするにはサインインしてください。"
@@ -1809,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "再試行"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "注目モデルをすべて表示（あと{count}件）"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "おすすめのみ表示"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "ローカル推論モデル"

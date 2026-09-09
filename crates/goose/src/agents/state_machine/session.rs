@@ -177,16 +177,20 @@ pub(crate) async fn run(
         "gen_ai.agent.name",
         crate::agents::gen_ai_telemetry::agent_name(&entry_session),
     );
-    if let Some(input) = entry_session
-        .conversation()
-        .and_then(|conversation| {
-            crate::agents::state_machine::messages_since_kickoff(conversation).ok()
-        })
-        .and_then(|messages| messages.first())
-        .map(crate::conversation::message::Message::user_visible_content)
-        .map(|message| message.as_concat_text())
-        .filter(|text| !text.is_empty())
-    {
+    let trace_input = if crate::agents::gen_ai_telemetry::capture_message_content() {
+        entry_session
+            .conversation()
+            .and_then(|conversation| {
+                crate::agents::state_machine::messages_since_kickoff(conversation).ok()
+            })
+            .and_then(|messages| messages.first())
+            .map(crate::conversation::message::Message::user_visible_content)
+            .map(|message| message.as_concat_text())
+            .filter(|text| !text.is_empty())
+    } else {
+        None
+    };
+    if let Some(input) = trace_input {
         tracing::Span::current().record("trace_input", input.as_str());
     }
 
@@ -224,8 +228,8 @@ pub(crate) async fn run(
         .unwrap_or_default();
     if !last_assistant_text.is_empty() {
         let span = tracing::Span::current();
-        span.record("trace_output", last_assistant_text.as_str());
         if crate::agents::gen_ai_telemetry::capture_message_content() {
+            span.record("trace_output", last_assistant_text.as_str());
             let output = crate::agents::gen_ai_telemetry::simple_output_json(&last_assistant_text);
             span.record("gen_ai.output.messages", output.as_str());
         }
