@@ -27,7 +27,7 @@ path = "src/bin/mcp_conformance_driver.rs"
 clap_mangen = { version = "0.3", default-features = false }
 goose = { path = "../goose", default-features = false }
 agent-client-protocol = { workspace = true, features = ["unstable"], optional = true }
-goose-mcp = { path = "../goose-mcp", default-features = false }
+goose-mcp = { path = "../goose-mcp", default-features = false, optional = true }
 goose-providers = { path = "../goose-providers", default-features = false }
 goose-roaming = { path = "../goose-roaming", optional = true }
 rmcp = { workspace = true }
@@ -102,6 +102,8 @@ default = [
     "rustls-tls",
     "system-keyring",
     "update",
+    "bundled-mcp",
+    "scheduler",
 ]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
@@ -116,6 +118,8 @@ nostr = ["goose/nostr"]
 otel = ["goose/otel"]
 system-keyring = ["goose/system-keyring"]
 update = ["dep:sigstore-verify", "dep:snap"]
+bundled-mcp = ["dep:goose-mcp", "goose-mcp/bundled-mcp"]
+scheduler = []
 portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 # disables the update command
 disable-update = []
@@ -125,7 +129,7 @@ rustls-tls = [
     "axum-server/tls-rustls",
     "sigstore-verify?/rustls",
     "goose/rustls-tls",
-    "goose-mcp/rustls-tls",
+    "goose-mcp?/rustls-tls",
     "goose-providers/rustls-tls",
 ]
 native-tls = [
@@ -134,7 +138,7 @@ native-tls = [
     "axum-server/tls-openssl",
     "sigstore-verify?/native-tls",
     "goose/native-tls",
-    "goose-mcp/native-tls",
+    "goose-mcp?/native-tls",
     "goose-providers/native-tls",
 ]
 [dev-dependencies]

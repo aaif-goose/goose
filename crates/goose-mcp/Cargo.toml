@@ -12,9 +12,15 @@ description.workspace = true
 workspace = true
 
 [features]
-default = []
+default = ["bundled-mcp"]
 rustls-tls = []
 native-tls = []
+autovisualiser = []
+computer-controller = ["dep:lopdf", "dep:docx-rs", "dep:image", "dep:umya-spreadsheet"]
+document-tools = ["computer-controller"]
+memory-server = []
+tutorial-server = ["dep:include_dir"]
+bundled-mcp = ["autovisualiser", "computer-controller", "document-tools", "memory-server", "tutorial-server"]
 
 [dependencies]
 rmcp = { workspace = true, features = ["server", "client", "transport-io", "macros"] }
@@ -31,11 +37,11 @@ indoc = { workspace = true }
 chrono = { workspace = true }
 etcetera = { workspace = true }
 tempfile = { workspace = true }
-include_dir = { workspace = true }
+include_dir = { workspace = true, optional = true }
 once_cell = { workspace = true }
-lopdf = { version = "0.44", default-features = false }
-docx-rs = { version = "0.4.18", default-features = false, features = ["image"] }
-image = { version = "0.24.4", default-features = false, features = ["bmp", "dds", "dxt", "farbfeld", "gif", "hdr", "ico", "jpeg", "jpeg_rayon", "openexr", "png", "pnm", "tga", "tiff", "webp"] }
-umya-spreadsheet = { version = "3", default-features = false }
+lopdf = { version = "0.44", default-features = false, optional = true }
+docx-rs = { version = "0.4.18", default-features = false, features = ["image"], optional = true }
+image = { version = "0.24.4", default-features = false, features = ["bmp", "dds", "dxt", "farbfeld", "gif", "hdr", "ico", "jpeg", "jpeg_rayon", "openexr", "png", "pnm", "tga", "tiff", "webp"], optional = true }
+umya-spreadsheet = { version = "3", default-features = false, optional = true }
 shell-words = { workspace = true }
 process-wrap = { version = "9", default-features = false, features = ["std", "process-session"] }
