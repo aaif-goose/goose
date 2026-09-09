@@ -378,6 +378,7 @@ mod tests {
             base_url: "https://router.huggingface.co/v1".to_string(),
             models: vec![ModelInfo::new("test-model").with_context_limit(128_000)],
             headers: None,
+            session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
             requires_auth: true,

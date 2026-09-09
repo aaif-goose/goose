@@ -8,14 +8,14 @@ use crate::config::Config;
 use crate::providers::base::{ProviderDef, DEFAULT_PROVIDER_TIMEOUT_SECS};
 use crate::providers::command_auth::CommandAuthProvider;
 use crate::providers::custom_provider_config::ConfigKeyResolver;
+use crate::session_context::{
+    session_id_request_builder, session_id_request_builder_with_header_override,
+};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::openai::{
     parse_custom_headers, parse_openai_base_url, OpenAiProvider, OpenAiProviderBuilder,
     OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_VERSIONLESS_BASE_PATH,
 };
-
-const OPENCODE_GO_PROVIDER_NAME: &str = "opencode_go";
-const OPENCODE_SESSION_ID_HEADER: &str = "x-opencode-session";
 
 pub struct OpenAiProviderDef;
 
@@ -118,7 +118,7 @@ pub async fn from_env(
         std::time::Duration::from_secs(timeout_secs),
         tls_config,
     )?
-    .with_request_builder(crate::session_context::session_id_request_builder());
+    .with_request_builder(session_id_request_builder());
 
     if !parsed.query_params.is_empty() {
         api_client = api_client.with_query(parsed.query_params);
@@ -203,22 +203,14 @@ pub fn resolve_api_key(
     }
 }
 
-fn session_id_request_builder_for_provider(
-    provider_name: &str,
-) -> goose_providers::api_client::RequestBuilderDecorator {
-    if provider_name == OPENCODE_GO_PROVIDER_NAME {
-        crate::session_context::session_id_request_builder_with_header(OPENCODE_SESSION_ID_HEADER)
-    } else {
-        crate::session_context::session_id_request_builder()
-    }
-}
-
 pub fn from_custom_config(
     config: DeclarativeProviderConfig,
     tls_config: Option<goose_providers::api_client::TlsConfig>,
 ) -> Result<OpenAiProvider> {
     let auth_override = config.auth.clone();
-    let request_builder = session_id_request_builder_for_provider(&config.name);
+    let request_builder = session_id_request_builder_with_header_override(
+        config.session_id_header_override.as_deref(),
+    )?;
     goose_providers::openai::from_declarative_config(
         config,
         tls_config,
@@ -405,45 +397,5 @@ mod tests {
     #[test]
     fn parse_base_url_rejects_whitespace_only() {
         assert!(parse_base_url("  ").is_err());
-    }
-
-    #[tokio::test]
-    async fn opencode_go_uses_opencode_session_header() {
-        crate::session_context::with_session_id(Some("test-session-123".to_string()), async {
-            let decorate = session_id_request_builder_for_provider("opencode_go");
-
-            let request = decorate(reqwest::Client::new().get("http://localhost"))
-                .unwrap()
-                .build()
-                .unwrap();
-
-            assert_eq!(
-                request.headers().get("x-opencode-session").unwrap(),
-                "test-session-123"
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn other_provider_uses_default_session_header() {
-        crate::session_context::with_session_id(Some("test-session-123".to_string()), async {
-            let decorate = session_id_request_builder_for_provider("other_provider");
-
-            let request = decorate(reqwest::Client::new().get("http://localhost"))
-                .unwrap()
-                .build()
-                .unwrap();
-
-            assert_eq!(
-                request
-                    .headers()
-                    .get(crate::session_context::SESSION_ID_HEADER)
-                    .unwrap(),
-                "test-session-123"
-            );
-            assert!(request.headers().get("x-opencode-session").is_none());
-        })
-        .await;
     }
 }
