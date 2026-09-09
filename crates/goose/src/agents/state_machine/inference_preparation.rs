@@ -166,6 +166,66 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn both_loops_drop_project_hints_when_working_directory_disappears() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        fs::create_dir(config_root.path().join("config")).unwrap();
+        fs::write(
+            config_root.path().join("config").join(GOOSE_HINTS_FILENAME),
+            "GLOBAL_HINT",
+        )
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(project.join("nested")).unwrap();
+        fs::write(project.join(GOOSE_HINTS_FILENAME), "ROOT_HINT").unwrap();
+        fs::write(
+            project.join("nested").join(GOOSE_HINTS_FILENAME),
+            "NESTED_HINT",
+        )
+        .unwrap();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        let conversation = Conversation::new_unvalidated([Message::assistant().with_tool_request(
+            "read-nested",
+            Ok(CallToolRequestParams::new("read_file").with_arguments(arguments.clone().unwrap())),
+        )]);
+        let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap();
+        let mut legacy = PromptManager::with_timestamp(timestamp);
+        legacy.set_system_prompt_override("base".to_string());
+        legacy.record_tool_arguments(&arguments, &project);
+        assert!(legacy
+            .builder_with_fresh_hints(&project, GooseMode::Auto)
+            .build()
+            .contains("NESTED_HINT"));
+
+        fs::rename(&project, temp.path().join("moved-project")).unwrap();
+        assert!(legacy.load_subdirectory_hints(&project));
+        let legacy_prompt = legacy
+            .builder_with_fresh_hints(&project, GooseMode::Auto)
+            .build();
+        let mut state_machine = PromptManager::with_timestamp(timestamp);
+        state_machine.set_system_prompt_override("base".to_string());
+        let prompt = state_machine.build_system_prompt_from_snapshot(
+            Vec::new(),
+            GooseMode::Auto,
+            reconstructed_hint_snapshot(&conversation, &project),
+        );
+        assert_eq!(legacy_prompt, prompt);
+        assert!(prompt.contains("GLOBAL_HINT"));
+        assert!(!prompt.contains("ROOT_HINT"));
+        assert!(!prompt.contains("NESTED_HINT"));
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn both_loops_bound_one_snapshot_and_deduplicate_ancestor_hints() {
         let config_root = tempfile::tempdir().unwrap();
         let _guard = env_lock::lock_env([

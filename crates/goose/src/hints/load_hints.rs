@@ -202,7 +202,15 @@ impl SubdirectoryHintTracker {
         )
         .len();
         let Ok(canonical_working_dir) = working_dir.canonicalize() else {
-            return Vec::new();
+            return self
+                .loaded_dirs
+                .iter()
+                .filter_map(|dir| {
+                    self.emitted_hints
+                        .remove(dir)
+                        .map(|_| (format!("subdir_hints:{}", dir.display()), String::new()))
+                })
+                .collect();
         };
 
         let mut attempted_dirs = HashSet::new();
@@ -1260,6 +1268,49 @@ End of hints"#;
         assert_eq!(first.len(), 1);
         assert!(first[0].1.contains("nested hints"));
         assert!(tracker.load_new_hints(project_root.path()).is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_retracts_emitted_hints_when_working_directory_disappears() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        let moved = temp.path().join("moved-project");
+        fs::create_dir_all(project.join("nested")).unwrap();
+        fs::write(
+            project.join("nested").join(GOOSE_HINTS_FILENAME),
+            "NESTED_HINT",
+        )
+        .unwrap();
+        let mut tracker = SubdirectoryHintTracker::new();
+        let arguments = serde_json::json!({ "path": "nested/file.rs" })
+            .as_object()
+            .cloned();
+        tracker.record_tool_arguments(&arguments, &project);
+        let first = tracker.load_new_hints(&project);
+        assert_eq!(first.len(), 1);
+        assert!(first[0].1.contains("NESTED_HINT"));
+        assert!(tracker.load_new_hints(&project).is_empty());
+
+        fs::rename(&project, &moved).unwrap();
+        assert_eq!(
+            tracker.load_new_hints(&project),
+            vec![(first[0].0.clone(), String::new())]
+        );
+        assert!(tracker.emitted_hints.is_empty());
+        assert!(tracker.load_new_hints(&project).is_empty());
+
+        fs::rename(&moved, &project).unwrap();
+        assert_eq!(tracker.load_new_hints(&project), first);
+        assert!(tracker.load_new_hints(&project).is_empty());
     }
 
     #[test]
