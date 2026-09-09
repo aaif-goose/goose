@@ -9,8 +9,8 @@ use tokio::sync::watch;
 
 use crate::{
     canonical::{
-        catalog::ProviderSetupMetadata, map_to_canonical_model, provider_wire_name,
-        recommended_models_from_registry, CanonicalModelRegistry,
+        catalog::ProviderSetupMetadata, map_to_canonical_model, recommended_models_from_registry,
+        CanonicalModelRegistry,
     },
     conversation::{
         message::{Message, MessageContentBlock},
@@ -367,10 +367,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
 pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
     recommended_models_from_registry(provider)
         .into_iter()
-        .map(|name| {
-            let name = provider_wire_name(provider, &name);
-            model_info_for_provider_model(provider, &name)
-        })
+        .map(|name| model_info_for_provider_model(provider, &name))
         .collect()
 }
 

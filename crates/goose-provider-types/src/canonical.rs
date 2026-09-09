@@ -46,17 +46,24 @@ pub fn recommended_models_from_registry(provider: &str) -> Vec<String> {
     let mut models_with_dates: Vec<(String, Option<String>)> = all
         .iter()
         .filter(|m| m.modalities.input.contains(&Modality::Text) && m.tool_call)
+        .filter(|m| registry_provider != "openai" || !m.id.contains("realtime"))
         .filter_map(|m| {
             let (_, name) = m.id.split_once('/')?;
-            Some((name.to_string(), m.release_date.clone()))
+            Some((
+                provider_wire_name(provider, &m.id, name),
+                m.release_date.clone(),
+            ))
         })
         .collect();
 
-    models_with_dates.sort_by(|a, b| match (&a.1, &b.1) {
-        (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.0.cmp(&b.0),
+    models_with_dates.sort_by(|a, b| {
+        let date_order = match (&a.1, &b.1) {
+            (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        };
+        date_order.then_with(|| a.0.cmp(&b.0))
     });
 
     models_with_dates
@@ -65,12 +72,24 @@ pub fn recommended_models_from_registry(provider: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn provider_wire_name(provider: &str, canonical_name: &str) -> String {
+pub fn provider_wire_name(provider: &str, canonical_id: &str, canonical_name: &str) -> String {
     if map_provider_name(provider) == "anthropic" {
-        dotted_version_to_dash(canonical_name)
-    } else {
-        canonical_name.to_string()
+        return dotted_version_to_dash(canonical_name);
     }
+
+    static REPORT: once_cell::sync::Lazy<serde_json::Value> = once_cell::sync::Lazy::new(|| {
+        serde_json::from_str(include_str!("canonical/data/canonical_mapping_report.json"))
+            .expect("bundled canonical mapping report must be valid")
+    });
+    REPORT["all_mappings"][provider]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|mapping| mapping["canonical_model"].as_str() == Some(canonical_id))
+        .filter_map(|mapping| mapping["provider_model"].as_str())
+        .min_by_key(|name| (!name.ends_with("-latest"), name.len(), *name))
+        .unwrap_or(canonical_name)
+        .to_string()
 }
 
 fn dotted_version_to_dash(name: &str) -> String {
@@ -233,13 +252,24 @@ mod tests {
     #[test]
     fn anthropic_wire_name_uses_dashed_versions() {
         assert_eq!(
-            provider_wire_name("anthropic", "claude-sonnet-4.5"),
+            provider_wire_name(
+                "anthropic",
+                "anthropic/claude-sonnet-4.5",
+                "claude-sonnet-4.5"
+            ),
             "claude-sonnet-4-5"
         );
         assert_eq!(
-            provider_wire_name("anthropic", "claude-opus-5"),
+            provider_wire_name("anthropic", "anthropic/claude-opus-5", "claude-opus-5"),
             "claude-opus-5"
         );
-        assert_eq!(provider_wire_name("openai", "gpt-5.2"), "gpt-5.2");
+        assert_eq!(
+            provider_wire_name("openai", "openai/gpt-5.2", "gpt-5.2"),
+            "gpt-5.2"
+        );
+        assert_eq!(
+            provider_wire_name("openai", "openai/gpt-5.2-chat", "gpt-5.2-chat"),
+            "gpt-5.2-chat-latest"
+        );
     }
 }
