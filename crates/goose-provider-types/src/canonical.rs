@@ -89,10 +89,6 @@ pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<Canonica
         return None;
     };
 
-    canonical.thinking_mode = canonical
-        .thinking_mode
-        .or_else(|| ThinkingMode::for_model(&canonical.id));
-
     if should_clear_catalog_pricing(provider) {
         canonical.cost = Pricing::default();
     } else if name_builder::is_meta_provider(provider) && canonical.cost.has_no_usable_rate() {

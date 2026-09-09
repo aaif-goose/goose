@@ -8,19 +8,18 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::pin;
 use tokio_util::io::StreamReader;
 
 use crate::api_client::{ApiClient, AuthMethod, TlsConfig};
-use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
-use crate::canonical::{maybe_get_canonical_model, ThinkingMode};
-use crate::thinking::{
-    ThinkingEffort, ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
+use crate::base::{
+    model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
 };
+use crate::canonical::maybe_get_canonical_model;
 const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
 use crate::conversation::message::Message;
 use crate::databricks_auth::{
@@ -54,6 +53,13 @@ const DATABRICKS_V2_CATALOG_PAGE_SIZE: usize = 100;
 const DATABRICKS_V2_MAX_CATALOG_PAGES: usize = 100;
 // Model-services intermittently uses 499 for transient gateway timeouts.
 const DATABRICKS_V2_TRANSIENT_GATEWAY_STATUS: u16 = 499;
+const MODEL_SERVICE_METADATA_TIMEOUT: Duration = Duration::from_secs(5);
+const MODEL_SERVICE_METADATA_TTL: Duration = Duration::from_secs(60);
+
+struct CachedModelServiceModel {
+    fetched_at: Instant,
+    model: Result<Option<String>, ProviderError>,
+}
 
 #[derive(Clone, Copy)]
 struct ModelCatalog {
@@ -110,7 +116,7 @@ pub struct DatabricksV2Provider {
     #[serde(skip)]
     gateway_path: String,
     #[serde(skip)]
-    effort_support: Mutex<ThinkingEffortSupport>,
+    model_service_models: Mutex<HashMap<String, CachedModelServiceModel>>,
 }
 
 impl DatabricksV2Provider {
@@ -158,7 +164,7 @@ impl DatabricksV2Provider {
             token_cache,
             refresh_hook,
             gateway_path: DATABRICKS_V2_DEFAULT_GATEWAY_PATH.to_string(),
-            effort_support: Mutex::new(ThinkingEffortSupport::Unspecified),
+            model_service_models: Mutex::new(HashMap::new()),
         })
     }
 
@@ -243,20 +249,103 @@ impl DatabricksV2Provider {
         }
     }
 
-    fn claude_model_service_config(model_config: &ModelConfig) -> Option<ModelConfig> {
+    async fn claude_model_service_config(&self, model_config: &ModelConfig) -> Option<ModelConfig> {
         if !Self::is_model_service_fqn(&model_config.model_name) {
             return None;
         }
-        let service_name = model_config.model_name.rsplit('.').next()?;
-        let canonical = maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, service_name)?;
+        let capability_model = match self.model_service_model(&model_config.model_name).await {
+            Ok(Some(model)) => model,
+            Ok(None) => return None,
+            // Older gateways may allow inference without exposing model-service metadata.
+            Err(_) => model_config.model_name.rsplit('.').next()?.to_string(),
+        };
+        let canonical = maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, &capability_model)?;
         if !canonical.id.starts_with("anthropic/")
             || model_config.reasoning.or(canonical.reasoning) != Some(true)
         {
             return None;
         }
         let mut config = model_config.clone();
-        config.model_name = service_name.to_string();
+        config.model_name = capability_model;
         Some(config)
+    }
+
+    fn model_service_model_from_value(value: &Value) -> Option<String> {
+        let routing = value.pointer("/config/routing")?;
+        let primary = routing.get("destinations")?.as_array()?;
+        let fallback = routing
+            .pointer("/fallback/destinations")
+            .and_then(Value::as_array);
+        let models: Vec<_> = primary
+            .iter()
+            .chain(fallback.into_iter().flatten())
+            .map(|destination| {
+                let model = destination
+                    .pointer("/pay_per_token_config/model")
+                    .or_else(|| destination.pointer("/provisioned_throughput_config/model"))
+                    .or_else(|| destination.pointer("/external_model_config/target/model"))?
+                    .as_str()?;
+                let model = model.strip_prefix("models/").unwrap_or(model);
+                maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, model).map(|model| model.id)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let model = models.first()?;
+        models
+            .iter()
+            .all(|candidate| candidate == model)
+            .then(|| model.clone())
+    }
+
+    async fn model_service_model(&self, name: &str) -> Result<Option<String>, ProviderError> {
+        if let Some(cached) = self.model_service_models.lock().unwrap().get(name) {
+            if cached.fetched_at.elapsed() < MODEL_SERVICE_METADATA_TTL {
+                return cached.model.clone();
+            }
+        }
+        let path = format!(
+            "{DATABRICKS_V2_LIST_MODEL_SERVICES_PATH}/{}",
+            urlencoding::encode(name)
+        );
+        let result = tokio::time::timeout(MODEL_SERVICE_METADATA_TIMEOUT, async {
+            let response = self.api_client.response_get(&path).await?;
+            let value: Value = read_json_response(handle_status(response).await?).await?;
+            if value
+                .pointer("/config/routing/destinations")
+                .and_then(Value::as_array)
+                .is_none()
+            {
+                return Err(ProviderError::RequestFailed(
+                    "Databricks model-service metadata is missing routing destinations".to_string(),
+                ));
+            }
+            Ok(Self::model_service_model_from_value(&value))
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(ProviderError::NetworkError(
+                "Databricks model-service metadata request timed out".to_string(),
+            ))
+        });
+        self.model_service_models.lock().unwrap().insert(
+            name.to_string(),
+            CachedModelServiceModel {
+                fetched_at: Instant::now(),
+                model: result.clone(),
+            },
+        );
+        result
+    }
+
+    fn model_service_info(name: &str, model: Option<&str>) -> ModelInfo {
+        match model {
+            Some(model) => {
+                let mut info = model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, model);
+                info.name = name.to_string();
+                info.resolved_model = Some(model.to_string());
+                info
+            }
+            None => ModelInfo::new(name),
+        }
     }
 
     fn is_model_service_fqn(model_name: &str) -> bool {
@@ -400,7 +489,7 @@ impl DatabricksV2Provider {
         if payload.get("max_tokens").is_none() {
             payload["max_tokens"] = Value::from(model_config.max_output_tokens());
         }
-        if let Some(config) = Self::claude_model_service_config(model_config) {
+        if let Some(config) = self.claude_model_service_config(model_config).await {
             payload.as_object_mut().unwrap().remove("budget_tokens");
             if !anthropic::model_supports_temperature(DATABRICKS_V2_PROVIDER_NAME, &config) {
                 payload.as_object_mut().unwrap().remove("temperature");
@@ -505,77 +594,6 @@ impl crate::base::ProviderDescriptor for DatabricksV2Provider {
 
 #[async_trait]
 impl Provider for DatabricksV2Provider {
-    fn thinking_effort_support(&self) -> ThinkingEffortSupport {
-        self.effort_support.lock().unwrap().clone()
-    }
-
-    async fn apply_model_selection(&self, model_config: &ModelConfig) -> Result<(), ProviderError> {
-        let support = if let Some(config) = Self::claude_model_service_config(model_config) {
-            let always_on =
-                maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, &config.model_name)
-                    .is_some_and(|model| {
-                        model.thinking_mode == Some(ThinkingMode::AlwaysOnAdaptive)
-                    });
-            let values = [
-                ThinkingEffort::Off,
-                ThinkingEffort::Low,
-                ThinkingEffort::Medium,
-                ThinkingEffort::High,
-                ThinkingEffort::Max,
-            ]
-            .into_iter()
-            .map(|effort| ThinkingEffortOption {
-                value: effort.to_string(),
-                label: if always_on && effort == ThinkingEffort::Off {
-                    "Default (high)".to_string()
-                } else {
-                    effort.to_string()
-                },
-            })
-            .collect();
-            let current = config
-                .thinking_effort()
-                .unwrap_or(ThinkingEffort::Off)
-                .to_string();
-            ThinkingEffortSupport::Options(ThinkingEffortCapability {
-                option_id: "thinking_effort".to_string(),
-                values,
-                current: Some(current),
-            })
-        } else if Self::is_model_service_fqn(&model_config.model_name)
-            && Self::route_for_model(&model_config.model_name)
-                == DatabricksV2Route::MlflowChatCompletions
-        {
-            ThinkingEffortSupport::Unsupported
-        } else {
-            ThinkingEffortSupport::Unspecified
-        };
-        *self.effort_support.lock().unwrap() = support;
-        Ok(())
-    }
-
-    async fn set_thinking_effort(
-        &self,
-        _session_id: &str,
-        value: &str,
-    ) -> Result<bool, ProviderError> {
-        match self.thinking_effort_support() {
-            ThinkingEffortSupport::Options(capability)
-                if !capability.values.iter().any(|option| option.value == value) =>
-            {
-                Err(ProviderError::InvalidValue(format!(
-                    "Thinking effort '{value}' is not supported by this model service"
-                )))
-            }
-            ThinkingEffortSupport::Unsupported if value != "off" => {
-                Err(ProviderError::InvalidValue(
-                    "Thinking effort is not supported by this model service".to_string(),
-                ))
-            }
-            _ => Ok(false),
-        }
-    }
-
     fn get_name(&self) -> &str {
         &self.name
     }
@@ -656,6 +674,35 @@ impl Provider for DatabricksV2Provider {
         names.dedup();
         Ok(names)
     }
+
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let names = self.fetch_supported_models().await?;
+        let cache = self.model_service_models.lock().unwrap();
+        Ok(names
+            .into_iter()
+            .map(|name| {
+                match cache
+                    .get(&name)
+                    .and_then(|cached| cached.model.as_ref().ok())
+                {
+                    Some(model) => Self::model_service_info(&name, model.as_deref()),
+                    None => model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, &name),
+                }
+            })
+            .collect())
+    }
+
+    async fn fetch_model_info(&self, name: &str) -> Result<ModelInfo, ProviderError> {
+        if Self::is_model_service_fqn(name) {
+            if let Ok(model) = self.model_service_model(name).await {
+                return Ok(Self::model_service_info(name, model.as_deref()));
+            }
+        }
+        Ok(model_info_for_provider_model(
+            DATABRICKS_V2_PROVIDER_NAME,
+            name,
+        ))
+    }
 }
 
 impl DatabricksV2Provider {
@@ -699,6 +746,30 @@ impl DatabricksV2Provider {
                 })?;
 
             let (page_models, next_page_token) = Self::parse_catalog_page(&json, catalog)?;
+            if catalog.name_prefix == Some(DATABRICKS_V2_MODEL_SERVICE_PREFIX) {
+                let mut cache = self.model_service_models.lock().unwrap();
+                for item in json[catalog.items_key].as_array().unwrap() {
+                    if item
+                        .pointer("/config/routing/destinations")
+                        .and_then(Value::as_array)
+                        .is_none()
+                    {
+                        continue;
+                    }
+                    if let Some(name) = item["name"]
+                        .as_str()
+                        .and_then(|name| name.strip_prefix(DATABRICKS_V2_MODEL_SERVICE_PREFIX))
+                    {
+                        cache.insert(
+                            name.to_string(),
+                            CachedModelServiceModel {
+                                fetched_at: Instant::now(),
+                                model: Ok(Self::model_service_model_from_value(item)),
+                            },
+                        );
+                    }
+                }
+            }
             models.extend(page_models);
 
             let Some(next_page_token) = next_page_token else {
