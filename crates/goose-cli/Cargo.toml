@@ -104,6 +104,8 @@ default = [
     "update",
     "bundled-mcp",
     "scheduler",
+    "platform-apps",
+    "chat-recall",
 ]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
@@ -119,7 +121,9 @@ otel = ["goose/otel"]
 system-keyring = ["goose/system-keyring"]
 update = ["dep:sigstore-verify", "dep:snap"]
 bundled-mcp = ["dep:goose-mcp", "goose-mcp/bundled-mcp"]
-scheduler = []
+scheduler = ["goose/scheduler"]
+platform-apps = ["goose/platform-apps"]
+chat-recall = ["goose/chat-recall"]
 portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 # disables the update command
 disable-update = []

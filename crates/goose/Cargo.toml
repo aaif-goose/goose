@@ -91,6 +91,9 @@ native-tls = [
 system-keyring = ["dep:keyring"]
 portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
+platform-apps = []
+chat-recall = []
+scheduler = []
 
 [lints]
 workspace = true

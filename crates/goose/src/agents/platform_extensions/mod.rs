@@ -1,12 +1,15 @@
 #[cfg(feature = "tree-sitter")]
 pub mod analyze;
+#[cfg(feature = "platform-apps")]
 pub mod apps;
+#[cfg(feature = "chat-recall")]
 pub mod chatrecall;
 #[cfg(feature = "code-mode")]
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+#[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
 pub mod summon;
@@ -60,6 +63,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "platform-apps")]
         map.insert(
             apps::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -74,6 +78,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "chat-recall")]
         map.insert(
             chatrecall::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -104,6 +109,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "scheduler")]
         map.insert(
             scheduler::EXTENSION_NAME,
             PlatformExtensionDef {
