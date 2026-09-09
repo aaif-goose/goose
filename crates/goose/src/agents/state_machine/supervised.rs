@@ -547,83 +547,13 @@ impl Agent {
                 );
             }
 
-            let stage_started = Instant::now();
-            let reviewed = run_hidden(
-                &supervisor_machine,
-                runtime.as_ref(),
-                &supervisor_session.id,
-                format!(
-                    "Review the completed implementation against the task and revised plan. Inspect the current diff and test evidence in the working tree. Identify only changes required for correctness.\n\nTask:\n{problem}\n\nRevised plan:\n{revised_plan}"
-                ),
-                cancel.child_token(),
-            )
-            .await?;
-            let review = feedback_from(&reviewed)?;
-            let repair_requested = review.requires_action && !implementer_cancel.is_cancelled();
-            yield trace_event(
-                "final_review",
-                "supervisor",
-                &provider_name,
-                Some(&models.supervisor),
-                stage_started.elapsed(),
-                serde_json::json!({
-                    "requires_action": review.requires_action,
-                    "feedback": &review.feedback,
-                    "delivered_to_implementer": repair_requested,
-                }),
-            );
-            if repair_requested {
-                implementer_steer
-                    .lock()
-                    .await
-                    .push_back(Message::user().with_text(format!(
-                        "Address this final review, then finish:\n\n{}",
-                        review.feedback
-                    )));
-                let (tx, mut repair_rx) = mpsc::channel(32);
-                let repair_emit = Emitter::new(tx, implementer_cancel.clone());
-                let repair_started = Instant::now();
-                {
-                    let repair = run_goose(
-                        &implementer_machine,
-                        runtime.as_ref(),
-                        &main_session_id,
-                        &repair_emit,
-                    );
-                    tokio::pin!(repair);
-                    loop {
-                        tokio::select! {
-                            event = repair_rx.recv() => {
-                                if let Some(event) = event {
-                                    yield event;
-                                } else {
-                                    break Ok(());
-                                }
-                            }
-                            result = &mut repair => break result.map(|_| ()),
-                        }
-                    }?;
-                }
-                drop(repair_emit);
-                while let Some(event) = repair_rx.recv().await {
-                    yield event;
-                }
-                yield trace_event(
-                    "repair",
-                    "implementer",
-                    &provider_name,
-                    Some(&models.implementer),
-                    repair_started.elapsed(),
-                    serde_json::json!({ "completed": true }),
-                );
-            }
             yield trace_event(
                 "completed",
                 "orchestrator",
                 &provider_name,
                 None,
                 workflow_started.elapsed(),
-                serde_json::json!({ "repair_run": repair_requested }),
+                serde_json::json!({ "final_review_run": false }),
             );
         }))
     }

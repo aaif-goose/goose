@@ -16,6 +16,10 @@ use crate::session::Session;
 
 pub const SUBMIT_PLAN_TOOL_NAME: &str = "submit_plan";
 pub const SUBMIT_FEEDBACK_TOOL_NAME: &str = "submit_feedback";
+const PLAN_CONTINUATION: &str =
+    "You MUST call the `submit_plan` tool NOW with the complete plan. Do not provide the plan directly in your response.";
+const FEEDBACK_CONTINUATION: &str =
+    "You MUST call the `submit_feedback` tool NOW with your assessment. Do not provide the assessment directly in your response.";
 
 pub struct PlanOperation;
 
@@ -136,7 +140,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
     async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
         Ok(vec![report_tool(
             SUBMIT_PLAN_TOOL_NAME,
-            "Submit the complete implementation plan after investigating the task.",
+            "This tool MUST be called to submit the complete implementation plan after investigating the task.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -154,7 +158,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
     ) -> Result<Vec<(String, String)>> {
         Ok(vec![(
             "planner".to_string(),
-            "Investigate the repository and produce a concrete implementation plan. Do not edit files. When the plan is complete, call submit_plan. On a later turn, use the same tool to submit the revised plan."
+            "# Plan Submission Instructions\n\nInvestigate the repository and produce a concrete implementation plan. Do not edit files. You MUST use the `submit_plan` tool to submit the complete plan rather than providing the plan directly in your response. On a later turn, use the same tool to submit the revised plan."
                 .to_string(),
         )])
     }
@@ -170,7 +174,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
             emit,
             SUBMIT_PLAN_TOOL_NAME,
             &["plan"],
-            "Call submit_plan now with the complete plan.",
+            PLAN_CONTINUATION,
         )
         .await
     }
@@ -185,7 +189,7 @@ impl Operation<Session, GooseEffect> for SupervisorOperation {
     async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
         Ok(vec![report_tool(
             SUBMIT_FEEDBACK_TOOL_NAME,
-            "Submit criticism, implementation steering, or patch review feedback.",
+            "This tool MUST be called to submit criticism or implementation steering.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -204,7 +208,7 @@ impl Operation<Session, GooseEffect> for SupervisorOperation {
     ) -> Result<Vec<(String, String)>> {
         Ok(vec![(
             "supervisor".to_string(),
-            "Independently inspect the repository before judging the supplied plan or implementation. Do not edit files. Be concise and actionable. Call submit_feedback when finished. Set requires_action when the planner or implementer must respond to the feedback."
+            "# Feedback Submission Instructions\n\nIndependently inspect the repository before judging the supplied plan or implementation. Do not edit files. Be concise and actionable. You MUST use the `submit_feedback` tool to submit the assessment rather than providing it directly in your response. Set `requires_action` when the planner or implementer must respond to the feedback."
                 .to_string(),
         )])
     }
@@ -220,7 +224,7 @@ impl Operation<Session, GooseEffect> for SupervisorOperation {
             emit,
             SUBMIT_FEEDBACK_TOOL_NAME,
             &["requires_action", "feedback"],
-            "Call submit_feedback now with your assessment and whether action is required.",
+            FEEDBACK_CONTINUATION,
         )
         .await
     }
