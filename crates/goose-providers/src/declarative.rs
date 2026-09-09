@@ -35,6 +35,7 @@ pub(crate) mod declarative_providers {
         ionet,
         lemonade,
         llama_swap,
+        llmman,
         lmstudio,
         lynkr,
         meta,
