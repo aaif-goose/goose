@@ -114,6 +114,9 @@ instructions: |
     Confirm that the model receives the tool result and answers on the next turn.
   - Exercise a thinking request if the effective template supports it. Record reasoning
     separately from visible output. Report unsupported capabilities explicitly.
+  - For Nanbeige 4.2, use its embedded checkpoint template and native tool mode.
+    Verify that XML-formatted tool calls arrive as structured tool requests and that
+    thinking is kept separate from visible text, including after a tool result.
   - Report the execution-plan evidence and each observed result. Never infer a native
     pass from mock tests or from the presence of a local model alone.
   For this phase, skip the unrelated delegation and remote-provider phases.
@@ -149,7 +152,7 @@ extensions:
 prompt: |
   {% if test_phases == 'local-eredu' %}
   Run only the local Eredu validation. Do not delegate or run other phases.
-  1. Call developer__shell with this exact command (use shell, not a file editor or
+  1. Call the developer extension's shell tool with this exact command (use shell, not a file editor or
      image reader): mkdir -p '{{ workspace_dir }}' && printf 'eredu-ok\n' > '{{ workspace_dir }}/probe.txt' && cat '{{ workspace_dir }}/probe.txt' && rm '{{ workspace_dir }}/probe.txt'
      Wait for the tool result and report the read content. Do not describe a plan.
   2. After receiving that tool result, inspect the latest completed request in

@@ -79,8 +79,25 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
     };
     *SETTINGS.lock().unwrap() = Some(settings.clone());
     let provider = LocalInferenceProvider::from_env().await.unwrap();
-    let config = ModelConfig::new(&path)
-        .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
+    let config =
+        ModelConfig::new(&path)
+            .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High)
+            .with_temperature(std::env::var("GOOSE_EREDU_TEST_TEMPERATURE").ok().map(
+                |temperature| {
+                    temperature
+                        .parse()
+                        .expect("GOOSE_EREDU_TEST_TEMPERATURE must be a number")
+                },
+            ))
+            .with_max_tokens(
+                std::env::var("GOOSE_EREDU_TEST_MAX_TOKENS")
+                    .ok()
+                    .map(|tokens| {
+                        tokens
+                            .parse()
+                            .expect("GOOSE_EREDU_TEST_MAX_TOKENS must be an integer")
+                    }),
+            );
     let (output, usage) = collect(
         &provider,
         &config,
@@ -104,7 +121,7 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
     }
 
     let mut bounded = config.clone();
-    bounded.max_tokens = Some(512);
+    bounded.max_tokens = Some(config.max_tokens.unwrap_or(512));
     let (_, reused) = collect(
         &provider,
         &bounded,
