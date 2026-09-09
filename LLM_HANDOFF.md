@@ -5,12 +5,13 @@
 - Repository: `/home/itlk/projekty/trwajace/goose_ai`
 - Branch: `work/mid-turn-auto-compact`
 - PR: https://github.com/aaif-goose/goose/pull/11903
-- HEAD: `b857833 Bound compaction suffix to tool inference` (pushed)
+- HEAD: `31ace88 Document compaction handoff status` (pushed); ostatnia
+  kodowa zmiana to `b857833 Bound compaction suffix to tool inference`.
 - Read `AGENTS.md` and `PROJECT_STATUS.md` before changing code.
 - This is maintainer-directed work; do not block on Ready status of issue #11072.
 
-CI for `b857833` is still running. At handoff all completed checks were green;
-verify live status before acting. One review thread remains unresolved.
+The documentation push started a fresh CI matrix. Check live status rather
+than relying on an earlier run. One review thread remains unresolved.
 
 ## Open review item
 

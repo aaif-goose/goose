@@ -200,9 +200,9 @@ następną inference, lecz nie po inference, która już go zużyła.
 
 ## Handoff — 2026-09-09
 
-HEAD to `b857833` na branchu `work/mid-turn-auto-compact`; commit jest
-wypchnięty do `origin`. Wszystkie wcześniejsze review threads są rozwiązane,
-ale pojawił się nowy otwarty P2 `PRRT_kwDOMneZ986gvZqm`
+Kodowa poprawka to `b857833`, a HEAD to `31ace88` (wyłącznie dokumentacja
+handoff); oba commity są wypchnięte do `origin`. Wszystkie wcześniejsze review
+threads są rozwiązane, ale pojawił się nowy otwarty P2 `PRRT_kwDOMneZ986gvZqm`
 (`discussion_r3970649254`): granica suffix accounting wymaga obecnie
 `is_user_visible()`, przez co agent-only continuation dodana po późniejszej
 inference (np. retry albo stop-hook) nie kończy suffixu. State machine może
@@ -217,10 +217,11 @@ streamu oraz dodać deterministyczną regresję state-machine dla retry lub
 stop-hook. Legacy nadal wymaga parzystego sprawdzenia, nawet gdy dokładne
 prepared-request count chroni je przed tym samym skutkiem.
 
-W momencie handoffu nowa macierz CI dla `b857833` nadal wykonuje trzy joby:
+W momencie handoffu macierz CI dla `b857833` nadal wykonywała trzy joby:
 `Build and Test Rust Project`, `Build and Test TLS Backend (native-tls)` i
 `Build and Test TLS Backend (rustls-tls)`; wszystkie ukończone joby są
-zielone. Ukończona macierz dla `16514c7` była całkowicie zielona.
+zielone. Push `31ace88` uruchomił kolejną macierz, więc należy sprawdzić jej
+stan na żywo. Ukończona macierz dla `16514c7` była całkowicie zielona.
 Szczegółowy prompt przekazania jest w `LLM_HANDOFF.md`.
 
 ## Checklista przed merge
