@@ -20,11 +20,11 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-eredu = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
-eredu-core = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
-eredu-text = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.1.1", default-features = false }
-eredu-architectures = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
-eredu-backend-mlx = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
+eredu = { git = "https://github.com/jbg/eredu", rev = "f4fbd5612b3fc9689e5d8077432651f6b4e92248", version = "0.5.0", default-features = false }
+eredu-core = { git = "https://github.com/jbg/eredu", rev = "f4fbd5612b3fc9689e5d8077432651f6b4e92248", version = "0.5.0", default-features = false }
+eredu-text = { git = "https://github.com/jbg/eredu", rev = "f4fbd5612b3fc9689e5d8077432651f6b4e92248", version = "0.1.1", default-features = false }
+eredu-architectures = { git = "https://github.com/jbg/eredu", rev = "f4fbd5612b3fc9689e5d8077432651f6b4e92248", version = "0.5.0", default-features = false }
+eredu-backend-mlx = { git = "https://github.com/jbg/eredu", rev = "f4fbd5612b3fc9689e5d8077432651f6b4e92248", version = "0.5.0", default-features = false }
 rmcp = { version = "3.2.0", default-features = false, features = ["schemars", "auth"] }
 agent-client-protocol-schema = { version = "=1.5.0", default-features = false }
 agent-client-protocol = { version = "2.0.0", default-features = false }

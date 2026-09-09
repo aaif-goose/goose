@@ -118,9 +118,16 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
         let mut native = settings.clone();
         native.tool_calling = ToolCallingMode::ForceNative;
         *SETTINGS.lock().unwrap() = Some(native);
-        let tool = Tool::new("lookup", "Look up the answer for a code.", json!({"type":"object","properties":{"code":{"type":"integer","minimum":1}},"required":["code"]}).as_object().unwrap().clone());
+        let tool = Tool::new(
+            "lookup",
+            "Look up the answer for a code. Set async to true to run in the background.",
+            json!({"type":"object","properties":{"code":{"type":"integer","minimum":1},"async":{"type":"boolean","default":false}},"required":["code"]})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
         let mut history = vec![Message::user().with_text(
-            "Use lookup to look up code 7. Do not answer until you have the tool result.",
+            "Use lookup to look up code 7 with async set to true. Do not answer until you have the tool result.",
         )];
         let (output, _) = collect(&provider, &bounded, &history, std::slice::from_ref(&tool)).await;
         let calls: Vec<_> = output
@@ -136,6 +143,7 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
             let tool_call = call.tool_call.as_ref().unwrap();
             assert_eq!(tool_call.name, "lookup");
             assert_eq!(tool_call.arguments.as_ref().unwrap()["code"], 7);
+            assert_eq!(tool_call.arguments.as_ref().unwrap()["async"], true);
         }
         let mut assistant = Message::assistant();
         assistant.content = output

@@ -59,7 +59,7 @@ fn lfm_native_tools_ignore_generic_thinking_but_validate_explicit_controls() {
     req.tools = vec![rmcp::model::Tool::new(
         "lookup",
         "Look up a code",
-        json!({"type":"object","properties":{"code":{"type":"integer"}},"required":["code"]})
+        json!({"type":"object","properties":{"code":{"type":"integer"},"async":{"type":"boolean","default":false}},"required":["code"]})
             .as_object()
             .unwrap()
             .clone(),
