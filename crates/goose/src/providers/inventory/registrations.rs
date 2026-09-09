@@ -12,6 +12,7 @@ use crate::providers::codex_acp::CODEX_ACP_PROVIDER_NAME;
 use crate::providers::copilot_acp::{COPILOT_ACP_BINARY, COPILOT_ACP_PROVIDER_NAME};
 use crate::providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME;
 use crate::providers::gemini_oauth::TokenCache as GeminiOAuthTokenCache;
+use crate::providers::githubcopilot::GithubCopilotProvider;
 use crate::providers::google::{GOOGLE_API_HOST, GOOGLE_PROVIDER_NAME};
 use crate::providers::huggingface::HuggingFaceProvider;
 use crate::providers::huggingface_auth;
@@ -187,6 +188,10 @@ pub fn huggingface_inventory() -> InventoryRegistration {
     .with_configured(|| huggingface_auth::has_configured_token().unwrap_or(false))
 }
 
+pub fn github_copilot_inventory() -> InventoryRegistration {
+    refresh_only().with_configured(GithubCopilotProvider::has_oauth_state)
+}
+
 pub fn refresh_only() -> InventoryRegistration {
     InventoryRegistration {
         supports_refresh: true,
@@ -239,6 +244,21 @@ pub fn acp_inventory(
     .with_configured(move || acp_adapter_installed(command))
 }
 
+/// CLI agent providers declare a required command key with a default, so the command
+/// resolves without any stored config. Having that command installed is what makes the
+/// provider usable, so it stands in for user-supplied configuration.
+pub fn cli_agent_inventory(
+    command: impl Fn() -> String + Send + Sync + 'static,
+    supports_refresh: bool,
+) -> InventoryRegistration {
+    InventoryRegistration {
+        supports_refresh,
+        identity: default_inventory_identity_resolver(),
+        configured: None,
+    }
+    .with_configured(move || acp_adapter_installed(&command()))
+}
+
 pub fn amp_acp_inventory() -> InventoryRegistration {
     acp_inventory(AMP_ACP_PROVIDER_NAME, AMP_ACP_BINARY, false)
 }
@@ -287,6 +307,55 @@ mod tests {
             Some("https://hub.services.ai.azure.com"),
             None,
         ));
+    }
+
+    #[test]
+    fn cli_agent_inventory_configured_tracks_command_installation() {
+        let missing = cli_agent_inventory(|| "goose-cli-agent-not-installed".to_string(), false);
+        let configured = missing
+            .configured
+            .expect("CLI agent should define configured resolver");
+        assert!(!configured());
+
+        let installed = cli_agent_inventory(|| "sh".to_string(), false);
+        let configured = installed
+            .configured
+            .expect("CLI agent should define configured resolver");
+        assert!(configured());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn github_copilot_inventory_configured_uses_oauth_state() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root_path.as_str()))]);
+
+        let registration = github_copilot_inventory();
+        let configured = registration
+            .configured
+            .expect("GitHub Copilot should define configured resolver");
+
+        assert!(!configured());
+
+        let cache_path = Paths::in_config_dir("githubcopilot/info.json");
+        std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            cache_path,
+            serde_json::to_string(&serde_json::json!({
+                "expires_at": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+                "info": {
+                    "token": "copilot-token",
+                    "expires_at": (Utc::now() + chrono::Duration::hours(1)).timestamp(),
+                    "refresh_in": 1500,
+                    "endpoints": { "api": "https://api.githubcopilot.com" },
+                },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(configured());
     }
 
     #[test]

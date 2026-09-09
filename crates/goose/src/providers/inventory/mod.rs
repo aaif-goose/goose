@@ -902,20 +902,37 @@ pub fn default_inventory_identity(
     identity
 }
 
-pub fn default_inventory_configured(config_keys: &[ConfigKey], config: &Config) -> bool {
-    config_keys.iter().all(|key| {
-        if !key.required {
-            return true;
-        }
-        if key.default.is_some() {
-            return true;
-        }
+/// A provider is configured when the user supplied its configuration, not merely
+/// when its declared defaults would let it construct. `declaration_is_configuration`
+/// is set for authless custom providers, whose declaration carries the base URL and
+/// models and so is itself the user-supplied configuration.
+pub fn default_inventory_configured(
+    provider_id: &str,
+    config_keys: &[ConfigKey],
+    config: &Config,
+    declaration_is_configuration: bool,
+) -> bool {
+    let has_value = |key: &ConfigKey| {
         if key.secret {
             config.get_secret::<serde_json::Value>(&key.name).is_ok()
         } else {
             config.get_param::<serde_json::Value>(&key.name).is_ok()
         }
-    })
+    };
+
+    let required_keys_satisfied = config_keys
+        .iter()
+        .all(|key| !key.required || key.default.is_some() || has_value(key));
+    if !required_keys_satisfied {
+        return false;
+    }
+
+    if crate::config::get_provider_entry(config, provider_id).is_some_and(|entry| entry.configured)
+    {
+        return true;
+    }
+
+    declaration_is_configuration || config_keys.iter().any(has_value)
 }
 
 pub fn declarative_inventory_identity(
@@ -1450,5 +1467,133 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "gpt-5.6");
+    }
+
+    struct TestConfig {
+        config: Config,
+        _config_file: tempfile::NamedTempFile,
+        _secrets_file: tempfile::NamedTempFile,
+    }
+
+    impl std::ops::Deref for TestConfig {
+        type Target = Config;
+
+        fn deref(&self) -> &Config {
+            &self.config
+        }
+    }
+
+    fn test_config() -> TestConfig {
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+        TestConfig {
+            config,
+            _config_file: config_file,
+            _secrets_file: secrets_file,
+        }
+    }
+
+    #[test]
+    fn defaulted_and_keyless_providers_are_not_configured() {
+        let config = test_config();
+        let defaulted = vec![ConfigKey::new(
+            "GOOSE_TEST_COMMAND",
+            true,
+            false,
+            Some("some-binary"),
+            true,
+        )];
+
+        assert!(!default_inventory_configured(
+            "defaulted",
+            &defaulted,
+            &config,
+            false
+        ));
+        assert!(!default_inventory_configured(
+            "no_keys",
+            &[],
+            &config,
+            false
+        ));
+    }
+
+    #[test]
+    fn authless_declaration_counts_as_configuration() {
+        let config = test_config();
+
+        assert!(default_inventory_configured("authless", &[], &config, true));
+    }
+
+    #[test]
+    fn a_stored_value_makes_a_provider_configured() {
+        let config = test_config();
+        let api_key = vec![ConfigKey::new("GOOSE_TEST_API_KEY", true, true, None, true)];
+
+        assert!(!default_inventory_configured(
+            "secret", &api_key, &config, false
+        ));
+
+        config
+            .set_secret("GOOSE_TEST_API_KEY", &"sk-test".to_string())
+            .unwrap();
+
+        assert!(default_inventory_configured(
+            "secret", &api_key, &config, false
+        ));
+    }
+
+    #[test]
+    fn missing_required_keys_outrank_the_configured_marker() {
+        let config = test_config();
+        let api_key = vec![ConfigKey::new("GOOSE_TEST_API_KEY", true, true, None, true)];
+        crate::config::set_provider_entry(
+            &config,
+            "secret",
+            &crate::config::ProviderEntry {
+                enabled: true,
+                model: "some-model".to_string(),
+                configured: true,
+            },
+        )
+        .unwrap();
+
+        assert!(!default_inventory_configured(
+            "secret", &api_key, &config, false
+        ));
+        assert!(!default_inventory_configured(
+            "secret", &api_key, &config, true
+        ));
+    }
+
+    #[test]
+    fn an_explicit_selection_configures_a_defaulted_provider() {
+        let config = test_config();
+        let defaulted = vec![ConfigKey::new(
+            "GOOSE_TEST_COMMAND",
+            true,
+            false,
+            Some("some-binary"),
+            true,
+        )];
+        crate::config::set_provider_entry(
+            &config,
+            "defaulted",
+            &crate::config::ProviderEntry {
+                enabled: true,
+                model: "some-model".to_string(),
+                configured: true,
+            },
+        )
+        .unwrap();
+
+        assert!(default_inventory_configured(
+            "defaulted",
+            &defaulted,
+            &config,
+            false
+        ));
     }
 }
