@@ -514,6 +514,12 @@ async fn auto_compacts_after_a_tool_result_before_the_next_inference() -> Result
 
     let large_result = "tool-result ".repeat(100);
     let image_data = "aW1hZ2U=";
+    pipeline
+        .seed([
+            Message::user().with_text("older text prompt"),
+            Message::assistant().with_text("older text response"),
+        ])
+        .await?;
     api.on("[image omitted: model does not support vision]")
         .call(ECHO, serde_json::json!({ "text": large_result }));
     api.on(SUMMARIZE_HISTORY).reply("summary");
@@ -538,6 +544,11 @@ async fn auto_compacts_after_a_tool_result_before_the_next_inference() -> Result
             .is_some_and(|call| call.input_contains(SUMMARIZE_HISTORY)),
         "the request after a tool result must compact before ordinary inference"
     );
+    assert!(!compacted
+        .conversation()
+        .agent_visible_messages()
+        .iter()
+        .any(|message| message.as_concat_text().contains("older text prompt")));
 
     let request_ids = compacted
         .conversation()

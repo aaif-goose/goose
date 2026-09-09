@@ -5410,6 +5410,17 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let (agent, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        agent
+            .config
+            .session_manager
+            .replace_conversation(
+                &session_id,
+                &Conversation::new_unvalidated([
+                    Message::user().with_text("older text prompt"),
+                    Message::assistant().with_text("older text response"),
+                ]),
+            )
+            .await?;
 
         let session_config = SessionConfig {
             id: session_id,

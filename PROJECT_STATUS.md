@@ -172,6 +172,13 @@ oraz preflighty legacy i state machine. CI dla `6fedb47` miało jedną
 niezwiązaną porażkę native-TLS (`extension_manager_tools_available`), przy
 zielonych Rust i rustls-TLS; następny push ponowi całą macierz.
 
+CI dla `5e16ce3` zakończyło się zielono. Kolejny P1 wykazał, że compaction
+image-only albo document-only bieżącego turnu mogła zachować tekstowy prompt
+ze starszego turnu. Wyszukiwanie promptu do zachowania jest teraz ograniczone
+do bieżącego user-visible turnu; gdy nie zawiera tekstu, pozostaje agent-only
+continuation. Regresje obejmują wspólną funkcję compaction oraz oba loopy,
+każda z wcześniejszym tekstowym turnem i bieżącym image-only promptem.
+
 PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
 szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
@@ -187,4 +194,5 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
 - [x] CI dla `b2d6339` jest zielone.
 - [x] CI dla `cced800` jest zielone.
-- [ ] Wypchnąć Toolshim preflight fix i poczekać na jej CI.
+- [x] CI dla `5e16ce3` jest zielone.
+- [ ] Wypchnąć poprawkę current-turn preservation i poczekać na jej CI.

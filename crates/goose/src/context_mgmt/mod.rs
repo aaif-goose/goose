@@ -94,29 +94,40 @@ pub async fn compact_messages(
 
     // Turn-context events are agent-appended, never the message to preserve.
     let (preserved_user_message, preserved_idx, is_most_recent) = if !manual_compact {
-        let found_msg = messages.iter().enumerate().rev().find_map(|(idx, msg)| {
-            if !msg.is_agent_visible()
-                || msg.is_turn_context()
-                || !matches!(msg.role, rmcp::model::Role::User)
-            {
-                return None;
-            }
+        let current_turn_start = messages
+            .iter()
+            .rposition(|msg| {
+                msg.role == Role::User && msg.is_user_visible() && !msg.is_tool_response()
+            })
+            .unwrap_or(messages.len());
+        let found_msg = messages
+            .iter()
+            .enumerate()
+            .skip(current_turn_start)
+            .rev()
+            .find_map(|(idx, msg)| {
+                if !msg.is_agent_visible()
+                    || msg.is_turn_context()
+                    || !matches!(msg.role, rmcp::model::Role::User)
+                {
+                    return None;
+                }
 
-            let projected = msg.agent_visible_content();
-            if !has_text_only(&projected) {
-                return None;
-            }
+                let projected = msg.agent_visible_content();
+                if !has_text_only(&projected) {
+                    return None;
+                }
 
-            let preserved = projected
-                .content
-                .into_iter()
-                .filter(|content| matches!(content, MessageContent::Text(_)))
-                .fold(
-                    Message::user().with_metadata(MessageMetadata::agent_only()),
-                    Message::with_content,
-                );
-            Some((idx, preserved))
-        });
+                let preserved = projected
+                    .content
+                    .into_iter()
+                    .filter(|content| matches!(content, MessageContent::Text(_)))
+                    .fold(
+                        Message::user().with_metadata(MessageMetadata::agent_only()),
+                        Message::with_content,
+                    );
+                Some((idx, preserved))
+            });
 
         if let Some((idx, msg)) = found_msg {
             let is_last = messages[idx + 1..].iter().all(Message::is_turn_context);
@@ -902,6 +913,8 @@ mod tests {
     async fn tool_compaction_without_text_prompt_adds_a_user_continuation() {
         let provider = MockProvider::new(Message::assistant().with_text("summary"), 100_000);
         let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("older text prompt"),
+            Message::assistant().with_text("older text response"),
             Message::user().with_image("aW1hZ2U=", "image/png"),
             Message::assistant().with_tool_request(
                 "image-tool",
@@ -935,6 +948,7 @@ mod tests {
         assert!(continuation
             .as_concat_text()
             .contains(TOOL_LOOP_CONTINUATION_TEXT));
+        assert!(!continuation.as_concat_text().contains("older text prompt"));
     }
 
     #[tokio::test]
