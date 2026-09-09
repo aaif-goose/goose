@@ -2775,6 +2775,9 @@ impl Agent {
                         }
                 }
                 drop(pending_steers);
+                for message in drained_steer_events {
+                    yield AgentEvent::Message(message);
+                }
 
                 let mut stream = crate::agents::reply_parts::stream_response_from_provider(
                     self.provider().await?,
@@ -2785,9 +2788,6 @@ impl Agent {
                     &tools,
                     &toolshim_tools,
                 ).await?;
-                for message in drained_steer_events {
-                    yield AgentEvent::Message(message);
-                }
                 last_assistant_text.clear();
 
                 let current_turn_tool_count = conversation.messages().iter()
