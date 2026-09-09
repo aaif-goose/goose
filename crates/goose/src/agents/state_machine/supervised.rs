@@ -11,7 +11,7 @@ use crate::agents::state_machine::{
     run_goose, submitted_report, Emitter, GooseEffect, PlanOperation, StateMachine,
     SupervisorOperation, SUBMIT_FEEDBACK_TOOL_NAME, SUBMIT_PLAN_TOOL_NAME,
 };
-use crate::agents::{Agent, AgentEvent, SessionConfig};
+use crate::agents::{Agent, AgentEvent, SessionConfig, StateMachineResources};
 use crate::config::Config;
 use crate::conversation::message::{Message, SystemNotificationType};
 use crate::model_config::model_config_from_user_config;
@@ -233,7 +233,7 @@ impl Agent {
         let planner_model = model_config_from_user_config(&provider_name, &models.planner)?;
         let supervisor_model = model_config_from_user_config(&provider_name, &models.supervisor)?;
         let implementer_model = model_config_from_user_config(&provider_name, &models.implementer)?;
-        let extension_configs = self.get_extension_configs().await;
+        let extension_configs = self.extension_manager.get_extension_configs().await;
         let planner_provider = create_with_working_dir(
             &provider_name,
             extension_configs.clone(),
@@ -242,7 +242,7 @@ impl Agent {
         .await?;
         let supervisor_provider = create_with_working_dir(
             &provider_name,
-            extension_configs,
+            extension_configs.clone(),
             parent.working_dir.clone(),
         )
         .await?;
@@ -271,19 +271,38 @@ impl Agent {
             .apply()
             .await?;
 
+        let (planner_extensions, supervisor_extensions) = tokio::try_join!(
+            self.extension_manager_for_session(
+                planner_provider.clone(),
+                extension_configs.clone(),
+                &planner_session,
+            ),
+            self.extension_manager_for_session(
+                supervisor_provider.clone(),
+                extension_configs,
+                &supervisor_session,
+            ),
+        )?;
+
         let planner_machine = self.create_state_machine(
-            planner_provider.clone(),
-            planner_model.clone(),
-            context_limit(&planner_provider, &planner_model).await,
+            StateMachineResources {
+                provider: planner_provider.clone(),
+                model_config: planner_model.clone(),
+                extension_manager: planner_extensions,
+                context_limit: context_limit(&planner_provider, &planner_model).await,
+            },
             session_config.max_turns,
             cancel.child_token(),
             self.steer_queue(&planner_session.id).await,
             Some(Arc::new(PlanOperation)),
         );
         let supervisor_machine = self.create_state_machine(
-            supervisor_provider.clone(),
-            supervisor_model.clone(),
-            context_limit(&supervisor_provider, &supervisor_model).await,
+            StateMachineResources {
+                provider: supervisor_provider.clone(),
+                model_config: supervisor_model.clone(),
+                extension_manager: supervisor_extensions,
+                context_limit: context_limit(&supervisor_provider, &supervisor_model).await,
+            },
             session_config.max_turns,
             cancel.child_token(),
             self.steer_queue(&supervisor_session.id).await,
@@ -292,9 +311,12 @@ impl Agent {
         let implementer_cancel = cancel.child_token();
         let implementer_steer = self.steer_queue(&session_config.id).await;
         let implementer_machine = self.create_state_machine(
-            implementer_provider.clone(),
-            implementer_model.clone(),
-            context_limit(&implementer_provider, &implementer_model).await,
+            StateMachineResources {
+                provider: implementer_provider.clone(),
+                model_config: implementer_model.clone(),
+                extension_manager: self.extension_manager.clone(),
+                context_limit: context_limit(&implementer_provider, &implementer_model).await,
+            },
             session_config.max_turns,
             implementer_cancel.clone(),
             implementer_steer.clone(),

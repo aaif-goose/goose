@@ -256,6 +256,32 @@ fn resolve_use_login_shell_path(explicit: Option<bool>, platform: &GoosePlatform
     explicit.unwrap_or(matches!(platform, GoosePlatform::GooseDesktop))
 }
 
+fn new_extension_manager(config: &AgentConfig, provider: SharedProvider) -> Arc<ExtensionManager> {
+    let explicit_mcp_host_info = config.mcp_host_info.clone();
+    let mcpui = explicit_mcp_host_info
+        .as_ref()
+        .filter(|host_info| host_info.explicit_extensions)
+        .map(GooseMcpHostInfo::mcpui_enabled)
+        .unwrap_or_else(|| matches!(config.goose_platform, GoosePlatform::GooseDesktop));
+    let capabilities = ExtensionManagerCapabilities {
+        mcpui,
+        host_info: explicit_mcp_host_info.clone(),
+    };
+    let client_name = explicit_mcp_host_info
+        .as_ref()
+        .and_then(|host_info| host_info.client_name.clone())
+        .unwrap_or_else(|| config.goose_platform.to_string());
+
+    Arc::new(ExtensionManager::new(
+        provider,
+        Arc::clone(&config.session_manager),
+        config.scheduler_service.clone(),
+        client_name,
+        capabilities,
+        config.resolve_use_login_shell_path(),
+    ))
+}
+
 /// The main goose Agent
 pub struct Agent {
     pub(super) provider: SharedProvider,
@@ -282,6 +308,13 @@ pub struct Agent {
     pub(super) goal: Mutex<Option<String>>,
     pub(super) grind: Mutex<Option<String>>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
+}
+
+pub(in crate::agents) struct StateMachineResources {
+    pub provider: Arc<dyn Provider>,
+    pub model_config: goose_providers::model::ModelConfig,
+    pub extension_manager: Arc<ExtensionManager>,
+    pub context_limit: usize,
 }
 
 fn ensure_message_event_id(event: AgentEvent) -> AgentEvent {
@@ -373,28 +406,8 @@ impl Agent {
     pub fn with_config(config: AgentConfig) -> Self {
         let (tool_tx, tool_rx) = mpsc::channel(32);
         let provider = Arc::new(Mutex::new(None));
-
-        let goose_platform = config.goose_platform.clone();
         let initial_mode = config.goose_mode;
-        let explicit_mcp_host_info = config.mcp_host_info.clone();
-        let mcpui = explicit_mcp_host_info
-            .as_ref()
-            .filter(|host_info| host_info.explicit_extensions)
-            .map(GooseMcpHostInfo::mcpui_enabled)
-            .unwrap_or_else(|| match config.goose_platform {
-                GoosePlatform::GooseDesktop => true,
-                GoosePlatform::GooseCli => false,
-            });
-        let capabilities = ExtensionManagerCapabilities {
-            mcpui,
-            host_info: explicit_mcp_host_info.clone(),
-        };
-        let client_name = explicit_mcp_host_info
-            .as_ref()
-            .and_then(|host_info| host_info.client_name.clone())
-            .unwrap_or_else(|| goose_platform.to_string());
-        let session_manager = Arc::clone(&config.session_manager);
-        let scheduler = config.scheduler_service.clone();
+        let extension_manager = new_extension_manager(&config, provider.clone());
         let inspection_session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
         let use_login_shell_path = config.resolve_use_login_shell_path();
@@ -403,14 +416,7 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_goose_mode: Mutex::new(initial_mode),
-            extension_manager: Arc::new(ExtensionManager::new(
-                provider.clone(),
-                session_manager,
-                scheduler,
-                client_name,
-                capabilities,
-                use_login_shell_path,
-            )),
+            extension_manager,
             final_output_tool: Arc::new(Mutex::new(None)),
             frontend_extensions: Mutex::new(HashMap::new()),
             frontend_tools: Mutex::new(HashMap::new()),
@@ -1563,6 +1569,35 @@ impl Agent {
         self.extension_configs_for_persistence().await
     }
 
+    pub(in crate::agents) async fn extension_manager_for_session(
+        &self,
+        provider: Arc<dyn Provider>,
+        extension_configs: Vec<ExtensionConfig>,
+        session: &Session,
+    ) -> Result<Arc<ExtensionManager>> {
+        let provider = Arc::new(Mutex::new(Some(provider)));
+        let extension_manager = new_extension_manager(&self.config, provider);
+        let container = self.container.lock().await.clone();
+        let loads = extension_configs.into_iter().map(|config| {
+            let extension_manager = extension_manager.clone();
+            let working_dir = session.working_dir.clone();
+            let session_id = session.id.clone();
+            let container = container.clone();
+            async move {
+                extension_manager
+                    .add_extension(
+                        config,
+                        Some(working_dir),
+                        container.as_ref(),
+                        Some(&session_id),
+                    )
+                    .await
+            }
+        });
+        futures::future::try_join_all(loads).await?;
+        Ok(extension_manager)
+    }
+
     /// Handle a confirmation response for a tool request
     pub async fn handle_confirmation(
         &self,
@@ -1597,14 +1632,18 @@ impl Agent {
 
     pub(super) fn create_state_machine(
         &self,
-        provider: Arc<dyn Provider>,
-        model_config: goose_providers::model::ModelConfig,
-        context_limit: usize,
+        resources: StateMachineResources,
         max_turns: Option<u32>,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
         report_operation: Option<Arc<dyn Operation<Session, GooseEffect>>>,
     ) -> StateMachine<'_, Session, GooseEffect> {
+        let StateMachineResources {
+            provider,
+            model_config,
+            extension_manager,
+            context_limit,
+        } = resources;
         let max_turns = max_turns.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_MAX_TURNS")
@@ -1671,7 +1710,7 @@ impl Agent {
             Arc::new(RecipeOperation),
             Arc::new(ToolExecutionOperation::new(
                 &self.current_goose_mode,
-                self.extension_manager.clone(),
+                extension_manager.clone(),
                 self.hook_manager.clone(),
             )),
             Arc::new(UnknownToolOperation),
@@ -1691,7 +1730,7 @@ impl Agent {
         let inference = Arc::new(InferenceRunner::new(
             provider,
             model_config,
-            self.extension_manager.clone(),
+            extension_manager,
             &self.current_goose_mode,
             &self.prompt_manager,
             &self.tool_inspection_manager,
@@ -1786,9 +1825,12 @@ impl Agent {
             .unwrap_or_else(|_| model_config.context_limit());
         let steer_queue = self.steer_queue(&session_id).await;
         let machine = self.create_state_machine(
-            provider,
-            model_config,
-            context_limit,
+            StateMachineResources {
+                provider,
+                model_config,
+                extension_manager: self.extension_manager.clone(),
+                context_limit,
+            },
             session_config.max_turns,
             cancel.clone(),
             steer_queue,
