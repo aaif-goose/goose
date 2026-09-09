@@ -115,24 +115,38 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
         .await
         .map_err(|_| anyhow::anyhow!("OpenAI Live HTTP setup timed out"))??;
         let session_id = creation_session_id(negotiation.session_id)?;
-        let sideband = connect_sideband(&client, session_id.clone()).await?;
-        let session = confirm_session_started(sideband, &session_id).await?;
-
         let answer = WebRtcAnswer::new(negotiation.answer_sdp)
             .ok_or_else(|| anyhow::anyhow!("OpenAI Live returned an invalid WebRTC answer"))?;
+        let mut sideband = connect_sideband(&client, session_id.clone()).await?;
+        confirm_session_started(&mut sideband, &session_id).await?;
+        let session = sideband.session.clone();
+        let event_task = tokio::spawn(consume_sideband(sideband));
 
-        Ok((answer, Box::new(OpenAiProviderConnection { session })))
+        Ok((
+            answer,
+            Box::new(OpenAiProviderConnection {
+                session,
+                event_task,
+            }),
+        ))
     }
 }
 
 struct OpenAiProviderConnection {
     session: OpenAiLiveSession,
+    event_task: tokio::task::JoinHandle<()>,
 }
 
 #[async_trait]
 impl ProviderConnection for OpenAiProviderConnection {
     async fn stop(&mut self) -> Result<()> {
         self.session.close().await
+    }
+}
+
+impl Drop for OpenAiProviderConnection {
+    fn drop(&mut self) {
+        self.event_task.abort();
     }
 }
 
@@ -162,10 +176,9 @@ async fn connect_sideband(
 }
 
 async fn confirm_session_started(
-    mut sideband: ConnectedOpenAiLiveSession,
+    sideband: &mut ConnectedOpenAiLiveSession,
     expected_session_id: &OpenAiLiveSessionId,
-) -> Result<OpenAiLiveSession> {
-    let session = sideband.session.clone();
+) -> Result<()> {
     timeout(SESSION_START_TIMEOUT, async {
         loop {
             match sideband.recv().await {
@@ -173,7 +186,7 @@ async fn confirm_session_started(
                     OpenAiLiveEventKind::SessionStarted { session_id }
                         if session_id.as_ref() == Some(expected_session_id) =>
                     {
-                        return Ok(session);
+                        return Ok(());
                     }
                     OpenAiLiveEventKind::SessionStarted { .. } => {
                         bail!("OpenAI Live sideband identity does not match creation identity")
@@ -198,6 +211,19 @@ async fn confirm_session_started(
     })
     .await
     .map_err(|_| anyhow::anyhow!("OpenAI Live session startup timed out"))?
+}
+
+async fn consume_sideband(mut sideband: ConnectedOpenAiLiveSession) {
+    loop {
+        match sideband.recv().await {
+            Ok(LiveSessionEvent::Message(_)) => {}
+            Ok(LiveSessionEvent::Ended { .. }) | Err(RecvError::Closed) => break,
+            Err(RecvError::Lagged(_)) => {
+                let _ = sideband.session.close().await;
+                break;
+            }
+        }
+    }
 }
 
 fn creation_session_id(session_id: Option<OpenAiLiveSessionId>) -> Result<OpenAiLiveSessionId> {
