@@ -133,7 +133,11 @@ pub async fn compact_messages(
             let is_last = messages[idx + 1..].iter().all(Message::is_turn_context);
             (Some(msg), Some(idx), is_last)
         } else {
-            (None, None, false)
+            (
+                None,
+                (current_turn_start < messages.len()).then_some(current_turn_start),
+                false,
+            )
         }
     } else {
         (None, None, false)
@@ -247,15 +251,19 @@ pub(crate) async fn context_tokens_since_last_inference(
     conversation: &Conversation,
 ) -> Result<Option<i32>> {
     let messages = conversation.messages();
-    let Some(last_assistant) = messages
-        .iter()
-        .rposition(|message| message.is_agent_visible() && message.role == Role::Assistant)
-    else {
+    let Some(tool_calling_assistant) = messages.iter().rposition(|message| {
+        message.is_agent_visible()
+            && message.role == Role::Assistant
+            && message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+    }) else {
         return Ok(None);
     };
 
     let added_messages =
-        Conversation::new_unvalidated(messages[last_assistant + 1..].iter().cloned())
+        Conversation::new_unvalidated(messages[tool_calling_assistant + 1..].iter().cloned())
             .agent_visible_messages();
     if !added_messages.iter().any(Message::is_tool_response) {
         return Ok(None);
@@ -916,6 +924,9 @@ mod tests {
             Message::user().with_text("older text prompt"),
             Message::assistant().with_text("older text response"),
             Message::user().with_image("aW1hZ2U=", "image/png"),
+            Message::user()
+                .with_text("<turn-context>cwd /repo</turn-context>")
+                .with_metadata(MessageMetadata::agent_only().with_turn_context()),
             Message::assistant().with_tool_request(
                 "image-tool",
                 Ok(rmcp::model::CallToolRequestParams::new("inspect_image")),
@@ -942,13 +953,45 @@ mod tests {
         let continuation = compacted
             .agent_visible_messages()
             .into_iter()
-            .last()
+            .find(|message| {
+                message
+                    .as_concat_text()
+                    .contains(TOOL_LOOP_CONTINUATION_TEXT)
+            })
             .expect("a provider-driving continuation");
         assert_eq!(continuation.role, Role::User);
         assert!(continuation
             .as_concat_text()
             .contains(TOOL_LOOP_CONTINUATION_TEXT));
         assert!(!continuation.as_concat_text().contains("older text prompt"));
+        assert!(compacted.messages().last().is_some_and(|message| {
+            message.is_agent_visible()
+                && message.is_turn_context()
+                && message.as_concat_text().contains("cwd /repo")
+        }));
+    }
+
+    #[tokio::test]
+    async fn suffix_accounting_anchors_to_the_tool_call_when_a_later_chunk_is_persisted() {
+        let conversation = Conversation::new_unvalidated([
+            Message::assistant()
+                .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file"))),
+            Message::user().with_tool_response(
+                "call_0",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("large tool result"),
+                ])),
+            ),
+            Message::assistant().with_text("a later chunk from the same inference"),
+        ]);
+
+        assert!(
+            context_tokens_since_last_inference(&conversation)
+                .await
+                .unwrap()
+                .is_some(),
+            "the tool response must remain part of the post-inference suffix"
+        );
     }
 
     #[tokio::test]

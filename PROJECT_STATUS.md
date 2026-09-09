@@ -184,6 +184,13 @@ szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
 nie obejmuje później znalezionego wyścigu P1.
 
+CI dla `16514c7` zakończyło się zielono. Dwa kolejne P2 doprecyzowały skrajne
+przypadki wspólnego preflightu: suffix token accounting kotwiczy się teraz na
+assistant tool request, nawet gdy późniejszy chunk tej inference został już
+zapisany, a image/document-only fallback zachowuje indeks początku turnu,
+aby przenieść jego turn-context. Regresje sprawdzają oba przypadki w
+`context_mgmt`, które jest współdzielone przez legacy i state machine.
+
 ## Checklista przed merge
 
 - [x] Naprawić P1 dotyczący późnego queued steer.
@@ -195,4 +202,5 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] CI dla `b2d6339` jest zielone.
 - [x] CI dla `cced800` jest zielone.
 - [x] CI dla `5e16ce3` jest zielone.
-- [ ] Wypchnąć poprawkę current-turn preservation i poczekać na jej CI.
+- [x] CI dla `16514c7` jest zielone.
+- [ ] Wypchnąć poprawki suffix accounting i turn-context carry, a następnie sprawdzić CI.
