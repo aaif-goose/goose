@@ -6,7 +6,10 @@ use url::Url;
 
 use crate::{
     config::{declarative_providers::DeclarativeProviderConfig, Config},
-    providers::{base::ProviderDef, custom_provider_config::ConfigKeyResolver},
+    providers::{
+        base::ProviderDef, command_auth::CommandAuthProvider,
+        custom_provider_config::ConfigKeyResolver,
+    },
 };
 use goose_providers::{
     api_client::{ApiClient, AuthMethod},
@@ -96,12 +99,19 @@ pub fn from_custom_config(
     config: DeclarativeProviderConfig,
     tls_config: Option<crate::providers::api_client::TlsConfig>,
 ) -> Result<OllamaProvider> {
+    let auth_override = config.auth.clone();
     ollama::from_declarative_config(config, tls_config, ConfigKeyResolver::new(Config::global()))
         .map(|builder| {
             builder
                 .map_api_client(|api_client| {
-                    api_client
-                        .with_request_builder(crate::session_context::session_id_request_builder())
+                    let api_client = api_client
+                        .with_request_builder(crate::session_context::session_id_request_builder());
+                    match auth_override {
+                        Some(auth_config) => api_client.with_auth(AuthMethod::Custom(Box::new(
+                            CommandAuthProvider::new(&auth_config, "Authorization", "Bearer "),
+                        ))),
+                        None => api_client,
+                    }
                 })
                 .options(options_from_config())
                 .build()

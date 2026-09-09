@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Tambah"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Selalu gunakan Toolshim untuk penyedia ini"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Kompatibel dengan Anthropic"
   },
@@ -926,8 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal memperbarui direktori kerja"
   },
@@ -1053,9 +1054,6 @@
   },
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "Tipe"
-  },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (tidak didukung)"
   },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "Standard IO (STDIO)"
@@ -1760,13 +1758,10 @@
     "defaultMessage": "Hapus model ini? Anda dapat mengunduhnya kembali nanti."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Unduh dan kelola model LLM lokal untuk inferensi tanpa kunci API. Cari model GGUF atau MLX di HuggingFace, atau gunakan pilihan unggulan di bawah."
+    "defaultMessage": "Unduh dan kelola model LLM lokal untuk inferensi tanpa kunci API. Cari model GGUF atau MLX di Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Tutup"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Unduh"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "Unduhan dibatalkan"
@@ -1785,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Model Unggulan"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Masuk untuk meningkatkan batas laju saat mencari dan mengunduh model, serta untuk mengakses repositori Hugging Face yang privat atau terbatas."
@@ -1812,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Coba Lagi"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Tampilkan semua unggulan ({count} lainnya)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Tampilkan yang direkomendasikan saja"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Model Inferensi Lokal"
@@ -3784,6 +3770,9 @@
   "sessionIndicators.streaming": {
     "defaultMessage": "Streaming"
   },
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Hapus sesi"
   },
@@ -3861,6 +3850,9 @@
   },
   "sessions.importing": {
     "defaultMessage": "Mengimpor..."
+  },
+  "sessions.includeAcp": {
+    "defaultMessage": "Sertakan sesi ACP"
   },
   "sessions.loadingMore": {
     "defaultMessage": "Memuat lebih banyak sesi..."
@@ -4531,9 +4523,6 @@
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Pengunduhan otomatis dinonaktifkan. Klik \"Download Now\" untuk mengunduh secara manual."
   },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "Tidak diperlukan instalasi manual."
-  },
   "updateSection.checkForUpdates": {
     "defaultMessage": "Periksa Pembaruan"
   },
@@ -4564,26 +4553,11 @@
   "updateSection.installAndRestart": {
     "defaultMessage": "Instal & Mulai Ulang"
   },
-  "updateSection.installNowHint": {
-    "defaultMessage": "Klik \"Install & Restart\" untuk memperbarui sekarang."
-  },
   "updateSection.latestVersion": {
     "defaultMessage": "Anda menjalankan versi terbaru!"
   },
   "updateSection.loading": {
     "defaultMessage": "Memuat..."
-  },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "Setelah pengunduhan, Anda perlu menginstal pembaruan secara manual."
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "Instalasi manual diperlukan untuk metode pembaruan ini."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Pembaruan sudah siap. Mulai ulang Goose untuk menyelesaikan pemasangan, atau keluar saat Anda selesai."
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ Pembaruan sudah siap! Klik \"Install & Restart\" untuk petunjuk pemasangan."
   },
   "updateSection.upToDate": {
     "defaultMessage": "(terbaru)"

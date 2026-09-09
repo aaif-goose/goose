@@ -1,5 +1,7 @@
 use crate::recipe::read_recipe_file_content::RecipeFile;
-use crate::recipe::template_recipe::{parse_recipe_content, prepare_recipe_template};
+use crate::recipe::template_recipe::{
+    parse_recipe_content, parse_recipe_template, prepare_recipe_template, ParsedRecipeTemplate,
+};
 use crate::recipe::value_deserializer::RecipeValueDeserializer;
 use crate::recipe::{
     Recipe, RecipeParameter, RecipeParameterInputType, RecipeParameterRequirement,
@@ -7,7 +9,7 @@ use crate::recipe::{
 };
 use anyhow::Result;
 use serde_path_to_error::Segment;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,8 +164,6 @@ fn safe_schema_path(path: &serde_path_to_error::Path) -> Option<SafeSchemaPath> 
     let mut display = String::new();
 
     for segment in path {
-        // Dynamic map keys are recipe data, not schema. Keep the last fixed
-        // schema path and never append those keys to a diagnostic.
         if matches!(node, SchemaNode::Opaque) {
             return Some(SafeSchemaPath {
                 display,
@@ -352,8 +352,6 @@ pub fn validate_recipe_for_scheduling(
 ) -> Result<Recipe, SchedulerRecipeError> {
     let (prepared_content, template_variables) = prepare_recipe_template(content, recipe_dir)
         .map_err(|_| SchedulerRecipeError::GenericParse(format))?;
-    // This is the only YAML or JSON parse in scheduling validation. The
-    // target-aware deserializer converts this Value without parsing the source again.
     let document = serde_yaml::from_str::<serde_yaml::Value>(&prepared_content)
         .map_err(|_| SchedulerRecipeError::GenericParse(format))?;
     let nested_recipe = document.get("recipe");
@@ -384,6 +382,28 @@ pub fn validate_recipe_for_scheduling(
     Ok(recipe)
 }
 
+pub(crate) struct ValidatedRecipeTemplate {
+    parsed: ParsedRecipeTemplate,
+}
+
+impl ValidatedRecipeTemplate {
+    pub(crate) fn recipe(&self) -> &Recipe {
+        self.parsed.recipe()
+    }
+
+    pub(crate) fn into_recipe(self) -> Recipe {
+        self.parsed.into_recipe()
+    }
+
+    pub(crate) fn render(self, params: &HashMap<String, String>) -> Result<Recipe> {
+        let (rendered_content, template_variables) = self.parsed.render(params)?;
+        let recipe = Recipe::from_content(&rendered_content)?;
+        validate_recipe_parameters(&recipe, &template_variables)?;
+        validate_recipe_non_parameter_invariants(&recipe)?;
+        Ok(recipe)
+    }
+}
+
 pub fn parse_and_validate_parameters(
     recipe_file_content: &str,
     recipe_dir_str: Option<String>,
@@ -394,6 +414,11 @@ pub fn parse_and_validate_parameters(
     validate_optional_parameters(recipe_parameters)?;
     validate_parameters_in_template(recipe_parameters, &template_variables)?;
     Ok(recipe_template)
+}
+
+fn validate_recipe_parameters(recipe: &Recipe, template_variables: &HashSet<String>) -> Result<()> {
+    validate_optional_parameters(&recipe.parameters)?;
+    validate_parameters_in_template(&recipe.parameters, template_variables)
 }
 
 fn validate_json_schema(schema: &serde_json::Value) -> Result<()> {
@@ -422,17 +447,28 @@ pub fn validate_recipe_template_from_content(
     recipe_content: &str,
     recipe_dir: Option<String>,
 ) -> Result<Recipe> {
-    let recipe = parse_and_validate_parameters(recipe_content, recipe_dir)?;
+    Ok(validate_recipe_template(recipe_content, recipe_dir)?.into_recipe())
+}
 
-    validate_prompt_or_instructions(&recipe)?;
-    validate_retry_config(&recipe)?;
+pub(crate) fn validate_recipe_template(
+    recipe_content: &str,
+    recipe_dir: Option<String>,
+) -> Result<ValidatedRecipeTemplate> {
+    let parsed = parse_recipe_template(recipe_content, recipe_dir)?;
+    validate_recipe_parameters(parsed.recipe(), parsed.template_variables())?;
+    validate_recipe_non_parameter_invariants(parsed.recipe())?;
+    Ok(ValidatedRecipeTemplate { parsed })
+}
+
+pub(crate) fn validate_recipe_non_parameter_invariants(recipe: &Recipe) -> Result<()> {
+    validate_prompt_or_instructions(recipe)?;
+    validate_retry_config(recipe)?;
     if let Some(response) = &recipe.response {
         if let Some(json_schema) = &response.json_schema {
             validate_json_schema(json_schema)?;
         }
     }
-
-    Ok(recipe)
+    Ok(())
 }
 
 fn validate_retry_config(recipe: &Recipe) -> Result<()> {

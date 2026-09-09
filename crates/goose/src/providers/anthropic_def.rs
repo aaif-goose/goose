@@ -3,7 +3,10 @@ use futures::future::BoxFuture;
 
 use crate::{
     config::{Config, DeclarativeProviderConfig},
-    providers::{base::ProviderDef, custom_provider_config::ConfigKeyResolver},
+    providers::{
+        base::ProviderDef, command_auth::CommandAuthProvider,
+        custom_provider_config::ConfigKeyResolver,
+    },
 };
 use goose_providers::{
     anthropic::{self, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION},
@@ -69,12 +72,19 @@ pub fn from_custom_config(
     config: DeclarativeProviderConfig,
     tls_config: Option<TlsConfig>,
 ) -> Result<AnthropicProvider> {
+    let auth_override = config.auth.clone();
     anthropic::from_declarative_config(config, tls_config, ConfigKeyResolver::new(Config::global()))
         .map(|builder| {
             builder
                 .map_api_client(|api_client| {
-                    api_client
-                        .with_request_builder(crate::session_context::session_id_request_builder())
+                    let api_client = api_client
+                        .with_request_builder(crate::session_context::session_id_request_builder());
+                    match auth_override {
+                        Some(auth_config) => api_client.with_auth(AuthMethod::Custom(Box::new(
+                            CommandAuthProvider::new(&auth_config, "x-api-key", ""),
+                        ))),
+                        None => api_client,
+                    }
                 })
                 .build()
         })
@@ -103,7 +113,9 @@ mod tests {
             .unwrap();
         AnthropicProviderBuilder::new(api_client)
             .name("custom_anthropic")
-            .custom_models(custom_models)
+            .custom_models(
+                custom_models.map(|models| models.into_iter().map(ModelInfo::new).collect()),
+            )
             .dynamic_models(dynamic_models)
             .build()
     }
@@ -127,11 +139,12 @@ mod tests {
             catalog_provider_id: None,
             base_path: None,
             env_vars: None,
+            auth: None,
             dynamic_models,
             skip_canonical_filtering: false,
             model_doc_link: None,
             setup_steps: vec![],
-            fast_model: None,
+            toolshim: false,
             preserves_thinking: false,
             emit_clear_thinking: false,
             setup: None,
@@ -185,8 +198,10 @@ mod tests {
 
     #[test]
     fn from_custom_config_honors_explicit_timeout_seconds() {
-        let mut config =
-            base_declarative_config(vec![ModelInfo::new("m1".to_string(), 200000)], Some(false));
+        let mut config = base_declarative_config(
+            vec![ModelInfo::new("m1").with_context_limit(200000)],
+            Some(false),
+        );
         config.timeout_seconds = Some(120);
         assert_eq!(built_timeout(config), std::time::Duration::from_secs(120));
     }
@@ -195,8 +210,10 @@ mod tests {
     fn from_custom_config_defaults_timeout_when_unset() {
         // timeout_seconds: None in base config → 600s default, unchanged
         // behavior for providers that don't set the field.
-        let config =
-            base_declarative_config(vec![ModelInfo::new("m1".to_string(), 200000)], Some(false));
+        let config = base_declarative_config(
+            vec![ModelInfo::new("m1").with_context_limit(200000)],
+            Some(false),
+        );
         assert_eq!(built_timeout(config), std::time::Duration::from_secs(600));
     }
 }

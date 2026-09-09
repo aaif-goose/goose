@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "जोड़ें"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "इस प्रदाता के लिए हमेशा Toolshim का उपयोग करें"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic संगत"
   },
@@ -926,8 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "कार्यशील निर्देशिका अद्यतन करने में विफल"
   },
@@ -1053,9 +1054,6 @@
   },
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "प्रकार"
-  },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (असमर्थित)"
   },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "मानक आईओ (एसटीडीआईओ)"
@@ -1760,13 +1758,10 @@
     "defaultMessage": "यह मॉडल हटाएं? आप इसे बाद में पुनः डाउनलोड कर सकते हैं."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "API कुंजियों के बिना अनुमान के लिए स्थानीय एलएलएम मॉडल डाउनलोड और प्रबंधित करें। किसी भी जीजीयूएफ मॉडल के लिए हगिंगफेस खोजें या नीचे दिए गए चुनिंदा विकल्पों का उपयोग करें।"
+    "defaultMessage": "API कुंजियों के बिना अनुमान के लिए स्थानीय एलएलएम मॉडल डाउनलोड और प्रबंधित करें। Hugging Face पर GGUF या MLX मॉडल खोजें।"
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "खारिज करें"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "डाउनलोड करें"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "डाउनलोड रद्द किया गया"
@@ -1785,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "विशेष रुप से प्रदर्शित मॉडल"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "मॉडल खोजते और डाउनलोड करते समय दर सीमा बढ़ाने के लिए और निजी या गेटेड हगिंग फेस रिपॉजिटरी तक पहुंचने के लिए साइन इन करें।"
@@ -1812,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "पुनः प्रयास करें"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "सभी विशेष रुप से प्रदर्शित दिखाएँ ({count} अधिक)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "केवल अनुशंसित दिखाएं"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "स्थानीय अनुमान मॉडल"
@@ -3784,6 +3770,9 @@
   "sessionIndicators.streaming": {
     "defaultMessage": "स्ट्रीमिंग"
   },
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
+  },
   "sessions.action.delete": {
     "defaultMessage": "सत्र हटाएँ"
   },
@@ -3861,6 +3850,9 @@
   },
   "sessions.importing": {
     "defaultMessage": "आयात किया जा रहा है..."
+  },
+  "sessions.includeAcp": {
+    "defaultMessage": "ACP सत्र शामिल करें"
   },
   "sessions.loadingMore": {
     "defaultMessage": "अधिक सत्र लोड हो रहे हैं..."
@@ -4531,9 +4523,6 @@
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "स्वचालित डाउनलोड अक्षम है। मैन्युअल रूप से डाउनलोड करने के लिए \"अभी डाउनलोड करें\" पर क्लिक करें।"
   },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "जब आप ऐप छोड़ देंगे तो अपडेट अपने आप इंस्टॉल हो जाएगा।"
-  },
   "updateSection.checkForUpdates": {
     "defaultMessage": "अद्यतनों के लिए जाँच करें"
   },
@@ -4564,26 +4553,11 @@
   "updateSection.installAndRestart": {
     "defaultMessage": "स्थापित करें और पुनः प्रारंभ करें"
   },
-  "updateSection.installNowHint": {
-    "defaultMessage": "या अभी अपडेट करने के लिए \"इंस्टॉल करें और पुनरारंभ करें\" पर क्लिक करें।"
-  },
   "updateSection.latestVersion": {
     "defaultMessage": "आप नवीनतम संस्करण चला रहे हैं!"
   },
   "updateSection.loading": {
     "defaultMessage": "लोड हो रहा है..."
-  },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "डाउनलोड करने के बाद, आपको अपडेट को मैन्युअल रूप से इंस्टॉल करना होगा।"
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "इस अद्यतन विधि के लिए मैन्युअल स्थापना आवश्यक है."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ अपडेट तैयार है! जब आप Goose छोड़ देंगे तो यह इंस्टॉल हो जाएगा।"
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ अपडेट तैयार है! इंस्टॉलेशन निर्देशों के लिए \"इंस्टॉल करें और पुनरारंभ करें\" पर क्लिक करें।"
   },
   "updateSection.upToDate": {
     "defaultMessage": "(अप टू डेट)"

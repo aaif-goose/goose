@@ -69,15 +69,9 @@ cd ui/desktop && pnpm test   # test UI
 
 ## Structure
 ```
-crates/
-├── goose              # core logic
-├── goose-acp-macros   # ACP proc macros
-├── goose-cli          # CLI entry
-├── goose-mcp          # MCP extensions
-├── goose-test         # test utilities
-└── goose-test-support # test helpers
-
-ui/desktop/            # Electron app
+crates/       # Rust workspace members — see root Cargo.toml (`members = ["crates/*"]`)
+ui/desktop/   # Electron app
+ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ```
 
 ## Development Loop

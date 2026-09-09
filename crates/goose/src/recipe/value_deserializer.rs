@@ -4,8 +4,6 @@ use serde_yaml::mapping::Iter as MappingIter;
 use serde_yaml::Value;
 use std::slice;
 
-/// Deserializes an already parsed YAML value while preserving serde_yaml's
-/// target-aware scalar conversion for string fields.
 pub(super) struct RecipeValueDeserializer<'de> {
     value: &'de Value,
 }

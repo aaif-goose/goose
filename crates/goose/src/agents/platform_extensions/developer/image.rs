@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -214,7 +214,24 @@ async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
 }
 
 fn load_file_bytes(path: PathBuf) -> Result<Vec<u8>, String> {
-    std::fs::read(path).map_err(|error| format!("failed to read image file: {error}"))
+    let file =
+        std::fs::File::open(path).map_err(|error| format!("failed to read image file: {error}"))?;
+    let file_size = file
+        .metadata()
+        .map_err(|error| format!("failed to read image file: {error}"))?
+        .len();
+    ensure_image_size(file_size)?;
+
+    let bytes = read_bounded(file, MAX_IMAGE_BYTES)
+        .map_err(|error| format!("failed to read image file: {error}"))?;
+    ensure_image_size(bytes.len() as u64)?;
+    Ok(bytes)
+}
+
+fn read_bounded(reader: impl Read, max_bytes: u64) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(max_bytes + 1).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn validate_crop(crop: &CropParams, image_width: u32, image_height: u32) -> Result<(), String> {
@@ -260,5 +277,91 @@ fn mime_type(format: image::ImageFormat) -> Result<&'static str, String> {
         _ => Err(
             "unsupported image format; supported formats are png, jpeg, gif, and webp".to_string(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod local_file_tests {
+    use super::*;
+
+    const SMALL_PNG: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    #[test]
+    fn bounded_reader_accepts_limit_and_detects_extra_byte() {
+        assert_eq!(read_bounded(&b"12345678"[..], 8).unwrap(), b"12345678");
+        assert_eq!(read_bounded(&b"123456789"[..], 8).unwrap(), b"123456789");
+    }
+
+    #[test]
+    fn bounded_reader_stops_productive_infinite_source() {
+        assert_eq!(read_bounded(std::io::repeat(0), 8).unwrap().len(), 9);
+    }
+
+    #[test]
+    fn oversized_sparse_local_file_is_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("oversized.png");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(MAX_IMAGE_BYTES + 1)
+            .unwrap();
+
+        let error = load_file_bytes(path).unwrap_err();
+
+        assert_eq!(
+            error,
+            format!(
+                "image is too large: {} bytes exceeds {MAX_IMAGE_BYTES} byte limit",
+                MAX_IMAGE_BYTES + 1
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn local_path_and_file_url_still_decode_small_image() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("small.png");
+        let png = base64::prelude::BASE64_STANDARD.decode(SMALL_PNG).unwrap();
+        std::fs::write(&path, &png).unwrap();
+        let file_url = url::Url::from_file_path(&path).unwrap().to_string();
+
+        for source in [path.to_string_lossy().into_owned(), file_url] {
+            let loaded = load_image(&ImageReadParams { source, crop: None }, None)
+                .await
+                .unwrap();
+
+            assert_eq!(loaded.mime_type, "image/png");
+            assert_eq!(loaded.bytes_len, png.len());
+            assert_eq!((loaded.width, loaded.height), (1, 1));
+            assert_eq!(
+                base64::prelude::BASE64_STANDARD
+                    .decode(loaded.data)
+                    .unwrap(),
+                png
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_local_file_keeps_unsupported_format_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("not-an-image.bin");
+        std::fs::write(&path, b"not an image").unwrap();
+
+        let error = load_image(
+            &ImageReadParams {
+                source: path.to_string_lossy().into_owned(),
+                crop: None,
+            },
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "unsupported image format; supported formats are png, jpeg, gif, and webp"
+        );
     }
 }

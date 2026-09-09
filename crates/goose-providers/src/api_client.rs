@@ -429,6 +429,13 @@ impl ApiClient {
         self
     }
 
+    // Auth is applied fresh on every request, so unlike `with_headers` this
+    // doesn't need to rebuild the underlying `reqwest::Client`.
+    pub fn with_auth(mut self, auth: AuthMethod) -> Self {
+        self.auth = auth;
+        self
+    }
+
     pub fn with_https_only(mut self) -> Result<Self> {
         self.transport_policy = TransportPolicy::HttpsOnly;
         self.rebuild_client()?;

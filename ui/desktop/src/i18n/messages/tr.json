@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Ekle"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Bu sağlayıcı için her zaman Toolshim kullan"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic Uyumlu"
   },
@@ -926,8 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Çalışma dizini güncellenemedi"
   },
@@ -1053,9 +1054,6 @@
   },
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "Tür"
-  },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (desteklenmiyor)"
   },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "Standart IO (STDIO)"
@@ -1760,13 +1758,10 @@
     "defaultMessage": "Bu model silinsin mi? Daha sonra tekrar indirebilirsiniz."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "API anahtarları olmadan çıkarım yapmak için yerel LLM modellerini indirin ve yönetin. Herhangi bir GGUF modeli için HuggingFace'yi arayın veya aşağıdaki öne çıkan seçimleri kullanın."
+    "defaultMessage": "API anahtarları olmadan çıkarım yapmak için yerel LLM modellerini indirin ve yönetin. Hugging Face üzerinde GGUF veya MLX modelleri arayın."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Kapat"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "İndir"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "İndirme iptal edildi"
@@ -1785,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Öne Çıkan Modeller"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Model ararken ve indirirken hız sınırlarını artırmak ve özel ya da erişimi kısıtlı Hugging Face depolarına erişmek için oturum açın."
@@ -1812,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Yeniden dene"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Tüm öne çıkanları göster ({count} daha fazlası)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Yalnızca önerilenleri göster"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Yerel Çıkarım Modelleri"
@@ -3784,6 +3770,9 @@
   "sessionIndicators.streaming": {
     "defaultMessage": "Akış"
   },
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Oturumu sil"
   },
@@ -3861,6 +3850,9 @@
   },
   "sessions.importing": {
     "defaultMessage": "İçe aktarılıyor..."
+  },
+  "sessions.includeAcp": {
+    "defaultMessage": "ACP oturumlarını dahil et"
   },
   "sessions.loadingMore": {
     "defaultMessage": "Daha fazla oturum yükleniyor..."
@@ -4531,9 +4523,6 @@
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Otomatik indirme devre dışı. Manuel olarak indirmek için \"Şimdi İndir\"e tıklayın."
   },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "Uygulamadan çıktığınızda güncelleme otomatik olarak yüklenecektir."
-  },
   "updateSection.checkForUpdates": {
     "defaultMessage": "Güncellemeleri Kontrol Et"
   },
@@ -4564,26 +4553,11 @@
   "updateSection.installAndRestart": {
     "defaultMessage": "Yükle ve Yeniden Başlat"
   },
-  "updateSection.installNowHint": {
-    "defaultMessage": "Veya şimdi güncellemek için \"Yükle ve Yeniden Başlat\"ı tıklayın."
-  },
   "updateSection.latestVersion": {
     "defaultMessage": "En son sürümü çalıştırıyorsunuz!"
   },
   "updateSection.loading": {
     "defaultMessage": "Yükleniyor..."
-  },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "İndirdikten sonra güncellemeyi manuel olarak yüklemeniz gerekecektir."
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "Bu güncelleme yöntemi için manuel kurulum gereklidir."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Güncelleme hazır! Goose'den çıktığınızda yüklenecektir."
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ Güncelleme hazır! Kurulum talimatları için \"Yükle ve Yeniden Başlat\"a tıklayın."
   },
   "updateSection.upToDate": {
     "defaultMessage": "(güncel)"

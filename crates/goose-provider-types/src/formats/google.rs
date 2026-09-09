@@ -1,4 +1,7 @@
 use crate::conversation::token_usage::{ProviderUsage, Usage};
+use crate::documents::{
+    document_media_type_is_supported, unsupported_document_text, UNSUPPORTED_MEDIA_TYPE_REASON,
+};
 use crate::errors::ProviderError;
 use crate::formats::openai::{is_valid_function_name, sanitize_function_name};
 use crate::mcp_utils::extract_text_from_resource;
@@ -254,6 +257,20 @@ pub fn format_messages(messages: &[Message], nested_function_response_media: boo
                                 "data": image.data,
                             }
                         }));
+                    }
+                    MessageContentBlock::Document(document) => {
+                        if document_media_type_is_supported(&document.mime_type) {
+                            parts.push(json!({
+                                "inline_data": {
+                                    "mime_type": document.mime_type,
+                                    "data": document.data,
+                                }
+                            }));
+                        } else {
+                            parts.push(json!({
+                                "text": unsupported_document_text(document, UNSUPPORTED_MEDIA_TYPE_REASON)
+                            }));
+                        }
                     }
 
                     _ => {}
@@ -932,6 +949,31 @@ mod tests {
         assert_eq!(
             payload[0]["parts"][1]["inline_data"]["data"],
             "base64encodeddata"
+        );
+    }
+
+    #[test]
+    fn test_message_to_google_spec_document_only_message() {
+        let messages = vec![Message::new(
+            Role::User,
+            0,
+            vec![MessageContentBlock::document(
+                "base64pdfdata".to_string(),
+                "application/pdf".to_string(),
+                Some("report.pdf".to_string()),
+            )],
+        )];
+        let payload = format_messages(&messages, false);
+
+        assert_eq!(payload.len(), 1);
+        assert_eq!(payload[0]["role"], "user");
+        assert_eq!(
+            payload[0]["parts"][0]["inline_data"]["mime_type"],
+            "application/pdf"
+        );
+        assert_eq!(
+            payload[0]["parts"][0]["inline_data"]["data"],
+            "base64pdfdata"
         );
     }
 
