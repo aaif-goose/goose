@@ -1,0 +1,14 @@
+{{- 'Reasoning strength: ' + (reasoning_strength | default('high')) + '.' -}}
+{%- for message in messages -%}
+    {%- if message.role == 'assistant' -%}
+        {%- if message.reasoning_content -%}
+            {{- '<|start|>assistant to=self<|message|>' + message.reasoning_content + '<|eom|>' -}}
+        {%- endif -%}
+        {{- '<|start|>assistant to=user<|message|>' + (message.content or '') + '<|eot|>' -}}
+    {%- else -%}
+        {{- '<|start|>' + message.role + '<|message|>' + (message.content or '') + '<|eot|>' -}}
+    {%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+    {{- '<|start|>assistant' -}}
+{%- endif -%}

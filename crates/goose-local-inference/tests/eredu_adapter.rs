@@ -445,6 +445,9 @@ fn unrecognized_template_reports_timing_and_committed_counts_with_stops() {
         let mut req = request();
         req.settings = settings.clone();
         req.model.request_params = Some([("stop".into(), json!(["STOP"]))].into());
+        req.model = req
+            .model
+            .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
         let (usage, messages) = run(&worker, req);
         let usage = usage.unwrap();
         assert_eq!(text(&messages), "hi😀");
@@ -692,6 +695,9 @@ fn auto_fallback_and_force_emulated_choose_once_before_generation() {
         let mut req = request();
         req.settings = settings;
         req.tools = tools();
+        req.model = req
+            .model
+            .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
         let (usage, messages) = run(&worker, req.clone());
         usage.unwrap();
         let requests: Vec<_> = messages
@@ -851,7 +857,8 @@ fn semantic_delivery_preserves_multiple_calls_and_finishes_once() {
 }
 
 #[test]
-fn generic_thinking_off_reaches_the_effective_template() {
+fn generic_thinking_uses_the_supported_template_toggle() {
+    use goose_provider_types::thinking::ThinkingEffort;
     let settings = ModelSettings {
         chat_template: ChatTemplate::CustomInline {
             template: include_str!("support/qwen3.jinja").into(),
@@ -859,15 +866,23 @@ fn generic_thinking_off_reaches_the_effective_template() {
         ..Default::default()
     };
     let (_dir, worker, calls) = worker("hi<|im_end|>", settings, None);
-    let mut req = request();
-    req.model = req
-        .model
-        .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::Off);
-    let (usage, messages) = run(&worker, req);
-    usage.unwrap();
-    assert_eq!(text(&messages), "hi");
-    let prompt = support::tokenizer()
-        .decode(&calls.lock().unwrap().prompts[0], false)
-        .unwrap();
-    assert!(prompt.ends_with("<think>\n\n</think>\n\n"));
+    for (index, (effort, explicit_toggle, disabled)) in [
+        (ThinkingEffort::Off, None, true),
+        (ThinkingEffort::High, None, false),
+        (ThinkingEffort::High, Some(false), true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut req = request();
+        req.model = req.model.with_thinking_effort(effort);
+        req.settings.enable_thinking = explicit_toggle;
+        let (usage, messages) = run(&worker, req);
+        usage.unwrap();
+        assert_eq!(text(&messages), "hi");
+        let prompt = support::tokenizer()
+            .decode(&calls.lock().unwrap().prompts[index], false)
+            .unwrap();
+        assert_eq!(prompt.ends_with("<think>\n\n</think>\n\n"), disabled);
+    }
 }

@@ -40,6 +40,10 @@ controls such as GPU layers and batch size are rejected when using Eredu.
 Tool mode can be automatic, native, or emulated; native support depends on the
 model and its template.
 
+Goose's general thinking preference uses controls accepted by the selected template.
+Unsupported controls retain checkpoint behavior; explicit model controls and template
+arguments take precedence and are validated by Eredu.
+
 ## Implementation and checks
 
 [`eredu_factory.rs`](src/eredu_factory.rs) supplies the concrete backend to

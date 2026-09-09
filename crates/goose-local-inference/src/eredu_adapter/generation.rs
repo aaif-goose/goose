@@ -22,7 +22,7 @@ use goose_provider_types::conversation::{
     message::Message,
     token_usage::{DraftStats, ProviderStats, ProviderUsage, Usage},
 };
-use goose_provider_types::{errors::ProviderError, model::ModelConfig};
+use goose_provider_types::{errors::ProviderError, model::ModelConfig, thinking::ThinkingEffort};
 use rmcp::model::{CallToolRequestParams, Tool};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -111,19 +111,8 @@ fn chat_request(request: &Request, emulated: bool) -> Result<ChatTemplateRequest
         enable_thinking: request
             .model
             .request_param("enable_thinking")
-            .or_else(|| {
-                request
-                    .model
-                    .thinking_effort()
-                    .map(|effort| effort != goose_provider_types::thinking::ThinkingEffort::Off)
-            })
             .or(request.settings.enable_thinking),
-        reasoning_effort: request.model.request_param("reasoning_effort").or_else(|| {
-            request
-                .model
-                .request_param::<String>("thinking_effort")
-                .filter(|effort| effort != "off")
-        }),
+        reasoning_effort: request.model.request_param("reasoning_effort"),
         extra_template_kwargs: request
             .model
             .request_param("chat_template_kwargs")
@@ -133,15 +122,52 @@ fn chat_request(request: &Request, emulated: bool) -> Result<ChatTemplateRequest
     })
 }
 
+fn prepare_chat<B: eredu_core::TextGenerationBackend>(
+    model: &mut LoadedModel<B>,
+    request: &Request,
+    emulated: bool,
+) -> Result<PreparedChat, ProviderError> {
+    let mut chat = chat_request(request, emulated)?;
+    let Some(effort) = request.model.thinking_effort() else {
+        return model.prepare_chat(chat).map_err(error);
+    };
+    let mut prepared = model.prepare_chat(chat.clone()).map_err(error)?;
+    if !prepared.capabilities().reasoning_parser.is_supported()
+        || chat.reasoning_effort.is_some()
+        || !chat.extra_template_kwargs.is_empty()
+    {
+        return Ok(prepared);
+    }
+
+    // Eredu exposes reasoning parsing separately from template-specific controls.
+    // Apply generic preferences only when preparation accepts them; explicit controls
+    // and checkpoint-specific template kwargs were validated above and take precedence.
+    if chat.enable_thinking.is_none() {
+        chat.enable_thinking = Some(effort != ThinkingEffort::Off);
+        match model.prepare_chat(chat.clone()) {
+            Ok(candidate) => prepared = candidate,
+            Err(_) => chat.enable_thinking = None,
+        }
+    }
+    if effort != ThinkingEffort::Off && chat.enable_thinking != Some(false) {
+        chat.reasoning_effort = Some(match effort {
+            ThinkingEffort::Max => "xhigh".into(),
+            _ => effort.to_string(),
+        });
+        if let Ok(candidate) = model.prepare_chat(chat) {
+            prepared = candidate;
+        }
+    }
+    Ok(prepared)
+}
+
 pub fn prepare<B: eredu_core::TextGenerationBackend>(
     model: &mut LoadedModel<B>,
     request: &Request,
 ) -> Result<(PreparedChat, bool), ProviderError> {
     let emulated = !request.tools.is_empty()
         && request.settings.tool_calling == ToolCallingMode::ForceEmulated;
-    let prepared = model
-        .prepare_chat(chat_request(request, emulated)?)
-        .map_err(error)?;
+    let prepared = prepare_chat(model, request, emulated)?;
     if emulated || request.tools.is_empty() {
         return Ok((prepared, emulated));
     }
@@ -153,10 +179,7 @@ pub fn prepare<B: eredu_core::TextGenerationBackend>(
                     "Native tool calling is unavailable for the effective template: {reason}"
                 )));
             }
-            model
-                .prepare_chat(chat_request(request, true)?)
-                .map(|prepared| (prepared, true))
-                .map_err(error)
+            prepare_chat(model, request, true).map(|prepared| (prepared, true))
         }
     }
 }

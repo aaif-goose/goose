@@ -79,7 +79,8 @@ async fn native_chat_tools_templates_cancellation_and_speculation() {
     };
     *SETTINGS.lock().unwrap() = Some(settings.clone());
     let provider = LocalInferenceProvider::from_env().await.unwrap();
-    let config = ModelConfig::new(&path);
+    let config = ModelConfig::new(&path)
+        .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
     let (output, usage) = collect(
         &provider,
         &config,
