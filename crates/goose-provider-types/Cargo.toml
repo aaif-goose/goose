@@ -11,6 +11,10 @@ description.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["bundled-model-catalog"]
+bundled-model-catalog = []
+
 [dependencies]
 anyhow = { workspace = true }
 async-stream = { workspace = true }

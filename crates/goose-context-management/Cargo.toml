@@ -12,7 +12,7 @@ description = "Conversation compaction for Goose"
 workspace = true
 
 [dependencies]
-goose-providers = { version = "0.1.0-alpha.8", path = "../goose-providers", features = ["rustls-tls"] }
+goose-providers = { version = "0.1.0-alpha.8", path = "../goose-providers", default-features = false, features = ["rustls-tls"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 include_dir = { workspace = true }
