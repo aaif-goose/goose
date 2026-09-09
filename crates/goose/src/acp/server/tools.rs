@@ -91,6 +91,11 @@ impl GooseAcpAgent {
             params
         };
 
+        if agent.goose_mode().await != GooseMode::Auto {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("app tool calls require auto mode"));
+        }
+
         let session = self
             .session_manager
             .get_session(session_id, false)

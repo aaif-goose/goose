@@ -152,8 +152,15 @@ const MarkdownCode = memo(
     ref: React.Ref<HTMLElement>
   ) {
     const match = /language-(\w+)/.exec(className || '');
-    return !inline && match ? (
-      <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>
+    const codeContent = String(children ?? '');
+
+    // react-markdown gives untagged fenced blocks no language-xxx className,
+    // so they look like inline code here. Block-level content always ends with
+    // a trailing newline, which inline code spans can never contain.
+    const isBlockLevelCode = !inline && codeContent.endsWith('\n');
+
+    return isBlockLevelCode ? (
+      <CodeBlock language={match ? match[1] : 'text'}>{codeContent.replace(/\n$/, '')}</CodeBlock>
     ) : (
       <code ref={ref} {...props} className="break-all bg-inline-code whitespace-pre-wrap font-mono">
         {children}
@@ -182,15 +189,12 @@ const MarkdownContent = memo(function MarkdownContent({
   className = '',
 }: MarkdownContentProps) {
   const intl = useIntl();
-  const [processedContent, setProcessedContent] = useState(content);
-
-  useEffect(() => {
+  const processedContent = useMemo(() => {
     try {
-      const processed = wrapHTMLInCodeBlock(content);
-      setProcessedContent(processed);
+      return wrapHTMLInCodeBlock(content);
     } catch (error) {
       console.error('Error processing content:', error);
-      setProcessedContent(content);
+      return content;
     }
   }, [content]);
 

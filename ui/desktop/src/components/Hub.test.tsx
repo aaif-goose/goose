@@ -1,87 +1,55 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+/**
+ * @vitest-environment jsdom
+ */
+import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Hub from './Hub';
 import { IntlTestWrapper } from '../i18n/test-utils';
-import type { FixedExtensionEntry } from './ConfigContext';
-import { createSession } from '../sessions';
+import type { UserInput } from '../types/message';
 
+const captured = vi.hoisted(() => ({
+  handleSubmit: null as ((input: UserInput) => void) | null,
+}));
 const mockSetView = vi.fn();
 
-vi.mock('./ConfigContext', () => ({
-  useConfig: () => ({
-    extensionsList: [
-      {
-        name: 'developer',
-        type: 'builtin',
-        description: 'developer',
-        enabled: true,
-      },
-      {
-        name: 'memory',
-        type: 'builtin',
-        description: 'memory',
-        enabled: false,
-      },
-    ] satisfies FixedExtensionEntry[],
-  }),
-}));
-
 vi.mock('./ChatInput', () => ({
-  default: ({
-    handleSubmit,
-  }: {
-    handleSubmit: (input: { msg: string; images: unknown[] }) => void;
-  }) => (
-    <button type="button" onClick={() => handleSubmit({ msg: 'hello from hub', images: [] })}>
-      Submit
-    </button>
-  ),
+  default: (props: { handleSubmit: (input: UserInput) => void }) => {
+    captured.handleSubmit = props.handleSubmit;
+    return <div />;
+  },
+}));
+vi.mock('./ConfigContext', () => ({ useConfig: () => ({ extensionsList: [] }) }));
+vi.mock('../utils/workingDir', () => ({
+  getInitialWorkingDir: () => '/tmp/goose',
+  getEffectiveWorkingDir: () => Promise.resolve('/tmp/effective'),
+}));
+vi.mock('../utils/nextChatExtensions', () => ({
+  createNextChatExtensionDraft: () => ({}),
+  selectNextChatExtensions: () => [],
 }));
 
-vi.mock('../sessions', () => ({
-  createSession: vi.fn(),
-}));
+beforeEach(() => {
+  vi.clearAllMocks();
+  captured.handleSubmit = null;
+});
 
 describe('Hub', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    Object.defineProperty(window, 'appConfig', {
-      configurable: true,
-      writable: true,
-      value: {
-        get: (key: string) => (key === 'GOOSE_WORKING_DIR' ? '/tmp/hub-dir' : null),
-      },
-    });
-  });
-
-  it('navigates to pair immediately without waiting for createSession', () => {
+  it('navigates immediately and leaves the effective working directory for Pair to resolve', () => {
+    const draftRef = { current: 'hello from hub' };
     render(
       <IntlTestWrapper>
-        <Hub setView={mockSetView} />
+        <Hub setView={mockSetView} draftRef={draftRef} />
       </IntlTestWrapper>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    act(() => captured.handleSubmit?.({ msg: draftRef.current, images: [] }));
 
-    expect(createSession).not.toHaveBeenCalled();
     expect(mockSetView).toHaveBeenCalledWith('pair', {
       disableAnimation: true,
       initialMessage: { msg: 'hello from hub', images: [] },
-      workingDir: '/tmp/hub-dir',
-      allExtensions: [
-        {
-          name: 'developer',
-          type: 'builtin',
-          description: 'developer',
-          enabled: true,
-        },
-        {
-          name: 'memory',
-          type: 'builtin',
-          description: 'memory',
-          enabled: false,
-        },
-      ],
+      workingDir: undefined,
+      allExtensions: [],
     });
+    expect(draftRef.current).toBe('');
   });
 });

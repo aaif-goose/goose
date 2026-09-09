@@ -229,7 +229,7 @@ impl AgentManager {
             if let Some(recipe) = &session.recipe {
                 agent
                     .apply_recipe_components(recipe.response.clone(), true)
-                    .await;
+                    .await?;
             }
         }
 

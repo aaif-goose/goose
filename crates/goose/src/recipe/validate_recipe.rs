@@ -20,10 +20,15 @@ pub fn parse_and_validate_parameters(
 }
 
 fn validate_json_schema(schema: &serde_json::Value) -> Result<()> {
-    match jsonschema::validator_for(schema) {
-        Ok(_) => Ok(()),
-        Err(err) => Err(anyhow::anyhow!("JSON schema validation failed: {}", err)),
+    let schema_object = schema
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("JSON schema must be an object"))?;
+    if schema_object.is_empty() {
+        return Err(anyhow::anyhow!("Empty JSON schema is not allowed"));
     }
+    jsonschema::validator_for(schema)
+        .map(|_| ())
+        .map_err(|error| anyhow::anyhow!("JSON schema validation failed: {error}"))
 }
 
 pub fn validate_recipe_template_from_file(recipe_file: &RecipeFile) -> Result<Recipe> {
@@ -263,5 +268,60 @@ parameters:
         assert_eq!(recipe.description, "A test recipe for validation");
         assert!(recipe.instructions.is_some());
         println!("Recipe: {:?}", recipe.prompt);
+    }
+
+    #[test]
+    fn response_json_schema_must_be_an_object() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Boolean schema
+description: Boolean schema
+instructions: Return structured output
+response:
+  json_schema: true
+"#;
+
+        let error = validate_recipe_template_from_content(recipe_content, None).unwrap_err();
+
+        assert_eq!(error.to_string(), "JSON schema must be an object");
+    }
+
+    #[test]
+    fn response_json_schema_accepts_an_object_schema() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Object schema
+description: Object schema
+instructions: Return structured output
+response:
+  json_schema:
+    type: object
+    properties:
+      result:
+        type: string
+"#;
+
+        validate_recipe_template_from_content(recipe_content, None).unwrap();
+    }
+
+    #[test]
+    fn response_json_schema_must_compile() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Invalid pattern
+description: Invalid pattern
+instructions: Return structured output
+response:
+  json_schema:
+    type: object
+    properties:
+      result:
+        type: string
+        pattern: "["
+"#;
+
+        let error = validate_recipe_template_from_content(recipe_content, None).unwrap_err();
+
+        assert!(error.to_string().contains("JSON schema validation failed"));
     }
 }

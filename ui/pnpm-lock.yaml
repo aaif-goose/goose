@@ -18,9 +18,9 @@ importers:
 
   desktop:
     dependencies:
-      '@aaif/goose-sdk':
+      '@aaif/goose-acp-client':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../goose-acp-client
       '@agentclientprotocol/sdk':
         specifier: 1.3.0
         version: 1.3.0(zod@4.4.3)
@@ -215,8 +215,8 @@ importers:
         specifier: ^10.0.1
         version: 10.0.1(eslint@9.39.4(jiti@2.7.0))
       '@formatjs/cli':
-        specifier: ^6.16.18
-        version: 6.16.18
+        specifier: 6.14.0
+        version: 6.14.0
       '@formatjs/icu-messageformat-parser':
         specifier: 3.5.16
         version: 3.5.16
@@ -332,17 +332,35 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(@vitest/ui@4.1.10)(jsdom@28.1.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.8.2))
 
-  goose-binary/goose-binary-darwin-arm64: {}
+  goose-acp:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+    optionalDependencies:
+      '@aaif/goose-binary-darwin-arm64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-darwin-arm64
+      '@aaif/goose-binary-darwin-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-darwin-x64
+      '@aaif/goose-binary-linux-arm64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-linux-arm64
+      '@aaif/goose-binary-linux-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-linux-x64
+      '@aaif/goose-binary-win32-x64':
+        specifier: workspace:*
+        version: link:../goose-binary/goose-binary-win32-x64
 
-  goose-binary/goose-binary-darwin-x64: {}
-
-  goose-binary/goose-binary-linux-arm64: {}
-
-  goose-binary/goose-binary-linux-x64: {}
-
-  goose-binary/goose-binary-win32-x64: {}
-
-  sdk:
+  goose-acp-client:
     dependencies:
       '@modelcontextprotocol/ext-apps':
         specifier: ^0.3.1
@@ -372,22 +390,16 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-    optionalDependencies:
-      '@aaif/goose-binary-darwin-arm64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-arm64
-      '@aaif/goose-binary-darwin-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-x64
-      '@aaif/goose-binary-linux-arm64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-arm64
-      '@aaif/goose-binary-linux-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-x64
-      '@aaif/goose-binary-win32-x64':
-        specifier: workspace:*
-        version: link:../goose-binary/goose-binary-win32-x64
+
+  goose-binary/goose-binary-darwin-arm64: {}
+
+  goose-binary/goose-binary-darwin-x64: {}
+
+  goose-binary/goose-binary-linux-arm64: {}
+
+  goose-binary/goose-binary-linux-x64: {}
+
+  goose-binary/goose-binary-win32-x64: {}
 
 packages:
 
@@ -716,7 +728,7 @@ packages:
     engines: {node: '>=22.12.0'}
 
   '@electron/node-gyp@https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2':
-    resolution: {gitHosted: true, tarball: https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2}
+    resolution: {tarball: https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2}
     version: 10.2.0-electron.1
     engines: {node: '>=12.13.0'}
     hasBin: true
@@ -1038,42 +1050,8 @@ packages:
   '@formatjs/bigdecimal@0.2.0':
     resolution: {integrity: sha512-GeaxHZbUoYvHL9tC5eltHLs+1zU70aPw0s7LwqgktIzF5oMhNY4o4deEtusJMsq7WFJF3Ye2zQEzdG8beVk73w==}
 
-  '@formatjs/cli-native-darwin-arm64@1.1.12':
-    resolution: {integrity: sha512-9RKHpBt/Fw+7AVjCsihATyOcC7aYnZJHdNg8Ud2K/yLZiSOfS1V/oSDPK47VCPh98HmclCI/O6tRq9KeXjZrhQ==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@formatjs/cli-native-linux-arm64-musl@1.0.10':
-    resolution: {integrity: sha512-e+C7cssp6RM7YzWoW6cK1dUzcbdDYCtUFI/0ALPU4qx2NI7AMMJCC/iqVwo6pk95T7YcjYYuSjCqm1ni+ZC/4g==}
-    cpu: [arm64]
-    os: [linux]
-    libc: [musl]
-
-  '@formatjs/cli-native-linux-arm64@1.2.12':
-    resolution: {integrity: sha512-Ge4F8Td5n5bQ26sQlxN+DUa5iWkbxqZY9m+L8edudXEYAo2j9yMg+Y8mieBH+YwKexmBPQFSs9eYaGQYM6CzBw==}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  '@formatjs/cli-native-linux-x64-musl@1.0.10':
-    resolution: {integrity: sha512-ZAYzdqsjv/rL8ntGl/iSmGjuOmEytxrktdsPsFFDeq3NN/LFiQn3LxPR3uLGOlLlN+pUhc8I3yFRgRjE59e1hw==}
-    cpu: [x64]
-    os: [linux]
-    libc: [musl]
-
-  '@formatjs/cli-native-linux-x64@1.1.12':
-    resolution: {integrity: sha512-sOWoISoova0fDJLpdTYA7lVlIoODUGzoetSq2C+/XQzp/544tWgRlacf7u1dqIxnmYZuKIXmawr5p2trf67IaA==}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
-  '@formatjs/cli-native-win32-x64@1.1.13':
-    resolution: {integrity: sha512-5veGmXGU5qqEXA8AFUOAa64vXRtsLuxGFODBCdIRXWLvFiGCzn2CzGnPikdIyj2u1Gy9KdPVXkNdKmdzucKeuQ==}
-    cpu: [x64]
-    os: [win32]
-
-  '@formatjs/cli@6.16.18':
-    resolution: {integrity: sha512-+h3vsuYBTKEpSFZAEWnFuf1fK2a+Hyp0UtgeP5Hw33Lgm+N9veup+XVeT5CAJ21PoZSM/t21dTo4mUu36TEThg==}
+  '@formatjs/cli@6.14.0':
+    resolution: {integrity: sha512-5lqzAyAObZ8J8Ljtua8s4e5GKrPBu/lmuYN5ok5GgKUe+u+QwBPNlR3d2aYJpUbhgYuV8PXPHFXVPOwyhSR1uw==}
     engines: {node: '>= 20.12.0'}
     hasBin: true
     peerDependencies:
@@ -1081,9 +1059,9 @@ packages:
       '@glimmer/reference': '*'
       '@glimmer/syntax': ^0.84.3 || ^0.95.0
       '@glimmer/validator': '*'
-      '@vue/compiler-core': '3'
-      content-tag: '4'
-      vue: '3'
+      '@vue/compiler-core': ^3.5.0
+      content-tag: ^4.1.0
+      vue: ^3.5.0
     peerDependenciesMeta:
       '@glimmer/env':
         optional: true
@@ -3327,6 +3305,7 @@ packages:
   '@xmldom/xmldom@0.9.11':
     resolution: {integrity: sha512-tW8bcK3hsG0/uqSnNz6TK4BkcuZSezoU7DlnYssILmZDktPnSHHuDJJFM0AJv+13gz2r0iGdrj6qqKeUnxXEDg==}
     engines: {node: '>=14.6'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@xtuc/ieee754@1.2.0':
     resolution: {integrity: sha512-DX8nKgqcGwsc0eJSqYt5lwP4DH5FlHnmuWWBRy7X0NcaGR0ZtuyeESgMwTYVEtxmsNGY+qit4QYT/MIYTOTPeA==}
@@ -8243,32 +8222,7 @@ snapshots:
 
   '@formatjs/bigdecimal@0.2.0': {}
 
-  '@formatjs/cli-native-darwin-arm64@1.1.12':
-    optional: true
-
-  '@formatjs/cli-native-linux-arm64-musl@1.0.10':
-    optional: true
-
-  '@formatjs/cli-native-linux-arm64@1.2.12':
-    optional: true
-
-  '@formatjs/cli-native-linux-x64-musl@1.0.10':
-    optional: true
-
-  '@formatjs/cli-native-linux-x64@1.1.12':
-    optional: true
-
-  '@formatjs/cli-native-win32-x64@1.1.13':
-    optional: true
-
-  '@formatjs/cli@6.16.18':
-    optionalDependencies:
-      '@formatjs/cli-native-darwin-arm64': 1.1.12
-      '@formatjs/cli-native-linux-arm64': 1.2.12
-      '@formatjs/cli-native-linux-arm64-musl': 1.0.10
-      '@formatjs/cli-native-linux-x64': 1.1.12
-      '@formatjs/cli-native-linux-x64-musl': 1.0.10
-      '@formatjs/cli-native-win32-x64': 1.1.13
+  '@formatjs/cli@6.14.0': {}
 
   '@formatjs/ecma402-abstract@3.2.0':
     dependencies:

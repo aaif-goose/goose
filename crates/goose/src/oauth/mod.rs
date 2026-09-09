@@ -6,7 +6,7 @@ use axum::extract::{Query, State};
 use axum::response::Html;
 use axum::routing::get;
 use axum::Router;
-use minijinja::render;
+use minijinja::{context, Environment};
 use oauth2::{Scope, TokenResponse};
 use rmcp::transport::auth::{
     AuthError, AuthorizationRequest, CredentialStore, OAuthClientConfig, OAuthState,
@@ -17,7 +17,7 @@ use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{oneshot, Mutex};
 use tracing::warn;
 
@@ -60,6 +60,16 @@ fn resolve_oauth_callback_timeout(value: Option<&str>) -> Duration {
 fn oauth_callback_timeout() -> Duration {
     let timeout = std::env::var(OAUTH_CALLBACK_TIMEOUT_ENV).ok();
     resolve_oauth_callback_timeout(timeout.as_deref())
+}
+
+fn render_oauth_callback(name: &str) -> String {
+    Environment::new()
+        .render_named_str(
+            "oauth_callback.html",
+            CALLBACK_TEMPLATE,
+            context! { name => name },
+        )
+        .expect("failed to render OAuth callback")
 }
 
 fn announce_authorization_url(name: &str, authorization_url: &str) {
@@ -192,6 +202,26 @@ fn resolve_refreshed_granted_scopes(
     token_scopes.unwrap_or_else(|| previous_granted_scopes.to_vec())
 }
 
+const REFRESH_BUFFER_SECS: u64 = 30;
+
+fn access_token_needs_refresh(stored_credentials: &StoredCredentials) -> bool {
+    let Some(token_response) = stored_credentials.token_response.as_ref() else {
+        return true;
+    };
+    let (Some(expires_in), Some(received_at)) = (
+        token_response.expires_in(),
+        stored_credentials.token_received_at,
+    ) else {
+        return false;
+    };
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .saturating_sub(received_at);
+    expires_in.as_secs().saturating_sub(elapsed) < REFRESH_BUFFER_SECS
+}
+
 fn configure_static_client(
     auth_manager: &mut AuthorizationManager,
     static_client: Option<&StaticOAuthClientConfig>,
@@ -321,6 +351,9 @@ pub async fn oauth_flow_with_challenge(
             // client_id alone; a confidential client must present its secret
             // at the token endpoint for the refresh to succeed.
             configure_static_client(&mut auth_manager, static_client, mcp_server_url)?;
+            if !access_token_needs_refresh(stored_credentials) {
+                return Ok(auth_manager);
+            }
             match auth_manager.refresh_token().await {
                 Ok(mut token_response) => {
                     let restored_omitted_scopes =
@@ -380,7 +413,7 @@ pub async fn oauth_flow_with_challenge(
     let app_state = AppState {
         callback_receiver: Arc::new(Mutex::new(Some(callback_sender))),
     };
-    let rendered = render!(CALLBACK_TEMPLATE, name => name);
+    let rendered = render_oauth_callback(name);
     let handler = move |Query(params): Query<CallbackParams>, State(state): State<AppState>| {
         let rendered = rendered.clone();
         async move {
@@ -510,6 +543,24 @@ mod tests {
             resolve_oauth_callback_timeout(Some("42")),
             Duration::from_secs(42)
         );
+    }
+
+    #[test]
+    fn oauth_callback_escapes_extension_name() {
+        let payload = r#"<script>alert("xss")</script>&"#;
+        let rendered = render_oauth_callback(payload);
+
+        assert!(!rendered.contains(payload));
+        assert!(rendered.contains("&lt;script&gt;"));
+        assert!(rendered.contains("&amp;"));
+    }
+
+    #[test]
+    fn oauth_callback_preserves_plain_extension_name() {
+        let rendered = render_oauth_callback("Example MCP");
+
+        assert!(rendered.contains("Example MCP OAuth Success"));
+        assert!(rendered.contains(">Example MCP</span>"));
     }
 
     #[tokio::test]
@@ -767,6 +818,44 @@ mod tests {
 
         assert_eq!(request.client_id.as_deref(), Some("registered-client"));
         assert_eq!(request.scopes, vec!["scope.read", "scope.write"]);
+    }
+
+    #[test]
+    fn long_lived_token_without_refresh_token_is_not_refreshed() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "mcp_long_lived",
+            "token_type": "bearer",
+            "expires_in": 31_536_000,
+        }))
+        .unwrap();
+        let stored = StoredCredentials::new(
+            "client-id".to_string(),
+            Some(token_response.clone()),
+            vec![],
+            Some(now),
+        );
+
+        assert!(token_response.refresh_token().is_none());
+        assert!(
+            !access_token_needs_refresh(&stored),
+            "a token valid for another year must be used as-is instead of forcing browser re-auth"
+        );
+
+        let expired = StoredCredentials::new(
+            "client-id".to_string(),
+            Some(token_response),
+            vec![],
+            Some(now - 31_536_000),
+        );
+        assert!(
+            access_token_needs_refresh(&expired),
+            "an expired token must still take the refresh path"
+        );
     }
 
     #[tokio::test]

@@ -82,7 +82,7 @@ const removeQueuedMessage = (messages: QueuedMessage[], messageId: string): Queu
 
 const MAX_IMAGES_PER_MESSAGE = 10;
 
-const TOKEN_LIMIT_DEFAULT = 128000; // fallback for custom models that the backend doesn't know about
+const TOKEN_LIMIT_DEFAULT = 128000; // used before a session has a backend-resolved limit
 
 const getContextAlertType = (totalTokens: number, tokenLimit: number): AlertType => {
   const percentage = tokenLimit ? (totalTokens / tokenLimit) * 100 : 0;
@@ -168,10 +168,17 @@ interface ChatInputProps {
   queueProcessingBlocked?: boolean;
   commandHistory?: string[];
   initialValue?: string;
+  /**
+   * Unsent input, held above the route outlet so it outlives the unmount.
+   * Only New Chat passes it: every other chat stays mounted in
+   * `ChatSessionsContainer` and keeps its text in local state.
+   */
+  draftRef?: React.RefObject<string>;
   droppedFiles?: DroppedFile[];
   onFilesProcessed?: () => void;
   setView: (view: View) => void;
   totalTokens?: number;
+  contextLimit?: number;
   accumulatedInputTokens?: number;
   accumulatedOutputTokens?: number;
   accumulatedCost?: number | null;
@@ -203,10 +210,12 @@ export default function ChatInput({
   queueProcessingBlocked = false,
   commandHistory = [],
   initialValue = '',
+  draftRef,
   droppedFiles = [],
   onFilesProcessed,
   setView,
   totalTokens,
+  contextLimit,
   accumulatedInputTokens,
   accumulatedOutputTokens,
   accumulatedCost,
@@ -232,6 +241,19 @@ export default function ChatInput({
   const [isFocused, setIsFocused] = useState(false);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false);
+
+  // Every path that puts text in the input goes through here, so the draft cannot
+  // miss one: typing, dictation, link paste, history, file and mention insertion.
+  const applyInputValue = useCallback(
+    (next: string) => {
+      setDisplayValue(next);
+      setValue(next);
+      if (draftRef) {
+        draftRef.current = next;
+      }
+    },
+    [draftRef]
+  );
 
   // Derived state - chatState != Idle means we're in some form of loading state
   const isLoading = chatState !== ChatState.Idle;
@@ -490,8 +512,7 @@ export default function ChatInput({
           ? `${displayValue.trim()} ${cleanedText}`
           : displayValue.trim() || cleanedText;
 
-      setDisplayValue(newValue);
-      setValue(newValue);
+      applyInputValue(newValue);
 
       if (shouldAutoSubmit && newValue.trim()) {
         trackVoiceDictation('auto_submit');
@@ -516,13 +537,18 @@ export default function ChatInput({
   const timeoutRefsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   useEffect(() => {
-    setValue(initialValue);
-    setDisplayValue(initialValue);
+    // The draft is restored here rather than through `initialValue`, because this
+    // effect also runs on mount and would overwrite a value seeded into `useState`.
+    // It stays a ref for the same reason: a prop that changed on every keystroke
+    // would re-run this effect and reset the state it clears below.
+    const restored = draftRef?.current || initialValue;
+    setValue(restored);
+    setDisplayValue(restored);
     setPastedImages([]);
     setHistoryIndex(-1);
     setIsInGlobalHistory(false);
     setHasUserTyped(false);
-  }, [initialValue]);
+  }, [initialValue, draftRef]);
 
   // Handle recipe prompt updates
   useEffect(() => {
@@ -581,7 +607,11 @@ export default function ChatInput({
   // Load providers and get current model's token limit
   const loadProviderDetails = async () => {
     try {
-      // Reset token limit loaded state
+      if (sessionId) {
+        setTokenLimit(0);
+        setIsTokenLimitLoaded(false);
+        return;
+      }
       setIsTokenLimitLoaded(false);
 
       // Use effective model/provider (includes overrides from in-session model changes),
@@ -642,7 +672,20 @@ export default function ChatInput({
   useEffect(() => {
     loadProviderDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveModel, effectiveProvider, configModel, configProvider]);
+  }, [effectiveModel, effectiveProvider, configModel, configProvider, sessionId]);
+
+  useEffect(() => {
+    if (contextLimit === undefined) {
+      if (sessionId) {
+        setTokenLimit(0);
+        setIsTokenLimitLoaded(false);
+      }
+      return;
+    }
+
+    setTokenLimit(contextLimit);
+    setIsTokenLimitLoaded(true);
+  }, [contextLimit, sessionId]);
 
   // Handle token usage alerts
   useEffect(() => {
@@ -688,11 +731,6 @@ export default function ChatInput({
 
   const maxHeight = 10 * 24;
 
-  // Immediate function to update actual value - no debounce for better responsiveness
-  const updateValue = React.useCallback((value: string) => {
-    setValue(value);
-  }, []);
-
   const minTextareaHeight = 38;
 
   const debouncedAutosize = useMemo(
@@ -730,8 +768,7 @@ export default function ChatInput({
     const val = evt.target.value;
     const cursorPosition = evt.target.selectionStart;
 
-    setDisplayValue(val);
-    updateValue(val);
+    applyInputValue(val);
     setHasUserTyped(true);
     checkForMentionOrSlash(val, cursorPosition, evt.target);
   };
@@ -827,13 +864,22 @@ export default function ChatInput({
     setDisplayValue('');
     setValue('');
     setPastedImages([]);
+    if (draftRef) {
+      draftRef.current = '';
+    }
     if (onFilesProcessed && droppedFiles.length > 0) {
       onFilesProcessed();
     }
     if (localDroppedFiles.length > 0) {
       setLocalDroppedFiles([]);
     }
-  }, [droppedFiles.length, localDroppedFiles.length, onFilesProcessed, setLocalDroppedFiles]);
+  }, [
+    draftRef,
+    droppedFiles.length,
+    localDroppedFiles.length,
+    onFilesProcessed,
+    setLocalDroppedFiles,
+  ]);
 
   const handlePaste = async (evt: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (isRecording) return;
@@ -857,8 +903,7 @@ export default function ChatInput({
               const newValue =
                 displayValue.substring(0, start) + markdown + displayValue.substring(end);
               const cursorPos = start + markdown.length;
-              setDisplayValue(newValue);
-              updateValue(newValue);
+              applyInputValue(newValue);
               setHasUserTyped(true);
               checkForMentionOrSlash(newValue, cursorPos, textarea);
               requestAnimationFrame(() => {
@@ -1021,13 +1066,7 @@ export default function ChatInput({
     // Update display if we have a new value
     if (newIndex !== historyIndex) {
       setHistoryIndex(newIndex);
-      if (newIndex === -1) {
-        setDisplayValue(savedInput || '');
-        setValue(savedInput || '');
-      } else {
-        setDisplayValue(newValue || '');
-        setValue(newValue || '');
-      }
+      applyInputValue((newIndex === -1 ? savedInput : newValue) || '');
       // Reset hasUserTyped when we populate from history
       setHasUserTyped(false);
     }
@@ -1184,9 +1223,7 @@ export default function ChatInput({
       }
 
       if (evt.altKey) {
-        const newValue = displayValue + '\n';
-        setDisplayValue(newValue);
-        setValue(newValue);
+        applyInputValue(displayValue + '\n');
         return;
       }
 
@@ -1286,9 +1323,7 @@ export default function ChatInput({
     } else {
       trackFileAttached('file');
       const path = window.electron.getPathForFile(file);
-      const newValue = displayValue.trim() ? `${displayValue.trim()} ${path}` : path;
-      setDisplayValue(newValue);
-      setValue(newValue);
+      applyInputValue(displayValue.trim() ? `${displayValue.trim()} ${path}` : path);
     }
 
     textAreaRef.current?.focus();
@@ -1306,8 +1341,7 @@ export default function ChatInput({
     );
     const newValue = `${beforeMention}${itemText}${afterMention}`;
 
-    setDisplayValue(newValue);
-    setValue(newValue);
+    applyInputValue(newValue);
     setMentionPopover((prev) => ({ ...prev, isOpen: false }));
     textAreaRef.current?.focus();
 

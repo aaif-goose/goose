@@ -5,7 +5,7 @@ use crate::conversation::message::Message;
 use anyhow::Result;
 use futures::future::BoxFuture;
 use goose_providers::api_client::{ApiClient, AuthMethod, TlsConfig};
-use goose_providers::base::ProviderDescriptor;
+use goose_providers::base::{ModelInfo, ProviderDescriptor};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::ollama::fetch_ollama_model_names;
@@ -13,19 +13,18 @@ use goose_providers::openai::OpenAiProvider;
 use rmcp::model::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 use tokio::sync::OnceCell;
 
 const OLLAMA_CLOUD_PROVIDER_NAME: &str = "ollama_cloud";
-
-static SHOW_INFO_CACHE: LazyLock<Mutex<HashMap<String, usize>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+const SHOW_INFO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub struct OllamaCloudProvider {
     inner: OpenAiProvider,
     ollama_api_client: ApiClient,
     model_names: OnceCell<Vec<String>>,
-    custom_models: Option<Vec<String>>,
+    context_limits: Mutex<HashMap<String, Option<usize>>>,
+    custom_models: Option<Vec<ModelInfo>>,
     dynamic_models: Option<bool>,
 }
 
@@ -43,13 +42,7 @@ impl OllamaCloudProvider {
             crate::providers::openai_def::from_custom_config(config.clone(), tls_config.clone())?;
 
         let custom_models = if !config.models.is_empty() {
-            Some(
-                config
-                    .models
-                    .iter()
-                    .map(|m| m.name.clone())
-                    .collect::<Vec<String>>(),
-            )
+            Some(config.models.clone())
         } else {
             None
         };
@@ -68,6 +61,7 @@ impl OllamaCloudProvider {
             inner,
             ollama_api_client,
             model_names: OnceCell::new(),
+            context_limits: Mutex::new(HashMap::new()),
             custom_models,
             dynamic_models: config.dynamic_models,
         })
@@ -190,7 +184,10 @@ impl Provider for OllamaCloudProvider {
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
         if let Some(custom_models) = &self.custom_models {
             if self.dynamic_models == Some(false) {
-                return Ok(custom_models.clone());
+                return Ok(custom_models
+                    .iter()
+                    .map(|model| model.name.clone())
+                    .collect());
             }
 
             match self.get_or_fetch_model_names().await {
@@ -200,7 +197,10 @@ impl Provider for OllamaCloudProvider {
                         "Ollama api/tags not available for provider '{}', using static model list",
                         self.inner.get_name(),
                     );
-                    return Ok(custom_models.clone());
+                    return Ok(custom_models
+                        .iter()
+                        .map(|model| model.name.clone())
+                        .collect());
                 }
                 Err(e) => return Err(e),
             }
@@ -209,31 +209,37 @@ impl Provider for OllamaCloudProvider {
         self.get_or_fetch_model_names().await
     }
 
-    async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
-        if let Some(limit) = model_config.context_limit {
-            return Ok(limit);
-        }
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        let configured_limits = self
+            .custom_models
+            .iter()
+            .flatten()
+            .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
+        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+            .with_configured_limits(configured_limits)
+            .resolve(model, override_limit, || async {
+                if let Some(cached) = self
+                    .context_limits
+                    .lock()
+                    .ok()
+                    .and_then(|cache| cache.get(model).copied())
+                {
+                    return Ok(cached);
+                }
 
-        if let Some(cached) = SHOW_INFO_CACHE
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&model_config.model_name).copied())
-        {
-            return Ok(cached);
-        }
-
-        if let Some(limit) = self
-            .fetch_context_limit_from_show(&model_config.model_name)
+                let limit = tokio::time::timeout(
+                    SHOW_INFO_TIMEOUT,
+                    self.fetch_context_limit_from_show(model),
+                )
+                .await
+                .ok()
+                .flatten();
+                if let Ok(mut cache) = self.context_limits.lock() {
+                    cache.insert(model.to_string(), limit);
+                }
+                Ok(limit)
+            })
             .await
-        {
-            if let Ok(mut cache) = SHOW_INFO_CACHE.lock() {
-                cache.insert(model_config.model_name.clone(), limit);
-            }
-
-            return Ok(limit);
-        }
-
-        Ok(model_config.context_limit())
     }
 }
 
@@ -299,7 +305,7 @@ mod tests {
         let provider = build_provider(
             server.uri(),
             Some(false),
-            vec![ModelInfo::new("static-model", 4096)],
+            vec![ModelInfo::new("static-model").with_context_limit(4096)],
         );
 
         assert_eq!(
@@ -314,7 +320,7 @@ mod tests {
         let provider = build_provider(
             server.uri(),
             None,
-            vec![ModelInfo::new("static-model", 4096)],
+            vec![ModelInfo::new("static-model").with_context_limit(4096)],
         );
 
         assert_eq!(
@@ -329,7 +335,7 @@ mod tests {
         let provider = build_provider(
             server.uri(),
             Some(true),
-            vec![ModelInfo::new("static-model", 4096)],
+            vec![ModelInfo::new("static-model").with_context_limit(4096)],
         );
 
         let models = provider.fetch_supported_models().await.unwrap();
@@ -351,7 +357,9 @@ mod tests {
         let provider = build_provider(server.uri(), Some(true), vec![]);
 
         let model_config = ModelConfig::new("gemma3:4b");
-        let limit = provider.get_context_limit(&model_config).await.unwrap();
+        let limit = provider
+            .get_context_limit(&model_config.model_name, None)
+            .await;
         assert_eq!(limit, 131072);
     }
 
@@ -361,18 +369,25 @@ mod tests {
         let provider = build_provider(server.uri(), Some(true), vec![]);
 
         let model_config = ModelConfig::new("qwen3-coder:480b");
-        let limit = provider.get_context_limit(&model_config).await.unwrap();
+        let limit = provider
+            .get_context_limit(&model_config.model_name, None)
+            .await;
         assert_eq!(limit, 262144);
     }
 
     #[tokio::test]
-    async fn get_context_limit_falls_back_on_missing_model_info() {
+    async fn get_context_limit_caches_missing_model_info() {
         let server = mock_show_server_no_model_info().await;
         let provider = build_provider(server.uri(), Some(true), vec![]);
 
-        let model_config = ModelConfig::new("unknown-model").with_context_limit(Some(8000));
-        let limit = provider.get_context_limit(&model_config).await.unwrap();
-        assert_eq!(limit, 8000);
+        for _ in 0..2 {
+            assert_eq!(
+                provider.get_context_limit("unknown-model", None).await,
+                goose_providers::model::DEFAULT_CONTEXT_LIMIT
+            );
+        }
+
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     fn build_provider(
@@ -466,11 +481,12 @@ mod tests {
             catalog_provider_id: None,
             base_path: None,
             env_vars: None,
+            auth: None,
             dynamic_models,
             skip_canonical_filtering: false,
             model_doc_link: None,
             setup_steps: vec![],
-            fast_model: None,
+            toolshim: false,
             preserves_thinking: true,
             emit_clear_thinking: false,
             setup: None,

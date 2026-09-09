@@ -2,7 +2,7 @@ import type {
   RecipeParameterDto,
   RecipeParamsResponse_unstable,
   RequestRecipeParams_unstable,
-} from '@aaif/goose-sdk';
+} from '@aaif/goose-acp-client';
 import { v7 as uuidv7 } from 'uuid';
 
 export interface AcpRecipeParamRequest {
@@ -81,8 +81,7 @@ export function beginConfiguredRecipeParameterScope(): ConfiguredRecipeParameter
   }
 
   const configured = window.appConfig?.get('recipeParameters') as
-    | Record<string, string>
-    | undefined;
+    Record<string, string> | undefined;
   if (!configured || Object.keys(configured).length === 0) {
     configuredParameterState = { status: 'consumed' };
     return undefined;
@@ -122,8 +121,15 @@ function configuredParameterValues(request: RequestRecipeParams_unstable): {
   if (configuredParameterState.sessionId !== request.sessionId) {
     return { values: {}, usesConfiguredParameters: false };
   }
+  const fileParameterKeys = new Set(
+    request.parameters
+      .filter((parameter) => parameter.input_type === 'file')
+      .map((parameter) => parameter.key)
+  );
   return {
-    values: { ...configuredParameterState.values },
+    values: Object.fromEntries(
+      Object.entries(configuredParameterState.values).filter(([key]) => !fileParameterKeys.has(key))
+    ),
     usesConfiguredParameters: true,
   };
 }

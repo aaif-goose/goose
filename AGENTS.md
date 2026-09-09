@@ -16,6 +16,15 @@ The issue is the source of truth for work intended for an upstream pull request.
 
 Maintainer-directed work, urgent security fixes, release automation, and local or exploratory changes do not require a Ready issue.
 
+## GitHub Communication
+
+Write issue and pull request comments for humans, not as exhaustive work logs.
+
+- Lead with the conclusion or action needed.
+- Keep comments concise; do not repeat context already present in the thread.
+- Use short paragraphs or bullets, and include implementation details only when they affect a decision or review.
+- Prefer one clear summary over multiple incremental comments.
+
 ## Agent Loop Migration
 
 We are replacing the legacy agent loop in `crates/goose/src/agents/agent.rs` with the state machine in `crates/goose/src/agents/state_machine/`. The state-machine path is enabled with `GOOSE_STATE_MACHINE=1`.
@@ -60,15 +69,9 @@ cd ui/desktop && pnpm test   # test UI
 
 ## Structure
 ```
-crates/
-├── goose              # core logic
-├── goose-acp-macros   # ACP proc macros
-├── goose-cli          # CLI entry
-├── goose-mcp          # MCP extensions
-├── goose-test         # test utilities
-└── goose-test-support # test helpers
-
-ui/desktop/            # Electron app
+crates/       # Rust workspace members — see root Cargo.toml (`members = ["crates/*"]`)
+ui/desktop/   # Electron app
+ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ```
 
 ## Development Loop

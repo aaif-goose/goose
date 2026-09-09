@@ -132,13 +132,23 @@ fn create_owner_only_file(path: &Path) -> io::Result<std::fs::File> {
 }
 
 #[cfg(windows)]
-fn create_private_temporary_file(parent: &Path) -> io::Result<tempfile::NamedTempFile> {
-    tempfile::Builder::new().make_in(parent, create_owner_only_file)
+pub(crate) fn create_private_named_temp_file(
+    builder: &mut tempfile::Builder<'_, '_>,
+    parent: &Path,
+) -> io::Result<tempfile::NamedTempFile> {
+    builder.make_in(parent, create_owner_only_file)
 }
 
 #[cfg(not(windows))]
+pub(crate) fn create_private_named_temp_file(
+    builder: &mut tempfile::Builder<'_, '_>,
+    parent: &Path,
+) -> io::Result<tempfile::NamedTempFile> {
+    builder.tempfile_in(parent)
+}
+
 fn create_private_temporary_file(parent: &Path) -> io::Result<tempfile::NamedTempFile> {
-    tempfile::NamedTempFile::new_in(parent)
+    create_private_named_temp_file(&mut tempfile::Builder::new(), parent)
 }
 
 #[cfg(windows)]

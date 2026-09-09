@@ -19,12 +19,12 @@ use candle_transformers::models::whisper::{self as m, audio, Config, N_FRAMES};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use symphonia::core::audio::{AudioBufferRef, Layout, Signal};
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::audio::GenericAudioBufferRef;
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 use tokenizers::Tokenizer;
 
 // Common suppress tokens for all Whisper models
@@ -935,42 +935,40 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
 
     let hint = Hint::new();
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .context("Failed to probe audio format - unsupported format")?;
 
-    let mut format = probed.format;
-
     let track = format
-        .default_track()
+        .default_track(TrackType::Audio)
         .context("No default audio track found")?;
 
-    let sample_rate = track
+    let codec_params = track
         .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+        .context("No audio codec parameters found")?
+        .clone();
+
+    let sample_rate = codec_params
         .sample_rate
         .context("No sample rate in audio track")?;
 
-    let channels = if let Some(ch) = track.codec_params.channels {
-        ch.count()
-    } else if let Some(layout) = track.codec_params.channel_layout {
-        match layout {
-            Layout::Mono => 1,
-            Layout::Stereo => 2,
-            _ => 1,
-        }
-    } else {
-        anyhow::bail!("No channel information in audio track (neither channels nor channel_layout)")
-    };
+    let channels = codec_params
+        .channels
+        .as_ref()
+        .map(|channels| channels.count())
+        .context("No channel information in audio track")?;
 
     tracing::debug!(sample_rate, channels, "audio format detected");
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
         .context("Failed to create audio decoder - please ensure browser sends WAV format audio")?;
 
     let mut pcm_data = Vec::new();
@@ -978,7 +976,8 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(symphonia::core::errors::Error::IoError(e))
                 if e.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
@@ -1040,45 +1039,9 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
     Ok(resampled)
 }
 
-fn audio_buffer_to_f32(buffer: &AudioBufferRef) -> Vec<f32> {
-    let num_channels = buffer.spec().channels.count();
-    let num_frames = buffer.frames();
-    let mut samples = Vec::with_capacity(num_frames * num_channels);
-
-    match buffer {
-        AudioBufferRef::F32(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx]);
-                }
-            }
-        }
-        AudioBufferRef::S16(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx] as f32 / 32768.0);
-                }
-            }
-        }
-        AudioBufferRef::S32(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx] as f32 / 2147483648.0);
-                }
-            }
-        }
-        AudioBufferRef::F64(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx] as f32);
-                }
-            }
-        }
-        _ => {
-            tracing::warn!("Unsupported audio buffer format, returning silence");
-        }
-    }
-
+fn audio_buffer_to_f32(buffer: &GenericAudioBufferRef<'_>) -> Vec<f32> {
+    let mut samples = Vec::with_capacity(buffer.samples_interleaved());
+    buffer.copy_to_vec_interleaved(&mut samples);
     samples
 }
 
@@ -1151,6 +1114,35 @@ mod tests {
     use test_case::test_case;
 
     const TS: u32 = 50364; // A timestamp token for tests
+
+    #[test]
+    fn decodes_pcm_wav() {
+        let input = [-32768i16, 0, 32767];
+        let data_size = (input.len() * std::mem::size_of::<i16>()) as u32;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_size).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&16000u32.to_le_bytes());
+        wav.extend_from_slice(&32000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_size.to_le_bytes());
+        for sample in input {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+
+        let decoded = decode_audio_simple(&wav).unwrap();
+
+        assert_eq!(decoded.len(), input.len());
+        assert_eq!(decoded[0], -1.0);
+        assert_eq!(decoded[1], 0.0);
+        assert!((decoded[2] - 32767.0 / 32768.0).abs() < f32::EPSILON);
+    }
 
     #[test_case(None, ENGLISH_LANGUAGE_TOKEN ; "unset falls back to english")]
     #[test_case(Some("en"), ENGLISH_LANGUAGE_TOKEN ; "english")]

@@ -3,12 +3,14 @@ pub mod formats;
 pub mod mcp_servers;
 
 use crate::config::paths::Paths;
+use crate::config::Config;
+use crate::plugins::discovery::PluginScope;
 use crate::subprocess::{git_command, SubprocessExt};
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Duration, Utc};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
@@ -82,6 +84,49 @@ struct InstallMetadata {
 }
 
 pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
+    enabled_plugin_skill_dirs(None)
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect()
+}
+
+pub(crate) fn enabled_plugin_skill_dirs(
+    project_root: Option<&Path>,
+) -> Vec<(PathBuf, PluginScope)> {
+    enabled_plugin_skill_dirs_with_config(project_root, Config::global())
+}
+
+fn is_project_plugin_install_dir(path: &Path) -> bool {
+    path.parent().is_some_and(|parent| {
+        parent.file_name().and_then(|name| name.to_str()) == Some("plugins")
+            && parent
+                .parent()
+                .and_then(|grandparent| grandparent.file_name())
+                .and_then(|name| name.to_str())
+                == Some(".agents")
+    })
+}
+
+pub(crate) fn configured_project_plugin_skill_dirs(config: &Config) -> Vec<PathBuf> {
+    let entries: HashMap<String, discovery::PluginConfigEntry> = config
+        .get_param(discovery::PLUGINS_CONFIG_KEY)
+        .unwrap_or_default();
+    let user_plugins_dir = plugin_install_dir();
+    let mut seen = HashSet::new();
+
+    entries
+        .into_keys()
+        .map(PathBuf::from)
+        .filter(|path| is_project_plugin_install_dir(path) && !path.starts_with(&user_plugins_dir))
+        .flat_map(|path| formats::open_plugins::installed_skill_dirs(&path))
+        .filter(|path| seen.insert(path.clone()))
+        .collect()
+}
+
+pub(crate) fn enabled_plugin_skill_dirs_with_config(
+    project_root: Option<&Path>,
+    config: &Config,
+) -> Vec<(PathBuf, PluginScope)> {
     let plugins_dir = plugin_install_dir();
     for update in auto_update_plugins_at_root(Utc::now(), &plugins_dir) {
         if let Err(err) = update.result {
@@ -92,25 +137,16 @@ pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
         }
     }
 
-    let entries = match fs::read_dir(plugins_dir) {
-        Ok(entries) => entries,
-        Err(_) => return Vec::new(),
-    };
-
     let mut seen = HashSet::new();
-    entries
-        .flatten()
-        .flat_map(|entry| {
-            let plugin_dir = entry.path();
-            let default_skills_dir = plugin_dir.join("skills");
-            let mut skill_dirs = Vec::new();
-            if default_skills_dir.is_dir() {
-                skill_dirs.push(default_skills_dir);
-            }
-            skill_dirs.extend(formats::open_plugins::installed_skill_dirs(&plugin_dir));
-            skill_dirs
+    discovery::discover_enabled_plugins_with_config(project_root, config)
+        .into_iter()
+        .flat_map(|plugin| {
+            let plugin_dir = plugin.root;
+            formats::open_plugins::installed_skill_dirs(&plugin_dir)
+                .into_iter()
+                .map(move |dir| (dir, plugin.scope))
         })
-        .filter(|path| seen.insert(path.clone()))
+        .filter(|(path, _)| seen.insert(path.clone()))
         .collect()
 }
 

@@ -161,7 +161,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         let has_response_schema = recipe.response.is_some();
         agent
             .apply_recipe_components(recipe.response.clone(), true)
-            .await;
+            .await?;
 
         let subagent_prompt =
             build_subagent_prompt(&agent, &task_config, &session_id, system_instructions).await?;

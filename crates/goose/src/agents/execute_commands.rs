@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::Message;
+use crate::recipe::Recipe;
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
 use super::Agent;
@@ -254,10 +255,9 @@ impl Agent {
     async fn handle_status_command(&self, session_id: &str) -> Result<Option<Message>> {
         let provider = self.provider().await?;
         let model_config = self.model_config_for_session(session_id).await?;
-        let context_limit = provider
-            .get_context_limit(&model_config)
-            .await
-            .unwrap_or_else(|_| model_config.context_limit());
+        let context_limit =
+            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+                .await?;
 
         let goose_mode = self.goose_mode().await;
 
@@ -466,18 +466,35 @@ impl Agent {
         match recipe_slash_command::resolve_command(command, params_str) {
             Ok(None) => Ok(None),
             Ok(Some((recipe, prompt))) => {
-                self.apply_recipe_components(recipe.response.clone(), true)
-                    .await;
-                self.config
-                    .session_manager
-                    .update(session_id)
-                    .recipe(Some(recipe))
-                    .apply()
-                    .await?;
-                Ok(Some(Message::user().with_text(prompt)))
+                self.apply_resolved_recipe_command(command, recipe, prompt, session_id)
+                    .await
             }
             Err(text) => Ok(Some(Message::assistant().with_text(text))),
         }
+    }
+
+    async fn apply_resolved_recipe_command(
+        &self,
+        command: &str,
+        recipe: Recipe,
+        prompt: String,
+        session_id: &str,
+    ) -> Result<Option<Message>> {
+        if let Err(error) = self
+            .apply_recipe_components(recipe.response.clone(), true)
+            .await
+        {
+            return Ok(Some(
+                Message::assistant().with_text(format!("Recipe /{command} is not valid: {error}")),
+            ));
+        }
+        self.config
+            .session_manager
+            .update(session_id)
+            .recipe(Some(recipe))
+            .apply()
+            .await?;
+        Ok(Some(Message::user().with_text(prompt)))
     }
 
     async fn handle_skill_command(
@@ -558,6 +575,8 @@ fn user_only_assistant_text(text: impl Into<String>) -> Message {
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
+    use crate::recipe::Response;
+    use serde_json::json;
 
     #[test]
     fn parse_slash_command_splits_on_literal_space() {
@@ -614,5 +633,44 @@ mod tests {
         assert!(list_commands()
             .iter()
             .any(|command| command.name == "status"));
+    }
+
+    #[tokio::test]
+    async fn invalid_rendered_recipe_schema_returns_assistant_response() {
+        let agent = Agent::new();
+        let recipe = Recipe::builder()
+            .title("Invalid rendered schema")
+            .description("Invalid rendered schema")
+            .instructions("Return structured output")
+            .response(Response {
+                json_schema: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "type": "string",
+                            "pattern": "["
+                        }
+                    }
+                })),
+            })
+            .build()
+            .expect("recipe shape is otherwise valid");
+
+        let response = agent
+            .apply_resolved_recipe_command(
+                "invalid-rendered-schema",
+                recipe,
+                "Return structured output".to_string(),
+                "unused-session",
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.role, rmcp::model::Role::Assistant);
+        assert!(response
+            .as_concat_text()
+            .contains("Recipe /invalid-rendered-schema is not valid"));
+        assert!(agent.final_output_tool.lock().await.is_none());
     }
 }

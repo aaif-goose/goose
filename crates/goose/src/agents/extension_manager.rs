@@ -17,7 +17,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tempfile::{tempdir, TempDir};
+#[cfg(test)]
+use tempfile::tempdir;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{mpsc, Mutex};
@@ -28,7 +29,7 @@ use tracing::{error, warn};
 use super::container::Container;
 use super::extension::{
     ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
-    ToolInfo, PLATFORM_EXTENSIONS,
+    PLATFORM_EXTENSIONS,
 };
 use super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use super::types::SharedProvider;
@@ -45,7 +46,6 @@ use crate::config::{get_all_extensions, Config};
 use crate::oauth::{
     oauth_flow, oauth_flow_with_challenge, GooseCredentialStore, StaticOAuthClientConfig,
 };
-use crate::prompt_template;
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
@@ -131,7 +131,6 @@ struct Extension {
 
     client: McpClientBox,
     server_info: Option<ServerInfo>,
-    _temp_dir: Option<tempfile::TempDir>,
 }
 
 impl Extension {
@@ -140,14 +139,12 @@ impl Extension {
         resolved_config: ExtensionConfig,
         client: McpClientBox,
         server_info: Option<ServerInfo>,
-        temp_dir: Option<tempfile::TempDir>,
     ) -> Self {
         Self {
             client,
             config,
             resolved_config,
             server_info,
-            _temp_dir: temp_dir,
         }
     }
 
@@ -310,10 +307,12 @@ pub(crate) fn recover_mangled_tool_name<'a>(
         // the owner is only in metadata — so the model's "developer.shell"
         // has to be checked against "{owner}.{name}" instead (see #9486).
         let owner_mangled = owner.map(|o| format!("{o}.{name}"));
+        let owner_prefixed = owner.map(|o| format!("{o}__{name}"));
 
         let matches = stripped == name
             || separator_mangled.as_deref() == Some(stripped)
-            || owner_mangled.as_deref() == Some(stripped);
+            || owner_mangled.as_deref() == Some(stripped)
+            || owner_prefixed.as_deref() == Some(stripped);
         if name == emitted || !matches {
             continue;
         }
@@ -1461,19 +1460,12 @@ impl ExtensionManager {
             );
         }
 
-        let mut temp_dir = None;
-
         let effective_working_dir = working_dir
             .clone()
             .or_else(|| std::env::var("GOOSE_WORKING_DIR").ok().map(PathBuf::from))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         let client: Box<dyn McpClientTrait> = match &config {
-            ExtensionConfig::Sse { .. } => {
-                return Err(ExtensionError::ConfigError(
-                    "SSE is unsupported, migrate to streamable_http".to_string(),
-                ));
-            }
             ExtensionConfig::StreamableHttp {
                 uri,
                 timeout,
@@ -1666,46 +1658,6 @@ impl ExtensionManager {
                 .await?;
                 Box::new(client)
             }
-            ExtensionConfig::InlinePython {
-                name,
-                code,
-                timeout,
-                dependencies,
-                ..
-            } => {
-                let dir = tempdir()?;
-                let file_path = dir.path().join(format!("{}.py", name));
-                temp_dir = Some(dir);
-                std::fs::write(&file_path, code)?;
-
-                let command = Command::new("uvx").configure(|command| {
-                    command.arg("--with").arg("mcp");
-                    dependencies.iter().flatten().for_each(|dep| {
-                        command.arg("--with").arg(dep);
-                    });
-                    command.arg("python").arg(file_path.to_str().unwrap());
-                });
-
-                let client = child_process_client(
-                    command,
-                    timeout,
-                    self.provider.clone(),
-                    &effective_working_dir,
-                    container.map(|c| c.id().to_string()),
-                    self.client_name.clone(),
-                    self.mcp_client_capabilities(),
-                    self.context.session_manager.action_required(),
-                    Arc::downgrade(self),
-                )
-                .await?;
-
-                Box::new(client)
-            }
-            ExtensionConfig::Frontend { .. } => {
-                return Err(ExtensionError::ConfigError(
-                    "Invalid extension type: Frontend extensions cannot be added as server extensions".to_string()
-                ));
-            }
         };
 
         let server_info = client.get_info().cloned();
@@ -1713,13 +1665,7 @@ impl ExtensionManager {
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             sanitized_name,
-            Extension::new(
-                config,
-                resolved_config,
-                Arc::from(client),
-                server_info,
-                temp_dir,
-            ),
+            Extension::new(config, resolved_config, Arc::from(client), server_info),
         );
         drop(extensions);
         self.invalidate_tools_cache_and_bump_version().await;
@@ -1733,12 +1679,11 @@ impl ExtensionManager {
         config: ExtensionConfig,
         client: McpClientBox,
         info: Option<ServerInfo>,
-        temp_dir: Option<TempDir>,
     ) {
         let normalized = name_to_key(&name);
         self.extensions.lock().await.insert(
             normalized,
-            Extension::new(config.clone(), config.clone(), client, info, temp_dir),
+            Extension::new(config.clone(), config.clone(), client, info),
         );
         self.invalidate_tools_cache_and_bump_version().await;
     }
@@ -1761,9 +1706,16 @@ impl ExtensionManager {
     /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
-        self.extensions.lock().await.remove(&sanitized_name);
-        self.invalidate_tools_cache_and_bump_version().await;
+        self.remove_extension_by_key(&sanitized_name).await?;
         Ok(())
+    }
+
+    pub async fn remove_extension_by_key(&self, key: &str) -> ExtensionResult<bool> {
+        let removed = self.extensions.lock().await.remove(key).is_some();
+        if removed {
+            self.invalidate_tools_cache_and_bump_version().await;
+        }
+        Ok(removed)
     }
 
     pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
@@ -2047,14 +1999,6 @@ impl ExtensionManager {
         Ok(tools)
     }
 
-    /// Get the extension prompt including client instructions
-    pub async fn get_planning_prompt(&self, tools_info: Vec<ToolInfo>) -> String {
-        let mut context: HashMap<&str, Value> = HashMap::new();
-        context.insert("tools", serde_json::to_value(tools_info).unwrap());
-
-        prompt_template::render_template("plan.md", &context).expect("Prompt should render")
-    }
-
     // Function that gets executed for read_resource tool
     pub async fn read_resource_tool(
         &self,
@@ -2309,19 +2253,6 @@ impl ExtensionManager {
                     tool_meta: get_tool_meta_value(tool),
                     resource_uri: get_tool_resource_uri(tool),
                 });
-            }
-
-            if let Some((prefix, actual)) = name.split_once("__") {
-                let owner = name_to_key(prefix);
-                if let Some(client) = self.get_server_client(&owner).await {
-                    return Ok(ResolvedTool {
-                        extension_name: owner,
-                        actual_tool_name: actual.to_string(),
-                        client,
-                        tool_meta: None,
-                        resource_uri: None,
-                    });
-                }
             }
 
             if !recovery_attempted {
@@ -2616,12 +2547,9 @@ impl ExtensionManager {
                             description
                         }
                     }
-                    ExtensionConfig::Sse { .. } => "SSE extension (unsupported)",
                     ExtensionConfig::Platform { description, .. }
                     | ExtensionConfig::StreamableHttp { description, .. }
-                    | ExtensionConfig::Stdio { description, .. }
-                    | ExtensionConfig::Frontend { description, .. }
-                    | ExtensionConfig::InlinePython { description, .. } => description,
+                    | ExtensionConfig::Stdio { description, .. } => description,
                 };
                 disabled_extensions.push(format!("- {} - {}", config.name(), description));
             }
@@ -2898,7 +2826,7 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension = Extension::new(config.clone(), config.clone(), client, None, None);
+            let extension = Extension::new(config.clone(), config.clone(), client, None);
             self.extensions
                 .lock()
                 .await
@@ -2987,9 +2915,8 @@ mod tests {
             _cancellation_token: CancellationToken,
         ) -> Result<CallToolResult, Error> {
             match name {
-                "tool" | "test__tool" | "available_tool" | "hidden_tool" | "render_chart" => {
-                    Ok(CallToolResult::success(vec![]))
-                }
+                "tool" | "test__tool" | "available_tool" | "hidden_tool" | "render_chart"
+                | "unadvertised_tool" => Ok(CallToolResult::success(vec![])),
                 _ => Err(Error::TransportClosed),
             }
         }
@@ -3781,6 +3708,29 @@ mod tests {
         assert_eq!(resolved.extension_name, "developer");
     }
 
+    #[tokio::test]
+    async fn test_dispatch_rejects_unadvertised_tool_implemented_by_extension() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        extension_manager
+            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
+            .await;
+
+        let ctx = ToolCallContext::new("test-session-id".to_string(), None, None);
+        let tool_call = CallToolRequestParams::new("test_client__unadvertised_tool".to_string());
+
+        let err = match extension_manager
+            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
+            .await
+        {
+            Ok(_) => panic!("an unadvertised tool must not be dispatched"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
+    }
+
     #[test]
     fn test_recover_mangled_tool_name() {
         let tools = [("developer__shell", None), ("platform__search", None)];
@@ -3823,10 +3773,15 @@ mod tests {
         // Platform extensions with unprefixed_tools=true (e.g. "developer")
         // advertise tools with no "__" prefix at all; the owner lives only in
         // metadata. GLM's documented "developer.shell" reproduction (#9486)
-        // must recover via the owner, not the tool's own (absent) prefix.
+        // and emulated "developer__shell" calls must recover via the owner,
+        // not the tool's own (absent) prefix.
         let tools = [("shell", Some("developer")), ("write", Some("developer"))];
         assert_eq!(
             recover_mangled_tool_name("developer.shell", tools.iter().copied()).as_deref(),
+            Some("shell")
+        );
+        assert_eq!(
+            recover_mangled_tool_name("developer__shell", tools.iter().copied()).as_deref(),
             Some("shell")
         );
         assert_eq!(
@@ -3954,11 +3909,10 @@ mod tests {
             temp_dir.path().to_path_buf(),
         ));
 
-        let config = ExtensionConfig::Frontend {
+        let config = ExtensionConfig::Platform {
             name: "test-ext".to_string(),
             description: "original".to_string(),
-            tools: vec![],
-            instructions: None,
+            display_name: None,
             bundled: None,
             available_tools: vec![],
         };
@@ -3967,7 +3921,6 @@ mod tests {
             "test-ext".to_string(),
             config.clone(),
             Arc::new(MockClient {}),
-            None,
             None,
         )
         .await;
@@ -3992,19 +3945,17 @@ mod tests {
             temp_dir.path().to_path_buf(),
         ));
 
-        let config_a = ExtensionConfig::Frontend {
+        let config_a = ExtensionConfig::Platform {
             name: "test-ext".to_string(),
             description: "version-a".to_string(),
-            tools: vec![],
-            instructions: None,
+            display_name: None,
             bundled: None,
             available_tools: vec![],
         };
-        let config_b = ExtensionConfig::Frontend {
+        let config_b = ExtensionConfig::Platform {
             name: "test-ext".to_string(),
-            description: "version-b".to_string(), // changed
-            tools: vec![],
-            instructions: None,
+            description: "version-b".to_string(),
+            display_name: None,
             bundled: None,
             available_tools: vec![],
         };
@@ -4014,16 +3965,15 @@ mod tests {
             config_a,
             Arc::new(MockClient {}),
             None,
-            None,
         )
         .await;
         assert_eq!(em.extensions.lock().await.len(), 1);
 
-        // add_extension with changed config attempts to create a new client (fails here
-        // because Frontend configs cannot be added as server extensions), but must preserve
-        // the old extension so the session isn't left without it.
         let result = em.add_extension(config_b, None, None, None).await;
-        assert!(result.is_err(), "Frontend add_extension must return Err");
+        assert!(
+            result.is_err(),
+            "unknown platform extension must return Err"
+        );
         assert_eq!(
             em.extensions.lock().await.len(),
             1,

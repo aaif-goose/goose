@@ -507,6 +507,44 @@ describe('ParameterInputModal', () => {
       expect((screen.getByLabelText(/boolean parameter/i) as HTMLSelectElement).value).toBe('true');
     });
 
+    it('does not initialize file parameters from prefills or defaults', async () => {
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      renderWithIntl(
+        <ParameterInputModal
+          {...defaultProps}
+          onSubmit={onSubmit}
+          parameters={[
+            {
+              key: 'document',
+              description: 'Document',
+              input_type: 'file',
+              requirement: 'required',
+              default: '/tmp/default.txt',
+            },
+            {
+              key: 'topic',
+              description: 'Topic',
+              input_type: 'string',
+              requirement: 'required',
+            },
+          ]}
+          initialValues={{ document: '/tmp/private.txt', topic: 'release notes' }}
+        />
+      );
+
+      expect(screen.getByLabelText(/^Document/)).toHaveValue('');
+      expect(screen.getByLabelText(/^Topic/)).toHaveValue('release notes');
+
+      await user.type(screen.getByLabelText(/^Document/), '/tmp/selected.txt');
+      await user.click(screen.getByText('Start Recipe'));
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        document: '/tmp/selected.txt',
+        topic: 'release notes',
+      });
+    });
+
     it('keeps a valid default when an invalid prefill is supplied', () => {
       renderWithIntl(
         <ParameterInputModal

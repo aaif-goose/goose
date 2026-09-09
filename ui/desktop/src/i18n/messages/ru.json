@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Добавить"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Всегда использовать Toolshim для этого провайдера"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Совместимо с Anthropic"
   },
@@ -917,6 +920,15 @@
   "dirSwitcher.currentDirectory": {
     "defaultMessage": "Текущий каталог"
   },
+  "dirSwitcher.enterPath": {
+    "defaultMessage": "Enter path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+  },
+  "dirSwitcher.enterPathInvalid": {
+    "defaultMessage": "Working directory must be an absolute path"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Не удалось обновить рабочий каталог"
   },
@@ -1042,9 +1054,6 @@
   },
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "Тип"
-  },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (не поддерживается)"
   },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "Стандартный ввод-вывод (STDIO)"
@@ -1749,13 +1758,10 @@
     "defaultMessage": "Удалить эту модель? Позже ее можно скачать снова."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Скачивайте и управляйте локальными LLM-моделями для инференса без API-ключей. Ищите любые GGUF-модели на HuggingFace или используйте подборку ниже."
+    "defaultMessage": "Скачивайте и управляйте локальными LLM-моделями для инференса без API-ключей. Ищите модели GGUF или MLX на Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Скрыть"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Скачать"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "Скачивание отменено"
@@ -1774,9 +1780,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Рекомендуемые модели"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Войдите, чтобы увеличить лимиты запросов при поиске и загрузке моделей, а также получить доступ к приватным или ограниченным репозиториям Hugging Face."
@@ -1801,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Повторить"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Показать все рекомендуемые (ещё {count})"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Показывать только рекомендуемые"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Локальные модели инференса"
@@ -3773,6 +3770,9 @@
   "sessionIndicators.streaming": {
     "defaultMessage": "Потоковая передача"
   },
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
+  },
   "sessions.action.delete": {
     "defaultMessage": "Удалить сеанс"
   },
@@ -3850,6 +3850,9 @@
   },
   "sessions.importing": {
     "defaultMessage": "Импорт..."
+  },
+  "sessions.includeAcp": {
+    "defaultMessage": "Включить сессии ACP"
   },
   "sessions.loadingMore": {
     "defaultMessage": "Загрузка дополнительных сеансов..."
@@ -4520,9 +4523,6 @@
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Автоматическая загрузка отключена. Нажмите «Скачать сейчас», чтобы загрузить вручную."
   },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "Обновление будет установлено автоматически при выходе из приложения."
-  },
   "updateSection.checkForUpdates": {
     "defaultMessage": "Проверить обновления"
   },
@@ -4553,26 +4553,11 @@
   "updateSection.installAndRestart": {
     "defaultMessage": "Установить и перезапустить"
   },
-  "updateSection.installNowHint": {
-    "defaultMessage": "Или нажмите «Установить и перезапустить», чтобы обновиться сейчас."
-  },
   "updateSection.latestVersion": {
     "defaultMessage": "У вас установлена последняя версия!"
   },
   "updateSection.loading": {
     "defaultMessage": "Загрузка..."
-  },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "После скачивания нужно будет установить обновление вручную."
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "Для этого способа обновления требуется ручная установка."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Обновление готово! Оно будет установлено при выходе из Goose."
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ Обновление готово! Нажмите «Установить и перезапустить», чтобы получить инструкции по установке."
   },
   "updateSection.upToDate": {
     "defaultMessage": "(актуально)"

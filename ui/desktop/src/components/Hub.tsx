@@ -1,13 +1,4 @@
-/**
- * Hub Component
- *
- * The empty-chat landing screen. Visually it's "Pair with no messages yet" —
- * a large time + greeting above a centered, narrower ChatInput. Submitting
- * navigates to /pair immediately; PairRouteWrapper creates the session in
- * the background so Enter does not wait on session/new.
- */
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { defineMessages, useIntl } from '../i18n';
 import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
@@ -15,13 +6,14 @@ import { ChatState } from '../types/chatState';
 import 'react-toastify/dist/ReactToastify.css';
 import { View, ViewOptions } from '../utils/navigationUtils';
 import { useConfig } from './ConfigContext';
-import { getInitialWorkingDir } from '../utils/workingDir';
+import { getEffectiveWorkingDir, getInitialWorkingDir } from '../utils/workingDir';
 import { UserInput } from '../types/message';
 import {
   createNextChatExtensionDraft,
   selectNextChatExtensions,
   type NextChatExtensionDraft,
 } from '../utils/nextChatExtensions';
+import { formatClockDisplay } from '../utils/timeUtils';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -29,34 +21,45 @@ const i18n = defineMessages({
   goodEvening: { id: 'hub.goodEvening', defaultMessage: 'Good evening' },
 });
 
-function useClock(): { time: string; meridiem: string; hour: number } {
+function useClock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, []);
 
-  const hour = now.getHours();
-  const minutes = now.getMinutes();
-  const meridiem = hour >= 12 ? 'PM' : 'AM';
-  const displayHour = ((hour + 11) % 12) + 1;
-  const time = `${displayHour}:${String(minutes).padStart(2, '0')}`;
-  return { time, meridiem, hour };
+  return formatClockDisplay(now);
 }
 
 export default function Hub({
   setView,
+  draftRef,
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
+  /** Unsent input of this screen, kept above the route outlet across the unmount. */
+  draftRef: RefObject<string>;
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
   const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
+  const userSelectedWorkingDirRef = useRef(false);
+  const hasSubmittedRef = useRef(false);
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
-  const hasSubmittedRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { time, meridiem, hour } = useClock();
+
+  // Re-resolve the working dir on mount: GOOSE_WORKING_DIR is fixed at window
+  // creation, so a configured remote directory may have changed since then.
+  useEffect(() => {
+    let active = true;
+    void getEffectiveWorkingDir().then((dir) => {
+      if (active && !userSelectedWorkingDirRef.current) setWorkingDir(dir);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const greeting = useMemo(() => {
     if (hour < 12) return intl.formatMessage(i18n.goodMorning);
@@ -81,6 +84,11 @@ export default function Hub({
     setNextChatExtensionDraft(draft);
   }, []);
 
+  const handleWorkingDirChange = useCallback((dir: string) => {
+    userSelectedWorkingDirRef.current = true;
+    setWorkingDir(dir);
+  }, []);
+
   const handleSubmit = (input: UserInput) => {
     const { msg: userMessage, images } = input;
     if (!(images.length > 0 || userMessage.trim()) || hasSubmittedRef.current) return;
@@ -95,10 +103,11 @@ export default function Hub({
         ? { extensionConfigs: selectedExtensions }
         : { allExtensions: extensionsList };
 
+    draftRef.current = '';
     setView('pair', {
       disableAnimation: true,
       initialMessage: { msg: userMessage, images },
-      workingDir,
+      workingDir: userSelectedWorkingDirRef.current ? workingDir : undefined,
       ...sessionOptions,
     });
   };
@@ -110,13 +119,16 @@ export default function Hub({
           <span className="text-6xl font-light text-text-primary tracking-tight tabular-nums">
             {time}
           </span>
-          <span className="text-2xl font-light text-text-secondary">{meridiem}</span>
+          {meridiem ? (
+            <span className="text-2xl font-light text-text-secondary">{meridiem}</span>
+          ) : null}
         </div>
         <p className="text-xl text-text-secondary mb-6">{greeting}</p>
 
         <ChatInputCard>
           <ChatInput
             sessionId={null}
+            draftRef={draftRef}
             handleSubmit={handleSubmit}
             chatState={ChatState.Idle}
             onStop={() => {}}
@@ -129,7 +141,8 @@ export default function Hub({
             onFilesProcessed={() => {}}
             messages={[]}
             disableAnimation={false}
-            onWorkingDirChange={setWorkingDir}
+            workingDir={workingDir}
+            onWorkingDirChange={handleWorkingDirChange}
             inputRef={inputRef}
             nextChatExtensionDraft={draftForMenu}
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}

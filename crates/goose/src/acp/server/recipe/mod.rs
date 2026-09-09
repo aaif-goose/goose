@@ -313,15 +313,21 @@ impl GooseAcpAgent {
         }
     }
 
-    pub(super) async fn apply_recipe(&self, agent: &Arc<Agent>, recipe: &Recipe) {
+    pub(super) async fn apply_recipe(
+        &self,
+        agent: &Arc<Agent>,
+        recipe: &Recipe,
+    ) -> Result<(), agent_client_protocol::Error> {
         agent
             .apply_recipe_components(recipe.response.clone(), true)
-            .await;
+            .await
+            .invalid_params_err()?;
         if let Some(instructions) = recipe.instructions.clone() {
             agent
                 .extend_system_prompt("recipe".to_string(), instructions)
                 .await;
         }
+        Ok(())
     }
 
     pub(super) async fn apply_session_recipe(
@@ -334,7 +340,7 @@ impl GooseAcpAgent {
         };
 
         if session.session_type == SessionType::Scheduled {
-            self.apply_recipe(agent, recipe).await;
+            self.apply_recipe(agent, recipe).await?;
             return Ok(());
         }
 
@@ -344,7 +350,7 @@ impl GooseAcpAgent {
             &recipe_dir,
             session.user_recipe_values.clone().unwrap_or_default(),
         )? {
-            self.apply_recipe(agent, &rendered).await;
+            self.apply_recipe(agent, &rendered).await?;
         }
 
         Ok(())

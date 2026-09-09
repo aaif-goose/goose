@@ -101,6 +101,10 @@ const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
   useEffect(() => {
     const values = createParameterValueMap();
     parameters.forEach((param) => {
+      if (param.input_type === 'file') {
+        return;
+      }
+
       if (param.requirement === 'optional' && param.default != null) {
         if (isValidParameterValue(param, param.default)) {
           values[param.key] = param.default;
