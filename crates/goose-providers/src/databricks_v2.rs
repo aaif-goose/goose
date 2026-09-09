@@ -267,7 +267,7 @@ impl DatabricksV2Provider {
         }
         let mut config = model_config.clone();
         config.model_name = capability_model;
-        Some(config)
+        Some(config.with_canonical_limits(DATABRICKS_V2_PROVIDER_NAME))
     }
 
     fn model_service_model_from_value(value: &Value) -> Option<String> {
@@ -470,7 +470,8 @@ impl DatabricksV2Provider {
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let is_model_service = Self::is_model_service_fqn(&model_config.model_name);
-        let mut format_config = model_config.clone();
+        let claude_config = self.claude_model_service_config(model_config).await;
+        let mut format_config = claude_config.as_ref().unwrap_or(model_config).clone();
         if is_model_service {
             // Keep UC namespace text out of OpenAI format heuristics.
             format_config.model_name = "model-service".to_string();
@@ -487,9 +488,9 @@ impl DatabricksV2Provider {
             payload["model"] = Value::String(model_config.model_name.clone());
         }
         if payload.get("max_tokens").is_none() {
-            payload["max_tokens"] = Value::from(model_config.max_output_tokens());
+            payload["max_tokens"] = Value::from(format_config.max_output_tokens());
         }
-        if let Some(config) = self.claude_model_service_config(model_config).await {
+        if let Some(config) = claude_config {
             payload.as_object_mut().unwrap().remove("budget_tokens");
             if !anthropic::model_supports_temperature(DATABRICKS_V2_PROVIDER_NAME, &config) {
                 payload.as_object_mut().unwrap().remove("temperature");
