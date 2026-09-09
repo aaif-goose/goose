@@ -146,8 +146,7 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
         .with_model_config(
             goose_providers::model::ModelConfig::new("gpt-4.1").with_context_limit(Some(200)),
         )
-        .await
-        .with_max_turns(2);
+        .await;
     let large_context = (0..500)
         .map(|index| format!("token-{index}"))
         .collect::<Vec<_>>()
@@ -165,11 +164,6 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
     compacted.assert_message(-1, Agent, "continued after estimated compaction");
     compacted.assert_emitted("Performing auto-compaction");
     assert_eq!(compacted.history_replacements(), 1);
-    assert_eq!(
-        api.call_count(),
-        3,
-        "compaction must not consume an inference turn"
-    );
 
     Ok(())
 }
@@ -515,7 +509,8 @@ async fn auto_compacts_after_a_tool_result_before_the_next_inference() -> Result
         .with_model_config(
             goose_providers::model::ModelConfig::new("gpt-4.1").with_context_limit(Some(200)),
         )
-        .await;
+        .await
+        .with_max_turns(2);
 
     let large_result = "tool-result ".repeat(100);
     api.on("start tool loop")
@@ -526,9 +521,14 @@ async fn auto_compacts_after_a_tool_result_before_the_next_inference() -> Result
 
     let compacted = pipeline.run(["start tool loop"]).await?;
 
-    compacted.assert_message(-1, Agent, "continued after tool result");
+    compacted.assert_message(-2, Agent, "continued after tool result");
     compacted.assert_emitted("Performing auto-compaction");
     assert_eq!(compacted.history_replacements(), 1);
+    assert_eq!(
+        api.call_count(),
+        3,
+        "compaction must not consume an inference turn"
+    );
     assert!(
         api.calls()
             .get(1)

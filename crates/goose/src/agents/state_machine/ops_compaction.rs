@@ -24,6 +24,21 @@ const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation..."
 
 pub(super) const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
 
+fn mark_synthetic_compaction_turns(conversation: &mut Conversation, original_message_count: usize) {
+    for message in conversation
+        .messages_mut()
+        .iter_mut()
+        .skip(original_message_count)
+        .filter(|message| message.role == rmcp::model::Role::Assistant)
+    {
+        message.metadata.set_operation_note(
+            "compaction",
+            "synthetic_turn",
+            serde_json::Value::Bool(true),
+        );
+    }
+}
+
 fn compaction_part(
     total_tokens: Option<i32>,
     context_limit: usize,
@@ -150,8 +165,10 @@ impl PreInferenceHook<Session, GooseEffect> for PreparedRequestCompactionHook {
                     "Compaction complete",
                 ))
                 .await;
+                let mut compacted = result.conversation;
+                mark_synthetic_compaction_turns(&mut compacted, conversation.len());
                 Ok(Some(applied([GooseEffect::ReplaceConversation {
-                    conversation: result.conversation,
+                    conversation: compacted,
                     usage: Some(result.usage),
                 }])?))
             }
@@ -424,13 +441,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
         {
             Ok(result) => {
                 let mut compacted = result.conversation;
-                for message in compacted.messages_mut().iter_mut().filter(|message| {
-                    message.role == rmcp::model::Role::Assistant
-                        && message.is_agent_visible()
-                        && !message.is_user_visible()
-                }) {
-                    self.set_message_meta(message, "synthetic_turn", serde_json::Value::Bool(true));
-                }
+                mark_synthetic_compaction_turns(&mut compacted, conversation.len());
                 let usage = result.usage;
                 record_chat_usage(&span, &usage);
                 emit.message(Message::assistant().with_system_notification(

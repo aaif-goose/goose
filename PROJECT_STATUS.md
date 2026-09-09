@@ -146,6 +146,13 @@ turn. `CompactionOperation` oznacza teraz własne assistant messages jako
 synthetic, a `MaxTurnsOperation` pomija je w budżecie. Regresja używa
 `max_turns = 2` i wymaga tool requestu, compaction oraz drugiego inference.
 
+Po `1d9b0b7` CI wykazało, że oczekiwanie regresji na ostatnią wiadomość było
+błędne: druga inference nastąpiła, a dopiero później pętla słusznie zwróciła
+komunikat o wykorzystaniu obu tur. Test sprawdza teraz kontynuację jako
+przedostatnią wiadomość i trzy wywołania providera. Wspólny marker synthetic
+jest stosowany zarówno przez `CompactionOperation`, jak i
+`PreparedRequestCompactionHook`.
+
 PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
 szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
@@ -160,4 +167,4 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] Poczekać na zielone CI dla ostatnio wypchniętego commitu.
 - [x] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
 - [x] CI dla `b2d6339` jest zielone.
-- [ ] Wypchnąć poprawkę budżetu state machine i poczekać na jej CI.
+- [ ] Wypchnąć poprawkę markera prepared-hook i poczekać na jej CI.
