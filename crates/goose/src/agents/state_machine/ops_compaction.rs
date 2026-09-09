@@ -111,9 +111,13 @@ impl PreInferenceHook<Session, GooseEffect> for PreparedRequestCompactionHook {
             return Ok(None);
         }
 
-        // GooseInferenceProvider applies the tool-shim immediately before the
-        // provider call. Apply the same transformation here so schemas moved
-        // into the system prompt are included in this pre-flight count.
+        // GooseInferenceProvider enriches unclaimed-tool errors and applies
+        // the tool-shim immediately before the provider call. Apply the same
+        // transformations here so the count covers the sent request exactly.
+        let messages = crate::agents::state_machine::ops_llm::enrich_unclaimed_tool_errors(
+            messages,
+            &request.tools,
+        );
         let (tools, _, system_prompt) = crate::agents::reply_parts::prepare_tools_for_provider(
             request.tools.clone(),
             request.system_prompt.clone(),
@@ -122,7 +126,7 @@ impl PreInferenceHook<Session, GooseEffect> for PreparedRequestCompactionHook {
         let counter = crate::token_counter::create_token_counter()
             .await
             .map_err(|error| anyhow!("Failed to create token counter: {error}"))?;
-        let tokens = counter.count_chat_tokens(&system_prompt, messages, &tools);
+        let tokens = counter.count_chat_tokens(&system_prompt, &messages, &tools);
         if (tokens as f64 / self.context_limit as f64) <= self.threshold {
             return Ok(None);
         }
