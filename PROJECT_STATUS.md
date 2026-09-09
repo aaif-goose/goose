@@ -166,6 +166,12 @@ uwzględniał tekstu `Available tools` dodawanego dla unknown-tool error tuż
 przed inference. Preflight używa teraz tej samej funkcji
 `enrich_unclaimed_tool_errors` co provider, przed liczeniem tokenów.
 
+Kolejny P2 rozszerza tę samą zasadę o Toolshim: wspólny builder requestu
+wykonuje teraz project, fix, merge i konwersję Toolshim; używają go inference
+oraz preflighty legacy i state machine. CI dla `6fedb47` miało jedną
+niezwiązaną porażkę native-TLS (`extension_manager_tools_available`), przy
+zielonych Rust i rustls-TLS; następny push ponowi całą macierz.
+
 PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
 szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
@@ -181,4 +187,4 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
 - [x] CI dla `b2d6339` jest zielone.
 - [x] CI dla `cced800` jest zielone.
-- [ ] Wypchnąć unknown-tool preflight fix i poczekać na jej CI.
+- [ ] Wypchnąć Toolshim preflight fix i poczekać na jej CI.

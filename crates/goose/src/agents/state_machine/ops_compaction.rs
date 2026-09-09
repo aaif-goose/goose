@@ -118,6 +118,10 @@ impl PreInferenceHook<Session, GooseEffect> for PreparedRequestCompactionHook {
             messages,
             &request.tools,
         );
+        let messages = crate::agents::reply_parts::prepare_messages_for_provider(
+            Conversation::new_unvalidated(messages).agent_visible_messages(),
+            &self.model_config,
+        );
         let (tools, _, system_prompt) = crate::agents::reply_parts::prepare_tools_for_provider(
             request.tools.clone(),
             request.system_prompt.clone(),
@@ -126,7 +130,7 @@ impl PreInferenceHook<Session, GooseEffect> for PreparedRequestCompactionHook {
         let counter = crate::token_counter::create_token_counter()
             .await
             .map_err(|error| anyhow!("Failed to create token counter: {error}"))?;
-        let tokens = counter.count_chat_tokens(&system_prompt, &messages, &tools);
+        let tokens = counter.count_chat_tokens(&system_prompt, messages.messages(), &tools);
         if (tokens as f64 / self.context_limit as f64) <= self.threshold {
             return Ok(None);
         }

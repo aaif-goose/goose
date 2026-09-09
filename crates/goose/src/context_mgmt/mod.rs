@@ -312,12 +312,12 @@ pub async fn check_if_compaction_needed_for_request(
             let token_counter = create_token_counter()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {e}"))?;
+            let messages = crate::agents::reply_parts::prepare_messages_for_provider(
+                conversation.agent_visible_messages(),
+                &model_config,
+            );
             (
-                token_counter.count_chat_tokens(
-                    system_prompt,
-                    &conversation.agent_visible_messages(),
-                    tools,
-                ),
+                token_counter.count_chat_tokens(system_prompt, messages.messages(), tools),
                 "prepared provider request",
             )
         }
