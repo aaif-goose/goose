@@ -362,6 +362,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_aigateway_provider_registry_wiring() {
+        let aigateway = get_from_registry("aigateway")
+            .await
+            .expect("aigateway provider should be registered");
+        let meta = aigateway.metadata();
+
+        assert_eq!(meta.name, "aigateway");
+        assert_eq!(meta.default_model, "zai-org/glm-5.3-flash");
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "AIGATEWAY_API_KEY" && key.secret));
+    }
+
+    #[tokio::test]
     async fn test_openai_compatible_providers_config_keys() {
         let providers_list = providers().await;
         let required_api_key_cases = vec![

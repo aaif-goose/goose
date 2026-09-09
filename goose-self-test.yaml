@@ -176,6 +176,12 @@ prompt: |
   1. Run `cargo test -p goose test_gondola_provider_registry_wiring` to verify Gondola is registered with the correct name, default model (`deepseek-v4-flash`), and a secret `GONDOLA_API_KEY` config key.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
+  ### AIgateway Provider Validation
+  When running from a goose source checkout:
+  1. Run `cargo test -p goose test_aigateway_provider_registry_wiring` to verify AIgateway is registered with the correct name, default model (`zai-org/glm-5.3-flash`), and a secret `AIGATEWAY_API_KEY` config key.
+  2. Verify the declarative definition (`crates/goose-providers/src/declarative/definitions/aigateway.json`) parses, its engine resolves to OpenAI-compatible, and its base URL is `https://api.aigateway.sh/v1/chat/completions`.
+  If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
+
   ### Databricks AI Gateway Path Validation
   When running from a goose source checkout:
   1. Run `cargo test -p goose-providers databricks_v2::tests::gateway_path` to verify the configurable gateway path.
