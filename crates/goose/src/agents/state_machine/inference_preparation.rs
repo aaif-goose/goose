@@ -357,5 +357,23 @@ mod tests {
         assert!(caller_only_prompt.contains("CALLER_HINTS"));
         assert!(!caller_only_prompt.contains("ROOT_HINT"));
         assert!(!caller_only_prompt.contains("NESTED_HINT"));
+
+        fs::write(project.path().join(GOOSE_HINTS_FILENAME), "UPDATED_ROOT").unwrap();
+        assert!(legacy.load_subdirectory_hints(project.path()));
+        assert!(legacy.load_subdirectory_hints(project.path()));
+        let legacy_refreshed = legacy
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build();
+        let state_machine_refreshed = state_machine.build_system_prompt_from_snapshot(
+            Vec::new(),
+            GooseMode::Auto,
+            reconstructed_hint_snapshot(&conversation, project.path()),
+        );
+        assert_eq!(legacy_refreshed, state_machine_refreshed);
+        assert!(legacy_refreshed.contains("UPDATED_ROOT"));
+        assert!(!legacy_refreshed.contains("ROOT_HINT"));
+        assert!(legacy_refreshed.contains("NESTED_HINT"));
+        assert!(legacy_refreshed.contains("CALLER_EXTRA"));
+        assert!(!legacy.load_subdirectory_hints(project.path()));
     }
 }

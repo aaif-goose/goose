@@ -242,9 +242,11 @@ impl PromptManager {
             .subdirectory_hint_tracker
             .load_prompt_snapshot(working_dir, MAX_HINT_OUTPUT_BYTES);
         let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
-        self.pending_hint_snapshot = changed.then(|| snapshot.clone());
+        if changed {
+            self.pending_hint_snapshot = Some(snapshot.clone());
+        }
         self.last_hint_snapshot = Some(snapshot);
-        changed
+        self.pending_hint_snapshot.is_some()
     }
 
     fn take_fresh_hint_snapshot(&mut self, working_dir: &Path) -> String {
@@ -473,6 +475,52 @@ mod tests {
             .build()
             .contains("NESTED_HINT"));
         assert!(!manager.load_subdirectory_hints(project.path()));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn unchanged_hint_refresh_preserves_pending_snapshot_until_consumed() {
+        let config_root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = tempfile::tempdir().unwrap();
+        let root_hints = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
+        std::fs::write(&root_hints, "ROOT_V1").unwrap();
+        let mut manager = PromptManager::new();
+        assert!(manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build()
+            .contains("ROOT_V1"));
+
+        std::fs::write(&root_hints, "ROOT_V2").unwrap();
+        assert!(manager.load_subdirectory_hints(project.path()));
+        assert!(manager.load_subdirectory_hints(project.path()));
+        std::fs::write(&root_hints, "ROOT_V3").unwrap();
+        let staged = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build();
+        assert!(staged.contains("ROOT_V2"));
+        assert!(!staged.contains("ROOT_V3"));
+
+        assert!(manager.load_subdirectory_hints(project.path()));
+        std::fs::write(&root_hints, "ROOT_V4").unwrap();
+        assert!(manager.load_subdirectory_hints(project.path()));
+        let replaced = manager.build_system_prompt(project.path(), Vec::new(), GooseMode::Auto);
+        assert!(replaced.contains("ROOT_V4"));
+        assert!(!replaced.contains("ROOT_V3"));
+        assert!(!manager.load_subdirectory_hints(project.path()));
+
+        std::fs::write(&root_hints, "ROOT_V5").unwrap();
+        let fresh = manager
+            .builder_with_fresh_hints(project.path(), GooseMode::Auto)
+            .build();
+        assert!(fresh.contains("ROOT_V5"));
+        assert!(!fresh.contains("ROOT_V4"));
     }
 
     #[test]
