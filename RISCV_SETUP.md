@@ -2,6 +2,10 @@
 
 This document describes how to build goose-cli for RISC-V 64-bit systems with full V8/code-mode support.
 
+> [!WARNING]
+> This is an experimental, community-contributed build process. RISC-V is not
+> officially supported by the goose project.
+
 ## Prerequisites
 
 - Rust 1.96.1+ (no toolchain upgrade needed)
@@ -44,7 +48,10 @@ V8 152.2.0 is the first version with pre-built RISC-V binaries. However:
 Run from the repository root:
 
 ```bash
-git clone --depth 1 --branch v152.2.0 https://github.com/denoland/rusty_v8.git vendor/rusty_v8
+git init vendor/rusty_v8
+git -C vendor/rusty_v8 remote add origin https://github.com/denoland/rusty_v8.git
+git -C vendor/rusty_v8 fetch --depth 1 origin 2768994f664e8a6e3aba27503606c58339136e2a
+git -C vendor/rusty_v8 checkout --detach FETCH_HEAD
 rm -rf vendor/rusty_v8/.git
 ```
 
@@ -56,6 +63,7 @@ Run from the repository root:
 
 ```bash
 wget -P vendor https://static.crates.io/crates/deno_core/deno_core-0.381.1.crate
+echo "77660b04f5368bcd69a42e0fdd6343e325eb781ec7d79bbf49ff2548ae4f17b6  vendor/deno_core-0.381.1.crate" | sha256sum --check
 tar -C vendor -xzf vendor/deno_core-0.381.1.crate
 mv vendor/deno_core-0.381.1 vendor/deno_core
 rm vendor/deno_core-0.381.1.crate
@@ -67,6 +75,7 @@ Run from the repository root:
 
 ```bash
 wget -P vendor https://static.crates.io/crates/serde_v8/serde_v8-0.290.0.crate
+echo "21a52aca5a5661aea9c2ccf8c2f985f2381266d7aab03a0d02beadb4ae1190ea  vendor/serde_v8-0.290.0.crate" | sha256sum --check
 tar -C vendor -xzf vendor/serde_v8-0.290.0.crate
 mv vendor/serde_v8-0.290.0 vendor/serde_v8
 rm vendor/serde_v8-0.290.0.crate

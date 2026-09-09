@@ -1,25 +1,53 @@
 #!/usr/bin/env bash
-# Setup script for building goose on RISC-V
-# This script vendors dependencies and applies necessary patches for V8 152.2.0
+# Experimental, community-contributed RISC-V setup. This configuration is not
+# officially supported by the goose project.
+# This script vendors dependencies and applies necessary patches for V8 152.2.0.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENDOR_DIR="$REPO_ROOT/vendor"
+RUSTY_V8_COMMIT="2768994f664e8a6e3aba27503606c58339136e2a"
+DENO_CORE_SHA256="77660b04f5368bcd69a42e0fdd6343e325eb781ec7d79bbf49ff2548ae4f17b6"
+SERDE_V8_SHA256="21a52aca5a5661aea9c2ccf8c2f985f2381266d7aab03a0d02beadb4ae1190ea"
+
+verify_sha256() {
+    local file="$1"
+    local expected="$2"
+    local actual
+
+    if command -v sha256sum > /dev/null 2>&1; then
+        actual="$(sha256sum "$file" | awk '{print $1}')"
+    elif command -v shasum > /dev/null 2>&1; then
+        actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+    else
+        echo "Error: sha256sum or shasum is required to verify downloads" >&2
+        return 1
+    fi
+
+    if [ "$actual" != "$expected" ]; then
+        echo "Error: SHA-256 mismatch for $file" >&2
+        echo "Expected: $expected" >&2
+        echo "Actual:   $actual" >&2
+        return 1
+    fi
+}
 
 echo "=== Setting up goose for RISC-V build ==="
 echo "Repository: $REPO_ROOT"
 echo ""
 
 # 1. Clone rusty_v8
-echo "1. Cloning rusty_v8 v152.2.0..."
+echo "1. Cloning rusty_v8 commit $RUSTY_V8_COMMIT (v152.2.0)..."
 if [ -d "$VENDOR_DIR/rusty_v8" ]; then
     echo "   Already exists, skipping..."
 else
-    cd "$VENDOR_DIR"
-    git clone --depth 1 --branch v152.2.0 https://github.com/denoland/rusty_v8.git
-    rm -rf rusty_v8/.git
+    git -C "$VENDOR_DIR" init rusty_v8
+    git -C "$VENDOR_DIR/rusty_v8" remote add origin https://github.com/denoland/rusty_v8.git
+    git -C "$VENDOR_DIR/rusty_v8" fetch --depth 1 origin "$RUSTY_V8_COMMIT"
+    git -C "$VENDOR_DIR/rusty_v8" checkout --detach FETCH_HEAD
+    rm -rf "$VENDOR_DIR/rusty_v8/.git"
     echo "   ✓ Done"
 fi
 
@@ -30,6 +58,7 @@ if [ -d "$VENDOR_DIR/deno_core" ]; then
 else
     cd "$VENDOR_DIR"
     wget -q https://static.crates.io/crates/deno_core/deno_core-0.381.1.crate
+    verify_sha256 deno_core-0.381.1.crate "$DENO_CORE_SHA256"
     tar xzf deno_core-0.381.1.crate
     mv deno_core-0.381.1 deno_core
     rm deno_core-0.381.1.crate
@@ -43,6 +72,7 @@ if [ -d "$VENDOR_DIR/serde_v8" ]; then
 else
     cd "$VENDOR_DIR"
     wget -q https://static.crates.io/crates/serde_v8/serde_v8-0.290.0.crate
+    verify_sha256 serde_v8-0.290.0.crate "$SERDE_V8_SHA256"
     tar xzf serde_v8-0.290.0.crate
     mv serde_v8-0.290.0 serde_v8
     rm serde_v8-0.290.0.crate
