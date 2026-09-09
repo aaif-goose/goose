@@ -556,6 +556,17 @@ fn add_mcp_servers(
     Ok(())
 }
 
+fn union_mcp_servers_with_session_extensions(
+    extension_data: &ExtensionData,
+    config: &Config,
+    mcp_servers: Vec<McpServer>,
+) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
+    let mut extensions =
+        EnabledExtensionsState::extensions_or_default(Some(extension_data), config);
+    add_mcp_servers(&mut extensions, mcp_servers)?;
+    Ok(extensions)
+}
+
 fn enabled_extensions_data(
     session: &Session,
     extensions: Vec<ExtensionConfig>,
@@ -612,8 +623,9 @@ fn initial_session_extensions(
         {
             push_or_replace_extension(&mut extensions, extension);
         }
-        add_mcp_servers(&mut extensions, mcp_servers)?;
     }
+
+    add_mcp_servers(&mut extensions, mcp_servers)?;
 
     Ok(extensions)
 }
@@ -1188,14 +1200,12 @@ impl GooseAcpAgent {
         }
 
         if !mcp_servers.is_empty() {
-            let mut stored_extensions =
-                EnabledExtensionsState::from_extension_data(&session.extension_data)
-                    .unwrap_or_else(|| EnabledExtensionsState::new(Vec::new()));
-            add_mcp_servers(&mut stored_extensions.extensions, mcp_servers)?;
-            builder = builder.extension_data(enabled_extensions_data(
-                &session,
-                stored_extensions.extensions,
-            )?);
+            let extensions = union_mcp_servers_with_session_extensions(
+                &session.extension_data,
+                config,
+                mcp_servers,
+            )?;
+            builder = builder.extension_data(enabled_extensions_data(&session, extensions)?);
             session_needs_update = true;
         }
 
@@ -2862,6 +2872,34 @@ mod tests {
         extensions.iter().any(|ext| ext.name() == "developer")
     }
 
+    fn has_extension(extensions: &[ExtensionConfig], name: &str) -> bool {
+        extensions.iter().any(|extension| extension.name() == name)
+    }
+
+    fn client_mcp_server(name: &str) -> McpServer {
+        McpServer::Http(McpServerHttp::new(name, "http://localhost/mcp"))
+    }
+
+    fn platform_config(name: &str) -> ExtensionConfig {
+        ExtensionConfig::Platform {
+            name: name.to_string(),
+            description: String::new(),
+            display_name: None,
+            bundled: Some(true),
+            available_tools: vec![],
+        }
+    }
+
+    fn goose_platform(name: &str) -> GooseExtension {
+        GooseExtension::Platform {
+            name: name.to_string(),
+            description: None,
+            display_name: None,
+            bundled: Some(true),
+            available_tools: None,
+        }
+    }
+
     fn default_builtin(name: &str) -> AcpBuiltinSelection {
         AcpBuiltinSelection {
             defaults: vec![name.to_string()],
@@ -2921,6 +2959,130 @@ extensions:
         assert!(extensions
             .iter()
             .any(|extension| extension.name() == "zed-mcp"));
+    }
+
+    #[test]
+    fn new_session_mcp_preserves_configured_platform_extensions() {
+        let (config, _c, _s) = config_with_yaml("");
+        let project_root = tempfile::tempdir().unwrap();
+        let extensions = initial_session_extensions(
+            &config,
+            &AcpBuiltinSelection::default(),
+            project_root.path(),
+            vec![client_mcp_server("webstorm")],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            has_extension(&extensions, "skills"),
+            "configured platform extensions must survive a non-empty mcpServers list, got {:?}",
+            extension_names(&extensions)
+        );
+        assert!(has_extension(&extensions, "webstorm"));
+    }
+
+    #[test]
+    fn new_session_mcp_is_additive_to_goose_extensions() {
+        let (config, _c, _s) = config_with_yaml("");
+        let project_root = tempfile::tempdir().unwrap();
+        let extensions = initial_session_extensions(
+            &config,
+            &AcpBuiltinSelection::default(),
+            project_root.path(),
+            vec![client_mcp_server("webstorm")],
+            Some(vec![goose_platform("todo")]),
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            has_extension(&extensions, "todo"),
+            "goose _meta.enabledExtensions must be kept, got {:?}",
+            extension_names(&extensions)
+        );
+        assert!(
+            has_extension(&extensions, "webstorm"),
+            "client mcpServers must be unioned with goose extensions, got {:?}",
+            extension_names(&extensions)
+        );
+    }
+
+    #[test]
+    fn new_session_mcp_is_additive_to_recipe_extensions() {
+        let (config, _c, _s) = config_with_yaml("");
+        let project_root = tempfile::tempdir().unwrap();
+        let recipe = [platform_config("todo")];
+        let extensions = initial_session_extensions(
+            &config,
+            &AcpBuiltinSelection::default(),
+            project_root.path(),
+            vec![client_mcp_server("webstorm")],
+            None,
+            Some(recipe.as_slice()),
+        )
+        .unwrap();
+
+        assert!(
+            has_extension(&extensions, "todo"),
+            "recipe extensions must be kept, got {:?}",
+            extension_names(&extensions)
+        );
+        assert!(
+            has_extension(&extensions, "webstorm"),
+            "client mcpServers must be unioned with recipe extensions, got {:?}",
+            extension_names(&extensions)
+        );
+    }
+
+    #[test]
+    fn activation_mcp_unions_config_when_session_has_no_stored_extensions() {
+        let (config, _c, _s) = config_with_yaml("");
+        let extensions = union_mcp_servers_with_session_extensions(
+            &ExtensionData::new(),
+            &config,
+            vec![client_mcp_server("webstorm")],
+        )
+        .unwrap();
+
+        assert!(
+            has_extension(&extensions, "skills"),
+            "missing session enabled_extensions must fall back to config, got {:?}",
+            extension_names(&extensions)
+        );
+        assert!(has_extension(&extensions, "webstorm"));
+    }
+
+    #[test]
+    fn activation_mcp_keeps_stored_extensions_when_present() {
+        let (config, _c, _s) = config_with_yaml("");
+        let mut extension_data = ExtensionData::new();
+        EnabledExtensionsState::new(vec![platform_config("todo")])
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+
+        let extensions = union_mcp_servers_with_session_extensions(
+            &extension_data,
+            &config,
+            vec![client_mcp_server("webstorm")],
+        )
+        .unwrap();
+
+        assert!(has_extension(&extensions, "todo"));
+        assert!(has_extension(&extensions, "webstorm"));
+        assert!(
+            !has_extension(&extensions, "skills"),
+            "stored session extensions must not be replaced by config, got {:?}",
+            extension_names(&extensions)
+        );
+    }
+
+    fn extension_names(extensions: &[ExtensionConfig]) -> Vec<String> {
+        extensions
+            .iter()
+            .map(|extension| extension.name().to_string())
+            .collect()
     }
 
     #[test]
