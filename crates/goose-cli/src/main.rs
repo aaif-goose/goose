@@ -21,6 +21,8 @@ async fn run() -> Result<()> {
         eprintln!("Warning: Failed to initialize logging: {}", e);
     }
 
+    goose::model_catalog::initialize();
+
     let result = cli().await;
 
     #[cfg(feature = "otel")]
