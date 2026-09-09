@@ -1935,17 +1935,21 @@ export const zLocalInferenceModelDownloadStatusDto = z.object({
 
 export const zLocalInferenceSamplingConfig = z.union([
     z.object({
+        type: z.literal('Inherit')
+    }),
+    z.object({
         type: z.literal('Greedy')
     }),
     z.object({
-        temperature: z.number(),
-        topK: z.int(),
-        topP: z.number(),
-        minP: z.number(),
+        temperature: z.number().nullish(),
+        topK: z.int().nullish(),
+        topP: z.number().nullish(),
+        minP: z.number().nullish(),
         seed: z.int().gte(0).nullish(),
         type: z.literal('Temperature')
     }),
     z.object({
+        temperature: z.number().nullish(),
         tau: z.number(),
         eta: z.number(),
         seed: z.int().gte(0).nullish(),
@@ -1975,20 +1979,16 @@ export const zLocalInferenceChatTemplate = z.union([
 
 export const zLocalInferenceModelSettingsDto = z.object({
     backendId: z.string().nullish(),
+    device: z.string().nullish(),
+    maxCachedShards: z.int().gte(0).nullish(),
     contextSize: z.int().gte(0).nullish(),
     maxOutputTokens: z.int().gte(0).nullish(),
     draftModel: z.string().nullish(),
-    sampling: zLocalInferenceSamplingConfig.optional().default({
-        type: 'Temperature',
-        temperature: 0.800000011920929,
-        topK: 40,
-        topP: 0.949999988079071,
-        minP: 0.05000000074505806
-    }),
-    repeatPenalty: z.number(),
-    repeatLastN: z.int(),
-    frequencyPenalty: z.number(),
-    presencePenalty: z.number(),
+    sampling: zLocalInferenceSamplingConfig.optional().default({ type: 'Inherit' }),
+    repeatPenalty: z.number().nullish(),
+    repeatLastN: z.int().nullish(),
+    frequencyPenalty: z.number().nullish(),
+    presencePenalty: z.number().nullish(),
     nBatch: z.int().gte(0).nullish(),
     nGpuLayers: z.int().gte(0).nullish(),
     useMlock: z.boolean(),
@@ -1996,7 +1996,7 @@ export const zLocalInferenceModelSettingsDto = z.object({
     nThreads: z.int().nullish(),
     toolCalling: zLocalInferenceToolCallingMode.optional().default('auto'),
     chatTemplate: zLocalInferenceChatTemplate.optional().default({ type: 'embedded' }),
-    enableThinking: z.boolean(),
+    enableThinking: z.boolean().nullish(),
     visionCapable: z.boolean(),
     imageTokenEstimate: z.int().gte(0),
     mmprojSizeBytes: z.int().gte(0)
@@ -2007,6 +2007,8 @@ export const zLocalInferenceModelDto = z.object({
     repoId: z.string(),
     filename: z.string(),
     quantization: z.string(),
+    format: z.string(),
+    backendId: z.string(),
     sizeBytes: z.int().gte(0),
     status: zLocalInferenceModelDownloadStatusDto,
     recommended: z.boolean(),
@@ -2025,7 +2027,7 @@ export const zLocalInferenceModelsListResponse_unstable = z.object({
  */
 export const zLocalInferenceModelDownloadRequest_unstable = z.object({
     spec: z.string(),
-    backendId: z.string().nullish(),
+    format: z.string().nullish(),
     variantId: z.string().nullish()
 });
 
@@ -2085,7 +2087,12 @@ export const zLocalInferenceModelSettingsReadRequest_unstable = z.object({
 });
 
 export const zLocalInferenceModelSettingsReadResponse_unstable = z.object({
-    settings: zLocalInferenceModelSettingsDto
+    settings: zLocalInferenceModelSettingsDto,
+    backendId: z.string().nullish(),
+    format: z.string().nullish(),
+    defaultBackendId: z.string().nullish(),
+    availableBackends: z.array(z.string()),
+    effectiveGeneration: z.unknown().optional()
 });
 
 /**
@@ -2118,7 +2125,6 @@ export const zLocalInferenceHfGgufFileDto = z.object({
 export const zLocalInferenceHfModelVariantDto = z.object({
     variantId: z.string(),
     label: z.string(),
-    backendId: z.string(),
     format: z.string(),
     modelId: z.string(),
     downloadId: z.string(),

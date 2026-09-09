@@ -8,24 +8,27 @@ pub mod prompt_template;
 pub mod provider_utils;
 
 mod backend;
+pub mod eredu_adapter;
+mod eredu_factory;
 #[cfg(feature = "hf-hub")]
 pub mod hf_models;
 mod llamacpp;
 #[cfg(feature = "hf-hub")]
 pub mod management;
-mod mlx;
 pub mod model;
 pub(crate) mod multimodal;
-#[cfg(feature = "mlx")]
-mod native_tool_parsing;
+pub mod selection;
+#[cfg(feature = "hf-hub")]
+mod snapshot;
 pub(crate) mod thinking_output;
 mod tool_emulation;
 mod tool_parsing;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use backend::{BackendLoadedModel, LocalInferenceBackend};
+use eredu_factory::EreduBackend;
 use goose_provider_types::base::{MessageStream, Provider, ProviderDescriptor, ProviderMetadata};
 use goose_provider_types::conversation::message::{
     Message, MessageContent, SystemNotificationType,
@@ -35,10 +38,12 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::images::ImageFormat;
 use goose_provider_types::model::ModelConfig;
 use goose_provider_types::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
-use llamacpp::{LlamaCppBackend, LLAMACPP_BACKEND_ID};
-use mlx::{MlxBackend, MLX_BACKEND_ID};
+use llamacpp::LlamaCppBackend;
 use model::ChatTemplate;
 use rmcp::model::Tool;
+use selection::{
+    configured_backend, EREDU_BACKEND_ID, GGUF_FORMAT, LLAMACPP_BACKEND_ID, SAFETENSORS_FORMAT,
+};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -76,6 +81,7 @@ struct ModelCacheKey {
     backend_id: &'static str,
     model_id: String,
     chat_template: ChatTemplate,
+    realization: String,
 }
 
 impl ModelCacheKey {
@@ -83,11 +89,19 @@ impl ModelCacheKey {
         backend_id: &'static str,
         model_id: impl Into<String>,
         chat_template: ChatTemplate,
+        resolved: &ResolvedModelPaths,
     ) -> Self {
         Self {
             backend_id,
             model_id: model_id.into(),
             chat_template,
+            realization: serde_json::json!({
+                "target": resolved.model_path,
+                "draft": resolved.draft_model_path,
+                "device": resolved.settings.device,
+                "max_cached_shards": resolved.settings.max_cached_shards,
+            })
+            .to_string(),
         }
     }
 }
@@ -115,10 +129,10 @@ impl InferenceRuntime {
             return Ok(runtime);
         }
         let llamacpp_backend: Arc<dyn LocalInferenceBackend> = Arc::new(LlamaCppBackend::new()?);
-        let mlx_backend: Arc<dyn LocalInferenceBackend> = Arc::new(MlxBackend::new());
+        let eredu_backend: Arc<dyn LocalInferenceBackend> = Arc::new(EreduBackend);
         let mut backends = HashMap::new();
         backends.insert(LLAMACPP_BACKEND_ID, llamacpp_backend);
-        backends.insert(MLX_BACKEND_ID, mlx_backend);
+        backends.insert(EREDU_BACKEND_ID, eredu_backend);
         let runtime = Arc::new(Self {
             models: StdMutex::new(HashMap::new()),
             cold_load_lock: Mutex::new(()),
@@ -139,10 +153,7 @@ impl InferenceRuntime {
         &self,
         resolved: &ResolvedModelPaths,
     ) -> Result<Arc<dyn LocalInferenceBackend>, ProviderError> {
-        let backend_id = resolved
-            .backend_id
-            .as_deref()
-            .unwrap_or(LLAMACPP_BACKEND_ID);
+        let backend_id = resolved.backend_id.as_str();
         self.backends.get(backend_id).cloned().ok_or_else(|| {
             ProviderError::ExecutionError(format!(
                 "Local inference backend '{}' unavailable",
@@ -250,13 +261,14 @@ pub(crate) struct ResolvedModelPaths {
     pub context_limit: usize,
     pub settings: crate::model::ModelSettings,
     pub mmproj_path: Option<PathBuf>,
-    pub backend_id: Option<String>,
+    pub backend_id: String,
+    pub format: String,
     pub draft_model_path: Option<PathBuf>,
 }
 
 struct ExplicitModelPath {
     model_path: PathBuf,
-    backend_id: &'static str,
+    format: String,
 }
 
 fn has_extension(path: &Path, extension: &str) -> bool {
@@ -265,7 +277,7 @@ fn has_extension(path: &Path, extension: &str) -> bool {
         .is_some_and(|value| value.eq_ignore_ascii_case(extension))
 }
 
-fn is_mlx_model_directory(path: &Path) -> Result<bool> {
+fn is_safetensors_model_directory(path: &Path) -> Result<bool> {
     if !path.join("config.json").is_file() || !path.join("tokenizer.json").is_file() {
         return Ok(false);
     }
@@ -291,35 +303,46 @@ fn explicit_model_path(model_id: &str) -> Result<Option<ExplicitModelPath>> {
     if path.is_file() && has_extension(&path, "gguf") {
         return Ok(Some(ExplicitModelPath {
             model_path: path,
-            backend_id: LLAMACPP_BACKEND_ID,
+            format: GGUF_FORMAT.into(),
         }));
     }
 
-    let mlx_directory = if path.is_dir() {
+    let safetensors_directory = if path.is_dir() {
         Some(path.as_path())
     } else if path.is_file() && has_extension(&path, "safetensors") {
         path.parent()
     } else {
         None
     };
-    if let Some(directory) = mlx_directory {
-        if is_mlx_model_directory(directory)? {
-            mlx::validate_model_directory(directory)
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    if let Some(directory) = safetensors_directory {
+        if is_safetensors_model_directory(directory)? {
             return Ok(Some(ExplicitModelPath {
                 model_path: directory.to_path_buf(),
-                backend_id: MLX_BACKEND_ID,
+                format: SAFETENSORS_FORMAT.into(),
             }));
         }
     }
 
-    bail!(
-        "Unsupported local model path '{}': expected a GGUF file or an MLX directory containing config.json, tokenizer.json, and SafeTensors weights",
-        path.display()
-    )
+    let artifact = eredu_architectures::configuration::inspect_artifact(&path)?;
+    let format = match artifact.format() {
+        eredu_core::ArtifactFormat::SafeTensors => SAFETENSORS_FORMAT.to_owned(),
+        format => serde_json::to_value(format)?
+            .as_str()
+            .expect("artifact format serializes as a string")
+            .to_owned(),
+    };
+    Ok(Some(ExplicitModelPath {
+        model_path: path,
+        format,
+    }))
 }
 
 async fn resolve_draft_model_path(model_id: &str) -> Result<Option<PathBuf>> {
+    let path = PathBuf::from(model_id);
+    if path.is_dir() {
+        // Assistants can share the target tokenizer; Eredu admits their artifacts.
+        return Ok(Some(path));
+    }
     if let Some(explicit) = explicit_model_path(model_id)? {
         return Ok(Some(explicit.model_path));
     }
@@ -382,6 +405,7 @@ async fn resolve_loaded_model_path(model_id: &str) -> Result<Option<ResolvedMode
     settings.vision_capable = resolved.mmproj_path.is_some();
     settings.mmproj_size_bytes = resolved.settings.mmproj_size_bytes;
     resolved.context_limit = settings.context_size.unwrap_or(0) as usize;
+    resolved.backend_id = configured_backend(&resolved.format, &settings)?;
     resolved.settings = settings;
     Ok(Some(resolved))
 }
@@ -402,9 +426,10 @@ async fn resolve_model_path(model_id: &str) -> Result<Option<ResolvedModelPaths>
         return Ok(Some(ResolvedModelPaths {
             model_path: explicit.model_path,
             context_limit: settings.context_size.unwrap_or(0) as usize,
+            backend_id: configured_backend(&explicit.format, &settings)?,
+            format: explicit.format,
             settings,
             mmproj_path: None,
-            backend_id: Some(explicit.backend_id.to_string()),
             draft_model_path,
         }));
     }
@@ -424,14 +449,7 @@ async fn resolve_model_path(model_id: &str) -> Result<Option<ResolvedModelPaths>
         settings.mmproj_size_bytes = cached.mmproj_size_bytes;
         let draft_model = configured_draft_model(model_id, &settings);
         let draft_model_path = if let Some(draft_model) = &draft_model {
-            if let Some(explicit_draft) = explicit_model_path(draft_model)? {
-                Some(explicit_draft.model_path)
-            } else {
-                cached_models
-                    .iter()
-                    .find(|model| model.id == draft_model.as_str())
-                    .map(|model| model.model_path.clone())
-            }
+            resolve_draft_model_path(draft_model).await?
         } else {
             None
         };
@@ -440,9 +458,10 @@ async fn resolve_model_path(model_id: &str) -> Result<Option<ResolvedModelPaths>
         Some(ResolvedModelPaths {
             model_path: cached.model_path.clone(),
             context_limit: settings.context_size.unwrap_or(0) as usize,
+            backend_id: configured_backend(&cached.format, &settings)?,
+            format: cached.format.clone(),
             settings,
             mmproj_path: cached.mmproj_path.clone(),
-            backend_id: Some(cached.backend_id.clone()),
             draft_model_path,
         })
     };
@@ -725,7 +744,7 @@ impl ProviderDescriptor for LocalInferenceProvider {
         ProviderMetadata::new(
             PROVIDER_NAME,
             "Local Inference",
-            "Local inference using GGUF (llama.cpp) and MLX models",
+            "Local inference using llama.cpp or Eredu with GGUF and SafeTensors models",
             "",
             vec![],
             "https://github.com/utilityai/llama-cpp-rs",
@@ -794,7 +813,7 @@ impl Provider for LocalInferenceProvider {
 
         // Allow request_params to override thinking
         let mut model_settings = resolved.settings.clone();
-        if let Some(false) = model_config
+        if let Some(enable_thinking) = model_config
             .request_param::<bool>("enable_thinking")
             .or_else(|| {
                 config_resolver::bool_param("GOOSE_LOCAL_ENABLE_THINKING")
@@ -802,13 +821,14 @@ impl Provider for LocalInferenceProvider {
                     .flatten()
             })
         {
-            model_settings.enable_thinking = false;
+            model_settings.enable_thinking = Some(enable_thinking);
         }
 
         let cache_key = ModelCacheKey::new(
             backend.id(),
             model_config.model_name.clone(),
             model_settings.chat_template.clone(),
+            &resolved,
         );
         let model_slot = self.runtime.get_or_create_model_slot(cache_key.clone());
         let runtime = self.runtime.clone();
@@ -817,8 +837,7 @@ impl Provider for LocalInferenceProvider {
         let model_arc = model_slot.clone();
         let backend = backend.clone();
         let model_name = model_config.model_name.clone();
-        let temperature = model_config.temperature;
-        let max_tokens = model_config.max_tokens;
+        let request_model_config = model_config.clone();
         let context_limit = model_context_limit;
         let settings = model_settings;
         let resolved_model = resolved.clone();
@@ -992,17 +1011,15 @@ impl Provider for LocalInferenceProvider {
                 let message_id = Uuid::new_v4().to_string();
 
                 let request = backend::LocalGenerationRequest {
+                    model_config: &request_model_config,
                     model_name,
                     system: &system,
                     messages: &messages,
                     tools: &tools,
                     settings: &settings,
-                    temperature,
-                    max_tokens,
                     context_limit,
                     model_load_ms,
                     resolved_model: &resolved_model,
-                    draft_model_path: resolved_model.draft_model_path.clone(),
                     message_id: &message_id,
                     tx: &tx,
                     log: &mut log,
@@ -1011,6 +1028,9 @@ impl Provider for LocalInferenceProvider {
                 let result = backend.generate(loaded, request);
 
                 if let Err(err) = result {
+                    if !loaded.reusable_after_error() {
+                        *model_guard = ModelSlotState::Empty;
+                    }
                     let msg = match &err {
                         ProviderError::ExecutionError(s) => s.as_str(),
                         ProviderError::ContextLengthExceeded(s) => s.as_str(),
@@ -1107,3 +1127,7 @@ mod tests {
         assert_eq!(extract_text_content(&message), "ordinary user content");
     }
 }
+
+#[cfg(all(test, feature = "hf-hub"))]
+#[path = "../tests/support/runtime.rs"]
+mod runtime_tests;

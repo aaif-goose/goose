@@ -219,7 +219,7 @@ export const HuggingFaceModelSearch = ({
     const downloadKey = variant.downloadId;
     const request: DownloadModelRequest = {
       spec: repoId,
-      backendId: variant.backendId,
+      format: variant.format,
       variantId: variant.variantId,
     };
     setDownloading((prev) => new Set(prev).add(downloadKey));

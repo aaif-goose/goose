@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "ACP अडैप्टर मिल गया"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "ACP अडैप्टर नहीं मिला"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "प्रदाता CLI से साइन इन करें, फिर दोबारा जाँचें।"
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "दोबारा जाँचें"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "जाँच की जा रही है..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "सफलतापूर्वक कनेक्ट हो गया"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "आगे बढ़ने से पहले अपने खाते का कनेक्शन जाँचें।"
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "ऑटो कॉम्पैक्ट पर"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Enter path"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "कार्यशील निर्देशिका अद्यतन करने में विफल"
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "हाल की निर्देशिकाएँ"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "{branch} पर स्विच नहीं किया जा सका"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "कोई ब्रांच नहीं मिली"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "ब्रांच खोजें…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "आपके कुछ बदलाव कमिट नहीं हुए हो सकते हैं।"
   },
   "elicitationRequest.accept": {
     "defaultMessage": "स्वीकार करो"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "{branch} पर स्विच नहीं किया जा सका"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "कोई ब्रांच नहीं मिली"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "ब्रांच खोजें…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "आपके कुछ बदलाव कमिट नहीं हुए हो सकते हैं।"
   },
   "goosehintsModal.close": {
     "defaultMessage": "बंद करें"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "यह मॉडल हटाएं? आप इसे बाद में पुनः डाउनलोड कर सकते हैं."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "API कुंजियों के बिना अनुमान के लिए स्थानीय एलएलएम मॉडल डाउनलोड और प्रबंधित करें। Hugging Face पर GGUF या MLX मॉडल खोजें।"
+    "defaultMessage": "API कुंजियों के बिना अनुमान के लिए स्थानीय एलएलएम मॉडल डाउनलोड और प्रबंधित करें। Hugging Face पर GGUF या SafeTensors मॉडल खोजें।"
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "खारिज करें"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "मॉडल स्विच करें"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "स्वचालित"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "अनुमान बैकएंड"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "डिफ़ॉल्ट ({backend})"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "बैच का आकार"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "एक llama.cpp अंतर्निहित टेम्पलेट नाम चुनें"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "कैश में शार्ड की अधिकतम संख्या"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "चैट टेम्पलेट"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "संपूर्ण जिंजा चैट टेम्पलेट स्रोत चिपकाएँ"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "डिफ़ॉल्ट सीड"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "डिवाइस"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "डिवाइस (खाली होने पर पहले एक्सेलरेटर, फिर CPU)"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "ड्राफ़्ट मॉडल"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "डाउनलोड किए गए मॉडल की ID या पथ"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "खाली फ़ील्ड चेकपॉइंट के डिफ़ॉल्ट मान अपनाते हैं। प्रभावी मान:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "मॉडल डाउनलोड होने के बाद उपलब्ध"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "तापमान {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, सैंपलिंग {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "चेकपॉइंट टेम्पलेट, अंतर्निहित टेम्पलेट या इनलाइन Jinja का उपयोग करें"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "एटा (सीखने की दर)"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "जीपीयू पर अपलोड करने के लिए परतें"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "विरासत में लें"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "सेटिंग लोड हो रही है..."
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "मिन पी"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostat के लिए प्रभावी तापमान धनात्मक होना चाहिए"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "मॉडल का डिफ़ॉल्ट"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "मॉडल के डिफ़ॉल्ट मान"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "मॉडल प्रारूप"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "बंद"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "चालू"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "प्रदर्शन"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "तापमान"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "चिंतन"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "धागे"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "स्थानीय मॉडल Settings — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "हाल के"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "हल किया गया मॉडल"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "आपके पास सहेजे नहीं गए परिवर्तन हैं"
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "अप्रचलित — इसके बजाय {replacement} का उपयोग करें।"
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "प्रदाता कार्ड त्रुटि: कोई मेटाडेटा प्रदान नहीं किया गया"
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "जारी रखें"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "और दर्ज करें:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "कॉपी करें"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "एक ब्राउज़र विंडो खुलेगी। सत्यापन कोड यहाँ दिखाई देगा, ताकि आप उसे दर्ज करके साइन-इन पूरा कर सकें।"
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "जाएं"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "क्या आपके पास API कुंजी नहीं है?"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "इस प्रदाता का उपयोग करने के लिए अपनी कॉन्फ़िगरेशन दोबारा जांचें।"
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "मॉडल चुनें"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "बंद करें"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "यह वर्तमान प्रदाता कॉन्फ़िगरेशन को स्थायी रूप से हटा देगा।"
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "और दर्ज करें:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "कॉपी करें"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "एक ब्राउज़र विंडो खुलेगी। सत्यापन कोड यहाँ दिखाई देगा, ताकि आप उसे दर्ज करके साइन-इन पूरा कर सकें।"
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "जाएं"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "इस प्रदाता कॉन्फ़िगरेशन की जाँच करने में त्रुटि हुई।"
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "संदेश से छवि हटाएँ"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "हाल के"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "मॉडल चुनें"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "अप्रचलित — इसके बजाय {replacement} का उपयोग करें।"
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "ACP अडैप्टर मिल गया"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "ACP अडैप्टर नहीं मिला"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "प्रदाता CLI से साइन इन करें, फिर दोबारा जाँचें।"
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "दोबारा जाँचें"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "जाँच की जा रही है..."
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "सफलतापूर्वक कनेक्ट हो गया"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "आगे बढ़ने से पहले अपने खाते का कनेक्शन जाँचें।"
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "और दर्ज करें:"
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "कॉपी करें"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "जाएं"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "और दर्ज करें:"
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "कॉपी करें"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "जाएं"
   }
 }

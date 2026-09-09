@@ -14,6 +14,9 @@ fn resolve_huggingface_token() -> BoxFuture<'static, Result<Option<String>>> {
 }
 
 fn resolve_string_param(key: &'static str) -> Result<Option<String>> {
+    if key == "GOOSE_LOCAL_BACKEND" {
+        crate::config::Config::global().migrate_local_inference_backend()?;
+    }
     Ok(crate::config::Config::global()
         .get_param::<String>(key)
         .ok())
@@ -26,6 +29,7 @@ fn resolve_bool_param(key: &'static str) -> Result<Option<bool>> {
 fn resolve_model_settings(
     model_id: &str,
 ) -> Result<Option<goose_providers::local_inference::model::ModelSettings>> {
+    crate::config::Config::global().migrate_local_inference_backend()?;
     let settings = crate::config::Config::global()
         .get_param::<HashMap<String, goose_providers::local_inference::model::ModelSettings>>(
             LOCAL_MODEL_SETTINGS_KEY,

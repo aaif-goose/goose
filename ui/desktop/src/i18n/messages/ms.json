@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "Penyesuai ACP ditemui"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "Penyesuai ACP tidak ditemui"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "Log masuk melalui CLI penyedia, kemudian semak semula."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "Semak semula"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "Menyemak..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "Berjaya disambungkan"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "Semak sambungan akaun anda sebelum meneruskan."
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "Padatkan automatik pada"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Enter path"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal mengemas kini direktori kerja"
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terkini"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "Gagal beralih ke {branch}"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "Tiada cabang ditemui"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "Cari cabang…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "Anda mungkin mempunyai perubahan yang belum dikomit."
   },
   "elicitationRequest.accept": {
     "defaultMessage": "Terima"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "Gagal beralih ke {branch}"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "Tiada cabang ditemui"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Cari cabang…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "Anda mungkin mempunyai perubahan yang belum dikomit."
   },
   "goosehintsModal.close": {
     "defaultMessage": "Tutup"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "Padam model ini? Anda boleh memuat turunnya semula kemudian."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Muat turun dan urus model LLM tempatan untuk inferens tanpa kunci API. Cari model GGUF atau MLX di Hugging Face."
+    "defaultMessage": "Muat turun dan urus model LLM tempatan untuk inferens tanpa kunci API. Cari model GGUF atau SafeTensors di Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Ketepikan"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "Tukar model"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "Automatik"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "Backend inferens"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "Lalai ({backend})"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "Saiz kelompok"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "Pilih nama templat terbina dalam llama.cpp"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "Bilangan maksimum shard dalam cache"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "Templat sembang"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "Tampal sumber templat sembang Jinja penuh"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "Seed lalai"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "Peranti"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "Peranti (kosong: pemecut dahulu, kemudian CPU)"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "Model draf"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "ID atau laluan model yang dimuat turun"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "Medan kosong mewarisi nilai lalai checkpoint. Nilai berkesan:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "tersedia selepas model dimuat turun"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "suhu {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, pensampelan {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "Gunakan templat checkpoint, templat terbina dalam atau Jinja sebaris"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta (kadar pembelajaran)"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "Lapisan untuk dipunggah ke GPU"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "Warisi"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "Memuatkan tetapan..."
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostat memerlukan suhu berkesan yang positif"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "Lalai model"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "Nilai lalai model"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "Format model"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "Mati"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "Hidup"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "Prestasi"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "Suhu"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "Penaakulan"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "Bebenang"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Tetapan Model Tempatan — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Terkini"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Model diselesaikan"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Anda mempunyai perubahan yang belum disimpan"
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "Tidak digunakan lagi — gunakan {replacement} sebagai gantinya."
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "Ralat ProviderCard: Tiada metadata disediakan"
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "Teruskan"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "dan masukkan:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "Salin"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "Tetingkap pelayar akan dibuka. Kod pengesahan akan dipaparkan di sini supaya anda boleh memasukkannya untuk melengkapkan log masuk."
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "Lawati"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "Tidak mempunyai kunci API?"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "Semak semula konfigurasi anda untuk menggunakan penyedia ini."
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "Pilih Model"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "Tutup"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "Ini akan memadamkan konfigurasi penyedia semasa secara kekal."
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "dan masukkan:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "Salin"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "Tetingkap pelayar akan dibuka. Kod pengesahan akan dipaparkan di sini supaya anda boleh memasukkannya untuk melengkapkan log masuk."
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "Lawati"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "Terdapat ralat semasa menyemak konfigurasi penyedia ini."
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "Alih keluar imej daripada mesej"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "Terkini"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "Pilih Model"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "Tidak digunakan lagi — gunakan {replacement} sebagai gantinya."
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "Penyesuai ACP ditemui"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "Penyesuai ACP tidak ditemui"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "Log masuk melalui CLI penyedia, kemudian semak semula."
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "Semak semula"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "Menyemak..."
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "Berjaya disambungkan"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "Semak sambungan akaun anda sebelum meneruskan."
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "dan masukkan:"
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "Salin"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "Lawati"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "dan masukkan:"
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "Salin"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "Lawati"
   }
 }

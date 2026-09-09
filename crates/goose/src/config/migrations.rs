@@ -12,14 +12,59 @@ pub fn run_migrations(config: &mut Mapping) -> bool {
     let mut changed = false;
     changed |= migrate_platform_extensions(config);
     changed |= migrate_provider_config(config);
+    changed |= migrate_local_inference_backend(config);
     changed
 }
 
-/// Run only non-destructive migrations suitable for in-memory read paths.
+/// Run migrations suitable for in-memory read paths.
 /// Provider migration is excluded because it removes flat keys that
 /// `get_param()` callers may still look up directly.
 pub fn run_read_migrations(config: &mut Mapping) {
     migrate_platform_extensions(config);
+    migrate_local_inference_backend(config);
+}
+
+pub(super) fn migrate_local_inference_backend(config: &mut Mapping) -> bool {
+    let mut changed = false;
+    if let Some(settings) = config.get_mut("GOOSE_LOCAL_MODEL_SETTINGS") {
+        changed |= migrate_local_model_settings(settings);
+    }
+    if let Some(backend) = config.get_mut("GOOSE_LOCAL_BACKEND") {
+        if backend.as_str() == Some("mlx") {
+            *backend = "eredu".into();
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn migrate_local_model_settings(settings: &mut serde_yaml::Value) -> bool {
+    if let Some(encoded) = settings.as_str() {
+        if let Ok(mut parsed) = serde_json::from_str(encoded) {
+            if migrate_local_model_settings(&mut parsed) {
+                *settings = parsed;
+                return true;
+            }
+        }
+        return false;
+    }
+    let mut changed = false;
+    if let Some(settings) = settings.as_mapping_mut() {
+        for value in settings.values_mut() {
+            if let Some(model_settings) = value.as_mapping_mut() {
+                if model_settings
+                    .get("backend_id")
+                    .and_then(serde_yaml::Value::as_str)
+                    == Some("mlx")
+                {
+                    model_settings.clear();
+                    model_settings.insert("backend_id".into(), "eredu".into());
+                    changed = true;
+                }
+            }
+        }
+    }
+    changed
 }
 
 fn read_enabled_field(value: &serde_yaml::Value) -> Option<bool> {

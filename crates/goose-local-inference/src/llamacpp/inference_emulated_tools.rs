@@ -202,7 +202,7 @@ pub(super) fn generate_with_emulated_tools(
     let tx = ctx.tx;
     let mut emulator_parser = StreamingEmulatorParser::new(code_mode_enabled);
     let mut output_filter = ThinkingOutputFilter::new(
-        ctx.settings.enable_thinking,
+        ctx.settings.enable_thinking.unwrap_or(true),
         &template_result.generation_prompt,
     );
     let mut stop_trimmer = StopSuffixTrimmer::new(&template_result.additional_stops);

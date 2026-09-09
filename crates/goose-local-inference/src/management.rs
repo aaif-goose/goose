@@ -8,6 +8,7 @@ use super::{
     InferenceRuntime,
 };
 use crate::download_manager::{get_download_manager, DownloadProgress, DownloadStatus};
+use crate::selection::{self, EREDU_BACKEND_ID, GGUF_FORMAT, SAFETENSORS_FORMAT};
 use anyhow::{anyhow, Result};
 use goose_sdk_types::custom_requests::{
     LocalInferenceBuiltinChatTemplatesListResponse, LocalInferenceChatTemplate,
@@ -30,7 +31,7 @@ static DOWNLOAD_CANCELLATIONS: OnceLock<Mutex<HashMap<String, Arc<watch::Sender<
 #[derive(Clone)]
 struct LocalModelSelection {
     repo_id: String,
-    backend_id: String,
+    format: String,
     variant_id: Option<String>,
 }
 
@@ -93,7 +94,7 @@ pub async fn huggingface_repo_variants(
     let available_memory = available_inference_memory_bytes(&runtime);
     let gguf_variants: Vec<_> = variants
         .iter()
-        .filter(|variant| variant.backend_id == "llamacpp")
+        .filter(|variant| variant.format == GGUF_FORMAT)
         .map(|variant| hf_models::HfQuantVariant {
             quantization: variant.variant_id.clone(),
             size_bytes: variant.size_bytes,
@@ -113,7 +114,7 @@ pub async fn huggingface_repo_variants(
         .collect();
     let downloaded_quants = downloaded
         .iter()
-        .filter(|model| model.backend_id == "llamacpp")
+        .filter(|model| model.format == GGUF_FORMAT)
         .map(|model| model.quantization.clone())
         .collect();
     let downloaded_variants = downloaded.iter().map(|model| model.id.clone()).collect();
@@ -158,7 +159,7 @@ pub async fn download_model(
             if let Some(selection) = selection_for_task {
                 resolve_local_model_selection(
                     &selection.repo_id,
-                    &selection.backend_id,
+                    &selection.format,
                     selection.variant_id.as_deref(),
                 )
                 .await
@@ -229,10 +230,73 @@ pub async fn evict_model(model_id: &str) -> Result<()> {
         .map_err(|error| anyhow!(error.to_string()))
 }
 
-pub fn get_model_settings(model_id: &str) -> Result<LocalInferenceModelSettingsReadResponse> {
+pub async fn get_model_settings(model_id: &str) -> Result<LocalInferenceModelSettingsReadResponse> {
     let settings = crate::config_resolver::model_settings(model_id)?;
+    let resolved = super::resolve_model_path(model_id).await;
+    let mut format = resolved
+        .as_ref()
+        .ok()
+        .and_then(|model| model.as_ref())
+        .map(|model| model.format.clone());
+    if format.is_none() {
+        format = if let Some(artifact) = crate::explicit_model_path(model_id)? {
+            Some(artifact.format)
+        } else {
+            hf_models::cached_local_model(model_id)
+                .await?
+                .map(|model| model.format)
+        };
+    }
+    let global_backend = crate::config_resolver::string_param("GOOSE_LOCAL_BACKEND")?;
+    let default_backend_id = format
+        .as_deref()
+        .map(|format| global_backend.unwrap_or_else(|| selection::default_backend(format).into()));
+    let backend_id = settings
+        .backend_id
+        .clone()
+        .or_else(|| default_backend_id.clone());
+    let available_backends = format
+        .as_deref()
+        .map(selection::available_backends)
+        .unwrap_or_default();
+    let preview = || -> Result<Option<serde_json::Value>> {
+        let Some(model) = resolved? else {
+            return Ok(None);
+        };
+        if model.backend_id != EREDU_BACKEND_ID {
+            return Ok(None);
+        }
+        let checkpoint: Option<eredu_core::CheckpointGenerationConfig> =
+            match std::fs::File::open(if model.model_path.is_dir() {
+                model.model_path.join("generation_config.json")
+            } else {
+                model
+                    .model_path
+                    .parent()
+                    .unwrap()
+                    .join("generation_config.json")
+            }) {
+                Ok(file) => Some(serde_json::from_reader(file)?),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            };
+        let request = goose_provider_types::model::ModelConfig::new(model_id);
+        let overrides = crate::eredu_adapter::settings::generation_settings(&settings, &request)
+            .map_err(|error| anyhow!(error.to_string()))?
+            .overrides;
+        Ok(Some(serde_json::to_value(
+            eredu_core::resolve_generation_config(checkpoint.as_ref(), overrides)?,
+        )?))
+    };
+    let effective_generation =
+        preview().unwrap_or_else(|error| Some(serde_json::json!({"error": error.to_string()})));
     Ok(LocalInferenceModelSettingsReadResponse {
         settings: model_settings_to_dto(&settings),
+        backend_id,
+        format,
+        default_backend_id,
+        available_backends,
+        effective_generation,
     })
 }
 
@@ -241,6 +305,11 @@ pub fn update_model_settings(
     settings: LocalInferenceModelSettingsDto,
 ) -> Result<LocalInferenceModelSettingsUpdateResponse> {
     let settings = model_settings_from_dto(settings);
+    if let Some(backend) = settings.backend_id.as_deref() {
+        if !["eredu", "llamacpp"].contains(&backend) {
+            anyhow::bail!("Unknown local inference backend '{backend}'");
+        }
+    }
     crate::config_resolver::write_model_settings(model_id, &settings)?;
     Ok(LocalInferenceModelSettingsUpdateResponse {
         settings: model_settings_to_dto(&settings),
@@ -274,7 +343,7 @@ fn local_model_to_dto(
     loaded_model_ids: &HashSet<String>,
 ) -> LocalInferenceModelDto {
     let mut settings = crate::config_resolver::model_settings(&model.id).unwrap_or_default();
-    settings.backend_id = Some(model.backend_id.clone());
+
     settings.vision_capable = model.mmproj_path.is_some();
     settings.mmproj_size_bytes = model.mmproj_size_bytes;
     LocalInferenceModelDto {
@@ -282,6 +351,13 @@ fn local_model_to_dto(
         repo_id: model.repo_id.clone(),
         filename: model.filename.clone(),
         quantization: model.quantization.clone(),
+        format: model.format.clone(),
+        backend_id: selection::configured_backend(&model.format, &settings).unwrap_or_else(|_| {
+            settings
+                .backend_id
+                .clone()
+                .unwrap_or_else(|| selection::default_backend(&model.format).into())
+        }),
         size_bytes: model.size_bytes,
         status: LocalInferenceModelDownloadStatusDto {
             state: LocalInferenceDownloadState::Downloaded,
@@ -301,17 +377,24 @@ fn local_model_to_dto(
 }
 
 fn active_download_to_dto(model_id: String, progress: &DownloadProgress) -> LocalInferenceModelDto {
-    let (repo_id, quantization, backend_id) = match hf_models::parse_model_spec(&model_id) {
-        Ok((repo_id, quantization)) => (repo_id, quantization, "llamacpp".to_string()),
-        Err(_) => (model_id.clone(), "default".to_string(), "mlx".to_string()),
+    let (repo_id, quantization, format) = match hf_models::parse_model_spec(&model_id) {
+        Ok((repo_id, quantization)) => (repo_id, quantization, GGUF_FORMAT.to_string()),
+        Err(_) => (
+            model_id.clone(),
+            "default".to_string(),
+            SAFETENSORS_FORMAT.to_string(),
+        ),
     };
-    let mut settings = crate::config_resolver::model_settings(&model_id).unwrap_or_default();
-    settings.backend_id = Some(backend_id);
+    let settings = crate::config_resolver::model_settings(&model_id).unwrap_or_default();
+
     LocalInferenceModelDto {
         id: model_id,
         repo_id,
         filename: String::new(),
         quantization,
+        backend_id: selection::configured_backend(&format, &settings)
+            .unwrap_or_else(|_| selection::default_backend(&format).into()),
+        format,
         size_bytes: progress.total_bytes,
         status: active_download_status(progress),
         recommended: false,
@@ -377,7 +460,6 @@ fn hf_model_variant_to_dto(variant: HfModelVariant) -> LocalInferenceHfModelVari
     LocalInferenceHfModelVariantDto {
         variant_id: variant.variant_id,
         label: variant.label,
-        backend_id: variant.backend_id,
         format: variant.format,
         model_id: variant.model_id,
         download_id: variant.download_id,
@@ -395,6 +477,8 @@ fn hf_model_variant_to_dto(variant: HfModelVariant) -> LocalInferenceHfModelVari
 pub fn model_settings_to_dto(settings: &ModelSettings) -> LocalInferenceModelSettingsDto {
     LocalInferenceModelSettingsDto {
         backend_id: settings.backend_id.clone(),
+        device: settings.device.clone(),
+        max_cached_shards: settings.max_cached_shards,
         context_size: settings.context_size,
         max_output_tokens: settings.max_output_tokens,
         draft_model: settings.draft_model.clone(),
@@ -420,6 +504,8 @@ pub fn model_settings_to_dto(settings: &ModelSettings) -> LocalInferenceModelSet
 pub fn model_settings_from_dto(settings: LocalInferenceModelSettingsDto) -> ModelSettings {
     ModelSettings {
         backend_id: settings.backend_id,
+        device: settings.device.clone(),
+        max_cached_shards: settings.max_cached_shards,
         context_size: settings.context_size,
         max_output_tokens: settings.max_output_tokens,
         draft_model: settings.draft_model,
@@ -444,6 +530,7 @@ pub fn model_settings_from_dto(settings: LocalInferenceModelSettingsDto) -> Mode
 
 fn sampling_to_dto(sampling: &SamplingConfig) -> LocalInferenceSamplingConfig {
     match sampling {
+        SamplingConfig::Inherit => LocalInferenceSamplingConfig::Inherit,
         SamplingConfig::Greedy => LocalInferenceSamplingConfig::Greedy,
         SamplingConfig::Temperature {
             temperature,
@@ -458,7 +545,13 @@ fn sampling_to_dto(sampling: &SamplingConfig) -> LocalInferenceSamplingConfig {
             min_p: *min_p,
             seed: *seed,
         },
-        SamplingConfig::MirostatV2 { tau, eta, seed } => LocalInferenceSamplingConfig::MirostatV2 {
+        SamplingConfig::MirostatV2 {
+            temperature,
+            tau,
+            eta,
+            seed,
+        } => LocalInferenceSamplingConfig::MirostatV2 {
+            temperature: *temperature,
             tau: *tau,
             eta: *eta,
             seed: *seed,
@@ -468,6 +561,7 @@ fn sampling_to_dto(sampling: &SamplingConfig) -> LocalInferenceSamplingConfig {
 
 fn sampling_from_dto(sampling: LocalInferenceSamplingConfig) -> SamplingConfig {
     match sampling {
+        LocalInferenceSamplingConfig::Inherit => SamplingConfig::Inherit,
         LocalInferenceSamplingConfig::Greedy => SamplingConfig::Greedy,
         LocalInferenceSamplingConfig::Temperature {
             temperature,
@@ -482,9 +576,17 @@ fn sampling_from_dto(sampling: LocalInferenceSamplingConfig) -> SamplingConfig {
             min_p,
             seed,
         },
-        LocalInferenceSamplingConfig::MirostatV2 { tau, eta, seed } => {
-            SamplingConfig::MirostatV2 { tau, eta, seed }
-        }
+        LocalInferenceSamplingConfig::MirostatV2 {
+            temperature,
+            tau,
+            eta,
+            seed,
+        } => SamplingConfig::MirostatV2 {
+            temperature,
+            tau,
+            eta,
+            seed,
+        },
     }
 }
 
@@ -529,24 +631,24 @@ fn chat_template_from_dto(template: LocalInferenceChatTemplate) -> ChatTemplate 
 fn explicit_model_selection(
     req: &LocalInferenceModelDownloadRequest,
 ) -> Result<Option<LocalModelSelection>> {
-    if let Some(backend_id) = req.backend_id.as_deref() {
+    if let Some(format) = req.format.as_deref() {
         let (repo_id, parsed_variant_id) = hf_models::parse_model_spec(&req.spec)
             .map(|(repo_id, quantization)| (repo_id, Some(quantization)))
             .unwrap_or_else(|_| (req.spec.clone(), None));
         let variant_id = req.variant_id.clone().or(parsed_variant_id);
-        match backend_id {
-            "mlx" => Ok(Some(LocalModelSelection {
+        match format {
+            SAFETENSORS_FORMAT => Ok(Some(LocalModelSelection {
                 repo_id,
-                backend_id: backend_id.to_string(),
+                format: format.to_string(),
                 variant_id,
             })),
-            "llamacpp" => Ok(Some(LocalModelSelection {
+            GGUF_FORMAT => Ok(Some(LocalModelSelection {
                 repo_id,
-                backend_id: backend_id.to_string(),
+                format: format.to_string(),
                 variant_id: variant_id
                     .map(|variant_id| hf_models::canonicalize_quantization(&variant_id)),
             })),
-            _ => anyhow::bail!("Unknown local inference backend '{}'", backend_id),
+            _ => anyhow::bail!("Unknown model format '{}'", format),
         }
     } else {
         Ok(None)
@@ -558,12 +660,12 @@ async fn local_model_id_from_request(
     selection: Option<&LocalModelSelection>,
 ) -> Result<String> {
     if let Some(selection) = selection {
-        return match selection.backend_id.as_str() {
-            "mlx" => Ok(selection.repo_id.clone()),
-            "llamacpp" => {
+        return match selection.format.as_str() {
+            SAFETENSORS_FORMAT => Ok(selection.repo_id.clone()),
+            GGUF_FORMAT => {
                 let quantization = selection.variant_id.as_deref().ok_or_else(|| {
                     anyhow!(
-                        "llama.cpp model '{}' is missing a quantization",
+                        "GGUF model '{}' is missing a quantization",
                         selection.repo_id
                     )
                 })?;
@@ -572,7 +674,7 @@ async fn local_model_id_from_request(
                     &hf_models::canonicalize_quantization(quantization),
                 ))
             }
-            _ => anyhow::bail!("Unknown local inference backend '{}'", selection.backend_id),
+            _ => anyhow::bail!("Unknown model format '{}'", selection.format),
         };
     }
 
@@ -584,14 +686,12 @@ async fn local_model_id_from_request(
     }
 
     let variants = hf_models::get_repo_local_variants(&req.spec).await?;
-    let has_llamacpp = variants
+    let has_gguf = variants.iter().any(|variant| variant.format == GGUF_FORMAT);
+    let safetensors_variants: Vec<_> = variants
         .iter()
-        .any(|variant| variant.backend_id == "llamacpp");
-    let mlx_variants: Vec<_> = variants
-        .iter()
-        .filter(|variant| variant.backend_id == "mlx")
+        .filter(|variant| variant.format == SAFETENSORS_FORMAT)
         .collect();
-    if mlx_variants.len() == 1 && !has_llamacpp {
+    if safetensors_variants.len() == 1 && !has_gguf {
         Ok(req.spec.clone())
     } else {
         anyhow::bail!(
@@ -687,7 +787,7 @@ mod tests {
     async fn explicit_llamacpp_selection_derives_quantized_model_id() {
         let req = LocalInferenceModelDownloadRequest {
             spec: "test/repo".to_string(),
-            backend_id: Some("llamacpp".to_string()),
+            format: Some(GGUF_FORMAT.to_string()),
             variant_id: Some("q4_k_m".to_string()),
         };
         let selection = explicit_model_selection(&req).unwrap();

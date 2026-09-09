@@ -26,7 +26,7 @@ use crate::{build_openai_messages_json, build_openai_text_messages_json, Resolve
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::formats::openai::format_tools;
 
-pub(super) const LLAMACPP_BACKEND_ID: &str = "llamacpp";
+use crate::selection::LLAMACPP_BACKEND_ID;
 
 const CODE_EXECUTION_TOOL: &str = "code_execution__execute_typescript";
 
@@ -82,7 +82,7 @@ fn supports_native_tool_calling(
         tool_choice: None,
         json_schema: None,
         grammar: None,
-        reasoning_format: if settings.enable_thinking {
+        reasoning_format: if settings.enable_thinking.unwrap_or(true) {
             Some("auto")
         } else {
             None
@@ -91,7 +91,7 @@ fn supports_native_tool_calling(
         add_generation_prompt: true,
         use_jinja: true,
         parallel_tool_calls: false,
-        enable_thinking: settings.enable_thinking,
+        enable_thinking: settings.enable_thinking.unwrap_or(true),
         add_bos: false,
         add_eos: false,
         parse_tool_calls: true,

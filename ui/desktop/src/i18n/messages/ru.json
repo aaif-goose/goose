@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "Адаптер ACP найден"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "Адаптер ACP не найден"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "Войдите через CLI провайдера, затем повторите проверку."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "Проверить снова"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "Проверка..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "Подключение выполнено"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "Проверьте подключение учетной записи, прежде чем продолжить."
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "Автосжимать при"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Enter path"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Не удалось обновить рабочий каталог"
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Недавние каталоги"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "Не удалось переключиться на {branch}"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "Ветки не найдены"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "Поиск веток…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "Возможно, у вас есть незакоммиченные изменения."
   },
   "elicitationRequest.accept": {
     "defaultMessage": "Принять"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "Не удалось переключиться на {branch}"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "Ветки не найдены"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Поиск веток…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "Возможно, у вас есть незакоммиченные изменения."
   },
   "goosehintsModal.close": {
     "defaultMessage": "Закрыть"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "Удалить эту модель? Позже ее можно скачать снова."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Скачивайте и управляйте локальными LLM-моделями для инференса без API-ключей. Ищите модели GGUF или MLX на Hugging Face."
+    "defaultMessage": "Скачивайте и управляйте локальными LLM-моделями для инференса без API-ключей. Ищите модели GGUF или SafeTensors на Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Скрыть"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "Переключить модели"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "Автоматически"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "Бэкенд инференса"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "По умолчанию ({backend})"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "Размер пакета"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "Выберите имя встроенного шаблона llama.cpp"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "Максимум шардов в кэше"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "Шаблон чата"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "Вставьте полный исходный код шаблона Jinja"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "Начальное значение по умолчанию"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "Устройство"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "Устройство (пусто: сначала ускоритель, затем CPU)"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "Черновая модель"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "ID или путь к загруженной модели"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "Пустые поля наследуют настройки чекпойнта. Действующие значения:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "доступны после загрузки модели"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "температура {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, сэмплирование {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "Использовать шаблон чекпойнта, встроенный шаблон или код Jinja"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta (скорость обучения)"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "Слои для выгрузки на GPU"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "Наследовать"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "Загрузка настроек..."
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Для Mirostat нужна положительная действующая температура"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "Настройка модели"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "Настройки модели по умолчанию"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "Формат модели"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "Выкл."
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "Вкл."
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "Производительность"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "Температура"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "Рассуждение"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "Потоки"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Настройки локальной модели — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Недавние"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Разрешенная модель"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "У вас есть несохраненные изменения"
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "Устарел — используйте вместо него {replacement}."
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "Ошибка ProviderCard: метаданные не предоставлены"
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "Продолжить"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "и введите:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "Копировать"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "Откроется окно браузера. Код подтверждения появится здесь — введите его, чтобы завершить вход."
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "Перейдите на"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "Нет API-ключа?"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "Проверьте конфигурацию еще раз, чтобы использовать этого провайдера."
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "Выбрать модель"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "Закрыть"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "Это навсегда удалит текущую конфигурацию провайдера."
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "и введите:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "Копировать"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "Откроется окно браузера. Код подтверждения появится здесь — введите его, чтобы завершить вход."
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "Перейдите на"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "При проверке конфигурации этого провайдера произошла ошибка."
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "Удалить изображение из сообщения"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "Недавние"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "Выбрать модель"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "Устарел — используйте вместо него {replacement}."
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "Адаптер ACP найден"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "Адаптер ACP не найден"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "Войдите через CLI провайдера, затем повторите проверку."
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "Проверить снова"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "Проверка..."
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "Подключение выполнено"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "Проверьте подключение учетной записи, прежде чем продолжить."
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "и введите:"
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "Копировать"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "Перейдите на"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "и введите:"
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "Копировать"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "Перейдите на"
   }
 }

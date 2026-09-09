@@ -46,7 +46,7 @@ pub(super) fn generate_with_native_tools(
     // attach it to the final tool-call message (mirroring what the OpenAI
     // streaming path does). Streaming chunks are still sent for UI display.
     let mut output_filter = ThinkingOutputFilter::new(
-        ctx.settings.enable_thinking,
+        ctx.settings.enable_thinking.unwrap_or(true),
         &template_result.generation_prompt,
     );
 

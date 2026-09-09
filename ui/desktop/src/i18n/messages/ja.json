@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "ACPアダプターが見つかりました"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "ACPアダプターが見つかりません"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "プロバイダーのCLIからサインインし、もう一度確認してください。"
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "もう一度確認"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "確認中..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "接続しました"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "続行する前にアカウントの接続を確認してください。"
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "自動圧縮の実行タイミング"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Enter path"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "作業ディレクトリの更新に失敗しました"
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近のディレクトリ"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "{branch} への切り替えに失敗しました"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "ブランチが見つかりません"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "ブランチを検索…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "コミットされていない変更がある可能性があります。"
   },
   "elicitationRequest.accept": {
     "defaultMessage": "承諾"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "{branch} への切り替えに失敗しました"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "ブランチが見つかりません"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "ブランチを検索…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "コミットされていない変更がある可能性があります。"
   },
   "goosehintsModal.close": {
     "defaultMessage": "閉じる"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "このモデルを削除しますか？後で再ダウンロードできます。"
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "APIキーなしで推論できるローカルLLMモデルをダウンロード・管理します。Hugging FaceでGGUFまたはMLXモデルを検索できます。"
+    "defaultMessage": "APIキーなしで推論できるローカルLLMモデルをダウンロード・管理します。Hugging FaceでGGUFまたはSafeTensorsモデルを検索できます。"
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "閉じる"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "モデルを切り替え"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "自動"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "推論バックエンド"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "デフォルト（{backend}）"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "バッチサイズ"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "llama.cpp の組み込みテンプレート名を選択"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "キャッシュするシャードの最大数"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "チャットテンプレート"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "Jinjaチャットテンプレートの全文を貼り付け"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "既定のシード"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "デバイス"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "デバイス（空欄の場合はアクセラレータ、次にCPUを選択）"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "ドラフトモデル"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "ダウンロード済みモデルのIDまたはパス"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "空欄はチェックポイントの既定値を継承します。実効値:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "モデルのダウンロード後に表示されます"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "温度 {temperature}、top-k {topK}、top-p {topP}、min-p {minP}、サンプリング {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "チェックポイントのテンプレート、組み込みテンプレート、またはインラインJinjaを使用"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta（学習率）"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "GPUにオフロードするレイヤー数"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "継承"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "設定を読み込み中..."
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostatには正の実効温度が必要です"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "モデルの既定値"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "モデルの既定値"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "モデル形式"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "オフ"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "オン"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "パフォーマンス"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "温度"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "思考"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "スレッド"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "ローカルモデル設定 — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "最近"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "解決済みモデル"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "未保存の変更があります"
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "非推奨です。代わりに {replacement} を使用してください。"
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCardエラー: メタデータが提供されていません"
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "続行"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "コードを入力してください："
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "コピー"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "ブラウザーウィンドウが開きます。確認コードがここに表示されるので、入力してサインインを完了してください。"
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "次のURLにアクセスし、"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "APIキーをお持ちでないですか？"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "このプロバイダーを使用するには、設定をもう一度確認してください。"
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "モデルを選択"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "閉じる"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "現在のプロバイダー設定は完全に削除されます。"
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "コードを入力してください："
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "コピー"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "ブラウザーウィンドウが開きます。確認コードがここに表示されるので、入力してサインインを完了してください。"
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "次のURLにアクセスし、"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "このプロバイダー設定の確認中にエラーが発生しました。"
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "メッセージから画像を削除"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "最近"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "モデルを選択"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "非推奨です。代わりに {replacement} を使用してください。"
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "ACPアダプターが見つかりました"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "ACPアダプターが見つかりません"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "プロバイダーのCLIからサインインし、もう一度確認してください。"
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "もう一度確認"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "確認中..."
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "接続しました"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "続行する前にアカウントの接続を確認してください。"
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "コードを入力してください："
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "コピー"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "次のURLにアクセスし、"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "コードを入力してください："
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "コピー"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "次のURLにアクセスし、"
   }
 }

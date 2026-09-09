@@ -5805,6 +5805,12 @@
         "quantization": {
           "type": "string"
         },
+        "format": {
+          "type": "string"
+        },
+        "backendId": {
+          "type": "string"
+        },
         "sizeBytes": {
           "type": "integer",
           "minimum": 0
@@ -5840,6 +5846,8 @@
         "repoId",
         "filename",
         "quantization",
+        "format",
+        "backendId",
         "sizeBytes",
         "status",
         "recommended",
@@ -5904,6 +5912,19 @@
             "null"
           ]
         },
+        "device": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maxCachedShards": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
         "contextSize": {
           "type": [
             "integer",
@@ -5927,26 +5948,34 @@
         "sampling": {
           "$ref": "#/$defs/LocalInferenceSamplingConfig",
           "default": {
-            "type": "Temperature",
-            "temperature": 0.800000011920929,
-            "topK": 40,
-            "topP": 0.949999988079071,
-            "minP": 0.05000000074505806
+            "type": "Inherit"
           }
         },
         "repeatPenalty": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "float"
         },
         "repeatLastN": {
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "frequencyPenalty": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "float"
         },
         "presencePenalty": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "float"
         },
         "nBatch": {
@@ -5989,7 +6018,10 @@
           }
         },
         "enableThinking": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "visionCapable": {
           "type": "boolean"
@@ -6004,12 +6036,7 @@
         }
       },
       "required": [
-        "repeatPenalty",
-        "repeatLastN",
-        "frequencyPenalty",
-        "presencePenalty",
         "useMlock",
-        "enableThinking",
         "visionCapable",
         "imageTokenEstimate",
         "mmprojSizeBytes"
@@ -6017,6 +6044,18 @@
     },
     "LocalInferenceSamplingConfig": {
       "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "Inherit"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
         {
           "type": "object",
           "properties": {
@@ -6033,18 +6072,30 @@
           "type": "object",
           "properties": {
             "temperature": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "float"
             },
             "topK": {
-              "type": "integer"
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "topP": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "float"
             },
             "minP": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "float"
             },
             "seed": {
@@ -6060,16 +6111,19 @@
             }
           },
           "required": [
-            "type",
-            "temperature",
-            "topK",
-            "topP",
-            "minP"
+            "type"
           ]
         },
         {
           "type": "object",
           "properties": {
+            "temperature": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
             "tau": {
               "type": "number",
               "format": "float"
@@ -6160,7 +6214,7 @@
         "spec": {
           "type": "string"
         },
-        "backendId": {
+        "format": {
           "type": [
             "string",
             "null"
@@ -6339,10 +6393,36 @@
       "properties": {
         "settings": {
           "$ref": "#/$defs/LocalInferenceModelSettingsDto"
-        }
+        },
+        "backendId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultBackendId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "availableBackends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "effectiveGeneration": {}
       },
       "required": [
-        "settings"
+        "settings",
+        "availableBackends"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/local-inference/models/settings/read"
@@ -6486,9 +6566,6 @@
         "label": {
           "type": "string"
         },
-        "backendId": {
-          "type": "string"
-        },
         "format": {
           "type": "string"
         },
@@ -6538,7 +6615,6 @@
       "required": [
         "variantId",
         "label",
-        "backendId",
         "format",
         "modelId",
         "downloadId",

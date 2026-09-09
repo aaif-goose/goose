@@ -28,7 +28,7 @@ const i18n = defineMessages({
   description: {
     id: 'localInferenceSettings.description',
     defaultMessage:
-      'Download and manage local LLM models for inference without API keys. Search Hugging Face for GGUF or MLX models.',
+      'Download and manage local LLM models for inference without API keys. Search Hugging Face for GGUF or SafeTensors models.',
   },
   downloading: {
     id: 'localInferenceSettings.downloading',
@@ -512,7 +512,16 @@ export const LocalInferenceSettings = () => {
                         {model.id}
                       </span>
                       <span className="text-xs text-text-muted">
-                        {formatBytes(model.sizeBytes)}
+                        {formatBytes(model.sizeBytes)} ·{' '}
+                        {model.format === 'safetensors'
+                          ? 'SafeTensors'
+                          : model.format.toUpperCase()}{' '}
+                        ·{' '}
+                        {model.backendId === 'eredu'
+                          ? 'Eredu'
+                          : model.backendId === 'llamacpp'
+                            ? 'llama.cpp'
+                            : model.backendId}
                       </span>
                       {model.isLoaded && (
                         <span className="inline-flex items-center gap-1 text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded">

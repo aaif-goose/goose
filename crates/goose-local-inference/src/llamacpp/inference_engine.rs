@@ -237,22 +237,29 @@ pub(super) fn build_context_params(
 pub(super) fn build_sampler(settings: &crate::model::ModelSettings) -> LlamaSampler {
     use crate::model::SamplingConfig;
 
-    let has_penalties = settings.repeat_penalty != 1.0
-        || settings.frequency_penalty != 0.0
-        || settings.presence_penalty != 0.0;
+    let has_penalties = settings.repeat_penalty.unwrap_or(1.0) != 1.0
+        || settings.frequency_penalty.unwrap_or(0.0) != 0.0
+        || settings.presence_penalty.unwrap_or(0.0) != 0.0;
 
     let mut samplers: Vec<LlamaSampler> = Vec::new();
 
     if has_penalties {
         samplers.push(LlamaSampler::penalties(
-            settings.repeat_last_n,
-            settings.repeat_penalty,
-            settings.frequency_penalty,
-            settings.presence_penalty,
+            settings.repeat_last_n.unwrap_or(64),
+            settings.repeat_penalty.unwrap_or(1.0),
+            settings.frequency_penalty.unwrap_or(0.0),
+            settings.presence_penalty.unwrap_or(0.0),
         ));
     }
 
     match &settings.sampling {
+        SamplingConfig::Inherit => {
+            samplers.push(LlamaSampler::top_k(40));
+            samplers.push(LlamaSampler::top_p(0.95, 1));
+            samplers.push(LlamaSampler::min_p(0.05, 1));
+            samplers.push(LlamaSampler::temp(0.8));
+            samplers.push(LlamaSampler::dist(0));
+        }
         SamplingConfig::Greedy => {
             samplers.push(LlamaSampler::greedy());
         }
@@ -263,13 +270,21 @@ pub(super) fn build_sampler(settings: &crate::model::ModelSettings) -> LlamaSamp
             min_p,
             seed,
         } => {
-            samplers.push(LlamaSampler::top_k(*top_k));
-            samplers.push(LlamaSampler::top_p(*top_p, 1));
-            samplers.push(LlamaSampler::min_p(*min_p, 1));
-            samplers.push(LlamaSampler::temp(*temperature));
+            samplers.push(LlamaSampler::top_k(top_k.unwrap_or(40)));
+            samplers.push(LlamaSampler::top_p(top_p.unwrap_or(0.95), 1));
+            samplers.push(LlamaSampler::min_p(min_p.unwrap_or(0.05), 1));
+            samplers.push(LlamaSampler::temp(temperature.unwrap_or(0.8)));
             samplers.push(LlamaSampler::dist(seed.unwrap_or(0)));
         }
-        SamplingConfig::MirostatV2 { tau, eta, seed } => {
+        SamplingConfig::MirostatV2 {
+            temperature,
+            tau,
+            eta,
+            seed,
+        } => {
+            if let Some(temperature) = temperature {
+                samplers.push(LlamaSampler::temp(*temperature));
+            }
             samplers.push(LlamaSampler::mirostat_v2(seed.unwrap_or(0), *tau, *eta));
         }
     }
@@ -435,7 +450,7 @@ pub(super) fn prepare_generation<'model>(
             tool_choice: None,
             json_schema: None,
             grammar: None,
-            reasoning_format: if ctx.settings.enable_thinking {
+            reasoning_format: if ctx.settings.enable_thinking.unwrap_or(true) {
                 Some("auto")
             } else {
                 None
@@ -444,7 +459,7 @@ pub(super) fn prepare_generation<'model>(
             add_generation_prompt: true,
             use_jinja: true,
             parallel_tool_calls: false,
-            enable_thinking: ctx.settings.enable_thinking,
+            enable_thinking: ctx.settings.enable_thinking.unwrap_or(true),
             add_bos: false,
             add_eos: false,
             parse_tool_calls: true,

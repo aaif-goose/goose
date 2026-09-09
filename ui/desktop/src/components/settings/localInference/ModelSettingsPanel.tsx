@@ -3,7 +3,7 @@ import { RotateCcw } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Switch } from '../../ui/switch';
 import {
-  getModelSettings,
+  getModelSettingsInfo,
   listBuiltinChatTemplates,
   updateModelSettings,
   type ChatTemplate,
@@ -14,6 +14,53 @@ import {
 import { defineMessages, useIntl } from '../../../i18n';
 
 const i18n = defineMessages({
+  backend: { id: 'modelSettingsPanel.backend', defaultMessage: 'Inference backend' },
+  backendDefault: {
+    id: 'modelSettingsPanel.backendDefault',
+    defaultMessage: 'Default ({backend})',
+  },
+  modelFormat: { id: 'modelSettingsPanel.modelFormat', defaultMessage: 'Model format' },
+  modelDefaults: { id: 'modelSettingsPanel.modelDefaults', defaultMessage: 'Model defaults' },
+  modelDefault: { id: 'modelSettingsPanel.modelDefault', defaultMessage: 'Model default' },
+  inherit: { id: 'modelSettingsPanel.inherit', defaultMessage: 'Inherit' },
+  defaultSeed: { id: 'modelSettingsPanel.defaultSeed', defaultMessage: 'Default seed' },
+  automatic: { id: 'modelSettingsPanel.automatic', defaultMessage: 'Automatic' },
+  device: { id: 'modelSettingsPanel.device', defaultMessage: 'Device' },
+  deviceHelp: {
+    id: 'modelSettingsPanel.deviceHelp',
+    defaultMessage: 'Device (empty selects an accelerator, then CPU)',
+  },
+  cachedShards: { id: 'modelSettingsPanel.cachedShards', defaultMessage: 'Maximum cached shards' },
+  thinkingControl: { id: 'modelSettingsPanel.thinkingControl', defaultMessage: 'Thinking' },
+  on: { id: 'modelSettingsPanel.on', defaultMessage: 'On' },
+  off: { id: 'modelSettingsPanel.off', defaultMessage: 'Off' },
+  draftModel: { id: 'modelSettingsPanel.draftModel', defaultMessage: 'Draft model' },
+  draftPlaceholder: {
+    id: 'modelSettingsPanel.draftPlaceholder',
+    defaultMessage: 'Downloaded model ID or path',
+  },
+  effectiveMissing: {
+    id: 'modelSettingsPanel.effectiveMissing',
+    defaultMessage: 'available after the model is downloaded',
+  },
+  effectiveIntro: {
+    id: 'modelSettingsPanel.effectiveIntro',
+    defaultMessage: 'Empty fields inherit checkpoint defaults. Effective values:',
+  },
+  effectiveValues: {
+    id: 'modelSettingsPanel.effectiveValues',
+    defaultMessage:
+      'temperature {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, sampling {sampling}',
+  },
+  ereduTemplateDescription: {
+    id: 'modelSettingsPanel.ereduTemplateDescription',
+    defaultMessage: 'Use the checkpoint template, a built-in template, or inline Jinja',
+  },
+  mirostatTemperature: {
+    id: 'modelSettingsPanel.mirostatTemperature',
+    defaultMessage: 'Mirostat requires a positive effective temperature',
+  },
+
   loadingSettings: {
     id: 'modelSettingsPanel.loadingSettings',
     defaultMessage: 'Loading settings...',
@@ -225,18 +272,11 @@ const DEFAULT_SETTINGS: ModelSettings = {
   contextSize: null,
   maxOutputTokens: null,
   draftModel: null,
-  sampling: {
-    type: 'Temperature',
-    temperature: 0.8,
-    topK: 40,
-    topP: 0.95,
-    minP: 0.05,
-    seed: null,
-  },
-  repeatPenalty: 1.0,
-  repeatLastN: 64,
-  frequencyPenalty: 0.0,
-  presencePenalty: 0.0,
+  sampling: { type: 'Inherit' },
+  repeatPenalty: null,
+  repeatLastN: null,
+  frequencyPenalty: null,
+  presencePenalty: null,
   nBatch: null,
   nGpuLayers: null,
   useMlock: false,
@@ -244,7 +284,7 @@ const DEFAULT_SETTINGS: ModelSettings = {
   nThreads: null,
   toolCalling: 'auto',
   chatTemplate: { type: 'embedded' },
-  enableThinking: true,
+  enableThinking: null,
   visionCapable: false,
   imageTokenEstimate: 256,
   mmprojSizeBytes: 0,
@@ -280,6 +320,7 @@ function NumberField({
       {description && <span className="text-xs text-text-muted">{description}</span>}
       <input
         type="number"
+        aria-label={label}
         className="w-full rounded border border-border-subtle bg-background-default px-2 py-1 text-sm text-text-default"
         value={value ?? ''}
         onChange={(e) => {
@@ -342,6 +383,7 @@ function SelectField<T extends string>({
         {description && <span className="text-xs text-text-muted">{description}</span>}
       </div>
       <select
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
         className="rounded border border-border-subtle bg-background-default px-2 py-1 text-xs text-text-default"
@@ -390,24 +432,30 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
   const [chatTemplateDraft, setChatTemplateDraft] = useState('');
   const [builtinTemplateDraft, setBuiltinTemplateDraft] = useState('chatml');
   const [builtinTemplateOptions, setBuiltinTemplateOptions] = useState<string[]>(['chatml']);
+  const [backendId, setBackendId] = useState<string | null>(null);
+  const [modelFormat, setModelFormat] = useState<string | null>(null);
+  const [defaultBackendId, setDefaultBackendId] = useState<string | null>(null);
+  const [availableBackends, setAvailableBackends] = useState<string[]>([]);
+  const [effective, setEffective] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [settingsResult, builtinsResult] = await Promise.allSettled([
-        getModelSettings(modelId),
+        getModelSettingsInfo(modelId),
         listBuiltinChatTemplates(),
       ]);
       if (builtinsResult.status === 'fulfilled' && builtinsResult.value.length) {
         setBuiltinTemplateOptions(builtinsResult.value);
       }
       if (settingsResult.status === 'fulfilled') {
-        setSettings({
-          ...settingsResult.value,
-          toolCalling: settingsResult.value.toolCalling ?? 'auto',
-          chatTemplate: settingsResult.value.chatTemplate ?? { type: 'embedded' },
-        });
+        setSettings(settingsResult.value.settings);
+        setBackendId(settingsResult.value.backendId ?? null);
+        setModelFormat(settingsResult.value.format ?? null);
+        setDefaultBackendId(settingsResult.value.defaultBackendId ?? null);
+        setAvailableBackends(settingsResult.value.availableBackends);
+        setEffective(settingsResult.value.effectiveGeneration as Record<string, unknown> | null);
       }
     } catch {
       // use defaults
@@ -437,6 +485,12 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
     setSaving(true);
     try {
       await updateModelSettings(modelId, updated);
+      const info = await getModelSettingsInfo(modelId);
+      setSettings(info.settings);
+      setBackendId(info.backendId ?? null);
+      setDefaultBackendId(info.defaultBackendId ?? null);
+      setAvailableBackends(info.availableBackends);
+      setEffective(info.effectiveGeneration as Record<string, unknown> | null);
     } catch (e) {
       console.error('Failed to save settings:', e);
     } finally {
@@ -444,13 +498,13 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
     }
   };
 
-  const resetDefaults = () => save(DEFAULT_SETTINGS);
+  const resetDefaults = () => save({ ...DEFAULT_SETTINGS, backendId: settings.backendId });
 
   const updateField = <K extends keyof ModelSettings>(key: K, value: ModelSettings[K]) => {
     save({ ...settings, [key]: value });
   };
 
-  const samplingType: SamplingType = settings.sampling?.type ?? 'Temperature';
+  const samplingType: SamplingType = settings.sampling?.type ?? 'Inherit';
   const chatTemplate = settings.chatTemplate ?? { type: 'embedded' };
   const chatTemplateMode: ChatTemplateMode =
     chatTemplate.type === 'custom_inline'
@@ -489,19 +543,14 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
   const setSamplingType = (type: SamplingType) => {
     let sampling: SamplingConfig;
-    if (type === 'Greedy') {
+    if (type === 'Inherit') {
+      sampling = { type: 'Inherit' };
+    } else if (type === 'Greedy') {
       sampling = { type: 'Greedy' };
     } else if (type === 'MirostatV2') {
       sampling = { type: 'MirostatV2', tau: 5.0, eta: 0.1, seed: null };
     } else {
-      sampling = {
-        type: 'Temperature',
-        temperature: 0.8,
-        topK: 40,
-        topP: 0.95,
-        minP: 0.05,
-        seed: null,
-      };
+      sampling = { type: 'Temperature' };
     }
     save({ ...settings, sampling });
   };
@@ -510,19 +559,63 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
     save({ ...settings, sampling: { ...settings.sampling!, ...partial } as SamplingConfig });
   };
 
-  const visibleBuiltinTemplateOptions = builtinTemplateOptions.includes(builtinTemplateDraft)
-    ? builtinTemplateOptions
-    : [builtinTemplateDraft, ...builtinTemplateOptions].filter(Boolean);
+  const backendLabel = (id: string) =>
+    (({ eredu: 'Eredu', llamacpp: 'llama.cpp' }) as Record<string, string>)[id] ?? id;
+  const backendOptions = [
+    ...new Set([...availableBackends, ...(settings.backendId ? [settings.backendId] : [])]),
+  ];
+  const supportedBuiltins = backendId === 'eredu' ? ['chatml'] : builtinTemplateOptions;
+  const visibleBuiltinTemplateOptions = supportedBuiltins.includes(builtinTemplateDraft)
+    ? supportedBuiltins
+    : [builtinTemplateDraft, ...supportedBuiltins].filter(Boolean);
 
   if (loading) {
-    return <div className="py-2 text-xs text-text-muted">{intl.formatMessage(i18n.loadingSettings)}</div>;
+    return (
+      <div className="py-2 text-xs text-text-muted">{intl.formatMessage(i18n.loadingSettings)}</div>
+    );
   }
 
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-xs text-text-muted">
+          {intl.formatMessage(i18n.modelFormat)}:{' '}
+          {modelFormat === 'safetensors'
+            ? 'SafeTensors'
+            : modelFormat === 'gguf'
+              ? 'GGUF'
+              : modelFormat}
+        </p>
+        <label className="flex flex-col gap-1 text-xs font-medium text-text-default">
+          {intl.formatMessage(i18n.backend)}
+          <select
+            value={settings.backendId ?? ''}
+            onChange={(event) => updateField('backendId', event.target.value || null)}
+            className="rounded border border-border-subtle bg-background-default px-2 py-1"
+          >
+            <option value="">
+              {intl.formatMessage(i18n.backendDefault, {
+                backend: backendLabel(defaultBackendId ?? ''),
+              })}
+            </option>
+            {backendOptions.map((id) => (
+              <option key={id} value={id}>
+                {backendLabel(id)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="flex items-center justify-end">
-        {saving && <span className="text-xs text-text-muted mr-auto">{intl.formatMessage(i18n.saving)}</span>}
-        <Button variant="ghost" size="sm" onClick={resetDefaults} title={intl.formatMessage(i18n.resetToDefaults)}>
+        {saving && (
+          <span className="text-xs text-text-muted mr-auto">{intl.formatMessage(i18n.saving)}</span>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={resetDefaults}
+          title={intl.formatMessage(i18n.resetToDefaults)}
+        >
           <RotateCcw className="w-3.5 h-3.5 mr-1" />
           <span className="text-xs">{intl.formatMessage(i18n.reset)}</span>
         </Button>
@@ -530,7 +623,9 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
       {/* Context & Generation */}
       <div className="space-y-2">
-        <h5 className="text-xs font-medium text-text-default">{intl.formatMessage(i18n.contextAndGeneration)}</h5>
+        <h5 className="text-xs font-medium text-text-default">
+          {intl.formatMessage(i18n.contextAndGeneration)}
+        </h5>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label={intl.formatMessage(i18n.contextSize)}
@@ -546,19 +641,39 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
             description={intl.formatMessage(i18n.maxOutputTokensDescription)}
             value={settings.maxOutputTokens}
             onChange={(v) => updateField('maxOutputTokens', v)}
-            placeholder="No limit"
+            placeholder={intl.formatMessage(i18n.modelDefault)}
             min={1}
             allowNull
           />
         </div>
       </div>
 
+      {backendId === 'eredu' && (
+        <p className="text-xs text-text-muted">
+          {intl.formatMessage(i18n.effectiveIntro)}{' '}
+          {typeof effective?.error === 'string'
+            ? effective.error
+            : effective
+              ? intl.formatMessage(i18n.effectiveValues, {
+                  temperature: String(effective.temperature),
+                  topK: String(effective.top_k),
+                  topP: String(effective.top_p),
+                  minP: String(effective.min_p),
+                  sampling: effective.do_sample
+                    ? intl.formatMessage(i18n.on)
+                    : intl.formatMessage(i18n.off),
+                })
+              : intl.formatMessage(i18n.effectiveMissing)}
+          .
+        </p>
+      )}
       {/* Sampling */}
       <div className="space-y-2">
         <SelectField
           label={intl.formatMessage(i18n.samplingStrategy)}
           value={samplingType}
           options={[
+            { value: 'Inherit' as SamplingType, label: intl.formatMessage(i18n.modelDefaults) },
             { value: 'Greedy' as SamplingType, label: 'Greedy' },
             { value: 'Temperature' as SamplingType, label: 'Temperature' },
             { value: 'MirostatV2' as SamplingType, label: 'Mirostat v2' },
@@ -571,7 +686,9 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
             <NumberField
               label={intl.formatMessage(i18n.temperature)}
               value={settings.sampling.temperature}
-              onChange={(v) => updateSampling({ temperature: v ?? 0.8 })}
+              allowNull
+              placeholder={intl.formatMessage(i18n.inherit)}
+              onChange={(v) => updateSampling({ temperature: v })}
               min={0}
               max={2}
               step={0.05}
@@ -579,13 +696,17 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
             <NumberField
               label={intl.formatMessage(i18n.topK)}
               value={settings.sampling.topK}
-              onChange={(v) => updateSampling({ topK: v ?? 40 })}
+              allowNull
+              placeholder={intl.formatMessage(i18n.inherit)}
+              onChange={(v) => updateSampling({ topK: v })}
               min={0}
             />
             <NumberField
               label={intl.formatMessage(i18n.topP)}
               value={settings.sampling.topP}
-              onChange={(v) => updateSampling({ topP: v ?? 0.95 })}
+              allowNull
+              placeholder={intl.formatMessage(i18n.inherit)}
+              onChange={(v) => updateSampling({ topP: v })}
               min={0}
               max={1}
               step={0.01}
@@ -593,7 +714,9 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
             <NumberField
               label={intl.formatMessage(i18n.minP)}
               value={settings.sampling.minP}
-              onChange={(v) => updateSampling({ minP: v ?? 0.05 })}
+              allowNull
+              placeholder={intl.formatMessage(i18n.inherit)}
+              onChange={(v) => updateSampling({ minP: v })}
               min={0}
               max={1}
               step={0.01}
@@ -602,7 +725,7 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
               label={intl.formatMessage(i18n.seed)}
               value={settings.sampling.seed}
               onChange={(v) => updateSampling({ seed: v })}
-              placeholder="Random"
+              placeholder={intl.formatMessage(i18n.defaultSeed)}
               min={0}
               allowNull
             />
@@ -611,6 +734,16 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
         {samplingType === 'MirostatV2' && settings.sampling?.type === 'MirostatV2' && (
           <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              label="Temperature"
+              description="Mirostat requires a positive effective temperature"
+              value={settings.sampling.temperature}
+              onChange={(v) => updateSampling({ temperature: v })}
+              allowNull
+              placeholder={intl.formatMessage(i18n.inherit)}
+              min={0.01}
+              step={0.05}
+            />
             <NumberField
               label={intl.formatMessage(i18n.tauTargetEntropy)}
               value={settings.sampling.tau}
@@ -630,7 +763,7 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
               label={intl.formatMessage(i18n.seed)}
               value={settings.sampling.seed}
               onChange={(v) => updateSampling({ seed: v })}
-              placeholder="Random"
+              placeholder={intl.formatMessage(i18n.defaultSeed)}
               min={0}
               allowNull
             />
@@ -640,13 +773,17 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
       {/* Repetition Penalty */}
       <div className="space-y-2">
-        <h5 className="text-xs font-medium text-text-default">{intl.formatMessage(i18n.repetitionPenalty)}</h5>
+        <h5 className="text-xs font-medium text-text-default">
+          {intl.formatMessage(i18n.repetitionPenalty)}
+        </h5>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label={intl.formatMessage(i18n.repeatPenalty)}
             description={intl.formatMessage(i18n.repeatPenaltyDescription)}
             value={settings.repeatPenalty}
-            onChange={(v) => updateField('repeatPenalty', v ?? 1.0)}
+            allowNull
+            placeholder={intl.formatMessage(i18n.inherit)}
+            onChange={(v) => updateField('repeatPenalty', v)}
             min={0}
             step={0.05}
           />
@@ -654,14 +791,18 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
             label={intl.formatMessage(i18n.repeatWindow)}
             description={intl.formatMessage(i18n.repeatWindowDescription)}
             value={settings.repeatLastN}
-            onChange={(v) => updateField('repeatLastN', v ?? 64)}
+            allowNull
+            placeholder={intl.formatMessage(i18n.inherit)}
+            onChange={(v) => updateField('repeatLastN', v)}
             min={0}
           />
           <NumberField
             label={intl.formatMessage(i18n.frequencyPenalty)}
             description={intl.formatMessage(i18n.frequencyPenaltyDescription)}
             value={settings.frequencyPenalty}
-            onChange={(v) => updateField('frequencyPenalty', v ?? 0.0)}
+            allowNull
+            placeholder={intl.formatMessage(i18n.inherit)}
+            onChange={(v) => updateField('frequencyPenalty', v)}
             min={0}
             max={2}
             step={0.05}
@@ -670,7 +811,9 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
             label={intl.formatMessage(i18n.presencePenalty)}
             description={intl.formatMessage(i18n.presencePenaltyDescription)}
             value={settings.presencePenalty}
-            onChange={(v) => updateField('presencePenalty', v ?? 0.0)}
+            allowNull
+            placeholder={intl.formatMessage(i18n.inherit)}
+            onChange={(v) => updateField('presencePenalty', v)}
             min={0}
             max={2}
             step={0.05}
@@ -680,58 +823,105 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
       {/* Performance */}
       <div className="space-y-2">
-        <h5 className="text-xs font-medium text-text-default">{intl.formatMessage(i18n.performance)}</h5>
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            label={intl.formatMessage(i18n.batchSize)}
-            description={intl.formatMessage(i18n.batchSizeDescription)}
-            value={settings.nBatch}
-            onChange={(v) => updateField('nBatch', v)}
-            placeholder="Auto"
-            min={1}
-            allowNull
-          />
-          <NumberField
-            label={intl.formatMessage(i18n.gpuLayers)}
-            description={intl.formatMessage(i18n.gpuLayersDescription)}
-            value={settings.nGpuLayers}
-            onChange={(v) => updateField('nGpuLayers', v)}
-            placeholder="All"
-            min={0}
-            allowNull
-          />
-          <NumberField
-            label={intl.formatMessage(i18n.threads)}
-            description={intl.formatMessage(i18n.threadsDescription)}
-            value={settings.nThreads}
-            onChange={(v) => updateField('nThreads', v)}
-            placeholder="Auto"
-            min={1}
-            allowNull
-          />
-        </div>
-        <ToggleField
-          label={intl.formatMessage(i18n.lockModelInRam)}
-          description={intl.formatMessage(i18n.lockModelInRamDescription)}
-          value={settings.useMlock ?? false}
-          onChange={(v) => updateField('useMlock', v)}
-        />
+        <h5 className="text-xs font-medium text-text-default">
+          {intl.formatMessage(i18n.performance)}
+        </h5>
+        {backendId !== 'eredu' && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField
+                label={intl.formatMessage(i18n.batchSize)}
+                description={intl.formatMessage(i18n.batchSizeDescription)}
+                value={settings.nBatch}
+                onChange={(v) => updateField('nBatch', v)}
+                placeholder="Auto"
+                min={1}
+                allowNull
+              />
+              <NumberField
+                label={intl.formatMessage(i18n.gpuLayers)}
+                description={intl.formatMessage(i18n.gpuLayersDescription)}
+                value={settings.nGpuLayers}
+                onChange={(v) => updateField('nGpuLayers', v)}
+                placeholder="All"
+                min={0}
+                allowNull
+              />
+              <NumberField
+                label={intl.formatMessage(i18n.threads)}
+                description={intl.formatMessage(i18n.threadsDescription)}
+                value={settings.nThreads}
+                onChange={(v) => updateField('nThreads', v)}
+                placeholder="Auto"
+                min={1}
+                allowNull
+              />
+            </div>
+            <ToggleField
+              label={intl.formatMessage(i18n.lockModelInRam)}
+              description={intl.formatMessage(i18n.lockModelInRamDescription)}
+              value={settings.useMlock ?? false}
+              onChange={(v) => updateField('useMlock', v)}
+            />
+            <SelectField
+              label={intl.formatMessage(i18n.flashAttention)}
+              description={intl.formatMessage(i18n.flashAttentionDescription)}
+              value={
+                settings.flashAttention === null || settings.flashAttention === undefined
+                  ? 'auto'
+                  : settings.flashAttention
+                    ? 'on'
+                    : 'off'
+              }
+              options={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'on', label: 'On' },
+                { value: 'off', label: 'Off' },
+              ]}
+              onChange={(v) => updateField('flashAttention', v === 'auto' ? null : v === 'on')}
+            />
+          </>
+        )}
+        {backendId === 'eredu' && (
+          <>
+            <label className="text-xs">{intl.formatMessage(i18n.deviceHelp)}</label>
+            <input
+              aria-label={intl.formatMessage(i18n.device)}
+              value={settings.device ?? ''}
+              placeholder={intl.formatMessage(i18n.automatic)}
+              onChange={(event) => updateField('device', event.target.value || null)}
+            />
+            <label className="flex flex-col gap-1 text-xs">
+              {intl.formatMessage(i18n.draftModel)}
+              <input
+                value={settings.draftModel ?? ''}
+                placeholder={intl.formatMessage(i18n.draftPlaceholder)}
+                onChange={(event) => updateField('draftModel', event.target.value || null)}
+              />
+            </label>
+            <NumberField
+              label={intl.formatMessage(i18n.cachedShards)}
+              value={settings.maxCachedShards}
+              onChange={(value) => updateField('maxCachedShards', value)}
+              allowNull
+              min={1}
+              placeholder={intl.formatMessage(i18n.automatic)}
+            />
+          </>
+        )}
         <SelectField
-          label={intl.formatMessage(i18n.flashAttention)}
-          description={intl.formatMessage(i18n.flashAttentionDescription)}
+          label={intl.formatMessage(i18n.thinkingControl)}
           value={
-            settings.flashAttention === null || settings.flashAttention === undefined
-              ? 'auto'
-              : settings.flashAttention
-                ? 'on'
-                : 'off'
+            settings.enableThinking == null ? 'inherit' : settings.enableThinking ? 'on' : 'off'
           }
           options={[
-            { value: 'auto', label: 'Auto' },
+            { value: 'inherit', label: intl.formatMessage(i18n.modelDefault) },
             { value: 'on', label: 'On' },
             { value: 'off', label: 'Off' },
           ]}
-          onChange={(v) => updateField('flashAttention', v === 'auto' ? null : v === 'on')}
+          onChange={(value) =>
+            updateField('enableThinking', value === 'inherit' ? null : value === 'on')
+          }
         />
         <SelectField<ToolCallingMode>
           label={intl.formatMessage(i18n.toolCalling)}
@@ -746,7 +936,11 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
         />
         <SelectField<ChatTemplateMode>
           label={intl.formatMessage(i18n.chatTemplate)}
-          description={intl.formatMessage(i18n.chatTemplateDescription)}
+          description={
+            backendId === 'eredu'
+              ? intl.formatMessage(i18n.ereduTemplateDescription)
+              : intl.formatMessage(i18n.chatTemplateDescription)
+          }
           value={chatTemplateMode}
           options={[
             { value: 'embedded', label: intl.formatMessage(i18n.chatTemplateEmbedded) },

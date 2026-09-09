@@ -2401,6 +2401,8 @@ export type LocalInferenceModelDto = {
     repoId: string;
     filename: string;
     quantization: string;
+    format: string;
+    backendId: string;
     sizeBytes: number;
     status: LocalInferenceModelDownloadStatusDto;
     recommended: boolean;
@@ -2422,14 +2424,16 @@ export type LocalInferenceDownloadState = 'NotDownloaded' | 'Downloading' | 'Dow
 
 export type LocalInferenceModelSettingsDto = {
     backendId?: string | null;
+    device?: string | null;
+    maxCachedShards?: number | null;
     contextSize?: number | null;
     maxOutputTokens?: number | null;
     draftModel?: string | null;
     sampling?: LocalInferenceSamplingConfig;
-    repeatPenalty: number;
-    repeatLastN: number;
-    frequencyPenalty: number;
-    presencePenalty: number;
+    repeatPenalty?: number | null;
+    repeatLastN?: number | null;
+    frequencyPenalty?: number | null;
+    presencePenalty?: number | null;
     nBatch?: number | null;
     nGpuLayers?: number | null;
     useMlock: boolean;
@@ -2437,22 +2441,25 @@ export type LocalInferenceModelSettingsDto = {
     nThreads?: number | null;
     toolCalling?: LocalInferenceToolCallingMode;
     chatTemplate?: LocalInferenceChatTemplate;
-    enableThinking: boolean;
+    enableThinking?: boolean | null;
     visionCapable: boolean;
     imageTokenEstimate: number;
     mmprojSizeBytes: number;
 };
 
 export type LocalInferenceSamplingConfig = {
+    type: 'Inherit';
+} | {
     type: 'Greedy';
 } | {
-    temperature: number;
-    topK: number;
-    topP: number;
-    minP: number;
+    temperature?: number | null;
+    topK?: number | null;
+    topP?: number | null;
+    minP?: number | null;
     seed?: number | null;
     type: 'Temperature';
 } | {
+    temperature?: number | null;
     tau: number;
     eta: number;
     seed?: number | null;
@@ -2476,7 +2483,7 @@ export type LocalInferenceChatTemplate = {
  */
 export type LocalInferenceModelDownloadRequest_unstable = {
     spec: string;
-    backendId?: string | null;
+    format?: string | null;
     variantId?: string | null;
 };
 
@@ -2537,6 +2544,11 @@ export type LocalInferenceModelSettingsReadRequest_unstable = {
 
 export type LocalInferenceModelSettingsReadResponse_unstable = {
     settings: LocalInferenceModelSettingsDto;
+    backendId?: string | null;
+    format?: string | null;
+    defaultBackendId?: string | null;
+    availableBackends: Array<string>;
+    effectiveGeneration?: unknown;
 };
 
 /**
@@ -2582,7 +2594,6 @@ export type LocalInferenceHfGgufFileDto = {
 export type LocalInferenceHfModelVariantDto = {
     variantId: string;
     label: string;
-    backendId: string;
     format: string;
     modelId: string;
     downloadId: string;

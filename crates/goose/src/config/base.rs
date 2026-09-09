@@ -484,6 +484,20 @@ impl Config {
         self.write_path().to_string_lossy().to_string()
     }
 
+    pub fn migrate_local_inference_backend(&self) -> Result<bool, ConfigError> {
+        let _guard = self.guard.lock().unwrap();
+        if !self.write_path().exists() {
+            return Ok(false);
+        }
+        let content = std::fs::read_to_string(self.write_path())?;
+        let mut values = parse_yaml_content(&content)?;
+        let changed = crate::config::migrations::migrate_local_inference_backend(&mut values);
+        if changed {
+            self.save_values(&values)?;
+        }
+        Ok(changed)
+    }
+
     /// Load only the writable config file for read-modify-write operations.
     /// Returns an empty mapping if the file doesn't exist or can't be parsed.
     fn load_write_config(&self) -> Result<Mapping, ConfigError> {
@@ -2155,6 +2169,96 @@ mod tests {
         let config_file = NamedTempFile::new().unwrap();
         let secrets_file = NamedTempFile::new().unwrap();
         Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap()
+    }
+
+    #[test]
+    fn local_backend_migration_discards_legacy_settings_once() {
+        let config = new_test_config();
+        std::fs::write(
+            config.write_path(),
+            r#"
+GOOSE_LOCAL_BACKEND: mlx
+unrelated: keep
+GOOSE_LOCAL_MODEL_SETTINGS:
+  safe-model:
+    backend_id: mlx
+    context_size: 4096
+    sampling: {type: Temperature, temperature: 0.7}
+    repeat_penalty: 1.0
+    max_output_tokens: 512
+    enable_thinking: true
+    draft_model: old-draft
+    device: cpu:0
+    max_cached_shards: 2
+    n_batch: 512
+    tool_calling: force_emulated
+    chat_template: {type: custom_inline, template: old-template}
+    obsolete_setting: discard
+  gguf-model:
+    backend_id: llamacpp
+    context_size: 8192
+  eredu-model:
+    backend_id: eredu
+    sampling: {type: Temperature, temperature: 0.9}
+  automatic-model:
+    context_size: 8192
+"#,
+        )
+        .unwrap();
+        assert!(config.migrate_local_inference_backend().unwrap());
+        let migrated = std::fs::read_to_string(config.write_path()).unwrap();
+        let values: serde_yaml::Value = serde_yaml::from_str(&migrated).unwrap();
+        assert_eq!(values["GOOSE_LOCAL_BACKEND"], "eredu");
+        assert_eq!(values["unrelated"], "keep");
+        let models = &values["GOOSE_LOCAL_MODEL_SETTINGS"];
+        assert_eq!(
+            models["safe-model"],
+            serde_yaml::from_str::<serde_yaml::Value>("backend_id: eredu").unwrap()
+        );
+        assert_eq!(models["gguf-model"]["backend_id"], "llamacpp");
+        assert_eq!(models["gguf-model"]["context_size"], 8192);
+        assert_eq!(models["eredu-model"]["sampling"]["temperature"], 0.9);
+        assert!(models["automatic-model"]["backend_id"].is_null());
+        assert_eq!(models["automatic-model"]["context_size"], 8192);
+        let modified = std::fs::metadata(config.write_path())
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert!(!config.migrate_local_inference_backend().unwrap());
+        assert_eq!(
+            std::fs::metadata(config.write_path())
+                .unwrap()
+                .modified()
+                .unwrap(),
+            modified
+        );
+        assert_eq!(
+            std::fs::read_to_string(config.write_path()).unwrap(),
+            migrated
+        );
+    }
+
+    #[test]
+    fn local_backend_migration_normalizes_base_layer_without_copying_it() {
+        let original = "GOOSE_LOCAL_MODEL_SETTINGS:\n  base-model:\n    backend_id: mlx\n    sampling: {type: Temperature, temperature: 0.8}\n    enable_thinking: true\n";
+        let (config, base) = new_test_config_with_base(original);
+        assert!(!config.migrate_local_inference_backend().unwrap());
+        let models: serde_yaml::Value = config.get_param("GOOSE_LOCAL_MODEL_SETTINGS").unwrap();
+        assert_eq!(models["base-model"]["backend_id"], "eredu");
+        assert_eq!(models["base-model"].as_mapping().unwrap().len(), 1);
+        assert_eq!(std::fs::read_to_string(base.path()).unwrap(), original);
+        assert!(!config.write_path().exists());
+    }
+
+    #[test]
+    fn local_backend_migration_handles_json_encoded_settings() {
+        let config = new_test_config();
+        std::fs::write(config.write_path(), "GOOSE_LOCAL_MODEL_SETTINGS: '{\"model\":{\"backend_id\":\"mlx\",\"context_size\":2048}}'\n").unwrap();
+        assert!(config.migrate_local_inference_backend().unwrap());
+        let models: serde_yaml::Value = config.get_param("GOOSE_LOCAL_MODEL_SETTINGS").unwrap();
+        assert_eq!(models["model"]["backend_id"], "eredu");
+        assert_eq!(models["model"].as_mapping().unwrap().len(), 1);
+        assert!(!config.migrate_local_inference_backend().unwrap());
     }
 
     /// Create a test config where `base_content` is a lower-priority layer

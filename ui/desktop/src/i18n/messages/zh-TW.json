@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "已找到 ACP 轉接器"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "找不到 ACP 轉接器"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "請透過提供者 CLI 登入，然後再次檢查。"
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "再次檢查"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "正在檢查…"
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "連線成功"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "請先檢查帳戶連線，然後再繼續。"
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "自動壓縮於"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Enter path"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "無法更新工作目錄"
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近的目錄"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "無法切換至 {branch}"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "找不到分支"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "搜尋分支…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "你可能有尚未提交的變更。"
   },
   "elicitationRequest.accept": {
     "defaultMessage": "接受"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "無法切換至 {branch}"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "找不到分支"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "搜尋分支…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "你可能有尚未提交的變更。"
   },
   "goosehintsModal.close": {
     "defaultMessage": "關閉"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "要刪除此模型嗎？您之後可以重新下載。"
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "下載並管理本機 LLM 模型，無需 API 金鑰即可進行推論。在 Hugging Face 搜尋 GGUF 或 MLX 模型。"
+    "defaultMessage": "下載並管理本機 LLM 模型，無需 API 金鑰即可進行推論。在 Hugging Face 搜尋 GGUF 或 SafeTensors 模型。"
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "關閉"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "切換模型"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "自動"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "推論後端"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "預設（{backend}）"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "批次大小"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "選擇 llama.cpp 內建範本名稱"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "快取分片數上限"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "對話範本"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "貼上完整的 Jinja 對話範本原始碼"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "預設種子"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "裝置"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "裝置（留空時優先選擇加速器，其次為 CPU）"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "草稿模型"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "已下載模型的 ID 或路徑"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "空白欄位繼承檢查點預設值。生效值："
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "下載模型後可用"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "溫度 {temperature}，top-k {topK}，top-p {topP}，min-p {minP}，取樣 {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "使用檢查點範本、內建範本或行內 Jinja"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta（學習率）"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "要卸載至 GPU 的層數"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "繼承"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "正在載入設定…"
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostat 要求生效溫度為正數"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "模型預設值"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "模型預設設定"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "模型格式"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "關閉"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "開啟"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "效能"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "溫度"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "思考"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "執行緒"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "本機模型設定 — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "最近"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "已解析的模型"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "您有未儲存的變更"
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "已棄用 — 請改用 {replacement}。"
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCard 錯誤：未提供中繼資料"
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "繼續"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "並輸入："
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "複製"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "將開啟瀏覽器視窗。驗證碼會顯示在此處，輸入驗證碼即可完成登入。"
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "前往"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "沒有 API 金鑰嗎？"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "再次檢查您的組態以使用此提供者。"
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "選擇模型"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "關閉"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "這將永久刪除目前的提供者組態。"
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "並輸入："
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "複製"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "將開啟瀏覽器視窗。驗證碼會顯示在此處，輸入驗證碼即可完成登入。"
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "前往"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "檢查此提供者組態時發生錯誤。"
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "從訊息中移除圖片"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "最近"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "選擇模型"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "已棄用 — 請改用 {replacement}。"
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "已找到 ACP 轉接器"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "找不到 ACP 轉接器"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "請透過提供者 CLI 登入，然後再次檢查。"
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "再次檢查"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "正在檢查…"
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "連線成功"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "請先檢查帳戶連線，然後再繼續。"
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "並輸入："
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "複製"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "前往"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "並輸入："
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "複製"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "前往"
   }
 }

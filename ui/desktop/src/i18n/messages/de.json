@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "ACP-Adapter gefunden"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "ACP-Adapter nicht gefunden"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "Melden Sie sich über die Anbieter-CLI an und prüfen Sie die Verbindung erneut."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "Erneut prüfen"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "Wird geprüft..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "Erfolgreich verbunden"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "Prüfen Sie Ihre Kontoverbindung, bevor Sie fortfahren."
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "Automatisch verdichten bei"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Pfad eingeben"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Absoluten Pfad eingeben (z. B. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Arbeitsverzeichnis muss ein absoluter Pfad sein"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Absoluten Pfad eingeben (z. B. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Aktualisieren des Arbeitsverzeichnisses fehlgeschlagen"
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Zuletzt verwendete Verzeichnisse"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "Wechsel zu {branch} fehlgeschlagen"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "Keine Branches gefunden"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "Branches durchsuchen…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "Möglicherweise gibt es noch nicht committete Änderungen."
   },
   "elicitationRequest.accept": {
     "defaultMessage": "Akzeptieren"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "Wechsel zu {branch} fehlgeschlagen"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "Keine Branches gefunden"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Branches durchsuchen…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "Möglicherweise gibt es noch nicht committete Änderungen."
   },
   "goosehintsModal.close": {
     "defaultMessage": "Schließen"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "Dieses Modell löschen? Sie können es später erneut herunterladen."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Lokale LLM-Modelle für die Inferenz ohne API-Schlüssel herunterladen und verwalten. Durchsuchen Sie Hugging Face nach GGUF- oder MLX-Modellen."
+    "defaultMessage": "Lokale LLM-Modelle für die Inferenz ohne API-Schlüssel herunterladen und verwalten. Durchsuchen Sie Hugging Face nach GGUF- oder SafeTensors-Modellen."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Schließen"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "Modelle wechseln"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "Automatisch"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "Inferenz-Backend"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "Standard ({backend})"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "Stapelgröße"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "Wählen Sie den Namen einer in llama.cpp integrierten Vorlage aus"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "Maximal zwischengespeicherte Shards"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "Chat-Vorlage"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "Fügen Sie den vollständigen Jinja-Chat-Vorlagenquelltext ein"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "Standard-Seed"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "Gerät"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "Gerät (leer: zuerst Beschleuniger, dann CPU)"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "Entwurfsmodell"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "ID oder Pfad eines heruntergeladenen Modells"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "Leere Felder übernehmen die Checkpoint-Standardwerte. Effektive Werte:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "nach dem Modelldownload verfügbar"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "Temperatur {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, Sampling {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "Checkpoint-Vorlage, integrierte Vorlage oder Jinja-Code verwenden"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta (Lernrate)"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "Auf die GPU auszulagernde Schichten"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "Übernehmen"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "Einstellungen werden geladen..."
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostat erfordert eine positive effektive Temperatur"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "Modellstandard"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "Modellstandardwerte"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "Modellformat"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "Aus"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "Ein"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "Leistung"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "Temperatur"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "Denken"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "Threads"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Lokale Modelleinstellungen — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Zuletzt verwendet"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Aufgelöstes Modell"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Sie haben nicht gespeicherte Änderungen"
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "Veraltet — verwenden Sie stattdessen {replacement}."
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCard-Fehler: Keine Metadaten bereitgestellt"
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "Weiter"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "und geben Sie ein:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "Kopieren"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "Ein Browserfenster wird geöffnet. Der Bestätigungscode wird hier angezeigt, damit Sie ihn eingeben und die Anmeldung abschließen können."
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "Besuchen Sie"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "Sie haben keinen API-Schlüssel?"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "Überprüfen Sie Ihre Konfiguration erneut, um diesen Anbieter zu verwenden."
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "Modell auswählen"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "Schließen"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "Dadurch wird die aktuelle Anbieterkonfiguration dauerhaft gelöscht."
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "und geben Sie ein:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "Kopieren"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "Ein Browserfenster wird geöffnet. Der Bestätigungscode wird hier angezeigt, damit Sie ihn eingeben und die Anmeldung abschließen können."
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "Besuchen Sie"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "Beim Überprüfen dieser Anbieterkonfiguration ist ein Fehler aufgetreten."
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "Bild aus Nachricht entfernen"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "Zuletzt verwendet"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "Modell auswählen"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "Veraltet — verwenden Sie stattdessen {replacement}."
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "ACP-Adapter gefunden"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "ACP-Adapter nicht gefunden"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "Melden Sie sich über die Anbieter-CLI an und prüfen Sie die Verbindung erneut."
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "Erneut prüfen"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "Wird geprüft..."
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "Erfolgreich verbunden"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "Prüfen Sie Ihre Kontoverbindung, bevor Sie fortfahren."
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "und geben Sie ein:"
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "Kopieren"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "Besuchen Sie"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "und geben Sie ein:"
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "Kopieren"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "Besuchen Sie"
   }
 }

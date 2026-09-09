@@ -9,14 +9,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::huggingface_auth;
-use crate::mlx::snapshot_files_are_complete as mlx_snapshot_files_are_complete;
+use crate::selection::{GGUF_FORMAT, SAFETENSORS_FORMAT};
+use crate::snapshot::snapshot_files_are_complete;
 
 const HF_DOWNLOAD_BASE: &str = "https://huggingface.co";
-const LLAMACPP_BACKEND_ID: &str = "llamacpp";
-const MLX_BACKEND_ID: &str = "mlx";
-const GGUF_FORMAT: &str = "gguf";
-const MLX_FORMAT: &str = "mlx-safetensors";
-const MLX_VARIANT_ID: &str = "default";
+const SAFETENSORS_VARIANT_ID: &str = "default";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HfModelInfo {
@@ -33,7 +30,6 @@ pub struct HfModelInfo {
 pub struct HfModelVariant {
     pub variant_id: String,
     pub label: String,
-    pub backend_id: String,
     pub format: String,
     pub model_id: String,
     pub download_id: String,
@@ -84,7 +80,6 @@ impl HfQuantVariant {
         HfModelVariant {
             variant_id: self.quantization.clone(),
             label: self.quantization.clone(),
-            backend_id: LLAMACPP_BACKEND_ID.to_string(),
             format: GGUF_FORMAT.to_string(),
             model_id: model_id.clone(),
             download_id: model_id,
@@ -110,7 +105,7 @@ pub struct CachedLocalModel {
     pub repo_id: String,
     pub filename: String,
     pub quantization: String,
-    pub backend_id: String,
+    pub format: String,
     pub model_path: PathBuf,
     pub size_bytes: u64,
     pub mmproj_path: Option<PathBuf>,
@@ -134,7 +129,7 @@ pub enum ResolvedLocalModel {
         local_paths: Vec<std::path::PathBuf>,
         mmproj_path: Option<std::path::PathBuf>,
     },
-    Mlx {
+    Safetensors {
         repo_id: String,
         variant_id: String,
         snapshot_path: std::path::PathBuf,
@@ -150,14 +145,14 @@ impl ResolvedLocalModel {
                 quantization,
                 ..
             } => model_id_from_repo(repo_id, quantization),
-            Self::Mlx { repo_id, .. } => repo_id.clone(),
+            Self::Safetensors { repo_id, .. } => repo_id.clone(),
         }
     }
 
     pub fn total_size(&self) -> u64 {
         match self {
             Self::Gguf { resolved, .. } => resolved.total_size,
-            Self::Mlx { total_size, .. } => *total_size,
+            Self::Safetensors { total_size, .. } => *total_size,
         }
     }
 }
@@ -770,7 +765,11 @@ pub async fn search_local_models(query: &str, limit: usize) -> Result<Vec<HfMode
     }
 
     results.extend(gguf_results);
-    append_optional_mlx_results(&mut results, search_mlx_models(query, limit).await, query);
+    append_optional_safetensors_results(
+        &mut results,
+        search_safetensors_models(query, limit).await,
+        query,
+    );
     dedupe_models(&mut results);
     results.sort_by(|a, b| {
         model_search_rank(query, a)
@@ -781,17 +780,17 @@ pub async fn search_local_models(query: &str, limit: usize) -> Result<Vec<HfMode
     Ok(results)
 }
 
-fn append_optional_mlx_results(
+fn append_optional_safetensors_results(
     results: &mut Vec<HfModelInfo>,
-    mlx_results: Result<Vec<HfModelInfo>>,
+    safetensors_results: Result<Vec<HfModelInfo>>,
     query: &str,
 ) {
-    match mlx_results {
+    match safetensors_results {
         Ok(models) => results.extend(models),
         Err(error) => tracing::warn!(
             query,
             error = %error,
-            "Failed to search MLX models; returning non-MLX results"
+            "Failed to search SafeTensors models; returning GGUF results"
         ),
     }
 }
@@ -1129,7 +1128,6 @@ mod tests {
         let gguf_variant = HfModelVariant {
             variant_id: "Q4_K_M".to_string(),
             label: "Q4_K_M".to_string(),
-            backend_id: LLAMACPP_BACKEND_ID.to_string(),
             format: GGUF_FORMAT.to_string(),
             model_id: "mixed/repo:Q4_K_M".to_string(),
             download_id: "mixed/repo:Q4_K_M".to_string(),
@@ -1142,17 +1140,16 @@ mod tests {
             supported: true,
             unsupported_reason: None,
         };
-        let mlx_variant = HfModelVariant {
-            variant_id: MLX_VARIANT_ID.to_string(),
+        let safetensors_variant = HfModelVariant {
+            variant_id: SAFETENSORS_VARIANT_ID.to_string(),
             label: "Default".to_string(),
-            backend_id: MLX_BACKEND_ID.to_string(),
-            format: MLX_FORMAT.to_string(),
+            format: SAFETENSORS_FORMAT.to_string(),
             model_id: repo_id.clone(),
             download_id: repo_id.clone(),
             size_bytes: 8,
             filename: None,
             download_url: None,
-            description: "MLX".to_string(),
+            description: "SafeTensors".to_string(),
             quality_rank: 91,
             sharded: true,
             supported: true,
@@ -1178,7 +1175,7 @@ mod tests {
                 model_name: "repo".to_string(),
                 downloads: 2,
                 gguf_files: Vec::new(),
-                variants: vec![mlx_variant],
+                variants: vec![safetensors_variant],
             },
         ];
 
@@ -1191,11 +1188,11 @@ mod tests {
         assert!(models[0]
             .variants
             .iter()
-            .any(|variant| variant.backend_id == LLAMACPP_BACKEND_ID));
+            .any(|variant| variant.format == GGUF_FORMAT));
         assert!(models[0]
             .variants
             .iter()
-            .any(|variant| variant.backend_id == MLX_BACKEND_ID));
+            .any(|variant| variant.format == SAFETENSORS_FORMAT));
     }
 
     fn sibling(filename: &str) -> RepoSibling {
@@ -1206,24 +1203,24 @@ mod tests {
         }
     }
 
-    fn mlx_siblings(tokenizer_files: &[&str]) -> Vec<RepoSibling> {
+    fn safetensors_siblings(tokenizer_files: &[&str]) -> Vec<RepoSibling> {
         let mut siblings = vec![sibling("config.json"), sibling("model.safetensors")];
         siblings.extend(tokenizer_files.iter().map(|filename| sibling(filename)));
         siblings
     }
 
     #[test]
-    fn mlx_compatible_repo_accepts_tokenizer_json() {
+    fn safetensors_compatible_repo_accepts_tokenizer_json() {
         let config = Some(serde_json::json!({ "model_type": "llama" }));
 
-        assert!(is_mlx_compatible_repo(
+        assert!(is_safetensors_compatible_repo(
             &config,
-            &mlx_siblings(&["tokenizer.json"])
+            &safetensors_siblings(&["tokenizer.json"])
         ));
     }
 
     #[test]
-    fn mlx_compatible_repo_rejects_incomplete_tokenizer_files() {
+    fn safetensors_compatible_repo_rejects_incomplete_tokenizer_files() {
         let config = Some(serde_json::json!({ "model_type": "llama" }));
 
         for tokenizer_files in [
@@ -1235,14 +1232,14 @@ mod tests {
             vec!["vocab.json", "merges.txt"],
         ] {
             assert!(
-                !is_mlx_compatible_repo(&config, &mlx_siblings(&tokenizer_files)),
+                !is_safetensors_compatible_repo(&config, &safetensors_siblings(&tokenizer_files)),
                 "{tokenizer_files:?}"
             );
         }
     }
 
     #[test]
-    fn mlx_snapshot_requires_every_indexed_safetensors_shard() {
+    fn safetensors_snapshot_requires_every_indexed_safetensors_shard() {
         let mut cached = std::collections::HashSet::from(["model-00001-of-00002.safetensors"]);
         let index = serde_json::json!({
             "weight_map": {
@@ -1251,30 +1248,30 @@ mod tests {
             }
         });
 
-        assert!(!mlx_snapshot_files_are_complete(&cached, Some(&index)));
+        assert!(!snapshot_files_are_complete(&cached, Some(&index)));
         cached.insert("model-00002-of-00002.safetensors");
-        assert!(mlx_snapshot_files_are_complete(&cached, Some(&index)));
+        assert!(snapshot_files_are_complete(&cached, Some(&index)));
     }
 
     #[test]
-    fn mlx_snapshot_requires_every_numbered_safetensors_shard_without_an_index() {
+    fn safetensors_snapshot_requires_every_numbered_safetensors_shard_without_an_index() {
         let mut cached = std::collections::HashSet::from(["model-00001-of-00002.safetensors"]);
 
-        assert!(!mlx_snapshot_files_are_complete(&cached, None));
+        assert!(!snapshot_files_are_complete(&cached, None));
         cached.insert("model-00002-of-00002.safetensors");
-        assert!(mlx_snapshot_files_are_complete(&cached, None));
+        assert!(snapshot_files_are_complete(&cached, None));
     }
 
     #[test]
-    fn mlx_snapshot_accepts_multiple_unnumbered_safetensors_files() {
+    fn safetensors_snapshot_accepts_multiple_unnumbered_safetensors_files() {
         let cached =
             std::collections::HashSet::from(["model.safetensors", "vision_model.safetensors"]);
 
-        assert!(mlx_snapshot_files_are_complete(&cached, None));
+        assert!(snapshot_files_are_complete(&cached, None));
     }
 
     #[test]
-    fn mlx_download_filenames_include_fp8_snapshot_metadata() {
+    fn safetensors_download_filenames_include_fp8_snapshot_metadata() {
         let siblings = [
             "config.json",
             "configuration.json",
@@ -1293,7 +1290,7 @@ mod tests {
         .map(sibling)
         .collect::<Vec<_>>();
 
-        let filenames = mlx_download_filenames(&siblings)
+        let filenames = safetensors_download_filenames(&siblings)
             .into_iter()
             .collect::<std::collections::HashSet<_>>();
 
@@ -1309,7 +1306,7 @@ mod tests {
     }
 
     #[test]
-    fn mlx_download_size_uses_safetensors_metadata_when_sibling_sizes_are_missing() {
+    fn safetensors_download_size_uses_safetensors_metadata_when_sibling_sizes_are_missing() {
         let info: ModelInfo = serde_json::from_value(serde_json::json!({
             "id": "owner/repo",
             "safetensors": {
@@ -1334,12 +1331,15 @@ mod tests {
             },
         ];
 
-        assert_eq!(mlx_download_size_bytes(&info, &siblings), 40);
+        assert_eq!(safetensors_download_size_bytes(&info, &siblings), 40);
     }
 
     #[test]
-    fn mlx_variant_id_detects_fp8_repo_name() {
-        assert_eq!(mlx_variant_id("Qwen/Qwen3.6-35B-A3B-FP8", &None), "fp8");
+    fn safetensors_variant_id_detects_fp8_repo_name() {
+        assert_eq!(
+            safetensors_variant_id("Qwen/Qwen3.6-35B-A3B-FP8", &None),
+            "fp8"
+        );
     }
 
     fn test_model(repo_id: &str) -> HfModelInfo {
@@ -1354,10 +1354,10 @@ mod tests {
     }
 
     #[test]
-    fn append_optional_mlx_results_extends_on_success() {
+    fn append_optional_safetensors_results_extends_on_success() {
         let mut results = vec![test_model("gguf/repo")];
 
-        append_optional_mlx_results(
+        append_optional_safetensors_results(
             &mut results,
             Ok(vec![test_model("mlx/repo")]),
             "search-query",
@@ -1369,10 +1369,10 @@ mod tests {
     }
 
     #[test]
-    fn append_optional_mlx_results_preserves_existing_on_error() {
+    fn append_optional_safetensors_results_preserves_existing_on_error() {
         let mut results = vec![test_model("gguf/repo")];
 
-        append_optional_mlx_results(
+        append_optional_safetensors_results(
             &mut results,
             Err(anyhow::anyhow!("hf-hub unavailable")),
             "search-query",
@@ -1459,7 +1459,7 @@ mod tests {
     }
 
     #[test]
-    fn active_download_repo_id_handles_gguf_and_mlx_downloads() {
+    fn active_download_repo_id_handles_gguf_and_safetensors_downloads() {
         let progress =
             |model_id: &str, status: crate::download_manager::DownloadStatus, task_exited: bool| {
                 crate::download_manager::DownloadProgress {
@@ -1482,12 +1482,12 @@ mod tests {
         );
         assert_eq!(active_download_repo_id(&gguf), Some("owner/repo"));
 
-        let mlx = progress(
+        let safetensors = progress(
             "owner/repo-model",
             crate::download_manager::DownloadStatus::Cancelled,
             false,
         );
-        assert_eq!(active_download_repo_id(&mlx), Some("owner/repo"));
+        assert_eq!(active_download_repo_id(&safetensors), Some("owner/repo"));
 
         let exited = progress(
             "owner/repo-model",
@@ -1904,19 +1904,24 @@ fn split_repo_id(repo_id: &str) -> Result<(&str, &str)> {
         .ok_or_else(|| anyhow::anyhow!("Invalid repo id '{}': expected owner/name", repo_id))
 }
 
-async fn search_mlx_models(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
-    let mut results = search_mlx_models_with_query(query, limit).await?;
+async fn search_safetensors_models(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
+    let mut results = search_safetensors_models_with_query(query, limit).await?;
     if !query.contains('/') {
+        results.extend(
+            search_safetensors_models_with_query(&format!("mlx-community/{query}"), limit).await?,
+        );
         results
-            .extend(search_mlx_models_with_query(&format!("mlx-community/{query}"), limit).await?);
-        results.extend(search_mlx_models_with_query(&format!("google/{query}"), limit).await?);
+            .extend(search_safetensors_models_with_query(&format!("google/{query}"), limit).await?);
     }
     dedupe_models(&mut results);
     results.truncate(limit);
     Ok(results)
 }
 
-async fn search_mlx_models_with_query(query: &str, limit: usize) -> Result<Vec<HfModelInfo>> {
+async fn search_safetensors_models_with_query(
+    query: &str,
+    limit: usize,
+) -> Result<Vec<HfModelInfo>> {
     let client = hf_client().await?;
     let stream = client
         .list_models()
@@ -1999,12 +2004,16 @@ async fn model_info_to_local_model_info(
         .iter()
         .map(|variant| variant.to_model_variant(&repo_id))
         .collect();
-    if is_mlx_compatible_model_info(&info) {
-        let mlx_config = load_repo_config_json(repo).await.unwrap_or_else(|error| {
-            tracing::debug!(repo_id, %error, "Failed to load MLX config.json; falling back to API config");
+    if is_safetensors_compatible_model_info(&info) {
+        let safetensors_config = load_repo_config_json(repo).await.unwrap_or_else(|error| {
+            tracing::debug!(repo_id, %error, "Failed to load SafeTensors config.json; falling back to API config");
             info.config.clone()
         });
-        variants.extend(mlx_variants_from_model_info(&repo_id, &info, &mlx_config));
+        variants.extend(safetensors_variants_from_model_info(
+            &repo_id,
+            &info,
+            &safetensors_config,
+        ));
     }
 
     if variants.is_empty() {
@@ -2070,17 +2079,21 @@ pub async fn get_repo_local_variants(repo_id: &str) -> Result<Vec<HfModelVariant
         .iter()
         .map(|variant| variant.to_model_variant(repo_id))
         .collect();
-    variants.extend(get_repo_mlx_variants(repo_id).await.unwrap_or_default());
+    variants.extend(
+        get_repo_safetensors_variants(repo_id)
+            .await
+            .unwrap_or_default(),
+    );
     variants.sort_by(|a, b| {
-        a.backend_id
-            .cmp(&b.backend_id)
+        a.format
+            .cmp(&b.format)
             .then_with(|| b.quality_rank.cmp(&a.quality_rank))
             .then_with(|| a.variant_id.cmp(&b.variant_id))
     });
     Ok(variants)
 }
 
-pub async fn get_repo_mlx_variants(repo_id: &str) -> Result<Vec<HfModelVariant>> {
+pub async fn get_repo_safetensors_variants(repo_id: &str) -> Result<Vec<HfModelVariant>> {
     let client = hf_client().await?;
     let repo = model_repo(&client, repo_id)?;
     let info = repo
@@ -2092,13 +2105,17 @@ pub async fn get_repo_mlx_variants(repo_id: &str) -> Result<Vec<HfModelVariant>>
         ])
         .send()
         .await?;
-    if !is_mlx_compatible_model_info(&info) {
+    if !is_safetensors_compatible_model_info(&info) {
         return Ok(Vec::new());
     }
-    let mlx_config = load_repo_config_json(&repo)
+    let safetensors_config = load_repo_config_json(&repo)
         .await
         .unwrap_or_else(|_| info.config.clone());
-    Ok(mlx_variants_from_model_info(repo_id, &info, &mlx_config))
+    Ok(safetensors_variants_from_model_info(
+        repo_id,
+        &info,
+        &safetensors_config,
+    ))
 }
 
 async fn load_repo_config_json(
@@ -2113,58 +2130,60 @@ async fn load_repo_config_json(
     Ok(Some(serde_json::from_str(&config_json)?))
 }
 
-fn mlx_variants_from_model_info(
+fn safetensors_variants_from_model_info(
     repo_id: &str,
     info: &ModelInfo,
-    mlx_config: &Option<serde_json::Value>,
+    safetensors_config: &Option<serde_json::Value>,
 ) -> Vec<HfModelVariant> {
     let siblings = info.siblings.as_deref().unwrap_or(&[]);
 
-    if !is_mlx_compatible_repo(&info.config, siblings) {
+    if !is_safetensors_compatible_repo(&info.config, siblings) {
         return Vec::new();
     }
 
-    let size_bytes = mlx_download_size_bytes(info, siblings);
-    let variant_id = mlx_variant_id(repo_id, &info.config);
+    let size_bytes = safetensors_download_size_bytes(info, siblings);
+    let variant_id = safetensors_variant_id(repo_id, &info.config);
 
     vec![HfModelVariant {
         variant_id: variant_id.clone(),
-        label: mlx_variant_label(&variant_id),
-        backend_id: MLX_BACKEND_ID.to_string(),
-        format: MLX_FORMAT.to_string(),
+        label: safetensors_variant_label(&variant_id),
+        format: SAFETENSORS_FORMAT.to_string(),
         model_id: repo_id.to_string(),
         download_id: repo_id.to_string(),
         size_bytes,
         filename: None,
         download_url: None,
-        description: mlx_variant_description(mlx_config),
+        description: safetensors_variant_description(safetensors_config),
         quality_rank: 91,
         sharded: siblings
             .iter()
             .filter(|s| s.rfilename.ends_with(".safetensors"))
             .count()
             > 1,
-        supported: is_mlx_runtime_supported(mlx_config),
-        unsupported_reason: mlx_unsupported_reason(mlx_config),
+        supported: safetensors_unsupported_reason(safetensors_config).is_none(),
+        unsupported_reason: safetensors_unsupported_reason(safetensors_config),
     }]
 }
 
-fn is_mlx_compatible_model_info(info: &ModelInfo) -> bool {
-    is_mlx_compatible_repo(&info.config, info.siblings.as_deref().unwrap_or_default())
+fn is_safetensors_compatible_model_info(info: &ModelInfo) -> bool {
+    is_safetensors_compatible_repo(&info.config, info.siblings.as_deref().unwrap_or_default())
 }
 
-fn is_mlx_compatible_repo(config: &Option<serde_json::Value>, siblings: &[RepoSibling]) -> bool {
+fn is_safetensors_compatible_repo(
+    config: &Option<serde_json::Value>,
+    siblings: &[RepoSibling],
+) -> bool {
     let has_config = siblings.iter().any(|s| s.rfilename == "config.json");
-    let has_tokenizer = has_mlx_tokenizer(siblings);
+    let has_tokenizer = has_safetensors_tokenizer(siblings);
     let has_safetensors = siblings
         .iter()
         .any(|s| s.rfilename.ends_with(".safetensors"));
 
-    has_config && has_tokenizer && has_safetensors && mlx_model_type(config).is_some()
+    has_config && has_tokenizer && has_safetensors && safetensors_model_type(config).is_some()
 }
 
-fn mlx_download_size_bytes(info: &ModelInfo, siblings: &[RepoSibling]) -> u64 {
-    let sibling_size: u64 = mlx_download_filenames(siblings)
+fn safetensors_download_size_bytes(info: &ModelInfo, siblings: &[RepoSibling]) -> u64 {
+    let sibling_size: u64 = safetensors_download_filenames(siblings)
         .into_iter()
         .filter_map(|filename| {
             siblings
@@ -2199,66 +2218,56 @@ fn dtype_size_bytes(dtype: &str) -> u64 {
     }
 }
 
-fn has_mlx_tokenizer(siblings: &[RepoSibling]) -> bool {
+fn has_safetensors_tokenizer(siblings: &[RepoSibling]) -> bool {
     siblings
         .iter()
-        .any(|s| is_standalone_mlx_tokenizer_file(&s.rfilename))
+        .any(|s| is_standalone_safetensors_tokenizer_file(&s.rfilename))
 }
 
-fn is_standalone_mlx_tokenizer_file(filename: &str) -> bool {
+fn is_standalone_safetensors_tokenizer_file(filename: &str) -> bool {
     filename == "tokenizer.json"
 }
 
-fn mlx_model_type(config: &Option<serde_json::Value>) -> Option<&str> {
+fn safetensors_model_type(config: &Option<serde_json::Value>) -> Option<&str> {
     config
         .as_ref()
         .and_then(|config| config.get("model_type"))
         .and_then(|value| value.as_str())
 }
 
-fn is_mlx_runtime_supported(config: &Option<serde_json::Value>) -> bool {
-    mlx_unsupported_reason(config).is_none()
-}
-
-fn mlx_unsupported_reason(config: &Option<serde_json::Value>) -> Option<String> {
+fn safetensors_unsupported_reason(config: &Option<serde_json::Value>) -> Option<String> {
     if !cfg!(target_os = "macos") {
-        return Some("MLX requires macOS".to_string());
+        return Some("Eredu requires macOS in this build".to_string());
     }
     if !cfg!(feature = "mlx") {
-        return Some("MLX support was not compiled in".to_string());
+        return Some("Eredu requires a build with the mlx feature".to_string());
     }
 
-    mlx_config_support(config)
+    safetensors_config_support(config)
 }
 
-fn mlx_config_support(config: &Option<serde_json::Value>) -> Option<String> {
+fn safetensors_config_support(config: &Option<serde_json::Value>) -> Option<String> {
     let config = config.as_ref()?;
-    mlx_config_support_for_value(config)
+    safetensors_config_support_for_value(config)
 }
 
-#[cfg(all(feature = "mlx", target_os = "macos"))]
-fn mlx_config_support_for_value(config: &serde_json::Value) -> Option<String> {
-    safemlx_lm::check_model_config(config)
-        .unsupported_reason()
-        .map(str::to_string)
+fn safetensors_config_support_for_value(config: &serde_json::Value) -> Option<String> {
+    eredu_architectures::configuration::resolve_model_config(config)
+        .err()
+        .map(|error| error.to_string())
 }
 
-#[cfg(not(all(feature = "mlx", target_os = "macos")))]
-fn mlx_config_support_for_value(_config: &serde_json::Value) -> Option<String> {
-    None
-}
-
-fn mlx_variant_description(config: &Option<serde_json::Value>) -> String {
-    match mlx_unsupported_reason(config) {
-        None => "MLX safetensors snapshot".to_string(),
-        Some(reason) => format!("MLX safetensors snapshot ({reason})"),
+fn safetensors_variant_description(config: &Option<serde_json::Value>) -> String {
+    match safetensors_unsupported_reason(config) {
+        None => "SafeTensors checkpoint".to_string(),
+        Some(reason) => format!("SafeTensors checkpoint ({reason})"),
     }
 }
 
-fn mlx_download_filenames(siblings: &[RepoSibling]) -> Vec<String> {
+fn safetensors_download_filenames(siblings: &[RepoSibling]) -> Vec<String> {
     siblings
         .iter()
-        .filter(|s| should_download_for_mlx(&s.rfilename))
+        .filter(|s| should_download_for_safetensors(&s.rfilename))
         .map(|s| s.rfilename.clone())
         .collect()
 }
@@ -2321,19 +2330,19 @@ fn merge_model_info(existing: &mut HfModelInfo, duplicate: HfModelInfo) {
     let mut variant_keys: std::collections::HashSet<(String, String)> = existing
         .variants
         .iter()
-        .map(|variant| (variant.backend_id.clone(), variant.variant_id.clone()))
+        .map(|variant| (variant.format.clone(), variant.variant_id.clone()))
         .collect();
     existing
         .variants
         .extend(duplicate.variants.into_iter().filter(|variant| {
-            variant_keys.insert((variant.backend_id.clone(), variant.variant_id.clone()))
+            variant_keys.insert((variant.format.clone(), variant.variant_id.clone()))
         }));
 }
 
-fn should_download_for_mlx(filename: &str) -> bool {
+fn should_download_for_safetensors(filename: &str) -> bool {
     filename.ends_with(".safetensors")
         || filename == "config.json"
-        || is_standalone_mlx_tokenizer_file(filename)
+        || is_standalone_safetensors_tokenizer_file(filename)
         || filename == "tokenizer_config.json"
         || filename == "generation_config.json"
         || filename == "configuration.json"
@@ -2347,7 +2356,7 @@ fn should_download_for_mlx(filename: &str) -> bool {
         || filename == "added_tokens.json"
 }
 
-fn mlx_variant_id(repo_id: &str, config: &Option<serde_json::Value>) -> String {
+fn safetensors_variant_id(repo_id: &str, config: &Option<serde_json::Value>) -> String {
     let repo_lower = repo_id.to_lowercase();
     for marker in ["bf16", "f16", "fp16", "f32", "fp32", "fp8", "4bit", "8bit"] {
         if repo_lower.contains(marker) {
@@ -2359,31 +2368,33 @@ fn mlx_variant_id(repo_id: &str, config: &Option<serde_json::Value>) -> String {
         .and_then(|config| config.get("torch_dtype"))
         .and_then(|value| value.as_str())
         .map(|dtype| dtype.replace("float", "f"))
-        .unwrap_or_else(|| MLX_VARIANT_ID.to_string())
+        .unwrap_or_else(|| SAFETENSORS_VARIANT_ID.to_string())
 }
 
-fn mlx_variant_label(variant_id: &str) -> String {
-    if variant_id == MLX_VARIANT_ID {
-        "MLX".to_string()
+fn safetensors_variant_label(variant_id: &str) -> String {
+    if variant_id == SAFETENSORS_VARIANT_ID {
+        "SafeTensors".to_string()
     } else {
-        format!("MLX {}", variant_id.to_uppercase())
+        format!("SafeTensors {}", variant_id.to_uppercase())
     }
 }
 
 pub async fn resolve_local_model_selection(
     repo_id: &str,
-    backend_id: &str,
+    format: &str,
     variant_id: Option<&str>,
 ) -> Result<ResolvedLocalModel> {
-    match backend_id {
-        MLX_BACKEND_ID => resolve_mlx_model(repo_id, variant_id.unwrap_or(MLX_VARIANT_ID)).await,
-        LLAMACPP_BACKEND_ID => {
+    match format {
+        SAFETENSORS_FORMAT => {
+            resolve_safetensors_model(repo_id, variant_id.unwrap_or(SAFETENSORS_VARIANT_ID)).await
+        }
+        GGUF_FORMAT => {
             let quantization = variant_id.ok_or_else(|| {
                 anyhow::anyhow!("llama.cpp model '{}' is missing a quantization", repo_id)
             })?;
             resolve_gguf_model(repo_id, quantization).await
         }
-        _ => bail!("Unknown local inference backend '{}'", backend_id),
+        _ => bail!("Unknown local inference format '{}'", format),
     }
 }
 
@@ -2484,16 +2495,14 @@ pub async fn resolve_local_model_spec(spec: &str) -> Result<ResolvedLocalModel> 
 
     if looks_like_repo_id(spec) {
         let variants = get_repo_local_variants(spec).await?;
-        let mlx_variants: Vec<_> = variants
+        let safetensors_variants: Vec<_> = variants
             .iter()
-            .filter(|variant| variant.backend_id == MLX_BACKEND_ID)
+            .filter(|variant| variant.format == SAFETENSORS_FORMAT)
             .collect();
-        if mlx_variants.len() == 1
-            && !variants
-                .iter()
-                .any(|variant| variant.backend_id == LLAMACPP_BACKEND_ID)
+        if safetensors_variants.len() == 1
+            && !variants.iter().any(|variant| variant.format == GGUF_FORMAT)
         {
-            return resolve_mlx_model(spec, &mlx_variants[0].variant_id).await;
+            return resolve_safetensors_model(spec, &safetensors_variants[0].variant_id).await;
         }
         bail!(
             "Model spec '{}' is ambiguous; choose one of: {}",
@@ -2510,17 +2519,21 @@ pub async fn resolve_local_model_spec(spec: &str) -> Result<ResolvedLocalModel> 
     resolve_gguf_model(&repo_id, &quantization).await
 }
 
-async fn resolve_mlx_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLocalModel> {
-    let variants = get_repo_mlx_variants(repo_id).await?;
+async fn resolve_safetensors_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLocalModel> {
+    let variants = get_repo_safetensors_variants(repo_id).await?;
     let Some(variant) = variants
         .iter()
         .find(|variant| variant.variant_id == variant_id)
     else {
-        bail!("No MLX variant '{}' found in {}", variant_id, repo_id);
+        bail!(
+            "No SafeTensors variant '{}' found in {}",
+            variant_id,
+            repo_id
+        );
     };
     if !variant.supported {
         bail!(
-            "MLX variant '{}' in {} is not supported: {}",
+            "SafeTensors variant '{}' in {} is not supported: {}",
             variant_id,
             repo_id,
             variant
@@ -2538,8 +2551,8 @@ async fn resolve_mlx_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLo
         .send()
         .await?;
     let siblings = info.siblings.as_deref().unwrap_or(&[]);
-    let filenames = mlx_download_filenames(siblings);
-    let total_size = mlx_download_size_bytes(&info, siblings);
+    let filenames = safetensors_download_filenames(siblings);
+    let total_size = safetensors_download_size_bytes(&info, siblings);
     let progress = HfDownloadProgress::new(repo_id.to_string(), total_size);
     progress.init();
     let mut snapshot_path = None;
@@ -2569,14 +2582,15 @@ async fn resolve_mlx_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLo
         progress.finish_file(file_size);
     }
     progress.complete();
-    let snapshot_path = snapshot_path
-        .ok_or_else(|| anyhow::anyhow!("MLX model {} has no downloadable files", repo_id))?;
+    let snapshot_path = snapshot_path.ok_or_else(|| {
+        anyhow::anyhow!("SafeTensors model {} has no downloadable files", repo_id)
+    })?;
     let total_size = if total_size > 0 {
         total_size
     } else {
         dir_size(&snapshot_path)
     };
-    Ok(ResolvedLocalModel::Mlx {
+    Ok(ResolvedLocalModel::Safetensors {
         repo_id: repo_id.to_string(),
         variant_id: variant_id.to_string(),
         snapshot_path,
@@ -2851,7 +2865,7 @@ pub async fn cached_local_models() -> Result<Vec<CachedLocalModel>> {
                     repo_id: repo.repo_id.clone(),
                     filename: primary.file_name.clone(),
                     quantization: variant.quantization,
-                    backend_id: LLAMACPP_BACKEND_ID.to_string(),
+                    format: GGUF_FORMAT.to_string(),
                     model_path: primary.file_path.clone(),
                     size_bytes: selected.iter().map(|file| file.size_on_disk).sum(),
                     mmproj_path: mmproj.map(|file| file.file_path.clone()),
@@ -2889,23 +2903,22 @@ pub async fn cached_local_models() -> Result<Vec<CachedLocalModel>> {
                     .and_then(|contents| serde_json::from_slice(&contents).ok())
             });
             let valid_index = index_file.is_none() || index.is_some();
-            if is_mlx_compatible_repo(&config, &repo_siblings)
-                && is_mlx_runtime_supported(&config)
+            if is_safetensors_compatible_repo(&config, &repo_siblings)
                 && valid_index
-                && mlx_snapshot_files_are_complete(&cached_filenames, index.as_ref())
+                && snapshot_files_are_complete(&cached_filenames, index.as_ref())
             {
                 let cached_files: Vec<_> = revision
                     .files
                     .iter()
-                    .filter(|file| should_download_for_mlx(&file.file_name))
+                    .filter(|file| should_download_for_safetensors(&file.file_name))
                     .collect();
                 if !cached_files.is_empty() {
                     let model = CachedLocalModel {
                         id: repo.repo_id.clone(),
                         repo_id: repo.repo_id.clone(),
-                        filename: MLX_VARIANT_ID.to_string(),
-                        quantization: mlx_variant_id(&repo.repo_id, &config),
-                        backend_id: MLX_BACKEND_ID.to_string(),
+                        filename: SAFETENSORS_VARIANT_ID.to_string(),
+                        quantization: safetensors_variant_id(&repo.repo_id, &config),
+                        format: SAFETENSORS_FORMAT.to_string(),
                         model_path: revision.snapshot_path.clone(),
                         size_bytes: cached_files.iter().map(|file| file.size_on_disk).sum(),
                         mmproj_path: None,
@@ -3014,8 +3027,8 @@ pub async fn delete_cached_local_model(model_id: &str) -> Result<()> {
         .flat_map(|repo| &repo.revisions)
         .flat_map(|revision| &revision.files)
         .filter(|file| {
-            if model.backend_id == MLX_BACKEND_ID {
-                should_download_for_mlx(&file.file_name)
+            if model.format == SAFETENSORS_FORMAT {
+                should_download_for_safetensors(&file.file_name)
             } else {
                 let is_model_weight = file.file_name.ends_with(".gguf")
                     && !is_auxiliary_gguf_file(&file.file_name)

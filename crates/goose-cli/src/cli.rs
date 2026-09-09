@@ -1223,7 +1223,7 @@ enum Command {
 #[derive(Subcommand)]
 enum LocalModelsCommand {
     /// Search HuggingFace for local models
-    #[command(about = "Search HuggingFace for local GGUF and MLX models")]
+    #[command(about = "Search HuggingFace for local GGUF and SafeTensors models")]
     Search {
         /// Search query
         query: Option<String>,
@@ -1263,6 +1263,13 @@ enum LocalModelsCommand {
     /// List downloaded local models
     #[command(about = "List downloaded local models")]
     List,
+
+    /// Choose the inference backend for a local model
+    Backend {
+        id: String,
+        #[arg(value_parser = ["auto", "eredu", "llamacpp"])]
+        backend: String,
+    },
 
     /// Delete a downloaded model
     #[command(about = "Delete a downloaded local model")]
@@ -2516,7 +2523,7 @@ fn recommended_variant(
     let mut variant_indexes = Vec::new();
     let mut gguf_variants = Vec::new();
     for (index, variant) in model.variants.iter().enumerate() {
-        if variant.backend_id != "llamacpp" || !variant.supported {
+        if variant.format != "gguf" || !variant.supported {
             continue;
         }
         variant_indexes.push(index);
@@ -2715,13 +2722,39 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
             }
 
             println!(
-                "{:<50} {:<10} {:<12} Downloaded",
-                "ID", "Backend", "Variant"
+                "{:<50} {:<12} {:<10} {:<12} Downloaded",
+                "ID", "Format", "Backend", "Variant"
             );
             println!("{}", "-".repeat(88));
             for m in &models {
-                println!("{:<50} {:<10} {:<12} ✓", m.id, m.backend_id, m.quantization);
+                let settings =
+                    goose::providers::local_inference::config_resolver::model_settings(&m.id)?;
+                let backend = goose::providers::local_inference::selection::configured_backend(
+                    &m.format, &settings,
+                )?;
+                println!(
+                    "{:<50} {:<12} {:<10} {:<12} ✓",
+                    m.id, m.format, backend, m.quantization
+                );
             }
+        }
+        LocalModelsCommand::Backend { id, backend } => {
+            use goose::providers::local_inference::{management, selection};
+            let info = management::get_model_settings(&id).await?;
+            let format = info
+                .format
+                .ok_or_else(|| anyhow::anyhow!("Model not found: {id}"))?;
+            let mut settings = info.settings;
+            settings.backend_id = (backend != "auto").then_some(backend);
+            selection::select_backend(&format, settings.backend_id.as_deref(), None)?;
+            management::update_model_settings(&id, settings)?;
+            let info = management::get_model_settings(&id).await?;
+            println!(
+                "{}: {} ({})",
+                id,
+                info.backend_id.unwrap_or_default(),
+                format
+            );
         }
         LocalModelsCommand::Delete { id } => {
             if hf_models::cached_local_model(&id).await?.is_some() {

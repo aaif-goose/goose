@@ -1833,36 +1833,32 @@ pub enum LocalInferenceChatTemplate {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum LocalInferenceSamplingConfig {
+    #[default]
+    Inherit,
     Greedy,
     Temperature {
-        temperature: f32,
-        top_k: i32,
-        top_p: f32,
-        min_p: f32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        temperature: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        top_k: Option<i32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        top_p: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min_p: Option<f32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seed: Option<u32>,
     },
     MirostatV2 {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        temperature: Option<f32>,
         tau: f32,
         eta: f32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seed: Option<u32>,
     },
-}
-
-impl Default for LocalInferenceSamplingConfig {
-    fn default() -> Self {
-        Self::Temperature {
-            temperature: 0.8,
-            top_k: 40,
-            top_p: 0.95,
-            min_p: 0.05,
-            seed: None,
-        }
-    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1871,6 +1867,10 @@ pub struct LocalInferenceModelSettingsDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cached_shards: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_size: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<usize>,
@@ -1878,10 +1878,14 @@ pub struct LocalInferenceModelSettingsDto {
     pub draft_model: Option<String>,
     #[serde(default)]
     pub sampling: LocalInferenceSamplingConfig,
-    pub repeat_penalty: f32,
-    pub repeat_last_n: i32,
-    pub frequency_penalty: f32,
-    pub presence_penalty: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_last_n: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub n_batch: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1895,7 +1899,8 @@ pub struct LocalInferenceModelSettingsDto {
     pub tool_calling: LocalInferenceToolCallingMode,
     #[serde(default)]
     pub chat_template: LocalInferenceChatTemplate,
-    pub enable_thinking: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
     pub vision_capable: bool,
     pub image_token_estimate: usize,
     pub mmproj_size_bytes: u64,
@@ -1947,6 +1952,8 @@ pub struct LocalInferenceModelDto {
     pub repo_id: String,
     pub filename: String,
     pub quantization: String,
+    pub format: String,
+    pub backend_id: String,
     pub size_bytes: u64,
     pub status: LocalInferenceModelDownloadStatusDto,
     pub recommended: bool,
@@ -1962,7 +1969,6 @@ pub struct LocalInferenceModelDto {
 pub struct LocalInferenceHfModelVariantDto {
     pub variant_id: String,
     pub label: String,
-    pub backend_id: String,
     pub format: String,
     pub model_id: String,
     pub download_id: String,
@@ -2026,7 +2032,7 @@ pub struct LocalInferenceModelsListResponse {
 pub struct LocalInferenceModelDownloadRequest {
     pub spec: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backend_id: Option<String>,
+    pub format: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_id: Option<String>,
 }
@@ -2103,6 +2109,15 @@ pub struct LocalInferenceModelSettingsReadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LocalInferenceModelSettingsReadResponse {
     pub settings: LocalInferenceModelSettingsDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_backend_id: Option<String>,
+    pub available_backends: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_generation: Option<serde_json::Value>,
 }
 
 /// Update the sampling settings for a local inference model.

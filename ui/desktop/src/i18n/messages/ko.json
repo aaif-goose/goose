@@ -1,4 +1,25 @@
 {
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "ACP 어댑터를 찾았습니다"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "ACP 어댑터를 찾을 수 없습니다"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "제공업체 CLI에서 로그인한 후 다시 확인하세요."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "다시 확인"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "확인 중..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "연결되었습니다"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "계속하기 전에 계정 연결을 확인하세요."
+  },
   "alertBox.autoCompactAt": {
     "defaultMessage": "자동 압축 기준"
   },
@@ -923,11 +944,11 @@
   "dirSwitcher.enterPath": {
     "defaultMessage": "Enter path"
   },
-  "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
-  },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
   },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
@@ -943,18 +964,6 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "최근 디렉터리"
-  },
-  "gitBranchIndicator.failedToSwitch": {
-    "defaultMessage": "{branch} 브랜치로 전환하지 못했습니다"
-  },
-  "gitBranchIndicator.noBranchesFound": {
-    "defaultMessage": "브랜치를 찾을 수 없습니다"
-  },
-  "gitBranchIndicator.searchBranches": {
-    "defaultMessage": "브랜치 검색…"
-  },
-  "gitBranchIndicator.uncommittedChanges": {
-    "defaultMessage": "커밋되지 않은 변경 사항이 있을 수 있습니다."
   },
   "elicitationRequest.accept": {
     "defaultMessage": "수락"
@@ -1258,6 +1267,18 @@
   },
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "{branch} 브랜치로 전환하지 못했습니다"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "브랜치를 찾을 수 없습니다"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "브랜치 검색…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "커밋되지 않은 변경 사항이 있을 수 있습니다."
   },
   "goosehintsModal.close": {
     "defaultMessage": "닫기"
@@ -1758,7 +1779,7 @@
     "defaultMessage": "이 모델을 삭제하시겠습니까? 나중에 다시 다운로드할 수 있습니다."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "API 키 없이 추론에 사용할 로컬 LLM 모델을 다운로드하고 관리하세요. Hugging Face에서 GGUF 또는 MLX 모델을 검색하세요."
+    "defaultMessage": "API 키 없이 추론에 사용할 로컬 LLM 모델을 다운로드하고 관리하세요. Hugging Face에서 GGUF 또는 SafeTensors 모델을 검색하세요."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "닫기"
@@ -2144,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "모델 전환"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "자동"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "추론 백엔드"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "기본값 ({backend})"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "배치 크기"
   },
@@ -2155,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "llama.cpp 내장 템플릿 이름을 선택하세요."
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "캐시할 최대 샤드 수"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "채팅 템플릿"
@@ -2186,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "전체 Jinja 채팅 템플릿 소스를 붙여넣으세요."
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "기본 시드"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "장치"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "장치 (비워 두면 가속기, 그다음 CPU 선택)"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "초안 모델"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "다운로드한 모델의 ID 또는 경로"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "빈 필드는 체크포인트 기본값을 상속합니다. 유효 값:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "모델 다운로드 후 확인 가능"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "온도 {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, 샘플링 {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "체크포인트 템플릿, 내장 템플릿 또는 인라인 Jinja 사용"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta(학습률)"
   },
@@ -2207,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "GPU로 오프로드할 레이어"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "상속"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "설정 로드 중..."
   },
@@ -2224,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostat에는 양수인 유효 온도가 필요합니다"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "모델 기본값"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "모델 기본값"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "모델 형식"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "끄기"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "켜기"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "성능"
@@ -2270,6 +2351,9 @@
   "modelSettingsPanel.temperature": {
     "defaultMessage": "Temperature"
   },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "추론"
+  },
   "modelSettingsPanel.threads": {
     "defaultMessage": "스레드"
   },
@@ -2311,6 +2395,9 @@
   },
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "로컬 모델 설정 — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "최근"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "확인된 모델"
@@ -2684,6 +2771,9 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "저장되지 않은 변경 사항이 있습니다."
   },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "더 이상 사용되지 않습니다. 대신 {replacement}을(를) 사용하세요."
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCard 오류: 메타데이터가 제공되지 않았습니다."
   },
@@ -2738,8 +2828,17 @@
   "providerConfigForm.continue": {
     "defaultMessage": "계속"
   },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "코드를 입력하세요:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "복사"
+  },
   "providerConfigForm.deviceCodeFlowHint": {
     "defaultMessage": "브라우저 창이 열립니다. 인증 코드가 여기에 표시되면 입력하여 로그인을 완료하세요."
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "방문하여"
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "API 키가 없나요?"
@@ -2765,6 +2864,9 @@
   "providerConfigurationModal.checkConfigAgain": {
     "defaultMessage": "이 제공업체를 사용하려면 구성을 다시 확인하세요."
   },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "모델 선택"
+  },
   "providerConfigurationModal.close": {
     "defaultMessage": "닫기"
   },
@@ -2777,8 +2879,17 @@
   "providerConfigurationModal.deleteConfirmation": {
     "defaultMessage": "현재 제공업체 구성이 영구적으로 삭제됩니다."
   },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "코드를 입력하세요:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "복사"
+  },
   "providerConfigurationModal.deviceCodeFlowHint": {
     "defaultMessage": "브라우저 창이 열립니다. 인증 코드가 여기에 표시되면 입력하여 로그인을 완료하세요."
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "방문하여"
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "이 제공업체 구성을 확인하는 동안 오류가 발생했습니다."
@@ -4621,53 +4732,5 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "메시지에서 이미지 제거"
-  },
-  "modelsBottomBar.recentModels": {
-    "defaultMessage": "최근"
-  },
-  "providerConfigurationModal.chooseModel": {
-    "defaultMessage": "모델 선택"
-  },
-  "providerCard.deprecatedReplacement": {
-    "defaultMessage": "더 이상 사용되지 않습니다. 대신 {replacement}을(를) 사용하세요."
-  },
-  "acpReadinessPanel.adapterFound": {
-    "defaultMessage": "ACP 어댑터를 찾았습니다"
-  },
-  "acpReadinessPanel.adapterNotFound": {
-    "defaultMessage": "ACP 어댑터를 찾을 수 없습니다"
-  },
-  "acpReadinessPanel.authenticationHelp": {
-    "defaultMessage": "제공업체 CLI에서 로그인한 후 다시 확인하세요."
-  },
-  "acpReadinessPanel.checkAgain": {
-    "defaultMessage": "다시 확인"
-  },
-  "acpReadinessPanel.checking": {
-    "defaultMessage": "확인 중..."
-  },
-  "acpReadinessPanel.connected": {
-    "defaultMessage": "연결되었습니다"
-  },
-  "acpReadinessPanel.connectionNotChecked": {
-    "defaultMessage": "계속하기 전에 계정 연결을 확인하세요."
-  },
-  "providerConfigForm.deviceCodeAndEnter": {
-    "defaultMessage": "코드를 입력하세요:"
-  },
-  "providerConfigForm.deviceCodeCopy": {
-    "defaultMessage": "복사"
-  },
-  "providerConfigForm.deviceCodeVisit": {
-    "defaultMessage": "방문하여"
-  },
-  "providerConfigurationModal.deviceCodeAndEnter": {
-    "defaultMessage": "코드를 입력하세요:"
-  },
-  "providerConfigurationModal.deviceCodeCopy": {
-    "defaultMessage": "복사"
-  },
-  "providerConfigurationModal.deviceCodeVisit": {
-    "defaultMessage": "방문하여"
   }
 }

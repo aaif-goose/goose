@@ -1779,7 +1779,7 @@
     "defaultMessage": "Delete this model? You can re-download it later."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Download and manage local LLM models for inference without API keys. Search Hugging Face for GGUF or MLX models."
+    "defaultMessage": "Download and manage local LLM models for inference without API keys. Search Hugging Face for GGUF or SafeTensors models."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Dismiss"
@@ -2165,6 +2165,15 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "Switch models"
   },
+  "modelSettingsPanel.automatic": {
+    "defaultMessage": "Automatic"
+  },
+  "modelSettingsPanel.backend": {
+    "defaultMessage": "Inference backend"
+  },
+  "modelSettingsPanel.backendDefault": {
+    "defaultMessage": "Default ({backend})"
+  },
   "modelSettingsPanel.batchSize": {
     "defaultMessage": "Batch size"
   },
@@ -2176,6 +2185,9 @@
   },
   "modelSettingsPanel.builtinChatTemplateDescription": {
     "defaultMessage": "Select a llama.cpp built-in template name"
+  },
+  "modelSettingsPanel.cachedShards": {
+    "defaultMessage": "Maximum cached shards"
   },
   "modelSettingsPanel.chatTemplate": {
     "defaultMessage": "Chat template"
@@ -2207,6 +2219,33 @@
   "modelSettingsPanel.customChatTemplateDescription": {
     "defaultMessage": "Paste the full Jinja chat template source"
   },
+  "modelSettingsPanel.defaultSeed": {
+    "defaultMessage": "Default seed"
+  },
+  "modelSettingsPanel.device": {
+    "defaultMessage": "Device"
+  },
+  "modelSettingsPanel.deviceHelp": {
+    "defaultMessage": "Device (empty selects an accelerator, then CPU)"
+  },
+  "modelSettingsPanel.draftModel": {
+    "defaultMessage": "Draft model"
+  },
+  "modelSettingsPanel.draftPlaceholder": {
+    "defaultMessage": "Downloaded model ID or path"
+  },
+  "modelSettingsPanel.effectiveIntro": {
+    "defaultMessage": "Empty fields inherit checkpoint defaults. Effective values:"
+  },
+  "modelSettingsPanel.effectiveMissing": {
+    "defaultMessage": "available after the model is downloaded"
+  },
+  "modelSettingsPanel.effectiveValues": {
+    "defaultMessage": "temperature {temperature}, top-k {topK}, top-p {topP}, min-p {minP}, sampling {sampling}"
+  },
+  "modelSettingsPanel.ereduTemplateDescription": {
+    "defaultMessage": "Use the checkpoint template, a built-in template, or inline Jinja"
+  },
   "modelSettingsPanel.etaLearningRate": {
     "defaultMessage": "Eta (learning rate)"
   },
@@ -2228,6 +2267,9 @@
   "modelSettingsPanel.gpuLayersDescription": {
     "defaultMessage": "Layers to offload to GPU"
   },
+  "modelSettingsPanel.inherit": {
+    "defaultMessage": "Inherit"
+  },
   "modelSettingsPanel.loadingSettings": {
     "defaultMessage": "Loading settings..."
   },
@@ -2245,6 +2287,24 @@
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.mirostatTemperature": {
+    "defaultMessage": "Mirostat requires a positive effective temperature"
+  },
+  "modelSettingsPanel.modelDefault": {
+    "defaultMessage": "Model default"
+  },
+  "modelSettingsPanel.modelDefaults": {
+    "defaultMessage": "Model defaults"
+  },
+  "modelSettingsPanel.modelFormat": {
+    "defaultMessage": "Model format"
+  },
+  "modelSettingsPanel.off": {
+    "defaultMessage": "Off"
+  },
+  "modelSettingsPanel.on": {
+    "defaultMessage": "On"
   },
   "modelSettingsPanel.performance": {
     "defaultMessage": "Performance"
@@ -2290,6 +2350,9 @@
   },
   "modelSettingsPanel.temperature": {
     "defaultMessage": "Temperature"
+  },
+  "modelSettingsPanel.thinkingControl": {
+    "defaultMessage": "Thinking"
   },
   "modelSettingsPanel.threads": {
     "defaultMessage": "Threads"

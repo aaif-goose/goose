@@ -20,6 +20,11 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
+eredu = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
+eredu-core = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
+eredu-text = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.1.1", default-features = false }
+eredu-architectures = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
+eredu-backend-mlx = { git = "https://github.com/jbg/eredu", rev = "dc8c8d8c501f6f8e99cc602c8a9d994927b4cf51", version = "0.5.0", default-features = false }
 rmcp = { version = "3.2.0", default-features = false, features = ["schemars", "auth"] }
 agent-client-protocol-schema = { version = "=1.5.0", default-features = false }
 agent-client-protocol = { version = "2.0.0", default-features = false }
@@ -86,7 +91,6 @@ test-case = { version = "3", default-features = false }
 url = { version = "2.5.4", default-features = false, features = ["std"] }
 opentelemetry = { version = "0.32", default-features = false }
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics"] }
-opentelemetry-http = { version = "0.32", default-features = false, features = ["internal-logs", "reqwest"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "internal-logs", "logs", "metrics", "reqwest-client", "trace"] }
 opentelemetry-appender-tracing = { version = "0.32", default-features = false, features = ["experimental_span_attributes"] }
 opentelemetry-stdout = { version = "0.32", default-features = false, features = ["trace", "metrics", "logs"] }
@@ -107,12 +111,6 @@ tree-sitter-typescript = { version = "0.23", default-features = false }
 # llama-cpp-2 doesn't pin the version of its sys crate, so we do it here. it also has breaking changes in patch releases, so we use an exact version pin
 llama-cpp-2 = { version = "=0.1.146", default-features = false, features = ["sampler", "mtmd"] }
 llama-cpp-sys-2 = { version = "=0.1.146", default-features = false }
-
-# These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
-# A fix is available in temporal_rs 0.2 but PCTX has not updated
-# They are just here to pin the version, and can be removed if PCTX updates temporal_rs
-icu_calendar = { version = "=2.1.1", default-features = false }
-icu_locale = { version = "=2.1.1", default-features = false }
 
 [patch.crates-io]
 agent-client-protocol = { git = "https://github.com/agentclientprotocol/rust-sdk", rev = "c97a5203d3392f7f231514d84eea014f9f43e6fb" }

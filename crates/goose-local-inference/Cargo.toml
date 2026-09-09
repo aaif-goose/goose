@@ -15,7 +15,7 @@ workspace = true
 default = []
 cuda = ["llama-cpp-2/cuda"]
 vulkan = ["llama-cpp-2/vulkan"]
-mlx = ["dep:safemlx", "dep:safemlx-lm", "dep:safemlx-lm-utils"]
+mlx = ["dep:eredu-backend-mlx"]
 hf-hub = [
     "dep:futures",
     "dep:goose-download-manager",
@@ -48,12 +48,16 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["fs", "rt-multi-thread", "sync", "time"] }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
+eredu = { workspace = true }
+eredu-core = { workspace = true }
+eredu-text = { workspace = true }
+eredu-architectures = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+eredu-backend-mlx = { workspace = true, optional = true, features = ["accelerate", "metal"] }
 llama-cpp-2 = { workspace = true, features = ["sampler", "metal", "mtmd"] }
-safemlx = { default-features = false, features = ["accelerate", "metal", "safetensors"], optional = true, version = "0.1.2" }
-safemlx-lm = { optional = true, version = "0.4.1" }
-safemlx-lm-utils = { optional = true, version = "0.1.2" }
 
 [dev-dependencies]
 env-lock.workspace = true
+tempfile.workspace = true
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }

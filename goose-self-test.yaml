@@ -16,6 +16,7 @@ activities:
   - Test delegate tool for task delegation (sync and async)
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
+  - Validate Eredu local inference defaults, streaming, and a native tool round trip
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
@@ -25,7 +26,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, acp-effort, local-eredu, advanced"
 
   - key: test_depth
     input_type: string
@@ -100,6 +101,23 @@ instructions: |
   - Measure performance metrics
   - Test resource constraints
 
+  ### Local Eredu validation (test_phases=local-eredu)
+  Use this phase only when the current provider is local and the selected model is
+  an Eredu model (`backend_id=eredu`), in SafeTensors or GGUF format. Check request
+  diagnostics for an `eredu` execution plan before reporting a pass.
+  For GGUF, select Eredu explicitly with `goose local-models backend <model-id> eredu`;
+  without an override GGUF uses llama.cpp and SafeTensors uses Eredu.
+  - With generation overrides cleared, ask a short question and confirm a streamed
+    response and usage. Record the selected device, residency, and checkpoint defaults.
+    Record TTFT and, when drafting is active, draft and accepted token counts.
+  - Use a developer tool to create, read, and remove a small file in the test workspace.
+    Confirm that the model receives the tool result and answers on the next turn.
+  - Exercise a thinking request if the effective template supports it. Record reasoning
+    separately from visible output. Report unsupported capabilities explicitly.
+  - Report the execution-plan evidence and each observed result. Never infer a native
+    pass from mock tests or from the presence of a local model alone.
+  For this phase, skip the unrelated delegation and remote-provider phases.
+
   ### Phase 5: Report Generation
   Compile comprehensive test results:
   - Aggregate all test outcomes
@@ -129,6 +147,19 @@ extensions:
     name: skills
 
 prompt: |
+  {% if test_phases == 'local-eredu' %}
+  Run only the local Eredu validation. Do not delegate or run other phases.
+  1. Call developer__shell with this exact command (use shell, not a file editor or
+     image reader): mkdir -p '{{ workspace_dir }}' && printf 'eredu-ok\n' > '{{ workspace_dir }}/probe.txt' && cat '{{ workspace_dir }}/probe.txt' && rm '{{ workspace_dir }}/probe.txt'
+     Wait for the tool result and report the read content. Do not describe a plan.
+  2. After receiving that tool result, inspect the latest completed request in
+     $GOOSE_PATH_ROOT/state/logs/llm_request.0.jsonl. Read its eredu execution-plan
+     device and residency, plus token usage, TTFT, and any draft statistics.
+     If the log is unavailable, say so.
+  3. Give a short report of the observed file round trip, selected backend and plan,
+     and whether your output included reasoning. Do not change generation settings
+     or run unrelated tests. Report an error honestly if any step cannot complete.
+  {% else %}
   Execute the Goose Self-Testing Integration Suite in {{ workspace_dir }}.
   Test phases: {{ test_phases }}, Depth: {{ test_depth }}, Parallel: {{ parallel_tests }}
 
@@ -546,3 +577,4 @@ prompt: |
   Be thorough but efficient based on the test_depth parameter.
 
   This is true first-person integration testing. Execute with precision and document with clarity.
+  {% endif %}
