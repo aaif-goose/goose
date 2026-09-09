@@ -513,13 +513,16 @@ async fn auto_compacts_after_a_tool_result_before_the_next_inference() -> Result
         .with_max_turns(2);
 
     let large_result = "tool-result ".repeat(100);
-    api.on("start tool loop")
+    let image_data = "aW1hZ2U=";
+    api.on("[image omitted: model does not support vision]")
         .call(ECHO, serde_json::json!({ "text": large_result }));
     api.on(SUMMARIZE_HISTORY).reply("summary");
     api.on("Your context was compacted")
         .reply("continued after tool result");
 
-    let compacted = pipeline.run(["start tool loop"]).await?;
+    let compacted = pipeline
+        .run_message(Message::user().with_image(image_data, "image/png"))
+        .await?;
 
     compacted.assert_message(-2, Agent, "continued after tool result");
     compacted.assert_emitted("Performing auto-compaction");

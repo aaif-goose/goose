@@ -157,9 +157,15 @@ pub async fn compact_messages(
         TOOL_LOOP_CONTINUATION_TEXT
     };
 
-    let continuation_msg = Message::assistant()
-        .with_text(continuation_text)
-        .with_metadata(MessageMetadata::agent_only());
+    let continuation_msg = if preserved_user_message.is_none() && !manual_compact {
+        Message::user()
+            .with_text(continuation_text)
+            .with_metadata(MessageMetadata::agent_only())
+    } else {
+        Message::assistant()
+            .with_text(continuation_text)
+            .with_metadata(MessageMetadata::agent_only())
+    };
     let continuation_created = continuation_msg.created;
     continuation_messages.push(continuation_msg);
 
@@ -890,6 +896,45 @@ mod tests {
             long > short,
             "the preserved user message must be part of the retained context ({short} vs {long})"
         );
+    }
+
+    #[tokio::test]
+    async fn tool_compaction_without_text_prompt_adds_a_user_continuation() {
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 100_000);
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_image("aW1hZ2U=", "image/png"),
+            Message::assistant().with_tool_request(
+                "image-tool",
+                Ok(rmcp::model::CallToolRequestParams::new("inspect_image")),
+            ),
+            Message::user().with_tool_response(
+                "image-tool",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("large result"),
+                ])),
+            ),
+        ]);
+
+        let compacted = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await
+        .unwrap()
+        .conversation;
+
+        let continuation = compacted
+            .agent_visible_messages()
+            .into_iter()
+            .last()
+            .expect("a provider-driving continuation");
+        assert_eq!(continuation.role, Role::User);
+        assert!(continuation
+            .as_concat_text()
+            .contains(TOOL_LOOP_CONTINUATION_TEXT));
     }
 
     #[tokio::test]

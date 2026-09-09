@@ -153,6 +153,14 @@ przedostatnią wiadomość i trzy wywołania providera. Wspólny marker syntheti
 jest stosowany zarówno przez `CompactionOperation`, jak i
 `PreparedRequestCompactionHook`.
 
+CI dla `cced800` zakończyło się zielono. Późniejszy P1 dotyczył image-only
+lub document-only promptu przed dużym tool result: compaction nie mogła
+zachować tekstowego promptu, więc historia kończyła się assistant summary.
+W takim przypadku wspólne `compact_messages` dodaje teraz agent-only user
+continuation; dzięki temu oba loopy mają provider-driving suffix bez
+naruszania pary tool request/result. Pokrywają to test wspólnego modułu,
+state machine i legacy.
+
 PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
 szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
@@ -167,4 +175,5 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] Poczekać na zielone CI dla ostatnio wypchniętego commitu.
 - [x] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
 - [x] CI dla `b2d6339` jest zielone.
-- [ ] Wypchnąć poprawkę markera prepared-hook i poczekać na jej CI.
+- [x] CI dla `cced800` jest zielone.
+- [ ] Wypchnąć image-only tool-compaction fix i poczekać na jej CI.

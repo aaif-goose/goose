@@ -5496,7 +5496,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
         let stream = agent
             .reply(
-                Message::user().with_text("use a tool"),
+                Message::user().with_image("aW1hZ2U=", "image/png"),
                 SessionConfig {
                     id: session_id,
                     schedule_id: None,
