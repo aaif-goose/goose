@@ -17,7 +17,7 @@ local-inference = ["dep:goose-local-inference"]
 local-inference-hf-hub = ["local-inference", "goose-local-inference/hf-hub"]
 cuda = ["local-inference", "goose-local-inference/cuda"]
 vulkan = ["local-inference", "goose-local-inference/vulkan"]
-mlx = ["local-inference", "goose-local-inference/mlx"]
+eredu = ["local-inference", "goose-local-inference/eredu"]
 rustls-tls = [
     "reqwest/rustls",
     "rmcp/reqwest",

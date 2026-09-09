@@ -42,7 +42,7 @@ impl LocalInferenceBackend for EreduBackend {
         if settings.draft_model.is_some() && resolved.draft_model_path.is_none() {
             return Err(error("The selected draft model is not downloaded"));
         }
-        #[cfg(all(feature = "mlx", target_os = "macos"))]
+        #[cfg(all(feature = "eredu", target_os = "macos"))]
         {
             WorkerHandle::spawn(
                 eredu_backend_mlx::MlxBackendFactory::default,
@@ -52,11 +52,11 @@ impl LocalInferenceBackend for EreduBackend {
             )
             .map(|worker| Box::new(worker) as Box<dyn BackendLoadedModel>)
         }
-        #[cfg(not(all(feature = "mlx", target_os = "macos")))]
+        #[cfg(not(all(feature = "eredu", target_os = "macos")))]
         {
             let _ = (resolved, settings);
             Err(error(
-                "The Eredu backend requires macOS and a build with the mlx feature",
+                "The Eredu backend requires macOS and a build with the eredu feature",
             ))
         }
     }

@@ -4,8 +4,9 @@ The `local` provider runs models in process. Artifact format and inference backe
 are independent: GGUF defaults to `llamacpp`, and SafeTensors defaults to `eredu`.
 Eredu can also load GGUF and any other format supported by its artifact loader.
 
-On macOS, the `mlx` Cargo feature enables Eredu's MLX backend. The `cuda` and
-`vulkan` features enable llama.cpp acceleration.
+On macOS, build with `cargo build -p goose-cli --features eredu` to enable Eredu
+through MLX. The `eredu` feature is opt-in; `cuda` and `vulkan` enable llama.cpp
+acceleration.
 
 ## Backend selection
 
@@ -52,7 +53,7 @@ From the repository root:
 ```sh
 source bin/activate-hermit
 cargo test -p goose-local-inference --no-default-features --features hf-hub
-cargo test -p goose-local-inference --no-default-features --features mlx,hf-hub
+cargo test -p goose-local-inference --no-default-features --features eredu,hf-hub
 ```
 
 The first command runs portable tests; the second enables the native backend on

@@ -15,7 +15,7 @@ workspace = true
 default = []
 cuda = ["llama-cpp-2/cuda"]
 vulkan = ["llama-cpp-2/vulkan"]
-mlx = ["dep:eredu-backend-mlx"]
+eredu = ["dep:eredu-backend-mlx"]
 hf-hub = [
     "dep:futures",
     "dep:goose-download-manager",

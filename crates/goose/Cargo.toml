@@ -40,7 +40,7 @@ aws-providers = [
 ]
 cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "goose-providers/cuda"]
 vulkan = ["local-inference", "goose-providers/vulkan"]
-mlx = ["local-inference", "goose-providers/mlx"]
+eredu = ["local-inference", "goose-providers/eredu"]
 rustls-tls = [
     "dep:rustls",
     "dep:rcgen",

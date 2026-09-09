@@ -1,4 +1,4 @@
-#![cfg(all(feature = "mlx", feature = "hf-hub", target_os = "macos"))]
+#![cfg(all(feature = "eredu", feature = "hf-hub", target_os = "macos"))]
 
 use futures::StreamExt;
 use goose_local_inference::{

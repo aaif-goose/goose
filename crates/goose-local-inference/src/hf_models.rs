@@ -2153,8 +2153,8 @@ fn safetensors_unsupported_reason(config: &Option<serde_json::Value>) -> Option<
     if !cfg!(target_os = "macos") {
         return Some("Eredu requires macOS in this build".to_string());
     }
-    if !cfg!(feature = "mlx") {
-        return Some("Eredu requires a build with the mlx feature".to_string());
+    if !cfg!(feature = "eredu") {
+        return Some("Eredu requires a build with the eredu feature".to_string());
     }
 
     safetensors_config_support(config)

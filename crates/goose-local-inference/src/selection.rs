@@ -42,7 +42,7 @@ pub fn available_backends(format: &str) -> Vec<String> {
     if format == GGUF_FORMAT {
         backends.push(LLAMACPP_BACKEND_ID.into());
     }
-    if cfg!(all(feature = "mlx", target_os = "macos")) {
+    if cfg!(all(feature = "eredu", target_os = "macos")) {
         backends.push(EREDU_BACKEND_ID.into());
     }
     backends

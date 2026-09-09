@@ -44,7 +44,8 @@ Default is `[]`.
 
 - **TLS (pick one):** `rustls-tls` or `native-tls`.
 - `local-inference` — pulls in [`goose-local-inference`](../goose-local-inference);
-  `cuda`, `vulkan`, `mlx` select an accelerator and imply it.
+  `cuda` and `vulkan` select llama.cpp acceleration; `eredu` enables Eredu.
+  All three imply `local-inference`.
 
 ## Shared plumbing
 
