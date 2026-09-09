@@ -217,6 +217,7 @@ fn package_config(
     }
     let (cmd, mut args) = runtime(package)?;
     args.extend(resolve_arguments(&package.runtime_arguments, values)?);
+    let (envs, env_keys) = resolve_inputs(&package.environment_variables, values)?;
     match package.registry_type.as_str() {
         "npm" => {
             args.push("-y".into());
@@ -231,7 +232,17 @@ fn package_config(
             package.version.as_deref(),
             "==",
         )),
-        "oci" => args.extend(["--rm".into(), "-i".into(), package.identifier.clone()]),
+        "oci" => {
+            args.extend(["--rm".into(), "-i".into()]);
+            for input in &package.environment_variables {
+                let name = input
+                    .name
+                    .as_deref()
+                    .context("environment variable is missing name")?;
+                args.extend(["-e".into(), name.into()]);
+            }
+            args.push(package.identifier.clone());
+        }
         "nuget" => args.push(versioned(
             &package.identifier,
             package.version.as_deref(),
@@ -253,7 +264,6 @@ fn package_config(
         args.push("--".into());
     }
     args.extend(resolve_arguments(&package.package_arguments, values)?);
-    let (envs, env_keys) = resolve_inputs(&package.environment_variables, values)?;
     Ok(ExtensionConfig::Stdio {
         name,
         description,
