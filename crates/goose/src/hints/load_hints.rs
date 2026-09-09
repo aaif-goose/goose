@@ -356,10 +356,7 @@ fn append_hint_file(
     output_limit: usize,
     load_state: &mut HintLoadState,
 ) -> bool {
-    if !load_state
-        .loaded_hint_files
-        .insert(hints_path.to_path_buf())
-    {
+    if load_state.loaded_hint_files.contains(hints_path) {
         return false;
     }
     let Some(used_with_framing) = output.len().checked_add(framing.len()) else {
@@ -385,6 +382,9 @@ fn append_hint_file(
 
     output.push_str(framing);
     output.push_str(&expanded);
+    load_state
+        .loaded_hint_files
+        .insert(hints_path.to_path_buf());
     true
 }
 
@@ -1630,6 +1630,98 @@ End of hints"#;
         assert_eq!(hints.len(), MAX_HINT_OUTPUT_BYTES);
         assert_eq!(hints.matches(ANCESTOR_MARKER).count(), 1);
         assert!(hints.contains(DESCENDANT_MARKER));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn tracker_retries_ancestor_hints_with_a_shorter_header() {
+        let config_root = TempDir::new().unwrap();
+        let _guard = env_lock::lock_env([
+            (
+                "GOOSE_PATH_ROOT",
+                Some(config_root.path().to_str().unwrap()),
+            ),
+            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
+        ]);
+        let project = TempDir::new().unwrap();
+        let ancestor = project.path().join("a");
+        let descendant = ancestor.join("deep".repeat(30));
+        fs::create_dir_all(&descendant).unwrap();
+        const MARKER: &str = "ANCESTOR_MARKER";
+        fs::write(ancestor.join(GOOSE_HINTS_FILENAME), MARKER).unwrap();
+        let root_hints = project.path().join(GOOSE_HINTS_FILENAME);
+        fs::write(&root_hints, "ROOT").unwrap();
+        let root_framing = load_hint_files(
+            project.path(),
+            &[GOOSE_HINTS_FILENAME.to_string()],
+            &build_gitignore(project.path()),
+        )
+        .len()
+            - "ROOT".len();
+        let ancestor_output =
+            subdirectory_hints_header(&ancestor.canonicalize().unwrap()).len() + MARKER.len();
+        assert!(
+            subdirectory_hints_header(&descendant.canonicalize().unwrap()).len() > ancestor_output
+        );
+        fs::write(
+            &root_hints,
+            "r".repeat(
+                MAX_HINT_OUTPUT_BYTES - root_framing - HINT_SEPARATOR.len() - ancestor_output,
+            ),
+        )
+        .unwrap();
+
+        for incremental in [false, true] {
+            let mut tracker = SubdirectoryHintTracker::new();
+            for directory in [&descendant, &ancestor] {
+                let arguments = serde_json::json!({ "path": directory.join("file.rs") })
+                    .as_object()
+                    .cloned();
+                tracker.record_tool_arguments(&arguments, project.path());
+            }
+            if incremental {
+                let extras = tracker.load_new_hints(project.path());
+                assert_eq!(extras.len(), 1);
+                assert_eq!(
+                    extras[0].0,
+                    format!(
+                        "subdir_hints:{}",
+                        ancestor.canonicalize().unwrap().display()
+                    )
+                );
+                assert_eq!(extras[0].1.len(), ancestor_output);
+                assert_eq!(extras[0].1.matches(MARKER).count(), 1);
+                assert!(tracker.load_new_hints(project.path()).is_empty());
+            } else {
+                let snapshot = tracker.load_snapshot(project.path());
+                assert_eq!(snapshot.len(), MAX_HINT_OUTPUT_BYTES);
+                assert_eq!(snapshot.matches(MARKER).count(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn retrying_unadmitted_hint_files_still_charges_raw_input() {
+        let project = TempDir::new().unwrap();
+        let malformed = project.path().join("malformed.md");
+        let valid = project.path().join("valid.md");
+        fs::write(&malformed, vec![0xff; MAX_HINT_OUTPUT_BYTES / 2]).unwrap();
+        fs::write(&valid, "VALID_HINT").unwrap();
+        let mut state = HintLoadState::new();
+        let mut output = String::new();
+        for path in [&malformed, &malformed, &valid] {
+            assert!(!append_hint_file(
+                &mut output,
+                "",
+                path,
+                project.path(),
+                &Gitignore::empty(),
+                MAX_HINT_OUTPUT_BYTES,
+                &mut state,
+            ));
+        }
+        assert!(output.is_empty());
+        assert!(state.loaded_hint_files.is_empty());
     }
 
     #[test]
