@@ -114,56 +114,39 @@ provider requestem.
 Najnowsza poprawka review zachowuje legacy turn budget po compaction restart
 i zapisuje queued steer przed terminalnym final output.
 
-## Pozostałe zadania
+## Stan bieżący — 2026-09-09
 
-### P1: ostatni queued steer przed legacy inference
+P1 dotyczący queued steer jest naprawiony i wypchnięty. Preflight legacy
+trzyma blokadę kolejki wyłącznie do czasu przygotowania requestu, a następnie
+ją zwalnia przed I/O providera; steer dodany później pozostaje dla następnego
+preflight. State machine wykonuje odpowiedni prepared-request hook w osobnym
+cyklu, więc nie ma analogicznego okna.
 
-Poprawka jest zaimplementowana lokalnie i oczekuje na pełną walidację oraz
-commit. Legacy path teraz:
+Test `legacy_compacts_a_tool_result_before_the_next_inference` został
+poprawiony po review: wymusza `GOOSE_STATE_MACHINE=0` pod `env_lock` i
+wykonuje tool request oraz wynik w tym samym legacy reply. Provider wywoływany
+jest kolejno dla tool requestu, compaction i kontynuacji.
 
-1. legacy loop opróżnia kolejkę steer;
-2. następnie wykonuje asynchroniczne operacje, w tym reload sesji oraz
-   liczenie tokenów;
-3. nowy steer może zostać dodany po drainie;
-4. kolejna iteracja może wysłać go do providera bez ponownej kontroli progu.
+Walidacja ostatniej zmiany:
 
-1. reloaduje persisted conversation, aby zachować elicitation history;
-2. pod blokadą kolejki opróżnia steer;
-3. sprawdza dokładnie przygotowany request pod kątem compaction;
-4. rozpoczyna `stream_response_from_provider` przed zwolnieniem tej blokady.
+- `cargo test -p goose legacy_compacts_a_tool_result_before_the_next_inference -- --nocapture` — pass;
+- `cargo fmt --check` — pass;
+- `cargo clippy -p goose --all-targets -- -D warnings` — pass;
+- `git diff --check` — pass.
 
-Zdarzenia steer są emitowane po rozpoczęciu streamu, aby nie zawieszać
-generatora na kliencie próbującym równocześnie dodać steer.
+Pełne CI dla `afb238a` jest zielone. Pełne lokalne `cargo test -p goose`
+nadal ma opisane wyżej 8 niezwiązanych, środowiskowych/bazowych błędów.
 
-Należy jeszcze dodać deterministyczny test legacy path, w którym duży steer
-jest dodawany po pierwszym drainie i przed kolejnym inference. Test powinien
-dowieść, że compaction następuje przed provider call.
-
-### Parzystość ścieżek
-
-Każdą zmianę legacy loop należy ocenić pod kątem state machine. State machine
-nie ma analogicznego przejścia: `SteerOperation` po drainie zwraca osobny
-efekt, więc następny cykl ponownie wykonuje `CompactionOperation` i
-`PreparedRequestCompactionHook` przed inference. Steer dodany później zostaje
-w kolejce dla kolejnego cyklu i nie jest dodawany do bieżącego requestu.
-
-### Wymagania workflow upstream
-
-Repozytoryjny `AGENTS.md` wymaga, aby issue implementowane w zewnętrznym PR
-miało status **Ready** na Goose Issues board. Ostatni odczyt #11072 zwrócił
-brak przypisania do boardu (`projectItems: []`). Przed dalszym upstreamowym
-wdrażaniem należy potwierdzić u maintainera status Ready albo uzyskać jego
-wyraźną dyspozycję traktującą pracę jako maintainer-directed.
+PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
+szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
+legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
+nie obejmuje później znalezionego wyścigu P1.
 
 ## Checklista przed merge
 
-- [x] Naprawić P1 dotyczący późnego queued steer (lokalnie, przed commitem).
-- [ ] Dodać test legacy odtwarzający ten przypadek.
-- [ ] Potwierdzić parzystość z state machine.
-- [ ] Uruchomić `source bin/activate-hermit && cargo build`.
-- [ ] Uruchomić `cargo test -p goose`.
-- [ ] Uruchomić `cargo fmt --check`.
-- [ ] Uruchomić `cargo clippy --all-targets -- -D warnings`.
-- [ ] Poczekać na zielone CI dla ostatniego commitu.
-- [ ] Sprawdzić i zamknąć wszystkie wątki review.
-- [ ] Potwierdzić status Ready issue #11072 lub uzyskać dyspozycję maintainera.
+- [x] Naprawić P1 dotyczący późnego queued steer.
+- [x] Dodać deterministyczny test legacy z in-turn tool call.
+- [x] Potwierdzić parzystość z state machine.
+- [x] Uruchomić formatowanie, clippy i ukierunkowany test.
+- [x] Poczekać na zielone CI dla ostatnio wypchniętego commitu.
+- [ ] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.

@@ -5206,24 +5206,50 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         }
     }
 
-    struct SmallContextTextProvider(CountingTextProvider);
+    struct InTurnToolProvider {
+        call_count: AtomicUsize,
+    }
+
+    impl InTurnToolProvider {
+        fn new() -> Self {
+            Self {
+                call_count: AtomicUsize::new(0),
+            }
+        }
+
+        fn call_count(&self) -> usize {
+            self.call_count.load(Ordering::SeqCst)
+        }
+    }
 
     #[async_trait::async_trait]
-    impl crate::providers::base::Provider for SmallContextTextProvider {
+    impl crate::providers::base::Provider for InTurnToolProvider {
         async fn stream(
             &self,
-            model_config: &goose_providers::model::ModelConfig,
-            system_prompt: &str,
-            messages: &[Message],
-            tools: &[Tool],
+            _model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
-            self.0
-                .stream(model_config, system_prompt, messages, tools)
-                .await
+            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+            let message = match call {
+                0 => Message::assistant().with_tool_request(
+                    "large-result",
+                    Err(ErrorData::new(
+                        ErrorCode::INVALID_PARAMS,
+                        "tool result large enough to trigger compaction".to_string(),
+                        None,
+                    )),
+                ),
+                _ => Message::assistant().with_text(format!("provider response {call}")),
+            };
+            let usage =
+                ProviderUsage::new("mock-model".to_string(), Usage::new(None, None, Some(170)));
+            Ok(stream_from_single_message(message, usage))
         }
 
         fn get_name(&self) -> &str {
-            self.0.get_name()
+            "in-turn-tool"
         }
 
         async fn get_context_limit(&self, _model: &str, _override_limit: Option<usize>) -> usize {
@@ -5461,43 +5487,16 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
     #[tokio::test]
     async fn legacy_compacts_a_tool_result_before_the_next_inference() -> Result<()> {
+        let _env = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("0"))]);
         let temp_dir = tempfile::tempdir()?;
-        let provider = Arc::new(SmallContextTextProvider(CountingTextProvider::new()));
+        let provider = Arc::new(InTurnToolProvider::new());
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let (agent, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
 
-        let request = Message::assistant()
-            .with_tool_request("large-result", Ok(CallToolRequestParams::new("test_tool")));
-        let mut response = Message::user();
-        response.add_tool_response_with_metadata(
-            "large-result",
-            Ok(CallToolResult::success(vec![ContentBlock::text(
-                "tool-result ".repeat(100),
-            )])),
-            None,
-        );
-        let conversation = Conversation::new_unvalidated([
-            Message::user().with_text("old work"),
-            request,
-            response,
-        ]);
-        agent
-            .config
-            .session_manager
-            .replace_conversation(&session_id, &conversation)
-            .await?;
-        agent
-            .config
-            .session_manager
-            .update(&session_id)
-            .usage(Usage::new(None, None, Some(170)))
-            .apply()
-            .await?;
-
         let stream = agent
             .reply(
-                Message::user().with_text("continue"),
+                Message::user().with_text("use a tool"),
                 SessionConfig {
                     id: session_id,
                     schedule_id: None,
@@ -5518,8 +5517,8 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             "legacy must compact before its next provider request"
         );
         assert!(
-            provider.0.call_count() >= 2,
-            "compaction and continuation call the provider"
+            provider.call_count() >= 3,
+            "the tool request, compaction, and continuation call the provider"
         );
         Ok(())
     }
