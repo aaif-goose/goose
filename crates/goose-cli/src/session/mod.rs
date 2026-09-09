@@ -659,7 +659,6 @@ impl CliSession {
             let msg = Message::user().with_text(&prompt);
             self.process_message(msg, CancellationToken::default(), true)
                 .await?;
-            output::emit_attention_bell();
         } else if self
             .extension_loading
             .as_ref()
@@ -875,7 +874,6 @@ impl CliSession {
                 self.process_agent_response(true, CancellationToken::default())
                     .await?;
                 output::hide_thinking();
-                output::emit_attention_bell();
 
                 let elapsed = start_time.elapsed();
                 let elapsed_str = format_elapsed_time(elapsed);
@@ -1812,6 +1810,10 @@ impl CliSession {
             if self.stats {
                 print_run_stats(run_started, first_token_at, last_usage.as_ref());
             }
+        }
+
+        if interactive {
+            output::emit_attention_bell();
         }
 
         Ok(())
