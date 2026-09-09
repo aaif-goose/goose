@@ -86,15 +86,6 @@ impl ExpansionBudget {
         true
     }
 
-    fn reserve_input(&mut self, bytes: usize) -> bool {
-        if bytes > self.remaining_input_bytes {
-            return false;
-        }
-
-        self.remaining_input_bytes -= bytes;
-        true
-    }
-
     fn can_fit_output(&self, bytes: usize) -> bool {
         !self.exhausted && bytes <= self.remaining_output_bytes
     }
@@ -370,7 +361,8 @@ fn content_between(content: &str, start: usize, end: usize) -> &str {
         .expect("regex match offsets must be UTF-8 boundaries")
 }
 
-fn read_sanitized_hint_file(path: &Path, max_input_bytes: usize) -> io::Result<(String, usize)> {
+fn read_sanitized_hint_file(path: &Path, remaining_input_bytes: &mut usize) -> io::Result<String> {
+    let max_input_bytes = *remaining_input_bytes;
     let file = std::fs::File::open(path)?;
     if file.metadata()?.len() > max_input_bytes as u64 {
         return Err(io::Error::new(
@@ -379,9 +371,12 @@ fn read_sanitized_hint_file(path: &Path, max_input_bytes: usize) -> io::Result<(
         ));
     }
 
-    let mut content = String::new();
-    file.take((max_input_bytes as u64).saturating_add(1))
-        .read_to_string(&mut content)?;
+    let mut content = Vec::new();
+    let read_result = file
+        .take((max_input_bytes as u64).saturating_add(1))
+        .read_to_end(&mut content);
+    *remaining_input_bytes = remaining_input_bytes.saturating_sub(content.len());
+    read_result?;
     if content.len() > max_input_bytes {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -389,8 +384,9 @@ fn read_sanitized_hint_file(path: &Path, max_input_bytes: usize) -> io::Result<(
         ));
     }
 
-    let input_bytes = content.len();
-    Ok((sanitize_unicode_tags(&content), input_bytes))
+    let content = String::from_utf8(content)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    Ok(sanitize_unicode_tags(&content))
 }
 
 fn should_process_reference(
@@ -439,17 +435,13 @@ fn process_file_reference(
         return None;
     }
 
-    let (content, input_bytes) =
-        match read_sanitized_hint_file(safe_path, budget.remaining_input_bytes) {
-            Ok(content) => content,
-            Err(e) => {
-                tracing::warn!("Could not read file {:?}: {}", safe_path, e);
-                return None;
-            }
-        };
-    if !budget.reserve_input(input_bytes) {
-        return None;
-    }
+    let content = match read_sanitized_hint_file(safe_path, &mut budget.remaining_input_bytes) {
+        Ok(content) => content,
+        Err(e) => {
+            tracing::warn!("Could not read file {:?}: {}", safe_path, e);
+            return None;
+        }
+    };
     let output_bytes = expanded_output_cost(reference, content.len())?;
     let output_growth = output_bytes.saturating_sub(replaced_bytes);
     if !budget.reserve_output(output_growth) {
@@ -559,17 +551,14 @@ fn read_referenced_files_with_budget(
         }
     };
     let max_content_bytes = budget.remaining_output_bytes;
-    let (content, input_bytes) =
-        match read_sanitized_hint_file(&safe_file_path, budget.remaining_input_bytes) {
-            Ok(content) => content,
-            Err(e) => {
-                tracing::warn!("Could not read hint file {:?}: {}", safe_file_path, e);
-                return String::new();
-            }
-        };
-    if !budget.reserve_input(input_bytes) {
-        return String::new();
-    }
+    let content = match read_sanitized_hint_file(&safe_file_path, &mut budget.remaining_input_bytes)
+    {
+        Ok(content) => content,
+        Err(e) => {
+            tracing::warn!("Could not read hint file {:?}: {}", safe_file_path, e);
+            return String::new();
+        }
+    };
     if content.len() > max_content_bytes || !budget.reserve_output(content.len()) {
         tracing::warn!(
             "Hint file too large: {:?} (remaining limit: {} bytes)",
@@ -1320,6 +1309,62 @@ mod tests {
 
             assert!(expanded.contains(sanitized));
             assert!(!expanded.contains(main_content));
+        }
+
+        #[test]
+        fn failed_utf8_top_level_reads_charge_the_shared_input_budget() {
+            let project = tempfile::tempdir().unwrap();
+            let invalid = project.path().join("invalid.md");
+            std::fs::write(&invalid, [0xff; 12]).unwrap();
+            let valid = create_file(project.path(), "valid.md", "good");
+            let ignore_patterns = create_ignore_patterns(project.path());
+            let mut input_budget = HintInputBudget {
+                remaining_bytes: 16,
+            };
+
+            for (path, expected, remaining) in
+                [(&invalid, "", 4), (&valid, "good", 0), (&valid, "", 0)]
+            {
+                let output = read_referenced_files_with_limit_and_input_budget(
+                    path,
+                    project.path(),
+                    &mut HashSet::new(),
+                    0,
+                    &ignore_patterns,
+                    MAX_HINT_OUTPUT_BYTES,
+                    &mut input_budget,
+                );
+                assert_eq!(output, expected);
+                assert_eq!(input_budget.remaining_bytes, remaining);
+            }
+        }
+
+        #[test]
+        fn failed_utf8_imports_charge_the_shared_input_budget() {
+            let project = tempfile::tempdir().unwrap();
+            std::fs::write(project.path().join("invalid.md"), [0xff; 8]).unwrap();
+            create_file(project.path(), "valid.md", "VALID");
+            let content = "@invalid.md @valid.md";
+            let main = create_file(project.path(), "main.md", content);
+            let ignore_patterns = create_ignore_patterns(project.path());
+
+            for remaining in [0, 5] {
+                let mut input_budget = HintInputBudget {
+                    remaining_bytes: content.len() + 8 + remaining,
+                };
+                let output = read_referenced_files_with_limit_and_input_budget(
+                    &main,
+                    project.path(),
+                    &mut HashSet::new(),
+                    0,
+                    &ignore_patterns,
+                    MAX_HINT_OUTPUT_BYTES,
+                    &mut input_budget,
+                );
+                assert!(output.contains("@invalid.md"));
+                assert_eq!(output.contains("VALID"), remaining > 0);
+                assert_eq!(input_budget.remaining_bytes, 0);
+            }
         }
 
         #[test]

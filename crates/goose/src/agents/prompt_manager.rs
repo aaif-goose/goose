@@ -1,43 +1,30 @@
 #[cfg(test)]
-use crate::hints::load_hint_files;
-#[cfg(test)]
 use chrono::DateTime;
 use chrono::Utc;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use crate::agents::{extension::ExtensionInfo, moim};
-use crate::hints::load_hints::{build_gitignore, load_hint_files_with_limit};
-use crate::hints::{get_context_filenames, SubdirectoryHintTracker, MAX_HINT_OUTPUT_BYTES};
+use crate::hints::load_hints::build_gitignore;
+use crate::hints::{
+    get_context_filenames, load_hint_files, SubdirectoryHintTracker, MAX_HINT_OUTPUT_BYTES,
+};
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
     utils::sanitize_unicode_tags,
 };
-use std::path::{Path, PathBuf};
-
-const PROMPT_EXTRA_SEPARATOR: &str = "\n\n";
+use std::path::Path;
 
 pub struct PromptManager {
     system_prompt_override: Option<String>,
     system_prompt_extras: IndexMap<String, String>,
     current_date_timestamp: String,
-    hint_state: Mutex<HintState>,
-}
-
-struct HintState {
     subdirectory_hint_tracker: SubdirectoryHintTracker,
     last_hint_snapshot: Option<String>,
-    pending_hint_snapshot: Option<(String, usize)>,
-}
-
-enum HintSource {
-    Snapshot(String),
-    TopLevel(PathBuf),
-    Fresh(PathBuf),
+    pending_hint_snapshot: Option<String>,
 }
 
 impl Default for PromptManager {
@@ -65,7 +52,7 @@ pub struct SystemPromptBuilder<'a, M> {
     extensions_info: Vec<ExtensionInfo>,
     prompt_extras: IndexMap<String, String>,
     subagents_enabled: bool,
-    hint_source: Option<HintSource>,
+    hints: Option<String>,
     code_execution_mode: bool,
     include_extensions: bool,
     goose_mode: Option<GooseMode>,
@@ -103,17 +90,17 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     }
 
     pub fn with_hints(mut self, working_dir: &Path) -> Self {
-        self.hint_source = Some(HintSource::TopLevel(working_dir.to_path_buf()));
+        let hints = load_hint_files(
+            working_dir,
+            &get_context_filenames(),
+            &build_gitignore(working_dir),
+        );
+        self.hints = (!hints.is_empty()).then_some(hints);
         self
     }
 
     fn with_hint_snapshot(mut self, hints: String) -> Self {
-        self.hint_source = (!hints.is_empty()).then_some(HintSource::Snapshot(hints));
-        self
-    }
-
-    fn with_fresh_hints(mut self, working_dir: &Path) -> Self {
-        self.hint_source = Some(HintSource::Fresh(working_dir.to_path_buf()));
+        self.hints = (!hints.is_empty()).then_some(hints);
         self
     }
 
@@ -145,34 +132,6 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             .goose_mode
             .unwrap_or_else(|| Config::global().get_goose_mode().unwrap_or_default());
 
-        let prompt_parts = self
-            .prompt_extras
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<Vec<_>>();
-        let output_limit = self.manager.hint_output_limit(&prompt_parts, goose_mode);
-        let hints = match self.hint_source {
-            Some(HintSource::Snapshot(hints)) => Some(hints),
-            Some(HintSource::TopLevel(working_dir)) => {
-                let hints_filenames = get_context_filenames();
-                let ignore_patterns = build_gitignore(&working_dir);
-                let hints = load_hint_files_with_limit(
-                    &working_dir,
-                    &hints_filenames,
-                    &ignore_patterns,
-                    output_limit,
-                );
-                (!hints.is_empty()).then_some(hints)
-            }
-            Some(HintSource::Fresh(working_dir)) => {
-                let hints = self
-                    .manager
-                    .take_fresh_hint_snapshot(&working_dir, output_limit);
-                (!hints.is_empty()).then_some(hints)
-            }
-            None => None,
-        };
-
         let context = SystemPromptContext {
             extensions: sanitized_extensions_info,
             current_date_time: self.manager.current_date_timestamp.clone(),
@@ -197,9 +156,8 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         let mut system_prompt_extras = self.manager.system_prompt_extras.clone();
         system_prompt_extras.extend(self.prompt_extras);
 
-        // Add hints if provided
-        if let Some(hints) = hints {
-            system_prompt_extras.shift_remove("hints");
+        let has_generated_hints = self.hints.is_some();
+        if let Some(hints) = self.hints {
             system_prompt_extras.insert("hints".to_string(), hints);
         }
 
@@ -215,14 +173,20 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             base_prompt
         } else {
             let sanitized_system_prompt_extras: Vec<String> = system_prompt_extras
-                .into_values()
-                .map(|extra| sanitize_unicode_tags(&extra))
+                .into_iter()
+                .map(|(key, extra)| {
+                    let mut extra = sanitize_unicode_tags(&extra);
+                    if has_generated_hints && key == "hints" {
+                        extra.truncate(extra.floor_char_boundary(MAX_HINT_OUTPUT_BYTES));
+                    }
+                    extra
+                })
                 .collect();
 
             format!(
                 "{}\n\n# Additional Instructions:\n\n{}",
                 base_prompt,
-                sanitized_system_prompt_extras.join(PROMPT_EXTRA_SEPARATOR)
+                sanitized_system_prompt_extras.join("\n\n")
             )
         }
     }
@@ -236,11 +200,9 @@ impl PromptManager {
             // Use the fixed current date time so that prompt cache can be used.
             // Filtering to an hour to balance user time accuracy and multi session prompt cache hits.
             current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00 %:z").to_string(),
-            hint_state: Mutex::new(HintState {
-                subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
-                last_hint_snapshot: None,
-                pending_hint_snapshot: None,
-            }),
+            subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
+            last_hint_snapshot: None,
+            pending_hint_snapshot: None,
         }
     }
 
@@ -250,11 +212,9 @@ impl PromptManager {
             system_prompt_override: None,
             system_prompt_extras: IndexMap::new(),
             current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
-            hint_state: Mutex::new(HintState {
-                subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
-                last_hint_snapshot: None,
-                pending_hint_snapshot: None,
-            }),
+            subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
+            last_hint_snapshot: None,
+            pending_hint_snapshot: None,
         }
     }
 
@@ -273,58 +233,27 @@ impl PromptManager {
         arguments: &Option<serde_json::Map<String, serde_json::Value>>,
         working_dir: &Path,
     ) {
-        self.hint_state
-            .get_mut()
-            .expect("hint state mutex poisoned")
-            .subdirectory_hint_tracker
+        self.subdirectory_hint_tracker
             .record_tool_arguments(arguments, working_dir);
     }
 
     pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
-        let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
-        let output_limit = self.hint_output_limit(&[], goose_mode);
-        let state = self
-            .hint_state
-            .get_mut()
-            .expect("hint state mutex poisoned");
-        let snapshot = state
+        let snapshot = self
             .subdirectory_hint_tracker
-            .load_prompt_snapshot(working_dir, output_limit);
-        let changed = state.last_hint_snapshot.as_ref() != Some(&snapshot);
-        state.pending_hint_snapshot = changed.then(|| (snapshot.clone(), output_limit));
-        state.last_hint_snapshot = Some(snapshot.clone());
+            .load_prompt_snapshot(working_dir, MAX_HINT_OUTPUT_BYTES);
+        let changed = self.last_hint_snapshot.as_ref() != Some(&snapshot);
+        self.pending_hint_snapshot = changed.then(|| snapshot.clone());
+        self.last_hint_snapshot = Some(snapshot);
         changed
     }
 
-    fn take_fresh_hint_snapshot(&self, working_dir: &Path, output_limit: usize) -> String {
-        let mut state = self.hint_state.lock().expect("hint state mutex poisoned");
-        let snapshot = match state.pending_hint_snapshot.take() {
-            Some((snapshot, pending_limit)) if pending_limit == output_limit => snapshot,
-            _ => state
-                .subdirectory_hint_tracker
-                .load_prompt_snapshot(working_dir, output_limit),
-        };
-        state.last_hint_snapshot = Some(snapshot.clone());
+    fn take_fresh_hint_snapshot(&mut self, working_dir: &Path) -> String {
+        let snapshot = self.pending_hint_snapshot.take().unwrap_or_else(|| {
+            self.subdirectory_hint_tracker
+                .load_prompt_snapshot(working_dir, MAX_HINT_OUTPUT_BYTES)
+        });
+        self.last_hint_snapshot = Some(snapshot.clone());
         snapshot
-    }
-
-    pub(crate) fn hint_output_limit(
-        &self,
-        prompt_parts: &[(String, String)],
-        goose_mode: GooseMode,
-    ) -> usize {
-        let mut extras = self.system_prompt_extras.clone();
-        extras.extend(prompt_parts.iter().cloned());
-        extras.shift_remove("hints");
-        extras.insert("hints".to_string(), String::new());
-        if goose_mode == GooseMode::Chat {
-            extras.insert("chat_mode".to_string(), String::new());
-        }
-
-        let hint_index = extras.get_index_of("hints").unwrap();
-        let adjacent_separators =
-            usize::from(hint_index > 0) + usize::from(hint_index + 1 < extras.len());
-        MAX_HINT_OUTPUT_BYTES.saturating_sub(adjacent_separators * PROMPT_EXTRA_SEPARATOR.len())
     }
 
     pub fn build_system_prompt(
@@ -333,8 +262,7 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        let output_limit = self.hint_output_limit(&prompt_parts, goose_mode);
-        let snapshot = self.take_fresh_hint_snapshot(working_dir, output_limit);
+        let snapshot = self.take_fresh_hint_snapshot(working_dir);
         self.build_system_prompt_from_snapshot(prompt_parts, goose_mode, snapshot)
     }
 
@@ -357,8 +285,9 @@ impl PromptManager {
         working_dir: &Path,
         goose_mode: GooseMode,
     ) -> SystemPromptBuilder<'_, PromptManager> {
+        let snapshot = self.take_fresh_hint_snapshot(working_dir);
         self.builder()
-            .with_fresh_hints(working_dir)
+            .with_hint_snapshot(snapshot)
             .with_goose_mode(goose_mode)
     }
 
@@ -378,7 +307,7 @@ impl PromptManager {
             extensions_info: vec![],
             prompt_extras: IndexMap::new(),
             subagents_enabled: false,
-            hint_source: None,
+            hints: None,
             code_execution_mode: false,
             include_extensions: true,
             goose_mode: None,
@@ -584,86 +513,32 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn public_with_hints_uses_the_final_prompt_layout_budget() {
-        let config_root = tempfile::tempdir().unwrap();
-        let _guard = env_lock::lock_env([
-            (
-                "GOOSE_PATH_ROOT",
-                Some(config_root.path().to_str().unwrap()),
-            ),
-            ("CONTEXT_FILE_NAMES", Some(r#"[".goosehints"]"#)),
-        ]);
-        let project = tempfile::tempdir().unwrap();
-        let hints_path = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
-        const MARKER: &str = "BOUNDARY_MARKER";
-        std::fs::write(&hints_path, MARKER).unwrap();
-        let hints_filenames = vec![crate::hints::GOOSE_HINTS_FILENAME.to_string()];
-        let ignore_patterns = build_gitignore(project.path());
-        let framing_bytes = load_hint_files_with_limit(
-            project.path(),
-            &hints_filenames,
-            &ignore_patterns,
-            MAX_HINT_OUTPUT_BYTES,
-        )
-        .len()
-            - MARKER.len();
-
+    fn generated_hint_snapshot_is_sanitized_and_truncated_at_a_utf8_boundary() {
         let mut manager = PromptManager::new();
-        manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
-        manager.add_system_prompt_extra("caller".to_string(), "CALLER_EXTRA".to_string());
-        let output_limit = manager.hint_output_limit(
-            &[("hints".to_string(), "PROMPT_HINTS".to_string())],
-            GooseMode::Chat,
-        );
-        assert_eq!(output_limit, MAX_HINT_OUTPUT_BYTES - 4);
-        std::fs::write(
-            &hints_path,
+        manager.set_system_prompt_override("base".to_string());
+        for hints in [
             format!(
                 "{}{}",
-                "x".repeat(output_limit - framing_bytes - MARKER.len()),
-                MARKER
+                "\u{0344}".repeat(MAX_HINT_OUTPUT_BYTES / 2),
+                "\u{E0041}"
             ),
-        )
-        .unwrap();
+            sanitize_unicode_tags(&"\u{00c5}\u{E0041}\u{0323}".repeat(MAX_HINT_OUTPUT_BYTES / 4)),
+        ] {
+            let prompt = manager.builder().with_hint_snapshot(hints).build();
+            let output = prompt
+                .strip_prefix("base\n\n# Additional Instructions:\n\n")
+                .unwrap();
 
-        let exact = manager
-            .builder()
-            .with_hints(project.path())
-            .with_prompt_extras([("hints".to_string(), "PROMPT_HINTS".to_string())])
-            .with_goose_mode(GooseMode::Chat)
-            .build();
-        assert!(exact.contains(MARKER));
-        assert!(exact.contains("CALLER_EXTRA"));
-        assert!(!exact.contains("CALLER_HINTS"));
-        assert!(!exact.contains("PROMPT_HINTS"));
-
-        std::fs::write(
-            &hints_path,
-            format!(
-                "{}{}",
-                "x".repeat(output_limit + 1 - framing_bytes - MARKER.len()),
-                MARKER
-            ),
-        )
-        .unwrap();
-        let oversized = manager
-            .builder()
-            .with_hints(project.path())
-            .with_prompt_extras([("hints".to_string(), "PROMPT_HINTS".to_string())])
-            .with_goose_mode(GooseMode::Chat)
-            .build();
-        assert!(!oversized.contains(MARKER));
-        assert!(oversized.contains("PROMPT_HINTS"));
-
-        let caller_only = manager.builder().build();
-        assert!(caller_only.contains("CALLER_HINTS"));
-        assert!(!caller_only.contains("PROMPT_HINTS"));
+            assert!(output.len() <= MAX_HINT_OUTPUT_BYTES);
+            assert!(output.len() >= MAX_HINT_OUTPUT_BYTES - 3);
+            assert!(!output.contains('\u{E0041}'));
+            assert_eq!(output, sanitize_unicode_tags(output));
+        }
     }
 
     #[test]
     #[serial_test::serial]
-    fn fresh_builder_uses_the_layout_and_files_present_at_build_time() {
+    fn hint_snapshot_budget_is_independent_of_other_prompt_extras() {
         let config_root = tempfile::tempdir().unwrap();
         let _guard = env_lock::lock_env([
             (
@@ -676,60 +551,45 @@ mod tests {
         let hints_path = project.path().join(crate::hints::GOOSE_HINTS_FILENAME);
         const MARKER: &str = "BOUNDARY_MARKER";
         std::fs::write(&hints_path, MARKER).unwrap();
-        let hints_filenames = vec![crate::hints::GOOSE_HINTS_FILENAME.to_string()];
-        let ignore_patterns = build_gitignore(project.path());
-        let framing_bytes = load_hint_files_with_limit(
+        let framing_bytes = load_hint_files(
             project.path(),
-            &hints_filenames,
-            &ignore_patterns,
-            MAX_HINT_OUTPUT_BYTES,
+            &get_context_filenames(),
+            &build_gitignore(project.path()),
         )
         .len()
             - MARKER.len();
+        std::fs::write(
+            &hints_path,
+            format!(
+                "{}{}",
+                "x".repeat(MAX_HINT_OUTPUT_BYTES - framing_bytes - MARKER.len()),
+                MARKER
+            ),
+        )
+        .unwrap();
 
         let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra("hints".to_string(), "CALLER_HINTS".to_string());
         manager.add_system_prompt_extra("caller".to_string(), "CALLER_EXTRA".to_string());
-        let prompt_parts = [("operation".to_string(), "OPERATION_EXTRA".to_string())];
-        let output_limit = manager.hint_output_limit(&prompt_parts, GooseMode::Chat);
-        assert_eq!(output_limit, MAX_HINT_OUTPUT_BYTES - 4);
+        for mode in [GooseMode::Auto, GooseMode::Chat] {
+            let prompt = manager
+                .builder()
+                .with_hints(project.path())
+                .with_prompt_extras([("operation".to_string(), "OPERATION_EXTRA".to_string())])
+                .with_goose_mode(mode)
+                .build();
+            assert!(prompt.contains(MARKER));
+            assert!(prompt.contains("CALLER_EXTRA"));
+            assert!(prompt.contains("OPERATION_EXTRA"));
+            assert!(!prompt.contains("CALLER_HINTS"));
+        }
+        assert!(manager.builder().build().contains("CALLER_HINTS"));
 
-        std::fs::write(&hints_path, "STALE_HINTS").unwrap();
-        let builder = manager.builder_with_fresh_hints(project.path(), GooseMode::Auto);
-        std::fs::write(
-            &hints_path,
-            format!(
-                "{}{}",
-                "x".repeat(output_limit - framing_bytes - MARKER.len()),
-                MARKER
-            ),
-        )
-        .unwrap();
-        let exact = builder
-            .with_prompt_extras(prompt_parts.clone())
-            .with_goose_mode(GooseMode::Chat)
-            .build();
-        assert!(exact.contains(MARKER));
-        assert!(!exact.contains("STALE_HINTS"));
-        assert!(exact.contains("CALLER_EXTRA"));
-        assert!(exact.contains("OPERATION_EXTRA"));
-
-        let builder = manager.builder_with_fresh_hints(project.path(), GooseMode::Auto);
-        std::fs::write(
-            &hints_path,
-            format!(
-                "{}{}",
-                "x".repeat(output_limit + 1 - framing_bytes - MARKER.len()),
-                MARKER
-            ),
-        )
-        .unwrap();
-        let oversized = builder
-            .with_prompt_extras(prompt_parts)
-            .with_goose_mode(GooseMode::Chat)
-            .build();
-        assert!(!oversized.contains(MARKER));
-        assert!(oversized.contains("CALLER_EXTRA"));
-        assert!(oversized.contains("OPERATION_EXTRA"));
+        let builder = manager.builder().with_hints(project.path());
+        std::fs::write(&hints_path, "LATER_CONTENT").unwrap();
+        let captured = builder.build();
+        assert!(captured.contains(MARKER));
+        assert!(!captured.contains("LATER_CONTENT"));
     }
 
     #[test]
