@@ -137,6 +137,9 @@ Walidacja ostatniej zmiany:
 Pełne CI dla `afb238a` jest zielone. Pełne lokalne `cargo test -p goose`
 nadal ma opisane wyżej 8 niezwiązanych, środowiskowych/bazowych błędów.
 
+Poprawka testu jest w `702f9d6`; odpowiedź review została dodana, a wszystkie
+wątki są rozwiązane. CI dla tego commitu rozpoczęło się po pushu.
+
 PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
 szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
@@ -149,4 +152,5 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] Potwierdzić parzystość z state machine.
 - [x] Uruchomić formatowanie, clippy i ukierunkowany test.
 - [x] Poczekać na zielone CI dla ostatnio wypchniętego commitu.
-- [ ] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
+- [x] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
+- [ ] Poczekać na CI dla `702f9d6`.
