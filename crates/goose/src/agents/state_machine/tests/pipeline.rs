@@ -86,7 +86,6 @@ pub(super) struct TestPipeline {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     extension_manager: Arc<ExtensionManager>,
-    goose_mode: TokioMutex<GooseMode>,
     prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
@@ -137,16 +136,12 @@ impl TestPipeline {
                 tool_call_cutoff,
                 !self.provider_features.manages_own_context,
             )),
-            Arc::new(ToolApprovalOperation::new(
-                &self.goose_mode,
-                &self.tool_inspection_manager,
-            )),
+            Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation),
             Arc::new(RecipeOperation),
             Arc::new(ToolExecutionOperation::new(
-                &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
             )),
@@ -168,7 +163,6 @@ impl TestPipeline {
             provider,
             self.model_config.clone(),
             self.extension_manager.clone(),
-            &self.goose_mode,
             &self.prompt_manager,
             &self.tool_inspection_manager,
             &self.frontend_instructions,
@@ -189,7 +183,6 @@ impl TestPipeline {
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
-        *self.goose_mode.lock().await = mode;
         self.session_manager
             .update(&self.session_id)
             .goose_mode(mode)
@@ -786,7 +779,6 @@ async fn build_test_pipeline(
         provider: provider.clone(),
         model_config,
         extension_manager,
-        goose_mode: TokioMutex::new(session.goose_mode),
         prompt_manager: TokioMutex::new(PromptManager::new()),
         tool_inspection_manager,
         permission_manager,

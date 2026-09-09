@@ -116,7 +116,6 @@ pub struct InferenceRunner<'a> {
     model_config: ModelConfig,
     #[cfg(feature = "code-mode")]
     extension_manager: Arc<ExtensionManager>,
-    goose_mode: &'a Mutex<GooseMode>,
     prompt_manager: &'a Mutex<PromptManager>,
     tool_inspection_manager: &'a ToolInspectionManager,
     frontend_instructions: &'a Mutex<Option<String>>,
@@ -166,7 +165,6 @@ impl<'a> InferenceRunner<'a> {
         model_config: ModelConfig,
         #[cfg(feature = "code-mode")] extension_manager: Arc<ExtensionManager>,
         #[cfg(not(feature = "code-mode"))] _extension_manager: Arc<ExtensionManager>,
-        goose_mode: &'a Mutex<GooseMode>,
         prompt_manager: &'a Mutex<PromptManager>,
         tool_inspection_manager: &'a ToolInspectionManager,
         frontend_instructions: &'a Mutex<Option<String>>,
@@ -176,7 +174,6 @@ impl<'a> InferenceRunner<'a> {
             model_config,
             #[cfg(feature = "code-mode")]
             extension_manager,
-            goose_mode,
             prompt_manager,
             tool_inspection_manager,
             frontend_instructions,
@@ -379,7 +376,7 @@ impl Inference<Session, GooseEffect> for InferenceRunner<'_> {
             #[cfg(not(feature = "code-mode"))]
             let code_execution_mode = false;
 
-            let goose_mode = *self.goose_mode.lock().await;
+            let goose_mode = session.goose_mode;
             if goose_mode == GooseMode::SmartApprove {
                 self.tool_inspection_manager
                     .apply_tool_annotations(&input.tools);

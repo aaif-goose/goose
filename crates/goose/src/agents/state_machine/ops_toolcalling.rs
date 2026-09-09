@@ -25,7 +25,6 @@ use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookContext, HookDecision, HookEvent, HookManager};
 use crate::session::{EnabledExtensionsState, ExtensionState, Session};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
 
@@ -80,20 +79,14 @@ pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -
     )
 }
 
-pub struct ToolExecutionOperation<'a> {
-    goose_mode: &'a Mutex<GooseMode>,
+pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
 }
 
-impl<'a> ToolExecutionOperation<'a> {
-    pub fn new(
-        goose_mode: &'a Mutex<GooseMode>,
-        extension_manager: Arc<ExtensionManager>,
-        hook_manager: HookManager,
-    ) -> Self {
+impl ToolExecutionOperation {
+    pub fn new(extension_manager: Arc<ExtensionManager>, hook_manager: HookManager) -> Self {
         Self {
-            goose_mode,
             extension_manager,
             hook_manager,
         }
@@ -575,7 +568,7 @@ fn approval_denied(permission: Option<&crate::permission::Permission>) -> bool {
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
+impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     fn name(&self) -> &'static str {
         "tool_execution"
     }
@@ -703,7 +696,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             return not_applicable();
         }
 
-        if *self.goose_mode.lock().await == GooseMode::Chat {
+        if session.goose_mode == GooseMode::Chat {
             let mut response = Message::user();
             for (request, disposition) in &pending {
                 let result = match disposition {

@@ -12,7 +12,7 @@ use crate::agents::state_machine::{
     SupervisorOperation, SUBMIT_FEEDBACK_TOOL_NAME, SUBMIT_PLAN_TOOL_NAME,
 };
 use crate::agents::{Agent, AgentEvent, SessionConfig, StateMachineResources};
-use crate::config::Config;
+use crate::config::{Config, GooseMode};
 use crate::conversation::message::{Message, SystemNotificationType};
 use crate::model_config::model_config_from_user_config;
 use crate::providers::base::Provider;
@@ -179,7 +179,7 @@ async fn create_role_session(
             parent.working_dir.clone(),
             name.to_string(),
             SessionType::Hidden,
-            parent.goose_mode,
+            GooseMode::Auto,
         )
         .await?;
     runtime
@@ -677,5 +677,31 @@ mod tests {
         assert_eq!(trace["model"], "openai/planner");
         assert_eq!(trace["duration_ms"], 42);
         assert_eq!(trace["details"]["plan"], "change the parser");
+    }
+
+    #[tokio::test]
+    async fn role_sessions_run_in_auto_mode() {
+        let data_dir = tempfile::tempdir().expect("temporary session directory");
+        let runtime = SessionManager::new(data_dir.path().to_path_buf());
+        let parent = runtime
+            .create_session(
+                data_dir.path().to_path_buf(),
+                "parent".to_string(),
+                SessionType::User,
+                GooseMode::Approve,
+            )
+            .await
+            .expect("parent session");
+        let model_config = goose_providers::model::ModelConfig::new("planner");
+
+        let planner = create_role_session(&runtime, &parent, "Planner", "openrouter", model_config)
+            .await
+            .expect("planner session");
+
+        assert_eq!(planner.goose_mode, GooseMode::Auto);
+        assert_eq!(
+            planner.parent_session_id.as_deref(),
+            Some(parent.id.as_str())
+        );
     }
 }
