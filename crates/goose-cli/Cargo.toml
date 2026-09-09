@@ -106,6 +106,7 @@ default = [
     "scheduler",
     "platform-apps",
     "chat-recall",
+    "acp-http",
 ]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
@@ -124,6 +125,7 @@ bundled-mcp = ["dep:goose-mcp", "goose-mcp/bundled-mcp"]
 scheduler = ["goose/scheduler"]
 platform-apps = ["goose/platform-apps"]
 chat-recall = ["goose/chat-recall"]
+acp-http = ["goose/acp-http"]
 portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
 # disables the update command
 disable-update = []

@@ -94,6 +94,7 @@ nostr = ["dep:nostr", "dep:nostr-sdk"]
 platform-apps = []
 chat-recall = []
 scheduler = []
+acp-http = ["dep:agent-client-protocol-http"]
 
 [lints]
 workspace = true
@@ -193,7 +194,7 @@ agent-client-protocol = { workspace = true, features = [
     "unstable_end_turn_token_usage",
     "unstable_session_fork",
 ] }
-agent-client-protocol-http = { workspace = true, features = ["server"] }
+agent-client-protocol-http = { workspace = true, features = ["server"], optional = true }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 
 # For local Whisper transcription (optional, behind "local-inference" feature)

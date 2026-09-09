@@ -9,6 +9,7 @@ use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
 use goose::recipe::Recipe;
+#[cfg(feature = "acp-http")]
 use goose::source_roots::SourceRoot;
 #[cfg(feature = "bundled-mcp")]
 use goose_mcp::mcp_server_runner::{serve, McpCommand};
@@ -43,8 +44,10 @@ use goose::session::session_manager::SessionType;
 use goose::session::SessionManager;
 use std::io::Read;
 use std::path::PathBuf;
+#[cfg(feature = "acp-http")]
 const GOOSE_SERVER_SECRET_KEY_ENV: &str = "GOOSE_SERVER__SECRET_KEY";
 
+#[cfg(feature = "acp-http")]
 fn generate_serve_secret_key() -> String {
     use rand::distr::{Alphanumeric, SampleString};
 
@@ -857,6 +860,7 @@ enum Command {
     },
 
     /// Start ACP server over HTTP and WebSocket
+    #[cfg(feature = "acp-http")]
     #[command(about = "Start ACP server over HTTP and WebSocket")]
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
@@ -1393,6 +1397,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Acp { .. }) => "acp",
         #[cfg(feature = "roaming")]
         Some(Command::Roam { .. }) => "roam",
+        #[cfg(feature = "acp-http")]
         Some(Command::Serve { .. }) => "serve",
         Some(Command::Session { .. }) => "session",
         Some(Command::Run { .. }) => "run",
@@ -1633,6 +1638,7 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "acp-http")]
 struct ServeCommandArgs {
     host: String,
 
@@ -1768,6 +1774,7 @@ async fn start_roam_share(
     Ok(node)
 }
 
+#[cfg(feature = "acp-http")]
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     use axum::http::HeaderValue;
     use goose::acp::server::AcpBuiltinSelection;
@@ -2817,6 +2824,7 @@ pub async fn cli() -> anyhow::Result<()> {
         }) => goose::acp::server::run(builtins, enable_scheduler).await,
         #[cfg(feature = "roaming")]
         Some(Command::Roam { command }) => handle_roam_command(command).await,
+        #[cfg(feature = "acp-http")]
         Some(Command::Serve {
             host,
             port,
@@ -3109,6 +3117,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "acp-http")]
     #[test]
     fn serve_command_accepts_dangerously_unauthenticated_flag() {
         let cli = Cli::try_parse_from([
