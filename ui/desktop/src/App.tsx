@@ -55,7 +55,7 @@ import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
-import { getInitialWorkingDir } from './utils/workingDir';
+import { getEffectiveWorkingDir, getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
@@ -85,6 +85,7 @@ export function resolveSessionInitialMessage(
 
 export const PairRouteWrapper = ({
   activeSessions,
+  draftRef,
 }: {
   activeSessions: Array<{
     sessionId: string;
@@ -94,6 +95,7 @@ export const PairRouteWrapper = ({
   setActiveSessions: (
     sessions: Array<{ sessionId: string; initialMessage?: UserInput; noAutoSubmit?: boolean }>
   ) => void;
+  draftRef?: RefObject<string>;
 }) => {
   const { extensionsList } = useConfig();
   const location = useLocation();
@@ -117,7 +119,7 @@ export const PairRouteWrapper = ({
   const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | null | undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
-  const workingDir = routeState.workingDir ?? getInitialWorkingDir();
+  const requestedWorkingDir = routeState.workingDir;
   const isPendingSession =
     !resumeSessionId && Boolean(initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig);
 
@@ -131,17 +133,25 @@ export const PairRouteWrapper = ({
 
     (async () => {
       try {
+        const sessionWorkingDir = requestedWorkingDir ?? (await getEffectiveWorkingDir());
+        if (unmountedRef.current) {
+          return;
+        }
+
         const sessionOptions = routeState.extensionConfigs?.length
           ? { extensionConfigs: routeState.extensionConfigs }
           : { allExtensions: routeState.allExtensions ?? extensionsList };
 
-        const newSession = await createSession(workingDir, {
+        const newSession = await createSession(sessionWorkingDir, {
           recipeDeeplink: recipeDeeplinkFromConfig ?? undefined,
           recipeId: recipeIdFromConfig ?? undefined,
           ...sessionOptions,
         });
         if (unmountedRef.current) {
           return;
+        }
+        if (draftRef) {
+          draftRef.current = '';
         }
         const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
 
@@ -168,6 +178,9 @@ export const PairRouteWrapper = ({
       } catch (error) {
         if (unmountedRef.current) {
           return;
+        }
+        if (draftRef && initialMessage?.msg) {
+          draftRef.current = initialMessage.msg;
         }
         if (isRecipeParamsCancelled(error)) {
           navigate('/');
@@ -199,7 +212,8 @@ export const PairRouteWrapper = ({
     resumeSessionId,
     setSearchParams,
     extensionsList,
-    workingDir,
+    requestedWorkingDir,
+    draftRef,
   ]);
 
   // Add resumed session to active sessions if not already there
@@ -697,6 +711,7 @@ export function AppInner() {
                   <PairRouteWrapper
                     activeSessions={activeSessions}
                     setActiveSessions={setActiveSessions}
+                    draftRef={hubDraftRef}
                   />
                 }
               />

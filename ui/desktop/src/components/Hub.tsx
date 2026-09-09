@@ -103,7 +103,6 @@ export default function Hub({
         ? { extensionConfigs: selectedExtensions }
         : { allExtensions: extensionsList };
 
-    draftRef.current = '';
     setView('pair', {
       disableAnimation: true,
       initialMessage: { msg: userMessage, images },

@@ -11,6 +11,7 @@ import { IntlTestWrapper } from './i18n/test-utils';
 import { FeaturesProvider } from './contexts/FeaturesContext';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 import { createSession } from './sessions';
+import { getEffectiveWorkingDir } from './utils/workingDir';
 import { RecipeParameterScopesUnsupportedError } from './acp/errors';
 
 const mockToastError = vi.hoisted(() => vi.fn());
@@ -51,6 +52,11 @@ vi.mock('./sessions', async (importOriginal) => ({
     .mockResolvedValue({ sessionId: 'test', messages: [], metadata: { description: '' } }),
   generateSessionId: vi.fn(),
   createSession: vi.fn(),
+}));
+
+vi.mock('./utils/workingDir', () => ({
+  getInitialWorkingDir: () => '/test/dir',
+  getEffectiveWorkingDir: vi.fn().mockResolvedValue('/test/dir'),
 }));
 
 vi.mock('./acp/capabilities', () => ({
@@ -221,6 +227,7 @@ describe('App Component - Brand New State', () => {
       if (key === 'GOOSE_WORKING_DIR') return '/test/dir';
       return null;
     });
+    vi.mocked(getEffectiveWorkingDir).mockResolvedValue('/test/dir');
 
     // Reset search params
     mockSearchParams.forEach((_, key) => {
@@ -419,6 +426,74 @@ describe('App Component - Brand New State', () => {
         extensionConfigs: [{ name: 'developer', type: 'builtin', description: 'developer' }],
       });
     });
+    expect(getEffectiveWorkingDir).not.toHaveBeenCalled();
+  });
+
+  it('resolves the effective working directory when Hub did not pass one', async () => {
+    vi.mocked(getEffectiveWorkingDir).mockResolvedValueOnce('/tmp/effective-remote');
+    vi.mocked(createSession).mockResolvedValueOnce({
+      id: 'session-effective-dir',
+      recipe: null,
+    } as Awaited<ReturnType<typeof createSession>>);
+    mockLocation.state = {
+      initialMessage: { msg: 'hello from hub', images: [] },
+    };
+    mockLocation.pathname = '/pair';
+
+    render(<PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} />, {
+      wrapper: AppInnerTestWrapper,
+    });
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith('/tmp/effective-remote', {
+        recipeDeeplink: undefined,
+        recipeId: undefined,
+        allExtensions: [],
+      });
+    });
+  });
+
+  it('restores the Hub draft when createSession fails', async () => {
+    vi.mocked(createSession).mockRejectedValueOnce(new Error('backend down'));
+    const draftRef = { current: '' };
+    mockLocation.state = {
+      initialMessage: { msg: 'retry me', images: [] },
+      workingDir: '/tmp/hub-dir',
+    };
+    mockLocation.pathname = '/pair';
+
+    render(
+      <PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} draftRef={draftRef} />,
+      { wrapper: AppInnerTestWrapper }
+    );
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/');
+    });
+    expect(draftRef.current).toBe('retry me');
+  });
+
+  it('clears the Hub draft after createSession succeeds', async () => {
+    vi.mocked(createSession).mockResolvedValueOnce({
+      id: 'session-success',
+      recipe: null,
+    } as Awaited<ReturnType<typeof createSession>>);
+    const draftRef = { current: 'hello from hub' };
+    mockLocation.state = {
+      initialMessage: { msg: 'hello from hub', images: [] },
+      workingDir: '/tmp/hub-dir',
+    };
+    mockLocation.pathname = '/pair';
+
+    render(
+      <PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} draftRef={draftRef} />,
+      { wrapper: AppInnerTestWrapper }
+    );
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalled();
+    });
+    expect(draftRef.current).toBe('');
   });
 
   it('should navigate home when the main process emits new-chat', async () => {

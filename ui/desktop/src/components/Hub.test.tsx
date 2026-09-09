@@ -9,12 +9,17 @@ import type { UserInput } from '../types/message';
 
 const captured = vi.hoisted(() => ({
   handleSubmit: null as ((input: UserInput) => void) | null,
+  onWorkingDirChange: null as ((dir: string) => void) | null,
 }));
 const mockSetView = vi.fn();
 
 vi.mock('./ChatInput', () => ({
-  default: (props: { handleSubmit: (input: UserInput) => void }) => {
+  default: (props: {
+    handleSubmit: (input: UserInput) => void;
+    onWorkingDirChange?: (dir: string) => void;
+  }) => {
     captured.handleSubmit = props.handleSubmit;
+    captured.onWorkingDirChange = props.onWorkingDirChange ?? null;
     return <div />;
   },
 }));
@@ -31,6 +36,7 @@ vi.mock('../utils/nextChatExtensions', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   captured.handleSubmit = null;
+  captured.onWorkingDirChange = null;
 });
 
 describe('Hub', () => {
@@ -50,6 +56,25 @@ describe('Hub', () => {
       workingDir: undefined,
       allExtensions: [],
     });
-    expect(draftRef.current).toBe('');
+    expect(draftRef.current).toBe('hello from hub');
+  });
+
+  it('passes a user-selected working directory through to pair', () => {
+    const draftRef = { current: 'hello from hub' };
+    render(
+      <IntlTestWrapper>
+        <Hub setView={mockSetView} draftRef={draftRef} />
+      </IntlTestWrapper>
+    );
+
+    act(() => captured.onWorkingDirChange?.('/tmp/picked'));
+    act(() => captured.handleSubmit?.({ msg: draftRef.current, images: [] }));
+
+    expect(mockSetView).toHaveBeenCalledWith('pair', {
+      disableAnimation: true,
+      initialMessage: { msg: 'hello from hub', images: [] },
+      workingDir: '/tmp/picked',
+      allExtensions: [],
+    });
   });
 });
