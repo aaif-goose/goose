@@ -65,8 +65,6 @@ pub fn recommended_models_from_registry(provider: &str) -> Vec<String> {
         .collect()
 }
 
-/// Catalog names use dotted versions (`claude-sonnet-4.5`). Anthropic's API
-/// takes the dashed alias (`claude-sonnet-4-5`). Other providers keep catalog names.
 pub fn provider_wire_name(provider: &str, canonical_name: &str) -> String {
     if map_provider_name(provider) == "anthropic" {
         dotted_version_to_dash(canonical_name)

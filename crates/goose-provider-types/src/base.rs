@@ -364,7 +364,6 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
     }
 }
 
-/// Pre-key picker list from the bundled catalog. No hardcoded fallback.
 pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
     recommended_models_from_registry(provider)
         .into_iter()
