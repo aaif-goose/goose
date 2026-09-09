@@ -7,7 +7,7 @@ pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, ThinkingMo
 pub use name_builder::{
     canonical_name, map_provider_name, map_to_canonical_model, strip_version_suffix,
 };
-pub use registry::CanonicalModelRegistry;
+pub use registry::{load_cached_catalog, refresh_remote_catalog, CanonicalModelRegistry};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelMapping {
@@ -82,7 +82,7 @@ fn should_clear_catalog_pricing(provider: &str) -> bool {
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
     let registry = CanonicalModelRegistry::bundled().ok()?;
 
-    let canonical_id = map_to_canonical_model(provider, model, registry)?;
+    let canonical_id = map_to_canonical_model(provider, model, &registry)?;
     let mut canonical = if let Some((canon_provider, canon_model)) = canonical_id.split_once('/') {
         registry.get(canon_provider, canon_model).cloned()?
     } else {
@@ -97,7 +97,7 @@ pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<Canonica
         // row carries the rate it actually charges to proxy that model, so prefer it. Where
         // there is no such row, report nothing: billing paid proxied inference as free is
         // worse than showing no estimate at all.
-        canonical.cost = host_catalog_pricing(provider, model, registry).unwrap_or_default();
+        canonical.cost = host_catalog_pricing(provider, model, &registry).unwrap_or_default();
     }
 
     Some(canonical)

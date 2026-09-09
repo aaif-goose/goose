@@ -550,7 +550,7 @@ pub trait Provider: Send + Sync {
         let mut models_with_dates: Vec<(String, Option<String>)> = all_models
             .iter()
             .filter_map(|model| {
-                let canonical_model = map_to_canonical_model(provider_name, model, registry)
+                let canonical_model = map_to_canonical_model(provider_name, model, &registry)
                     .and_then(|canonical_id| {
                         let (provider, model_name) = canonical_id.split_once('/')?;
                         registry.get(provider, model_name)
@@ -620,7 +620,7 @@ pub trait Provider: Send + Sync {
         Ok(map_to_canonical_model(
             self.get_name(),
             provider_model,
-            registry,
+            &registry,
         ))
     }
 
