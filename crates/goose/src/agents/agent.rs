@@ -5206,6 +5206,31 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         }
     }
 
+    struct SmallContextTextProvider(CountingTextProvider);
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for SmallContextTextProvider {
+        async fn stream(
+            &self,
+            model_config: &goose_providers::model::ModelConfig,
+            system_prompt: &str,
+            messages: &[Message],
+            tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.0
+                .stream(model_config, system_prompt, messages, tools)
+                .await
+        }
+
+        fn get_name(&self) -> &str {
+            self.0.get_name()
+        }
+
+        async fn get_context_limit(&self, _model: &str, _override_limit: Option<usize>) -> usize {
+            200
+        }
+    }
+
     struct ChunkedTextProvider;
 
     #[async_trait::async_trait]
@@ -5432,6 +5457,71 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
         Ok((agent, session.id))
+    }
+
+    #[tokio::test]
+    async fn legacy_compacts_a_tool_result_before_the_next_inference() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let provider = Arc::new(SmallContextTextProvider(CountingTextProvider::new()));
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let (agent, session_id) =
+            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+
+        let request = Message::assistant()
+            .with_tool_request("large-result", Ok(CallToolRequestParams::new("test_tool")));
+        let mut response = Message::user();
+        response.add_tool_response_with_metadata(
+            "large-result",
+            Ok(CallToolResult::success(vec![ContentBlock::text(
+                "tool-result ".repeat(100),
+            )])),
+            None,
+        );
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("old work"),
+            request,
+            response,
+        ]);
+        agent
+            .config
+            .session_manager
+            .replace_conversation(&session_id, &conversation)
+            .await?;
+        agent
+            .config
+            .session_manager
+            .update(&session_id)
+            .usage(Usage::new(None, None, Some(170)))
+            .apply()
+            .await?;
+
+        let stream = agent
+            .reply(
+                Message::user().with_text("continue"),
+                SessionConfig {
+                    id: session_id,
+                    schedule_id: None,
+                    max_turns: Some(2),
+                    retry_config: None,
+                },
+                None,
+            )
+            .await?;
+        tokio::pin!(stream);
+        let mut compacted = false;
+        while let Some(event) = stream.next().await {
+            compacted |= matches!(event?, AgentEvent::HistoryReplaced(_));
+        }
+
+        assert!(
+            compacted,
+            "legacy must compact before its next provider request"
+        );
+        assert!(
+            provider.0.call_count() >= 2,
+            "compaction and continuation call the provider"
+        );
+        Ok(())
     }
 
     struct TraceContentProvider;
