@@ -509,6 +509,7 @@ impl CliSession {
             let msg = Message::user().with_text(&prompt);
             self.process_message(msg, CancellationToken::default(), true)
                 .await?;
+            output::emit_attention_bell();
         }
 
         self.update_completion_cache().await?;
