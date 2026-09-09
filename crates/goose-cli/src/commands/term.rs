@@ -248,6 +248,20 @@ pub async fn handle_term_log(command: String) -> Result<()> {
     Ok(())
 }
 
+fn shell_history_text(newest_first_tail: &[&Message]) -> Option<String> {
+    let history: Vec<String> = newest_first_tail
+        .iter()
+        .filter(|m| !m.is_turn_context())
+        .rev()
+        .map(|m| m.as_concat_text())
+        .collect();
+    if history.is_empty() {
+        None
+    } else {
+        Some(history.join("\n"))
+    }
+}
+
 pub async fn handle_term_run(prompt: Vec<String>) -> Result<()> {
     let prompt = prompt.join(" ");
     let session_id = std::env::var("AGENT_SESSION_ID").map_err(|_| {
@@ -291,20 +305,12 @@ pub async fn handle_term_run(prompt: Vec<String>) -> Result<()> {
         }
     }
 
-    let prompt_with_context = if user_messages_after_last_assistant.is_empty() {
-        prompt
-    } else {
-        let history = user_messages_after_last_assistant
-            .iter()
-            .rev() // back to chronological order
-            .map(|m| m.as_concat_text())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        format!(
+    let prompt_with_context = match shell_history_text(&user_messages_after_last_assistant) {
+        Some(history) => format!(
             "<shell_history>\n{}\n</shell_history>\n\n{}",
             history, prompt
-        )
+        ),
+        None => prompt,
     };
 
     let config = SessionBuilderConfig {
@@ -336,9 +342,11 @@ pub async fn handle_term_info() -> Result<()> {
         .unwrap_or(0) as usize;
 
     let config = goose::config::Config::global();
-    let model_name = config
-        .get_goose_model()
-        .ok()
+    let model_name = session
+        .as_ref()
+        .and_then(|session| session.model_config.as_ref())
+        .map(|model| model.model_name.clone())
+        .or_else(|| config.get_goose_model().ok())
         .map(|name| {
             let short = name.rsplit('/').next().unwrap_or(&name);
             if let Some(stripped) = short.strip_prefix("goose-") {
@@ -349,16 +357,14 @@ pub async fn handle_term_info() -> Result<()> {
         })
         .unwrap_or_else(|| "?".to_string());
 
-    let context_limit = config
-        .get_goose_model()
-        .ok()
-        .and_then(|model_name| {
-            config.get_goose_provider().ok().and_then(|provider_name| {
-                goose::model_config::model_config_from_user_config(&provider_name, &model_name).ok()
-            })
+    let context_limit = session
+        .as_ref()
+        .and_then(|session| {
+            let provider_name = session.provider_name.as_deref()?;
+            let model = session.model_config.as_ref()?;
+            goose::context_limit::get_local_context_limit(provider_name, &model.model_name).ok()
         })
-        .map(|mc| mc.context_limit())
-        .unwrap_or(128_000);
+        .unwrap_or(goose_providers::model::DEFAULT_CONTEXT_LIMIT);
 
     let percentage = if context_limit > 0 {
         ((total_tokens as f64 / context_limit as f64) * 100.0).round() as usize
@@ -406,5 +412,25 @@ mod tests {
         let script = render_term_init_script(Shell::Fish, "session-123", "/tmp/goose", true);
 
         assert!(!script.contains("command_not_found"));
+    }
+
+    #[test]
+    fn shell_history_skips_turn_context_events() {
+        use goose::conversation::message::MessageMetadata;
+
+        let older = Message::user().with_text("git status");
+        let block = Message::user()
+            .with_text("<turn-context>cwd /repo</turn-context>")
+            .with_metadata(MessageMetadata::agent_only().with_turn_context());
+        let newer = Message::user().with_text("cargo build");
+        let newest_first_tail = vec![&newer, &block, &older];
+
+        assert_eq!(
+            shell_history_text(&newest_first_tail).unwrap(),
+            "git status\ncargo build"
+        );
+
+        let only_block = vec![&block];
+        assert_eq!(shell_history_text(&only_block), None);
     }
 }

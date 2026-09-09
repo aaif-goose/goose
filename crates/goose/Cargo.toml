@@ -24,9 +24,7 @@ local-inference = [
     "dep:candle-core",
     "dep:candle-nn",
     "dep:candle-transformers",
-    "dep:hf-hub",
-    "dep:llama-cpp-2",
-    "dep:llama-cpp-sys-2",
+    "goose-providers/local-inference-hf-hub",
     "dep:tokenizers",
     "dep:symphonia",
     "dep:rubato",
@@ -36,12 +34,13 @@ aws-providers = [
     "dep:aws-config",
     "dep:aws-smithy-types",
     "dep:aws-sdk-bedrockruntime",
+    "dep:aws-smithy-runtime-api",
     "dep:aws-sdk-sagemakerruntime",
     "dep:smithy-transport-reqwest",
 ]
-cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "llama-cpp-2/cuda"]
-vulkan = ["local-inference", "llama-cpp-2/vulkan"]
-mlx = ["local-inference", "dep:mlx-rs", "dep:mlx-lm", "dep:mlx-lm-utils"]
+cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "goose-providers/cuda"]
+vulkan = ["local-inference", "goose-providers/vulkan"]
+mlx = ["local-inference", "goose-providers/mlx"]
 rustls-tls = [
     "dep:rustls",
     "dep:rcgen",
@@ -49,14 +48,14 @@ rustls-tls = [
     "dep:axum-server",
     "dep:aws-lc-rs",
     "axum-server/tls-rustls",
+    "rcgen/aws_lc_rs",
     "reqwest/rustls",
     "rmcp/reqwest",
     "smithy-transport-reqwest?/rustls",
-    "sqlx/runtime-tokio-rustls",
+    "sqlx/tls-rustls",
     "jsonwebtoken/aws_lc_rs",
     "oauth2/reqwest",
     "oauth2/rustls-tls",
-    "hf-hub/rustls-tls",
     "goose-providers/rustls-tls",
 ]
 native-tls = [
@@ -65,10 +64,13 @@ native-tls = [
     "dep:axum-server",
     "dep:openssl",
     "axum-server/tls-openssl",
+    # rcgen requires a crypto backend; ring is used here because aws-lc-rs is
+    # reserved for the rustls-tls path and openssl does not provide this interface.
+    "rcgen/ring",
     "reqwest/native-tls",
     "rmcp/reqwest-native-tls",
     "smithy-transport-reqwest?/native-tls",
-    "sqlx/runtime-tokio-native-tls",
+    "sqlx/tls-native-tls",
     "jsonwebtoken/rust_crypto",
     "oauth2/reqwest",
     "oauth2/native-tls",
@@ -102,12 +104,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = { version = "0.1.8", default-features = false }
 serde_urlencoded = { version = "0.7.1", default-features = false }
-jsonschema = { version = "0.30", default-features = false }
+jsonschema = { version = "0.52", default-features = false }
 uuid = { workspace = true, features = ["v7"] }
 regex = { workspace = true }
 async-trait = { workspace = true }
 async-stream = { workspace = true }
-minijinja = { version = "2.18", default-features = false, features = ["loader", "multi_template", "serde"] }
+minijinja = { version = "2.18", default-features = false, features = ["loader", "multi_template", "serde", "builtins"] }
 include_dir = { workspace = true }
 tiktoken-rs = { version = "0.12", default-features = false }
 chrono = { workspace = true }
@@ -134,14 +136,16 @@ strum = { workspace = true }
 once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = { version = "3.1", default-features = false }
+goose-context-management = { path = "../goose-context-management" }
 goose-providers = { path = "../goose-providers", default-features = false }
+goose-download-manager = { path = "../goose-download-manager" }
 goose-sdk-types = { path = "../goose-sdk-types" }
+goose-agent = { path = "../goose-agent" }
 rand = { workspace = true }
-utoipa = { workspace = true, features = ["chrono"] }
 tokio-cron-scheduler = { version = "0.15", default-features = false }
 urlencoding = { workspace = true }
 v_htmlescape = { version = "0.17", default-features = false, features = ["std"] }
-sqlx = { version = "0.8.5", default-features = false, features = [
+sqlx = { version = "0.9.0", default-features = false, features = [
     "runtime-tokio",
     "sqlite",
     "chrono",
@@ -154,13 +158,14 @@ sqlx = { version = "0.8.5", default-features = false, features = [
 aws-config = { version = "1.8", default-features = false, features = ["credentials-process", "rt-tokio", "sso", "behavior-version-latest"], optional = true }
 aws-smithy-types = { version = "1.3.4", default-features = false, features = ["rt-tokio"], optional = true }
 aws-sdk-bedrockruntime = { version = "1.132", default-features = false, features = ["rt-tokio"], optional = true }
+aws-smithy-runtime-api = { version = "1.13", default-features = false, features = ["client"], optional = true }
 smithy-transport-reqwest = { version = "0.1", default-features = false, features = ["http2", "system-proxy"], optional = true }
 
 # For SageMaker TGI provider (optional, behind "aws-providers" feature)
 aws-sdk-sagemakerruntime = { version = "1.104", default-features = false, features = ["rt-tokio"], optional = true }
 
 # For GCP Vertex AI provider auth
-jsonwebtoken = { version = "10.2", default-features = false, features = ["use_pem"] }
+jsonwebtoken = { version = "11.0", default-features = false, features = ["use_pem"] }
 
 blake3 = { version = "1", default-features = false, features = ["std"] }
 fs2 = { workspace = true }
@@ -168,27 +173,29 @@ tokio-stream = { workspace = true, features = ["io-util"] }
 tempfile = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
 agent-client-protocol-schema = { workspace = true }
-agent-client-protocol = { workspace = true, features = ["unstable"] }
-agent-client-protocol-http = { workspace = true }
+agent-client-protocol = { workspace = true, features = [
+    "unstable_elicitation",
+    "unstable_end_turn_token_usage",
+    "unstable_session_fork",
+] }
+agent-client-protocol-http = { workspace = true, features = ["server"] }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 
 # For local Whisper transcription (optional, behind "local-inference" feature)
 candle-core = { workspace = true, optional = true }
 candle-nn = { workspace = true, optional = true }
-candle-transformers = { version = "0.10", default-features = false, optional = true }
+candle-transformers = { version = "0.11", default-features = false, optional = true }
 byteorder = { version = "1.5", default-features = false, features = ["std"], optional = true }
 tokenizers = { version = "0.23", default-features = false, features = ["onig"], optional = true }
-symphonia = { version = "0.5", default-features = false, features = ["aac", "adpcm", "alac", "isomp4", "mkv", "mp3", "pcm", "vorbis", "wav"], optional = true }
-rubato = { version = "0.16", default-features = false, optional = true }
+symphonia = { version = "0.6", default-features = false, features = ["aac", "adpcm", "alac", "isomp4", "mkv", "mp3", "pcm", "vorbis", "wav"], optional = true }
+rubato = { version = "5.0", default-features = false, optional = true }
 sys-info = { version = "0.9", default-features = false }
-
-llama-cpp-2 = { workspace = true, optional = true }
 
 schemars = { workspace = true, features = [
     "derive",
 ] }
 shellexpand = { workspace = true }
-indexmap = { version = "2.9", default-features = false, features = ["std"] }
+indexmap = { version = "2.9", default-features = false, features = ["serde", "std"] }
 ignore = { workspace = true }
 rayon = { workspace = true }
 tree-sitter = { workspace = true }
@@ -202,62 +209,57 @@ tree-sitter-rust = { workspace = true }
 tree-sitter-swift = { workspace = true }
 tree-sitter-typescript = { workspace = true }
 which = { workspace = true }
-pulldown-cmark = { version = "0.13", default-features = false }
-encoding_rs = { version = "0.8.35", default-features = false }
 pastey = { version = "0.2", default-features = false }
 shell-words = { workspace = true }
 goose-acp-macros = { path = "../goose-acp-macros", default-features = false }
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
 process-wrap = { version = "9", default-features = false, features = ["std"] }
-nostr = { version = "0.44", default-features = false, features = ["nip44", "std"], optional = true }
-nostr-sdk = { version = "0.44", default-features = false, features = ["nip44"], optional = true }
+nostr = { version = "0.45.1", default-features = false, features = ["nip44", "os-rng", "std"], optional = true }
+nostr-sdk = { version = "0.45.1", default-features = false, optional = true }
 rustls = { workspace = true, optional = true }
-rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "crypto", "pem"], optional = true }
-axum-server = { version = "0.8", default-features = false, optional = true }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem"], optional = true }
+axum-server = { workspace = true, optional = true }
 aws-lc-rs = { version = "1.17", default-features = false, optional = true }
 openssl = { version = "0.10.66", default-features = false, optional = true }
-pem = { version = "3.0.2", default-features = false, features = ["std"], optional = true }
-hf-hub = { version = "1.0.0-rc.1", default-features = false, optional = true }
-mlx-rs = { version = "0.25.3", default-features = false, features = ["accelerate", "metal", "safetensors"], optional = true }
-mlx-lm = { git = "https://github.com/jh-block/mlx-lm", optional = true }
-mlx-lm-utils = { git = "https://github.com/jh-block/mlx-lm", optional = true }
+pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
 
-pctx_code_mode = { version = "0.3", default-features = false, optional = true }
+pctx_code_mode = { version = "0.5.0", default-features = false, optional = true }
 
 # These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
 # A fix is available in temporal_rs 0.2 but PCTX has not updated
 # They are just here to pin the version, and can be removed if PCTX updates temporal_rs
 icu_calendar = { version = "=2.1.1", default-features = false }
 icu_locale = { version = "=2.1.1", default-features = false }
-llama-cpp-sys-2 = { workspace = true, optional = true }
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 subtle = { version = "2.5", default-features = false, features = ["std"] }
 gethostname = "1.1.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { workspace = true }
+winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handleapi", "minwinbase", "sddl", "securitybaseapi", "winbase", "winerror"] }
 keyring = { workspace = true, features = ["windows-native"], optional = true }
+ntapi = { version = "0.4.3", default-features = false }
 
 # Platform-specific GPU acceleration for Whisper and local inference
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { workspace = true, features = ["metal"], optional = true }
 candle-nn = { workspace = true, features = ["metal"], optional = true }
-llama-cpp-2 = { workspace = true, features = ["sampler", "metal", "mtmd"], optional = true }
 keyring = { workspace = true, features = ["apple-native"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { workspace = true, features = ["sync-secret-service"], optional = true }
+
+[target."cfg(unix)".dependencies]
 libc = { version = "0.2.182", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 serial_test = { workspace = true }
-mockall = { version = "0.14", default-features = false }
+mockall = { version = "0.15", default-features = false }
 wiremock = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
 dotenvy = { workspace = true }
-ctor = { version = "0.2", default-features = false }
+ctor = { version = "1.0", default-features = false, features = ["proc_macro"] }
 test-case = { workspace = true }
 env-lock = { workspace = true }
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }

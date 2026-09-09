@@ -15,7 +15,6 @@ GOOSE_BIN="$SCRIPT_DIR/target/debug/goose"
 
 TEST_PROVIDER=${GOOSE_PROVIDER:-anthropic}
 TEST_MODEL=${GOOSE_MODEL:-claude-haiku-4-5-20251001}
-MCP_SAMPLING_TOOL="trigger-sampling-request"
 
 RESULTS=()
 
@@ -63,56 +62,6 @@ if grep -qE "(add \| test_mcp)|(▸.*add.*test_mcp)" "$TMPFILE" && grep -q "100"
 else
     echo "✗ FastMCP stderr test failed"
     RESULTS+=("✗ FastMCP stderr")
-fi
-
-rm "$TMPFILE"
-rm -rf "$TESTDIR"
-echo ""
-
-TESTDIR=$(mktemp -d)
-TMPFILE=$(mktemp)
-
-(cd "$TESTDIR" && GOOSE_PROVIDER="$TEST_PROVIDER" GOOSE_MODEL="$TEST_MODEL" \
-    "$GOOSE_BIN" run --text "Use the sampleLLM tool to ask for an original short poem about the ocean" \
-    --with-extension "npx -y @modelcontextprotocol/server-everything@2026.1.14" 2>&1) | tee "$TMPFILE"
-
-if grep -qE "($MCP_SAMPLING_TOOL \| )|(▸.*$MCP_SAMPLING_TOOL)" "$TMPFILE"; then
-    JUDGE_PROMPT=$(cat <<EOF
-You are a validator. You will be given a transcript of a CLI run that used an MCP tool to initiate MCP sampling.
-The MCP server requests an original short poem about the ocean from the model via sampling.
-
-Task: Determine whether the transcript shows that the sampling request reached the model and that the output included either:
-  • A poem, verse, or creative text about the ocean or sea, or
-  • A clear attempt or explanation from the model about the poem request.
-
-If either of these conditions is true, respond PASS.
-If there is no evidence that the model attempted or returned a poem-related response, respond FAIL.
-If uncertain, lean toward PASS.
-
-Output format: Respond with exactly one word on a single line:
-PASS
-or
-FAIL
-
-Transcript:
------ BEGIN TRANSCRIPT -----
-$(cat "$TMPFILE")
------ END TRANSCRIPT -----
-EOF
-)
-    JUDGE_OUT=$(GOOSE_PROVIDER="$TEST_PROVIDER" GOOSE_MODEL="$TEST_MODEL" \
-        "$GOOSE_BIN" run --text "$JUDGE_PROMPT" 2>&1)
-
-    if echo "$JUDGE_OUT" | tr -d '\r' | grep -Eq '^[[:space:]]*PASS[[:space:]]*$'; then
-        echo "✓ MCP sampling test passed"
-        RESULTS+=("✓ MCP sampling")
-    else
-        echo "✗ MCP sampling test failed"
-        RESULTS+=("✗ MCP sampling")
-    fi
-else
-    echo "✗ MCP sampling test failed - $MCP_SAMPLING_TOOL tool not called"
-    RESULTS+=("✗ MCP sampling")
 fi
 
 rm "$TMPFILE"

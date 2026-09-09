@@ -31,9 +31,9 @@
       }
     ],
     "structuredContent": {
+      "temperature": 33,
       "conditions": "Cloudy",
-      "humidity": 82,
-      "temperature": 33
+      "humidity": 82
     }
   },
   {

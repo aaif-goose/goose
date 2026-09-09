@@ -1,11 +1,13 @@
 import type { Session } from './types/session';
 import type { ExtensionConfig } from './types/extensions';
-import { DEFAULT_CHAT_TITLE } from './contexts/ChatContext';
 import type { setViewType } from './hooks/useNavigation';
 import type { FixedExtensionEntry } from './components/ConfigContext';
 import { AppEvents } from './constants/events';
 import { acpChatSessionController } from './acp/chatSessionController';
 import { getConfiguredGooseExtensions, gooseExtensionName } from './acp/extensions';
+import { beginConfiguredRecipeParameterScope } from './acp/recipeParamRequests';
+import { getAcpFeatureCapabilities } from './acp/capabilities';
+import { RecipeParameterScopesUnsupportedError } from './acp/errors';
 
 export function getSessionDisplayName(session: Session): string {
   if (session.user_set_name) {
@@ -14,32 +16,7 @@ export function getSessionDisplayName(session: Session): string {
   if (session.recipe?.title) {
     return session.recipe.title;
   }
-  if (shouldShowNewChatTitle(session)) {
-    return DEFAULT_CHAT_TITLE;
-  }
   return session.name;
-}
-
-export function shouldShowNewChatTitle(session: Session): boolean {
-  return !session.user_set_name && session.message_count === 0 && !session.recipe?.title;
-}
-
-export function resumeSession(session: Session, setView: setViewType) {
-  const eventDetail = {
-    sessionId: session.id,
-    initialMessage: undefined,
-  };
-
-  window.dispatchEvent(
-    new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-      detail: eventDetail,
-    })
-  );
-
-  setView('pair', {
-    disableAnimation: true,
-    resumeSessionId: session.id,
-  });
 }
 
 interface CreateSessionOptions {
@@ -68,17 +45,31 @@ async function createAcpSession(
   workingDir: string,
   options?: CreateSessionOptions
 ): Promise<Session> {
-  const selectedNames = new Set(selectedExtensionConfigs(options).map((config) => config.name));
-  const gooseExtensions =
-    selectedNames.size > 0
-      ? (await getConfiguredGooseExtensions())
-          .filter((entry) => selectedNames.has(gooseExtensionName(entry.extension)))
-          .map((entry) => entry.extension)
-      : [];
-  return acpChatSessionController.createSession(workingDir, gooseExtensions, {
-    recipeId: options?.recipeId,
-    recipeDeeplink: options?.recipeDeeplink,
-  });
+  const configuredParameterScope = options?.recipeDeeplink
+    ? beginConfiguredRecipeParameterScope()
+    : undefined;
+  try {
+    if (configuredParameterScope) {
+      const capabilities = await getAcpFeatureCapabilities();
+      if (!capabilities.recipeParameterScopes) {
+        throw new RecipeParameterScopesUnsupportedError();
+      }
+    }
+    const selectedNames = new Set(selectedExtensionConfigs(options).map((config) => config.name));
+    const gooseExtensions =
+      selectedNames.size > 0
+        ? (await getConfiguredGooseExtensions())
+            .filter((entry) => selectedNames.has(gooseExtensionName(entry.extension)))
+            .map((entry) => entry.extension)
+        : [];
+    return await acpChatSessionController.createSession(workingDir, gooseExtensions, {
+      recipeId: options?.recipeId,
+      recipeDeeplink: options?.recipeDeeplink,
+      recipeParameterScopeId: configuredParameterScope?.id,
+    });
+  } finally {
+    configuredParameterScope?.finish();
+  }
 }
 
 export async function createSession(

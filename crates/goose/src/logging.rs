@@ -11,11 +11,11 @@ use tracing_subscriber::{
 
 /// Configuration for the shared logging setup.
 pub struct LoggingConfig<'a> {
-    /// Component name used for the log directory (e.g. "cli", "server").
+    /// Component name used for the log directory (e.g. "cli").
     pub component: &'a str,
     /// Optional session/run name appended to the log filename.
     pub name: Option<&'a str>,
-    /// Additional `EnvFilter` directives beyond the defaults (e.g. "goose_server=info").
+    /// Additional `EnvFilter` directives beyond the defaults (e.g. "goose_cli=info").
     /// Only applied when `RUST_LOG` is **not** set.
     pub extra_directives: &'a [&'a str],
     /// Whether to emit a pretty console layer to stderr in addition to the file layer.
@@ -47,9 +47,8 @@ fn build_env_filter(extra_directives: &[&str]) -> EnvFilter {
 
 /// Set up file-based (and optionally console) tracing for a goose component.
 ///
-/// This is the shared implementation used by both `goose-cli` and `goose-server`.
-/// Call `try_init` on the returned subscriber — callers are responsible for the
-/// `Once`-guard or direct init as appropriate for their use case.
+/// Call `try_init` on the returned subscriber; callers are responsible for the
+/// `Once` guard or direct init as appropriate for their use case.
 pub fn build_logging_subscriber(
     config: &LoggingConfig<'_>,
 ) -> Result<impl SubscriberInitExt + Send + Sync + 'static> {

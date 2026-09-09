@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use goose_sdk_types::custom_requests::{
     RecipeAuthorDto, RecipeDto, RecipeExtensionDto, RecipeParameterDto,
     RecipeParameterInputTypeDto, RecipeParameterRequirementDto, RecipeResponseDto,
@@ -344,6 +344,9 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 headers,
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools,
             } => Self::StreamableHttp {
@@ -355,6 +358,9 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 headers,
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
             },
@@ -427,6 +433,9 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 headers,
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools,
             } => Self::StreamableHttp {
@@ -438,18 +447,14 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 headers,
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools: available_tools_to_wire(available_tools),
             },
-            ExtensionConfig::Sse { .. } => bail_unsupported_extension("sse")?,
-            ExtensionConfig::Frontend { .. } => bail_unsupported_extension("frontend")?,
-            ExtensionConfig::InlinePython { .. } => bail_unsupported_extension("inline_python")?,
         })
     }
-}
-
-fn bail_unsupported_extension(extension_type: &str) -> Result<RecipeExtensionDto> {
-    bail!("recipe extension type `{extension_type}` is not supported by RecipeDto")
 }
 
 fn available_tools_to_wire(available_tools: Vec<String>) -> Option<Vec<String>> {
@@ -523,6 +528,9 @@ mod tests {
                     headers: HashMap::from([("X-Test".to_string(), "true".to_string())]),
                     timeout: Some(30),
                     socket: None,
+                    client_id: None,
+                    client_secret_key: None,
+                    scopes: vec![],
                     bundled: Some(false),
                     available_tools: Some(vec!["fetch".to_string()]),
                 },
@@ -624,35 +632,5 @@ mod tests {
         assert_eq!(serialized["extensions"][1]["available_tools"][0], "run");
         assert_eq!(serialized["extensions"][2]["envs"]["REMOTE_MODE"], "true");
         assert_eq!(serialized["extensions"][2]["available_tools"][0], "fetch");
-    }
-
-    #[test]
-    fn recipe_dto_rejects_unsupported_internal_extension_variants() {
-        let recipe = Recipe {
-            version: "1.0.0".to_string(),
-            title: "Unsupported Extension".to_string(),
-            description: "Uses an unsupported recipe extension".to_string(),
-            instructions: Some("Run".to_string()),
-            prompt: None,
-            extensions: Some(vec![ExtensionConfig::InlinePython {
-                name: "inline".to_string(),
-                description: "Inline Python".to_string(),
-                code: "print('hello')".to_string(),
-                timeout: Some(30),
-                dependencies: None,
-                available_tools: Vec::new(),
-            }]),
-            settings: None,
-            activities: None,
-            author: None,
-            parameters: None,
-            response: None,
-            sub_recipes: None,
-            retry: None,
-        };
-
-        let err = RecipeDto::try_from(recipe).unwrap_err().to_string();
-        assert!(err.contains("inline_python"));
-        assert!(err.contains("not supported"));
     }
 }

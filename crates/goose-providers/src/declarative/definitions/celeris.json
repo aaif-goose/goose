@@ -1,0 +1,20 @@
+{
+  "name": "celeris",
+  "engine": "openai",
+  "display_name": "Celeris",
+  "description": "General-purpose diffusion language models over an OpenAI-compatible API. Tokens are generated in parallel blocks rather than one at a time, which makes them substantially faster than comparable autoregressive models. celeris-1 has an 8192 token context shared between the prompt and the completion, and the base URL pins the model in its path.",
+  "api_key_env": "CELERIS_API_KEY",
+  "base_url": "https://inference.celeris.ai/celeris-1/v1",
+  "models": [
+    { "name": "celeris-1", "context_limit": 8192 }
+  ],
+  "dynamic_models": false,
+  "skip_canonical_filtering": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://docs.celeris.ai/api-reference",
+  "setup_steps": [
+    "Sign up at https://celeris.ai",
+    "Create an API key",
+    "Paste the key above as CELERIS_API_KEY"
+  ]
+}

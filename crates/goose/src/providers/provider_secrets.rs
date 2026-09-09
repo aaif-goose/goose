@@ -4,7 +4,6 @@ use std::path::Path;
 use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use utoipa::ToSchema;
 
 use crate::config::paths::Paths;
 use crate::config::{Config, ConfigError};
@@ -14,14 +13,14 @@ use crate::providers::huggingface_auth;
 pub const SECRET_STORE_ID_PREFIX: &str = "secret_store:";
 pub const PROVIDER_CACHE_ID_PREFIX: &str = "provider_cache:";
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderSecretStorage {
     SecretStore,
     ProviderCache,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderSecretStatus {
     Valid,
@@ -29,7 +28,7 @@ pub enum ProviderSecretStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderSecret {
     pub id: String,
     pub provider: String,

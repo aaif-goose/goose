@@ -46,6 +46,11 @@
       "responseType": "AppsImportResponse_unstable"
     },
     {
+      "method": "_goose/unstable/apps/delete",
+      "requestType": "AppsDeleteRequest_unstable",
+      "responseType": "AppsDeleteResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/session/working-dir/update",
       "requestType": "UpdateWorkingDirRequest_unstable",
       "responseType": "EmptyResponse"
@@ -86,19 +91,9 @@
       "responseType": "PromptOperationResponse_unstable"
     },
     {
-      "method": "session/delete",
-      "requestType": "DeleteSessionRequest",
-      "responseType": "EmptyResponse"
-    },
-    {
       "method": "_goose/unstable/config/extensions/list",
       "requestType": "GetConfigExtensionsRequest_unstable",
       "responseType": "GetConfigExtensionsResponse_unstable"
-    },
-    {
-      "method": "_goose/unstable/extensions/available",
-      "requestType": "GetAvailableExtensionsRequest_unstable",
-      "responseType": "GetAvailableExtensionsResponse_unstable"
     },
     {
       "method": "_goose/unstable/config/extensions/add",
@@ -171,6 +166,11 @@
       "responseType": "RefreshProviderInventoryResponse_unstable"
     },
     {
+      "method": "_goose/unstable/providers/readiness/check",
+      "requestType": "ProviderReadinessCheckRequest_unstable",
+      "responseType": "ProviderReadinessCheckResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/providers/config/read",
       "requestType": "ProviderConfigReadRequest_unstable",
       "responseType": "ProviderConfigReadResponse_unstable"
@@ -218,11 +218,6 @@
     {
       "method": "_goose/unstable/preferences/save",
       "requestType": "PreferencesSaveRequest_unstable",
-      "responseType": "EmptyResponse"
-    },
-    {
-      "method": "_goose/unstable/preferences/remove",
-      "requestType": "PreferencesRemoveRequest_unstable",
       "responseType": "EmptyResponse"
     },
     {
@@ -466,16 +461,6 @@
       "responseType": "DictationConfigResponse_unstable"
     },
     {
-      "method": "_goose/unstable/dictation/secret/save",
-      "requestType": "DictationSecretSaveRequest_unstable",
-      "responseType": "EmptyResponse"
-    },
-    {
-      "method": "_goose/unstable/dictation/secret/delete",
-      "requestType": "DictationSecretDeleteRequest_unstable",
-      "responseType": "EmptyResponse"
-    },
-    {
       "method": "_goose/unstable/dictation/models/list",
       "requestType": "DictationModelsListRequest_unstable",
       "responseType": "DictationModelsListResponse_unstable"
@@ -501,11 +486,6 @@
       "responseType": "EmptyResponse"
     },
     {
-      "method": "_goose/unstable/dictation/models/select",
-      "requestType": "DictationModelSelectRequest_unstable",
-      "responseType": "EmptyResponse"
-    },
-    {
       "method": "_goose/unstable/local-inference/models/list",
       "requestType": "LocalInferenceModelsListRequest_unstable",
       "responseType": "LocalInferenceModelsListResponse_unstable"
@@ -528,6 +508,11 @@
     {
       "method": "_goose/unstable/local-inference/models/delete",
       "requestType": "LocalInferenceModelDeleteRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/unstable/local-inference/models/evict",
+      "requestType": "LocalInferenceModelEvictRequest_unstable",
       "responseType": "EmptyResponse"
     },
     {
@@ -560,6 +545,10 @@
     {
       "method": "_goose/unstable/session/update",
       "paramsType": "GooseSessionNotification_unstable"
+    },
+    {
+      "method": "_goose/unstable/providers/authentication/device-code",
+      "paramsType": "ProviderDeviceCodeNotification_unstable"
     }
   ],
   "agentRequests": [

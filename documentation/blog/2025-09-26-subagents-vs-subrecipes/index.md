@@ -112,7 +112,7 @@ The choice depends on your specific needs and workflow requirements. Quick tasks
 
 Your workflow requirements should drive the decision.
 
-Share your subagent prompts or subrecipe ideas with us on our [Discord community](https://discord.gg/goose-oss) or [GitHub discussions](https://github.com/aaif-goose/goose/discussions).
+Share your subagent prompts or subrecipe ideas with us on our [Discord community](https://discord.gg/n8R5VaWDAn) or [GitHub discussions](https://github.com/aaif-goose/goose/discussions).
 
 
 

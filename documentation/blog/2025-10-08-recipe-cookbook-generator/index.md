@@ -7,6 +7,8 @@ authors:
 
 ![Recipe Cookbook Generator](recipe-cookbook-generator.png)
 
+> **Update:** This post is preserved for historical reference. The public Recipe Cookbook submission program has ended, and we are no longer accepting new recipe submissions.
+
 You've been using goose for weeks, maybe months. You have dozens of successful [sessions](/docs/guides/sessions/) where you asked for help with blog posts, code reviews, documentation, or data analysis. Each time you think "Didn't I already do this?" but never get around to checking. Sound familiar?
 
 I myself had over a hundred goose sessions and as many megabytes of conversation data. I was sitting on a goldmine of potential automation. A coworker suggested something brilliant: "What if goose could analyze your sessions and build recipes automatically?" Wait, wait, wait!! Create a personalized cookbook based on my own session history? Yes, please! Let's build a "cookbook generator" recipe!
@@ -167,9 +169,9 @@ The key insight is that AI agents shouldn't just execute tasks -- they should le
 Start building your own cookbook generator, and stop doing the same work twice. Your future self will thank you for the automation you create today.
 
 
-## Contribute to Our Community Cookbook
+## Recipe Submissions Are Closed
 
-Want to contribute your own recipes or improvements to the cookbook generator? Join our [Discord community](https://discord.gg/goose-oss) or check out our [GitHub repository](https://github.com/aaif-goose/goose) for more automation ideas. Join our [Hacktoberfest](https://github.com/aaif-goose/goose/issues/4705) event going on to contribute recipes and prompt ideas to get on our leaderboard to win some great prizes!
+The Recipe Cookbook remains available to browse, but we are no longer accepting new community recipe submissions.
 
 
 ## My Own Cookbook Generator Recipe

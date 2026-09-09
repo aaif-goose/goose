@@ -20,7 +20,7 @@ This tutorial covers how to add the [Dev.to MCP Server](https://github.com/nicky
   [Launch the installer](goose://extension?type=streamable_http&url=http%3A%2F%2Flocalhost%3A3000%2Fmcp&id=dev-to&name=Dev.to&description=Access%20Dev.to%20articles%20and%20content)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-  Use `goose configure` to add a `Remote Extension (Streaming HTTP)` extension type with:
+  Use `goose configure` to add a `Remote Extension (Streamable HTTP)` extension type with:
 
   **Endpoint URL**
 

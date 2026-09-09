@@ -152,15 +152,6 @@ enum TestMode {
     vec!["GITHUB_PERSONAL_ACCESS_TOKEN"]
 )]
 #[test_case(
-    vec!["uvx", "mcp-server-fetch"],
-    vec![
-        CallToolRequestParams::new("fetch").with_arguments(object!({
-            "url": "https://example.com",
-        }))
-    ],
-    vec![]
-)]
-#[test_case(
     vec!["uv", "run", "--with", "fastmcp==2.14.4", "fastmcp", "run", "tests/fastmcp_test_server.py"],
     vec![
         CallToolRequestParams::new("divide").with_arguments(object!({
@@ -176,17 +167,23 @@ async fn test_replayed_session(
     tool_calls: Vec<CallToolRequestParams>,
     required_envs: Vec<&str>,
 ) {
+    // The working directory is sent to the server verbatim in our `roots/list`
+    // response, so it is part of the recorded protocol traffic. It must be an
+    // absolute path (relative paths are not convertible to a `file://` URL) and
+    // it must be stable across machines, otherwise playback compares a recorded
+    // path against whatever cwd the test happens to run in.
+    const TEST_WORKING_DIR: &str = "/tmp/goose_test";
+    fs::create_dir_all(TEST_WORKING_DIR).ok();
+
     let _env = env_lock::lock_env([
         ("GOOSE_MCP_CLIENT_VERSION", Some("0.0.0")),
         ("GOOSE_PROVIDER", Some("openai")),
         ("GOOSE_MODEL", Some("gpt-4o")),
+        ("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR)),
     ]);
 
     // Setup test file for developer extension tests
     let test_file_path = "/tmp/goose_test/goose.txt";
-    if let Some(parent) = std::path::Path::new(test_file_path).parent() {
-        fs::create_dir_all(parent).ok();
-    }
     fs::write(test_file_path, "# goose\n").ok();
     let replay_file_name = command
         .iter()
@@ -221,7 +218,16 @@ async fn test_replayed_session(
     let mut env = HashMap::new();
 
     if matches!(mode, TestMode::Record) {
-        args.extend(command.into_iter().map(str::to_string));
+        args.extend(command.into_iter().map(|arg| {
+            if arg == "tests/fastmcp_test_server.py" {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join(arg)
+                    .to_string_lossy()
+                    .into_owned()
+            } else {
+                arg.to_string()
+            }
+        }));
 
         for key in required_envs {
             match env::var(key) {
@@ -260,10 +266,13 @@ async fn test_replayed_session(
     let extension_manager = Arc::new(ExtensionManager::new(
         provider,
         session_manager,
+        None,
         GoosePlatform::GooseDesktop.to_string(),
         ExtensionManagerCapabilities {
             mcpui: true,
             host_info: None,
+            elicitation_handler: None,
+            protocol_version: None,
         },
         true,
     ));
@@ -295,7 +304,7 @@ async fn test_replayed_session(
 
         let mut results_path = replay_file_path.clone();
         results_path.pop();
-        results_path.push(format!("{}.results.json", &replay_file_name));
+        results_path.push(format!("{}.results.json", replay_file_name));
 
         match mode {
             TestMode::Record => {

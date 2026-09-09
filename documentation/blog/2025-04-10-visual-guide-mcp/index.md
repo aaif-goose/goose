@@ -76,7 +76,7 @@ The [Quickstart Guide](/docs/quickstart) walks you through connecting your first
 
 And when you’re ready to explore more, head over to the [tutorials section](/docs/category/tutorials) in the docs — it has step-by-step guides and short video demos to show you how to connect to a variety of MCP servers.
 
-And don't forget to [join the community](https://discord.gg/goose-oss) to see what others are building, ask questions, or to simply connect. 
+And don't forget to [join the community](https://discord.gg/n8R5VaWDAn) to see what others are building, ask questions, or to simply connect.
 
 
 <head>

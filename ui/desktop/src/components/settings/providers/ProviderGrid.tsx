@@ -2,7 +2,7 @@ import React, { memo, useMemo, useCallback, useState } from 'react';
 import { ProviderCard } from './subcomponents/ProviderCard';
 import CardContainer from './subcomponents/CardContainer';
 import ProviderConfigurationModal from './modal/ProviderConfigurationModal';
-import type { CustomProviderConfigDto } from '@aaif/goose-sdk';
+import type { CustomProviderConfigDto } from '@aaif/goose-acp-client';
 import type { ProviderDetails, UpdateCustomProviderRequest } from '../../../types/providers';
 import {
   acpCreateCustomProviderFromRequest,
@@ -10,7 +10,8 @@ import {
   acpDeleteCustomProvider,
   acpUpdateCustomProviderFromRequest,
 } from '../../../acp/providers';
-import { Plus } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
+import { Input } from '../../ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 import CustomProviderForm from './modal/subcomponents/forms/CustomProviderForm';
 import { SwitchModelModal } from '../models/subcomponents/SwitchModelModal';
@@ -42,6 +43,14 @@ const i18n = defineMessages({
   chooseModel: {
     id: 'providerGrid.chooseModel',
     defaultMessage: 'Choose Model',
+  },
+  searchPlaceholder: {
+    id: 'providerGrid.searchPlaceholder',
+    defaultMessage: 'Search providers...',
+  },
+  noMatch: {
+    id: 'providerGrid.noMatch',
+    defaultMessage: 'No providers match "{query}"',
   },
 });
 
@@ -97,6 +106,7 @@ function ProviderCards({
   onModelSelected?: (model?: string) => void;
 }) {
   const intl = useIntl();
+  const [searchQuery, setSearchQuery] = useState('');
   const [configuringProvider, setConfiguringProvider] = useState<ProviderDetails | null>(null);
   const [showCustomProviderModal, setShowCustomProviderModal] = useState(false);
   const [showSwitchModelModal, setShowSwitchModelModal] = useState(false);
@@ -232,14 +242,24 @@ function ProviderCards({
     [refreshProviders]
   );
 
+  const query = searchQuery.trim().toLowerCase();
+
   const providerCards = useMemo(() => {
     // providers needs to be an array
     const providersArray = Array.isArray(providers) ? providers : [];
-    // Sort providers alphabetically by display name
-    const sortedProviders = [...providersArray].sort((a, b) =>
-      a.metadata.display_name.localeCompare(b.metadata.display_name)
+    const sortedProviders = [...providersArray].sort(
+      (a, b) =>
+        Number(b.is_configured) - Number(a.is_configured) ||
+        a.metadata.display_name.localeCompare(b.metadata.display_name)
     );
-    const cards = sortedProviders.map((provider) => (
+    const filteredProviders = query
+      ? sortedProviders.filter(
+          (provider) =>
+            provider.metadata.display_name.toLowerCase().includes(query) ||
+            provider.metadata.description.toLowerCase().includes(query)
+        )
+      : sortedProviders;
+    const cards = filteredProviders.map((provider) => (
       <ProviderCard
         key={provider.name}
         provider={provider}
@@ -254,7 +274,18 @@ function ProviderCards({
     );
 
     return cards;
-  }, [providers, isOnboarding, configureProviderViaModal, handleProviderLaunchWithModelSelection]);
+  }, [
+    providers,
+    query,
+    isOnboarding,
+    configureProviderViaModal,
+    handleProviderLaunchWithModelSelection,
+  ]);
+
+  const hasNoMatches =
+    query.length > 0 &&
+    providerCards.length === 1 &&
+    (Array.isArray(providers) ? providers.length : 0) > 0;
 
   const initialData = editingProvider && {
     engine: editingProvider.config.engine,
@@ -267,6 +298,7 @@ function ProviderCards({
     requires_auth: editingProvider.config.requiresAuth ?? true,
     headers: editingProvider.config.headers ?? undefined,
     catalog_provider_id: editingProvider.config.catalogProviderId ?? undefined,
+    toolshim: editingProvider.config.toolshim,
   };
 
   const editable = editingProvider ? editingProvider.isEditable : true;
@@ -277,7 +309,25 @@ function ProviderCards({
     : intl.formatMessage(i18n.addProviderTitle);
   return (
     <>
-      {providerCards}
+      <div className="mx-auto mb-4 max-w-md px-1">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+          <Input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={intl.formatMessage(i18n.searchPlaceholder)}
+            className="pl-9"
+            data-testid="provider-search-input"
+          />
+        </div>
+      </div>
+      <GridLayout>{providerCards}</GridLayout>
+      {hasNoMatches && (
+        <div className="mt-2 text-center text-sm text-text-secondary">
+          {intl.formatMessage(i18n.noMatch, { query: searchQuery.trim() })}
+        </div>
+      )}
       <Dialog open={showCustomProviderModal} onOpenChange={handleCloseModal}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -330,14 +380,12 @@ export default function ProviderGrid({
   onModelSelected?: (model?: string) => void;
 }) {
   return (
-    <GridLayout>
-      <ProviderCards
-        providers={providers}
-        isOnboarding={isOnboarding}
-        refreshProviders={refreshProviders}
-        setView={setView}
-        onModelSelected={onModelSelected}
-      />
-    </GridLayout>
+    <ProviderCards
+      providers={providers}
+      isOnboarding={isOnboarding}
+      refreshProviders={refreshProviders}
+      setView={setView}
+      onModelSelected={onModelSelected}
+    />
   );
 }

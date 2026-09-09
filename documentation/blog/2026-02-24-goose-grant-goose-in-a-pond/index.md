@@ -93,7 +93,7 @@ By the end, Goose In A Pond should be something anyone can install, customize, a
 
 The goose grant program exists to support projects that push goose into places we haven't imagined yet. Goose In A Pond does exactly that. It takes goose from a developer tool on your laptop to a full blown home assistant running on edge hardware - completely local, completely open, completely yours.
 
-We can't wait to see what the Jarida team builds. If you want to follow along, join the [goose community](https://discord.gg/goose-oss) and stay tuned for updates as the project progresses.
+We can't wait to see what the Jarida team builds. If you want to follow along, join the [goose community](https://discord.gg/n8R5VaWDAn) and stay tuned for updates as the project progresses.
 
 And if *you* have a wild idea for what goose could do? The **[goose grant program](/grants/)** might be for you 🪿
 

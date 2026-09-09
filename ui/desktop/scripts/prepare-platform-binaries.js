@@ -23,17 +23,6 @@ const windowsFiles = [
     'goose-npm/**/*'
 ];
 
-const macosFiles = [
-    'goosed',
-    'goose',
-    'jbang',
-    'npx',
-    'uvx',
-    '*.db',
-    '*.log',
-    '.gitkeep'
-];
-
 // Helper function to check if file matches patterns
 function matchesPattern(filename, patterns) {
     return patterns.some(pattern => {
@@ -151,7 +140,9 @@ async function ensureWindowsUvBinaries() {
                 );
             }
 
-            fs.copyFileSync(extractedPath, path.join(srcBinDir, name));
+            const destPath = path.join(srcBinDir, name);
+            fs.rmSync(destPath, { force: true });
+            fs.copyFileSync(extractedPath, destPath);
             console.log(`Copied pinned ${name}`);
         }
     } finally {
@@ -174,9 +165,10 @@ function cleanBinDirectory(targetPlatform) {
         const filePath = path.join(srcBinDir, file.name);
         
         if (targetPlatform === 'darwin' || targetPlatform === 'linux') {
-            // For macOS/Linux, remove Windows-specific files
-            if (matchesPattern(file.name, windowsFiles)) {
-                console.log(`Removing Windows file: ${file.name}`);
+            const isLegacyBackendBinary = file.name === 'goosed';
+            if (isLegacyBackendBinary || matchesPattern(file.name, windowsFiles)) {
+                const fileType = isLegacyBackendBinary ? 'legacy backend binary' : 'Windows file';
+                console.log(`Removing ${fileType}: ${file.name}`);
                 if (file.isDirectory()) {
                     fs.rmSync(filePath, { recursive: true, force: true });
                 } else {
@@ -235,9 +227,11 @@ async function copyPlatformFiles(targetPlatform) {
             const destPath = path.join(srcBinDir, file.name);
             
             if (file.isDirectory()) {
-                fs.cpSync(srcPath, destPath, { recursive: true, force: true });
+                fs.rmSync(destPath, { recursive: true, force: true });
+                fs.cpSync(srcPath, destPath, { recursive: true });
                 console.log(`Copied directory: ${file.name}`);
             } else {
+                fs.rmSync(destPath, { force: true });
                 fs.copyFileSync(srcPath, destPath);
                 console.log(`Copied: ${file.name}`);
             }

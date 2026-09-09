@@ -17,7 +17,7 @@ This tutorial covers how to add the [Cloudinary Asset Management MCP Server](htt
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=--package&arg=@cloudinary/asset-management&arg=--&arg=mcp&arg=start&id=cloudinary&name=Cloudinary%20Asset%20Management&description=Powerful%20media%20processing%20and%20transformation&env=CLOUDINARY_URL%3DCloudinary%20URL)
+  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=--package&arg=@cloudinary/asset-management&arg=--&arg=mcp&arg=start&id=cloudinary-asset-management-mcp&name=Cloudinary%20Asset%20Management&description=Powerful%20media%20processing%20and%20transformation&env=CLOUDINARY_URL%3DCloudinary%20URL)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
@@ -41,7 +41,7 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
-    extensionId="cloudinary"
+    extensionId="cloudinary-asset-management-mcp"
     extensionName="Cloudinary Asset Management"
     description="Powerful media processing and transformation"
     command="npx"
@@ -135,5 +135,4 @@ The transformed image now has:
 
 You can click on the transformed URL to see the final result!
 ```
-
 

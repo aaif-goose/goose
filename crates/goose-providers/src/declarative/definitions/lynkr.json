@@ -1,0 +1,24 @@
+{
+  "name": "lynkr",
+  "engine": "openai",
+  "display_name": "Lynkr",
+  "description": "Self-hosted, OpenAI-compatible LLM gateway that adds tier routing, token compression, and semantic caching in front of any backend.",
+  "api_key_env": "LYNKR_API_KEY",
+  "base_url": "${LYNKR_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "LYNKR_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:8081",
+      "description": "Base URL of the Lynkr gateway (default: http://localhost:8081)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true,
+  "model_doc_link": "https://github.com/Fast-Editor/Lynkr"
+}

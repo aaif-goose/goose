@@ -321,7 +321,7 @@ impl MappingReport {
 
 fn data_file_path(filename: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../goose-providers/src/canonical/data")
+        .join("../goose-provider-types/src/canonical/data")
         .join(filename)
 }
 
@@ -357,10 +357,12 @@ fn get_thinking_mode(canonical_id: &str, value: &Value) -> Option<ThinkingMode> 
 fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
     match canonical_id {
         "anthropic/claude-fable-5" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "anthropic/claude-opus-5" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.7" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
         _ => None,
     }
 }

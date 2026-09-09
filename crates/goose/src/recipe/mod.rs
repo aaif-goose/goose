@@ -11,7 +11,6 @@ use crate::recipe::yaml_format_utils::reformat_fields_with_multiline_values;
 use crate::utils::contains_unicode_tags;
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 pub mod build_recipe;
 pub mod local_recipes;
@@ -39,7 +38,7 @@ pub fn strip_error_location(error_msg: &str) -> String {
         .to_string()
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Recipe {
     // Required fields
     #[serde(default = "default_version")]
@@ -86,7 +85,7 @@ pub struct Recipe {
     pub retry: Option<RetryConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Author {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contact: Option<String>, // creator/contact information of the recipe
@@ -95,7 +94,7 @@ pub struct Author {
     pub metadata: Option<String>, // any additional metadata for the author
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub goose_provider: Option<String>,
@@ -110,13 +109,13 @@ pub struct Settings {
     pub max_turns: Option<usize>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub json_schema: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubRecipe {
     pub name: String,
     pub path: String,
@@ -153,7 +152,7 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum RecipeParameterRequirement {
     Required,
@@ -171,7 +170,7 @@ impl fmt::Display for RecipeParameterRequirement {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum RecipeParameterInputType {
     String,
@@ -194,7 +193,7 @@ impl fmt::Display for RecipeParameterInputType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RecipeParameter {
     pub key: String,
     pub input_type: RecipeParameterInputType,
@@ -659,53 +658,6 @@ sub_recipes:
         assert!(recipe.author.is_some());
         let author = recipe.author.unwrap();
         assert_eq!(author.contact, Some("test@example.com".to_string()));
-    }
-
-    #[test]
-    fn test_inline_python_extension() {
-        let content = r#"{
-            "version": "1.0.0",
-            "title": "Test Recipe",
-            "description": "A test recipe",
-            "instructions": "Test instructions",
-            "extensions": [
-                {
-                    "type": "inline_python",
-                    "name": "test_python",
-                    "code": "print('hello world')",
-                    "timeout": 300,
-                    "description": "Test python extension",
-                    "dependencies": ["numpy", "matplotlib"]
-                }
-            ]
-        }"#;
-
-        let recipe = Recipe::from_content(content).unwrap();
-
-        assert!(recipe.extensions.is_some());
-        let extensions = recipe.extensions.unwrap();
-        assert_eq!(extensions.len(), 1);
-
-        match &extensions[0] {
-            ExtensionConfig::InlinePython {
-                name,
-                code,
-                description,
-                timeout,
-                dependencies,
-                ..
-            } => {
-                assert_eq!(name, "test_python");
-                assert_eq!(code, "print('hello world')");
-                assert_eq!(description, "Test python extension");
-                assert_eq!(timeout, &Some(300));
-                assert!(dependencies.is_some());
-                let deps = dependencies.as_ref().unwrap();
-                assert!(deps.contains(&"numpy".to_string()));
-                assert!(deps.contains(&"matplotlib".to_string()));
-            }
-            _ => panic!("Expected InlinePython extension"),
-        }
     }
 
     #[test]

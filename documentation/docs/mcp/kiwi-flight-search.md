@@ -24,7 +24,7 @@ This tutorial covers how to add the [Kiwi Flight Search MCP Server](https://mcp.
   Use `Add custom extension` in Settings → Extensions to add a `Streamable HTTP` extension type with:
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-  Use `goose configure` to add a `Remote Extension (Streaming HTTP)` extension type with:
+  Use `goose configure` to add a `Remote Extension (Streamable HTTP)` extension type with:
   </TabItem>
 </Tabs>
 

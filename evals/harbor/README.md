@@ -231,7 +231,7 @@ cd /home/tbench/work/goose
 ```
 
 For deeper per-task understanding (why did A pass and B fail on this one
-task?), see the `compare_tasks` skill under `.agents/skills/`. Delegate to
+task?), see the `compare-tasks` skill under `.agents/skills/`. Delegate to
 it with the two job names and a task name and it will read both
 trajectories, the task spec, and the verifier output, then explain the
 mechanism behind the divergence.

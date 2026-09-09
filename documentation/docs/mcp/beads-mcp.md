@@ -48,7 +48,6 @@ uv tool install beads-mcp --with packaging
       type="stdio"
       command="uvx"
       args={["beads-mcp"]}
-      timeout={300}
     />
   </TabItem>
   <TabItem value="cli" label="goose CLI">
@@ -420,5 +419,4 @@ To test it, run: open index.html
 
 Or start a local server: python3 -m http.server 8000 and visit http://localhost:8000
 ```
-
 

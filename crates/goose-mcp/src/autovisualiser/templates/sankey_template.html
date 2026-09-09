@@ -172,8 +172,11 @@
                 .attr("stroke", function (d) { return nodeColor(d.source); })
                 .attr("stroke-width", function (d) { return Math.max(1, d.width); })
                 .on("mouseover", function (event, d) {
-                    tooltip.style("opacity", 1)
-                        .html("<strong>" + d.source.name + " → " + d.target.name + "</strong><br/>" + d.value.toLocaleString());
+                    setTooltip([
+                        d.source.name + " → " + d.target.name,
+                        d.value.toLocaleString(),
+                    ]);
+                    tooltip.style("opacity", 1);
                     McpAppBridge.positionTooltip(tooltip, event);
                 })
                 .on("mouseout", function () { tooltip.style("opacity", 0); });
@@ -188,10 +191,11 @@
                 .on("mouseover", function (event, d) {
                     var totalIn = d.targetLinks.reduce(function (s, l) { return s + l.value; }, 0);
                     var totalOut = d.sourceLinks.reduce(function (s, l) { return s + l.value; }, 0);
-                    tooltip.style("opacity", 1)
-                        .html("<strong>" + d.name + "</strong>" +
-                            (totalIn ? "<br/>In: " + totalIn.toLocaleString() : "") +
-                            (totalOut ? "<br/>Out: " + totalOut.toLocaleString() : ""));
+                    var lines = [d.name];
+                    if (totalIn) lines.push("In: " + totalIn.toLocaleString());
+                    if (totalOut) lines.push("Out: " + totalOut.toLocaleString());
+                    setTooltip(lines);
+                    tooltip.style("opacity", 1);
                     McpAppBridge.positionTooltip(tooltip, event);
                 })
                 .on("mouseout", function () { tooltip.style("opacity", 0); });
@@ -203,6 +207,14 @@
                 .attr("dy", "0.35em")
                 .attr("text-anchor", function (d) { return d.x0 < w / 2 ? "start" : "end"; })
                 .text(function (d) { return d.name; });
+        }
+
+        function setTooltip(lines) {
+            tooltip.selectAll("*").remove();
+            lines.forEach(function (line, index) {
+                if (index > 0) tooltip.append("br");
+                tooltip.append(index === 0 ? "strong" : "span").text(line);
+            });
         }
 
         function renderData(data) {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { GroupedExtensionLoadingToast } from '../GroupedExtensionLoadingToast';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 

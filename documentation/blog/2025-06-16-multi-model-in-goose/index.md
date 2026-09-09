@@ -88,7 +88,7 @@ If you're curious how it all works under the hood, see the [planning guide](/doc
 
 ---
 
-If you're experimenting with multi-model setups, [share what's working and what isn't](https://discord.gg/goose-oss).
+If you're experimenting with multi-model setups, [share what's working and what isn't](https://discord.gg/n8R5VaWDAn).
 
 
 <head>

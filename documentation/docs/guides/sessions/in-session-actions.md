@@ -65,11 +65,7 @@ Editing in place is useful when:
         goose session --resume <session-id> --edit
         ```
 
-        This opens `$VISUAL` / `$EDITOR` / `vi` with the conversation serialized as YAML. After editing and saving, goose continues the session from the edited conversation.
-
-        :::warning Deleted Context
-        With `--edit`, subsequent conversation history is permanently deleted from the session and removed from goose's context. Use this option only if you don't need goose to remember the context that follows the edited message.
-        :::
+        This opens `$VISUAL` / `$EDITOR` / `vi` with the conversation serialized as YAML. After editing and saving, goose continues the session from the edited conversation. Any later messages you leave in the YAML remain in the session and in goose's context; remove messages from the YAML if you want goose to forget them.
 
     </TabItem>
 </Tabs>

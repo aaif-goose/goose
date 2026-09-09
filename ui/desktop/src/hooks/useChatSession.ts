@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { defineMessages, useIntl } from '../i18n';
 import { AppEvents } from '../constants/events';
+import { toastError } from '../toasts';
 import { ChatState } from '../types/chatState';
 
 import type { TokenState } from '../types/chat';
@@ -8,6 +9,7 @@ import type { Session } from '../types/session';
 
 import {
   createUserMessage,
+  type ImageData,
   type Message,
   type NotificationEvent,
   type UserInput,
@@ -22,6 +24,7 @@ import {
   useAcpChatSessionSnapshot,
 } from '../acp/chatSessionStore';
 import { acpSteerSession } from '../acp/prompt';
+import { isAcpRecovering } from '../acp/acpConnection';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -61,6 +64,7 @@ export function useChatSession({
   const messages = acpSnapshot?.messages ?? [];
   const session = acpSnapshot?.session;
   const chatState = acpSnapshot?.chatState ?? ChatState.LoadingConversation;
+  const progressMessage = acpSnapshot?.progressMessage;
   const sessionLoadError = acpSnapshot?.sessionLoadError;
   const tokenState = acpSnapshot?.tokenState ?? initialTokenState;
   const queueProcessingBlocked = acpSnapshot?.pendingCancelPromptAttemptId != null;
@@ -105,7 +109,9 @@ export function useChatSession({
 
   const onFinish = useCallback(
     async (error?: string): Promise<void> => {
-      if (!error) {
+      if (error) {
+        toastError({ title: "Couldn't send message", msg: error });
+      } else {
         try {
           const [notificationsEnabled, anyWindowFocused] = await Promise.all([
             window.electron.getSetting('enableNotifications'),
@@ -140,15 +146,22 @@ export function useChatSession({
     [getCurrentSnapshot, onFinish, sessionId]
   );
 
+  const retrySessionLoad = useCallback(
+    () => acpChatSessionController.loadSession(sessionId, { onSessionLoaded }),
+    [sessionId, onSessionLoaded]
+  );
+
   // Load session on mount or sessionId change
   useEffect(() => {
-    if (!sessionId) return;
-
-    void acpChatSessionController.loadSession(sessionId, { onSessionLoaded });
-  }, [sessionId, onSessionLoaded]);
+    void retrySessionLoad();
+  }, [retrySessionLoad]);
 
   const handleSubmit = useCallback(
     async (input: UserInput) => {
+      if (isAcpRecovering()) {
+        return;
+      }
+
       const { msg: userMessage, images } = input;
       const currentSnapshot = getCurrentSnapshot();
 
@@ -274,16 +287,27 @@ export function useChatSession({
   }, [sessionId]);
 
   const onMessageUpdate = useCallback(
-    async (messageId: string, newContent: string, editType: 'fork' | 'edit' = 'fork') => {
+    async (
+      messageId: string,
+      newContent: string,
+      editType: 'fork' | 'edit',
+      retainedImages: ImageData[]
+    ) => {
       try {
-        await acpChatSessionController.updateMessage(sessionId, messageId, newContent, editType, {
-          getCurrentSnapshot,
-          onFinish,
-        });
+        await acpChatSessionController.updateMessage(
+          sessionId,
+          messageId,
+          newContent,
+          editType,
+          retainedImages,
+          {
+            getCurrentSnapshot,
+            onFinish,
+          }
+        );
       } catch (error) {
         const errorMsg = errorMessage(error);
         console.error('Failed to edit message:', error);
-        const { toastError } = await import('../toasts');
         toastError({
           title: 'Failed to edit message',
           msg: errorMsg,
@@ -319,11 +343,13 @@ export function useChatSession({
     messages,
     session,
     chatState,
+    progressMessage,
     updateSession,
     handleSubmit,
     onSteerQueuedMessage,
     submitElicitationResponse,
     stopStreaming,
+    retrySessionLoad,
     tokenState,
     notifications: notificationsMap,
     pauseQueueOnStop: false,

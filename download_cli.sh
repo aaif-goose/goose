@@ -7,7 +7,7 @@ set -eu
 # This script downloads the latest stable 'goose' CLI binary from GitHub releases
 # and installs it to your system.
 #
-# Supported OS: macOS (darwin), Linux, Windows (MSYS2/Git Bash/WSL)
+# Supported OS: macOS (darwin), Linux, Windows (MSYS2/Git Bash/WSL), Android (Termux)
 # Supported Architectures: x86_64, arm64
 #
 # Usage:
@@ -98,6 +98,10 @@ else
   # If explicit Windows-like shells/variables are present (MSYS/Cygwin), treat as windows.
   if [[ "${WINDIR:-}" ]] || [[ "${windir:-}" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
     OS="windows"
+  elif [[ -n "${TERMUX_VERSION:-}" ]]; then
+    # Termux on Android: treat as Linux before the Windows mount heuristic,
+    # since /d may exist on Android and would incorrectly match as Windows.
+    OS="linux"
   elif [[ -f "/proc/version" ]] && grep -q "Microsoft\|WSL" /proc/version 2>/dev/null; then
     # WSL is a Linux environment regardless of the current working directory.
     # The PWD (e.g. /mnt/c/) does not change the kernel — always install Linux.
@@ -152,6 +156,12 @@ detect_linux_musl() {
 
   return 1
 }
+
+# Termux on Android: the musl portable build is the best fit (no system-keyring, no local-inference).
+if [ "$OS" = "linux" ] && [ -n "${TERMUX_VERSION:-}" ] && [ -z "$GOOSE_LINUX_VARIANT" ]; then
+  echo "Termux detected (v$TERMUX_VERSION). Using musl portable build."
+  GOOSE_LINUX_VARIANT="musl"
+fi
 
 if [ "$OS" = "linux" ] && [ -z "$GOOSE_LINUX_VARIANT" ]; then
   if detect_linux_musl; then
@@ -242,7 +252,7 @@ if ! curl -sLf "$DOWNLOAD_URL" --output "$FILE"; then
 fi
 
 # Create a temporary directory for extraction
-TMP_DIR="/tmp/goose_install_$RANDOM"
+TMP_DIR="${TMPDIR:-/tmp}/goose_install_$RANDOM"
 if ! mkdir -p "$TMP_DIR"; then
   echo "Error: Could not create temporary extraction directory"
   exit 1

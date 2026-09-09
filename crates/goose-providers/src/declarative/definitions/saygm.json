@@ -1,0 +1,22 @@
+{
+  "name": "saygm",
+  "engine": "openai",
+  "display_name": "SayGM",
+  "description": "TEE-backed private inference via an OpenAI-compatible API with dynamic model routing. Prices are determined at runtime per request.",
+  "api_key_env": "SAYGM_API_KEY",
+  "base_url": "https://api.saygm.com/v1",
+  "dynamic_models": true,
+  "models": [
+    { "name": "gpt-5.5", "context_limit": 1050000, "reasoning": true },
+    { "name": "gpt-5.4-mini", "context_limit": 400000, "reasoning": true },
+    { "name": "Qwen/Qwen3-32B-TEE", "context_limit": 40960, "reasoning": true }
+  ],
+  "supports_streaming": true,
+  "skip_canonical_filtering": true,
+  "model_doc_link": "https://docs.saygm.com",
+  "setup_steps": [
+    "Create or sign in to your SayGM account at https://saygm.com",
+    "Generate an API key from the dashboard",
+    "Copy the key and paste it above"
+  ]
+}

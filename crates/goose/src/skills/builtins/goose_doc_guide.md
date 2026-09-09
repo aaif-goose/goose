@@ -1,6 +1,6 @@
 ---
 name: goose-doc-guide
-description: Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST fetch relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
+description: Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST read the relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
 ---
 
 Use this skill when working with **goose-specific features**:
@@ -13,22 +13,28 @@ Do NOT use this skill for:
 - General coding tasks unrelated to goose
 - Running existing recipes (just run them directly)
 
+The docs root for this session is `{{GOOSE_DOCS_ROOT}}`. It may be a local
+filesystem path or an HTTP(S) URL. When it is a local path read files with the
+shell/file tools; when it is not set or is an HTTP(S) URL fetch them from the
+canonical location which is https://goose-docs.ai. Everything below refers to
+this docs root as `<docs-root>`.
+
 ## Steps (COMPLETE ALL BEFORE RESPONDING)
-1. **Fetch official docs**
-   - Fetch the doc map from `https://goose-docs.ai/goose-docs-map.md`
+1. **Read official docs**
+   - Read the doc map from `<docs-root>/goose-docs-map.md`
    - Search the doc map for pages relevant to the user's topic and get the paths for these pages
    - Use the EXACT paths from the doc map. For example:
    - If doc map shows: `docs/guides/sessions/session-management.md`
-   - Fetch: `https://goose-docs.ai/docs/guides/sessions/session-management.md`
+   - Read: `<docs-root>/docs/guides/sessions/session-management.md`
    - Do NOT modify or guess paths.
-   - **ONLY fetch paths that are explicitly listed in the doc map - do not guess or infer URLs**
-   - Make multiple fetch calls in parallel and save to temp files
-   - Use the temp files for subsequent searches instead of re-fetching
+   - **ONLY read paths that are explicitly listed in the doc map - do not guess or infer paths**
+   - Read multiple docs in parallel and save to temp files
+   - Use the temp files for subsequent searches instead of re-reading
 
 2. **Create/modify content**
    - For goose configuration files:
       - Consult schema/field reference documentation first
-      - **Search the fetched docs to extract the complete schema for each element you plan to use**
+      - **Search the docs to extract the complete schema for each element you plan to use**
       - Extract example snippets to understand usage patterns
       - Create your configuration based on reference specs, following example patterns
       - **⚠️ STOP: Before showing the user, verify output content MUST match the schema and reference in the goose official documentation:**
@@ -43,14 +49,15 @@ Do NOT use this skill for:
    - [ ] You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
    - [ ] **Did you include "How to Use", CLI commands, or usage instructions?**
       - If YES and user didn't ask for it → **REMOVE IT NOW**
-      - If YES and user asked for it → verify exact commands from fetched docs before including
+      - If YES and user asked for it → verify exact commands from the docs before including
    - [ ] List all goose-specific items in your answer (commands, fields, syntax, values, how to use, explanations, etc.)
-   - [ ] For each item, verify it is correct according to the fetched docs. If not found, either fetch the relevant docs NOW and verify, or remove it (if user asked for it, state "I could not find documentation for [X]").
+   - [ ] For each item, verify it is correct according to the docs. If not found, either read the relevant docs NOW and verify, or remove it (if user asked for it, state "I could not find documentation for [X]").
 
 4. **Provide your answer and include a "Verification Completed" section**
    - For EACH goose-specific item in your response, cite the specific doc file where you verified it
 
 5. **List documentation links**
    - Only include docs actually used
+   - Always link to the canonical site `https://goose-docs.ai/`, even if you read the docs from a local path. Never expose local filesystem paths.
    - Remove `.md` suffix from URLs
-   - Example: If you fetched `https://goose-docs.ai/docs/guides/sessions/session-management.md`, list it as `https://goose-docs.ai/docs/guides/sessions/session-management`
+   - Example: If you read `docs/guides/sessions/session-management.md`, list it as `https://goose-docs.ai/docs/guides/sessions/session-management`

@@ -1,6 +1,6 @@
 use docx_rs::*;
 use image::{self, ImageFormat};
-use rmcp::model::{Content, ErrorCode, ErrorData};
+use rmcp::model::{ContentBlock, ErrorCode, ErrorData};
 use std::borrow::Cow;
 use std::{fs, io::Cursor};
 
@@ -261,7 +261,7 @@ fn extract_structure_from_docx(docx: &Docx) -> Vec<String> {
     structure
 }
 
-fn do_extract_text(path: &str) -> Result<Vec<Content>, ErrorData> {
+fn do_extract_text(path: &str) -> Result<Vec<ContentBlock>, ErrorData> {
     let docx = read_docx_file(path)?;
     let text = extract_text_from_docx(&docx);
     let structure = extract_structure_from_docx(&docx);
@@ -275,18 +275,18 @@ fn do_extract_text(path: &str) -> Result<Vec<Content>, ErrorData> {
     } else {
         format!("Extracted Text:\n{}", text)
     };
-    Ok(vec![Content::text(result)])
+    Ok(vec![ContentBlock::text(result)])
 }
 
 fn do_append(
     path: &str,
     content: &str,
     style: &Option<DocxStyle>,
-) -> Result<Vec<Content>, ErrorData> {
+) -> Result<Vec<ContentBlock>, ErrorData> {
     let doc = read_or_create_docx(path)?;
     let doc = add_styled_paragraphs(doc, content, style);
     write_docx_file(path, doc)?;
-    Ok(vec![Content::text(format!(
+    Ok(vec![ContentBlock::text(format!(
         "Successfully wrote content to {}",
         path
     ))])
@@ -297,7 +297,7 @@ fn do_replace(
     content: &str,
     old_text: &str,
     style: &Option<DocxStyle>,
-) -> Result<Vec<Content>, ErrorData> {
+) -> Result<Vec<ContentBlock>, ErrorData> {
     let docx = read_docx_file(path)?;
     let mut new_doc = Docx::new();
     let mut found_text = false;
@@ -334,7 +334,7 @@ fn do_replace(
         )));
     }
     write_docx_file(path, new_doc)?;
-    Ok(vec![Content::text(format!(
+    Ok(vec![ContentBlock::text(format!(
         "Successfully replaced content in {}",
         path
     ))])
@@ -345,7 +345,7 @@ fn do_insert_structured(
     content: &str,
     level: &Option<String>,
     style: &Option<DocxStyle>,
-) -> Result<Vec<Content>, ErrorData> {
+) -> Result<Vec<ContentBlock>, ErrorData> {
     let mut doc = read_or_create_docx(path)?;
 
     for para in content.split('\n').filter(|p| !p.trim().is_empty()) {
@@ -362,7 +362,7 @@ fn do_insert_structured(
     }
 
     write_docx_file(path, doc)?;
-    Ok(vec![Content::text(format!(
+    Ok(vec![ContentBlock::text(format!(
         "Successfully added structured content to {}",
         path
     ))])
@@ -397,7 +397,7 @@ fn do_add_image(
     width: Option<u32>,
     height: Option<u32>,
     style: &Option<DocxStyle>,
-) -> Result<Vec<Content>, ErrorData> {
+) -> Result<Vec<ContentBlock>, ErrorData> {
     let mut doc = read_or_create_docx(path)?;
     let image_data = load_image_as_png(image_path)?;
 
@@ -426,7 +426,7 @@ fn do_add_image(
     doc = doc.add_paragraph(paragraph);
 
     write_docx_file(path, doc)?;
-    Ok(vec![Content::text(format!(
+    Ok(vec![ContentBlock::text(format!(
         "Successfully added image to {}",
         path
     ))])
@@ -437,7 +437,7 @@ pub async fn docx_tool(
     operation: &str,
     content: Option<&str>,
     params: Option<&serde_json::Value>,
-) -> Result<Vec<Content>, ErrorData> {
+) -> Result<Vec<ContentBlock>, ErrorData> {
     match operation {
         "extract_text" => do_extract_text(path),
         "update_doc" => {

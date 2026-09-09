@@ -585,6 +585,54 @@ pre:has(> code.bg-inline-code) {
   margin-bottom: 0 !important;
 }
 
+.dark .user-message-bubble {
+  --code-block-background: #0f1628;
+  background-color: #171d30;
+  color: #d2dae6;
+}
+
+.dark .user-message pre {
+  background-color: var(--code-block-background);
+}
+
+.dark .user-message :is(h1, h2, h3, h4, h5, h6, strong) {
+  color: #e7ebf2 !important;
+}
+
+.dark .user-message li {
+  color: #c4cfde !important;
+}
+
+.dark .user-message li::marker {
+  color: #8798b0;
+}
+
+.dark .user-message a {
+  color: #aecfe3 !important;
+}
+
+.dark .user-message em {
+  color: #c6d9df !important;
+}
+
+.dark .agent-message-bubble {
+  background-color: #1f2126;
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+}
+
+.dark :is(.agent-message-bubble, .user-message-bubble) :not(pre) > code.bg-inline-code {
+  background-color: transparent;
+  color: #8cd3d6;
+  padding: 0;
+}
+
+.dark :is(.agent-message-bubble, .user-message-bubble) pre > code.bg-inline-code {
+  background-color: transparent;
+  color: #b8c4d1;
+  padding: 0;
+}
+
 .scrollbar-thin {
   scrollbar-width: thin;
 }
@@ -930,4 +978,14 @@ pre:has(> code.bg-inline-code) {
 
 .mcp-app-container.mcp-enter-inline {
   animation: mcp-enter-inline 180ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AURA THEME — component overrides
+   User message bubbles use the inverted bg-text-primary surface,
+   which turns light in Aura. Restore Aura's dark chat bubble.
+   ═══════════════════════════════════════════════════════════ */
+[data-theme='aura'] .user-message-bubble {
+  background-color: #393647;
+  color: #edecee;
 }

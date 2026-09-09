@@ -1,6 +1,6 @@
 [package]
 name = "goose-providers"
-version.workspace = true
+version = "0.1.0-alpha.9"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -13,13 +13,17 @@ workspace = true
 
 [features]
 default = []
+local-inference = ["dep:goose-local-inference"]
+local-inference-hf-hub = ["local-inference", "goose-local-inference/hf-hub"]
+cuda = ["local-inference", "goose-local-inference/cuda"]
+vulkan = ["local-inference", "goose-local-inference/vulkan"]
+mlx = ["local-inference", "goose-local-inference/mlx"]
 rustls-tls = [
     "reqwest/rustls",
     "rmcp/reqwest",
 ]
 native-tls = [
     "dep:pem",
-    "dep:pkcs1",
     "dep:pkcs8",
     "dep:sec1",
     "reqwest/native-tls",
@@ -29,40 +33,35 @@ native-tls = [
 [dependencies]
 anyhow = { workspace = true }
 async-stream = { workspace = true }
-base64 = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
-once_cell = { workspace = true }
-regex = { workspace = true, features = ["unicode"] }
+goose-provider-types = { version = "0.1.0-alpha.9", path = "../goose-provider-types", default-features = false }
+goose-local-inference = { version = "0.1.0-alpha.9", path = "../goose-local-inference", default-features = false, optional = true }
 reqwest = { workspace = true }
 rmcp = { workspace = true, features = ["server", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
-unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
-utoipa = { workspace = true, features = ["chrono"] }
-uuid = { workspace = true, features = ["v4", "std"] }
 async-trait = { workspace = true }
-strum = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
 tokio-util = { workspace = true, features = ["compat"] }
-rand = { workspace = true }
 url = { workspace = true }
-pem = { version = "3.0.2", default-features = false, features = ["std"], optional = true }
-pkcs1 = { version = "0.7.5", default-features = false, features = ["pkcs8", "std"], optional = true }
-# v0.10 matches the der/const-oid series used by sec1 v0.7 and pkcs1 v0.7; upgrading to v0.11 causes type mismatches across those crates.
-pkcs8 = { version = "0.10", default-features = false, features = ["alloc", "std"], optional = true }
-sec1 = { version = "0.7", default-features = false, features = ["der", "pkcs8", "std"], optional = true }
+urlencoding = { workspace = true }
+pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
+pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
+sec1 = { version = "0.8", default-features = false, features = ["der", "std"], optional = true }
+include_dir = { workspace = true }
 
 [dev-dependencies]
 test-case = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 tokio-stream = { workspace = true }
 env-lock = { workspace = true }
 wiremock.workspace = true
+flate2 = "1.1.9"
+reqwest = { workspace = true, features = ["gzip"] }
 
 [[example]]
 name = "streaming"

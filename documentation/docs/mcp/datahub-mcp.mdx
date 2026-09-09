@@ -68,7 +68,6 @@ Note that you'll need [uv](https://docs.astral.sh/uv/#installation) installed on
       type="stdio"
       command="uvx"
       args={["mcp-server-datahub@latest"]}
-      timeout={300}
       envVars={[
         { name: "DATAHUB_GMS_URL", label: "DataHub GMS URL (e.g., https://your-instance.acryl.io or http://localhost:8080)" },
         { name: "DATAHUB_GMS_TOKEN", label: "DataHub Personal Access Token" }
@@ -255,4 +254,3 @@ If `uvx` is not found:
 1. Ensure `uv` is installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. Restart your terminal or source your shell configuration
 3. Verify installation: `which uvx`
-

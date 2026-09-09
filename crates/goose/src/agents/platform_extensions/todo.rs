@@ -7,7 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
 use rmcp::model::{
-    CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
@@ -59,7 +59,7 @@ impl TodoClient {
         &self,
         session_id: &str,
         arguments: Option<JsonObject>,
-    ) -> Result<Vec<Content>, String> {
+    ) -> Result<Vec<ContentBlock>, String> {
         let content = arguments
             .as_ref()
             .ok_or("Missing arguments")?
@@ -95,7 +95,7 @@ impl TodoClient {
                         .apply()
                         .await
                     {
-                        Ok(_) => Ok(vec![Content::text(format!(
+                        Ok(_) => Ok(vec![ContentBlock::text(format!(
                             "Updated ({} chars)",
                             char_count
                         ))]),
@@ -151,6 +151,7 @@ impl McpClientTrait for TodoClient {
             tools: Self::get_tools(),
             next_cursor: None,
             meta: None,
+            ..Default::default()
         })
     }
 
@@ -169,7 +170,7 @@ impl McpClientTrait for TodoClient {
 
         match content {
             Ok(content) => Ok(CallToolResult::success(content)),
-            Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "Error: {}",
                 error
             ))])),

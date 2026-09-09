@@ -9,11 +9,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use utoipa::ToSchema;
 
 /// Extension data containing all extension states
 /// Keys are in format "extension_name.version" (e.g., "todo.v0")
-#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExtensionData {
     #[serde(flatten)]
     pub extension_states: HashMap<String, Value>,

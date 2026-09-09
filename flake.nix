@@ -42,7 +42,12 @@
           version = workspaceToml.workspace.package.version;
           src = self;
 
-          cargoLock.lockFile = ./Cargo.lock;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes = {
+              "cudaforge-0.1.6" = "sha256-w0e/mfx08BkphDEFEWxuyxyZu/gHiG0m6RHx+3BLzDY=";
+            };
+          };
 
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
 

@@ -1,6 +1,6 @@
 import { AppEvents } from '../constants/events';
 import { useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { ChatState } from '../types/chatState';
 import type { Message, UserInput } from '../types/message';
 import type { Session } from '../types/session';

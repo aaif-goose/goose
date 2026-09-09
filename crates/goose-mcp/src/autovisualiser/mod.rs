@@ -3,9 +3,10 @@ use indoc::formatdoc;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolResult, Content, ErrorCode, ErrorData, Implementation, InitializeResult,
-        ListResourcesResult, Meta, PaginatedRequestParams, RawResource, ReadResourceRequestParams,
-        ReadResourceResult, Resource, ResourceContents, ServerCapabilities, ServerInfo,
+        CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
+        ListResourcesResult, MetaObject, PaginatedRequestParams, ReadResourceRequestParams,
+        ReadResourceResponse, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
+        ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router, RoleServer, ServerHandler,
@@ -18,8 +19,8 @@ use std::path::PathBuf;
 const MCP_APPS_MIME_TYPE: &str = "text/html;profile=mcp-app";
 
 /// Build a Meta object with `_meta.ui.resourceUri` for linking a tool to a UI resource.
-fn ui_resource_meta(uri: &str) -> Meta {
-    let mut meta = Meta::new();
+fn ui_resource_meta(uri: &str) -> MetaObject {
+    let mut meta = MetaObject::new();
     meta.0
         .insert("ui".to_string(), json!({ "resourceUri": uri }));
     meta
@@ -682,18 +683,11 @@ impl ServerHandler for AutoVisualiserRouter {
     ) -> Result<ListResourcesResult, ErrorData> {
         let resources = UI_RESOURCES
             .iter()
-            .map(|def| Resource {
-                raw: RawResource {
-                    uri: def.uri.to_string(),
-                    name: def.name.to_string(),
-                    title: Some(def.name.to_string()),
-                    description: Some(def.description.to_string()),
-                    mime_type: Some(MCP_APPS_MIME_TYPE.to_string()),
-                    size: None,
-                    icons: None,
-                    meta: None,
-                },
-                annotations: None,
+            .map(|def| {
+                Resource::new(def.uri, def.name)
+                    .with_title(def.name)
+                    .with_description(def.description)
+                    .with_mime_type(MCP_APPS_MIME_TYPE)
             })
             .collect();
 
@@ -701,6 +695,7 @@ impl ServerHandler for AutoVisualiserRouter {
             resources,
             next_cursor: None,
             meta: None,
+            ..Default::default()
         })
     }
 
@@ -708,10 +703,10 @@ impl ServerHandler for AutoVisualiserRouter {
         &self,
         params: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
+    ) -> Result<ReadResourceResponse, ErrorData> {
         let html = self.get_template_html(&params.uri)?;
 
-        let mut meta = Meta::new();
+        let mut meta = MetaObject::new();
         meta.0
             .insert("ui".to_string(), json!({ "prefersBorder": true }));
 
@@ -722,7 +717,7 @@ impl ServerHandler for AutoVisualiserRouter {
             meta: Some(meta),
         };
 
-        Ok(ReadResourceResult::new(vec![resource_contents]))
+        Ok(ReadResourceResult::new(vec![resource_contents]).into())
     }
 }
 
@@ -922,7 +917,7 @@ Example:
         );
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/sankey")));
 
         Ok(result)
@@ -986,7 +981,7 @@ Example:
         );
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/radar")));
 
         Ok(result)
@@ -1067,7 +1062,7 @@ Example multiple charts (array of chart objects):
         };
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/donut")));
 
         Ok(result)
@@ -1129,7 +1124,7 @@ Example:
         );
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/treemap")));
 
         Ok(result)
@@ -1181,7 +1176,7 @@ Example:
         let text_fallback = format!("chord diagram: {} entities", entity_count);
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/chord")));
 
         Ok(result)
@@ -1251,7 +1246,7 @@ Example:
         let text_fallback = format!("map: \"{}\" with {} marker(s)", title, marker_count);
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/map")));
 
         Ok(result)
@@ -1291,7 +1286,7 @@ graph TD;
         })?;
 
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/mermaid")));
 
         Ok(result)
@@ -1353,7 +1348,7 @@ Example:
         // The host fetches the template via read_resource and sends this data
         // to the template via the MCP Apps postMessage lifecycle.
         let mut result = CallToolResult::structured(data);
-        result.content = vec![Content::text(text_fallback)];
+        result.content = vec![ContentBlock::text(text_fallback)];
         result = result.with_meta(Some(ui_resource_meta("ui://autovisualiser/chart")));
 
         Ok(result)
@@ -1364,7 +1359,7 @@ Example:
 mod tests {
     use super::*;
     use rmcp::handler::server::wrapper::Parameters;
-    use rmcp::model::RawContent;
+    use rmcp::model::ContentBlock;
     use serde_json::json;
 
     #[test]
@@ -1507,7 +1502,7 @@ mod tests {
         text_contains: &str,
     ) {
         assert_eq!(tool_result.content.len(), 1);
-        if let RawContent::Text(text_content) = &tool_result.content[0].raw {
+        if let ContentBlock::Text(text_content) = &tool_result.content[0] {
             assert!(
                 text_content.text.contains(text_contains),
                 "Text fallback '{}' should contain '{}'",
@@ -1724,6 +1719,64 @@ mod tests {
         let result = router.render_mermaid(params).await;
         assert!(result.is_ok());
         assert_mcp_apps_result(&result.unwrap(), "ui://autovisualiser/mermaid", "mermaid");
+    }
+
+    #[test]
+    fn donut_legend_renders_dynamic_values_as_text() {
+        let html = AutoVisualiserRouter::new()
+            .get_template_html("ui://autovisualiser/donut")
+            .unwrap();
+
+        assert!(!html.contains("legendEl.innerHTML"));
+        assert!(html.contains("labelEl.textContent = label"));
+        assert!(html.contains("valueEl.textContent = pct"));
+    }
+
+    #[test]
+    fn chord_tooltips_render_dynamic_values_as_text() {
+        let html = AutoVisualiserRouter::new()
+            .get_template_html("ui://autovisualiser/chord")
+            .unwrap();
+
+        assert!(!html.contains(".html("));
+        assert!(html.contains(".text(line)"));
+        assert!(html.contains("data.labels[d.source.index]"));
+        assert!(html.contains("data.labels[d.target.index]"));
+    }
+
+    #[test]
+    fn mermaid_errors_render_as_text_without_changing_svg_rendering() {
+        let html = AutoVisualiserRouter::new()
+            .get_template_html("ui://autovisualiser/mermaid")
+            .unwrap();
+
+        assert!(html.contains("errorEl.textContent = String(err.message || err)"));
+        assert!(html.contains("output.replaceChildren(errorEl)"));
+        assert!(html.contains("output.innerHTML = result.svg"));
+        assert!(!html.contains("'<div class=\"mermaid-error\">' +"));
+    }
+
+    #[test]
+    fn sankey_tooltips_render_dynamic_values_as_text() {
+        let html = AutoVisualiserRouter::new()
+            .get_template_html("ui://autovisualiser/sankey")
+            .unwrap();
+
+        assert!(!html.contains(".html("));
+        assert!(html.contains("tooltip.append(index === 0 ? \"strong\" : \"span\").text(line)"));
+        assert!(html.contains("d.source.name + \" → \" + d.target.name"));
+        assert!(html.contains("var lines = [d.name]"));
+    }
+
+    #[test]
+    fn treemap_tooltips_render_dynamic_values_as_text() {
+        let html = AutoVisualiserRouter::new()
+            .get_template_html("ui://autovisualiser/treemap")
+            .unwrap();
+
+        assert!(!html.contains("tt.innerHTML"));
+        assert!(html.contains("name.textContent = d.data.name"));
+        assert!(html.contains("document.createTextNode(d.data.category)"));
     }
 }
 

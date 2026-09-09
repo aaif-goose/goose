@@ -1,0 +1,95 @@
+name: Python GDK Wheels
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-wheels:
+    name: Build wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container || null }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+          - name: macos-x86_64
+            os: macos-15-intel
+          - name: linux-x86_64
+            os: ubuntu-latest
+            container: quay.io/pypa/manylinux_2_28_x86_64@sha256:441c35fdc6ee809ff9260894f8468ab4fea8c15dc880f8700a3f81b7922c1cda
+          - name: windows-x86_64
+            os: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+
+      - name: Select Linux Python
+        if: runner.os == 'Linux'
+        run: echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Python
+        if: runner.os != 'Linux'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install Linux tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install uv
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+
+      - name: Install just
+        if: runner.os != 'Linux'
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+
+      - name: Build wheel
+        shell: bash
+        run: just --justfile crates/goose-sdk/justfile python-wheel
+
+      - name: Repair Linux wheel
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 -m pip install auditwheel
+          mkdir -p crates/goose-sdk/python/wheelhouse
+          auditwheel repair --plat manylinux_2_28_x86_64 -w crates/goose-sdk/python/wheelhouse crates/goose-sdk/python/dist/*.whl
+          rm crates/goose-sdk/python/dist/*.whl
+          mv crates/goose-sdk/python/wheelhouse/*.whl crates/goose-sdk/python/dist/
+
+      - name: Smoke test wheel
+        shell: bash
+        run: |
+          python -m venv .venv-wheel-test
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            python_bin=".venv-wheel-test/Scripts/python.exe"
+          else
+            python_bin=".venv-wheel-test/bin/python"
+          fi
+          UV_NO_CONFIG=1 uv pip install --default-index https://pypi.org/simple --python "$python_bin" crates/goose-sdk/python/dist/*.whl
+          "$python_bin" -c 'import goose; print(goose.__name__)'
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: goose-sdk-wheel-${{ matrix.name }}
+          path: crates/goose-sdk/python/dist/*.whl
+          if-no-files-found: error

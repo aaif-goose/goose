@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use anyhow::{anyhow, Result};
 
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::Message;
+use crate::recipe::Recipe;
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
 use super::Agent;
@@ -88,6 +90,26 @@ pub fn list_commands() -> &'static [CommandDef] {
     COMMANDS
 }
 
+pub fn context_management_unsupported_message(command: &str, provider: &str) -> String {
+    format!(
+        "/{command} is not available for provider '{provider}' because it manages its own conversation context"
+    )
+}
+
+pub fn is_known_slash_command(message_text: &str, working_dir: Option<&Path>) -> bool {
+    let Some(parsed) = parse_slash_command(message_text) else {
+        return false;
+    };
+
+    COMMANDS
+        .iter()
+        .any(|command| command.name == parsed.command)
+        || recipe_slash_command::get_recipe_for_command(parsed.command).is_some()
+        || skill_slash_command::list_commands(working_dir)
+            .into_iter()
+            .any(|command| command.name.eq_ignore_ascii_case(parsed.command))
+}
+
 fn is_clear_goal_param(params_str: &str) -> bool {
     matches!(params_str, "off" | "clear" | "none")
 }
@@ -150,6 +172,14 @@ impl Agent {
     }
 
     async fn handle_compact_command(&self, session_id: &str) -> Result<Option<Message>> {
+        let provider = self.provider().await?;
+        if provider.manages_own_context() {
+            return Err(anyhow!(context_management_unsupported_message(
+                "compact",
+                provider.get_name()
+            )));
+        }
+
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, true).await?;
         let conversation = session
@@ -157,8 +187,8 @@ impl Agent {
             .ok_or_else(|| anyhow!("Session has no conversation"))?;
 
         let model_config = self.model_config_for_session(session_id).await?;
-        let (compacted_conversation, usage) = compact_messages(
-            self.provider().await?.as_ref(),
+        let compaction = compact_messages(
+            provider.as_ref(),
             &model_config,
             session_id,
             &conversation,
@@ -167,17 +197,30 @@ impl Agent {
         .await?;
 
         manager
-            .replace_conversation(session_id, &compacted_conversation)
+            .replace_conversation(session_id, &compaction.conversation)
             .await?;
 
-        self.update_session_metrics(session_id, session.schedule_id, &usage, true)
-            .await?;
+        self.update_session_metrics(
+            session_id,
+            session.schedule_id,
+            &compaction.usage,
+            Some(compaction.retained_context_tokens),
+        )
+        .await?;
 
         Ok(Some(user_only_assistant_text("Compaction complete")))
     }
 
     async fn handle_clear_command(&self, session_id: &str) -> Result<Option<Message>> {
         use crate::conversation::Conversation;
+
+        let provider = self.provider().await?;
+        if provider.manages_own_context() {
+            return Err(anyhow!(context_management_unsupported_message(
+                "clear",
+                provider.get_name()
+            )));
+        }
 
         let manager = self.config.session_manager.clone();
         manager
@@ -212,10 +255,9 @@ impl Agent {
     async fn handle_status_command(&self, session_id: &str) -> Result<Option<Message>> {
         let provider = self.provider().await?;
         let model_config = self.model_config_for_session(session_id).await?;
-        let context_limit = provider
-            .get_context_limit(&model_config)
-            .await
-            .unwrap_or_else(|_| model_config.context_limit());
+        let context_limit =
+            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+                .await?;
 
         let goose_mode = self.goose_mode().await;
 
@@ -403,7 +445,6 @@ impl Agent {
                     .await?
                     .conversation
                     .ok_or_else(|| anyhow!("No conversation found"))?
-                    .messages()
                     .last()
                     .cloned()
                     .ok_or_else(|| anyhow!("No messages in conversation"))?;
@@ -420,16 +461,40 @@ impl Agent {
         &self,
         command: &str,
         params_str: &str,
-        _session_id: &str,
+        session_id: &str,
     ) -> Result<Option<Message>> {
         match recipe_slash_command::resolve_command(command, params_str) {
             Ok(None) => Ok(None),
-            Ok(Some((response, prompt))) => {
-                self.apply_recipe_components(response, true).await;
-                Ok(Some(Message::user().with_text(prompt)))
+            Ok(Some((recipe, prompt))) => {
+                self.apply_resolved_recipe_command(command, recipe, prompt, session_id)
+                    .await
             }
             Err(text) => Ok(Some(Message::assistant().with_text(text))),
         }
+    }
+
+    async fn apply_resolved_recipe_command(
+        &self,
+        command: &str,
+        recipe: Recipe,
+        prompt: String,
+        session_id: &str,
+    ) -> Result<Option<Message>> {
+        if let Err(error) = self
+            .apply_recipe_components(recipe.response.clone(), true)
+            .await
+        {
+            return Ok(Some(
+                Message::assistant().with_text(format!("Recipe /{command} is not valid: {error}")),
+            ));
+        }
+        self.config
+            .session_manager
+            .update(session_id)
+            .recipe(Some(recipe))
+            .apply()
+            .await?;
+        Ok(Some(Message::user().with_text(prompt)))
     }
 
     async fn handle_skill_command(
@@ -510,6 +575,8 @@ fn user_only_assistant_text(text: impl Into<String>) -> Message {
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
+    use crate::recipe::Response;
+    use serde_json::json;
 
     #[test]
     fn parse_slash_command_splits_on_literal_space() {
@@ -566,5 +633,44 @@ mod tests {
         assert!(list_commands()
             .iter()
             .any(|command| command.name == "status"));
+    }
+
+    #[tokio::test]
+    async fn invalid_rendered_recipe_schema_returns_assistant_response() {
+        let agent = Agent::new();
+        let recipe = Recipe::builder()
+            .title("Invalid rendered schema")
+            .description("Invalid rendered schema")
+            .instructions("Return structured output")
+            .response(Response {
+                json_schema: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "type": "string",
+                            "pattern": "["
+                        }
+                    }
+                })),
+            })
+            .build()
+            .expect("recipe shape is otherwise valid");
+
+        let response = agent
+            .apply_resolved_recipe_command(
+                "invalid-rendered-schema",
+                recipe,
+                "Return structured output".to_string(),
+                "unused-session",
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.role, rmcp::model::Role::Assistant);
+        assert!(response
+            .as_concat_text()
+            .contains("Recipe /invalid-rendered-schema is not valid"));
+        assert!(agent.final_output_tool.lock().await.is_none());
     }
 }

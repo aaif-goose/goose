@@ -1,12 +1,12 @@
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 pub struct Paths;
 
 impl Paths {
     fn get_dir(dir_type: DirType) -> PathBuf {
-        if let Ok(test_root) = std::env::var("GOOSE_PATH_ROOT") {
-            let base = PathBuf::from(test_root);
+        if let Some(base) = Self::path_root() {
             match dir_type {
                 DirType::Config => base.join("config"),
                 DirType::Data => base.join("data"),
@@ -35,6 +35,14 @@ impl Paths {
                 DirType::AgentsHome => strategy.home_dir().join(".agents"),
             }
         }
+    }
+
+    pub(crate) fn path_root() -> Option<PathBuf> {
+        Self::validated_path_root(std::env::var_os("GOOSE_PATH_ROOT"))
+    }
+
+    fn validated_path_root(value: Option<OsString>) -> Option<PathBuf> {
+        value.map(PathBuf::from).filter(|path| path.is_absolute())
     }
 
     pub fn config_dir() -> PathBuf {
@@ -85,4 +93,28 @@ enum DirType {
     Plugins,
     Agents,
     AgentsHome,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Paths;
+    use std::ffi::OsString;
+
+    #[test]
+    fn path_root_requires_an_absolute_path() {
+        assert_eq!(Paths::validated_path_root(None), None);
+        assert_eq!(Paths::validated_path_root(Some(OsString::new())), None);
+        assert_eq!(
+            Paths::validated_path_root(Some(OsString::from("relative/root"))),
+            None
+        );
+
+        let absolute = std::env::current_dir()
+            .unwrap()
+            .join("nonexistent-goose-root");
+        assert_eq!(
+            Paths::validated_path_root(Some(absolute.clone().into_os_string())),
+            Some(absolute)
+        );
+    }
 }

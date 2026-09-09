@@ -1,5 +1,5 @@
-import type { GooseSessionNotification_unstable } from '@aaif/goose-sdk';
-import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
+import type { GooseSessionNotification_unstable } from '@aaif/goose-acp-client';
+import type { SessionNotification } from '@agentclientprotocol/sdk';
 import type { Message } from '../types/message';
 import {
   applyElicitationRequest as applyElicitationRequestToState,
@@ -8,22 +8,28 @@ import {
 } from './adapter/elicitations';
 import { applyGooseSessionNotification } from './adapter/gooseSessionNotifications';
 import { applyContentChunk, applyThoughtChunk } from './adapter/messages';
-import { applyPermissionRequest as applyPermissionRequestToState } from './adapter/permissions';
+import {
+  applyPermissionRequest as applyPermissionRequestToState,
+  cancelPermissionRequest as cancelPermissionRequestInState,
+} from './adapter/permissions';
 import {
   type AcpChatStateChange,
   type AdapterState,
   cloneMessage,
   getGooseActiveRunId,
+  getGooseQueuedSteer,
 } from './adapter/shared';
 import { applyToolCall, applyToolCallUpdate } from './adapter/tools';
 import type { AcpElicitationRequest } from './elicitationRequests';
+import type { AcpPermissionRequest } from './permissionRequestTypes';
 
 export type { AcpChatStateChange } from './adapter/shared';
 
 export interface AcpSessionNotificationAdapter {
   apply(notification: SessionNotification): AcpChatStateChange[];
   applyGoose(notification: GooseSessionNotification_unstable): AcpChatStateChange[];
-  applyPermissionRequest(request: RequestPermissionRequest): AcpChatStateChange[];
+  applyPermissionRequest(request: AcpPermissionRequest): AcpChatStateChange[];
+  cancelPermissionRequest(toolCallId: string, generation: string): AcpChatStateChange[];
   applyElicitationRequest(request: AcpElicitationRequest): AcpChatStateChange[];
   applyElicitationStatus(elicitationId: string, status: ElicitationStatus): AcpChatStateChange[];
   getMessages(): Message[];
@@ -36,6 +42,7 @@ export function createAcpSessionNotificationAdapter(
   const state: AdapterState = {
     messages: initialMessages.map(cloneMessage),
     localSteerTextByMessageId: new Map(localSteerTextByMessageId),
+    toolCallStatesById: new Map(),
   };
 
   return {
@@ -47,6 +54,9 @@ export function createAcpSessionNotificationAdapter(
     },
     applyPermissionRequest(request) {
       return applyPermissionRequestToState(state, request);
+    },
+    cancelPermissionRequest(toolCallId, generation) {
+      return cancelPermissionRequestInState(state, toolCallId, generation);
     },
     applyElicitationRequest(request) {
       return applyElicitationRequestToState(state, request);
@@ -79,17 +89,22 @@ function applyAcpSessionNotification(
       return applyToolCallUpdate(state, update);
     case 'session_info_update': {
       const activeRunId = getGooseActiveRunId(update);
-      if (!update.title && activeRunId === undefined) {
-        return [];
-      }
+      const queuedSteerMessageId = getGooseQueuedSteer(update);
+      const changes: AcpChatStateChange[] = [];
 
-      return [
-        {
+      if (update.title || activeRunId !== undefined) {
+        changes.push({
           type: 'sessionInfo',
           ...(update.title ? { name: update.title } : {}),
           ...(activeRunId !== undefined ? { activeRunId } : {}),
-        },
-      ];
+        });
+      }
+
+      if (queuedSteerMessageId) {
+        changes.push({ type: 'localSteerConfirmed', messageId: queuedSteerMessageId });
+      }
+
+      return changes;
     }
     case 'usage_update':
       return [];

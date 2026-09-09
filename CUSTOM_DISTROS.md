@@ -26,8 +26,8 @@ goose's architecture is designed for extensibility. Organizations can create "re
           │                │                      │
           ▼                ▼                      ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    goose-server (goosed)                        │
-│         REST API for all goose functionality                    │
+│                    goose serve (ACP)                            │
+│         ACP HTTP/WebSocket server for custom clients            │
 └─────────────────────────────────────────────────────────────────┘
           │
           ▼
@@ -49,7 +49,7 @@ goose's architecture is designed for extensibility. Organizations can create "re
 | Bundle custom MCP extensions | `config.yaml` extensions section, `ui/desktop/src/built-in-extensions.json`, `ui/desktop/src/components/settings/extensions/bundled-extensions.json` | Medium |
 | Modify system prompts | `crates/goose/src/prompts/` | Low |
 | Customize desktop branding | `ui/desktop/` (icons, names, colors) | Medium |
-| Build a new UI (web, mobile) | Integrate with `goose-server` REST API | High |
+| Build a new UI (web, mobile) | Integrate with `goose serve` over ACP | High |
 | Create guided workflows | Recipes (YAML-based task definitions) | Low |
 | Build complex multi-step workflows | Recipes with sub-recipes and subagents | Medium |
 
@@ -304,40 +304,32 @@ export GOOSE_BUNDLE_NAME="InsightStream-goose"
 
 **Goal**: Create an entirely new frontend while leveraging goose's backend.
 
-goose provides two integration options for building custom UIs:
+goose provides two ACP transport options for building custom clients:
 
-### Option 1: REST API (goose-server)
+### Option 1: ACP HTTP/WebSocket (`goose serve`)
 
-Use goose-server for HTTP-based integrations (web apps, simple clients):
+Use `goose serve` for process-separated integrations such as web apps, desktop shells, and other clients:
 
 ```bash
 # Start the server
-./target/release/goosed
+GOOSE_SERVER__SECRET_KEY='a-long-random-secret' goose serve
 
-# API available at http://localhost:3000
+# ACP endpoint available at http://localhost:3284/acp
 ```
 
-**Reference the OpenAPI spec** at `ui/desktop/openapi.json` for available endpoints:
-- Session management
-- Message streaming  
-- Extension control
-- Configuration
+HTTP clients authenticate with the `X-Secret-Key` header. Browser WebSocket clients use the same secret as a `?token=` query parameter because the browser WebSocket API cannot set custom headers:
 
-**Key endpoints** for a minimal integration:
-
-```
-POST /sessions              # Create a new session
-POST /sessions/{id}/messages # Send a message (streaming response)
-GET  /sessions/{id}         # Get session state
-GET  /extensions            # List available extensions
-POST /extensions/{name}/enable  # Enable an extension
+```text
+ws://localhost:3284/acp?token=a-long-random-secret
 ```
 
-**Handle streaming responses** - goose uses Server-Sent Events (SSE) for real-time responses.
+For browser clients served from a non-loopback origin, pass the exact UI origin with `--allowed-origin`. When you pass `--allowed-origin`, it replaces the default loopback origin allowlist, so include every origin the client needs.
 
-### Option 2: Agent Client Protocol (ACP)
+For the ACP protocol and client flow, see [Use goose as an ACP agent](documentation/docs/gdk/acp/index.md).
 
-For richer integrations (IDEs, desktop apps, embedded agents), use the **Agent Client Protocol (ACP)**—a standardized JSON-RPC protocol for AI agent communication over stdio or other transports.
+### Option 2: Agent Client Protocol (ACP) over stdio
+
+For richer local integrations (IDEs and embedded agents), run goose as an ACP agent over stdio.
 
 ACP provides:
 - **Bidirectional communication**: Agents can request permissions, stream updates, and receive cancellations
@@ -409,11 +401,6 @@ client.send_request("session/prompt", {
 For the full ACP specification, see the [Agent Client Protocol documentation](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/agent_client_protocol).
 
 ### Technical Details
-
-**REST API (goose-server)**:
-- Server implementation: `crates/goose-server/src/routes/`
-- OpenAPI generation: `just generate-openapi`
-- API client example: `ui/desktop/src/api/` (generated TypeScript client)
 
 **ACP**:
 - ACP server implementation: `crates/goose/src/acp/server.rs`
@@ -655,10 +642,10 @@ prompt: |
   - find_patterns: Find similar features to model after
 ```
 
-The AI can then invoke these sub-recipes using the `subagent` tool:
+Recipes that define `sub_recipes` get the Summon extension automatically. The AI can invoke sub-recipes through Summon's `delegate` tool:
 
 ```
-subagent(subrecipe: "find_files", parameters: {"search_term": "authentication"})
+delegate(source: "find_files", parameters: {"search_term": "authentication"})
 ```
 
 ### Subagents: Dynamic Task Delegation
@@ -678,28 +665,27 @@ prompt: |
   To complete this task:
   
   1. Spawn a subagent to analyze the frontend code:
-     subagent(instructions: "Analyze all React components in src/components/ 
-              and list their props and state management patterns")
+     delegate(instructions: "Analyze all React components in src/components/ and list their props and state management patterns")
   
   2. Spawn another subagent for the backend:
-     subagent(instructions: "Document all API endpoints in src/api/ 
-              including their request/response schemas")
+     delegate(instructions: "Document all API endpoints in src/api/ including their request/response schemas")
   
   3. Synthesize findings from both subagents into a unified report.
 ```
 
 #### Parallel Subagent Execution
 
-Multiple subagent calls in the same message execute in parallel:
+Use `async: true` to run delegates in parallel, then collect each result with `load(source: "<task_id>")`:
 
 ```yaml
 prompt: |
-  Run these analyses in parallel by making all subagent calls at once:
+  Run these analyses in parallel:
   
-  subagent(instructions: "Count lines of code by language")
-  subagent(instructions: "Find all TODO comments") 
-  subagent(instructions: "List external dependencies")
+  delegate(instructions: "Count lines of code by language", async: true)
+  delegate(instructions: "Find all TODO comments", async: true)
+  delegate(instructions: "List external dependencies", async: true)
   
+  Use load(source: "<task_id>") for each returned task id.
   Then combine the results into a codebase health report.
 ```
 
@@ -711,22 +697,18 @@ Customize model, provider, or behavior per subagent:
 prompt: |
   Use a faster model for simple tasks:
   
-  subagent(
+  delegate(
     instructions: "List all files modified in the last week",
-    settings: {
-      model: "gpt-4o-mini",
-      max_turns: 3
-    }
+    model: "gpt-4o-mini",
+    max_turns: 3
   )
   
   Use the full model for complex analysis:
   
-  subagent(
+  delegate(
     instructions: "Review this code for security vulnerabilities",
-    settings: {
-      model: "claude-sonnet-4-20250514",
-      temperature: 0.1
-    }
+    model: "claude-sonnet-4-20250514",
+    temperature: 0.1
   )
 ```
 
@@ -738,7 +720,7 @@ Limit which extensions a subagent can access:
 prompt: |
   Create a sandboxed subagent with only file reading capabilities:
   
-  subagent(
+  delegate(
     instructions: "Analyze the README files in this project",
     extensions: ["developer"]  # Only developer extension, no network access
   )
@@ -819,7 +801,7 @@ prompt: |
 2. **Parallelize independent tasks** - Multiple subagent calls in one message run concurrently
 3. **Use `sequential_when_repeated: true`** - For tasks that shouldn't run in parallel (e.g., database migrations)
 4. **Scope extensions appropriately** - Give subagents only the tools they need
-5. **Use summary mode (default)** - Subagents return concise summaries; use `summary: false` only when you need full conversation history
+5. **Use background delegation for independent work** - Pass `async: true` to `delegate`, then collect results with `load(source: "<task_id>")`
 6. **Handle failures gracefully** - Design workflows to continue even if one subagent fails
 
 ### Technical Details

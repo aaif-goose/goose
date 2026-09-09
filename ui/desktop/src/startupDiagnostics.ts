@@ -8,14 +8,17 @@ export interface StartupTraceEvent {
   details?: Record<string, unknown>;
 }
 
-export interface StartupDiagnostics {
+export interface GooseServeStartupDiagnostics {
   attemptId: string;
   startedAt: string;
-  goosedPath: string | null;
+  binaryPath: string | null;
   workingDir: string;
-  baseUrl: string | null;
+  httpBaseUrl: string | null;
+  readinessUrl: string | null;
+  statusUrl: string | null;
+  healthUrl: string | null;
+  acpUrl: string | null;
   pid: number | null;
-  certFingerprintSeen: boolean;
   healthCheckSucceeded: boolean;
   childExitCode: number | null;
   childExitSignal: string | null;
@@ -23,9 +26,9 @@ export interface StartupDiagnostics {
   events: StartupTraceEvent[];
 }
 
-export interface StartupTrace {
+export interface GooseServeStartupTrace {
   diagnosticsPath: string;
-  diagnostics: StartupDiagnostics;
+  diagnostics: GooseServeStartupDiagnostics;
   record: (name: string, details?: Record<string, unknown>) => void;
   flush: () => void;
 }
@@ -40,12 +43,14 @@ export const appendTail = (target: string[], lines: string[]) => {
   }
 };
 
-const cleanupStartupDiagnostics = (diagnosticsDir: string) => {
+const cleanupGooseServeStartupDiagnostics = (diagnosticsDir: string) => {
   const startupLogs = fs
     .readdirSync(diagnosticsDir, { withFileTypes: true })
     .filter(
       (entry) =>
-        entry.isFile() && entry.name.startsWith('goosed-startup-') && entry.name.endsWith('.json')
+        entry.isFile() &&
+        entry.name.startsWith('goose-serve-startup-') &&
+        entry.name.endsWith('.json')
     )
     .map((entry) => {
       const filePath = path.join(diagnosticsDir, entry.name);
@@ -61,29 +66,32 @@ const cleanupStartupDiagnostics = (diagnosticsDir: string) => {
   }
 };
 
-export const createStartupDiagnostics = (
+export const createGooseServeStartupDiagnostics = (
   diagnosticsDir: string | undefined,
   workingDir: string
-): StartupTrace | null => {
+): GooseServeStartupTrace | null => {
   if (!diagnosticsDir) {
     return null;
   }
 
   fs.mkdirSync(diagnosticsDir, { recursive: true });
-  cleanupStartupDiagnostics(diagnosticsDir);
+  cleanupGooseServeStartupDiagnostics(diagnosticsDir);
   const startedAt = new Date();
-  const attemptId = `goosed-startup-${startedAt.toISOString().replace(/:/g, '-')}-${process.pid}.json`;
+  const attemptId = `goose-serve-startup-${startedAt.toISOString().replace(/:/g, '-')}-${process.pid}.json`;
   const diagnosticsPath = path.join(diagnosticsDir, attemptId);
   const monotonicStart = Date.now();
 
-  const diagnostics: StartupDiagnostics = {
+  const diagnostics: GooseServeStartupDiagnostics = {
     attemptId,
     startedAt: startedAt.toISOString(),
-    goosedPath: null,
+    binaryPath: null,
     workingDir,
-    baseUrl: null,
+    httpBaseUrl: null,
+    readinessUrl: null,
+    statusUrl: null,
+    healthUrl: null,
+    acpUrl: null,
     pid: null,
-    certFingerprintSeen: false,
     healthCheckSucceeded: false,
     childExitCode: null,
     childExitSignal: null,

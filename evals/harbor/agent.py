@@ -247,24 +247,23 @@ class GooseBinaryAgent(Goose):
                 )
 
     @staticmethod
-    def _extract_complete_event_tokens(
-        log_text: str,
-    ) -> tuple[int | None, int | None, int | None]:
-        total = inp = out = None
+    def _extract_complete_event(log_text: str) -> dict | None:
+        complete_event = None
         for line in log_text.strip().split("\n"):
             line = line.strip()
             if not line or '"complete"' not in line:
                 continue
             event = json.loads(line)
-            if event.get("type") != "complete":
-                continue
-            total = event.get("total_tokens")
-            inp = event.get("input_tokens")
-            out = event.get("output_tokens")
-        return total, inp, out
+            if event.get("type") == "complete":
+                complete_event = event
+        return complete_event
 
     def _compute_cost_from_pricing(
-        self, prompt_tokens: int | None, completion_tokens: int | None
+        self,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        cache_read_tokens: int | None,
+        cache_write_tokens: int | None,
     ) -> float | None:
         if not self.model_name or not (prompt_tokens or completion_tokens):
             return None
@@ -280,9 +279,17 @@ class GooseBinaryAgent(Goose):
                 break
         if pricing is None:
             return None
-        return (prompt_tokens or 0) * (pricing.get("input_cost_per_token") or 0.0) + (
-            completion_tokens or 0
-        ) * (pricing.get("output_cost_per_token") or 0.0)
+        input_cost = pricing.get("input_cost_per_token") or 0.0
+        cache_read = cache_read_tokens or 0
+        cache_write = cache_write_tokens or 0
+        uncached = max((prompt_tokens or 0) - cache_read - cache_write, 0)
+        return (
+            uncached * input_cost
+            + cache_read * (pricing.get("cache_read_input_token_cost") or input_cost)
+            + cache_write
+            * (pricing.get("cache_creation_input_token_cost") or input_cost)
+            + (completion_tokens or 0) * (pricing.get("output_cost_per_token") or 0.0)
+        )
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         super().populate_context_post_run(context)
@@ -290,11 +297,33 @@ class GooseBinaryAgent(Goose):
         if not txt_path.exists():
             return
         log_text = txt_path.read_text()
-        _total, inp, out = self._extract_complete_event_tokens(log_text)
+        complete_event = self._extract_complete_event(log_text)
+        if complete_event is None:
+            return
+
+        inp = complete_event.get("input_tokens")
+        out = complete_event.get("output_tokens")
+        cache_read = complete_event.get("cache_read_input_tokens")
+        cache_write = complete_event.get("cache_write_input_tokens")
         if inp is not None:
             context.n_input_tokens = inp
         if out is not None:
             context.n_output_tokens = out
-        cost = self._compute_cost_from_pricing(inp, out)
+        if cache_read is not None:
+            context.n_cache_tokens = cache_read
+        if cache_read is not None or cache_write is not None:
+            context.metadata = {
+                **(context.metadata or {}),
+                "cache_read_input_tokens": cache_read or 0,
+                "cache_write_input_tokens": cache_write or 0,
+            }
+        cost = complete_event.get("cost_usd")
+        if cost is None:
+            cost = self._compute_cost_from_pricing(inp, out, cache_read, cache_write)
+            if cost is not None:
+                context.metadata = {
+                    **(context.metadata or {}),
+                    "cost_source": "litellm_estimate",
+                }
         if cost is not None:
             context.cost_usd = cost

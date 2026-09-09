@@ -1,4 +1,5 @@
-use crate::conversation::token_usage::ProviderUsage;
+use crate::conversation::token_usage::{CostSource, ProviderUsage};
+use crate::http_status::read_json_response;
 use crate::images::ImageFormat;
 use anyhow::Error;
 use async_stream::try_stream;
@@ -18,7 +19,9 @@ use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::errors::ProviderError;
 use crate::formats::openai::{
-    create_request, get_usage, response_to_message, response_to_streaming_message,
+    create_request, create_request_for_model_with_options, get_cost, get_usage,
+    record_response_metadata, response_to_message, response_to_streaming_message,
+    OpenAiFormatOptions,
 };
 use crate::formats::openai_responses::responses_api_to_streaming_message;
 use crate::model::ModelConfig;
@@ -49,6 +52,101 @@ impl OpenAiCompatibleProvider {
         self
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn build_request_for_model(
+        &self,
+        model_config: &ModelConfig,
+        wire_model: &str,
+        capability_model: &str,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+        for_streaming: bool,
+    ) -> Result<Value, ProviderError> {
+        create_request_for_model_with_options(
+            model_config,
+            wire_model,
+            capability_model,
+            system,
+            messages,
+            tools,
+            &ImageFormat::OpenAi,
+            for_streaming,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: model_config.supports_vision.unwrap_or_default(),
+                ..Default::default()
+            },
+        )
+        .map_err(|e| ProviderError::RequestFailed(format!("Failed to create request: {}", e)))
+    }
+
+    pub async fn stream_for_model(
+        &self,
+        model_config: &ModelConfig,
+        wire_model: &str,
+        capability_model: &str,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        let payload = self.build_request_for_model(
+            model_config,
+            wire_model,
+            capability_model,
+            system,
+            messages,
+            tools,
+            self.supports_streaming,
+        )?;
+        self.stream_payload(model_config, payload).await
+    }
+
+    async fn stream_payload(
+        &self,
+        model_config: &ModelConfig,
+        payload: Value,
+    ) -> Result<MessageStream, ProviderError> {
+        let mut log = start_log(model_config, &payload)?;
+        let path = format!("{}chat/completions", self.completions_prefix);
+        let response = self
+            .with_retry(|| async {
+                handle_status(
+                    self.api_client
+                        .request(&path)
+                        .model_headers(model_config)?
+                        .streaming(self.supports_streaming)
+                        .response_post(&payload)
+                        .await?,
+                )
+                .await
+            })
+            .await
+            .inspect_err(|e| {
+                let _ = log.error(e);
+            })?;
+        if self.supports_streaming {
+            stream_openai_compat(response, log)
+        } else {
+            let json = read_json_response(response).await?;
+            let message = response_to_message(&json).map_err(|e| {
+                ProviderError::RequestFailed(format!("Failed to parse message: {}", e))
+            })?;
+            let usage_json = json.get("usage").unwrap_or(&Value::Null);
+            let usage_data = get_usage(usage_json);
+            let mut usage = ProviderUsage::new(model_config.model_name.clone(), usage_data);
+            record_response_metadata(&mut usage, &json);
+            if let Some(cost) = get_cost(usage_json) {
+                usage = usage.with_cost(cost, CostSource::ProviderReported);
+            }
+            log.write(
+                &serde_json::to_value(&message).unwrap_or_default(),
+                Some(&usage.usage),
+            )?;
+            Ok(stream_from_single_message(message, usage))
+        }
+    }
+
     fn build_request(
         &self,
         model_config: &ModelConfig,
@@ -73,6 +171,13 @@ impl OpenAiCompatibleProvider {
 impl Provider for OpenAiCompatibleProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    async fn refresh_credentials(&self) -> Result<(), ProviderError> {
+        self.api_client
+            .refresh_credentials()
+            .await
+            .map_err(|error| ProviderError::Authentication(error.to_string()))
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
@@ -116,43 +221,7 @@ impl Provider for OpenAiCompatibleProvider {
             tools,
             self.supports_streaming,
         )?;
-        let mut log = start_log(model_config, &payload)?;
-
-        let completions_path = format!("{}chat/completions", self.completions_prefix);
-        let response = self
-            .with_retry(|| async {
-                let resp = self
-                    .api_client
-                    .response_post(&completions_path, &payload)
-                    .await?;
-                handle_status(resp).await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
-
-        if self.supports_streaming {
-            stream_openai_compat(response, log)
-        } else {
-            let json: serde_json::Value = response.json().await.map_err(|e| {
-                ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
-            })?;
-
-            let message = response_to_message(&json).map_err(|e| {
-                ProviderError::RequestFailed(format!("Failed to parse message: {}", e))
-            })?;
-
-            let usage_data = get_usage(json.get("usage").unwrap_or(&serde_json::Value::Null));
-            let usage = ProviderUsage::new(model_config.model_name.clone(), usage_data);
-
-            log.write(
-                &serde_json::to_value(&message).unwrap_or_default(),
-                Some(&usage.usage),
-            )?;
-
-            Ok(stream_from_single_message(message, usage))
-        }
+        self.stream_payload(model_config, payload).await
     }
 }
 
@@ -311,5 +380,76 @@ mod tests {
 
         assert_eq!(payload.get("stream"), None);
         assert_eq!(payload.get("stream_options"), None);
+    }
+
+    #[tokio::test]
+    async fn nonstreaming_completion_accepts_legitimate_response() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": {"role": "assistant", "content": "hello"}
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = OpenAiCompatibleProvider::new(
+            "test".to_string(),
+            ApiClient::new_with_tls(server.uri(), crate::api_client::AuthMethod::NoAuth, None)
+                .unwrap(),
+            String::new(),
+        )
+        .with_supports_streaming(false);
+
+        let _stream = provider
+            .stream(&ModelConfig::new("test-model"), "", &[], &[])
+            .await
+            .expect("legitimate non-streaming response should be accepted");
+    }
+
+    #[tokio::test]
+    async fn nonstreaming_completion_rejects_oversized_response_body() {
+        use crate::http_status::MAX_PROVIDER_JSON_RESPONSE_BYTES;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "a".repeat(MAX_PROVIDER_JSON_RESPONSE_BYTES + 1)
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = OpenAiCompatibleProvider::new(
+            "test".to_string(),
+            ApiClient::new_with_tls(server.uri(), crate::api_client::AuthMethod::NoAuth, None)
+                .unwrap(),
+            String::new(),
+        )
+        .with_supports_streaming(false);
+
+        let err = match provider
+            .stream(&ModelConfig::new("test-model"), "", &[], &[])
+            .await
+        {
+            Ok(_) => panic!("oversized response should be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("response body exceeds"),
+            "got: {err}"
+        );
     }
 }

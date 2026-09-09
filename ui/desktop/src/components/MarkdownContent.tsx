@@ -28,34 +28,14 @@ const customOneDarkTheme = {
 
 import { Check, Copy } from './icons';
 import { wrapHTMLInCodeBlock } from '../utils/htmlSecurity';
-import { isProtocolSafe, getProtocol, BLOCKED_PROTOCOLS } from '../utils/urlSecurity';
-import { ConfirmationModal } from './ui/ConfirmationModal';
+import { BLOCKED_PROTOCOLS } from '../utils/urlSecurity';
+import { getTextDirection } from '../utils/textDirection';
 import { defineMessages, useIntl } from '../i18n';
 
 const i18n = defineMessages({
   copyCode: {
     id: 'markdownContent.copyCode',
     defaultMessage: 'Copy code',
-  },
-  openExternalLink: {
-    id: 'markdownContent.openExternalLink',
-    defaultMessage: 'Open External Link',
-  },
-  openProtocolLink: {
-    id: 'markdownContent.openProtocolLink',
-    defaultMessage: 'Open {protocol} link?',
-  },
-  thisWillOpen: {
-    id: 'markdownContent.thisWillOpen',
-    defaultMessage: 'This will open: {href}',
-  },
-  open: {
-    id: 'markdownContent.open',
-    defaultMessage: 'Open',
-  },
-  cancel: {
-    id: 'markdownContent.cancel',
-    defaultMessage: 'Cancel',
   },
   failedToOpenLink: {
     id: 'markdownContent.failedToOpenLink',
@@ -74,6 +54,83 @@ interface CodeProps extends React.ClassAttributes<HTMLElement>, React.HTMLAttrib
 interface MarkdownContentProps {
   content: string;
   className?: string;
+}
+
+// Minimal hast node shape; avoids importing @types/hast just for this plugin.
+interface HastNode {
+  type?: string;
+  tagName?: string;
+  value?: string;
+  properties?: Record<string, unknown> | null;
+  children?: HastNode[];
+}
+
+// Block-level elements that get their own computed dir so mixed-direction
+// markdown (e.g. an English paragraph inside an Arabic message) resolves
+// punctuation placement per block instead of inheriting the message direction.
+const DIRECTIONAL_BLOCK_TAGS = new Set([
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'li',
+  'blockquote',
+  'dd',
+  'dt',
+  'td',
+  'th',
+  'figcaption',
+  'caption',
+  'summary',
+]);
+
+function collectText(node: HastNode): string {
+  // Code and KaTeX output are language-neutral (both render LTR internally),
+  // so they don't vote on the direction of the prose block containing them.
+  if (node.type === 'element') {
+    if (node.tagName === 'code' || node.tagName === 'pre') return '';
+    const classNames = node.properties?.className;
+    if (Array.isArray(classNames) && classNames.includes('katex')) return '';
+  }
+  let text = node.type === 'text' ? (node.value ?? '') : '';
+  for (const child of node.children ?? []) {
+    // Nested blocks other than paragraphs compute their own direction and
+    // don't vote on the parent, so a long sublist can't flip the list item
+    // containing it. Prose <p> children still count: loose list items and
+    // blockquotes hold their own text in direct <p> children, and their
+    // marker/indent side follows the parent's own direction.
+    if (
+      child.type === 'element' &&
+      child.tagName &&
+      child.tagName !== 'p' &&
+      DIRECTIONAL_BLOCK_TAGS.has(child.tagName)
+    ) {
+      continue;
+    }
+    text += collectText(child);
+  }
+  return text;
+}
+
+function applyPerBlockDirection(node: HastNode): void {
+  if (node.type === 'element' && node.tagName && DIRECTIONAL_BLOCK_TAGS.has(node.tagName)) {
+    const direction = getTextDirection(collectText(node));
+    if (direction) {
+      node.properties = { ...node.properties, dir: direction };
+    }
+  }
+  for (const child of node.children ?? []) {
+    applyPerBlockDirection(child);
+  }
+}
+
+function rehypePerBlockDirection(): (tree: HastNode) => void {
+  return (tree) => {
+    if (tree) applyPerBlockDirection(tree);
+  };
 }
 
 // Memoized CodeBlock component to prevent re-rendering when props haven't changed
@@ -127,6 +184,7 @@ const CodeBlock = memo(function CodeBlock({
         language={language}
         PreTag="div"
         customStyle={{
+          background: 'var(--code-block-background, #282c34)',
           margin: 0,
           width: '100%',
           maxWidth: '100%',
@@ -151,7 +209,7 @@ const CodeBlock = memo(function CodeBlock({
   }, [language, children]);
 
   return (
-    <div className="relative group w-full">
+    <div className="relative group w-full" dir="ltr">
       <button
         onClick={handleCopy}
         className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-gray-700/50 text-gray-300 font-sans text-sm
@@ -172,10 +230,22 @@ const MarkdownCode = memo(
     ref: React.Ref<HTMLElement>
   ) {
     const match = /language-(\w+)/.exec(className || '');
-    return !inline && match ? (
-      <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>
+    const codeContent = String(children ?? '');
+
+    // react-markdown gives untagged fenced blocks no language-xxx className,
+    // so they look like inline code here. Block-level content always ends with
+    // a trailing newline, which inline code spans can never contain.
+    const isBlockLevelCode = !inline && codeContent.endsWith('\n');
+
+    return isBlockLevelCode ? (
+      <CodeBlock language={match ? match[1] : 'text'}>{codeContent.replace(/\n$/, '')}</CodeBlock>
     ) : (
-      <code ref={ref} {...props} className="break-all bg-inline-code whitespace-pre-wrap font-mono">
+      <code
+        ref={ref}
+        {...props}
+        dir="ltr"
+        className="break-all bg-inline-code whitespace-pre-wrap font-mono"
+      >
         {children}
       </code>
     );
@@ -202,44 +272,35 @@ const MarkdownContent = memo(function MarkdownContent({
   className = '',
 }: MarkdownContentProps) {
   const intl = useIntl();
-  const [processedContent, setProcessedContent] = useState(content);
-  const [pendingLink, setPendingLink] = useState<{ protocol: string; href: string } | null>(null);
-
-  useEffect(() => {
+  const processedContent = useMemo(() => {
     try {
-      const processed = wrapHTMLInCodeBlock(content);
-      setProcessedContent(processed);
+      return wrapHTMLInCodeBlock(content);
     } catch (error) {
       console.error('Error processing content:', error);
-      setProcessedContent(content);
+      return content;
     }
   }, [content]);
 
-  const handleConfirmOpen = useCallback(async () => {
-    if (pendingLink) {
+  const handleOpenExternal = useCallback(
+    async (href: string) => {
       try {
-        await window.electron.openExternal(pendingLink.href);
+        await window.electron.openExternal(href);
       } catch {
         await window.electron.showMessageBox({
           type: 'error',
           buttons: ['OK'],
           title: intl.formatMessage(i18n.failedToOpenLink),
           message: intl.formatMessage(i18n.noApplicationFound),
-          detail: pendingLink.href,
+          detail: href,
         });
       }
-    }
-    setPendingLink(null);
-  }, [pendingLink, intl]);
-
-  const handleCancelOpen = useCallback(() => {
-    setPendingLink(null);
-  }, []);
+    },
+    [intl]
+  );
 
   return (
-    <>
-      <div
-        className={`w-full overflow-x-hidden prose prose-sm text-text-primary dark:prose-invert max-w-full word-break font-sans
+    <div
+      className={`w-full overflow-x-hidden prose prose-sm text-start text-text-primary dark:prose-invert max-w-full word-break font-sans
         prose-pre:p-0 prose-pre:m-0 !p-0
         prose-code:break-all prose-code:whitespace-pre-wrap prose-code:font-mono
         prose-a:break-all prose-a:overflow-wrap-anywhere
@@ -255,60 +316,44 @@ const MarkdownContent = memo(function MarkdownContent({
         prose-ol:my-2 prose-ol:font-sans
         prose-ul:mt-0 prose-ul:mb-3 prose-ul:font-sans
         prose-li:m-0 prose-li:font-sans ${className}`}
-      >
-        <ReactMarkdown
-          urlTransform={customUrlTransform}
-          remarkPlugins={[remarkGfm, remarkBreaks, [remarkMath, { singleDollarTextMath: false }]]}
-          rehypePlugins={[
-            [
-              rehypeKatex,
-              {
-                throwOnError: false,
-                errorColor: '#cc0000',
-                strict: false,
-              },
-            ],
-          ]}
-          components={{
-            a: (props) => {
-              return (
-                <a
-                  {...props}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!props.href) return;
-
-                    if (isProtocolSafe(props.href)) {
-                      window.electron.openExternal(props.href);
-                    } else {
-                      const protocol = getProtocol(props.href);
-                      if (!protocol) return;
-                      setPendingLink({ protocol, href: props.href });
-                    }
-                  }}
-                />
-              );
+    >
+      <ReactMarkdown
+        urlTransform={customUrlTransform}
+        remarkPlugins={[remarkGfm, remarkBreaks, [remarkMath, { singleDollarTextMath: false }]]}
+        rehypePlugins={[
+          [
+            rehypeKatex,
+            {
+              throwOnError: false,
+              errorColor: '#cc0000',
+              strict: false,
             },
-            code: MarkdownCode,
-          }}
-        >
-          {processedContent}
-        </ReactMarkdown>
-      </div>
-      <ConfirmationModal
-        isOpen={pendingLink !== null}
-        title={intl.formatMessage(i18n.openExternalLink)}
-        message={intl.formatMessage(i18n.openProtocolLink, { protocol: pendingLink?.protocol ?? '' })}
-        detail={intl.formatMessage(i18n.thisWillOpen, { href: pendingLink?.href ?? '' })}
-        onConfirm={handleConfirmOpen}
-        onCancel={handleCancelOpen}
-        confirmLabel={intl.formatMessage(i18n.open)}
-        cancelLabel={intl.formatMessage(i18n.cancel)}
-      />
-    </>
+          ],
+          rehypePerBlockDirection,
+        ]}
+        components={{
+          a: (props) => {
+            return (
+              <a
+                {...props}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!props.href) return;
+
+                  void handleOpenExternal(props.href);
+                }}
+              />
+            );
+          },
+          code: MarkdownCode,
+        }}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    </div>
   );
 });
 

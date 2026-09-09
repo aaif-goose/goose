@@ -3,8 +3,8 @@ use indoc::formatdoc;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolResult, Content, ErrorCode, ErrorData, Implementation, InitializeResult, Role,
-        ServerCapabilities, ServerInfo,
+        Annotations, CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation,
+        InitializeResult, Role, ServerCapabilities, ServerInfo, TextContent,
     },
     schemars::JsonSchema,
     tool, tool_handler, tool_router, ServerHandler,
@@ -100,9 +100,10 @@ impl TutorialServer {
         ))?;
         let content = String::from_utf8_lossy(file.contents()).into_owned();
 
-        Ok(CallToolResult::success(vec![
-            Content::text(content).with_audience(vec![Role::Assistant])
-        ]))
+        Ok(CallToolResult::success(vec![ContentBlock::Text(
+            TextContent::new(content)
+                .with_annotations(Annotations::default().with_audience(vec![Role::Assistant])),
+        )]))
     }
 }
 
@@ -165,13 +166,13 @@ mod tests {
         let call_result = result.unwrap();
         assert!(!call_result.content.is_empty());
 
-        // Check that content has Assistant audience
         let first_content = &call_result.content[0];
-        assert!(first_content.audience().is_some());
-        assert_eq!(first_content.audience().unwrap(), &vec![Role::Assistant]);
-
-        // Check that the content is text
-        assert!(first_content.as_text().is_some());
+        let text_content = first_content.as_text().expect("content should be text");
+        let audience = text_content
+            .annotations
+            .as_ref()
+            .and_then(|annotations| annotations.audience.as_ref());
+        assert_eq!(audience, Some(&vec![Role::Assistant]));
     }
 
     #[tokio::test]

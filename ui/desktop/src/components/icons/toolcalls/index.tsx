@@ -8,7 +8,6 @@ export { FileEdit } from './FileEdit';
 export { FilePlus } from './FilePlus';
 export { FileText } from './FileText';
 export { Globe } from './Globe';
-export { Harddrive } from './Harddrive';
 export { Monitor } from './Monitor';
 export { Numbers } from './Numbers';
 export { Save } from './Save';

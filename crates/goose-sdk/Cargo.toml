@@ -1,12 +1,12 @@
 [package]
 name = "goose-sdk"
-version.workspace = true
+version = "0.1.0-alpha.9"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Rust SDK for Goose with optional uniffi bindings for Python/Kotlin"
+description = "The goose Development Kit (GDK) for Rust, with optional uniffi bindings for Python/Kotlin"
 
 [lib]
 name = "goose_sdk"
@@ -19,15 +19,34 @@ required-features = ["uniffi"]
 
 [features]
 default = []
-uniffi = ["dep:uniffi", "dep:thiserror"]
+uniffi = [
+    "dep:uniffi",
+    "dep:goose-context-management",
+    "dep:thiserror",
+    "dep:anyhow",
+    "dep:goose-providers",
+    "dep:futures",
+    "dep:serde_json",
+    "dep:tokio",
+    "dep:rmcp",
+    "dep:base64",
+]
 
 [dependencies]
-goose-sdk-types = { path = "../goose-sdk-types" }
-agent-client-protocol = { workspace = true, features = ["unstable"] }
+goose-sdk-types = { version = "0.1.0-alpha.9", path = "../goose-sdk-types" }
+agent-client-protocol = { workspace = true }
 agent-client-protocol-schema = { workspace = true }
 
-uniffi = { version = "0.31", features = ["cli"], optional = true }
+uniffi = { version = "0.32", features = ["cli"], optional = true }
 thiserror = { version = "2", optional = true }
+goose-providers = { version = "0.1.0-alpha.9", path = "../goose-providers", features = ["rustls-tls"], optional = true }
+goose-context-management = { version = "0.1.0-alpha.9", path = "../goose-context-management", optional = true }
+futures = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync"], optional = true }
+anyhow = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "io-std", "io-util"] }

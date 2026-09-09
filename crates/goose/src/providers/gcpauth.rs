@@ -176,17 +176,28 @@ impl AdcCredentials {
         env_ops: &impl EnvOps,
         metadata_base_url: &str,
     ) -> Result<Self, AuthError> {
-        // Try GOOGLE_APPLICATION_CREDENTIALS first
-        if let Ok(cred_path) = Self::get_env_credentials_path(env_ops) {
-            if let Ok(creds) = Self::load_from_file(fs_ops, &cred_path).await {
-                return Ok(creds);
+        match env_ops.get_var("GOOGLE_APPLICATION_CREDENTIALS") {
+            Ok(cred_path) => return Self::load_from_file(fs_ops, &cred_path).await,
+            Err(env::VarError::NotPresent) => {}
+            Err(error) => {
+                return Err(AuthError::Credentials(format!(
+                    "Failed to read GOOGLE_APPLICATION_CREDENTIALS: {}",
+                    error
+                )));
             }
         }
 
         // Try default gcloud credentials path
         if let Ok(cred_path) = Self::get_default_credentials_path(env_ops) {
-            if let Ok(creds) = Self::load_from_file(fs_ops, &cred_path).await {
-                return Ok(creds);
+            match fs_ops.read_to_string(cred_path.clone()).await {
+                Ok(content) => return Self::parse_file_contents(&content),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(AuthError::Credentials(format!(
+                        "Failed to read credentials from {}: {}",
+                        cred_path, error
+                    )));
+                }
             }
         }
 
@@ -205,16 +216,12 @@ impl AdcCredentials {
             AuthError::Credentials(format!("Failed to read credentials from {}: {}", path, e))
         })?;
 
-        serde_json::from_str(&content)
-            .map_err(|e| AuthError::Credentials(format!("Invalid credentials format: {}", e)))
+        Self::parse_file_contents(&content)
     }
 
-    fn get_env_credentials_path(env_ops: &impl EnvOps) -> Result<String, AuthError> {
-        env_ops
-            .get_var("GOOGLE_APPLICATION_CREDENTIALS")
-            .map_err(|_| {
-                AuthError::Credentials("GOOGLE_APPLICATION_CREDENTIALS not set".to_string())
-            })
+    fn parse_file_contents(content: &str) -> Result<Self, AuthError> {
+        serde_json::from_str(content)
+            .map_err(|e| AuthError::Credentials(format!("Invalid credentials format: {}", e)))
     }
 
     fn get_default_credentials_path(env_ops: &impl EnvOps) -> Result<String, AuthError> {
@@ -621,6 +628,14 @@ mod tests {
         }
     }
 
+    fn default_credentials_path(home: &str) -> String {
+        if cfg!(windows) {
+            format!("{home}/gcloud/application_default_credentials.json")
+        } else {
+            format!("{home}/.config/gcloud/application_default_credentials.json")
+        }
+    }
+
     // Test fixtures for credentials
     fn mock_service_account() -> ServiceAccountCredentials {
         ServiceAccountCredentials {
@@ -925,7 +940,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     }
 
     #[tokio::test]
-    async fn test_load_from_default_path() {
+    async fn test_valid_default_credentials_load() {
         let mut context = TestContext::new();
 
         // Mock environment variables
@@ -972,7 +987,6 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         )
         .await;
 
-        assert!(result.is_ok());
         if let Ok(AdcCredentials::AuthorizedUser(au)) = result {
             assert_eq!(au.client_id, "test_client");
             assert_eq!(au.client_secret, "test_secret");
@@ -983,7 +997,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
     }
 
     #[tokio::test]
-    async fn test_load_from_metadata_server() {
+    async fn test_absent_default_credentials_fall_back_to_metadata() {
         let mut context = TestContext::new();
 
         // Mock environment variable lookups to fail
@@ -1000,7 +1014,14 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             .expect_get_var()
             .with(eq(home_var))
             .times(1)
-            .return_once(|_| Err(env::VarError::NotPresent));
+            .return_once(|_| Ok("/home/testuser".to_string()));
+
+        context
+            .fs_mock
+            .expect_read_to_string()
+            .with(eq(default_credentials_path("/home/testuser")))
+            .times(1)
+            .return_once(|_| Err(io::Error::new(io::ErrorKind::NotFound, "missing")));
 
         // Initialize mock server
         let context = context.with_metadata_server().await;
@@ -1028,80 +1049,152 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             .mount(mock_server)
             .await;
 
-        // Execute the code under test
         let result =
             AdcCredentials::load_impl(&context.fs_mock, &context.env_mock, &mock_server.uri())
                 .await;
 
-        // Assertions
-        assert!(
-            result.is_ok(),
-            "Expected successful result, got {:?}",
-            result
-        );
-
         if let Ok(AdcCredentials::DefaultAccount(base_url)) = result {
             assert_eq!(base_url, mock_server.uri());
         } else {
-            panic!("Expected DefaultAccount credentials, got {:?}", result);
+            panic!("Expected DefaultAccount credentials");
         }
+
+        assert_eq!(mock_server.received_requests().await.unwrap().len(), 1);
     }
 
     #[tokio::test]
-    async fn test_invalid_credentials_file() {
+    async fn test_malformed_default_credentials_do_not_fall_back_to_metadata() {
         let mut context = TestContext::new();
 
-        // Mock GOOGLE_APPLICATION_CREDENTIALS environment variable
+        context
+            .env_mock
+            .expect_get_var()
+            .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
+            .times(1)
+            .return_once(|_| Err(env::VarError::NotPresent));
+        context
+            .env_mock
+            .expect_get_var()
+            .with(eq(if cfg!(windows) { "APPDATA" } else { "HOME" }))
+            .times(1)
+            .return_once(|_| Ok("/home/testuser".to_string()));
+        context
+            .fs_mock
+            .expect_read_to_string()
+            .with(eq(default_credentials_path("/home/testuser")))
+            .times(1)
+            .return_once(|_| Ok("invalid json".to_string()));
+
+        let context = context.with_metadata_server().await;
+        let mock_server = context.mock_server.as_ref().unwrap();
+        let result =
+            AdcCredentials::load_impl(&context.fs_mock, &context.env_mock, &mock_server.uri())
+                .await;
+
+        assert!(
+            matches!(result, Err(AuthError::Credentials(message)) if message.contains("Invalid credentials format"))
+        );
+        assert!(mock_server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_unreadable_default_credentials_do_not_fall_back_to_metadata() {
+        let mut context = TestContext::new();
+
+        context
+            .env_mock
+            .expect_get_var()
+            .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
+            .times(1)
+            .return_once(|_| Err(env::VarError::NotPresent));
+        context
+            .env_mock
+            .expect_get_var()
+            .with(eq(if cfg!(windows) { "APPDATA" } else { "HOME" }))
+            .times(1)
+            .return_once(|_| Ok("/home/testuser".to_string()));
+        context
+            .fs_mock
+            .expect_read_to_string()
+            .with(eq(default_credentials_path("/home/testuser")))
+            .times(1)
+            .return_once(|_| {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "permission denied",
+                ))
+            });
+
+        let context = context.with_metadata_server().await;
+        let mock_server = context.mock_server.as_ref().unwrap();
+        let result =
+            AdcCredentials::load_impl(&context.fs_mock, &context.env_mock, &mock_server.uri())
+                .await;
+
+        assert!(
+            matches!(result, Err(AuthError::Credentials(message)) if message.contains("Failed to read credentials"))
+        );
+        assert!(mock_server.received_requests().await.unwrap().is_empty());
+    }
+
+    async fn assert_explicit_credentials_error(
+        file_result: Result<String, io::Error>,
+        expected_message: &str,
+    ) {
+        let mut context = TestContext::new();
         context
             .env_mock
             .expect_get_var()
             .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
             .times(1)
             .return_once(|_| Ok("/path/to/credentials.json".to_string()));
-
-        // Mock filesystem read for the invalid credentials file
         context
             .fs_mock
             .expect_read_to_string()
             .with(eq("/path/to/credentials.json".to_string()))
             .times(1)
-            .return_once(|_| Ok("invalid json".to_string()));
+            .return_once(move |_| file_result);
 
-        // Mock HOME/APPDATA environment variable
-        let home_var = if cfg!(windows) { "APPDATA" } else { "HOME" };
-        context
-            .env_mock
-            .expect_get_var()
-            .with(eq(home_var))
-            .times(1)
-            .return_once(|_| Ok("/home/user".to_string()));
+        let context = context.with_metadata_server().await;
+        let mock_server = context.mock_server.as_ref().unwrap();
+        let result =
+            AdcCredentials::load_impl(&context.fs_mock, &context.env_mock, &mock_server.uri())
+                .await;
 
-        // Mock filesystem read for the default credentials path
-        let default_creds_path = if cfg!(windows) {
-            "/home/user/gcloud/application_default_credentials.json"
-        } else {
-            "/home/user/.config/gcloud/application_default_credentials.json"
-        };
-        context
-            .fs_mock
-            .expect_read_to_string()
-            .with(eq(default_creds_path.to_string()))
-            .times(1)
-            .return_once(|_| {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "File not found",
-                ))
-            });
+        assert!(
+            matches!(result, Err(AuthError::Credentials(message)) if message.contains(expected_message))
+        );
+        assert!(mock_server.received_requests().await.unwrap().is_empty());
+    }
 
-        let result = AdcCredentials::load_impl(
-            &context.fs_mock,
-            &context.env_mock,
-            "http://metadata.example.com",
+    #[tokio::test]
+    async fn test_malformed_explicit_credentials_do_not_fall_back() {
+        assert_explicit_credentials_error(
+            Ok("invalid json".to_string()),
+            "Invalid credentials format",
         )
         .await;
+    }
 
-        assert!(matches!(result, Err(AuthError::Credentials(_))));
+    #[tokio::test]
+    async fn test_unreadable_explicit_credentials_do_not_fall_back() {
+        assert_explicit_credentials_error(
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "permission denied",
+            )),
+            "Failed to read credentials",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_missing_explicit_credentials_do_not_fall_back() {
+        assert_explicit_credentials_error(
+            Err(io::Error::new(io::ErrorKind::NotFound, "missing")),
+            "Failed to read credentials",
+        )
+        .await;
     }
 
     #[tokio::test]

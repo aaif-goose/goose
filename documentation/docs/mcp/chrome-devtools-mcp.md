@@ -16,7 +16,7 @@ This tutorial covers how to add the Chrome DevTools MCP Server as a goose extens
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=chrome-devtools-mcp%40latest&id=chrome-devtools&name=Chrome%20DevTools&description=Browser%20automation%20and%20web%20performance%20testing%20capabilities)
+  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=chrome-devtools-mcp%40latest&id=chrome-devtools-mcp&name=Chrome%20DevTools&description=Browser%20automation%20and%20web%20performance%20testing%20capabilities)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
@@ -36,13 +36,11 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
     <GooseDesktopInstaller
-      extensionId="chrome-devtools"
+      extensionId="chrome-devtools-mcp"
       extensionName="Chrome DevTools"
       description="Browser automation and web performance testing capabilities"
       command="npx"
       args={["-y", "chrome-devtools-mcp@latest"]}
-      cliCommand="npx -y chrome-devtools-mcp@latest"
-      timeout={300}
     />
   </TabItem>
   <TabItem value="cli" label="goose CLI">

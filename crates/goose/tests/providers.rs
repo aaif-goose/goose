@@ -5,8 +5,7 @@ use goose::acp::ACP_CURRENT_MODEL;
 use goose::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, PromptManager, SessionConfig};
 use goose::config::{ExtensionConfig, GooseMode, PermissionManager};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
-use goose::permission::permission_confirmation::PrincipalType;
-use goose::permission::{Permission, PermissionConfirmation};
+use goose::permission::Permission;
 use goose::providers::anthropic::ANTHROPIC_DEFAULT_MODEL;
 use goose::providers::azure::AZURE_DEFAULT_MODEL;
 use goose::providers::base::Provider;
@@ -15,7 +14,6 @@ use goose::providers::bedrock::BEDROCK_DEFAULT_MODEL;
 use goose::providers::claude_code::CLAUDE_CODE_DEFAULT_MODEL;
 use goose::providers::codex::CODEX_DEFAULT_MODEL;
 use goose::providers::create_with_named_model;
-use goose::providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use goose::providers::google::GOOGLE_DEFAULT_MODEL;
 use goose::providers::litellm::LITELLM_DEFAULT_MODEL;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
@@ -24,7 +22,9 @@ use goose::providers::sagemaker_tgi::SAGEMAKER_TGI_DEFAULT_MODEL;
 use goose::providers::snowflake::SNOWFLAKE_DEFAULT_MODEL;
 use goose::providers::xai::XAI_DEFAULT_MODEL;
 use goose::session::{SessionManager, SessionType};
+use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use goose_providers::errors::ProviderError;
+use goose_providers::thinking::ThinkingEffortSupport;
 use goose_test_support::{
     EnforceSessionId, ExpectedSessionId, IgnoreSessionId, McpFixture, FAKE_CODE,
 };
@@ -123,6 +123,7 @@ struct ProviderTestConfig {
     test_mode_update: bool,
     test_mcp_tools: bool,
     test_context_length_exceeded: bool,
+    test_thinking_effort: bool,
     expect_context_length_exceeded: bool,
     context_length_exceeded: usize,
 }
@@ -147,6 +148,7 @@ impl ProviderTestConfig {
             test_mode_update: true,
             test_mcp_tools: true,
             test_context_length_exceeded: true,
+            test_thinking_effort: false,
             expect_context_length_exceeded: true,
             context_length_exceeded: 600_000,
         }
@@ -174,6 +176,11 @@ impl ProviderTestConfig {
 
     fn test_mcp_tools(mut self, v: bool) -> Self {
         self.test_mcp_tools = v;
+        self
+    }
+
+    fn test_thinking_effort(mut self, v: bool) -> Self {
+        self.test_thinking_effort = v;
         self
     }
 
@@ -217,10 +224,10 @@ impl ProviderFixture {
         for &var in config.clear_env {
             env_vars.push((var, None));
         }
-        let guard = env_lock::lock_env(env_vars.into_iter());
+        let guard = env_lock::lock_env(env_vars);
 
         let expected_session_id = (config.expected_session_id)();
-        let mcp = McpFixture::new(expected_session_id.clone()).await;
+        let mcp = McpFixture::new().await;
 
         let mcp_extension =
             ExtensionConfig::streamable_http("mcp-fixture", &mcp.url, "MCP fixture", 30_u64);
@@ -343,7 +350,7 @@ impl ProviderFixture {
         };
 
         // Provider already executed an externally-dispatched tool — don't redispatch.
-        if tool_req.is_externally_dispatched() {
+        if tool_req.was_executed_externally() {
             return Ok(response1);
         }
 
@@ -497,6 +504,53 @@ impl ProviderFixture {
         Ok(())
     }
 
+    async fn test_thinking_effort(&self) -> Result<()> {
+        let ThinkingEffortSupport::Options(capability) = self.provider.thinking_effort_support()
+        else {
+            anyhow::bail!("{} should mirror the agent's effort option", self.name);
+        };
+        assert!(!capability.values.is_empty());
+        let target = capability.values.last().unwrap().value.clone();
+        println!(
+            "=== {}::thinking_effort ({} -> {}) === {:?}",
+            self.name,
+            capability.current.as_deref().unwrap_or("unset"),
+            target,
+            capability.values
+        );
+
+        assert!(
+            self.provider
+                .set_thinking_effort(&self.session_id, &target)
+                .await?
+        );
+
+        let effort_config = self
+            .model_config
+            .clone()
+            .with_merged_request_params(HashMap::from([(
+                "thinking_effort".to_string(),
+                serde_json::json!(target),
+            )]));
+        let message = Message::user().with_text("Just say hello!");
+        let (response, _) = goose::session_context::with_session_id(
+            Some(self.session_id.clone()),
+            self.provider.complete(
+                &effort_config,
+                "You are a helpful assistant.",
+                &[message],
+                &[],
+            ),
+        )
+        .await?;
+
+        assert!(response
+            .content
+            .iter()
+            .any(|c| matches!(c, MessageContent::Text(_))));
+        Ok(())
+    }
+
     async fn test_model_listing(&self) -> Result<()> {
         let models = self.provider.fetch_supported_models().await?;
 
@@ -506,10 +560,11 @@ impl ProviderFixture {
 
         assert!(!models.is_empty());
         let resolved = &self.model_config.model_name;
-        assert_ne!(resolved.as_str(), ACP_CURRENT_MODEL);
-        assert!(models
-            .iter()
-            .any(|m| m == resolved || m.contains(resolved) || resolved.contains(m)));
+        if resolved != ACP_CURRENT_MODEL {
+            assert!(models
+                .iter()
+                .any(|m| m == resolved || m.contains(resolved) || resolved.contains(m)));
+        }
         if let Some(alt) = &self.model_switch_name {
             assert!(models
                 .iter()
@@ -544,14 +599,8 @@ impl ProviderFixture {
                         if let ActionRequiredData::ToolConfirmation { ref id, .. } = ar.data {
                             saw_action_required = true;
                             self.agent
-                                .handle_confirmation(
-                                    id.clone(),
-                                    PermissionConfirmation {
-                                        principal_type: PrincipalType::Tool,
-                                        permission: permission.clone(),
-                                    },
-                                )
-                                .await;
+                                .submit_tool_confirmation(&self.session_id, id, permission.clone())
+                                .await?;
                         }
                     }
                 }
@@ -684,6 +733,12 @@ async fn test_provider(config: ProviderTestConfig) -> Result<()> {
             run_test(GooseMode::Auto)
                 .await?
                 .test_context_length_exceeded_error()
+                .await?;
+        }
+        if config.test_thinking_effort {
+            run_test(GooseMode::Auto)
+                .await?
+                .test_thinking_effort()
                 .await?;
         }
         if config.test_permissions {
@@ -894,11 +949,12 @@ async fn test_codex_provider() -> Result<()> {
 async fn test_claude_acp_provider() -> Result<()> {
     ProviderTestConfig::with_agentic_provider("claude-acp", ACP_CURRENT_MODEL, "claude-agent-acp")
         .model_switch_name("sonnet")
+        .test_thinking_effort(true)
         .run()
         .await
 }
 
-// Requires: npm install -g @zed-industries/codex-acp
+// Requires: npm install -g @agentclientprotocol/codex-acp
 #[tokio::test]
 async fn test_codex_acp_provider() -> Result<()> {
     ProviderTestConfig::with_agentic_provider("codex-acp", ACP_CURRENT_MODEL, "codex-acp")

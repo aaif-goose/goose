@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import type { ScheduledJobDto } from '@aaif/goose-sdk';
+import { useLocation } from 'react-router';
+import type { ScheduledJobDto } from '@aaif/goose-acp-client';
 import {
   acpListSchedules,
   acpCreateSchedule,
@@ -11,6 +11,7 @@ import {
   acpKillRunningJob,
   acpInspectRunningJob,
 } from '../../acp/schedules';
+import { scheduleRecipe } from '../../recipe/recipe_management';
 import { ScrollArea } from '../ui/scroll-area';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -40,25 +41,41 @@ const i18n = defineMessages({
   refreshing: { id: 'schedulesView.refreshing', defaultMessage: 'Refreshing...' },
   refresh: { id: 'schedulesView.refresh', defaultMessage: 'Refresh' },
   createSchedule: { id: 'schedulesView.createSchedule', defaultMessage: 'Create Schedule' },
-  description: { id: 'schedulesView.description', defaultMessage: 'Create and manage scheduled tasks to run recipes automatically at specified times.' },
+  description: {
+    id: 'schedulesView.description',
+    defaultMessage:
+      'Create and manage scheduled tasks to run recipes automatically at specified times.',
+  },
   errorPrefix: { id: 'schedulesView.errorPrefix', defaultMessage: 'Error: {error}' },
   noSchedules: { id: 'schedulesView.noSchedules', defaultMessage: 'No schedules yet' },
   scheduleUpdated: { id: 'schedulesView.scheduleUpdated', defaultMessage: 'Schedule Updated' },
-  scheduleUpdatedMsg: { id: 'schedulesView.scheduleUpdatedMsg', defaultMessage: 'Successfully updated schedule "{id}"' },
+  scheduleUpdatedMsg: {
+    id: 'schedulesView.scheduleUpdatedMsg',
+    defaultMessage: 'Successfully updated schedule "{id}"',
+  },
   confirmDelete: {
     id: 'schedulesView.confirmDelete',
     defaultMessage: 'Remove schedule "{id}"? The recipe will be kept.',
   },
   schedulePaused: { id: 'schedulesView.schedulePaused', defaultMessage: 'Schedule Paused' },
-  schedulePausedMsg: { id: 'schedulesView.schedulePausedMsg', defaultMessage: 'Successfully paused schedule "{id}"' },
+  schedulePausedMsg: {
+    id: 'schedulesView.schedulePausedMsg',
+    defaultMessage: 'Successfully paused schedule "{id}"',
+  },
   pauseError: { id: 'schedulesView.pauseError', defaultMessage: 'Pause Schedule Error' },
   scheduleUnpaused: { id: 'schedulesView.scheduleUnpaused', defaultMessage: 'Schedule Unpaused' },
-  scheduleUnpausedMsg: { id: 'schedulesView.scheduleUnpausedMsg', defaultMessage: 'Successfully unpaused schedule "{id}"' },
+  scheduleUnpausedMsg: {
+    id: 'schedulesView.scheduleUnpausedMsg',
+    defaultMessage: 'Successfully unpaused schedule "{id}"',
+  },
   unpauseError: { id: 'schedulesView.unpauseError', defaultMessage: 'Unpause Schedule Error' },
   jobKilled: { id: 'schedulesView.jobKilled', defaultMessage: 'Job Killed' },
   killError: { id: 'schedulesView.killError', defaultMessage: 'Kill Job Error' },
   jobInspection: { id: 'schedulesView.jobInspection', defaultMessage: 'Job Inspection' },
-  inspectNoInfo: { id: 'schedulesView.inspectNoInfo', defaultMessage: 'No detailed information available for this job' },
+  inspectNoInfo: {
+    id: 'schedulesView.inspectNoInfo',
+    defaultMessage: 'No detailed information available for this job',
+  },
   inspectError: { id: 'schedulesView.inspectError', defaultMessage: 'Inspect Job Error' },
 });
 
@@ -296,9 +313,16 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
         });
       } else {
         const newPayload = payload as NewSchedulePayload;
-        await acpCreateSchedule(newPayload);
-        const sourceType = pendingDeepLink ? 'deeplink' : 'file';
-        trackScheduleCreated(sourceType, true);
+        if (newPayload.sourceType === 'saved') {
+          await scheduleRecipe(newPayload.recipeId, newPayload.cron);
+        } else {
+          await acpCreateSchedule({
+            id: newPayload.id,
+            recipe: newPayload.recipe,
+            cron: newPayload.cron,
+          });
+        }
+        trackScheduleCreated(newPayload.sourceType, true);
       }
       await fetchSchedules();
       setIsModalOpen(false);
@@ -309,8 +333,13 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
       setSubmitApiError(errorMsg);
 
       if (!editingSchedule) {
-        const sourceType = pendingDeepLink ? 'deeplink' : 'file';
-        trackScheduleCreated(sourceType, false, getErrorType(error));
+        const failedSourceType =
+          typeof payload === 'object' && payload && 'sourceType' in payload
+            ? payload.sourceType
+            : pendingDeepLink
+              ? 'deeplink'
+              : 'file';
+        trackScheduleCreated(failedSourceType, false, getErrorType(error));
       }
     } finally {
       setIsSubmitting(false);
@@ -493,7 +522,9 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
                     className="flex items-center gap-2"
                   >
                     <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    {isRefreshing ? intl.formatMessage(i18n.refreshing) : intl.formatMessage(i18n.refresh)}
+                    {isRefreshing
+                      ? intl.formatMessage(i18n.refreshing)
+                      : intl.formatMessage(i18n.refresh)}
                   </Button>
                   <Button
                     onClick={() => {
@@ -519,7 +550,9 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
               <div className="h-full relative">
                 {apiError && (
                   <div className="mb-4 p-4 bg-background-danger border border-border-danger rounded-md">
-                    <p className="text-text-danger text-sm">{intl.formatMessage(i18n.errorPrefix, { error: apiError })}</p>
+                    <p className="text-text-danger text-sm">
+                      {intl.formatMessage(i18n.errorPrefix, { error: apiError })}
+                    </p>
                   </div>
                 )}
 

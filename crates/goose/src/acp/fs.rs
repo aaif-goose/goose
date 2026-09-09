@@ -1,3 +1,4 @@
+use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::tools::AcpAwareToolMeta;
 use crate::agents::mcp_client::{Error as McpError, McpClientTrait};
 use crate::agents::platform_extensions::developer::edit::{
@@ -6,16 +7,18 @@ use crate::agents::platform_extensions::developer::edit::{
 use crate::agents::platform_extensions::developer::shell::{ShellParams, OUTPUT_LIMIT_BYTES};
 use crate::agents::platform_extensions::developer::DeveloperClient;
 use agent_client_protocol::schema::v1::{
-    CreateTerminalRequest, Diff, KillTerminalRequest, ReadTextFileRequest, ReleaseTerminalRequest,
-    SessionId, SessionNotification, SessionUpdate, Terminal, TerminalOutputRequest,
-    ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    CreateTerminalRequest, Diff, EnvVariable, KillTerminalRequest, ReadTextFileRequest,
+    ReleaseTerminalRequest, SessionId, Terminal, TerminalOutputRequest, ToolCallContent,
+    ToolCallId, ToolCallLocation, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
     WaitForTerminalExitRequest, WriteTextFileRequest,
 };
 use agent_client_protocol::{Client, ConnectionTo};
 use agent_client_protocol_schema::v1::TerminalId;
 use async_trait::async_trait;
 use fs_err as fs;
-use rmcp::model::{CallToolResult, Content as RmcpContent, Tool, ToolAnnotations};
+use rmcp::model::{
+    Annotations, CallToolResult, ContentBlock as RmcpContent, TextContent, Tool, ToolAnnotations,
+};
 use schemars::schema_for;
 use std::path::Path;
 use std::sync::Arc;
@@ -64,13 +67,31 @@ pub(crate) struct AcpTools {
     pub(crate) inner: Arc<dyn McpClientTrait>,
     pub(crate) cx: ConnectionTo<Client>,
     pub(crate) session_id: SessionId,
+    pub(crate) tool_call_notifier: ToolCallNotifier,
     pub(crate) fs_read: bool,
     pub(crate) fs_write: bool,
     pub(crate) terminal: bool,
 }
 
+fn create_terminal_request(
+    session_id: &SessionId,
+    params: &ShellParams,
+    ctx: &crate::agents::ToolCallContext,
+) -> CreateTerminalRequest {
+    CreateTerminalRequest::new(session_id.clone(), &params.command)
+        .env(vec![EnvVariable::new("AGENT_SESSION_ID", &ctx.session_id)])
+        .cwd(ctx.working_dir.clone())
+        .output_byte_limit(OUTPUT_LIMIT_BYTES as u64)
+}
+
+fn visible_text(text: impl Into<String>) -> RmcpContent {
+    RmcpContent::Text(
+        TextContent::new(text).with_annotations(Annotations::default().with_priority(0.0)),
+    )
+}
+
 fn error_result(msg: impl std::fmt::Display) -> CallToolResult {
-    CallToolResult::error(vec![RmcpContent::text(msg.to_string()).with_priority(0.0)])
+    CallToolResult::error(vec![visible_text(msg.to_string())])
 }
 
 fn fail(action: &str, path: &str, err: impl std::fmt::Display) -> CallToolResult {
@@ -96,14 +117,8 @@ impl AcpTools {
     fn update_tool_call(&self, ctx: &crate::agents::ToolCallContext, fields: ToolCallUpdateFields) {
         if let Some(ref req_id) = ctx.tool_call_request_id {
             let _ = self
-                .cx
-                .send_notification(SessionNotification::new(
-                    self.session_id.clone(),
-                    SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                        ToolCallId::new(req_id.clone()),
-                        fields,
-                    )),
-                ))
+                .tool_call_notifier
+                .send_update(ToolCallUpdate::new(ToolCallId::new(req_id.clone()), fields))
                 .inspect_err(|e| tracing::error!("error updating tool call with client: {}", e));
         }
     }
@@ -136,13 +151,11 @@ impl AcpTools {
             ctx,
             ToolCallUpdateFields::new()
                 .kind(ToolKind::Read)
-                .locations(vec![ToolCallLocation::new(&path)]),
+                .locations(vec![ToolCallLocation::new(&path).line(params.line)]),
         );
         match acp_read_text_file(&self.cx, &self.session_id, &path, params.line, params.limit).await
         {
-            Ok(content) => Ok(CallToolResult::success(vec![
-                RmcpContent::text(content).with_priority(0.0)
-            ])),
+            Ok(content) => Ok(CallToolResult::success(vec![visible_text(content)])),
             Err(e) => Ok(fail("read", &params.path, e)),
         }
     }
@@ -174,11 +187,10 @@ impl AcpTools {
                 );
                 let line_count = params.content.lines().count();
                 let action = if path.exists() { "Wrote" } else { "Created" };
-                Ok(CallToolResult::success(vec![RmcpContent::text(format!(
+                Ok(CallToolResult::success(vec![visible_text(format!(
                     "{action} {} ({line_count} lines)",
                     params.path
-                ))
-                .with_priority(0.0)]))
+                ))]))
             }
             Err(e) => Ok(fail("write", &params.path, e)),
         }
@@ -227,11 +239,10 @@ impl AcpTools {
                 );
                 let old_lines = params.before.lines().count();
                 let new_lines = params.after.lines().count();
-                Ok(CallToolResult::success(vec![RmcpContent::text(format!(
+                Ok(CallToolResult::success(vec![visible_text(format!(
                     "Edited {} ({old_lines} lines -> {new_lines} lines)",
                     params.path
-                ))
-                .with_priority(0.0)]))
+                ))]))
             }
             Err(e) => Ok(fail("write", &params.path, e)),
         }
@@ -250,11 +261,7 @@ impl AcpTools {
 
         let create_res = self
             .cx
-            .send_request(
-                CreateTerminalRequest::new(self.session_id.clone(), &params.command)
-                    .cwd(ctx.working_dir.clone())
-                    .output_byte_limit(OUTPUT_LIMIT_BYTES as u64),
-            )
+            .send_request(create_terminal_request(&self.session_id, &params, ctx))
             .block_task()
             .await
             .map_err(|e| {
@@ -296,8 +303,8 @@ impl AcpTools {
             .unwrap_or_default();
 
         let content = vec![
-            RmcpContent::text(format!("exit code: {exit_code}")).with_priority(0.0),
-            RmcpContent::text(output_res.output).with_priority(0.0),
+            visible_text(format!("exit code: {exit_code}")),
+            visible_text(output_res.output),
         ];
 
         if exit_code != 0 {
@@ -436,5 +443,33 @@ impl McpClientTrait for AcpTools {
 
     fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
         self.inner.get_info()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::ToolCallContext;
+
+    #[test]
+    fn terminal_request_includes_agent_session_id() {
+        let session_id = SessionId::new("acp-session");
+        let params = ShellParams {
+            command: "echo test".to_string(),
+            timeout_secs: None,
+        };
+        let ctx = ToolCallContext::new(
+            "agent-session".to_string(),
+            Some(std::path::PathBuf::from("/tmp/worktree")),
+            None,
+        );
+
+        let request = create_terminal_request(&session_id, &params, &ctx);
+
+        assert_eq!(
+            request.env,
+            vec![EnvVariable::new("AGENT_SESSION_ID", "agent-session")]
+        );
+        assert_eq!(request.cwd, Some(std::path::PathBuf::from("/tmp/worktree")));
     }
 }

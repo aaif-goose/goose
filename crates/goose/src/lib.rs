@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 #[cfg(all(feature = "rustls-tls", feature = "native-tls"))]
 compile_error!("Features `rustls-tls` and `native-tls` are mutually exclusive");
 
@@ -8,6 +10,7 @@ pub mod agents;
 pub mod builtin_extension;
 pub mod checks;
 pub mod config;
+pub mod context_limit;
 pub mod context_mgmt;
 pub mod conversation {
     pub use goose_providers::conversation::*;
@@ -47,6 +50,7 @@ pub mod source_roots;
 pub mod sources;
 pub mod subprocess;
 pub mod token_counter;
+mod tool_call_labels;
 pub mod tool_inspection;
 pub mod tool_monitor;
 pub mod tracing;

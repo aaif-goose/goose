@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getSessionDisplayName, shouldShowNewChatTitle } from '../sessions';
+import { getSessionDisplayName } from '../sessions';
 import { prependUnique } from '../hooks/useNavigationSessions';
 import type { SessionListItem } from '../acp/sessions';
 import type { Session } from '../types/session';
@@ -30,33 +30,16 @@ function makeListItem(overrides: Partial<SessionListItem> = {}): SessionListItem
   };
 }
 
-describe('shouldShowNewChatTitle', () => {
-  it('returns true for an empty session without a user-set name', () => {
-    const session = makeSession({ message_count: 0, user_set_name: false });
-    expect(shouldShowNewChatTitle(session)).toBe(true);
-  });
-
-  it('returns false when the session has messages', () => {
-    const session = makeSession({ message_count: 3, user_set_name: false });
-    expect(shouldShowNewChatTitle(session)).toBe(false);
-  });
-
-  it('returns false when the user has set a custom name', () => {
-    const session = makeSession({ message_count: 0, user_set_name: true });
-    expect(shouldShowNewChatTitle(session)).toBe(false);
-  });
-
-  it('returns false when the session has a recipe', () => {
-    const session = makeSession({
-      message_count: 0,
-      user_set_name: false,
-      recipe: { title: 'Recipe', steps: [] } as unknown as Session['recipe'],
-    });
-    expect(shouldShowNewChatTitle(session)).toBe(false);
-  });
-});
-
 describe('getSessionDisplayName (fix for #8865)', () => {
+  it('returns the normalized session name even when message count metadata is stale', () => {
+    const session = makeSession({
+      name: 'Generated title',
+      user_set_name: false,
+      message_count: 0,
+    });
+    expect(getSessionDisplayName(session)).toBe('Generated title');
+  });
+
   it('returns the user-set name for a recipe session that has been renamed', () => {
     const session = makeSession({
       name: 'My Renamed Chat',

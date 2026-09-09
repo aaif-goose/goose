@@ -105,8 +105,15 @@
                 .on("mouseover", function (event, d) {
                     var pct = ((d.data.value / root.value) * 100).toFixed(1);
                     var tt = document.getElementById("tooltip");
-                    tt.innerHTML = "<strong>" + d.data.name + "</strong><br/>" + formatValue(d.data.value) + " (" + pct + "%)" +
-                        (d.data.category ? "<br/>" + d.data.category : "");
+                    var name = document.createElement("strong");
+                    name.textContent = d.data.name;
+                    tt.replaceChildren(name);
+                    tt.appendChild(document.createElement("br"));
+                    tt.appendChild(document.createTextNode(formatValue(d.data.value) + " (" + pct + "%)"));
+                    if (d.data.category) {
+                        tt.appendChild(document.createElement("br"));
+                        tt.appendChild(document.createTextNode(d.data.category));
+                    }
                     tt.style.opacity = 1;
                     McpAppBridge.positionTooltip(tt, event);
                 })

@@ -25,16 +25,30 @@ In addition to editing configuration files directly, many settings can be manage
 - **goose Desktop**: From the `Settings` page and the bottom toolbar
 - **goose CLI**: Run the `goose configure` command
 
+## Provider Configuration
+
+Provider settings are stored in the `active_provider` and `providers` keys:
+
+```yaml
+active_provider: anthropic
+providers:
+  anthropic:
+    enabled: true
+    model: claude-sonnet-4-5-20250929
+    configured: true
+```
+
+`GOOSE_PROVIDER` and `GOOSE_MODEL` are still supported as environment variables and override the config file for that process. Older config files that use flat `GOOSE_PROVIDER` and `GOOSE_MODEL` keys are read for compatibility and migrated when goose updates the provider settings.
+
 ## Global Settings
 
 The following settings can be configured at the root level of your config.yaml file:
 
 | Setting | Purpose | Values | Default | Required |
 |---------|---------|---------|---------|-----------|
-| `GOOSE_PROVIDER` | Primary [LLM provider](/docs/getting-started/providers) | "anthropic", "openai", etc. | None | Yes |
-| `GOOSE_MODEL` | Default model to use | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
 | `GOOSE_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOOSE_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
+| `GOOSE_CACHE_TTL` | Anthropic prompt-cache TTL; `1h` keeps the cached prefix alive across idle gaps at a higher cache-write rate. Headless runs always use `5m` | "5m", "1h" | "5m" | No |
 | `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
 | `GOOSE_PLANNER_PROVIDER` | Provider for [planning mode](/docs/guides/context-engineering/creating-plans) | Same as `GOOSE_PROVIDER` options | Falls back to `GOOSE_PROVIDER` | No |
@@ -43,13 +57,14 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Model for tool interpretation | Model name (e.g., "llama3.2") | System default | No |
 | `GOOSE_INPUT_LIMIT` | Override input token limit for Ollama (maps to `num_ctx`) | Positive integer | Model default | No |
 | `GOOSE_CLI_MIN_PRIORITY` | Tool output verbosity | Float between 0.0 and 1.0 | 0.0 | No |
-| `GOOSE_CLI_THEME` | [Theme](/docs/guides/goose-cli-commands#themes) for CLI response  markdown | "light", "dark", "ansi" | "dark" | No |
+| `GOOSE_CLI_THEME` | [Theme](/docs/guides/goose-cli-commands#themes) for CLI response markdown | "light", "dark", "ansi" | "ansi" | No |
 | `GOOSE_CLI_LIGHT_THEME` | Custom syntax highlighting theme for light mode | [bat theme name](https://github.com/sharkdp/bat#adding-new-themes) | "GitHub" | No |
 | `GOOSE_CLI_DARK_THEME` | Custom syntax highlighting theme for dark mode | [bat theme name](https://github.com/sharkdp/bat#adding-new-themes) | "zenburn" | No |
 | `GOOSE_CLI_SHOW_COST` | Show estimated cost for token use in the CLI | true/false | false | No |
 | `GOOSE_ALLOWLIST` | URL for allowed extensions | Valid URL | None | No |
+| `GOOSE_DOCS_ROOT` | Documentation root used by `goose-doc-guide` (e.g. for offline/air-gapped docs) | Local path or HTTP(S) URL containing `goose-docs-map.md` and `docs/` | `https://goose-docs.ai` | No |
 | `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository for recipes | Format: "org/repo" | None | No |
-| `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically summarizes your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0)| 0.8 | No |
+| `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically compacts your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0)| 0.8 | No |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false | No |
 | `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 | No |
 | `SECURITY_PROMPT_CLASSIFIER_ENABLED` | Enable ML-based prompt injection detection for advanced threat identification | true/false | false | No |
@@ -65,8 +80,12 @@ Here's a basic example of a config.yaml file:
 
 ```yaml
 # Model Configuration
-GOOSE_PROVIDER: "anthropic"
-GOOSE_MODEL: "claude-4.5-sonnet"
+active_provider: anthropic
+providers:
+  anthropic:
+    enabled: true
+    model: claude-sonnet-4-5-20250929
+    configured: true
 GOOSE_TEMPERATURE: 0.7
 
 # Planning Configuration
@@ -80,6 +99,9 @@ GOOSE_CLI_MIN_PRIORITY: 0.2
 
 # Recipe Configuration
 GOOSE_RECIPE_GITHUB_REPO: "aaif-goose/goose-recipes"
+
+# Documentation Configuration
+GOOSE_DOCS_ROOT: "/path/to/goose-docs"
 
 # Search Path Configuration
 GOOSE_SEARCH_PATHS:
@@ -119,15 +141,49 @@ extensions:
     enabled: true/false       # Whether the extension is active
     name: "extension_name"    # Internal name
     timeout: 300              # Operation timeout in seconds
-    type: "builtin"/"stdio"   # Extension type
+    type: "builtin"           # Extension type
     available_tools: []       # Filter to specific tools (empty = all)
-    
-    # Additional settings for stdio extensions:
-    cmd: "command"            # Command to execute
-    args: ["arg1", "arg2"]    # Command arguments
-    description: "text"       # Extension description
-    env_keys: []              # Required environment variables
-    envs: {}                  # Environment values
+```
+
+Supported extension types are `builtin`, `platform`, `stdio`, and `streamable_http`. SSE is not supported; migrate old SSE configurations to `streamable_http`.
+
+Common extension shapes:
+
+```yaml
+extensions:
+  developer:
+    type: builtin
+    name: developer
+    enabled: true
+    bundled: true
+    timeout: 300
+
+  computercontroller:
+    type: platform
+    name: computercontroller
+    display_name: Computer Controller
+    enabled: true
+    bundled: true
+
+  filesystem:
+    type: stdio
+    name: filesystem
+    enabled: true
+    cmd: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    env_keys: []
+    envs: {}
+    timeout: 300
+
+  remote-tools:
+    type: streamable_http
+    name: remote-tools
+    enabled: true
+    uri: "https://example.com/mcp"
+    headers: {}
+    env_keys: []
+    envs: {}
+    timeout: 300
 ```
 
 ### Tool Filtering
@@ -136,7 +192,7 @@ Use the `available_tools` field to limit which tools are loaded from an extensio
 
 ## Search Path Configuration
 
-Extensions may need to execute external commands or tools. By default, goose uses your system's PATH environment variable. You can add additional search directories in your config file:
+Extensions may need to execute external commands or tools. Goose builds the command search path from any `GOOSE_SEARCH_PATHS` entries, built-in fallback paths, and then your system PATH. You can add additional search directories in your config file:
 
 ```yaml
 GOOSE_SEARCH_PATHS:
@@ -145,7 +201,7 @@ GOOSE_SEARCH_PATHS:
   - "/opt/homebrew/bin"
 ```
 
-These paths are prepended to the system PATH when running extension commands, ensuring your custom tools are found without modifying your global PATH.
+These paths are checked before the built-in fallback paths and system PATH when running extension commands, ensuring your custom tools are found without modifying your global PATH.
 
 ## Observability Configuration
 
@@ -181,6 +237,10 @@ Settings are applied in the following order of precedence:
 3. Default values (lowest priority)
 
 ## Security Considerations
+
+:::warning Provider API keys do not go in `config.yaml`
+goose does not read provider API keys from `config.yaml`. A key placed there is ignored, which typically surfaces as an authentication failure such as `No api key passed in`. Store the key in the system keyring (via `goose configure`), or—when using file-based secret storage—in `secrets.yaml`. It can also be supplied through the provider's environment variable (for example `OPENAI_API_KEY`), which takes precedence over stored secrets.
+:::
 
 - Avoid storing sensitive information (API keys, tokens) in the config file
 - Use the system keyring (keychain on macOS) for storing secrets. When available, this is the recommended option.

@@ -10,14 +10,26 @@ describe('messageToAcpPromptContent', () => {
       created: 123,
       content: [
         { type: 'text', text: 'Describe this' },
-        { type: 'image', data: 'abc123', mimeType: 'image/png' },
+        {
+          type: 'image',
+          data: 'abc123',
+          mimeType: 'image/png',
+          _meta: { source: 'acp' },
+          annotations: { priority: 0.5 },
+        },
       ],
       metadata: { userVisible: true, agentVisible: true },
     };
 
     expect(messageToAcpPromptContent(message)).toEqual([
       { type: 'text', text: 'Describe this' },
-      { type: 'image', data: 'abc123', mimeType: 'image/png' },
+      {
+        type: 'image',
+        data: 'abc123',
+        mimeType: 'image/png',
+        _meta: { source: 'acp' },
+        annotations: { priority: 0.5 },
+      },
     ]);
   });
 

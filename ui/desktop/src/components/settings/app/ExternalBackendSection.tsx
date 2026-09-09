@@ -3,31 +3,49 @@ import { Switch } from '../../ui/switch';
 import { Input } from '../../ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { AlertCircle } from 'lucide-react';
-import { ExternalGoosedConfig, defaultSettings } from '../../../utils/settings';
-import { WEB_PROTOCOLS } from '../../../utils/urlSecurity';
+import { ExternalBackendConfig, defaultSettings } from '../../../utils/settings';
 import { defineMessages, useIntl } from '../../../i18n';
+import { normalizeAcpHttpBaseUrl } from '../../../acp/url';
 
 const i18n = defineMessages({
   title: {
     id: 'externalBackendSection.title',
-    defaultMessage: 'Goose Server',
+    defaultMessage: 'External Backend (ACP)',
   },
   description: {
     id: 'externalBackendSection.description',
     defaultMessage:
-      'By default goose launches a server for you, use this to connect to an external goose server',
+      'By default Goose starts a local backend. Use this to connect to an external ACP-compatible backend.',
   },
   useExternalServer: {
     id: 'externalBackendSection.useExternalServer',
-    defaultMessage: 'Use external server',
+    defaultMessage: 'Use external backend',
   },
   useExternalServerDescription: {
     id: 'externalBackendSection.useExternalServerDescription',
-    defaultMessage: 'Connect to a goose server running elsewhere (requires app restart)',
+    defaultMessage: 'Connect to an ACP-compatible backend running elsewhere.',
   },
   serverUrl: {
     id: 'externalBackendSection.serverUrl',
-    defaultMessage: 'Server URL',
+    defaultMessage: 'Backend Base URL',
+  },
+  serverUrlHelp: {
+    id: 'externalBackendSection.serverUrlHelp',
+    defaultMessage:
+      'Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base.',
+  },
+  workingDir: {
+    id: 'externalBackendSection.workingDir',
+    defaultMessage: 'Remote Working Directory (optional)',
+  },
+  workingDirPlaceholder: {
+    id: 'externalBackendSection.workingDirPlaceholder',
+    defaultMessage: '/home/goose/workspace',
+  },
+  workingDirHelp: {
+    id: 'externalBackendSection.workingDirHelp',
+    defaultMessage:
+      'Absolute path on the external backend. Leave blank to send the local working directory.',
   },
   secretKey: {
     id: 'externalBackendSection.secretKey',
@@ -39,7 +57,7 @@ const i18n = defineMessages({
   },
   secretKeyHelp: {
     id: 'externalBackendSection.secretKeyHelp',
-    defaultMessage: 'The secret key configured on the goosed server (GOOSE_SERVER__SECRET_KEY)',
+    defaultMessage: 'The secret key configured on the external backend (GOOSE_SERVER__SECRET_KEY).',
   },
   certFingerprint: {
     id: 'externalBackendSection.certFingerprint',
@@ -51,12 +69,12 @@ const i18n = defineMessages({
   },
   certFingerprintHelp: {
     id: 'externalBackendSection.certFingerprintHelp',
-    defaultMessage: 'Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU).',
+    defaultMessage:
+      'Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU).',
   },
   restartNote: {
     id: 'externalBackendSection.restartNote',
-    defaultMessage:
-      'Changes require restarting Goose to take effect. New chat windows will connect to the external server.',
+    defaultMessage: 'Changes apply to new chat windows. Restart Goose to update existing windows.',
   },
   urlProtocolError: {
     id: 'externalBackendSection.urlProtocolError',
@@ -70,11 +88,16 @@ const i18n = defineMessages({
     id: 'externalBackendSection.urlFormatError',
     defaultMessage: 'Invalid URL format',
   },
+  urlBaseError: {
+    id: 'externalBackendSection.urlBaseError',
+    defaultMessage:
+      'URL must be the backend base URL before /acp, without query parameters or fragments',
+  },
 });
 
 export default function ExternalBackendSection() {
   const intl = useIntl();
-  const [config, setConfig] = useState<ExternalGoosedConfig>(defaultSettings.externalGoosed);
+  const [config, setConfig] = useState<ExternalBackendConfig>(defaultSettings.externalGoosed);
   const [isSaving, setIsSaving] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
 
@@ -86,33 +109,37 @@ export default function ExternalBackendSection() {
     loadSettings();
   }, []);
 
-  const validateUrl = (
-    value: string,
-    certFingerprint = config.certFingerprint
-  ): boolean => {
+  const validateUrl = (value: string, certFingerprint = config.certFingerprint): boolean => {
     if (!value) {
       setUrlError(null);
       return true;
     }
     try {
-      const parsed = new URL(value);
-      if (!WEB_PROTOCOLS.includes(parsed.protocol)) {
-        setUrlError(intl.formatMessage(i18n.urlProtocolError));
-        return false;
-      }
+      const normalizedUrl = normalizeAcpHttpBaseUrl(value);
+      const parsed = new URL(normalizedUrl);
       if (certFingerprint?.trim() && parsed.protocol !== 'https:') {
         setUrlError(intl.formatMessage(i18n.fingerprintRequiresHttps));
         return false;
       }
       setUrlError(null);
       return true;
-    } catch {
-      setUrlError(intl.formatMessage(i18n.urlFormatError));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('http: or https:')) {
+        setUrlError(intl.formatMessage(i18n.urlProtocolError));
+      } else if (
+        message.includes('base URL before /acp') ||
+        message.includes('query parameters or fragments')
+      ) {
+        setUrlError(intl.formatMessage(i18n.urlBaseError));
+      } else {
+        setUrlError(intl.formatMessage(i18n.urlFormatError));
+      }
       return false;
     }
   };
 
-  const saveConfig = async (newConfig: ExternalGoosedConfig): Promise<void> => {
+  const saveConfig = async (newConfig: ExternalBackendConfig): Promise<void> => {
     setIsSaving(true);
     try {
       await window.electron.setSetting('externalGoosed', newConfig);
@@ -123,9 +150,9 @@ export default function ExternalBackendSection() {
     }
   };
 
-  const updateField = <K extends keyof ExternalGoosedConfig>(
+  const updateField = <K extends keyof ExternalBackendConfig>(
     field: K,
-    value: ExternalGoosedConfig[K]
+    value: ExternalBackendConfig[K]
   ) => {
     const newConfig = { ...config, [field]: value };
     setConfig(newConfig);
@@ -159,14 +186,14 @@ export default function ExternalBackendSection() {
       <Card className="pb-2">
         <CardHeader className="pb-0">
           <CardTitle>{intl.formatMessage(i18n.title)}</CardTitle>
-          <CardDescription>
-            {intl.formatMessage(i18n.description)}
-          </CardDescription>
+          <CardDescription>{intl.formatMessage(i18n.description)}</CardDescription>
         </CardHeader>
         <CardContent className="pt-4 space-y-4 px-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-text-primary text-xs">{intl.formatMessage(i18n.useExternalServer)}</h3>
+              <h3 className="text-text-primary text-xs">
+                {intl.formatMessage(i18n.useExternalServer)}
+              </h3>
               <p className="text-xs text-text-secondary max-w-md mt-[2px]">
                 {intl.formatMessage(i18n.useExternalServerDescription)}
               </p>
@@ -203,6 +230,27 @@ export default function ExternalBackendSection() {
                     {urlError}
                   </p>
                 )}
+                <p className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.serverUrlHelp)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="external-working-dir" className="text-text-primary text-xs">
+                  {intl.formatMessage(i18n.workingDir)}
+                </label>
+                <Input
+                  id="external-working-dir"
+                  type="text"
+                  placeholder={intl.formatMessage(i18n.workingDirPlaceholder)}
+                  value={config.workingDir || ''}
+                  onChange={(e) => updateField('workingDir', e.target.value)}
+                  onBlur={() => saveConfig(config)}
+                  disabled={isSaving}
+                />
+                <p className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.workingDirHelp)}
+                </p>
               </div>
 
               <div className="space-y-2">

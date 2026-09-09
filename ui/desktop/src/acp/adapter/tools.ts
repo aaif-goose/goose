@@ -18,9 +18,12 @@ import {
   rawInputToArguments,
   toolIdentity,
   type ToolIdentity,
+  type ToolCallState,
 } from './shared';
 
 export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatStateChange[] {
+  updateToolCallState(state, update);
+
   const gooseMeta = getGooseMessageMeta(update);
   const message = getOrCreateAssistantMessageForUpdate(state, gooseMeta);
 
@@ -56,31 +59,57 @@ export function applyToolCallUpdate(
   state: AdapterState,
   update: ToolCallUpdate
 ): AcpChatStateChange[] {
-  if (update.status !== 'completed' && update.status !== 'failed') {
+  const toolCallState = updateToolCallState(state, update);
+  const isFinished = toolCallState.status === 'completed' || toolCallState.status === 'failed';
+
+  if (!isFinished) {
     const notificationChange = toolNotificationChange(update);
     return notificationChange ? [notificationChange] : [];
   }
 
   if (hasToolResponse(state, update.toolCallId)) {
+    state.toolCallStatesById.delete(update.toolCallId);
     return messagesChange(state);
   }
 
   const gooseMeta = getGooseMessageMeta(update);
   const message = getOrCreateToolResponseMessageForUpdate(state, gooseMeta);
   const identity = toolIdentity(update);
-  const metadata = toolResponseMetadata(update, identity);
+  const metadata = toolResponseMetadata(toolCallState, identity);
 
   message.content.push({
     type: 'toolResponse',
     id: update.toolCallId,
-    toolResult:
-      update.status === 'failed'
-        ? { status: 'error', error: toolError(update) }
-        : { status: 'success', value: toolResultValue(update, mcpAppMetadata(update)) },
+    toolResult: {
+      status: 'success',
+      value: toolResultValue(
+        toolCallState,
+        mcpAppMetadata(update),
+        toolCallState.status === 'failed'
+      ),
+    },
     ...(metadata ? { metadata } : {}),
   });
 
+  state.toolCallStatesById.delete(update.toolCallId);
   return messagesChange(state);
+}
+
+function updateToolCallState(
+  state: AdapterState,
+  update: ToolCall | ToolCallUpdate
+): ToolCallState {
+  const toolCallState = mergeToolCallState(state.toolCallStatesById.get(update.toolCallId), update);
+  state.toolCallStatesById.set(update.toolCallId, toolCallState);
+  return toolCallState;
+}
+
+function mergeToolCallState(
+  previous: ToolCallState | undefined,
+  update: ToolCall | ToolCallUpdate
+): ToolCallState {
+  const { _meta: _ignoredMeta, ...toolCallStateUpdate } = update;
+  return { ...previous, ...toolCallStateUpdate };
 }
 
 function getOrCreateAssistantMessageForUpdate(
@@ -182,13 +211,29 @@ function baseToolMetadata(
 
 function toolResultValue(
   update: ToolCallUpdate,
-  mcpAppMeta: DesktopMcpAppMeta | undefined
+  mcpAppMeta: DesktopMcpAppMeta | undefined,
+  isError: boolean
 ): ToolResultValue {
-  return {
-    content: toolResultContent(update),
-    isError: false,
+  const content = toolResultContent(update);
+  if (isError && content.length === 0) {
+    const errorText =
+      typeof update.rawOutput === 'string' && update.rawOutput.trim()
+        ? update.rawOutput
+        : (update.title ?? 'Tool call failed');
+    content.push({ type: 'text', text: errorText });
+  }
+
+  const toolResult: ToolResultValue = {
+    content,
+    isError,
     ...(mcpAppMeta ? { _meta: mcpAppMeta } : {}),
   };
+
+  if (update.rawOutput !== undefined) {
+    toolResult.structuredContent = update.rawOutput;
+  }
+
+  return toolResult;
 }
 
 function toolResultContent(update: ToolCallUpdate): GooseContentBlock[] {
@@ -281,28 +326,13 @@ function apiResourceContentsFromAcpResource(
   };
 }
 
-function toolError(update: ToolCallUpdate): string {
-  if (typeof update.rawOutput === 'string' && update.rawOutput.trim()) {
-    return update.rawOutput;
-  }
-
-  const contentText = toolResultContent(update)
-    .flatMap((content) => (content.type === 'text' ? [content.text] : []))
-    .filter((text) => text.trim().length > 0)
-    .join('\n');
-  if (contentText) {
-    return contentText;
-  }
-
-  return update.title ?? 'Tool call failed';
-}
-
 interface DesktopMcpAppMeta extends Record<string, unknown> {
   ui: {
     resourceUri: string;
   };
   extensionName?: string;
   toolName?: string;
+  toolNameIsActual?: boolean;
 }
 
 type ToolResultValue = {
@@ -334,5 +364,9 @@ function mcpAppMetadata(update: ToolCallUpdate): DesktopMcpAppMeta | undefined {
     extensionName:
       typeof goose.mcpApp.extensionName === 'string' ? goose.mcpApp.extensionName : undefined,
     toolName: typeof goose.mcpApp.toolName === 'string' ? goose.mcpApp.toolName : undefined,
+    toolNameIsActual:
+      typeof goose.mcpApp.toolNameIsActual === 'boolean'
+        ? goose.mcpApp.toolNameIsActual
+        : undefined,
   };
 }

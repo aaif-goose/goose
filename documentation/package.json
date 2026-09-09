@@ -5,7 +5,7 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
-    "build": "node scripts/generate-docs-map.js && node scripts/generate-skills-manifest.js && node scripts/generate-skills-zips.js && docusaurus build",
+    "build": "node scripts/generate-docs-map.js && docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
@@ -27,7 +27,7 @@
     "dotenv": "^16.4.7",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.475.0",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.23",
     "postcss-import": "^16.1.0",
     "prism-react-renderer": "^2.3.0",
     "react": "^19.0.0",
@@ -45,7 +45,7 @@
     "@docusaurus/types": "3.7.0",
     "gray-matter": "^4.0.3",
     "globby": "^13.2.2",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^4.3.2",
     "typescript": "~5.6.2",
     "yaml-loader": "^0.8.1"
   },

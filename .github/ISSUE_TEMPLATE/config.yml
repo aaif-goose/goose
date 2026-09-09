@@ -1,8 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: goose Discord discussion
-    url: https://discord.gg/goose-oss
-    about: Please ask and answer questions here.
-  - name: Report a security vulnerability
-    url: https://github.com/aaif-goose/goose/security/policy
-    about: Please report security vulnerabilities here.

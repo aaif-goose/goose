@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::fs;
-use std::io;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,10 +12,10 @@ use tokio::sync::Mutex;
 use tokio_cron_scheduler::{job::JobId, Job, JobScheduler as TokioJobScheduler};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::AgentEvent;
-use crate::agents::{Agent, SessionConfig};
+use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
 use crate::config::paths::Paths;
-use crate::config::{resolve_extensions_for_new_session, Config};
+use crate::config::permission::PermissionManager;
+use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 #[cfg(feature = "telemetry")]
@@ -29,6 +29,116 @@ use crate::session::{Session, SessionManager};
 
 type RunningTasksMap = HashMap<String, CancellationToken>;
 type JobsMap = HashMap<String, (JobId, ScheduledJob)>;
+
+pub(crate) const MAX_SCHEDULE_RECIPE_BYTES: u64 = 1024 * 1024;
+
+pub struct ValidatedScheduleRecipe {
+    bytes: Vec<u8>,
+    source: PathBuf,
+}
+
+impl ValidatedScheduleRecipe {
+    pub(crate) fn new(bytes: Vec<u8>, source: PathBuf) -> Self {
+        Self { bytes, source }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+pub(crate) fn open_regular_schedule_recipe(path: &Path) -> io::Result<File> {
+    let metadata = fs::metadata(path)?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Recipe path must reference a regular file",
+        ));
+    }
+
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Recipe path must reference a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+fn copy_bounded_schedule_recipe(source: &Path, destination: &Path) -> Result<(), SchedulerError> {
+    let source = open_regular_schedule_recipe(source).map_err(|error| {
+        SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
+    })?;
+    let metadata = source.metadata().map_err(|error| {
+        SchedulerError::RecipeLoadError(format!("Cannot inspect recipe file: {error}"))
+    })?;
+    if !metadata.is_file() {
+        return Err(SchedulerError::RecipeLoadError(
+            "Recipe path must reference a regular file".to_string(),
+        ));
+    }
+    if metadata.len() > MAX_SCHEDULE_RECIPE_BYTES {
+        return Err(SchedulerError::RecipeLoadError(format!(
+            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
+        )));
+    }
+
+    let mut bytes = Vec::new();
+    source
+        .take(MAX_SCHEDULE_RECIPE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
+        })?;
+    if bytes.len() as u64 > MAX_SCHEDULE_RECIPE_BYTES {
+        return Err(SchedulerError::RecipeLoadError(format!(
+            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
+        )));
+    }
+
+    write_schedule_recipe_bytes(destination, &bytes)
+}
+
+fn write_schedule_recipe_bytes(destination: &Path, bytes: &[u8]) -> Result<(), SchedulerError> {
+    if bytes.len() as u64 > MAX_SCHEDULE_RECIPE_BYTES {
+        return Err(SchedulerError::RecipeLoadError(format!(
+            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
+        )));
+    }
+
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let mut file = options.open(destination)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        file.set_len(0)?;
+        file.write_all(bytes)
+    })();
+    if let Err(error) = result {
+        let _ = fs::remove_file(destination);
+        return Err(SchedulerError::StorageError(error));
+    }
+
+    Ok(())
+}
 
 pub fn get_default_scheduler_storage_path() -> Result<PathBuf, io::Error> {
     let data_dir = Paths::data_dir();
@@ -102,7 +212,7 @@ impl From<anyhow::Error> for SchedulerError {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ScheduledJob {
     pub id: String,
     pub source: String,
@@ -192,6 +302,7 @@ impl Scheduler {
         let jobs_arc = self.jobs.clone();
         let storage_path = self.storage_path.clone();
         let running_tasks_arc = self.running_tasks.clone();
+        let session_manager = self.session_manager.clone();
 
         let cron_parts: Vec<&str> = job.cron.split_whitespace().collect();
         let cron = match cron_parts.len() {
@@ -209,7 +320,7 @@ impl Scheduler {
                     "Invalid cron expression '{}': expected 5 or 6 fields, got {}",
                     job.cron,
                     cron_parts.len()
-                )))
+                )));
             }
         };
 
@@ -222,6 +333,7 @@ impl Scheduler {
             let local_storage_path = storage_path.clone();
             let job_to_execute = job_for_task.clone();
             let running_tasks = running_tasks_arc.clone();
+            let session_manager = session_manager.clone();
 
             Box::pin(async move {
                 let should_execute = {
@@ -261,6 +373,7 @@ impl Scheduler {
                     current_jobs_arc.clone(),
                     task_job_id.clone(),
                     cancel_token.clone(),
+                    session_manager,
                 )
                 .await;
 
@@ -300,6 +413,25 @@ impl Scheduler {
         original_job_spec: ScheduledJob,
         make_copy: bool,
     ) -> Result<(), SchedulerError> {
+        self.add_scheduled_job_inner(original_job_spec, make_copy, None)
+            .await
+    }
+
+    pub async fn add_scheduled_job_with_recipe(
+        &self,
+        original_job_spec: ScheduledJob,
+        validated_recipe: ValidatedScheduleRecipe,
+    ) -> Result<(), SchedulerError> {
+        self.add_scheduled_job_inner(original_job_spec, true, Some(validated_recipe))
+            .await
+    }
+
+    async fn add_scheduled_job_inner(
+        &self,
+        original_job_spec: ScheduledJob,
+        make_copy: bool,
+        validated_recipe: Option<ValidatedScheduleRecipe>,
+    ) -> Result<(), SchedulerError> {
         {
             let jobs_guard = self.jobs.lock().await;
             if jobs_guard.contains_key(&original_job_spec.id) {
@@ -309,21 +441,32 @@ impl Scheduler {
 
         let mut stored_job = original_job_spec;
         if make_copy {
-            let original_recipe_path =
-                Path::new(&stored_job.source).canonicalize().map_err(|e| {
-                    SchedulerError::RecipeLoadError(format!(
-                        "Recipe file not found: {}: {}",
-                        stored_job.source, e
-                    ))
-                })?;
-            if !original_recipe_path.is_file() {
-                return Err(SchedulerError::RecipeLoadError(format!(
-                    "Recipe file not found: {}",
-                    stored_job.source
-                )));
-            }
+            let (original_recipe_path, validated_recipe) =
+                if let Some(validated_recipe) = validated_recipe {
+                    (validated_recipe.source, Some(validated_recipe.bytes))
+                } else {
+                    let original_recipe_path =
+                        Path::new(&stored_job.source).canonicalize().map_err(|e| {
+                            SchedulerError::RecipeLoadError(format!(
+                                "Recipe file not found: {}: {}",
+                                stored_job.source, e
+                            ))
+                        })?;
+                    if !original_recipe_path.is_file() {
+                        return Err(SchedulerError::RecipeLoadError(format!(
+                            "Recipe file not found: {}",
+                            stored_job.source
+                        )));
+                    }
+                    (original_recipe_path, None)
+                };
 
-            let scheduled_recipes_dir = get_default_scheduled_recipes_dir()?;
+            let scheduled_recipes_dir = self
+                .storage_path
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("scheduled_recipes");
+            fs::create_dir_all(&scheduled_recipes_dir)?;
             let original_extension = original_recipe_path
                 .extension()
                 .and_then(|ext| ext.to_str())
@@ -332,7 +475,11 @@ impl Scheduler {
             let destination_filename = format!("{}.{}", stored_job.id, original_extension);
             let destination_recipe_path = scheduled_recipes_dir.join(destination_filename);
 
-            fs::copy(&original_recipe_path, &destination_recipe_path)?;
+            if let Some(recipe) = validated_recipe.as_deref() {
+                write_schedule_recipe_bytes(&destination_recipe_path, recipe)?;
+            } else {
+                copy_bounded_schedule_recipe(&original_recipe_path, &destination_recipe_path)?;
+            }
             stored_job.recipe_base_dir = original_recipe_path
                 .parent()
                 .map(|p| p.to_string_lossy().into_owned());
@@ -454,9 +601,10 @@ impl Scheduler {
             }
         };
 
-        let reset_stale_running_state = list
-            .iter_mut()
-            .fold(false, |changed, job| clear_running_state(job) || changed);
+        let mut reset_stale_running_state = false;
+        for job in &mut list {
+            reset_stale_running_state |= clear_running_state(job);
+        }
         if reset_stale_running_state {
             match serde_json::to_string_pretty(&list) {
                 Ok(data) => {
@@ -635,7 +783,7 @@ impl Scheduler {
             .map(|s| (s.id.clone(), s))
             .collect();
 
-        schedule_sessions.sort_by(|a, b| b.1.created_at.cmp(&a.1.created_at));
+        schedule_sessions.sort_by_key(|(_, session)| std::cmp::Reverse(session.created_at));
         schedule_sessions.truncate(limit);
 
         Ok(schedule_sessions)
@@ -673,6 +821,7 @@ impl Scheduler {
             self.jobs.clone(),
             sched_id.to_string(),
             cancel_token.clone(),
+            self.session_manager.clone(),
         )
         .await;
         let was_cancelled = cancel_token.is_cancelled();
@@ -847,6 +996,7 @@ async fn execute_job(
     jobs: Arc<Mutex<JobsMap>>,
     job_id: String,
     cancel_token: CancellationToken,
+    session_manager: Arc<SessionManager>,
 ) -> Result<String> {
     if job.source.is_empty() {
         return Ok(job.id.to_string());
@@ -872,13 +1022,21 @@ async fn execute_job(
     )
     .map_err(|e| anyhow!(e.to_string()))?;
 
-    let agent = Agent::new();
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager,
+        PermissionManager::instance(),
+        None,
+        GooseMode::Auto,
+        true,
+        GoosePlatform::GooseCli,
+    ));
 
     let config = Config::global();
     let provider_name = config.get_goose_provider()?;
     let model_name = config.get_goose_model()?;
     let model_config =
-        crate::model_config::model_config_from_user_config(&provider_name, &model_name)?;
+        crate::model_config::model_config_from_user_config(&provider_name, &model_name)?
+            .with_cache_ttl_clamped();
 
     let session = agent
         .config
@@ -887,7 +1045,7 @@ async fn execute_job(
             std::env::current_dir()?,
             format!("Scheduled job: {}", job.id),
             SessionType::Scheduled,
-            agent.config.goose_mode,
+            GooseMode::Auto,
         )
         .await?;
 
@@ -904,6 +1062,9 @@ async fn execute_job(
     let agent_provider = create(&provider_name, extensions).await?;
     agent
         .update_provider(agent_provider, model_config, &session.id)
+        .await?;
+    agent
+        .update_goose_mode(GooseMode::Auto, &session.id)
         .await?;
 
     let mut jobs_guard = jobs.lock().await;
@@ -966,6 +1127,15 @@ async fn execute_job(
     let user_message = Message::user().with_text(prompt_text);
     let mut conversation = Conversation::new_unvalidated(vec![user_message.clone()]);
 
+    agent
+        .config
+        .session_manager
+        .update(&session.id)
+        .schedule_id(Some(job.id.clone()))
+        .recipe(Some(recipe.clone()))
+        .apply()
+        .await?;
+
     let session_config = SessionConfig {
         id: session.id.clone(),
         schedule_id: Some(job.id.clone()),
@@ -999,15 +1169,6 @@ async fn execute_job(
             }
         }
     }
-
-    agent
-        .config
-        .session_manager
-        .update(&session.id)
-        .schedule_id(Some(job.id.clone()))
-        .recipe(Some(recipe))
-        .apply()
-        .await?;
 
     {
         let session_duration = start_time.elapsed();
@@ -1084,6 +1245,15 @@ impl SchedulerTrait for Scheduler {
         self.add_scheduled_job(job, make_copy).await
     }
 
+    async fn add_scheduled_job_with_recipe(
+        &self,
+        job: ScheduledJob,
+        validated_recipe: ValidatedScheduleRecipe,
+    ) -> Result<(), SchedulerError> {
+        self.add_scheduled_job_with_recipe(job, validated_recipe)
+            .await
+    }
+
     async fn schedule_recipe(
         &self,
         recipe_path: PathBuf,
@@ -1152,8 +1322,129 @@ mod tests {
 
     fn create_test_recipe(dir: &Path, name: &str) -> PathBuf {
         let recipe_path = dir.join(format!("{}.yaml", name));
-        fs::write(&recipe_path, "prompt: test\n").unwrap();
+        fs::write(
+            &recipe_path,
+            format!(
+                "version: 1.0.0\n\
+                 title: {name}\n\
+                 description: Scheduler test recipe\n\
+                 prompt: test\n"
+            ),
+        )
+        .unwrap();
         recipe_path
+    }
+
+    #[test]
+    fn bounded_recipe_copy_rejects_source_that_grew_after_validation() {
+        let temp_dir = tempdir().unwrap();
+        let source = temp_dir.path().join("source.yaml");
+        let destination = temp_dir.path().join("destination.yaml");
+        fs::write(
+            &source,
+            "title: Valid\ndescription: Initially valid\nprompt: Run safely\n",
+        )
+        .unwrap();
+        let validated = fs::read_to_string(&source).unwrap();
+        serde_yaml::from_str::<Recipe>(&validated).unwrap();
+        File::options()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_len(MAX_SCHEDULE_RECIPE_BYTES + 1)
+            .unwrap();
+
+        let error = copy_bounded_schedule_recipe(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("exceeds the 1048576 byte limit"));
+        assert!(!destination.exists());
+    }
+
+    #[tokio::test]
+    async fn validated_recipe_bytes_and_base_are_persisted_after_source_replacement() {
+        let temp_dir = tempdir().unwrap();
+        let _guard =
+            env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_dir.path().to_str().unwrap()))]);
+        let trusted_dir = temp_dir.path().join("trusted");
+        let replacement_dir = temp_dir.path().join("replacement");
+        fs::create_dir_all(&trusted_dir).unwrap();
+        fs::create_dir_all(&replacement_dir).unwrap();
+        let trusted_source = trusted_dir.join("source.yaml");
+        let replacement_source = replacement_dir.join("source.yaml");
+        let validated =
+            b"title: Validated\ndescription: Original recipe\nprompt: Run safely\n".to_vec();
+        let replacement =
+            b"title: Replacement\ndescription: Swapped recipe\nprompt: Run something else\n";
+        fs::write(&trusted_source, &validated).unwrap();
+        serde_yaml::from_slice::<Recipe>(&validated).unwrap();
+        fs::write(&replacement_source, replacement).unwrap();
+
+        let storage_path = temp_dir.path().join("schedule.json");
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let scheduler = Scheduler::new(storage_path, session_manager).await.unwrap();
+        let job = ScheduledJob {
+            id: "validated_recipe_copy".to_string(),
+            source: replacement_source.to_string_lossy().into_owned(),
+            cron: "0 0 0 1 1 *".to_string(),
+            last_run: None,
+            currently_running: false,
+            paused: false,
+            current_session_id: None,
+            process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
+        };
+
+        scheduler
+            .add_scheduled_job_with_recipe(
+                job,
+                ValidatedScheduleRecipe::new(validated.clone(), trusted_source.clone()),
+            )
+            .await
+            .unwrap();
+
+        let jobs = scheduler.list_scheduled_jobs().await;
+        let stored = jobs
+            .iter()
+            .find(|job| job.id == "validated_recipe_copy")
+            .unwrap();
+        assert_eq!(fs::read(&stored.source).unwrap(), validated);
+        assert_eq!(stored.recipe_base_dir.as_deref(), trusted_dir.to_str());
+        assert_ne!(
+            stored.recipe_base_dir.as_deref(),
+            replacement_source.parent().and_then(Path::to_str)
+        );
+    }
+
+    #[test]
+    fn validated_recipe_copy_rejects_oversized_bytes_without_destination() {
+        let temp_dir = tempdir().unwrap();
+        let destination = temp_dir.path().join("destination.yaml");
+        let oversized = vec![0; (MAX_SCHEDULE_RECIPE_BYTES + 1) as usize];
+
+        let error = write_schedule_recipe_bytes(&destination, &oversized).unwrap_err();
+
+        assert!(error.to_string().contains("exceeds the 1048576 byte limit"));
+        assert!(!destination.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validated_recipe_copy_makes_existing_destination_owner_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempdir().unwrap();
+        let destination = temp_dir.path().join("destination.yaml");
+        fs::write(&destination, b"old contents").unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_schedule_recipe_bytes(&destination, b"private recipe").unwrap();
+
+        assert_eq!(fs::read(&destination).unwrap(), b"private recipe");
+        assert_eq!(
+            fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[tokio::test]
@@ -1161,6 +1452,7 @@ mod tests {
         let _guard = env_lock::lock_env([
             ("GOOSE_PROVIDER", Some("openai")),
             ("GOOSE_MODEL", Some("gpt-4o")),
+            ("GOOSE_MODE", Some("chat")),
             ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
             ("OPENAI_CUSTOM_HEADERS", Some("")),
         ]);
@@ -1168,7 +1460,9 @@ mod tests {
         let storage_path = temp_dir.path().join("schedule.json");
         let recipe_path = create_test_recipe(temp_dir.path(), "scheduled_job");
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let scheduler = Scheduler::new(storage_path, session_manager).await.unwrap();
+        let scheduler = Scheduler::new(storage_path, session_manager.clone())
+            .await
+            .unwrap();
 
         let job = ScheduledJob {
             id: "scheduled_job".to_string(),
@@ -1188,6 +1482,12 @@ mod tests {
 
         let jobs = scheduler.list_scheduled_jobs().await;
         assert!(jobs[0].last_run.is_some(), "Job should have run");
+        let sessions = session_manager
+            .list_sessions_by_types(&[SessionType::Scheduled])
+            .await
+            .unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].goose_mode, GooseMode::Auto);
     }
 
     #[tokio::test]

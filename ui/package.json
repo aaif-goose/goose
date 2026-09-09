@@ -1,8 +1,8 @@
 {
   "private": true,
   "workspaces": [
-    "acp",
-    "text",
+    "goose-acp-client",
+    "goose-acp",
     "desktop",
     "goose-binary/*"
   ],
@@ -13,17 +13,5 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "react": "^19.2.4",
-      "react-dom": "^19.2.4"
-    },
-    "onlyBuiltDependencies": [
-      "@modelcontextprotocol/ext-apps",
-      "electron",
-      "electron-winstaller",
-      "esbuild"
-    ]
   }
 }

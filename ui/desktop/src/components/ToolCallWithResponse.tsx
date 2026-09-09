@@ -9,10 +9,10 @@ import {
   ToolRequestMessageContent,
   ToolResponseMessageContent,
   NotificationEvent,
+  LiveOutputNotificationParams,
   ToolConfirmationData,
 } from '../types/message';
 import { cn, snakeToTitleCase } from '../utils';
-import { LoadingStatus } from './ui/Dot';
 import { ChevronRight, ExternalLink } from 'lucide-react';
 import { TooltipWrapper } from './settings/providers/subcomponents/buttons/TooltipWrapper';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -21,6 +21,8 @@ import type { ContentBlock } from '../types/message';
 import McpAppRenderer from './McpApps/McpAppRenderer';
 import ToolApprovalButtons from './ToolApprovalButtons';
 import { defineMessages, useIntl } from '../i18n';
+
+type LoadingStatus = 'loading' | 'success' | 'error';
 
 const i18n = defineMessages({
   viewSubagentSession: {
@@ -67,6 +69,9 @@ type UiMeta = {
   ui?: {
     resourceUri?: string;
   };
+  extensionName?: string;
+  toolName?: string;
+  toolNameIsActual?: boolean;
   subagent_session_id?: string;
 };
 
@@ -136,6 +141,9 @@ function getSubagentSessionId(
 }
 
 function getToolResultContent(toolResult: Record<string, unknown>): ContentBlock[] {
+  if (toolResult.status === 'error') {
+    return typeof toolResult.error === 'string' ? [{ type: 'text', text: toolResult.error }] : [];
+  }
   if (toolResult.status !== 'success') {
     return [];
   }
@@ -153,6 +161,27 @@ interface McpAppWrapperProps {
   append?: (value: string) => void;
 }
 
+export function resolveMcpAppMetadata(
+  responseMeta: UiMeta | undefined
+): { resourceUri: string; extensionName: string; toolName: string } | null {
+  const resourceUri = responseMeta?.ui?.resourceUri;
+  const extensionName = responseMeta?.extensionName;
+  const toolName = responseMeta?.toolName;
+  if (resourceUri && extensionName && toolName) {
+    const legacyPrefix = `${extensionName}__`;
+    const actualToolName = responseMeta.toolNameIsActual
+      ? toolName
+      : toolName.startsWith(legacyPrefix)
+        ? toolName.slice(legacyPrefix.length)
+        : toolName;
+    if (actualToolName) {
+      return { resourceUri, extensionName, toolName: actualToolName };
+    }
+  }
+
+  return null;
+}
+
 function McpAppWrapper({
   toolRequest,
   toolResponse,
@@ -160,25 +189,12 @@ function McpAppWrapper({
   append,
 }: McpAppWrapperProps): React.ReactNode {
   const requestWithMeta = toolRequest as ToolRequestWithMeta;
-  let resourceUri = requestWithMeta._meta?.ui?.resourceUri;
-
-  if (!resourceUri && toolResponse) {
-    const resultWithMeta = toolResponse.toolResult as ToolResultWithMeta;
-    if (resultWithMeta?.status === 'success' && resultWithMeta.value) {
-      resourceUri = resultWithMeta.value._meta?.ui?.resourceUri;
-    }
-  }
-
-  // Tool names are formatted as "{extension_name}__{tool_name}".
-  // Extension names can contain underscores (special chars like parentheses are normalized to "_"),
-  // so we must use lastIndexOf to find the delimiter.
-  // e.g., "my_server(local)" -> "my_server_local_" -> "my_server_local___get_time"
-  const toolCallName =
-    requestWithMeta.toolCall.status === 'success' ? requestWithMeta.toolCall.value.name : '';
-  const delimiterIndex = toolCallName.lastIndexOf('__');
-  const extensionName = delimiterIndex === -1 ? '' : toolCallName.substring(0, delimiterIndex);
-  const toolName =
-    delimiterIndex === -1 ? toolCallName : toolCallName.substring(delimiterIndex + 2);
+  const resultWithMeta = toolResponse?.toolResult as ToolResultWithMeta | undefined;
+  const responseMeta =
+    resultWithMeta?.status === 'success' && resultWithMeta.value
+      ? resultWithMeta.value._meta
+      : undefined;
+  const appMetadata = resolveMcpAppMetadata(responseMeta);
 
   const toolArguments =
     requestWithMeta.toolCall.status === 'success'
@@ -187,14 +203,15 @@ function McpAppWrapper({
 
   const toolInput = { arguments: toolArguments || {} };
 
-  const resultWithMeta = toolResponse?.toolResult as ToolResultWithMeta | undefined;
   const toolResult =
     resultWithMeta?.status === 'success' && resultWithMeta.value
       ? (resultWithMeta.value as unknown as CallToolResult)
       : undefined;
 
-  if (!resourceUri) return null;
+  if (!appMetadata) return null;
   if (requestWithMeta.toolCall.status !== 'success') return null;
+
+  const { resourceUri, extensionName, toolName } = appMetadata;
 
   return (
     <div className="mt-3">
@@ -235,11 +252,8 @@ export default function ToolCallWithResponse({
     return null;
   }
 
-  const requestWithMeta = toolRequest as ToolRequestWithMeta;
   const resultWithMeta = toolResponse?.toolResult as ToolResultWithMeta;
-  const hasMcpAppResourceURI = Boolean(
-    requestWithMeta._meta?.ui?.resourceUri || resultWithMeta?.value?._meta?.ui?.resourceUri
-  );
+  const hasMcpAppResourceURI = Boolean(resultWithMeta?.value?._meta?.ui?.resourceUri);
 
   const shouldShowMcpContent = !isPendingApproval;
 
@@ -273,6 +287,7 @@ export default function ToolCallWithResponse({
             <div className="px-4 pb-2">
               <ToolApprovalButtons
                 data={{
+                  generation: confirmationContent.generation,
                   id: confirmationContent.id,
                   toolName: confirmationContent.toolName,
                   prompt: confirmationContent.prompt ?? undefined,
@@ -450,6 +465,18 @@ const notificationToProgress = (notification: NotificationEvent): Progress => {
   return message.params as Progress;
 };
 
+const liveOutputToString = (notifications: NotificationEvent[] | undefined): string =>
+  notifications
+    ?.filter((notification) => {
+      const message = notification.message as { method?: string };
+      return message.method === 'goose/live_output';
+    })
+    .flatMap((notification) => {
+      const message = notification.message as { params?: LiveOutputNotificationParams };
+      return message.params?.chunks.map((chunk) => chunk.output) ?? [];
+    })
+    .join('') ?? '';
+
 // Helper function to extract toolcall name
 const getToolName = (toolCallName: string): string => {
   const lastIndex = toolCallName.lastIndexOf('__');
@@ -510,12 +537,14 @@ function ToolCallView({
   // This is a workaround for cases where the backend doesn't send tool responses
   const isStreamingComplete = !isStreamingMessage;
   const shouldShowAsComplete = isStreamingComplete && !toolResponse;
+  const toolResult = toolResponse?.toolResult as Record<string, unknown> | undefined;
+  const toolResultValue = toolResult?.value as ToolResultValue | undefined;
 
   const loadingStatus: LoadingStatus = !toolResponse
     ? shouldShowAsComplete
       ? 'success'
       : 'loading'
-    : (toolResponse.toolResult as Record<string, unknown>).status === 'error'
+    : toolResult?.status === 'error' || toolResultValue?.isError
       ? 'error'
       : 'success';
 
@@ -529,10 +558,8 @@ function ToolCallView({
     }
   }, [toolResponse, startTime]);
 
-  const toolResults =
-    loadingStatus === 'success' && toolResponse?.toolResult
-      ? getToolResultContent(toolResponse.toolResult)
-      : [];
+  const toolResults = toolResult ? getToolResultContent(toolResult) : [];
+  const liveOutput = toolResponse ? '' : liveOutputToString(notifications);
 
   const logs = notifications
     ?.filter((notification) => {
@@ -560,8 +587,9 @@ function ToolCallView({
     (entries) => entries.sort((a, b) => b.progress - a.progress)[0]
   );
 
-  const isRenderingProgress =
-    loadingStatus === 'loading' && (progressEntries.length > 0 || (logs || []).length > 0);
+  const isRenderingActivity =
+    loadingStatus === 'loading' &&
+    (progressEntries.length > 0 || (logs || []).length > 0 || liveOutput.length > 0);
 
   // Function to create a descriptive representation of what the tool is doing
   const getToolDescription = (): string | null => {
@@ -646,12 +674,6 @@ function ToolCallView({
         break;
       }
 
-      case 'web_scrape':
-        if (args.url) {
-          return `scraping ${getStringValue(args.url)}`;
-        }
-        break;
-
       case 'remember_memory':
         if (args.category && args.data) {
           return `storing ${getStringValue(args.category)}: ${getStringValue(args.data)}`;
@@ -669,12 +691,6 @@ function ToolCallView({
           return `capturing window "${getStringValue(args.window_title)}"`;
         }
         return `capturing screen`;
-
-      case 'automation_script':
-        if (args.language) {
-          return `running ${getStringValue(args.language)} script`;
-        }
-        break;
 
       case 'delegate': {
         if (args.instructions) {
@@ -782,7 +798,7 @@ function ToolCallView({
   );
   return (
     <ToolCallExpandable
-      isStartExpanded={isRenderingProgress || isExpandToolDetails}
+      isStartExpanded={isRenderingActivity || isExpandToolDetails}
       isForceExpand={false}
       label={
         extensionTooltip ? (
@@ -829,6 +845,12 @@ function ToolCallView({
               loadingStatus === 'loading' || responseStyle === 'detailed' || responseStyle === null
             }
           />
+        </div>
+      )}
+
+      {liveOutput && (
+        <div className="border-t border-border-primary">
+          <LiveOutputView output={liveOutput} />
         </div>
       )}
 
@@ -955,6 +977,30 @@ interface ToolResultViewProps {
   };
   result: ContentBlock;
   isStartExpanded: boolean;
+}
+
+function LiveOutputView({ output }: { output: string }) {
+  const intl = useIntl();
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output]);
+
+  return (
+    <ToolCallExpandable
+      label={<span className="pl-4 py-1 font-sans text-sm">{intl.formatMessage(i18n.output)}</span>}
+      isStartExpanded={true}
+    >
+      <div ref={outputRef} className="max-h-[20rem] overflow-y-auto px-4 py-3">
+        <pre className="font-mono text-xs text-textSubtle whitespace-pre-wrap break-words">
+          {output}
+        </pre>
+      </div>
+    </ToolCallExpandable>
+  );
 }
 
 function ToolResultView({ result, isStartExpanded }: ToolResultViewProps) {

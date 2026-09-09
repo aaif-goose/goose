@@ -110,7 +110,7 @@ Want to see it in action? Check out the full stream where we built this feature 
 
 <iframe class="aspect-ratio" width="560" height="315" src="https://www.youtube.com/embed/IbBDBv9Chvg" title="LLM Tag Team: Who Plans, Who Executes?" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
-Got questions or want to share your own Lead/Worker success stories? Join us in our [Discord community](https://discord.gg/goose-oss) - we'd love to hear what you're building!
+Got questions or want to share your own Lead/Worker success stories? Join us in our [Discord community](https://discord.gg/n8R5VaWDAn) - we'd love to hear what you're building!
 
 
 <head>

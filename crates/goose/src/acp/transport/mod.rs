@@ -21,7 +21,8 @@ use crate::acp::server_factory::AcpServer;
 // The upstream ACP HTTP server only supports exact origin allowlists for
 // WebSocket upgrades; Goose applies its richer loopback predicate before this.
 const UPSTREAM_WS_ALLOWED_ORIGIN: &str = "http://goose.local";
-const DESKTOP_FILE_ORIGIN: &str = "null";
+const OPAQUE_ORIGIN: &str = "null";
+const FILE_ORIGIN: &str = "file://";
 
 #[derive(Clone)]
 struct AcpOriginPolicy {
@@ -49,6 +50,18 @@ impl AcpOriginPolicy {
             exact_origins: origins.into(),
             allow_loopback: true,
         }
+    }
+
+    fn local_default() -> Self {
+        Self::loopback_and(Self::file_origins(Vec::new()))
+    }
+
+    fn file_origins(mut origins: Vec<HeaderValue>) -> Vec<HeaderValue> {
+        origins.extend([
+            HeaderValue::from_static(OPAQUE_ORIGIN),
+            HeaderValue::from_static(FILE_ORIGIN),
+        ]);
+        origins
     }
 
     fn origin_allowed(&self, origin: &HeaderValue) -> bool {
@@ -203,14 +216,6 @@ pub fn create_acp_router(server: Arc<AcpServer>) -> Router {
     create_acp_router_with_policy(server, AcpOriginPolicy::loopback(), None)
 }
 
-pub fn create_authenticated_acp_router(server: Arc<AcpServer>, secret_key: String) -> Router {
-    create_acp_router_with_policy(
-        server,
-        AcpOriginPolicy::loopback_and(vec![HeaderValue::from_static(DESKTOP_FILE_ORIGIN)]),
-        Some(secret_key),
-    )
-}
-
 async fn health() -> &'static str {
     "ok"
 }
@@ -223,10 +228,12 @@ pub fn create_router(
     require_token: bool,
     additional_allowed_origins: Vec<HeaderValue>,
 ) -> Router {
-    let policy = if additional_allowed_origins.is_empty() {
-        AcpOriginPolicy::loopback()
-    } else {
+    let policy = if !additional_allowed_origins.is_empty() {
         AcpOriginPolicy::exact(additional_allowed_origins)
+    } else if require_token {
+        AcpOriginPolicy::local_default()
+    } else {
+        AcpOriginPolicy::loopback()
     };
     let acp_routes =
         create_acp_router_with_policy(server, policy, require_token.then_some(secret_key.clone()));

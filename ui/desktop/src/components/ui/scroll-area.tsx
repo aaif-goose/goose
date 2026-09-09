@@ -39,6 +39,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
     const rootRef = React.useRef<React.ElementRef<typeof ScrollAreaPrimitive.Root>>(null);
     const viewportRef = React.useRef<HTMLDivElement>(null);
     const viewportEndRef = React.useRef<HTMLDivElement>(null);
+    const contentRef = React.useRef<HTMLDivElement>(null);
     const [isFollowing, setIsFollowing] = React.useState(true);
     const [isScrolled, setIsScrolled] = React.useState(false);
     const userScrolledUpRef = React.useRef(false);
@@ -60,9 +61,12 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
 
     const scrollToBottom = React.useCallback(() => {
       if (viewportRef.current) {
+        // Jump instantly rather than animating: a smooth programmatic scroll
+        // emits intermediate scroll events that handleScroll mistakes for a
+        // manual scroll-up, which disables auto-follow mid-animation.
         viewportRef.current.scrollTo({
           top: viewportRef.current.scrollHeight,
-          behavior: 'smooth',
+          behavior: 'auto',
         });
         // When explicitly scrolling to bottom, reset the following state
         setIsFollowing(true);
@@ -169,7 +173,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
           if (viewportRef.current && !isActivelyScrollingRef.current) {
             viewportRef.current.scrollTo({
               top: viewportRef.current.scrollHeight,
-              behavior: 'smooth',
+              behavior: 'auto',
             });
           }
         });
@@ -177,6 +181,26 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
 
       lastScrollHeightRef.current = currentScrollHeight;
     }, [children, autoScroll, isFollowing]);
+
+    // Keep pinned to the bottom when content grows from async media (images,
+    // syntax highlighting) that resizes after paint without a React re-render,
+    // so it isn't covered by the [children] effect above.
+    React.useEffect(() => {
+      if (!autoScroll) return;
+      const viewport = viewportRef.current;
+      const content = contentRef.current;
+      if (!viewport || !content || typeof ResizeObserver === 'undefined') return;
+
+      const observer = new ResizeObserver(() => {
+        // Mirror the [children] effect's guards, including isActivelyScrolling, so
+        // the re-pin doesn't fight a user scrolling up while content is still growing.
+        if (isFollowing && !userScrolledUpRef.current && !isActivelyScrollingRef.current) {
+          viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' });
+        }
+      });
+      observer.observe(content);
+      return () => observer.disconnect();
+    }, [autoScroll, isFollowing]);
 
     // Add scroll event listener
     React.useEffect(() => {
@@ -204,7 +228,10 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
           ref={viewportRef}
           className="h-full w-full rounded-[inherit] [&>div]:!block"
         >
-          <div className={cn(paddingX ? `px-${paddingX}` : '', paddingY ? `py-${paddingY}` : '')}>
+          <div
+            ref={contentRef}
+            className={cn(paddingX ? `px-${paddingX}` : '', paddingY ? `py-${paddingY}` : '')}
+          >
             {children}
             {autoScroll && <div ref={viewportEndRef} style={{ height: '1px' }} />}
           </div>

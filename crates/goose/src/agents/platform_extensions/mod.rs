@@ -6,6 +6,7 @@ pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+pub mod scheduler;
 pub mod summarize;
 pub mod summon;
 pub mod todo;
@@ -39,7 +40,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Box::new(analyze::AnalyzeClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(analyze::AnalyzeClient::new(ctx).unwrap())),
             },
         );
 
@@ -53,7 +54,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
-                client_factory: |ctx| Box::new(todo::TodoClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(todo::TodoClient::new(ctx).unwrap())),
             },
         );
 
@@ -67,7 +68,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
-                client_factory: |ctx| Box::new(apps::AppsManagerClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(apps::AppsManagerClient::new(ctx).unwrap())),
             },
         );
 
@@ -81,7 +82,9 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: false,
                 unprefixed_tools: false,
                 hidden: false,
-                client_factory: |ctx| Box::new(chatrecall::ChatRecallClient::new(ctx).unwrap()),
+                client_factory: |ctx| {
+                    Some(Box::new(chatrecall::ChatRecallClient::new(ctx).unwrap()))
+                },
             },
         );
 
@@ -95,7 +98,22 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
-                client_factory: |ctx| Box::new(ext_manager::ExtensionManagerClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(ext_manager::ExtensionManagerClient::new(ctx).unwrap())),
+            },
+        );
+
+        map.insert(
+            scheduler::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: scheduler::EXTENSION_NAME,
+                display_name: "Scheduler",
+                description: "Create and manage scheduled recipe execution",
+                default_enabled: true,
+                unprefixed_tools: false,
+                hidden: true,
+                client_factory: |ctx| {
+                    scheduler::SchedulerClient::new(ctx).map(|client| Box::new(client) as _)
+                },
             },
         );
 
@@ -108,7 +126,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Box::new(summon::SummonClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(summon::SummonClient::new(ctx).unwrap())),
             },
         );
 
@@ -121,7 +139,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: false,
                 unprefixed_tools: false,
                 hidden: false,
-                client_factory: |ctx| Box::new(summarize::SummarizeClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(summarize::SummarizeClient::new(ctx).unwrap())),
             },
         );
 
@@ -137,13 +155,13 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| {
-                    Box::new(
+                    Some(Box::new(
                         code_execution::CodeExecutionClient::new(
                             ctx,
                             code_execution::get_tool_disclosure(),
                         )
                         .unwrap(),
-                    )
+                    ))
                 },
             },
         );
@@ -157,7 +175,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Box::new(developer::DeveloperClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(developer::DeveloperClient::new(ctx).unwrap())),
             },
         );
 
@@ -171,7 +189,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: false,
                 unprefixed_tools: false,
                 hidden: true,
-                client_factory: |ctx| Box::new(orchestrator::OrchestratorClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(orchestrator::OrchestratorClient::new(ctx).unwrap())),
             },
         );
 
@@ -185,7 +203,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
-                client_factory: |ctx| Box::new(tom::TomClient::new(ctx).unwrap()),
+                client_factory: |ctx| Some(Box::new(tom::TomClient::new(ctx).unwrap())),
             },
         );
 
@@ -198,7 +216,9 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Box::new(crate::skills::SkillsClient::new(ctx).unwrap()),
+                client_factory: |ctx| {
+                    Some(Box::new(crate::skills::SkillsClient::new(ctx).unwrap()))
+                },
             },
         );
 
@@ -211,6 +231,7 @@ pub struct PlatformExtensionContext {
     pub extension_manager:
         Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
+    pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
     pub session: Option<std::sync::Arc<Session>>,
     pub use_login_shell_path: bool,
 }
@@ -261,7 +282,9 @@ impl PlatformExtensionContext {
                 }
             }
         } else {
-            result.meta = Some(rmcp::model::Meta(meta_value.as_object().unwrap().clone()));
+            result.meta = Some(rmcp::model::MetaObject(
+                meta_value.as_object().unwrap().clone(),
+            ));
         }
 
         result
@@ -279,5 +302,5 @@ pub struct PlatformExtensionDef {
     pub unprefixed_tools: bool,
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
-    pub client_factory: fn(PlatformExtensionContext) -> Box<dyn McpClientTrait>,
+    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>>,
 }

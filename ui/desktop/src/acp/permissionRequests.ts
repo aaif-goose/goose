@@ -1,9 +1,11 @@
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
 import type { Permission } from '../types/permissions';
 import { acpChatSessionActions, acpPermissionUserInputRequestId } from './chatSessionStore';
+import type { AcpPermissionRequest } from './permissionRequestTypes';
 
 interface PendingPermissionRequest {
   request: RequestPermissionRequest;
+  generation: string;
   resolve: (response: RequestPermissionResponse) => void;
 }
 
@@ -19,19 +21,24 @@ export async function requestAcpPermission(
   }
 
   return new Promise<RequestPermissionResponse>((resolve) => {
-    pendingRequests.set(key, { request, resolve });
-    acpChatSessionActions.applyPermissionRequest(request);
+    const permissionRequest: AcpPermissionRequest = {
+      generation: globalThis.crypto.randomUUID(),
+      request,
+    };
+    pendingRequests.set(key, { ...permissionRequest, resolve });
+    acpChatSessionActions.applyPermissionRequest(permissionRequest);
   });
 }
 
 export function resolveAcpPermissionRequest(
   sessionId: string,
   toolCallId: string,
+  generation: string | undefined,
   action: Permission
 ): boolean {
   const key = permissionRequestKey(sessionId, toolCallId);
   const pending = pendingRequests.get(key);
-  if (!pending) {
+  if (!pending || !generation || pending.generation !== generation) {
     return false;
   }
 
@@ -48,6 +55,11 @@ export function cancelAcpPermissionRequestsForSession(sessionId: string): void {
   for (const [key, pending] of pendingRequests) {
     if (pending.request.sessionId === sessionId) {
       pendingRequests.delete(key);
+      acpChatSessionActions.cancelPermissionRequest(
+        sessionId,
+        pending.request.toolCall.toolCallId,
+        pending.generation
+      );
       pending.resolve(cancelledPermissionResponse());
     }
   }

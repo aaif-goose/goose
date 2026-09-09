@@ -45,9 +45,9 @@ const i18n = defineMessages({
     id: 'settingsView.tabChat',
     defaultMessage: 'Chat',
   },
-  tabSession: {
-    id: 'settingsView.tabSession',
-    defaultMessage: 'Session',
+  tabExternalBackend: {
+    id: 'settingsView.tabExternalBackend',
+    defaultMessage: 'External Backend',
   },
   tabPrompts: {
     id: 'settingsView.tabPrompts',
@@ -194,7 +194,7 @@ export default function SettingsView({
                     data-testid="settings-sharing-tab"
                   >
                     <Share2 className="h-4 w-4" />
-                    {intl.formatMessage(i18n.tabSession)}
+                    {intl.formatMessage(i18n.tabExternalBackend)}
                   </TabsTrigger>
                   <TabsTrigger
                     value="prompts"

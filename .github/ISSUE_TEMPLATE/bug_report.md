@@ -2,7 +2,7 @@
 name: Bug report
 about: Create a report to help us improve
 title: ''
-labels: bug
+type: bug
 assignees: ''
 ---
 
@@ -48,3 +48,5 @@ If applicable, add screenshots to help explain your problem.
 
 **Additional context**
 Add any other context about the problem here.
+
+Do not begin implementation until the issue reaches **Ready** on the [Goose Issues board](https://github.com/orgs/aaif-goose/projects/1).

@@ -5,7 +5,7 @@ use goose::conversation::Conversation;
 use std::fs;
 use std::io::Read;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 use tempfile::Builder;
 use tempfile::NamedTempFile;
@@ -122,23 +122,6 @@ fn create_temp_file(messages: &[&str], prefill: Option<&str>) -> Result<NamedTem
     Ok(temp_file)
 }
 
-/// RAII guard to ensure symlink is cleaned up even on panic
-struct SymlinkCleanup {
-    symlink_path: PathBuf,
-}
-
-impl SymlinkCleanup {
-    fn new(symlink_path: PathBuf) -> Self {
-        Self { symlink_path }
-    }
-}
-
-impl Drop for SymlinkCleanup {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.symlink_path);
-    }
-}
-
 /// Split an editor command into program and arguments.
 ///
 /// Uses shell-word splitting only when the command contains quotes, so values like
@@ -156,7 +139,7 @@ fn split_editor_command(editor_cmd: &str) -> Result<Vec<String>> {
 }
 
 /// Launch editor and wait for completion
-fn launch_editor(editor_cmd: &str, file_path: &PathBuf) -> Result<()> {
+fn launch_editor(editor_cmd: &str, file_path: &Path) -> Result<()> {
     use std::process::Stdio;
 
     let parts = split_editor_command(editor_cmd)?;
@@ -197,26 +180,10 @@ pub fn get_editor_input(
     let temp_file = create_temp_file(messages, prefill)?;
     let temp_path = temp_file.path().to_path_buf();
 
-    let symlink_path = PathBuf::from(".goose_prompt_temp.md");
-
-    if symlink_path.exists() {
-        std::fs::remove_file(&symlink_path)?;
-    }
-
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&temp_path, &symlink_path)?;
-
-    #[cfg(windows)]
-    std::os::windows::fs::symlink_file(&temp_path, &symlink_path)?;
-
-    let _cleanup_guard = SymlinkCleanup::new(symlink_path.clone());
-
-    let _original_template = build_template(messages, prefill);
-
-    launch_editor(editor_cmd, &symlink_path)?;
+    launch_editor(editor_cmd, &temp_path)?;
 
     let mut content = String::new();
-    let mut file = std::fs::File::open(&symlink_path)?;
+    let mut file = temp_file.reopen()?;
     file.read_to_string(&mut content)?;
 
     let user_input = extract_user_input(&content);
@@ -437,50 +404,6 @@ with multiple lines.
     }
 
     #[test]
-    #[cfg(unix)]
-    fn test_symlink_raii_cleanup_on_panic() {
-        use std::os::unix::fs;
-        use std::panic;
-
-        let messages = vec!["## User: Test message for panic cleanup"];
-        let temp_file = create_temp_file(&messages, None).unwrap();
-        let temp_path = temp_file.path().to_path_buf();
-
-        let symlink_path = PathBuf::from(format!("test_panic_cleanup_{}.md", std::process::id()));
-
-        if symlink_path.exists() {
-            let _ = std::fs::remove_file(&symlink_path);
-        }
-
-        assert!(
-            !symlink_path.exists(),
-            "Symlink should not exist before test"
-        );
-
-        #[cfg(unix)]
-        fs::symlink(&temp_path, &symlink_path).unwrap();
-
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_file(&temp_path, &symlink_path).unwrap();
-
-        assert!(symlink_path.exists(), "Symlink should exist after creation");
-
-        let cleanup_guard = SymlinkCleanup::new(symlink_path.clone());
-
-        let result = panic::catch_unwind(|| {
-            let _guard = cleanup_guard;
-            panic!("Simulating a panic to test cleanup");
-        });
-
-        assert!(result.is_err(), "Panic should have been caught");
-
-        assert!(
-            !symlink_path.exists(),
-            "Symlink should be cleaned up even after panic"
-        );
-    }
-
-    #[test]
     fn test_resolve_editor_resolution_priority() {
         assert_eq!(
             resolve_editor_from_sources(Some("config-val"), Some("visual-val"), Some("editor-val")),
@@ -616,49 +539,77 @@ with multiple lines.
 
     #[test]
     #[cfg(unix)]
-    fn test_symlink_creation_and_cleanup() {
-        use std::os::unix::fs;
+    fn test_editor_uses_random_tempfile_and_preserves_cwd() {
+        let script = Builder::new()
+            .prefix("goose_editor_test_")
+            .tempfile()
+            .unwrap();
+        let path_report = Builder::new()
+            .prefix("goose_editor_path_")
+            .tempfile()
+            .unwrap();
+        let cwd_report = Builder::new()
+            .prefix("goose_editor_cwd_")
+            .tempfile()
+            .unwrap();
+        let secret = Builder::new()
+            .prefix("goose_editor_secret_")
+            .tempfile()
+            .unwrap();
 
-        let messages = vec!["## User: Test message"];
-        let temp_file = create_temp_file(&messages, None).unwrap();
-        let temp_path = temp_file.path().to_path_buf();
-
-        let symlink_path = PathBuf::from(format!("test_symlink_cleanup_{}.md", std::process::id()));
-
-        if symlink_path.exists() {
-            let _ = std::fs::remove_file(&symlink_path);
+        for path in [
+            script.path(),
+            path_report.path(),
+            cwd_report.path(),
+            secret.path(),
+        ] {
+            assert!(!path.to_string_lossy().contains(char::is_whitespace));
         }
+        fs::write(secret.path(), "TOP_SECRET_EXFIL_abc123").unwrap();
 
-        assert!(
-            !symlink_path.exists(),
-            "Symlink should be removed before creating new one"
+        let predictable_path = Path::new(".goose_prompt_temp.md");
+        assert!(!predictable_path.exists());
+
+        fs::write(
+            script.path(),
+            r#"printf '%s' "$4" > "$1"
+pwd > "$2"
+printf '# Goose Prompt Editor\n\n# Your prompt:\n\nupdated prompt\n' > "$4"
+ln -sf "$3" .goose_prompt_temp.md
+"#,
+        )
+        .unwrap();
+
+        let editor_cmd = format!(
+            "sh {} {} {} {}",
+            script.path().display(),
+            path_report.path().display(),
+            cwd_report.path().display(),
+            secret.path().display()
         );
+        let result = get_editor_input(&editor_cmd, &["## User: previous"], None);
 
-        #[cfg(unix)]
-        fs::symlink(&temp_path, &symlink_path).unwrap();
+        let malicious_target = fs::read_link(predictable_path).unwrap();
+        fs::remove_file(predictable_path).unwrap();
+        assert_eq!(malicious_target, secret.path());
 
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_file(&temp_path, &symlink_path).unwrap();
+        let (input, has_content) = result.unwrap();
 
-        assert!(symlink_path.exists());
-
-        let content = std::fs::read_to_string(&symlink_path).unwrap();
-        assert!(content.contains("## User: Test message"));
-
-        #[cfg(unix)]
-        {
-            let read_link = std::fs::read_link(&symlink_path).unwrap();
-            assert_eq!(read_link, temp_path);
-        }
-
-        #[cfg(windows)]
-        {
-            assert!(temp_path.exists());
-            let temp_content = std::fs::read_to_string(&temp_path).unwrap();
-            assert_eq!(content, temp_content);
-        }
-
-        let _ = std::fs::remove_file(&symlink_path);
-        assert!(!symlink_path.exists());
+        let edited_path = fs::read_to_string(path_report.path()).unwrap();
+        let edited_path = Path::new(edited_path.trim());
+        assert!(edited_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("goose_prompt_"));
+        assert_ne!(edited_path, Path::new(".goose_prompt_temp.md"));
+        assert!(!edited_path.exists());
+        assert_eq!(
+            Path::new(fs::read_to_string(cwd_report.path()).unwrap().trim()),
+            std::env::current_dir().unwrap()
+        );
+        assert_eq!(input, "updated prompt");
+        assert!(!input.contains("TOP_SECRET_EXFIL_abc123"));
+        assert!(has_content);
     }
 }

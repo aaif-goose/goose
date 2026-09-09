@@ -322,17 +322,6 @@ Sessions created in goose Desktop can be resumed in the CLI and vice versa. All 
 While you can resume sessions, we recommend creating new sessions for new tasks to reduce the chance of [doom spiraling](/docs/troubleshooting/known-issues#stuck-in-a-loop-or-unresponsive).
 :::
 
-### Resume Project-Based Sessions
-
-<Tabs groupId="interface">
-    <TabItem value="ui" label="goose Desktop" default>
-        Project-based sessions are only available through the CLI.
-    </TabItem>
-    <TabItem value="cli" label="goose CLI">
-        You can use the [`project`](/docs/guides/goose-cli-commands#project) and [`projects`](/docs/guides/goose-cli-commands#projects) commands to start or resume sessions from a project, which is a tracked working directory with session metadata. For a complete guide to using Projects, see [Managing Projects Guide](/docs/guides/managing-projects).
-    </TabItem>
-</Tabs>
-
 ## Duplicate Sessions
 
 Create a complete copy of any session to reuse configurations, experiment with variations, or preserve important work.

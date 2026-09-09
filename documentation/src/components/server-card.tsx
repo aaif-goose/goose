@@ -149,7 +149,17 @@ export function ServerCard({ server }: { server: MCPServer }) {
                     <span>Install</span>
                     <Download className="h-4 w-4" />
                   </a>
-                ) : null}
+                ) : (
+                  <div
+                    className="manual-setup-badge"
+                    title={
+                      server.installation_notes ||
+                      "This extension requires manual setup. See details for instructions."
+                    }
+                  >
+                    Manual setup
+                  </div>
+                )}
               </div>
             </div>
           </div>

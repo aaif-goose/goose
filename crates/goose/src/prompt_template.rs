@@ -16,12 +16,12 @@ static TEMPLATE_REGISTRY: &[(&str, &str)] = &[
         "Prompt for summarizing conversation history when context limits are reached",
     ),
     (
-        "subagent_system.md",
-        "System prompt for subagents spawned to handle specific tasks",
+        "compaction_summary.md",
+        "Renders the structured compaction output into the post-compaction context",
     ),
     (
-        "recipe.md",
-        "Prompt for generating recipe files from conversations",
+        "subagent_system.md",
+        "System prompt for subagents spawned to handle specific tasks",
     ),
     (
         "apps_create.md",
@@ -50,7 +50,7 @@ static TEMPLATE_REGISTRY: &[(&str, &str)] = &[
 ];
 
 /// Information about a template including its content and customization status
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Template {
     pub name: String,
     pub description: String,
@@ -58,6 +58,13 @@ pub struct Template {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_content: Option<String>,
     pub is_customized: bool,
+}
+
+fn builtin_content(name: &str) -> Option<String> {
+    CORE_PROMPTS_DIR
+        .get_file(name)
+        .map(|file| String::from_utf8_lossy(file.contents()).to_string())
+        .or_else(|| goose_context_management::templates::builtin_template(name))
 }
 
 fn user_prompts_dir() -> PathBuf {
@@ -68,6 +75,23 @@ fn is_registered(name: &str) -> bool {
     TEMPLATE_REGISTRY.iter().any(|(n, _)| *n == name)
 }
 
+/// Wrap code in a markdown fence longer than any backtick run it contains,
+/// so embedded fences cannot close the block early.
+fn code_fence(code: String) -> String {
+    let longest_run = code
+        .chars()
+        .fold((0usize, 0usize), |(max, run), c| {
+            if c == '`' {
+                (max.max(run + 1), run + 1)
+            } else {
+                (max, 0)
+            }
+        })
+        .0;
+    let fence = "`".repeat((longest_run + 1).max(3));
+    format!("{fence}\n{}\n{fence}", code.trim_end_matches('\n'))
+}
+
 pub fn render_string<T: Serialize>(
     template_str: &str,
     context: &T,
@@ -75,6 +99,7 @@ pub fn render_string<T: Serialize>(
     let mut env = Environment::new();
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
+    env.add_filter("code_fence", code_fence);
     env.add_template("template", template_str)?;
     let tmpl = env.get_template("template")?;
     let ctx = MJValue::from_serialize(context);
@@ -99,24 +124,39 @@ pub fn render_template<T: Serialize>(name: &str, context: &T) -> Result<String, 
             )
         })?
     } else {
-        let file = CORE_PROMPTS_DIR.get_file(name).ok_or_else(|| {
+        builtin_content(name).ok_or_else(|| {
             MiniJinjaError::new(
                 minijinja::ErrorKind::TemplateNotFound,
                 format!("Built-in template '{}' not found", name),
             )
-        })?;
-        String::from_utf8_lossy(file.contents()).to_string()
+        })?
     };
 
     render_string(&template_str, context)
 }
 
+pub fn template_source(name: &str) -> Result<String, MiniJinjaError> {
+    let user_path = user_prompts_dir().join(name);
+    if user_path.exists() {
+        return std::fs::read_to_string(&user_path).map_err(|e| {
+            MiniJinjaError::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("Failed to read user template: {}", e),
+            )
+        });
+    }
+    builtin_content(name).ok_or_else(|| {
+        MiniJinjaError::new(
+            minijinja::ErrorKind::TemplateNotFound,
+            format!("Built-in template '{}' not found", name),
+        )
+    })
+}
+
 pub fn get_template(name: &str) -> Option<Template> {
     let (_, description) = TEMPLATE_REGISTRY.iter().find(|(n, _)| *n == name)?;
 
-    let default_content = CORE_PROMPTS_DIR
-        .get_file(name)
-        .map(|file| String::from_utf8_lossy(file.contents()).to_string())?;
+    let default_content = builtin_content(name)?;
 
     let user_path = user_prompts_dir().join(name);
     let user_content = if user_path.exists() {
@@ -171,9 +211,7 @@ pub fn list_templates() -> Vec<Template> {
     TEMPLATE_REGISTRY
         .iter()
         .filter_map(|(name, description)| {
-            let default_content = CORE_PROMPTS_DIR
-                .get_file(name)
-                .map(|file| String::from_utf8_lossy(file.contents()).to_string())?;
+            let default_content = builtin_content(name)?;
 
             let user_path = user_prompts_dir().join(name);
             let user_content = if user_path.exists() {

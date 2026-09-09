@@ -18,7 +18,7 @@ use crate::conversation::message::Message;
 use crate::providers::api_client::RequestBuilderDecorator;
 use crate::providers::base::{
     ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
+    DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use goose_providers::model::ModelConfig;
 
@@ -30,6 +30,7 @@ use crate::providers::gcpauth::GcpAuth;
 use crate::providers::openai_compatible::{map_http_error_to_provider_error, sanitize_url};
 use crate::providers::retry::RetryConfig;
 use goose_providers::errors::ProviderError;
+use goose_providers::http_status::read_error_body;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 
@@ -96,19 +97,25 @@ fn build_vertex_url(
         ModelProvider::Google | ModelProvider::MaaS(_) => "v1beta1",
     };
 
-    let path = format!(
-        "{}/projects/{}/locations/{}/publishers/{}/models/{}:{}",
-        api_version,
-        project_id,
-        target_location,
-        provider.as_str(),
-        model_name,
-        endpoint
-    );
-
-    let mut url = base_url
-        .join(&path)
-        .map_err(|e| GcpVertexAIError::InvalidUrl(e.to_string()))?;
+    let provider_name = provider.as_str();
+    let model_endpoint = format!("{model_name}:{endpoint}");
+    let mut url = base_url;
+    url.path_segments_mut()
+        .map_err(|_| {
+            GcpVertexAIError::InvalidUrl("Vertex AI host cannot be a base URL".to_string())
+        })?
+        .clear()
+        .extend([
+            api_version,
+            "projects",
+            project_id,
+            "locations",
+            target_location,
+            "publishers",
+            &provider_name,
+            "models",
+            &model_endpoint,
+        ]);
 
     if streaming && !matches!(provider, ModelProvider::Anthropic) {
         url.set_query(Some("alt=sse"));
@@ -174,7 +181,8 @@ impl GcpVertexAIProvider {
         let host = Self::build_host_url(&location);
 
         let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+            .read_timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
             .build()?;
 
         let auth = GcpAuth::new().await?;
@@ -279,6 +287,7 @@ impl GcpVertexAIProvider {
 
     async fn send_request_with_retry(
         &self,
+        model: &ModelConfig,
         url: Url,
         payload: &Value,
     ) -> Result<reqwest::Response, ProviderError> {
@@ -314,17 +323,25 @@ impl GcpVertexAIProvider {
                 }
             };
 
-            let request = self
+            let mut request = self
                 .client
                 .post(url.clone())
                 .json(payload)
                 .header("Authorization", auth_header);
 
-            let response = (self.request_builder)(request)
-                .map_err(|e| ProviderError::ExecutionError(e.to_string()))?
-                .send()
-                .await
-                .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+            if let Some(headers) = &model.request_headers {
+                for (key, value) in headers {
+                    request = request.header(key, value);
+                }
+            }
+
+            let request = (self.request_builder)(request)
+                .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+            let response = goose_providers::http_status::send_bounded(
+                request,
+                Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+            )
+            .await?;
 
             let status = response.status();
 
@@ -338,7 +355,8 @@ impl GcpVertexAIProvider {
                         }),
                     );
                 }
-                let msg = rate_limit_error_message(&response.text().await.unwrap_or_default());
+                let msg =
+                    rate_limit_error_message(&read_error_body(response).await.unwrap_or_default());
                 tracing::warn!("429 (attempt {rate_limit_attempts}/{max_retries}): {msg}");
                 last_error = Some(ProviderError::RateLimitExceeded {
                     details: msg,
@@ -382,7 +400,7 @@ impl GcpVertexAIProvider {
                 )));
             } else {
                 let url = sanitize_url(response.url().as_str());
-                let response_text = response.text().await.unwrap_or_default();
+                let response_text = read_error_body(response).await.unwrap_or_default();
                 let payload = serde_json::from_str::<Value>(&response_text).ok();
                 return Err(map_http_error_to_provider_error(status, payload, &url));
             }
@@ -400,7 +418,7 @@ impl GcpVertexAIProvider {
             .build_request_url(model, context.provider(), location, true)
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
 
-        self.send_request_with_retry(url, payload).await
+        self.send_request_with_retry(model, url, payload).await
     }
 
     async fn post_stream(
@@ -452,6 +470,7 @@ impl GcpVertexAIProvider {
         let response = match self
             .client
             .post(&url)
+            .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
             .header("Authorization", &auth_header)
             .json(&payload)
             .send()
@@ -571,6 +590,15 @@ impl goose_providers::base::ProviderDescriptor for GcpVertexAIProvider {
                     false,
                 ),
             ],
+        )
+        .with_setup(
+            crate::providers::catalog::ProviderSetupMetadata::new(
+                crate::providers::catalog::ProviderSetupCategory::Model,
+                crate::providers::catalog::ProviderSetupMethod::CloudCredentials,
+                crate::providers::catalog::ProviderSetupGroup::Additional,
+            )
+            .with_field("GCP_PROJECT_ID", "Project ID", Some("my-gcp-project"), None)
+            .with_field("GCP_LOCATION", "Location", Some("us-central1"), None),
         )
     }
 }
@@ -716,7 +744,10 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(anthropic_url.as_str().contains(":rawPredict"));
+        assert_eq!(
+            anthropic_url.as_str(),
+            "https://us-east5-aiplatform.googleapis.com/v1/projects/test-project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4@20250514:rawPredict"
+        );
 
         let anthropic_stream = build_vertex_url(
             "https://us-east5-aiplatform.googleapis.com",
@@ -728,8 +759,10 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(anthropic_stream.as_str().contains(":streamRawPredict"));
-        assert!(anthropic_stream.query().is_none());
+        assert_eq!(
+            anthropic_stream.as_str(),
+            "https://us-east5-aiplatform.googleapis.com/v1/projects/test-project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4@20250514:streamRawPredict"
+        );
 
         let google_stream = build_vertex_url(
             "https://us-central1-aiplatform.googleapis.com",
@@ -741,8 +774,84 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(google_stream.as_str().contains(":streamGenerateContent"));
-        assert_eq!(google_stream.query(), Some("alt=sse"));
+        assert_eq!(
+            google_stream.as_str(),
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+        );
+
+        let maas_url = build_vertex_url(
+            "https://us-central1-aiplatform.googleapis.com",
+            "us-central1",
+            "test-project",
+            "qwen3-coder-480b-a35b-instruct-maas",
+            ModelProvider::MaaS("qwen".to_string()),
+            "us-central1",
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            maas_url.as_str(),
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/publishers/qwen/models/qwen3-coder-480b-a35b-instruct-maas:generateContent"
+        );
+    }
+
+    #[test]
+    fn test_build_vertex_url_encodes_model_path_segment() {
+        let model_names = [
+            "claude-x/../../../../../../../../projects/attacker/locations/us-east5/endpoints/123",
+            r"claude-x\..\endpoints\123",
+            "claude-x%2F..%2Fprojects%2Fattacker",
+            "claude-x?alt=sse",
+            "claude-x#fragment",
+        ];
+
+        for model_name in model_names {
+            let url = build_vertex_url(
+                "https://us-east5-aiplatform.googleapis.com",
+                "us-east5",
+                "test-project",
+                model_name,
+                ModelProvider::Anthropic,
+                "us-east5",
+                true,
+            )
+            .unwrap();
+
+            let model_path = url
+                .path()
+                .strip_prefix(
+                    "/v1/projects/test-project/locations/us-east5/publishers/anthropic/models/",
+                )
+                .unwrap();
+            assert!(
+                !model_path.contains('/'),
+                "model escaped its segment: {url}"
+            );
+            assert_eq!(url.host_str(), Some("us-east5-aiplatform.googleapis.com"));
+            assert_eq!(url.query(), None);
+            assert_eq!(url.fragment(), None);
+        }
+    }
+
+    #[test]
+    fn test_build_vertex_url_encodes_maas_publisher_segment() {
+        let model_name = "../qwen-maas";
+        let provider = RequestContext::new(model_name).unwrap().provider();
+        let url = build_vertex_url(
+            "https://us-central1-aiplatform.googleapis.com",
+            "us-central1",
+            "test-project",
+            model_name,
+            provider,
+            "us-central1",
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/publishers/..%2Fqwen/models/..%2Fqwen-maas:generateContent"
+        );
     }
 
     #[test]

@@ -119,7 +119,7 @@ The first line starts with a hash `#` and a space-separated list of keywords and
 
 Since both the `.goosehints` file and the Memory Extension files are sent with every request, whether to use one or the other really comes down to how you want to manage your context. Since you can create a project-specific `.goosehints` file, you can use it to define project-wide rules and standards that you want to apply consistently across all interactions with Goose. This is useful for defining project-wide coding standards, documentation preferences, or other static rules that you want to apply consistently across all interactions. Meanwhile you can maintain a personal set of standards for writing and coding in your Memory Extension that you can update and change as needed without affecting the project-wide rules.
 
-Share your own `.goosehints` optimization stories in the [Goose community on Discord](http://discord.gg/goose-oss)!
+Share your own `.goosehints` optimization stories in the [goose community on Discord](http://discord.gg/n8R5VaWDAn)!
 
 <head>
   <meta property="og:title" content="What's in my .goosehints file (and why it probably shouldn't be)" />

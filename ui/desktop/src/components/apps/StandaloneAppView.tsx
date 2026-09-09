@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import McpAppRenderer from '../McpApps/McpAppRenderer';
 import { listMcpApps } from '../../acp/mcp-apps';
 import { acpCloseSession, acpNewSession } from '../../acp/sessions';

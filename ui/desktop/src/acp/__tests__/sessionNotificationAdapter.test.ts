@@ -1,13 +1,25 @@
-import type { GooseSessionNotification_unstable } from '@aaif/goose-sdk';
+import type { GooseSessionNotification_unstable } from '@aaif/goose-acp-client';
 import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
-import type { Message, NotificationEvent } from '../../types/message';
+import { getToolResponses, type Message, type NotificationEvent } from '../../types/message';
 import {
   createAcpSessionNotificationAdapter,
   type AcpChatStateChange,
 } from '../sessionNotificationAdapter';
 
 const SESSION_ID = 'session-1';
+const DEFAULT_TOOL_CALL = {
+  sessionUpdate: 'tool_call',
+  toolCallId: 'tool-1',
+  title: 'Read file',
+  status: 'pending',
+} as const;
+const DEFAULT_TOOL_CALL_UPDATE = {
+  sessionUpdate: 'tool_call_update',
+  toolCallId: 'tool-1',
+} as const;
+const OUTPUT_TOKEN_LIMIT_FALLBACK_TEXT =
+  'Response stopped because the model reached its output-token limit.';
 
 function acpUpdate(update: SessionNotification['update']): SessionNotification {
   return {
@@ -102,6 +114,24 @@ function firstContent(message: Message): Message['content'][number] {
   return content;
 }
 
+function permissionRequest(
+  sessionId: string,
+  toolCallId: string,
+  title: string,
+  path: string
+): RequestPermissionRequest {
+  return {
+    sessionId,
+    options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+    toolCall: {
+      toolCallId,
+      title,
+      rawInput: { path },
+      content: [{ type: 'content', content: { type: 'text', text: `Allow ${title}?` } }],
+    },
+  };
+}
+
 describe('createAcpSessionNotificationAdapter', () => {
   describe('apply', () => {
     describe('message chunks', () => {
@@ -133,6 +163,42 @@ describe('createAcpSessionNotificationAdapter', () => {
 
         expect(messages).toHaveLength(1);
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hell' });
+      });
+
+      it('keeps streamed content visible when an output-limit fallback chunk arrives later', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'Partial response' },
+            _meta: { goose: { messageId: 'msg-1' } },
+          } as SessionNotification['update'])
+        );
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: OUTPUT_TOKEN_LIMIT_FALLBACK_TEXT },
+              _meta: {
+                goose: {
+                  messageId: 'msg-1',
+                  outputTokenLimitReached: true,
+                  fallbackContent: true,
+                },
+              },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(1);
+        expect(firstContent(messages[0])).toMatchObject({
+          type: 'text',
+          text: 'Partial response',
+        });
+        expect(messages[0].metadata.outputTokenLimitReached).toBe(true);
+        expect(messages[0].metadata.fallbackContent).toBeUndefined();
       });
 
       it('reconciles locally rendered steer text with server chunks', () => {
@@ -286,6 +352,62 @@ describe('createAcpSessionNotificationAdapter', () => {
           signature: '',
         });
       });
+
+      it('preserves output-limit metadata when creating a thought message', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_thought_chunk',
+              content: { type: 'text', text: 'Truncated thinking' },
+              _meta: {
+                goose: {
+                  messageId: 'thought-1',
+                  outputTokenLimitReached: true,
+                },
+              },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0].metadata.outputTokenLimitReached).toBe(true);
+      });
+
+      it('preserves output-limit metadata when updating a thought message', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'Truncated ' },
+            _meta: { goose: { messageId: 'thought-1' } },
+          } as SessionNotification['update'])
+        );
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_thought_chunk',
+              content: { type: 'text', text: 'thinking' },
+              _meta: {
+                goose: {
+                  messageId: 'thought-1',
+                  outputTokenLimitReached: true,
+                },
+              },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(1);
+        expect(firstContent(messages[0])).toMatchObject({
+          type: 'thinking',
+          thinking: 'Truncated thinking',
+        });
+        expect(messages[0].metadata.outputTokenLimitReached).toBe(true);
+      });
     });
 
     describe('tools', () => {
@@ -352,6 +474,7 @@ describe('createAcpSessionNotificationAdapter', () => {
                   resourceUri: 'ui://app/resource',
                   extensionName: 'developer',
                   toolName: 'read_file',
+                  toolNameIsActual: true,
                 },
               },
             },
@@ -373,6 +496,7 @@ describe('createAcpSessionNotificationAdapter', () => {
                 ui: { resourceUri: 'ui://app/resource' },
                 extensionName: 'developer',
                 toolName: 'read_file',
+                toolNameIsActual: true,
               },
             },
           },
@@ -383,7 +507,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
       });
 
-      it('maps failed tool responses to error results', () => {
+      it('preserves failed tool responses as results with error status', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
         const failedToolStateChanges = adapter.apply(
@@ -403,8 +527,12 @@ describe('createAcpSessionNotificationAdapter', () => {
           type: 'toolResponse',
           id: 'tool-1',
           toolResult: {
-            status: 'error',
-            error: 'permission denied',
+            status: 'success',
+            value: {
+              content: [{ type: 'text', text: 'permission denied' }],
+              structuredContent: 'permission denied',
+              isError: true,
+            },
           },
           metadata: {
             title: 'Read file',
@@ -414,33 +542,241 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
       });
 
-      it('uses failed tool response text content when raw output is absent', () => {
+      it('preserves content from an unfinished tool call update', () => {
         const adapter = createAcpSessionNotificationAdapter();
+        const result = { type: 'text' as const, text: 'Intermediate result' };
+        const content = [{ type: 'content' as const, content: result }];
 
-        const failedToolStateChanges = adapter.apply(
-          acpUpdate({
-            sessionUpdate: 'tool_call_update',
-            toolCallId: 'tool-1',
-            status: 'failed',
-            title: 'Read file',
-            content: [
-              {
-                type: 'content',
-                content: { type: 'text', text: 'file not found' },
-              },
-            ],
-          })
+        adapter.apply(acpUpdate(DEFAULT_TOOL_CALL));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content }));
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }))
         );
-        const messages = expectOnlyMessagesChange(failedToolStateChanges);
 
-        expect(firstContent(messages[0])).toMatchObject({
+        expect(messages).toHaveLength(2);
+        expect(firstContent(messages[1])).toMatchObject({
           type: 'toolResponse',
           id: 'tool-1',
+          metadata: {
+            title: 'Read file',
+            status: 'completed',
+          },
           toolResult: {
-            status: 'error',
-            error: 'file not found',
+            status: 'success',
+            value: {
+              content: [result],
+              isError: false,
+            },
           },
         });
+      });
+
+      it('replaces earlier content with later content', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const initialResult = { type: 'text' as const, text: 'First result' };
+        const replacementResult = { type: 'text' as const, text: 'Second result' };
+        const initialContent = [{ type: 'content' as const, content: initialResult }];
+        const replacementContent = [{ type: 'content' as const, content: replacementResult }];
+
+        adapter.apply(acpUpdate(DEFAULT_TOOL_CALL));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content: initialContent }));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content: replacementContent }));
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }))
+        );
+
+        expect(firstContent(messages[1])).toMatchObject({
+          type: 'toolResponse',
+          id: 'tool-1',
+          metadata: {
+            content: replacementContent,
+          },
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [replacementResult],
+              isError: false,
+            },
+          },
+        });
+      });
+
+      it('clears earlier content with an empty content update', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const result = { type: 'text' as const, text: 'Intermediate result' };
+        const content = [{ type: 'content' as const, content: result }];
+
+        adapter.apply(acpUpdate(DEFAULT_TOOL_CALL));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content }));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content: [] }));
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }))
+        );
+
+        expect(firstContent(messages[1])).toMatchObject({
+          type: 'toolResponse',
+          id: 'tool-1',
+          metadata: {
+            content: [],
+          },
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [],
+              isError: false,
+            },
+          },
+        });
+      });
+
+      it('preserves unsupported content without rendering it', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const diff = {
+          type: 'diff' as const,
+          path: '/tmp/file.txt',
+          oldText: 'old content',
+          newText: 'new content',
+        };
+        const terminalReference = {
+          type: 'terminal' as const,
+          terminalId: 'terminal-1',
+        };
+        const content = [diff, terminalReference];
+
+        adapter.apply(acpUpdate(DEFAULT_TOOL_CALL));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content }));
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }))
+        );
+
+        expect(firstContent(messages[1])).toMatchObject({
+          type: 'toolResponse',
+          id: 'tool-1',
+          metadata: {
+            content,
+          },
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [],
+              isError: false,
+            },
+          },
+        });
+      });
+
+      it('uses unfinished content for a failed response when raw output is absent', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const result = { type: 'text' as const, text: 'file not found' };
+        const content = [{ type: 'content' as const, content: result }];
+
+        adapter.apply(acpUpdate(DEFAULT_TOOL_CALL));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content }));
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'failed' }))
+        );
+
+        expect(messages).toHaveLength(2);
+        expect(firstContent(messages[1])).toMatchObject({
+          type: 'toolResponse',
+          id: 'tool-1',
+          metadata: {
+            title: 'Read file',
+            status: 'failed',
+            content,
+          },
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [{ type: 'text', text: 'file not found' }],
+              isError: true,
+            },
+          },
+        });
+      });
+
+      it('keeps interleaved tool call state isolated by ID', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const toolOneResult = { type: 'text' as const, text: 'First tool result' };
+        const toolTwoResult = { type: 'text' as const, text: 'Second tool result' };
+        const toolOneContent = [{ type: 'content' as const, content: toolOneResult }];
+        const toolTwoContent = [{ type: 'content' as const, content: toolTwoResult }];
+
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL, title: 'First tool' }));
+        adapter.apply(
+          acpUpdate({ ...DEFAULT_TOOL_CALL, toolCallId: 'tool-2', title: 'Second tool' })
+        );
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, content: toolOneContent }));
+        adapter.apply(
+          acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, toolCallId: 'tool-2', content: toolTwoContent })
+        );
+
+        let messages = expectOnlyMessagesChange(
+          adapter.apply(
+            acpUpdate({
+              ...DEFAULT_TOOL_CALL_UPDATE,
+              toolCallId: 'tool-2',
+              status: 'completed',
+            })
+          )
+        );
+        const toolTwoResponse = messages
+          .flatMap(getToolResponses)
+          .find((response) => response.id === 'tool-2');
+
+        expect(toolTwoResponse).toMatchObject({
+          metadata: {
+            title: 'Second tool',
+            content: toolTwoContent,
+          },
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [toolTwoResult],
+            },
+          },
+        });
+
+        messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }))
+        );
+        const toolOneResponse = messages
+          .flatMap(getToolResponses)
+          .find((response) => response.id === 'tool-1');
+
+        expect(toolOneResponse).toMatchObject({
+          metadata: {
+            title: 'First tool',
+            content: toolOneContent,
+          },
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [toolOneResult],
+            },
+          },
+        });
+      });
+
+      it('does not create a duplicate response for repeated completed updates', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(acpUpdate(DEFAULT_TOOL_CALL));
+        adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }));
+
+        const messages = expectOnlyMessagesChange(
+          adapter.apply(acpUpdate({ ...DEFAULT_TOOL_CALL_UPDATE, status: 'completed' }))
+        );
+        const responses = messages
+          .flatMap(getToolResponses)
+          .filter((response) => response.id === 'tool-1');
+
+        expect(responses).toHaveLength(1);
       });
 
       it('maps in-progress tool message notifications', () => {
@@ -543,6 +879,7 @@ describe('createAcpSessionNotificationAdapter', () => {
           type: 'tokenState',
           tokenState: {
             totalTokens: 42,
+            contextLimit: 200,
             accumulatedInputTokens: 10,
             accumulatedOutputTokens: 15,
             accumulatedTotalTokens: 25,
@@ -583,13 +920,7 @@ describe('createAcpSessionNotificationAdapter', () => {
           status: { type: 'progress', message: 'Still working' },
         })
       );
-      messages = expectOnlyMessagesChange(progressStateChanges);
-
-      expect(firstContent(messages[2])).toMatchObject({
-        type: 'systemNotification',
-        notificationType: 'thinkingMessage',
-        msg: 'Still working',
-      });
+      expect(progressStateChanges).toEqual([{ type: 'progressMessage', message: 'Still working' }]);
     });
   });
 
@@ -620,7 +951,10 @@ describe('createAcpSessionNotificationAdapter', () => {
         },
       };
 
-      const permissionStateChanges = adapter.applyPermissionRequest(request);
+      const permissionStateChanges = adapter.applyPermissionRequest({
+        generation: 'permission-generation-1',
+        request,
+      });
       const messages = expectOnlyMessagesChange(permissionStateChanges);
 
       expect(messages).toHaveLength(1);
@@ -629,12 +963,93 @@ describe('createAcpSessionNotificationAdapter', () => {
         type: 'actionRequired',
         data: {
           actionType: 'toolConfirmation',
+          generation: 'permission-generation-1',
           id: 'tool-1',
           toolName: 'edit_file',
           arguments: { path: 'README.md' },
           prompt: 'Allow editing README.md?',
         },
       });
+    });
+
+    it('replaces reused tool call IDs with the current permission details', () => {
+      const adapter = createAcpSessionNotificationAdapter();
+      const first = permissionRequest(SESSION_ID, 'tool-1', 'Read file', 'README.md');
+      const second = permissionRequest(SESSION_ID, 'tool-1', 'Run command', 'secrets.txt');
+
+      adapter.applyPermissionRequest({ generation: 'generation-a', request: first });
+      const messages = expectOnlyMessagesChange(
+        adapter.applyPermissionRequest({ generation: 'generation-b', request: second })
+      );
+
+      expect(messages).toHaveLength(1);
+      expect(firstContent(messages[0])).toMatchObject({
+        type: 'actionRequired',
+        data: {
+          actionType: 'toolConfirmation',
+          generation: 'generation-b',
+          id: 'tool-1',
+          toolName: 'Run command',
+          arguments: { path: 'secrets.txt' },
+          prompt: 'Allow Run command?',
+        },
+      });
+    });
+
+    it('removes only the matching permission generation when cancelled', () => {
+      const adapter = createAcpSessionNotificationAdapter();
+      const request = permissionRequest(SESSION_ID, 'tool-1', 'Read file', 'README.md');
+      adapter.applyPermissionRequest({ generation: 'generation-a', request });
+
+      expect(adapter.cancelPermissionRequest('tool-1', 'generation-stale')).toEqual([]);
+      const messages = expectOnlyMessagesChange(
+        adapter.cancelPermissionRequest('tool-1', 'generation-a')
+      );
+
+      expect(messages).toEqual([]);
+    });
+  });
+
+  describe('session_info_update with queuedSteer', () => {
+    it('emits localSteerConfirmed when queuedSteer meta is present', () => {
+      const adapter = createAcpSessionNotificationAdapter();
+      const changes = adapter.apply(
+        acpUpdate({
+          sessionUpdate: 'session_info_update',
+          _meta: {
+            goose: {
+              queuedSteer: { messageId: 'steer-msg-1', runId: 'run-1' },
+            },
+          },
+        })
+      );
+
+      expect(changes).toEqual([{ type: 'localSteerConfirmed', messageId: 'steer-msg-1' }]);
+    });
+
+    it('emits both sessionInfo and localSteerConfirmed when both are present', () => {
+      const adapter = createAcpSessionNotificationAdapter();
+      const changes = adapter.apply(
+        acpUpdate({
+          sessionUpdate: 'session_info_update',
+          title: 'New Title',
+          _meta: {
+            goose: {
+              queuedSteer: { messageId: 'steer-msg-2', runId: 'run-2' },
+            },
+          },
+        })
+      );
+
+      expect(changes).toHaveLength(2);
+      expect(changes[0]).toEqual({ type: 'sessionInfo', name: 'New Title' });
+      expect(changes[1]).toEqual({ type: 'localSteerConfirmed', messageId: 'steer-msg-2' });
+    });
+
+    it('returns empty array when session_info_update has no relevant fields', () => {
+      const adapter = createAcpSessionNotificationAdapter();
+      const changes = adapter.apply(acpUpdate({ sessionUpdate: 'session_info_update' }));
+      expect(changes).toEqual([]);
     });
   });
 });

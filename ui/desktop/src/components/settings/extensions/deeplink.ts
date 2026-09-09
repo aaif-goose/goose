@@ -19,9 +19,8 @@ function getStdioConfig(
     'jbang',
     'npx',
     'uvx',
-    'goosed',
+    'goose',
     'npx.cmd',
-    'i-ching-mcp-server',
   ];
   if (!allowedCommands.includes(cmd)) {
     toastService.handleError(

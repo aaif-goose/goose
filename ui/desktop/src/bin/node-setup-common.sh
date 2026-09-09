@@ -76,11 +76,31 @@ log "Changing to directory ${MCP_HERMIT_DIR}."
 cd "${MCP_HERMIT_DIR}"
 
 
+download_hermit_binary() {
+    local HERMIT_TMP
+    HERMIT_TMP=$(mktemp "${MCP_HERMIT_DIR}/bin/hermit.XXXXXX")
+    if curl -fsSL "https://github.com/cashapp/hermit/releases/download/stable/hermit-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').gz" \
+        | gzip -dc > "${HERMIT_TMP}" && chmod +x "${HERMIT_TMP}"; then
+        mv "${HERMIT_TMP}" "${MCP_HERMIT_DIR}/bin/hermit"
+    else
+        rm -f "${HERMIT_TMP}"
+        return 1
+    fi
+}
+
+activate_hermit_environment() {
+    if ! HERMIT_ENV=$(hermit env --shell=bash --activate 2>> "${LOG_FILE}"); then
+        log "Hermit does not support bash activation. Updating hermit binary."
+        download_hermit_binary
+        HERMIT_ENV=$(hermit env --shell=bash --activate 2>> "${LOG_FILE}")
+    fi
+    eval "${HERMIT_ENV}" >> "${LOG_FILE}" 2>&1
+}
+
 # Check if hermit binary exists and download if not
 if [ ! -f "${MCP_HERMIT_DIR}/bin/hermit" ]; then
     log "Hermit binary not found. Downloading hermit binary."
-    curl -fsSL "https://github.com/cashapp/hermit/releases/download/stable/hermit-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').gz" \
-        | gzip -dc > "${MCP_HERMIT_DIR}/bin/hermit" && chmod +x "${MCP_HERMIT_DIR}/bin/hermit"
+    download_hermit_binary
     log "Hermit binary downloaded and made executable."
 else
     log "Hermit binary already exists. Skipping download."
@@ -134,14 +154,14 @@ fi
 # Activate the environment with output redirected to log.
 # Activation must run on every platform: macOS GUI apps otherwise never get the
 # hermit-managed node/npx onto PATH, so STDIO extensions fail with
-# "env: node: No such file or directory". The Linux-only guard was introduced in
-# #5372 to "preserve existing behavior" on macOS, but that path is now broken.
+# "env: node: No such file or directory".
 log "Activating hermit environment."
-{ . "bin/activate-hermit"; } >> "${LOG_FILE}" 2>&1
+activate_hermit_environment
 
 # Install Node.js using hermit
 log "Installing Node.js with hermit."
 hermit install node >> "${LOG_FILE}"
+activate_hermit_environment
 
 # Verify installations
 log "Verifying installation locations:"

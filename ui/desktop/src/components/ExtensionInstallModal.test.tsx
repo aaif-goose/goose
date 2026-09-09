@@ -106,25 +106,6 @@ describe('ExtensionInstallModal', () => {
       expect(screen.getAllByRole('button')).toHaveLength(3);
     });
 
-    it('should handle i-ching-mcp-server as allowed command', async () => {
-      mockElectron.getAllowedExtensions.mockResolvedValue([]);
-
-      renderWithIntl(<ExtensionInstallModal addExtension={mockAddExtension} setView={mockSetView} />);
-
-      const eventHandler = getAddExtensionEventHandler();
-
-      await act(async () => {
-        await eventHandler(
-          {},
-          'goose://extension?cmd=i-ching-mcp-server&id=i-ching&name=I%20Ching&description=I%20Ching%20divination'
-        );
-      });
-
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByText('Confirm Extension Installation')).toBeInTheDocument();
-      expect(screen.getByText(/I Ching extension/)).toBeInTheDocument();
-      expect(screen.getAllByRole('button')).toHaveLength(3);
-    });
     it('should handle blocked extension', async () => {
       mockElectron.getAllowedExtensions.mockResolvedValue(['uvx allowed-package']);
 

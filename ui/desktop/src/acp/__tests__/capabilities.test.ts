@@ -1,6 +1,6 @@
 import type { InitializeResponse } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
-import { hasLocalInferenceCapability } from '../capabilities';
+import { hasLocalInferenceCapability, hasRecipeParameterScopesCapability } from '../capabilities';
 
 function initializeResponseWithMeta(meta?: unknown): Pick<InitializeResponse, 'agentCapabilities'> {
   return {
@@ -21,6 +21,29 @@ describe('ACP capabilities', () => {
         })
       )
     ).toBe(true);
+  });
+
+  it('detects scoped recipe-parameter support from Goose metadata', () => {
+    expect(
+      hasRecipeParameterScopesCapability(
+        initializeResponseWithMeta({
+          goose: {
+            recipeParameterScopes: {},
+          },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('treats missing or malformed scoped recipe-parameter metadata as unsupported', () => {
+    expect(hasRecipeParameterScopesCapability(initializeResponseWithMeta())).toBe(false);
+    expect(hasRecipeParameterScopesCapability(initializeResponseWithMeta({}))).toBe(false);
+    expect(hasRecipeParameterScopesCapability(initializeResponseWithMeta({ goose: {} }))).toBe(
+      false
+    );
+    expect(hasRecipeParameterScopesCapability(initializeResponseWithMeta({ goose: true }))).toBe(
+      false
+    );
   });
 
   it('treats missing local inference metadata as unsupported', () => {

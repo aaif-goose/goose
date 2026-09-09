@@ -3,8 +3,6 @@ use chrono::DateTime;
 use chrono::Utc;
 use indexmap::IndexMap;
 use serde::Serialize;
-use serde_json::Value;
-use std::collections::HashMap;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
@@ -15,9 +13,6 @@ use crate::{
     utils::sanitize_unicode_tags,
 };
 use std::path::Path;
-
-const MAX_EXTENSIONS: usize = 5;
-const MAX_TOOLS: usize = 50;
 
 pub struct PromptManager {
     system_prompt_override: Option<String>,
@@ -36,14 +31,11 @@ impl Default for PromptManager {
 struct SystemPromptContext {
     extensions: Vec<ExtensionInfo>,
     current_date_time: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    extension_tool_limits: Option<(usize, usize)>,
     goose_mode: GooseMode,
     is_autonomous: bool,
     enable_subagents: bool,
-    max_extensions: usize,
-    max_tools: usize,
     code_execution_mode: bool,
+    include_extensions: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     moim_system_prompt_block: Option<String>,
 }
@@ -52,11 +44,11 @@ pub struct SystemPromptBuilder<'a, M> {
     manager: &'a M,
 
     extensions_info: Vec<ExtensionInfo>,
-    frontend_instructions: Option<String>,
-    extension_tool_count: Option<(usize, usize)>,
+    prompt_extras: IndexMap<String, String>,
     subagents_enabled: bool,
     hints: Option<String>,
     code_execution_mode: bool,
+    include_extensions: bool,
     goose_mode: Option<GooseMode>,
 }
 
@@ -73,22 +65,21 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         self
     }
 
-    pub fn with_frontend_instructions(mut self, frontend_instructions: Option<String>) -> Self {
-        self.frontend_instructions = frontend_instructions;
-        self
-    }
-
-    pub fn with_extension_and_tool_counts(
+    pub fn with_prompt_extras(
         mut self,
-        extension_count: usize,
-        tool_count: usize,
+        extras: impl IntoIterator<Item = (String, String)>,
     ) -> Self {
-        self.extension_tool_count = Some((extension_count, tool_count));
+        self.prompt_extras.extend(extras);
         self
     }
 
     pub fn with_code_execution_mode(mut self, enabled: bool) -> Self {
         self.code_execution_mode = enabled;
+        self
+    }
+
+    pub fn without_extensions(mut self) -> Self {
+        self.include_extensions = false;
         self
     }
 
@@ -117,14 +108,6 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     pub fn build(self) -> String {
         let mut extensions_info = self.extensions_info;
 
-        // Add frontend instructions to extensions_info to simplify json rendering
-        if let Some(frontend_instructions) = self.frontend_instructions {
-            extensions_info.push(ExtensionInfo::new(
-                "frontend",
-                &frontend_instructions,
-                false,
-            ));
-        }
         // Stable tool ordering is important for multi session prompt caching.
         extensions_info.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -140,20 +123,14 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             .goose_mode
             .unwrap_or_else(|| Config::global().get_goose_mode().unwrap_or_default());
 
-        let extension_tool_limits = self
-            .extension_tool_count
-            .filter(|(extensions, tools)| *extensions > MAX_EXTENSIONS || *tools > MAX_TOOLS);
-
         let context = SystemPromptContext {
             extensions: sanitized_extensions_info,
             current_date_time: self.manager.current_date_timestamp.clone(),
-            extension_tool_limits,
             goose_mode,
             is_autonomous: goose_mode == GooseMode::Auto,
             enable_subagents: self.subagents_enabled,
-            max_extensions: MAX_EXTENSIONS,
-            max_tools: MAX_TOOLS,
             code_execution_mode: self.code_execution_mode,
+            include_extensions: self.include_extensions,
             moim_system_prompt_block: moim::system_prompt_block(),
         };
 
@@ -168,6 +145,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         });
 
         let mut system_prompt_extras = self.manager.system_prompt_extras.clone();
+        system_prompt_extras.extend(self.prompt_extras);
 
         // Add hints if provided
         if let Some(hints) = self.hints {
@@ -206,7 +184,7 @@ impl PromptManager {
             system_prompt_extras: IndexMap::new(),
             // Use the fixed current date time so that prompt cache can be used.
             // Filtering to an hour to balance user time accuracy and multi session prompt cache hits.
-            current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00").to_string(),
+            current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00 %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
         }
     }
@@ -216,7 +194,7 @@ impl PromptManager {
         PromptManager {
             system_prompt_override: None,
             system_prompt_extras: IndexMap::new(),
-            current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+            current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
         }
     }
@@ -249,6 +227,21 @@ impl PromptManager {
         has_new
     }
 
+    pub fn build_system_prompt(
+        &mut self,
+        working_dir: &Path,
+        prompt_parts: Vec<(String, String)>,
+        goose_mode: GooseMode,
+    ) -> String {
+        self.load_subdirectory_hints(working_dir);
+        self.builder()
+            .with_prompt_extras(prompt_parts)
+            .with_hints(working_dir)
+            .with_goose_mode(goose_mode)
+            .without_extensions()
+            .build()
+    }
+
     /// Override the system prompt with custom text
     pub fn set_system_prompt_override(&mut self, template: String) {
         self.system_prompt_override = Some(template);
@@ -263,19 +256,13 @@ impl PromptManager {
             manager: self,
 
             extensions_info: vec![],
-            frontend_instructions: None,
-            extension_tool_count: None,
+            prompt_extras: IndexMap::new(),
             subagents_enabled: false,
             hints: None,
             code_execution_mode: false,
+            include_extensions: true,
             goose_mode: None,
         }
-    }
-
-    pub async fn get_recipe_prompt(&self) -> String {
-        let context: HashMap<&str, Value> = HashMap::new();
-        prompt_template::render_template("recipe.md", &context)
-            .unwrap_or_else(|_| "The recipe prompt is busted. Tell the user.".to_string())
     }
 }
 
@@ -301,6 +288,17 @@ mod tests {
     }
 
     #[test]
+    fn test_current_date_time_includes_timezone() {
+        let mut manager =
+            PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+        manager.set_system_prompt_override("It is currently {{current_date_time}}".to_string());
+
+        let result = manager.builder().build();
+
+        assert_eq!(result, "It is currently 1970-01-01 00:00:00 +00:00");
+    }
+
+    #[test]
     fn test_build_system_prompt_sanitizes_extras() {
         let mut manager = PromptManager::new();
         let malicious_extra = "Extra instruction\u{E0041}\u{E0042}\u{E0043}hidden";
@@ -313,6 +311,75 @@ mod tests {
         assert!(!result.contains('\u{E0043}'));
         assert!(result.contains("Extra instruction"));
         assert!(result.contains("hidden"));
+    }
+
+    #[test]
+    fn prompt_contributions_are_not_retained() {
+        let manager = PromptManager::new();
+
+        let with_contribution = manager
+            .builder()
+            .with_prompt_extras([("operation".to_string(), "temporary instruction".to_string())])
+            .build();
+        let without_contribution = manager.builder().build();
+
+        assert!(with_contribution.contains("temporary instruction"));
+        assert!(!without_contribution.contains("temporary instruction"));
+    }
+
+    #[test]
+    fn composed_prompt_uses_contributions_instead_of_the_extension_catalog() {
+        let mut manager = PromptManager::new();
+        let working_dir = tempfile::tempdir().unwrap();
+
+        let prompt = manager.build_system_prompt(
+            working_dir.path(),
+            vec![(
+                "extensions".to_string(),
+                "# Extensions\n\n## developer".to_string(),
+            )],
+            GooseMode::Auto,
+        );
+
+        assert!(prompt.contains("## developer"));
+        assert!(!prompt.contains("No extensions are defined"));
+    }
+
+    #[test]
+    fn project_git_metadata_does_not_reach_system_prompt() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join(".git")).unwrap();
+        std::fs::create_dir(project.path().join("docs")).unwrap();
+        std::fs::write(
+            project.path().join(".git/config"),
+            "url = https://oauth2:PROMPT_SECRET@example.invalid/repo.git",
+        )
+        .unwrap();
+        std::fs::write(
+            project.path().join("docs/config.md"),
+            "legitimate project configuration",
+        )
+        .unwrap();
+        std::fs::write(
+            project.path().join(crate::hints::AGENTS_MD_FILENAME),
+            "project instructions\n@.git/config\n@docs/config.md",
+        )
+        .unwrap();
+        let ignore_patterns = build_gitignore(project.path());
+        let hints = load_hint_files(
+            project.path(),
+            &[crate::hints::AGENTS_MD_FILENAME.to_string()],
+            &ignore_patterns,
+        );
+
+        let prompt = PromptManager::new()
+            .builder()
+            .with_prompt_extras([("hints".to_string(), hints)])
+            .build();
+
+        assert!(prompt.contains("project instructions"));
+        assert!(prompt.contains("legitimate project configuration"));
+        assert!(!prompt.contains("PROMPT_SECRET"));
     }
 
     #[test]
@@ -436,7 +503,6 @@ mod tests {
                 "<instructions on how to use extension B (no resources)>",
                 false,
             ))
-            .with_extension_and_tool_counts(MAX_EXTENSIONS + 1, MAX_TOOLS + 1)
             .build();
 
         assert_snapshot!(system_prompt)
@@ -465,23 +531,30 @@ mod tests {
             )
             .await
             .unwrap();
+        let scheduler = crate::scheduler::Scheduler::new(
+            tmp_dir.path().join("schedules"),
+            session_manager.clone(),
+        )
+        .await
+        .unwrap();
         let context = PlatformExtensionContext {
             extension_manager: None,
             session_manager,
+            scheduler: Some(scheduler),
             session: Some(Arc::new(session)),
             use_login_shell_path: false,
         };
 
         let mut extensions: Vec<ExtensionInfo> = PLATFORM_EXTENSIONS
             .values()
-            .map(|def| {
-                let client = (def.client_factory)(context.clone());
+            .filter_map(|def| {
+                let client = (def.client_factory)(context.clone())?;
                 let instructions = client.get_instructions().unwrap_or_default();
                 let has_resources = client
                     .get_info()
                     .and_then(|i| i.capabilities.resources.as_ref())
                     .is_some();
-                ExtensionInfo::new(def.name, &instructions, has_resources)
+                Some(ExtensionInfo::new(def.name, &instructions, has_resources))
             })
             .collect();
 

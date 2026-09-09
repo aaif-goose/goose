@@ -3,11 +3,9 @@ use crate::recipes::print_recipe::{
     print_required_parameters_for_template,
 };
 use crate::recipes::search_recipe::load_recipe_file;
-use crate::recipes::secret_discovery::{discover_recipe_secrets, SecretRequirement};
 use anyhow::Result;
-use goose::config::Config;
 use goose::recipe::build_recipe::{
-    apply_values_to_parameters, build_recipe_from_template, RecipeError,
+    apply_values_to_parameters_without_file_expansion, build_recipe_from_template, RecipeError,
 };
 use goose::recipe::validate_recipe::parse_and_validate_parameters;
 use goose::recipe::Recipe;
@@ -30,92 +28,13 @@ pub fn load_recipe(recipe_name: &str, params: Vec<(String, String)>) -> Result<R
         params,
         Some(create_user_prompt_callback()),
     ) {
-        Ok(recipe) => {
-            let secret_requirements = discover_recipe_secrets(&recipe);
-            if let Err(e) = collect_missing_secrets(&secret_requirements) {
-                eprintln!(
-                    "Warning: Failed to collect some secrets: {}. Recipe will continue to run.",
-                    e
-                );
-            }
-            Ok(recipe)
-        }
+        Ok(recipe) => Ok(recipe),
         Err(RecipeError::MissingParams { parameters }) => Err(anyhow::anyhow!(
             "Please provide the following parameters in the command line: {}",
             missing_parameters_command_line(parameters)
         )),
         Err(e) => Err(anyhow::anyhow!(e.to_string())),
     }
-}
-
-/// Collects missing secrets from the user interactively
-///
-/// This function checks if each required secret exists in the keyring.
-/// For missing secrets, it prompts the user interactively and stores them
-/// using the scoped key to prevent collisions.
-///
-/// # Arguments
-/// * `requirements` - Vector of SecretRequirement objects to collect
-///
-/// # Returns
-/// Result indicating success or failure of the collection process
-pub fn collect_missing_secrets(requirements: &[SecretRequirement]) -> Result<()> {
-    if requirements.is_empty() {
-        return Ok(());
-    }
-
-    let config = Config::global();
-    let mut missing_secrets = Vec::new();
-
-    for req in requirements {
-        match config.get_secret::<String>(&req.key) {
-            Ok(_) => continue, // Secret exists
-            Err(_) => missing_secrets.push(req),
-        }
-    }
-
-    if missing_secrets.is_empty() {
-        return Ok(());
-    }
-
-    println!(
-        "🔐 This recipe uses {} secret(s) that are not yet configured (press ESC to skip any that are optional):",
-        missing_secrets.len()
-    );
-
-    for req in &missing_secrets {
-        println!("\n📋 Extension: {}", req.extension_name);
-        println!("🔑 Secret: {}", req.key);
-
-        let value = cliclack::password(format!(
-            "Enter {} ({}) - press ESC to skip",
-            req.key,
-            req.description()
-        ))
-        .mask('▪')
-        .interact()
-        .unwrap_or_else(|_| String::new());
-
-        if !value.trim().is_empty() {
-            if let Err(e) = config.set_secret(&req.key, &value) {
-                println!("⚠️  Failed to store secret in secure storage: {}. Secret available for this session only.", e);
-                println!(
-                    "   Consider setting {} as an environment variable for future use.",
-                    req.key
-                );
-            } else {
-                println!("✅ Secret stored securely for {}", req.extension_name);
-            }
-        } else {
-            println!("⏭️  Skipped {} for {}", req.key, req.extension_name);
-        }
-    }
-
-    if !missing_secrets.is_empty() {
-        println!("\n🎉 Secret collection complete! Recipe execution will now continue.");
-    }
-
-    Ok(())
 }
 
 pub fn render_recipe_as_yaml(recipe_name: &str, params: Vec<(String, String)>) -> Result<()> {
@@ -140,7 +59,7 @@ pub fn explain_recipe(recipe_name: &str, params: Vec<(String, String)>) -> Resul
         parse_and_validate_parameters(recipe_file_content, Some(recipe_dir_str.clone()))?;
     let recipe_parameters = recipe_template.parameters.clone();
 
-    let (params_for_template, missing_params) = apply_values_to_parameters(
+    let (params_for_template, missing_params) = apply_values_to_parameters_without_file_expansion(
         &params,
         recipe_parameters,
         &recipe_dir_str,
@@ -154,6 +73,7 @@ pub fn explain_recipe(recipe_name: &str, params: Vec<(String, String)>) -> Resul
 
 #[cfg(test)]
 mod tests {
+    use goose::recipe::build_recipe::apply_values_to_parameters_without_file_expansion;
     use goose::recipe::{RecipeParameterInputType, RecipeParameterRequirement};
 
     use crate::recipes::recipe::load_recipe;
@@ -197,5 +117,33 @@ mod tests {
             ));
             assert_eq!(param.description, "A test parameter");
         }
+    }
+
+    #[test]
+    fn explanation_preserves_file_parameter_path_without_reading_contents() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("does-not-exist.txt");
+        let parameters = vec![goose::recipe::RecipeParameter {
+            key: "input_file".to_string(),
+            input_type: RecipeParameterInputType::File,
+            requirement: RecipeParameterRequirement::Required,
+            description: "Input file".to_string(),
+            default: None,
+            options: None,
+        }];
+
+        let (values, missing) = apply_values_to_parameters_without_file_expansion(
+            &[("input_file".to_string(), file_path.display().to_string())],
+            Some(parameters),
+            temp_dir.path().to_str().unwrap(),
+            None::<fn(&str, &str) -> anyhow::Result<String>>,
+        )
+        .unwrap();
+
+        assert!(missing.is_empty());
+        assert_eq!(
+            values.get("input_file"),
+            Some(&file_path.display().to_string())
+        );
     }
 }

@@ -11,13 +11,16 @@ use crate::providers::claude_acp::{CLAUDE_ACP_BINARY, CLAUDE_ACP_PROVIDER_NAME};
 use crate::providers::codex_acp::CODEX_ACP_PROVIDER_NAME;
 use crate::providers::copilot_acp::{COPILOT_ACP_BINARY, COPILOT_ACP_PROVIDER_NAME};
 use crate::providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME;
+use crate::providers::gemini_oauth::TokenCache as GeminiOAuthTokenCache;
 use crate::providers::google::{GOOGLE_API_HOST, GOOGLE_PROVIDER_NAME};
 use crate::providers::huggingface::HuggingFaceProvider;
 use crate::providers::huggingface_auth;
+use crate::providers::kimicode;
 use crate::providers::ollama::OLLAMA_PROVIDER_NAME;
 use crate::providers::openai::{OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_PROVIDER_NAME};
 use crate::providers::pi_acp::{PI_ACP_BINARY, PI_ACP_PROVIDER_NAME};
 use crate::providers::xai_oauth::TokenCache as XaiOAuthTokenCache;
+use goose_providers::azure_foundry::{endpoint_kind, EndpointKind, AZURE_FOUNDRY_PROVIDER_NAME};
 
 pub fn openai_inventory() -> InventoryRegistration {
     InventoryRegistration::new(true, || {
@@ -63,6 +66,52 @@ pub fn openai_inventory() -> InventoryRegistration {
             .get_secret::<serde_json::Value>("OPENAI_API_KEY")
             .is_ok()
     })
+}
+
+pub fn azure_foundry_inventory() -> InventoryRegistration {
+    InventoryRegistration::new(true, || {
+        let config = Config::global();
+        let mut identity =
+            InventoryIdentityInput::new(AZURE_FOUNDRY_PROVIDER_NAME, AZURE_FOUNDRY_PROVIDER_NAME);
+        if let Ok(endpoint) = config.get_param::<String>("AZURE_FOUNDRY_ENDPOINT") {
+            identity = identity.with_public("endpoint", endpoint);
+        }
+        if let Ok(api_version) = config.get_param::<String>("AZURE_FOUNDRY_API_VERSION") {
+            identity = identity.with_public("api_version", api_version);
+        }
+        if let Ok(model) = config.get_param::<String>("AZURE_FOUNDRY_MODEL") {
+            identity = identity.with_public("model", model);
+        }
+        if let Some(api_key) = config_secret_value(config, "AZURE_FOUNDRY_API_KEY") {
+            identity = identity.with_secret("api_key", api_key);
+        }
+        if let Some(ad_token) = config_secret_value(config, "AZURE_FOUNDRY_AD_TOKEN") {
+            identity = identity.with_secret("ad_token", ad_token);
+        }
+        Ok(identity)
+    })
+    .with_configured(|| azure_foundry_configured(Config::global()))
+}
+
+fn azure_foundry_configured(config: &Config) -> bool {
+    azure_foundry_configured_values(
+        config
+            .get_param::<String>("AZURE_FOUNDRY_ENDPOINT")
+            .ok()
+            .as_deref(),
+        config
+            .get_param::<String>("AZURE_FOUNDRY_MODEL")
+            .ok()
+            .as_deref(),
+    )
+}
+
+fn azure_foundry_configured_values(endpoint: Option<&str>, model: Option<&str>) -> bool {
+    let Some(endpoint) = endpoint.filter(|endpoint| !endpoint.trim().is_empty()) else {
+        return false;
+    };
+    endpoint_kind(endpoint) != EndpointKind::Maas
+        || model.is_some_and(|model| !model.trim().is_empty())
 }
 
 pub fn anthropic_inventory() -> InventoryRegistration {
@@ -146,6 +195,10 @@ pub fn refresh_only() -> InventoryRegistration {
     }
 }
 
+pub fn kimi_code_inventory() -> InventoryRegistration {
+    refresh_only().with_configured(kimicode::has_configured_token)
+}
+
 pub fn chatgpt_codex_inventory() -> InventoryRegistration {
     InventoryRegistration {
         supports_refresh: false,
@@ -155,9 +208,18 @@ pub fn chatgpt_codex_inventory() -> InventoryRegistration {
     .with_configured(|| ChatGptCodexTokenCache::new().has_token())
 }
 
-pub fn xai_oauth_inventory() -> InventoryRegistration {
+pub fn gemini_oauth_inventory() -> InventoryRegistration {
     InventoryRegistration {
         supports_refresh: false,
+        identity: default_inventory_identity_resolver(),
+        configured: None,
+    }
+    .with_configured(|| GeminiOAuthTokenCache::new().has_token())
+}
+
+pub fn xai_oauth_inventory() -> InventoryRegistration {
+    InventoryRegistration {
+        supports_refresh: true,
         identity: default_inventory_identity_resolver(),
         configured: None,
     }
@@ -194,5 +256,99 @@ pub fn copilot_acp_inventory() -> InventoryRegistration {
 }
 
 pub fn pi_acp_inventory() -> InventoryRegistration {
-    acp_inventory(PI_ACP_PROVIDER_NAME, PI_ACP_BINARY, false)
+    acp_inventory(PI_ACP_PROVIDER_NAME, PI_ACP_BINARY, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::paths::Paths;
+    use chrono::Utc;
+
+    #[test]
+    fn azure_foundry_maas_requires_a_model_to_be_configured() {
+        assert!(!azure_foundry_configured_values(
+            Some("https://deployment.models.ai.azure.com"),
+            None,
+        ));
+        assert!(!azure_foundry_configured_values(
+            Some("https://deployment.models.ai.azure.com"),
+            Some("  "),
+        ));
+        assert!(azure_foundry_configured_values(
+            Some("https://deployment.models.ai.azure.com"),
+            Some("Phi-4"),
+        ));
+        assert!(azure_foundry_configured_values(
+            Some("https://hub.services.ai.azure.com/api/projects/project"),
+            None,
+        ));
+        assert!(azure_foundry_configured_values(
+            Some("https://hub.services.ai.azure.com"),
+            None,
+        ));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn gemini_oauth_inventory_configured_uses_token_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root_path.as_str()))]);
+
+        let registration = gemini_oauth_inventory();
+        let configured = registration
+            .configured
+            .expect("Gemini OAuth should define configured resolver");
+
+        assert!(!configured());
+
+        let cache_path = Paths::in_config_dir("gemini_oauth/tokens.json");
+        std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            cache_path,
+            serde_json::to_string(&serde_json::json!({
+                "project_id": "test-project",
+                "token": {
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                    "expires_at": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+                },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(configured());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn kimi_code_inventory_configured_uses_token_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root_path.as_str()))]);
+
+        let registration = kimi_code_inventory();
+        let configured = registration
+            .configured
+            .expect("Kimi Code should define configured resolver");
+
+        assert!(!configured());
+
+        let cache_path = Paths::in_config_dir("kimicode/token.json");
+        std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            cache_path,
+            serde_json::to_string(&serde_json::json!({
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "expires_at": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(configured());
+    }
 }

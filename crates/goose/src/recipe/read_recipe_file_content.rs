@@ -12,27 +12,28 @@ pub struct RecipeFile {
 pub fn read_recipe_file<P: AsRef<Path>>(recipe_path: P) -> Result<RecipeFile> {
     let raw_path = recipe_path.as_ref();
     let path = convert_path_with_tilde_expansion(raw_path);
-
-    let content = fs::read_to_string(&path)
-        .map_err(|e| anyhow!("Failed to read recipe file {}: {}", path.display(), e))?;
-
-    let canonical = path.canonicalize().map_err(|e| {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let parent_dir = parent.canonicalize().map_err(|e| {
         anyhow!(
-            "Failed to resolve absolute path for {}: {}",
-            path.display(),
+            "Failed to resolve recipe directory {}: {}",
+            parent.display(),
             e
         )
     })?;
-
-    let parent_dir = canonical
-        .parent()
-        .ok_or_else(|| anyhow!("Resolved path has no parent: {}", canonical.display()))?
-        .to_path_buf();
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow!("Recipe path has no file name: {}", path.display()))?;
+    let content = crate::skills::read_source_file(&parent_dir, Path::new(file_name))
+        .map_err(|e| anyhow!("Failed to read recipe file {}: {}", path.display(), e))?;
+    let file_path = parent_dir.join(file_name);
 
     Ok(RecipeFile {
         content,
         parent_dir,
-        file_path: canonical,
+        file_path,
     })
 }
 
@@ -98,5 +99,32 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Failed to read parameter file"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_recipe_file_rejects_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_recipe = outside.path().join("outside.yaml");
+        std::fs::write(
+            &outside_recipe,
+            "title: Outside\ndescription: Outside\ninstructions: Untrusted",
+        )
+        .unwrap();
+        let linked_recipe = temp_dir.path().join("linked.yaml");
+        std::os::unix::fs::symlink(outside_recipe, &linked_recipe).unwrap();
+
+        assert!(read_recipe_file(linked_recipe).is_err());
+    }
+
+    #[test]
+    fn recipe_above_default_tool_response_threshold_is_allowed() {
+        let temp_dir = TempDir::new().unwrap();
+        let recipe_path = temp_dir.path().join("large.yaml");
+        let content = "x".repeat(200_001);
+        std::fs::write(&recipe_path, &content).unwrap();
+
+        assert_eq!(read_recipe_file(recipe_path).unwrap().content, content);
     }
 }

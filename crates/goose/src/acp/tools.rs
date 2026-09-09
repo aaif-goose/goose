@@ -1,5 +1,5 @@
 use rmcp::{
-    model::{CallToolResult, Meta},
+    model::{CallToolResult, MetaObject},
     object,
 };
 
@@ -12,7 +12,7 @@ pub trait AcpAwareToolMeta {
 
 impl AcpAwareToolMeta for CallToolResult {
     fn with_acp_aware_meta(self) -> Self {
-        self.with_meta(Some(Meta(object!({ACP_AWARE_META_KEY: true}))))
+        self.with_meta(Some(MetaObject(object!({ACP_AWARE_META_KEY: true}))))
     }
 
     fn is_acp_aware(&self) -> bool {

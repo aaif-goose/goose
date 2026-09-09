@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use crate::conversation::message::{Message, MessageContent};
 
+const ACTION_REQUIRED_STREAM_CAPACITY: usize = 8;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ElicitationOutcome {
     Accept(Value),
@@ -50,17 +52,11 @@ pub(crate) struct ActionRequiredManager {
 }
 
 impl ActionRequiredManager {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pending: Arc::new(RwLock::new(HashMap::new())),
             action_required_senders: Mutex::new(HashMap::new()),
         }
-    }
-
-    pub(crate) fn global() -> &'static Self {
-        static INSTANCE: once_cell::sync::Lazy<ActionRequiredManager> =
-            once_cell::sync::Lazy::new(ActionRequiredManager::new);
-        &INSTANCE
     }
 
     pub(crate) async fn request_and_wait(
@@ -71,6 +67,20 @@ impl ActionRequiredManager {
         schema: Value,
         timeout_duration: Duration,
     ) -> Result<ElicitationOutcome> {
+        let sender = self
+            .action_required_senders
+            .lock()
+            .await
+            .get(&(session_id.clone(), tool_call_request_id.clone()))
+            .cloned();
+
+        let Some(sender) = sender else {
+            return Err(anyhow::anyhow!(
+                "Tool call request not found for elicitation: {}",
+                tool_call_request_id
+            ));
+        };
+
         let id = Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let pending_request = PendingRequest {
@@ -87,27 +97,14 @@ impl ActionRequiredManager {
         let action_required_message = Message::assistant().with_content(
             MessageContent::action_required_elicitation(id.clone(), message, schema),
         );
-
-        let sender = self
-            .action_required_senders
-            .lock()
-            .await
-            .get(&(session_id.clone(), tool_call_request_id.clone()))
-            .cloned();
-
-        let Some(sender) = sender else {
+        if let Err(error) = sender.try_send(action_required_message) {
             self.pending.write().await.remove(&id);
+            let message = match error {
+                mpsc::error::TrySendError::Full(_) => "stream is full",
+                mpsc::error::TrySendError::Closed(_) => "stream closed",
+            };
             return Err(anyhow::anyhow!(
-                "Tool call request not found for elicitation: {}",
-                tool_call_request_id
-            ));
-        };
-
-        if sender.send(action_required_message).await.is_err() {
-            self.pending.write().await.remove(&id);
-            return Err(anyhow::anyhow!(
-                "Tool call action-required stream closed: {}",
-                tool_call_request_id
+                "Tool call action-required {message}: {tool_call_request_id}"
             ));
         }
 
@@ -201,7 +198,7 @@ impl ActionRequiredManager {
         session_id: String,
         tool_call_request_id: String,
     ) -> mpsc::Receiver<Message> {
-        let (tx, rx) = mpsc::channel(8);
+        let (tx, rx) = mpsc::channel(ACTION_REQUIRED_STREAM_CAPACITY);
         self.action_required_senders
             .lock()
             .await
@@ -582,5 +579,79 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Tool call action-required stream closed"));
+    }
+
+    #[tokio::test]
+    async fn full_tool_call_stream_rejects_without_pending_state() {
+        let manager = Arc::new(ActionRequiredManager::new());
+        let mut action_required_rx = manager
+            .register_action_required_stream("session-a".to_string(), "tool-call-a".to_string())
+            .await;
+
+        for index in 0..ACTION_REQUIRED_STREAM_CAPACITY {
+            let result = manager
+                .request_and_wait(
+                    "session-a".to_string(),
+                    "tool-call-a".to_string(),
+                    format!("Fill queue {index}"),
+                    json!({ "type": "object" }),
+                    Duration::ZERO,
+                )
+                .await;
+            assert!(result.is_err());
+        }
+
+        assert!(manager.pending.read().await.is_empty());
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            manager.request_and_wait(
+                "session-a".to_string(),
+                "tool-call-a".to_string(),
+                "Rejected while queue is full".to_string(),
+                json!({ "type": "object" }),
+                Duration::from_secs(5),
+            ),
+        )
+        .await
+        .expect("full-stream rejection must not wait for response timeout");
+
+        assert!(result
+            .expect_err("full stream should reject another elicitation")
+            .to_string()
+            .contains("Tool call action-required stream is full"));
+        assert!(manager.pending.read().await.is_empty());
+
+        recv_elicitation_message(&mut action_required_rx).await;
+        let waiter = {
+            let manager = manager.clone();
+            tokio::spawn(async move {
+                manager
+                    .request_and_wait(
+                        "session-a".to_string(),
+                        "tool-call-a".to_string(),
+                        "Admitted after capacity is available".to_string(),
+                        json!({ "type": "object" }),
+                        Duration::from_secs(5),
+                    )
+                    .await
+            })
+        };
+
+        for _ in 1..ACTION_REQUIRED_STREAM_CAPACITY {
+            recv_elicitation_message(&mut action_required_rx).await;
+        }
+        let admitted = recv_elicitation_message(&mut action_required_rx).await;
+        manager
+            .claim_response("session-a", &elicitation_id(&admitted))
+            .await
+            .unwrap()
+            .submit(ElicitationOutcome::Accept(json!({ "answer": "accepted" })))
+            .unwrap();
+
+        assert_eq!(
+            waiter.await.unwrap().unwrap(),
+            ElicitationOutcome::Accept(json!({ "answer": "accepted" }))
+        );
     }
 }

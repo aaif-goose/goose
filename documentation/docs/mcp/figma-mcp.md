@@ -22,7 +22,7 @@ The MCP Server requires a Dev or Full seat on Professional, Organization, or Ent
     [Launch the installer](goose://extension?type=streamable_http&url=http%3A%2F%2F127.0.0.1%3A3845%2Fmcp&id=figma&name=Figma&description=Convert%20Figma%20designs%20into%20code%20and%20extract%20design%20context)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-    Use `goose configure` to add a `Remote Extension (Streaming HTTP)` extension type with:
+    Use `goose configure` to add a `Remote Extension (Streamable HTTP)` extension type with:
     
     **Endpoint URL**
     

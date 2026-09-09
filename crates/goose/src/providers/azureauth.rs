@@ -59,6 +59,7 @@ struct TokenResponse {
 #[derive(Debug)]
 pub struct AzureAuth {
     credentials: AzureCredentials,
+    resource: String,
     cached_token: Arc<RwLock<Option<CachedToken>>>,
 }
 
@@ -73,6 +74,18 @@ impl AzureAuth {
     /// # Returns
     /// * `Result<Self, AuthError>` - A new AzureAuth instance or an error if initialization fails
     pub fn new(api_key: Option<String>, ad_token: Option<String>) -> Result<Self, AuthError> {
+        Self::new_with_resource(
+            api_key,
+            ad_token,
+            "https://cognitiveservices.azure.com".to_string(),
+        )
+    }
+
+    pub fn new_with_resource(
+        api_key: Option<String>,
+        ad_token: Option<String>,
+        resource: String,
+    ) -> Result<Self, AuthError> {
         let credentials = match (ad_token, api_key) {
             (Some(token), _) => AzureCredentials::BearerToken(token),
             (None, Some(key)) => AzureCredentials::ApiKey(key),
@@ -81,6 +94,7 @@ impl AzureAuth {
 
         Ok(Self {
             credentials,
+            resource,
             cached_token: Arc::new(RwLock::new(None)),
         })
     }
@@ -88,6 +102,10 @@ impl AzureAuth {
     /// Returns the type of credentials being used.
     pub fn credential_type(&self) -> &AzureCredentials {
         &self.credentials
+    }
+
+    pub async fn invalidate_token(&self) {
+        *self.cached_token.write().await = None;
     }
 
     /// Retrieves a valid authentication token.
@@ -137,12 +155,7 @@ impl AzureAuth {
 
         let az = if cfg!(windows) { "az.cmd" } else { "az" };
         let output = tokio::process::Command::new(az)
-            .args([
-                "account",
-                "get-access-token",
-                "--resource",
-                "https://cognitiveservices.azure.com",
-            ])
+            .args(["account", "get-access-token", "--resource", &self.resource])
             .set_no_window()
             .output()
             .await

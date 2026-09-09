@@ -38,6 +38,27 @@ const i18n = defineMessages({
 type CommandItemType = 'Builtin' | 'Recipe' | 'Skill' | 'Agent';
 type DisplayItemType = CommandItemType | 'Directory' | 'File';
 
+const MAX_SCAN_OPERATIONS = 100;
+const MAX_SCAN_RESULTS = 500;
+
+interface DirectoryScanBudget {
+  remainingOperations: number;
+  remainingResults: number;
+  isCancelled: () => boolean;
+}
+
+const reserveScanOperation = (budget: DirectoryScanBudget): boolean => {
+  if (budget.isCancelled() || budget.remainingOperations === 0) return false;
+  budget.remainingOperations--;
+  return true;
+};
+
+const reserveScanResult = (budget: DirectoryScanBudget): boolean => {
+  if (budget.isCancelled() || budget.remainingResults === 0) return false;
+  budget.remainingResults--;
+  return true;
+};
+
 const typeOrder: Record<DisplayItemType, number> = {
   Agent: 0,
   Directory: 1,
@@ -165,12 +186,19 @@ const MentionPopover = forwardRef<
     const currentWorkingDir = workingDir ?? getInitialWorkingDir();
 
     const scanDirectoryFromRoot = useCallback(
-      async (dirPath: string, relativePath = '', depth = 0): Promise<DisplayItem[]> => {
+      async (
+        dirPath: string,
+        budget: DirectoryScanBudget,
+        relativePath = '',
+        depth = 0
+      ): Promise<DisplayItem[]> => {
         // Increase depth limit for better file discovery
-        if (depth > 5) return [];
+        if (depth > 5 || budget.isCancelled() || budget.remainingResults === 0) return [];
 
         try {
+          if (!reserveScanOperation(budget)) return [];
           const items = await window.electron.listFiles(dirPath);
+          if (budget.isCancelled()) return [];
           const results: DisplayItem[] = [];
 
           // Common directories to prioritize or skip
@@ -231,6 +259,7 @@ const MentionPopover = forwardRef<
           const itemLimit = depth === 0 ? 50 : depth === 1 ? 40 : 30;
 
           for (const item of sortedItems.slice(0, itemLimit)) {
+            if (budget.isCancelled() || budget.remainingResults === 0) return results;
             const fullPath = `${dirPath}/${item}`;
             const itemRelativePath = relativePath ? `${relativePath}/${item}` : item;
 
@@ -328,6 +357,7 @@ const MentionPopover = forwardRef<
 
             // If it has a known file extension, treat it as a file
             if (hasExtension && ext && commonExtensions.includes(ext)) {
+              if (!reserveScanResult(budget)) return results;
               results.push({
                 extra: fullPath,
                 name: item,
@@ -347,6 +377,7 @@ const MentionPopover = forwardRef<
               'makefile',
             ];
             if (!hasExtension && knownFiles.includes(item.toLowerCase())) {
+              if (!reserveScanResult(budget)) return results;
               results.push({
                 extra: fullPath,
                 name: item,
@@ -358,8 +389,11 @@ const MentionPopover = forwardRef<
 
             // Otherwise, try to determine if it's a directory
             try {
+              if (!reserveScanOperation(budget)) return results;
               await window.electron.listFiles(fullPath);
+              if (budget.isCancelled()) return results;
 
+              if (!reserveScanResult(budget)) return results;
               results.push({
                 name: item,
                 extra: fullPath,
@@ -369,7 +403,12 @@ const MentionPopover = forwardRef<
 
               // Recursively scan directories more aggressively
               if (depth < 4 || priorityDirs.includes(item)) {
-                const subFiles = await scanDirectoryFromRoot(fullPath, itemRelativePath, depth + 1);
+                const subFiles = await scanDirectoryFromRoot(
+                  fullPath,
+                  budget,
+                  itemRelativePath,
+                  depth + 1
+                );
                 results.push(...subFiles);
               }
             } catch {
@@ -498,7 +537,11 @@ const MentionPopover = forwardRef<
             // Fetch agents from server and scan files in parallel
             const [agentItems, scannedFiles] = await Promise.all([
               listAgentMentionItems(currentWorkingDir, sessionId ?? undefined).catch(() => []),
-              scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath()),
+              scanDirectoryFromRoot(currentWorkingDir || getDefaultStartPath(), {
+                remainingOperations: MAX_SCAN_OPERATIONS,
+                remainingResults: MAX_SCAN_RESULTS,
+                isCancelled: () => cancelled,
+              }),
             ]);
             if (cancelled) return;
             setItems([...agentItems, ...scannedFiles]);

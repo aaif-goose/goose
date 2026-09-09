@@ -28,7 +28,7 @@ A goose agent with the Project Coordinator role will assign roles to other agent
 Working with a team of AI agents on a task is a game changer. Instead of getting confused as to how to improve your prompt engineering on your own or work across sessions manually, tools like Cliff's gooseTeam or Aaron's Agent Communication Protocol help us make sure AI agents like goose are doing the work for us as efficiently as possible. The possibilities feel endless!
 
 ## Get Your Contribution Featured
-Hopefully this contribution inspired you as much as it inspired our community. If you have a goose contribution or project you'd like to share with our community, join our [Discord](https://discord.gg/goose-oss) and share your work in the **#share-your-work** channel. You may just be featured on our livestream or get a cool prize. 👀 You can also star goose on GitHub or follow us on social media so you never miss an update from us. Until next time!
+Hopefully this contribution inspired you as much as it inspired our community. If you have a goose contribution or project you'd like to share with our community, join our [Discord](https://discord.gg/n8R5VaWDAn) and share your work in the **#share-your-work** channel. You may just be featured on our livestream or get a cool prize. 👀 You can also star goose on GitHub or follow us on social media so you never miss an update from us. Until next time!
 
 
 <head>

@@ -36,15 +36,3 @@ export function getCachedTools(
   cache.set(key, promise);
   return promise;
 }
-
-export function clearToolsCache(sessionId?: string): void {
-  if (!sessionId) {
-    cache.clear();
-    return;
-  }
-  for (const key of cache.keys()) {
-    if (key.startsWith(`${sessionId}:`)) {
-      cache.delete(key);
-    }
-  }
-}

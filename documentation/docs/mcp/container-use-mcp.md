@@ -44,9 +44,6 @@ You'll need [Docker](https://www.docker.com/) installed on your system. If you w
             description="Run container automation with container-use"
             command="npx"
             args={["-y", "mcp-remote", "https://container-use.com/mcp"]}
-            cliCommand="npx -y mcp-remote https://container-use.com/mcp"
-            timeout={300}
-            note="Requires Node.js and Docker installed; see [container-use.com/quickstart](https://container-use.com/quickstart)."
         />
     </TabItem>
       <TabItem value="cli" label="goose CLI">
@@ -70,9 +67,6 @@ You'll need [Docker](https://www.docker.com/) installed on your system. If you w
             description="Run container automation with container-use"
             command="container-use"
             args={["stdio"]}
-            cliCommand="container-use stdio"
-            timeout={300}
-            note="Requires Docker installed; see [container-use.com/quickstart](https://container-use.com/quickstart)."
         />
     </TabItem>
       <TabItem value="cli" label="goose CLI">

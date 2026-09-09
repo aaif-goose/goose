@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildConnectSrc, shouldUpgradeInsecureRequests, buildCSP } from '../csp';
-import type { ExternalGoosedConfig } from '../settings';
+import type { ExternalBackendConfig } from '../settings';
 
 describe('buildConnectSrc', () => {
   it('includes default sources when no external backend is configured', () => {
@@ -11,7 +11,7 @@ describe('buildConnectSrc', () => {
   });
 
   it('includes external backend origin when enabled', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'http://dev.company.net:12604',
       secret: 'test',
@@ -22,7 +22,7 @@ describe('buildConnectSrc', () => {
   });
 
   it('includes external secure WebSocket origin for HTTPS backends', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'https://secure.company.net:12604',
       secret: 'test',
@@ -33,7 +33,7 @@ describe('buildConnectSrc', () => {
   });
 
   it('does not include external origin when disabled', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: false,
       url: 'http://dev.company.net:12604',
       secret: 'test',
@@ -43,7 +43,7 @@ describe('buildConnectSrc', () => {
   });
 
   it('handles invalid URLs gracefully', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'not-a-valid-url',
       secret: 'test',
@@ -60,7 +60,7 @@ describe('shouldUpgradeInsecureRequests', () => {
   });
 
   it('returns true when external backend is disabled', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: false,
       url: 'http://dev.company.net:12604',
       secret: 'test',
@@ -69,7 +69,7 @@ describe('shouldUpgradeInsecureRequests', () => {
   });
 
   it('returns false when external backend uses HTTP', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'http://dev.company.net:12604',
       secret: 'test',
@@ -78,7 +78,7 @@ describe('shouldUpgradeInsecureRequests', () => {
   });
 
   it('returns true when external backend uses HTTPS', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'https://dev.company.net:12604',
       secret: 'test',
@@ -87,7 +87,7 @@ describe('shouldUpgradeInsecureRequests', () => {
   });
 
   it('returns true for invalid URLs', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'not-a-url',
       secret: 'test',
@@ -96,7 +96,7 @@ describe('shouldUpgradeInsecureRequests', () => {
   });
 
   it('returns true when URL is empty', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: '',
       secret: 'test',
@@ -112,7 +112,7 @@ describe('buildCSP', () => {
   });
 
   it('includes upgrade-insecure-requests with HTTPS external backend', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'https://secure.company.net:12604',
       secret: 'test',
@@ -123,7 +123,7 @@ describe('buildCSP', () => {
   });
 
   it('excludes upgrade-insecure-requests with HTTP external backend', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'http://dev.company.net:12604',
       secret: 'test',
@@ -134,7 +134,7 @@ describe('buildCSP', () => {
   });
 
   it('always includes core directives', () => {
-    const config: ExternalGoosedConfig = {
+    const config: ExternalBackendConfig = {
       enabled: true,
       url: 'http://dev.company.net:12604',
       secret: 'test',

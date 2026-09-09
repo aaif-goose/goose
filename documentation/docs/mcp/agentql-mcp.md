@@ -16,7 +16,7 @@ This tutorial covers how to add the [AgentQL MCP Server](https://github.com/tiny
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=agentql-mcp&id=agentql&name=AgentQL&description=Transform%20unstructured%20web%20content%20into%20structured%20data&env=AGENTQL_API_KEY%3DAgentQL%20API%20Key)
+  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=agentql-mcp&id=agentql-mcp&name=AgentQL&description=Transform%20unstructured%20web%20content%20into%20structured%20data&env=AGENTQL_API_KEY%3DAgentQL%20API%20Key)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
@@ -40,7 +40,7 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
-    extensionId="agentql"
+    extensionId="agentql-mcp"
     extensionName="AgentQL"
     description="Transform unstructured web content into structured data"
     command="npx"

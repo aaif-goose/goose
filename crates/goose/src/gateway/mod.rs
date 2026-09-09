@@ -2,13 +2,11 @@ pub mod handler;
 pub mod manager;
 pub mod pairing;
 pub mod telegram;
-pub mod telegram_format;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
-use utoipa::ToSchema;
 
 use handler::GatewayHandler;
 
@@ -51,7 +49,7 @@ pub struct Attachment {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OutgoingMessage {
     Text { body: String },
@@ -66,7 +64,7 @@ pub enum PairingState {
     Paired { session_id: String, paired_at: i64 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayConfig {
     pub gateway_type: String,
     pub platform_config: serde_json::Value,

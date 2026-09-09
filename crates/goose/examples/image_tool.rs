@@ -4,9 +4,9 @@ use dotenvy::dotenv;
 use goose::conversation::message::Message;
 use goose::providers::anthropic::ANTHROPIC_DEFAULT_MODEL;
 use goose::providers::create_with_named_model;
-use goose::providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
-use rmcp::model::{CallToolRequestParams, Content, Tool};
+use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
+use rmcp::model::{CallToolRequestParams, ContentBlock, Tool};
 use rmcp::object;
 use std::fs;
 use std::sync::Arc;
@@ -55,10 +55,9 @@ async fn main() -> Result<()> {
             ),
             Message::user().with_tool_response(
                 "000",
-                Ok(rmcp::model::CallToolResult::success(vec![Content::image(
-                    base64_image,
-                    "image/png",
-                )])),
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::image(base64_image, "image/png"),
+                ])),
             ),
         ];
 

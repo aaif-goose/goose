@@ -20,7 +20,7 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use rmcp::model::{CallToolRequestParams, CallToolResult, Content};
+use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 use serde_json::{json, Map, Value};
 
 use crate::conversation::message::Message;
@@ -179,7 +179,7 @@ pub fn convert(content: &str) -> Result<String> {
                 msg.created = created;
                 msg = msg.with_tool_response(
                     call_id,
-                    Ok(CallToolResult::success(vec![Content::text(output)])),
+                    Ok(CallToolResult::success(vec![ContentBlock::text(output)])),
                 );
                 messages.push(msg);
             }
@@ -216,7 +216,7 @@ pub fn convert(content: &str) -> Result<String> {
                 resp.created = created;
                 resp = resp.with_tool_response(
                     id,
-                    Ok(CallToolResult::success(vec![Content::text(format!(
+                    Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                         "[web_search {}]",
                         status
                     ))])),
@@ -339,6 +339,34 @@ mod tests {
             .unwrap()
             .iter()
             .any(|c| c["type"] == "toolResponse"));
+    }
+
+    #[test]
+    fn sanitizes_unicode_tags_in_function_call_output() {
+        let jsonl = [
+            serde_json::json!({
+                "timestamp": "2026-05-22T13:37:22Z",
+                "type": "session_meta",
+                "payload": {"id": "s", "cwd": "/w"}
+            })
+            .to_string(),
+            serde_json::json!({
+                "timestamp": "2026-05-22T13:37:23Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": "visible\u{E0041}世界"
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+
+        let json = convert(&jsonl).unwrap();
+
+        assert!(json.contains("visible世界"));
+        assert!(!json.contains('\u{E0041}'));
     }
 
     #[test]

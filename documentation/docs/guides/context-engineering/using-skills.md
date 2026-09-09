@@ -7,21 +7,41 @@ sidebar_label: Agent Skills
 Skills are reusable sets of instructions and resources that teach goose how to perform specific tasks. A skill can range from a simple checklist to a detailed workflow with domain expertise, and can include supporting files like scripts or templates. Example use cases include deployment procedures, code review checklists, and API integration guides.
 
 :::info
-This functionality requires the built-in [Summon extension](/docs/mcp/summon-mcp), available in v1.25.0+.
+This functionality uses the built-in Skills platform extension, which is enabled by default.
 :::
 
-When a session starts, goose adds any skills that it discovers to its instructions. During the session, goose automatically loads a skill when:
+When a session starts, goose adds discovered skill names and descriptions to its instructions. During the session, goose can load a skill's full instructions when:
 - Your request clearly matches a skill's purpose
 - You explicitly ask to use a skill, for example:
   - "Use the code-review skill to review this PR"
   - "Follow the new-service skill to set up the auth service"
   - "Apply the deployment skill"
 
-You can also ask goose what skills are available, or use the CLI `/skills` command to list available skills and load one or more by name (e.g. `/skills code-review edge-case-finder`).
+You can also ask goose what skills are available, run `goose skills list`, or use the CLI `/skills` command to list available skills and load one or more by name:
+
+```bash
+/skills code-review edge-case-finder
+```
 
 :::info Claude Compatibility
 goose skills are compatible with Claude Desktop and other [agents that support Agent Skills](https://agentskills.io/home#adoption).
 :::
+
+## Built-in Skills
+
+goose ships with a built-in skill that is always available without any installation:
+
+| Skill | Description |
+|-------|-------------|
+| `web-search` | Search the web using DuckDuckGo (no API key), Tavily, or SearXNG, and extract page content. |
+
+For browser automation — navigating pages, clicking, filling forms, and capturing screenshots — install the upstream-maintained browser-use skill:
+
+```bash
+browser-use skill install
+```
+
+This gives you the full, up-to-date skill from the browser-use project, including remote browser support, the AX-tree element selection strategy, and recording tools.
 
 ## Skill Locations
 

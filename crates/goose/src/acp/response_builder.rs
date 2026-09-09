@@ -1,6 +1,7 @@
-use crate::agents::ExtensionLoadResult;
+use crate::agents::{Agent, ExtensionLoadResult};
 use crate::config::{Config, GooseMode};
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
+use crate::session::session_manager::SessionUsageTotals;
 use crate::session::Session;
 use crate::slash_commands::types::{SlashCommandEntry, SlashCommandSource};
 use agent_client_protocol::schema::v1::{
@@ -10,10 +11,11 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::{Client, ConnectionTo};
 use goose_providers::model::ModelConfig;
-use goose_providers::thinking::ThinkingEffort;
+use goose_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
 use serde::Serialize;
 use strum::{EnumMessage, VariantNames};
 
+use super::provider::resolve_effort_value;
 use super::server::{build_usage_updates, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_LABEL};
 
 pub(super) fn session_provider_selection(session: &Session) -> &str {
@@ -231,9 +233,19 @@ pub(super) fn build_mode_state(
     ))
 }
 
+/// The provider decides whether goose owns the effort menu; a session without a
+/// live provider keeps the model-name based path.
+pub(super) async fn agent_thinking_effort_support(agent: &Agent) -> ThinkingEffortSupport {
+    match agent.provider().await {
+        Ok(provider) => provider.thinking_effort_support(),
+        Err(_) => ThinkingEffortSupport::Unspecified,
+    }
+}
+
 pub(super) async fn build_session_setup_config(
     provider_inventory: &ProviderInventoryService,
     session: &Session,
+    effort_support: &ThinkingEffortSupport,
 ) -> Result<(SessionModeState, Option<Vec<SessionConfigOption>>), agent_client_protocol::Error> {
     let mode_state = build_mode_state(session.goose_mode)?;
 
@@ -258,6 +270,7 @@ pub(super) async fn build_session_setup_config(
         model_config,
         provider_selection,
         provider_options,
+        effort_support,
     );
     Ok((mode_state, Some(config_options)))
 }
@@ -268,6 +281,7 @@ pub(super) fn build_config_options(
     model_config: &ModelConfig,
     provider_selection: &str,
     provider_options: Vec<SessionConfigSelectOption>,
+    effort_support: &ThinkingEffortSupport,
 ) -> Vec<SessionConfigOption> {
     let mode_options: Vec<SessionConfigSelectOption> = mode_state
         .available_modes
@@ -282,14 +296,8 @@ pub(super) fn build_config_options(
         .iter()
         .map(|m| SessionConfigSelectOption::new(m.id.clone(), m.name.clone()))
         .collect();
-    let thinking_effort_options = thinking_effort_values(model_config)
-        .iter()
-        .map(|effort| {
-            let effort = effort.to_string();
-            SessionConfigSelectOption::new(effort.clone(), effort)
-        })
-        .collect::<Vec<_>>();
-    let current_thinking_effort = current_thinking_effort_value(model_config);
+    let (thinking_effort_options, current_thinking_effort) =
+        build_thinking_effort_choices(model_config, effort_support);
     vec![
         SessionConfigOption::select(
             "provider",
@@ -320,6 +328,59 @@ pub(super) fn build_config_options(
         .description("Controls reasoning effort for models that support extended thinking.")
         .category(SessionConfigOptionCategory::ThoughtLevel),
     ]
+}
+
+/// A provider that manages its own reasoning decides the menu: it mirrors the
+/// agent's effort selector verbatim, or honestly offers nothing when the agent
+/// has no such knob for the current model. Only providers that leave effort to
+/// goose fall back to the model-name based values, which the ACP sentinel model
+/// name can never satisfy.
+fn build_thinking_effort_choices(
+    model_config: &ModelConfig,
+    effort_support: &ThinkingEffortSupport,
+) -> (Vec<SessionConfigSelectOption>, String) {
+    match effort_support {
+        ThinkingEffortSupport::Options(capability) => (
+            capability
+                .values
+                .iter()
+                .map(|option| {
+                    SessionConfigSelectOption::new(option.value.clone(), option.label.clone())
+                })
+                .collect(),
+            capability_thinking_effort_value(capability, model_config),
+        ),
+        ThinkingEffortSupport::Unsupported => {
+            let off = ThinkingEffort::Off.to_string();
+            (
+                vec![SessionConfigSelectOption::new(off.clone(), off.clone())],
+                off,
+            )
+        }
+        ThinkingEffortSupport::Unspecified => (
+            thinking_effort_values(model_config)
+                .iter()
+                .map(|effort| {
+                    let effort = effort.to_string();
+                    SessionConfigSelectOption::new(effort.clone(), effort)
+                })
+                .collect(),
+            current_thinking_effort_value(model_config),
+        ),
+    }
+}
+
+/// The goose-side value that will actually be sent wins — `resolve_effort_value`
+/// is shared with the provider's send path — then whatever the agent currently
+/// has, which is what it keeps when goose sends nothing.
+fn capability_thinking_effort_value(
+    capability: &ThinkingEffortCapability,
+    model_config: &ModelConfig,
+) -> String {
+    resolve_effort_value(capability, model_config)
+        .or_else(|| capability.current.clone())
+        .or_else(|| capability.values.first().map(|option| option.value.clone()))
+        .unwrap_or_default()
 }
 
 fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffort] {
@@ -401,18 +462,19 @@ fn available_commands_update(working_dir: &std::path::Path) -> AvailableCommands
 pub(super) fn send_session_setup_notifications(
     cx: &ConnectionTo<Client>,
     session: &Session,
+    totals: &SessionUsageTotals,
+    context_limit: usize,
     supports_goose_custom_notifications: bool,
 ) -> Result<(), agent_client_protocol::Error> {
     let session_id = SessionId::new(session.id.clone());
-    if let Some(updates) = build_usage_updates(session) {
-        if supports_goose_custom_notifications {
-            cx.send_notification(updates.custom)?;
-        }
-        cx.send_notification(SessionNotification::new(
-            session_id.clone(),
-            SessionUpdate::UsageUpdate(updates.standard),
-        ))?;
+    let updates = build_usage_updates(session, totals, context_limit);
+    if supports_goose_custom_notifications {
+        cx.send_notification(updates.custom)?;
     }
+    cx.send_notification(SessionNotification::new(
+        session_id.clone(),
+        SessionUpdate::UsageUpdate(updates.standard),
+    ))?;
     cx.send_notification(SessionNotification::new(
         session_id,
         SessionUpdate::AvailableCommandsUpdate(available_commands_update(&session.working_dir)),
@@ -421,8 +483,10 @@ pub(super) fn send_session_setup_notifications(
 
 #[cfg(test)]
 mod tests {
+    use super::super::provider::THINKING_EFFORT_PARAM;
     use super::*;
     use agent_client_protocol::schema::v1::SessionConfigKind;
+    use goose_providers::thinking::ThinkingEffortOption;
     use test_case::test_case;
 
     fn model_selection(current: &str, models: &[&str]) -> ModelSelection {
@@ -455,8 +519,12 @@ mod tests {
             description: "Mock".to_string(),
             default_model: "unused".to_string(),
             configured: true,
+            available: true,
             provider_type: crate::providers::base::ProviderType::Builtin,
-            category: crate::providers::catalog::ProviderSetupCategory::Model,
+            acp: false,
+            visible_in_setup: true,
+            deprecated: false,
+            replacement: None,
             config_keys: vec![],
             setup_steps: vec![],
             supports_refresh: true,
@@ -475,7 +543,6 @@ mod tests {
             last_updated_at: None,
             last_refresh_attempt_at: None,
             last_refresh_error: None,
-            model_selection_hint: None,
         };
         build_model_state("unused", &inventory)
     }
@@ -653,6 +720,7 @@ mod tests {
             &model_config,
             provider_name,
             provider_options,
+            &ThinkingEffortSupport::Unspecified,
         )
     }
 
@@ -673,6 +741,7 @@ mod tests {
             &model_config,
             "openai",
             vec![SessionConfigSelectOption::new("openai", "openai")],
+            &ThinkingEffortSupport::Unspecified,
         );
         let option = options
             .iter()
@@ -702,6 +771,7 @@ mod tests {
             &model_config,
             "openai",
             vec![SessionConfigSelectOption::new("openai", "openai")],
+            &ThinkingEffortSupport::Unspecified,
         );
         let option = options
             .iter()
@@ -719,5 +789,124 @@ mod tests {
                 SessionConfigSelectOption::new("off", "off")
             ])
         );
+    }
+
+    fn effort_capability(values: &[&str], current: &str) -> ThinkingEffortCapability {
+        ThinkingEffortCapability {
+            option_id: "effort".to_string(),
+            values: values
+                .iter()
+                .map(|value| ThinkingEffortOption {
+                    value: value.to_string(),
+                    label: value.to_string(),
+                })
+                .collect(),
+            current: Some(current.to_string()),
+        }
+    }
+
+    fn build_effort_option(
+        model_name: &str,
+        persisted_effort: Option<&str>,
+        effort_support: &ThinkingEffortSupport,
+    ) -> (String, Vec<SessionConfigSelectOption>) {
+        let mode_state = build_mode_state(GooseMode::Auto).unwrap();
+        let model_state = model_selection(model_name, &[model_name]);
+        let mut model_config = ModelConfig::new(model_name);
+        if let Some(effort) = persisted_effort {
+            model_config =
+                model_config.with_merged_request_params(std::collections::HashMap::from([(
+                    THINKING_EFFORT_PARAM.to_string(),
+                    serde_json::json!(effort),
+                )]));
+        }
+
+        let options = build_config_options(
+            &mode_state,
+            &model_state,
+            &model_config,
+            "claude-acp",
+            vec![SessionConfigSelectOption::new("claude-acp", "claude-acp")],
+            effort_support,
+        );
+        let option = options
+            .into_iter()
+            .find(|option| option.id.0.as_ref() == "thinking_effort")
+            .expect("thinking_effort option");
+        let SessionConfigKind::Select(select) = option.kind else {
+            panic!("thinking_effort should be a select option");
+        };
+        let values = match select.options {
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(values) => {
+                values
+            }
+            grouped => panic!("unexpected thinking_effort options: {grouped:?}"),
+        };
+        (select.current_value.0.to_string(), values)
+    }
+
+    #[test]
+    fn test_build_config_options_mirrors_agent_effort_menu_on_the_model_sentinel() {
+        let model_name = crate::acp::ACP_CURRENT_MODEL;
+        assert!(
+            !ModelConfig::new(model_name).is_reasoning_model(),
+            "the sentinel is the model name that made the old sniffing path collapse the menu"
+        );
+        let support = ThinkingEffortSupport::Options(effort_capability(
+            &["default", "high", "xhigh"],
+            "high",
+        ));
+
+        let (current, values) = build_effort_option(model_name, Some("high"), &support);
+
+        assert_eq!(current, "high");
+        assert_eq!(
+            values,
+            vec![
+                SessionConfigSelectOption::new("default", "default"),
+                SessionConfigSelectOption::new("high", "high"),
+                SessionConfigSelectOption::new("xhigh", "xhigh"),
+            ]
+        );
+    }
+
+    #[test_case(Some("high") => "high".to_string() ; "persisted value")]
+    #[test_case(Some("off") => "default".to_string() ; "persisted off maps onto the agent default")]
+    #[test_case(Some("max") => "xhigh".to_string() ; "persisted max maps onto the agent's xhigh")]
+    #[test_case(Some("unknown") => "low".to_string() ; "unmappable persisted value falls back to the agent")]
+    #[test_case(None => "low".to_string() ; "no persisted value falls back to the agent")]
+    fn test_build_config_options_effort_current_value(persisted: Option<&str>) -> String {
+        // Unoffered by the capability below, so the global default never wins
+        // and the test doesn't depend on the machine's configured value.
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("medium"))]);
+        let support = ThinkingEffortSupport::Options(effort_capability(
+            &["default", "low", "high", "xhigh"],
+            "low",
+        ));
+
+        build_effort_option(crate::acp::ACP_CURRENT_MODEL, persisted, &support).0
+    }
+
+    #[test]
+    fn test_build_config_options_effort_falls_back_to_the_global_default() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+        let support =
+            ThinkingEffortSupport::Options(effort_capability(&["default", "high"], "default"));
+
+        let (current, _) = build_effort_option(crate::acp::ACP_CURRENT_MODEL, None, &support);
+
+        assert_eq!(current, "high");
+    }
+
+    #[test]
+    fn test_build_config_options_offers_no_effort_when_the_agent_has_none() {
+        let (current, values) = build_effort_option(
+            "claude-sonnet-4",
+            Some("high"),
+            &ThinkingEffortSupport::Unsupported,
+        );
+
+        assert_eq!(current, "off");
+        assert_eq!(values, vec![SessionConfigSelectOption::new("off", "off")]);
     }
 }

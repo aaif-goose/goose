@@ -1,0 +1,41 @@
+{
+  "name": "cerebras",
+  "engine": "openai",
+  "display_name": "Cerebras",
+  "description": "Fast inference on Cerebras wafer-scale engines",
+  "api_key_env": "CEREBRAS_API_KEY",
+  "base_url": "https://api.cerebras.ai/v1/chat/completions",
+  "models": [
+    {
+      "name": "gpt-oss-120b",
+      "context_limit": 131072,
+      "thinking_preservation_format": "content_prepend",
+      "request_params": {
+        "reasoning_format": "parsed"
+      }
+    },
+    {
+      "name": "zai-glm-4.7",
+      "context_limit": 131072,
+      "thinking_preservation_format": "content_xml",
+      "request_params": {
+        "reasoning_format": "parsed"
+      }
+    },
+    {
+      "name": "gemma-4-31b",
+      "context_limit": 131072,
+      "thinking_preservation_format": "content_prepend",
+      "request_params": {
+        "reasoning_format": "parsed"
+      }
+    }
+  ],
+  "supports_streaming": true,
+  "setup": {
+    "category": "model",
+    "setup_method": "single_api_key",
+    "group": "additional",
+    "docs_url": "https://cloud.cerebras.ai/platform"
+  }
+}

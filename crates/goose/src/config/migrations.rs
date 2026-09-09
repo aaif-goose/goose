@@ -22,6 +22,13 @@ pub fn run_read_migrations(config: &mut Mapping) {
     migrate_platform_extensions(config);
 }
 
+fn read_enabled_field(value: &serde_yaml::Value) -> Option<bool> {
+    value
+        .as_mapping()?
+        .get(serde_yaml::Value::String("enabled".to_string()))?
+        .as_bool()
+}
+
 fn migrate_platform_extensions(config: &mut Mapping) -> bool {
     let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
 
@@ -68,10 +75,22 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
             let existing_entry =
                 existing.and_then(|v| serde_yaml::from_value::<ExtensionEntry>(v.clone()).ok());
 
-            let enabled = existing_entry
-                .as_ref()
-                .map(|e| e.enabled)
+            let enabled = existing
+                .and_then(read_enabled_field)
                 .unwrap_or(def.default_enabled);
+
+            let available_tools = existing_entry
+                .as_ref()
+                .and_then(|entry| match &entry.config {
+                    ExtensionConfig::Builtin {
+                        available_tools, ..
+                    }
+                    | ExtensionConfig::Platform {
+                        available_tools, ..
+                    } => Some(available_tools.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
 
             // If the extension already exists as type 'builtin', preserve that type
             let is_existing_builtin = existing_entry
@@ -85,7 +104,7 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
                     display_name: Some(def.display_name.to_string()),
                     timeout: None,
                     bundled: Some(true),
-                    available_tools: Vec::new(),
+                    available_tools,
                 }
             } else {
                 ExtensionConfig::Platform {
@@ -93,7 +112,7 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
                     description: def.description.to_string(),
                     display_name: Some(def.display_name.to_string()),
                     bundled: Some(true),
-                    available_tools: Vec::new(),
+                    available_tools,
                 }
             };
 
@@ -275,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn test_migrate_platform_extensions_preserves_enabled_state() {
+    fn test_migrate_platform_extensions_preserves_restrictions() {
         let mut config = Mapping::new();
         let mut extensions = Mapping::new();
         let todo_entry = ExtensionEntry {
@@ -284,7 +303,7 @@ mod tests {
                 description: "old description".to_string(),
                 display_name: Some("Old Name".to_string()),
                 bundled: Some(true),
-                available_tools: Vec::new(),
+                available_tools: vec!["todo_read".to_string()],
             },
             enabled: false,
         };
@@ -307,6 +326,61 @@ mod tests {
         let todo_entry: ExtensionEntry = serde_yaml::from_value(todo_value.clone()).unwrap();
 
         assert!(!todo_entry.enabled);
+        assert!(matches!(
+            todo_entry.config,
+            ExtensionConfig::Platform {
+                available_tools,
+                ..
+            } if available_tools == ["todo_read"]
+        ));
+        assert!(!run_migrations(&mut config));
+    }
+
+    #[test]
+    fn test_migrate_builtin_extensions_preserves_restrictions() {
+        let def = PLATFORM_EXTENSIONS.get("todo").unwrap();
+        let mut config = Mapping::new();
+        let mut extensions = Mapping::new();
+        let todo_entry = ExtensionEntry {
+            config: ExtensionConfig::Builtin {
+                name: def.name.to_string(),
+                description: "old description".to_string(),
+                display_name: Some("Old Name".to_string()),
+                timeout: Some(30),
+                bundled: Some(true),
+                available_tools: vec!["todo_read".to_string()],
+            },
+            enabled: true,
+        };
+        extensions.insert(
+            serde_yaml::Value::String("todo".to_string()),
+            serde_yaml::to_value(&todo_entry).unwrap(),
+        );
+        config.insert(
+            serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string()),
+            serde_yaml::Value::Mapping(extensions),
+        );
+
+        assert!(run_migrations(&mut config));
+
+        let extensions_key = serde_yaml::Value::String(EXTENSIONS_CONFIG_KEY.to_string());
+        let extensions = config.get(&extensions_key).unwrap().as_mapping().unwrap();
+        let todo_entry: ExtensionEntry = serde_yaml::from_value(
+            extensions
+                .get(serde_yaml::Value::String("todo".to_string()))
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+
+        assert!(todo_entry.enabled);
+        assert!(matches!(
+            todo_entry.config,
+            ExtensionConfig::Builtin {
+                available_tools,
+                ..
+            } if available_tools == ["todo_read"]
+        ));
     }
 
     #[test]

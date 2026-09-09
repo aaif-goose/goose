@@ -103,6 +103,7 @@ impl TestProvider {
                             ..
                         }) => {
                             result.is_error = None;
+                            result.result_type = None;
                         }
                         _ => {}
                     }
@@ -223,7 +224,7 @@ mod tests {
     use crate::conversation::message::{Message, MessageContent};
     use chrono::Utc;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-    use rmcp::model::{RawTextContent, Role, TextContent};
+    use rmcp::model::{Role, TextContent};
     use std::env;
 
     #[derive(Clone)]
@@ -247,13 +248,9 @@ mod tests {
             let message = Message::new(
                 Role::Assistant,
                 Utc::now().timestamp(),
-                vec![MessageContent::Text(TextContent {
-                    raw: RawTextContent {
-                        text: self.response.clone(),
-                        meta: None,
-                    },
-                    annotations: None,
-                })],
+                vec![MessageContent::Text(TextContent::new(
+                    self.response.clone(),
+                ))],
             );
             let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
             Ok(stream_from_single_message(message, usage))

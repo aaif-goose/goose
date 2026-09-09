@@ -20,11 +20,20 @@
   "appsView.customApp": {
     "defaultMessage": "Aplikasi khusus"
   },
+  "appsView.deleteApp": {
+    "defaultMessage": "Delete app"
+  },
+  "appsView.deleteConfirm": {
+    "defaultMessage": "Delete \"{name}\"? This cannot be undone."
+  },
   "appsView.description": {
     "defaultMessage": "Aplikasi dari server MCP Anda dan Aplikasi yang dibuat oleh goose sendiri. Anda dapat memintanya membuat aplikasi baru melalui antarmuka obrolan dan aplikasi tersebut akan muncul di sini."
   },
   "appsView.errorLoading": {
     "defaultMessage": "Kesalahan saat memuat aplikasi: {error}"
+  },
+  "appsView.errorPrefix": {
+    "defaultMessage": "Error: {error}"
   },
   "appsView.importApp": {
     "defaultMessage": "Impor Aplikasi"
@@ -41,14 +50,14 @@
   "appsView.noAppsTitle": {
     "defaultMessage": "Tidak ada aplikasi yang tersedia"
   },
-  "appsView.retry": {
-    "defaultMessage": "Coba lagi"
-  },
   "appsView.retiredChatApp": {
     "defaultMessage": "Chat app retired"
   },
   "appsView.retiredChatAppDetail": {
     "defaultMessage": "We removed this feature because MCP sampling is no longer supported."
+  },
+  "appsView.retry": {
+    "defaultMessage": "Coba lagi"
   },
   "appsView.title": {
     "defaultMessage": "Aplikasi"
@@ -121,6 +130,12 @@
   },
   "baseChat.goHome": {
     "defaultMessage": "Ke beranda"
+  },
+  "baseChat.reconnecting": {
+    "defaultMessage": "Koneksi terputus. Menghubungkan kembali…"
+  },
+  "baseChat.retry": {
+    "defaultMessage": "Coba lagi"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Ekstensi Diperbarui"
@@ -602,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Tambah"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Selalu gunakan Toolshim untuk penyedia ini"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Kompatibel dengan Anthropic"
   },
@@ -902,6 +920,15 @@
   "dirSwitcher.currentDirectory": {
     "defaultMessage": "Direktori saat ini"
   },
+  "dirSwitcher.enterPath": {
+    "defaultMessage": "Enter path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+  },
+  "dirSwitcher.enterPathInvalid": {
+    "defaultMessage": "Working directory must be an absolute path"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal memperbarui direktori kerja"
   },
@@ -916,6 +943,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terbaru"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "Gagal beralih ke {branch}"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "Tidak ada branch yang ditemukan"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Cari branch…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "Anda mungkin memiliki perubahan yang belum di-commit."
   },
   "elicitationRequest.accept": {
     "defaultMessage": "Terima"
@@ -1015,9 +1054,6 @@
   },
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "Tipe"
-  },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (tidak didukung)"
   },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "Standard IO (STDIO)"
@@ -1185,7 +1221,7 @@
     "defaultMessage": "Kunci Rahasia"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "Kunci rahasia yang dikonfigurasi pada server goosed (GOOSE_SERVER__SECRET_KEY)"
+    "defaultMessage": "Kunci rahasia yang dikonfigurasi pada server Goose (GOOSE_SERVER__SECRET_KEY)"
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "Masukkan kunci rahasia server"
@@ -1193,8 +1229,14 @@
   "externalBackendSection.serverUrl": {
     "defaultMessage": "URL Server"
   },
+  "externalBackendSection.serverUrlHelp": {
+    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+  },
   "externalBackendSection.title": {
     "defaultMessage": "Server Goose"
+  },
+  "externalBackendSection.urlBaseError": {
+    "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
   },
   "externalBackendSection.urlFormatError": {
     "defaultMessage": "Format URL tidak valid"
@@ -1207,6 +1249,15 @@
   },
   "externalBackendSection.useExternalServerDescription": {
     "defaultMessage": "Terhubung ke server goose yang berjalan di tempat lain (memerlukan mulai ulang aplikasi)"
+  },
+  "externalBackendSection.workingDir": {
+    "defaultMessage": "Direktori kerja jarak jauh (opsional)"
+  },
+  "externalBackendSection.workingDirHelp": {
+    "defaultMessage": "Jalur absolut pada backend eksternal. Biarkan kosong untuk mengirim direktori kerja lokal."
+  },
+  "externalBackendSection.workingDirPlaceholder": {
+    "defaultMessage": "/home/goose/workspace"
   },
   "goosehintsModal.close": {
     "defaultMessage": "Tutup"
@@ -1707,13 +1758,10 @@
     "defaultMessage": "Hapus model ini? Anda dapat mengunduhnya kembali nanti."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Unduh dan kelola model LLM lokal untuk inferensi tanpa kunci API. Cari model GGUF atau MLX di HuggingFace, atau gunakan pilihan unggulan di bawah."
+    "defaultMessage": "Unduh dan kelola model LLM lokal untuk inferensi tanpa kunci API. Cari model GGUF atau MLX di Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Tutup"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Unduh"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "Unduhan dibatalkan"
@@ -1730,11 +1778,14 @@
   "localInferenceSettings.downloading": {
     "defaultMessage": "Mengunduh"
   },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Model Unggulan"
+  "localInferenceSettings.evictFromMemory": {
+    "defaultMessage": "Evict from memory"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Masuk untuk meningkatkan batas laju saat mencari dan mengunduh model, serta untuk mengakses repositori Hugging Face yang privat atau terbatas."
+  },
+  "localInferenceSettings.loadedInMemory": {
+    "defaultMessage": "Loaded in memory"
   },
   "localInferenceSettings.modelSettings": {
     "defaultMessage": "Pengaturan Model"
@@ -1753,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Coba Lagi"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Tampilkan semua unggulan ({count} lainnya)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Tampilkan yang direkomendasikan saja"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Model Inferensi Lokal"
@@ -1853,9 +1898,6 @@
   "localModelPicker.useModel": {
     "defaultMessage": "Gunakan {modelId}"
   },
-  "markdownContent.cancel": {
-    "defaultMessage": "Batal"
-  },
   "markdownContent.copyCode": {
     "defaultMessage": "Salin kode"
   },
@@ -1865,23 +1907,8 @@
   "markdownContent.noApplicationFound": {
     "defaultMessage": "Tidak ada aplikasi yang ditemukan untuk membuka tautan ini."
   },
-  "markdownContent.open": {
-    "defaultMessage": "Buka"
-  },
-  "markdownContent.openExternalLink": {
-    "defaultMessage": "Buka Tautan Eksternal"
-  },
-  "markdownContent.openProtocolLink": {
-    "defaultMessage": "Buka tautan {protocol}?"
-  },
-  "markdownContent.thisWillOpen": {
-    "defaultMessage": "Ini akan membuka: {href}"
-  },
   "mcpAppRenderer.appFallbackTitle": {
     "defaultMessage": "Aplikasi"
-  },
-  "mcpAppRenderer.cancelButton": {
-    "defaultMessage": "Batal"
   },
   "mcpAppRenderer.close": {
     "defaultMessage": "Tutup"
@@ -1906,18 +1933,6 @@
   },
   "mcpAppRenderer.movePipWindow": {
     "defaultMessage": "Pindahkan jendela Picture-in-Picture (gunakan tombol panah)"
-  },
-  "mcpAppRenderer.openButton": {
-    "defaultMessage": "Buka"
-  },
-  "mcpAppRenderer.openExternalLinkTitle": {
-    "defaultMessage": "Buka Tautan Eksternal"
-  },
-  "mcpAppRenderer.openLinkDetail": {
-    "defaultMessage": "Ini akan membuka: {url}"
-  },
-  "mcpAppRenderer.openProtocolLink": {
-    "defaultMessage": "Buka tautan {protocol}?"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Picture-in-Picture"
@@ -2005,6 +2020,51 @@
   },
   "messageQueue.waiting": {
     "defaultMessage": "menunggu"
+  },
+  "messageUsageStats.cacheHitRate": {
+    "defaultMessage": "({percent}% dari masukan)"
+  },
+  "messageUsageStats.cacheRead": {
+    "defaultMessage": "baca cache"
+  },
+  "messageUsageStats.cacheWrite": {
+    "defaultMessage": "tulis cache"
+  },
+  "messageUsageStats.compaction": {
+    "defaultMessage": "Pemadatan"
+  },
+  "messageUsageStats.cost": {
+    "defaultMessage": "Biaya"
+  },
+  "messageUsageStats.estimated": {
+    "defaultMessage": "(perkiraan)"
+  },
+  "messageUsageStats.firstToken": {
+    "defaultMessage": "Token pertama"
+  },
+  "messageUsageStats.input": {
+    "defaultMessage": "Masukan"
+  },
+  "messageUsageStats.output": {
+    "defaultMessage": "Keluaran"
+  },
+  "messageUsageStats.reported": {
+    "defaultMessage": "(dilaporkan)"
+  },
+  "messageUsageStats.speed": {
+    "defaultMessage": "Kecepatan"
+  },
+  "messageUsageStats.tokenUnit": {
+    "defaultMessage": "tok"
+  },
+  "messageUsageStats.tokensPerSecondUnit": {
+    "defaultMessage": "tok/s"
+  },
+  "messageUsageStats.total": {
+    "defaultMessage": "Total"
+  },
+  "messageUsageStats.totalTime": {
+    "defaultMessage": "Waktu total"
   },
   "microphoneSelector.chooseDescription": {
     "defaultMessage": "Pilih mikrofon mana yang akan digunakan untuk dikte"
@@ -2291,8 +2351,35 @@
   "navigationPanel.chats": {
     "defaultMessage": "Obrolan"
   },
+  "navigationPanel.metaCreated": {
+    "defaultMessage": "Dibuat"
+  },
+  "navigationPanel.metaDirectory": {
+    "defaultMessage": "Direktori"
+  },
+  "navigationPanel.metaModel": {
+    "defaultMessage": "Model"
+  },
+  "navigationPanel.metaStatus": {
+    "defaultMessage": "Status"
+  },
+  "navigationPanel.metaUpdated": {
+    "defaultMessage": "Diperbarui"
+  },
   "navigationPanel.noChats": {
     "defaultMessage": "Tidak ada obrolan terbaru"
+  },
+  "navigationPanel.statusError": {
+    "defaultMessage": "Kesalahan"
+  },
+  "navigationPanel.statusIdle": {
+    "defaultMessage": "Menganggur"
+  },
+  "navigationPanel.statusStreaming": {
+    "defaultMessage": "Streaming"
+  },
+  "navigationPanel.statusUnread": {
+    "defaultMessage": "Aktivitas belum dibaca"
   },
   "navigationPanel.untitledSession": {
     "defaultMessage": "Sesi tanpa judul"
@@ -2652,7 +2739,7 @@
     "defaultMessage": "Lanjutkan"
   },
   "providerConfigForm.deviceCodeFlowHint": {
-    "defaultMessage": "Jendela browser akan terbuka dan kode verifikasi akan disalin ke clipboard Anda. Tempelkan di browser untuk menyelesaikan proses masuk."
+    "defaultMessage": "Jendela browser akan terbuka. Kode verifikasi akan muncul di sini agar Anda dapat memasukkannya untuk menyelesaikan proses masuk."
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "Tidak punya kunci API?"
@@ -2691,7 +2778,7 @@
     "defaultMessage": "Tindakan ini akan menghapus konfigurasi penyedia saat ini secara permanen."
   },
   "providerConfigurationModal.deviceCodeFlowHint": {
-    "defaultMessage": "Jendela browser akan terbuka dan kode verifikasi akan disalin ke clipboard Anda. Tempelkan di browser untuk menyelesaikan proses masuk."
+    "defaultMessage": "Jendela browser akan terbuka. Kode verifikasi akan muncul di sini agar Anda dapat memasukkannya untuk menyelesaikan proses masuk."
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "Terjadi kesalahan saat memeriksa konfigurasi penyedia ini."
@@ -2746,6 +2833,12 @@
   },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Dari templat atau penyiapan manual"
+  },
+  "providerGrid.noMatch": {
+    "defaultMessage": "Tidak ada penyedia yang cocok dengan \"{query}\""
+  },
+  "providerGrid.searchPlaceholder": {
+    "defaultMessage": "Cari penyedia..."
   },
   "providerLogo.alt": {
     "defaultMessage": "Logo {providerName}"
@@ -2951,12 +3044,6 @@
   "recipeModelSelector.useDefaultProvider": {
     "defaultMessage": "Gunakan penyedia default"
   },
-  "recipeNameField.defaultLabel": {
-    "defaultMessage": "Nama Resep"
-  },
-  "recipeNameField.formatHint": {
-    "defaultMessage": "Akan diformat secara otomatis (huruf kecil, tanda hubung untuk spasi)"
-  },
   "recipeWarningModal.cancel": {
     "defaultMessage": "Batal"
   },
@@ -3072,7 +3159,7 @@
     "defaultMessage": "Tidak ada resep tersimpan"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Resep yang disimpan dari obrolan akan muncul di sini."
+    "defaultMessage": "Resep yang disimpan akan muncul di sini."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Buka di jendela baru"
@@ -3335,6 +3422,9 @@
   "scheduleDetailView.viewingScheduleId": {
     "defaultMessage": "Melihat ID Jadwal: {id}"
   },
+  "scheduleModal.alreadyScheduledOption": {
+    "defaultMessage": "{title} (sudah dijadwalkan)"
+  },
   "scheduleModal.browseYaml": {
     "defaultMessage": "Telusuri berkas YAML..."
   },
@@ -3359,6 +3449,9 @@
   "scheduleModal.editSchedule": {
     "defaultMessage": "Edit Jadwal"
   },
+  "scheduleModal.failedLoadRecipes": {
+    "defaultMessage": "Gagal memuat resep."
+  },
   "scheduleModal.failedParseRecipe": {
     "defaultMessage": "Gagal mengurai resep dari berkas."
   },
@@ -3371,14 +3464,23 @@
   "scheduleModal.invalidFileType": {
     "defaultMessage": "Jenis berkas tidak valid: Harap pilih berkas YAML (.yaml atau .yml)"
   },
+  "scheduleModal.loadingRecipes": {
+    "defaultMessage": "Memuat resep..."
+  },
   "scheduleModal.nameLabel": {
     "defaultMessage": "Nama:"
   },
   "scheduleModal.namePlaceholder": {
     "defaultMessage": "mis., daily-summary-job"
   },
+  "scheduleModal.noSavedRecipes": {
+    "defaultMessage": "Tidak ada resep tersimpan ditemukan."
+  },
   "scheduleModal.provideValidRecipe": {
     "defaultMessage": "Harap berikan sumber resep yang valid."
+  },
+  "scheduleModal.recipeAlreadyScheduled": {
+    "defaultMessage": "Resep ini sudah memiliki jadwal. Edit dari daftar Resep."
   },
   "scheduleModal.recipeDescription": {
     "defaultMessage": "Deskripsi: {description}"
@@ -3389,11 +3491,17 @@
   "scheduleModal.recipeTitle": {
     "defaultMessage": "Judul: {title}"
   },
+  "scheduleModal.savedRecipes": {
+    "defaultMessage": "Resep tersimpan"
+  },
   "scheduleModal.scheduleIdRequired": {
     "defaultMessage": "ID jadwal diperlukan."
   },
   "scheduleModal.scheduleLabel": {
     "defaultMessage": "Jadwal:"
+  },
+  "scheduleModal.selectRecipePlaceholder": {
+    "defaultMessage": "Pilih resep tersimpan"
   },
   "scheduleModal.selected": {
     "defaultMessage": "Dipilih: {path}"
@@ -3587,6 +3695,9 @@
   "sessionActionsHeader.copiedJson": {
     "defaultMessage": "JSON sesi disalin"
   },
+  "sessionActionsHeader.copiedModelInteractions": {
+    "defaultMessage": "Interaksi model terbaru disalin"
+  },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "Teks disalin"
   },
@@ -3617,6 +3728,12 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "Memuat JSON..."
   },
+  "sessionActionsHeader.modelInteractionsFailed": {
+    "defaultMessage": "Gagal memuat interaksi model: {error}"
+  },
+  "sessionActionsHeader.modelInteractionsTitle": {
+    "defaultMessage": "Interaksi model terbaru"
+  },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Gagal mengganti nama sesi: {error}"
   },
@@ -3641,6 +3758,9 @@
   "sessionActionsHeader.viewJson": {
     "defaultMessage": "Lihat JSON sesi"
   },
+  "sessionActionsHeader.viewModelInteractions": {
+    "defaultMessage": "Lihat interaksi model terbaru"
+  },
   "sessionIndicators.error": {
     "defaultMessage": "Sesi mengalami kesalahan"
   },
@@ -3650,23 +3770,8 @@
   "sessionIndicators.streaming": {
     "defaultMessage": "Streaming"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "Sesi ini tidak berisi pesan apa pun"
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "Tidak ada pesan ditemukan"
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "Kesalahan Memuat Detail Sesi"
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "Coba Lagi"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "Anda"
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
   },
   "sessions.action.delete": {
     "defaultMessage": "Hapus sesi"
@@ -3679,6 +3784,12 @@
   },
   "sessions.action.export": {
     "defaultMessage": "Ekspor sesi"
+  },
+  "sessions.action.exportJson": {
+    "defaultMessage": "JSON"
+  },
+  "sessions.action.exportMarkdown": {
+    "defaultMessage": "Markdown"
   },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka di jendela baru"
@@ -3740,6 +3851,9 @@
   "sessions.importing": {
     "defaultMessage": "Mengimpor..."
   },
+  "sessions.includeAcp": {
+    "defaultMessage": "Sertakan sesi ACP"
+  },
   "sessions.loadingMore": {
     "defaultMessage": "Memuat lebih banyak sesi..."
   },
@@ -3748,6 +3862,12 @@
   },
   "sessions.saving": {
     "defaultMessage": "Menyimpan..."
+  },
+  "sessions.scheduledJobs": {
+    "defaultMessage": "Scheduled Jobs"
+  },
+  "sessions.scheduledJobsCount": {
+    "defaultMessage": "{count,plural,one{{count} job} other{{count} jobs}}"
   },
   "sessions.search.noResults": {
     "defaultMessage": "Tidak ada sesi yang cocok ditemukan"
@@ -3778,6 +3898,9 @@
   },
   "sessions.toast.duplicated": {
     "defaultMessage": "Sesi \"{name}\" berhasil digandakan"
+  },
+  "sessions.toast.exportFailed": {
+    "defaultMessage": "Gagal mengekspor sesi: {error}"
   },
   "sessions.toast.exported": {
     "defaultMessage": "Sesi berhasil diekspor"
@@ -3977,6 +4100,9 @@
   "settingsView.tabChat": {
     "defaultMessage": "Obrolan"
   },
+  "settingsView.tabExternalBackend": {
+    "defaultMessage": "Backend Eksternal"
+  },
   "settingsView.tabKeyboard": {
     "defaultMessage": "Keyboard"
   },
@@ -3989,14 +4115,8 @@
   "settingsView.tabPrompts": {
     "defaultMessage": "Prompt"
   },
-  "settingsView.tabSession": {
-    "defaultMessage": "Sesi"
-  },
   "settingsView.title": {
     "defaultMessage": "Pengaturan"
-  },
-  "sheet.close": {
-    "defaultMessage": "Tutup"
   },
   "shortcutRecorder.cancel": {
     "defaultMessage": "Batal"
@@ -4063,15 +4183,6 @@
   },
   "stringUtils.configuredProvider": {
     "defaultMessage": "Penyedia {name} telah dikonfigurasi"
-  },
-  "stringUtils.ollamaApp": {
-    "defaultMessage": "Aplikasi Ollama"
-  },
-  "stringUtils.ollamaNotConfiguredPrefix": {
-    "defaultMessage": "Untuk menggunakan, salah satu"
-  },
-  "stringUtils.ollamaNotConfiguredSuffix": {
-    "defaultMessage": "harus terpasang di mesin Anda dan terbuka, atau Anda harus memasukkan nilai untuk OLLAMA_HOST."
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Tambahkan yang Sudah Ada"
@@ -4328,6 +4439,9 @@
   "telemetrySettings.updateError": {
     "defaultMessage": "Gagal memperbarui pengaturan telemetri."
   },
+  "themeSelector.aura": {
+    "defaultMessage": "Aura"
+  },
   "themeSelector.dark": {
     "defaultMessage": "Gelap"
   },
@@ -4409,9 +4523,6 @@
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Pengunduhan otomatis dinonaktifkan. Klik \"Download Now\" untuk mengunduh secara manual."
   },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "Tidak diperlukan instalasi manual."
-  },
   "updateSection.checkForUpdates": {
     "defaultMessage": "Periksa Pembaruan"
   },
@@ -4442,26 +4553,11 @@
   "updateSection.installAndRestart": {
     "defaultMessage": "Instal & Mulai Ulang"
   },
-  "updateSection.installNowHint": {
-    "defaultMessage": "Klik \"Install & Restart\" untuk memperbarui sekarang."
-  },
   "updateSection.latestVersion": {
     "defaultMessage": "Anda menjalankan versi terbaru!"
   },
   "updateSection.loading": {
     "defaultMessage": "Memuat..."
-  },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "Setelah pengunduhan, Anda perlu menginstal pembaruan secara manual."
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "Instalasi manual diperlukan untuk metode pembaruan ini."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Pembaruan sudah siap. Mulai ulang Goose untuk menyelesaikan pemasangan, atau keluar saat Anda selesai."
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ Pembaruan sudah siap! Klik \"Install & Restart\" untuk petunjuk pemasangan."
   },
   "updateSection.upToDate": {
     "defaultMessage": "(terbaru)"
@@ -4486,6 +4582,9 @@
   },
   "userMessage.editButton": {
     "defaultMessage": "Edit"
+  },
+  "userMessage.editImagesHeading": {
+    "defaultMessage": "Gambar terlampir:"
   },
   "userMessage.editInPlace": {
     "defaultMessage": "Edit di Tempat"
@@ -4519,5 +4618,56 @@
   },
   "userMessage.forkSessionTitle": {
     "defaultMessage": "Buat sesi baru dengan pesan yang diedit"
+  },
+  "userMessage.removeImageFromEdit": {
+    "defaultMessage": "Hapus gambar dari pesan"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Terbaru"
+  },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "Pilih Model"
+  },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "Tidak digunakan lagi — gunakan {replacement} sebagai gantinya."
+  },
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "Adaptor ACP ditemukan"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "Adaptor ACP tidak ditemukan"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "Masuk melalui CLI penyedia, lalu periksa lagi."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "Periksa lagi"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "Memeriksa..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "Berhasil terhubung"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "Periksa koneksi akun Anda sebelum melanjutkan."
+  },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "dan masukkan:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "Salin"
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "Kunjungi"
+  },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "dan masukkan:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "Salin"
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "Kunjungi"
   }
 }

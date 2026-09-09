@@ -281,7 +281,7 @@ Developing user interfaces is a blend of creativity and problem-solving. And I l
 
 Beyond prototyping, goose's ability to analyze screenshots can help developers identify and resolve UI bugs.
 
-If you're interested in learning more, check out the [goose repo](https://github.com/aaif-goose/goose) and join our [Discord community](https://discord.gg/goose-oss).
+If you're interested in learning more, check out the [goose repo](https://github.com/aaif-goose/goose) and join our [Discord community](https://discord.gg/n8R5VaWDAn).
 
 <head>
     <meta property="og:title" content="Screenshot-Driven Development" />

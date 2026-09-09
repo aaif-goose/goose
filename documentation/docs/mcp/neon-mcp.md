@@ -30,7 +30,7 @@ The Neon MCP Server grants powerful database management capabilities and is inte
     [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fmcp.neon.tech%2Fmcp&id=neon&name=Neon&description=Manage%20Neon%20Postgres%20databases%2C%20projects%2C%20and%20branches)
     </TabItem>
     <TabItem value="cli" label="goose CLI">
-    Use `goose configure` to add a `Remote Extension (Streaming HTTP)` extension type with:
+    Use `goose configure` to add a `Remote Extension (Streamable HTTP)` extension type with:
 
     **Endpoint URL**
     ```

@@ -8,7 +8,6 @@ pub use resolver::{
 
 use super::base::{ConfigKey, ModelInfo, Provider, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
-use super::catalog::ProviderSetupCategory;
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
 use crate::session::session_manager::SessionStorage;
@@ -18,7 +17,7 @@ use chrono::{DateTime, Duration, Utc};
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{Pool, Row, Sqlite, Transaction};
+use sqlx::{Row, Sqlite, Transaction};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -34,8 +33,12 @@ pub struct ProviderInventoryEntry {
     pub description: String,
     pub default_model: String,
     pub configured: bool,
+    pub available: bool,
     pub provider_type: ProviderType,
-    pub category: ProviderSetupCategory,
+    pub acp: bool,
+    pub visible_in_setup: bool,
+    pub deprecated: bool,
+    pub replacement: Option<String>,
     pub config_keys: Vec<ConfigKey>,
     pub setup_steps: Vec<String>,
     pub supports_refresh: bool,
@@ -44,7 +47,6 @@ pub struct ProviderInventoryEntry {
     pub last_updated_at: Option<DateTime<Utc>>,
     pub last_refresh_attempt_at: Option<DateTime<Utc>>,
     pub last_refresh_error: Option<String>,
-    pub model_selection_hint: Option<String>,
 }
 
 /// Families whose latest model should be surfaced in the compact picker.
@@ -160,6 +162,7 @@ pub struct RefreshSkip {
 pub(crate) struct RefreshJob {
     pub provider_id: String,
     pub identity: InventoryIdentity,
+    pub toolshim: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -260,13 +263,17 @@ struct ProviderDescriptor {
     default_model: String,
     identity: InventoryIdentity,
     configured: bool,
+    available: bool,
     provider_type: ProviderType,
-    category: ProviderSetupCategory,
+    acp: bool,
+    visible_in_setup: bool,
+    deprecated: bool,
+    replacement: Option<String>,
     config_keys: Vec<ConfigKey>,
     setup_steps: Vec<String>,
     supports_refresh: bool,
+    toolshim: bool,
     static_models: Vec<ModelInfo>,
-    model_selection_hint: Option<String>,
 }
 
 impl ProviderInventoryService {
@@ -294,6 +301,7 @@ impl ProviderInventoryService {
             snapshot.as_ref(),
             &descriptor.identity.provider_family,
             &descriptor.static_models,
+            descriptor.supports_refresh,
         );
 
         Ok(Some(ProviderInventoryEntry {
@@ -302,8 +310,12 @@ impl ProviderInventoryService {
             description: descriptor.description,
             default_model: descriptor.default_model,
             configured: descriptor.configured,
+            available: descriptor.available,
             provider_type: descriptor.provider_type,
-            category: descriptor.category,
+            acp: descriptor.acp,
+            visible_in_setup: descriptor.visible_in_setup,
+            deprecated: descriptor.deprecated,
+            replacement: descriptor.replacement,
             config_keys: descriptor.config_keys,
             setup_steps: descriptor.setup_steps,
             supports_refresh: descriptor.supports_refresh,
@@ -316,7 +328,6 @@ impl ProviderInventoryService {
                 .as_ref()
                 .and_then(|snapshot| snapshot.last_refresh_attempt_at),
             last_refresh_error: snapshot.and_then(|snapshot| snapshot.last_refresh_error),
-            model_selection_hint: descriptor.model_selection_hint,
         }))
     }
 
@@ -426,6 +437,7 @@ impl ProviderInventoryService {
             plan.started.push(RefreshJob {
                 provider_id: descriptor.provider_id,
                 identity: descriptor.identity,
+                toolshim: descriptor.toolshim,
             });
         }
 
@@ -612,16 +624,15 @@ impl ProviderInventoryService {
                     .find(|job| job.provider_id == provider_id);
                 if let Some(refresh_job) = refresh_job {
                     let mut refresh_guard = self.refresh_guard(&refresh_job.identity);
+                    let toolshim = refresh_job.toolshim;
                     let fetch_result: Result<Vec<String>> =
                         match ensure_refresh_identity_current(&provider_id, &refresh_job.identity)
                             .await
                         {
                             Ok(()) => {
-                                match AssertUnwindSafe(provider.fetch_recommended_models(
-                                    crate::model_config::global_toolshim(),
-                                ))
-                                .catch_unwind()
-                                .await
+                                match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
+                                    .catch_unwind()
+                                    .await
                                 {
                                     Ok(Ok(models)) => Ok(models),
                                     Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
@@ -714,15 +725,26 @@ impl ProviderInventoryService {
             description: metadata.description.clone(),
             default_model: metadata.default_model.clone(),
             identity,
-            configured: entry.inventory_configured(),
+            configured: if metadata.setup.as_ref().is_some_and(|setup| setup.acp) {
+                crate::config::get_provider_entry(Config::global(), provider_id)
+                    .is_some_and(|entry| entry.enabled && entry.configured)
+            } else {
+                entry.inventory_configured()
+            },
+            available: entry.inventory_configured(),
             provider_type: entry.provider_type(),
-            category: crate::providers::catalog::get_provider_setup_category(&metadata.name)
-                .unwrap_or(ProviderSetupCategory::Model),
+            acp: metadata.setup.as_ref().is_some_and(|setup| setup.acp),
+            visible_in_setup: metadata.deprecated.is_none(),
+            deprecated: metadata.deprecated.is_some(),
+            replacement: metadata
+                .deprecated
+                .as_ref()
+                .and_then(|deprecated| deprecated.replacement.clone()),
             config_keys: metadata.config_keys.clone(),
             setup_steps: metadata.setup_steps.clone(),
             supports_refresh: entry.supports_inventory_refresh(),
+            toolshim: entry.toolshim_enabled(crate::model_config::global_toolshim()),
             static_models: metadata.known_models,
-            model_selection_hint: metadata.model_selection_hint,
         }))
     }
 
@@ -936,6 +958,10 @@ pub fn declarative_inventory_identity(
         "skip_canonical_filtering".to_string(),
         config.skip_canonical_filtering.to_string(),
     );
+    identity.public_inputs.insert(
+        "toolshim".to_string(),
+        (config.toolshim || crate::model_config::global_toolshim()).to_string(),
+    );
     if !config.models.is_empty() {
         identity.public_inputs.insert(
             "models".to_string(),
@@ -953,11 +979,30 @@ pub fn declarative_inventory_identity(
             .public_inputs
             .insert("headers".to_string(), serialize_string_map(headers)?);
     }
+    if let Some(header_name) = &config.session_id_header_override {
+        identity.public_inputs.insert(
+            "session_id_header_override".to_string(),
+            header_name.clone(),
+        );
+    }
     if !config.api_key_env.is_empty() {
         if let Some(value) = config_secret_value(global, &config.api_key_env) {
             identity
                 .secret_inputs
                 .insert(config.api_key_env.clone(), value);
+        }
+    }
+    if let Some(auth) = &config.auth {
+        identity
+            .secret_inputs
+            .insert("auth_command".to_string(), auth.command.clone());
+        identity
+            .secret_inputs
+            .insert("auth_args".to_string(), serde_json::to_string(&auth.args)?);
+        if let Some(cwd) = &auth.cwd {
+            identity
+                .secret_inputs
+                .insert("auth_cwd".to_string(), cwd.clone());
         }
     }
 
@@ -1009,16 +1054,39 @@ fn fallback_inventory_identity(provider_id: &str) -> InventoryIdentityInput {
     )
 }
 
+fn is_databricks_v2_model_service(provider_family: &str, model_id: &str) -> bool {
+    provider_family == "databricks_v2" && model_id.splitn(3, '.').count() == 3
+}
+
 fn enrich_model_ids_with_canonical(
     provider_family: &str,
     model_ids: &[String],
 ) -> Vec<InventoryModel> {
+    if provider_family == "litellm" {
+        return model_ids
+            .iter()
+            .map(|id| InventoryModel {
+                id: id.clone(),
+                name: id.clone(),
+                family: None,
+                context_limit: None,
+                reasoning: None,
+                recommended: false,
+            })
+            .collect();
+    }
+
     let mut models: Vec<InventoryModel> = Vec::new();
-    let mut seen_names: HashSet<String> = HashSet::new();
+    let mut seen_keys: HashSet<String> = HashSet::new();
 
     for id in model_ids {
         let model = enriched_model(provider_family, id, None);
-        if !seen_names.insert(model.name.clone()) {
+        let dedup_key = if is_databricks_v2_model_service(provider_family, id) {
+            id
+        } else {
+            &model.name
+        };
+        if !seen_keys.insert(dedup_key.clone()) {
             continue;
         }
         models.push(model);
@@ -1030,7 +1098,9 @@ fn enrich_model_ids_with_canonical(
     if matches!(provider_family, "databricks" | "databricks_v2") {
         let mut name_to_idx: HashMap<String, usize> = HashMap::new();
         for (idx, model) in models.iter().enumerate() {
-            name_to_idx.insert(model.name.clone(), idx);
+            if !is_databricks_v2_model_service(provider_family, &model.id) {
+                name_to_idx.insert(model.name.clone(), idx);
+            }
         }
         for id in model_ids {
             if !id.starts_with("goose-") {
@@ -1067,7 +1137,7 @@ fn configured_models_to_inventory(
     let mut result: Vec<InventoryModel> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     for model in models {
-        let enriched = enriched_model(provider_family, &model.name, Some(model.context_limit));
+        let enriched = enriched_model(provider_family, &model.name, model.context_limit);
         if seen_names.insert(enriched.name.clone()) {
             result.push(enriched);
         }
@@ -1091,7 +1161,12 @@ fn inventory_models_from_snapshot(
     snapshot: Option<&InventorySnapshot>,
     provider_family: &str,
     configured_models: &[ModelInfo],
+    supports_refresh: bool,
 ) -> Vec<InventoryModel> {
+    if !supports_refresh {
+        return configured_models_to_inventory(provider_family, configured_models);
+    }
+
     match snapshot {
         Some(snapshot) if !snapshot.models.is_empty() || snapshot.last_updated_at.is_some() => {
             snapshot.models.clone()
@@ -1128,52 +1203,7 @@ fn enriched_model(
     }
 }
 
-pub async fn create_tables(pool: &Pool<Sqlite>) -> Result<()> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS provider_inventory_entries (
-            inventory_key TEXT PRIMARY KEY,
-            provider_id TEXT NOT NULL,
-            provider_family TEXT NOT NULL,
-            last_updated_at TEXT,
-            last_refresh_attempt_at TEXT,
-            last_refresh_error TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS provider_inventory_models (
-            inventory_key TEXT NOT NULL REFERENCES provider_inventory_entries(inventory_key) ON DELETE CASCADE,
-            ordinal INTEGER NOT NULL,
-            model_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            family TEXT,
-            context_limit INTEGER,
-            reasoning BOOLEAN,
-            recommended BOOLEAN,
-            PRIMARY KEY (inventory_key, ordinal)
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_provider_inventory_provider_id ON provider_inventory_entries(provider_id)",
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-pub async fn create_tables_in_tx(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
+pub async fn create_tables(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS provider_inventory_entries (
@@ -1314,8 +1344,10 @@ mod tests {
 
     #[test]
     fn configured_models_use_canonical_enrichment() {
-        let models =
-            configured_models_to_inventory("anthropic", &[ModelInfo::new("claude-sonnet-4-5", 0)]);
+        let models = configured_models_to_inventory(
+            "anthropic",
+            &[ModelInfo::new("claude-sonnet-4-5").with_context_limit(0)],
+        );
 
         assert_eq!(models.len(), 1);
         assert!(models[0].name.contains("Claude"));
@@ -1342,8 +1374,32 @@ mod tests {
     }
 
     #[test]
+    fn databricks_v2_inventory_preserves_distinct_model_service_fqns() {
+        let model_ids = [
+            "alpha.prod.claude-sonnet-4-5",
+            "beta.prod.claude-sonnet-4-5",
+            "alpha.prod.claude-sonnet-4-5",
+        ]
+        .map(String::from);
+        let models = enrich_model_ids_with_canonical("databricks_v2", &model_ids);
+
+        let ids = models
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            [
+                "alpha.prod.claude-sonnet-4-5",
+                "beta.prod.claude-sonnet-4-5"
+            ]
+        );
+        assert_eq!(models[0].name, models[1].name);
+    }
+
+    #[test]
     fn inventory_uses_configured_models_before_first_successful_refresh() {
-        let configured_models = [ModelInfo::new("claude-sonnet-4-5", 0)];
+        let configured_models = [ModelInfo::new("claude-sonnet-4-5").with_context_limit(0)];
         let snapshot = InventorySnapshot {
             models: vec![],
             last_updated_at: None,
@@ -1352,7 +1408,7 @@ mod tests {
         };
 
         let models =
-            inventory_models_from_snapshot(Some(&snapshot), "anthropic", &configured_models);
+            inventory_models_from_snapshot(Some(&snapshot), "anthropic", &configured_models, true);
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "claude-sonnet-4-5");
@@ -1360,7 +1416,7 @@ mod tests {
 
     #[test]
     fn inventory_preserves_empty_models_after_successful_refresh() {
-        let configured_models = [ModelInfo::new("claude-sonnet-4-5", 0)];
+        let configured_models = [ModelInfo::new("claude-sonnet-4-5").with_context_limit(0)];
         let snapshot = InventorySnapshot {
             models: vec![],
             last_updated_at: Some(Utc::now()),
@@ -1369,8 +1425,36 @@ mod tests {
         };
 
         let models =
-            inventory_models_from_snapshot(Some(&snapshot), "anthropic", &configured_models);
+            inventory_models_from_snapshot(Some(&snapshot), "anthropic", &configured_models, true);
 
         assert!(models.is_empty());
+    }
+
+    #[test]
+    fn inventory_ignores_stale_snapshots_for_static_providers() {
+        let configured_models = [ModelInfo::new("gpt-5.6").with_context_limit(0)];
+        let snapshot = InventorySnapshot {
+            models: vec![InventoryModel {
+                id: "gpt-5.5".to_string(),
+                name: "gpt-5.5".to_string(),
+                family: None,
+                context_limit: None,
+                reasoning: None,
+                recommended: false,
+            }],
+            last_updated_at: Some(Utc::now()),
+            last_refresh_attempt_at: Some(Utc::now()),
+            last_refresh_error: None,
+        };
+
+        let models = inventory_models_from_snapshot(
+            Some(&snapshot),
+            "chatgpt_codex",
+            &configured_models,
+            false,
+        );
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "gpt-5.6");
     }
 }

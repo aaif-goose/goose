@@ -5,7 +5,6 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
 use tracing::{info, warn};
-use utoipa::ToSchema;
 
 pub const DEFAULT_EXTENSION: &str = "developer";
 pub const DEFAULT_EXTENSION_TIMEOUT: u64 = 300;
@@ -13,7 +12,7 @@ pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
 
-#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ExtensionEntry {
     pub enabled: bool,
     #[serde(flatten)]
@@ -41,6 +40,18 @@ pub(crate) fn is_extension_available(config: &ExtensionConfig) -> bool {
     }
 }
 
+fn inject_name_if_missing(key: &str, value: serde_yaml::Value) -> serde_yaml::Value {
+    let name_key = serde_yaml::Value::String("name".to_string());
+    if let serde_yaml::Value::Mapping(mut map) = value {
+        if !map.contains_key(&name_key) {
+            map.insert(name_key, serde_yaml::Value::String(key.to_string()));
+        }
+        serde_yaml::Value::Mapping(map)
+    } else {
+        value
+    }
+}
+
 fn parse_extensions_map(raw: &Mapping) -> IndexMap<String, ExtensionEntry> {
     let mut extensions_map = IndexMap::with_capacity(raw.len());
     for (k, v) in raw {
@@ -49,7 +60,8 @@ fn parse_extensions_map(raw: &Mapping) -> IndexMap<String, ExtensionEntry> {
             continue;
         };
 
-        match serde_yaml::from_value::<ExtensionEntry>(v.clone()) {
+        let v = inject_name_if_missing(key, v.clone());
+        match serde_yaml::from_value::<ExtensionEntry>(v) {
             Ok(entry) => {
                 if !is_extension_available(&entry.config) {
                     continue;
@@ -199,6 +211,17 @@ pub fn is_extension_enabled(key: &str) -> bool {
     extensions.get(key).map(|e| e.enabled).unwrap_or(false)
 }
 
+/// Returns the configured enabled state for an extension, or `None` when it has no entry.
+pub fn configured_enabled_state(config: &Config, name: &str) -> Option<bool> {
+    let extensions = get_extensions_map_with_config(config);
+    let key = name_to_key(name);
+    extensions
+        .values()
+        .find(|entry| entry.config.name() == name)
+        .or_else(|| extensions.get(&key))
+        .map(|entry| entry.enabled)
+}
+
 pub fn get_enabled_extensions() -> Vec<ExtensionConfig> {
     get_all_extensions()
         .into_iter()
@@ -256,15 +279,20 @@ pub fn get_warnings() -> Vec<String> {
 
     let mut warnings = Vec::new();
     for (k, v) in raw {
-        if let (serde_yaml::Value::String(key), Ok(entry)) =
-            (k, serde_yaml::from_value::<ExtensionEntry>(v))
-        {
-            if matches!(entry.config, ExtensionConfig::Sse { .. }) {
-                warnings.push(format!(
-                    "'{}': SSE is unsupported, migrate to streamable_http",
-                    key
-                ));
-            }
+        let Some(key) = k.as_str() else {
+            continue;
+        };
+        let Some(extension) = v.as_mapping() else {
+            continue;
+        };
+        let extension_type = extension
+            .get(serde_yaml::Value::String("type".to_string()))
+            .and_then(serde_yaml::Value::as_str);
+        if extension_type == Some("sse") {
+            warnings.push(format!(
+                "'{}': SSE is unsupported, migrate to streamable_http",
+                key
+            ));
         }
     }
     warnings
@@ -591,6 +619,91 @@ extensions:
     }
 
     #[test]
+    fn test_stdio_without_name_uses_map_key() {
+        let (config, _config_file, _secrets_file) = test_config(
+            r#"
+extensions:
+  firecrawl:
+    enabled: true
+    type: stdio
+    cmd: npx
+    args: ["-y", "firecrawl-mcp"]
+    envs:
+      FIRECRAWL_API_KEY: test-key
+"#,
+        );
+
+        let extensions = get_extensions_map_with_config(&config);
+        let entry = extensions
+            .get("firecrawl")
+            .expect("firecrawl extension should parse");
+        assert_eq!(entry.config.name(), "firecrawl");
+        assert!(entry.enabled);
+    }
+
+    #[test]
+    fn test_stdio_env_alias_accepted() {
+        let (config, _config_file, _secrets_file) = test_config(
+            r#"
+extensions:
+  brave-search:
+    enabled: true
+    type: stdio
+    name: brave-search
+    cmd: npx
+    args: ["-y", "@modelcontextprotocol/server-brave-search"]
+    env:
+      BRAVE_API_KEY: test-key
+"#,
+        );
+
+        let extensions = get_extensions_map_with_config(&config);
+        let entry = extensions
+            .get("brave-search")
+            .expect("brave-search extension should parse");
+        match &entry.config {
+            ExtensionConfig::Stdio { envs, .. } => {
+                assert_eq!(
+                    envs.get_env().get("BRAVE_API_KEY"),
+                    Some(&"test-key".to_string())
+                );
+            }
+            other => panic!("expected Stdio, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_stdio_env_alias_without_name_uses_map_key() {
+        let (config, _config_file, _secrets_file) = test_config(
+            r#"
+extensions:
+  brave-search:
+    enabled: true
+    type: stdio
+    cmd: npx
+    args: ["-y", "@modelcontextprotocol/server-brave-search"]
+    env:
+      BRAVE_API_KEY: test-key
+"#,
+        );
+
+        let extensions = get_extensions_map_with_config(&config);
+        let entry = extensions
+            .get("brave-search")
+            .expect("brave-search extension should parse when name is missing and env: is used");
+        assert_eq!(entry.config.name(), "brave-search");
+        match &entry.config {
+            ExtensionConfig::Stdio { envs, .. } => {
+                assert_eq!(
+                    envs.get_env().get("BRAVE_API_KEY"),
+                    Some(&"test-key".to_string())
+                );
+            }
+            other => panic!("expected Stdio, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_deserialization_failure_logs_offending_key() {
         let (config, _config_file, _secrets_file) = test_config(
             r#"
@@ -663,5 +776,40 @@ extensions:
             "expected no logs for other extension keys, got {:?}",
             other_keys
         );
+    }
+
+    #[test]
+    fn test_configured_enabled_state_unknown_extension_is_none() {
+        let (config, _config_file, _secrets_file) = test_config("");
+
+        assert_eq!(
+            configured_enabled_state(&config, "not_a_real_extension"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_default_on_extension_enabled_when_config_empty() {
+        let (config, _config_file, _secrets_file) = test_config("");
+
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
+    }
+
+    #[test]
+    fn test_configured_enabled_state_tracks_changes() {
+        let (config, _config_file, _secrets_file) = test_config("");
+        set_extension_with_config(&config, builtin_entry("developer", false));
+
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+
+        set_extension_enabled_with_config(&config, "developer", true);
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
+    }
+
+    #[test]
+    fn test_default_off_extension_disabled_when_config_empty() {
+        let (config, _config_file, _secrets_file) = test_config("");
+
+        assert_eq!(configured_enabled_state(&config, "chatrecall"), Some(false));
     }
 }

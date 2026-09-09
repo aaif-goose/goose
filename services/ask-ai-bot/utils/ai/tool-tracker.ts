@@ -6,6 +6,8 @@ export class ToolTracker {
   private codeSearchResults: number = 0;
   private viewedCodePaths: Set<string> = new Set();
   private listedDirs: number = 0;
+  private gitHubSearchCalls: number = 0;
+  private gitHubReadCalls: number = 0;
 
   recordSearchCall(results: string[]): void {
     this.docSearchCalls++;
@@ -29,6 +31,14 @@ export class ToolTracker {
 
   recordListDir(): void {
     this.listedDirs++;
+  }
+
+  recordGitHubSearch(): void {
+    this.gitHubSearchCalls++;
+  }
+
+  recordGitHubRead(): void {
+    this.gitHubReadCalls++;
   }
 
   getSummary(): string {
@@ -61,6 +71,21 @@ export class ToolTracker {
       const fileCount = this.viewedCodePaths.size;
       const filesText = fileCount === 1 ? "file" : "files";
       parts.push(`viewed ${fileCount} source ${filesText}`);
+    }
+
+    if (this.listedDirs > 0) {
+      const timesText = this.listedDirs === 1 ? "time" : "times";
+      parts.push(`listed directories ${this.listedDirs} ${timesText}`);
+    }
+
+    if (this.gitHubSearchCalls > 0) {
+      const timesText = this.gitHubSearchCalls === 1 ? "time" : "times";
+      parts.push(`searched GitHub ${this.gitHubSearchCalls} ${timesText}`);
+    }
+
+    if (this.gitHubReadCalls > 0) {
+      const itemText = this.gitHubReadCalls === 1 ? "item" : "items";
+      parts.push(`read ${this.gitHubReadCalls} GitHub ${itemText}`);
     }
 
     if (parts.length === 0) return "";

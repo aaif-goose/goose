@@ -27,7 +27,7 @@ Thank you so much for your contribution, ATrueLight4! Your work brings us one st
 To show our deep gratitude for your contribution, we've granted you the exclusive ✨Top Contributor✨ badge on the Block Open Source Discord! You'll also be one of the first contributors to receive exclusive codename goose swag. (more info on that to be announced later 👀🪿)
 
 ## Get Your Own Spotlight
-Interested in contributing to goose and having your contribution featured? Whether it's improving platform support, adding new features, or fixing bugs, we welcome all contributions from the open source community. You can [join the Block Open Source Discord](https://discord.gg/goose-oss) or [get started using codename goose](https://goose-docs.ai/) today.
+Interested in contributing to goose and having your contribution featured? Whether it's improving platform support, adding new features, or fixing bugs, we welcome all contributions from the open source community. You can [join the Block Open Source Discord](https://discord.gg/n8R5VaWDAn) or [get started using codename goose](https://goose-docs.ai/) today.
 
 <head>
   <meta property="og:title" content="How ATrueLight4 Helped Goose Navigate Windows" />

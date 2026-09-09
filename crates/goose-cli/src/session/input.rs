@@ -1,4 +1,7 @@
 use super::completion::GooseCompleter;
+use super::paste::{
+    read_paste_aware_input, PasteAwareEnterHandler, PasteCaptureHandler, PasteState,
+};
 use super::{CompletionCache, HintStatus};
 use anyhow::Result;
 use goose::config::{Config, GooseMode};
@@ -20,11 +23,11 @@ pub enum InputResult {
     ListPrompts(Option<String>),
     PromptCommand(PromptCommandOptions),
     GooseMode(String),
-    Model(Option<String>),
+    Model(ModelCommandOptions),
     Plan(PlanCommandOptions),
     EndPlan,
     Clear,
-    Recipe(Option<String>),
+    New,
     Compact,
     ToggleFullToolOutput,
     Edit(Option<String>),
@@ -42,6 +45,12 @@ pub struct PromptCommandOptions {
 #[derive(Debug)]
 pub struct PlanCommandOptions {
     pub message_text: String,
+}
+
+#[derive(Debug, Default)]
+pub struct ModelCommandOptions {
+    pub provider: Option<String>,
+    pub model: Option<String>,
 }
 
 struct CtrlCHandler {
@@ -83,12 +92,18 @@ impl rustyline::ConditionalEventHandler for CtrlCHandler {
     }
 }
 
+/// The Ctrl-modified character that inserts a newline instead of submitting the
+/// prompt. Configurable via `GOOSE_CLI_NEWLINE_KEY`, defaulting to `j` (Ctrl+J).
+/// Characters already bound to other actions are rejected: `m` (Ctrl+M is Enter)
+/// and `c` (Ctrl+C interrupts), both of which would otherwise shadow the paste
+/// and interrupt handlers.
 pub fn get_newline_key() -> char {
     Config::global()
         .get_param::<String>("GOOSE_CLI_NEWLINE_KEY")
         .ok()
         .and_then(|s| s.chars().next())
         .map(|c| c.to_ascii_lowercase())
+        .filter(|c| !matches!(c, 'm' | 'c'))
         .unwrap_or('j')
 }
 
@@ -136,10 +151,32 @@ pub fn get_input(
         .map(|h| h.completion_cache.clone())
         .ok_or_else(|| anyhow::anyhow!("Editor helper not set"))?;
 
-    let newline_key = get_newline_key();
+    let paste_state = Arc::new(std::sync::RwLock::new(PasteState::default()));
+
+    editor.bind_sequence(
+        rustyline::Event::Any,
+        rustyline::EventHandler::Conditional(Box::new(PasteCaptureHandler::new(
+            paste_state.clone(),
+        ))),
+    );
+
+    editor.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Enter, rustyline::Modifiers::NONE),
+        rustyline::EventHandler::Conditional(Box::new(PasteAwareEnterHandler::new(
+            paste_state.clone(),
+        ))),
+    );
+
+    editor.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Char('m'), rustyline::Modifiers::CTRL),
+        rustyline::EventHandler::Conditional(Box::new(PasteAwareEnterHandler::new(
+            paste_state.clone(),
+        ))),
+    );
+
     editor.bind_sequence(
         rustyline::KeyEvent(
-            rustyline::KeyCode::Char(newline_key),
+            rustyline::KeyCode::Char(get_newline_key()),
             rustyline::Modifiers::CTRL,
         ),
         rustyline::EventHandler::Simple(rustyline::Cmd::Newline),
@@ -150,7 +187,7 @@ pub fn get_input(
         rustyline::EventHandler::Conditional(Box::new(CtrlCHandler::new(completion_cache))),
     );
 
-    let input = match editor.readline("> ") {
+    let input = match read_paste_aware_input(editor, paste_state) {
         Ok(text) => text,
         Err(e) => match e {
             rustyline::error::ReadlineError::Interrupted => return Ok(InputResult::Exit),
@@ -202,7 +239,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_PLAN: &str = "/plan";
     const CMD_ENDPLAN: &str = "/endplan";
     const CMD_CLEAR: &str = "/clear";
-    const CMD_RECIPE: &str = "/recipe";
+    const CMD_NEW: &str = "/new";
     const CMD_COMPACT: &str = "/compact";
     const CMD_SUMMARIZE_DEPRECATED: &str = "/summarize";
     const CMD_EDIT: &str = "/edit";
@@ -264,17 +301,33 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         s if s.starts_with(CMD_MODE) => Some(InputResult::GooseMode(
             s.get(CMD_MODE.len()..).unwrap_or("").to_string(),
         )),
-        s if s == CMD_MODEL => Some(InputResult::Model(None)),
+        s if s == CMD_MODEL => Some(InputResult::Model(ModelCommandOptions::default())),
         s if s.starts_with(CMD_MODEL_WITH_SPACE) => {
-            let model = s
+            let rest = s
                 .get(CMD_MODEL_WITH_SPACE.len()..)
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            if model.is_empty() {
-                Some(InputResult::Model(None))
+            if rest.is_empty() {
+                Some(InputResult::Model(ModelCommandOptions::default()))
+            } else if let Some(after_flag) = rest.strip_prefix("--provider ") {
+                let parts: Vec<&str> = after_flag.split_whitespace().collect();
+                let provider = parts.first().map(|s| s.to_string());
+                let model = parts
+                    .get(1..)
+                    .filter(|parts| !parts.is_empty())
+                    .map(|parts| parts.join(" "));
+                Some(InputResult::Model(ModelCommandOptions { provider, model }))
+            } else if rest == "--provider" {
+                Some(InputResult::Model(ModelCommandOptions {
+                    provider: Some(String::new()),
+                    model: None,
+                }))
             } else {
-                Some(InputResult::Model(Some(model)))
+                Some(InputResult::Model(ModelCommandOptions {
+                    provider: None,
+                    model: Some(rest),
+                }))
             }
         }
         s if s.starts_with(CMD_PLAN) => {
@@ -282,7 +335,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         }
         s if s == CMD_ENDPLAN => Some(InputResult::EndPlan),
         s if s == CMD_CLEAR => Some(InputResult::Clear),
-        s if s.starts_with(CMD_RECIPE) => parse_recipe_command(s),
+        s if s == CMD_NEW => Some(InputResult::New),
         s if s == CMD_COMPACT => Some(InputResult::Compact),
         // Match "/skills" exactly or "/skills " with args - avoids matching e.g. "/skillsextra"
         s if s == CMD_SKILLS || s.starts_with(&format!("{CMD_SKILLS} ")) => {
@@ -313,31 +366,6 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         }
         _ => None,
     }
-}
-
-fn parse_recipe_command(s: &str) -> Option<InputResult> {
-    const CMD_RECIPE: &str = "/recipe";
-
-    if s == CMD_RECIPE {
-        // No filepath provided, use default
-        return Some(InputResult::Recipe(None));
-    }
-
-    // Extract the filepath from the command
-    let filepath = s.get(CMD_RECIPE.len()..).unwrap_or("").trim();
-
-    if filepath.is_empty() {
-        return Some(InputResult::Recipe(None));
-    }
-
-    // Validate that the filepath ends with .yaml
-    if !filepath.to_lowercase().ends_with(".yaml") {
-        println!("{}", console::style("Filepath must end with .yaml").red());
-        return Some(InputResult::Retry);
-    }
-
-    // Return the filepath for validation in the handler
-    Some(InputResult::Recipe(Some(filepath.to_string())))
 }
 
 fn parse_prompts_command(args: &str) -> Option<InputResult> {
@@ -401,10 +429,17 @@ fn parse_plan_command(input: String) -> Option<InputResult> {
     Some(InputResult::Plan(options))
 }
 
-fn print_help() {
-    let newline_key = get_newline_key().to_ascii_uppercase();
+fn help_text() -> String {
     let modes = GooseMode::VARIANTS.join(", ");
-    println!(
+    let newline_key = get_newline_key().to_ascii_uppercase();
+    let additional_builtin_help = additional_builtin_help();
+    let additional_builtin_help = if additional_builtin_help.is_empty() {
+        String::new()
+    } else {
+        format!("{additional_builtin_help}\n")
+    };
+
+    format!(
         "Available commands:
 /exit or /quit - Exit the session
 /t - Toggle Light/Dark/Ansi theme
@@ -416,28 +451,45 @@ fn print_help() {
 /prompt <n> [--info] [key=value...] - Get prompt info or execute a prompt
 /mode <name> - Set the goose mode to use ({modes})
 /model [name] - Show the current model, or switch models for this session while keeping the same provider
+/model --provider <name> [model] - Switch to a different provider (optionally specifying a model)
 /plan <message_text> -  Enters 'plan' mode with optional message. Create a plan based on the current messages and asks user if they want to act on it.
                         If user acts on the plan, goose mode is set to 'auto' and returns to 'normal' goose mode.
                         To warm up goose before using '/plan', we recommend setting '/mode approve' & putting appropriate context into goose.
                         The model is used based on $GOOSE_PLANNER_PROVIDER and $GOOSE_PLANNER_MODEL environment variables.
                         If no model is set, the default model is used.
 /endplan - Exit plan mode and return to 'normal' goose mode.
-/recipe [filepath] - Generate a recipe from the current conversation and save it to the specified filepath (must end with .yaml).
-                       If no filepath is provided, it will be saved to ./recipe.yaml.
 /compact - Compact the current conversation to reduce context length while preserving key information.
-/status - Show session status: model, provider, mode, and token usage.
+{additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
 /skills - List available skills or enable skills by name (usage: /skills [<name>...])
 /? or /help - Display this help message
 /clear - Clears the current chat history
+/new - Start a fresh session in this process, keeping the current provider, model and extensions
 
 Navigation:
-Ctrl+C - Clear current line if text is entered, otherwise exit the session
+Enter - Send message
 Ctrl+{newline_key} - Add a newline (configurable via GOOSE_CLI_NEWLINE_KEY)
+Ctrl+C - Clear current line if text is entered, otherwise exit the session
 Up/Down arrows - Navigate through command history
 GOOSE_CLI_BELL=true - Ring the terminal bell when goose finishes a turn or needs approval"
-    );
+    )
+}
+
+fn additional_builtin_help() -> String {
+    const DOCUMENTED_BUILTINS: &[&str] =
+        &["prompts", "prompt", "compact", "clear", "skills", "status"];
+
+    goose::agents::execute_commands::list_commands()
+        .iter()
+        .filter(|command| !DOCUMENTED_BUILTINS.contains(&command.name))
+        .map(|command| format!("/{} - {}", command.name, command.description))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn print_help() {
+    println!("{}", help_text());
 }
 
 /// Extract recent messages for editor context
@@ -520,20 +572,95 @@ mod tests {
         // Test model command
         assert!(matches!(
             handle_slash_command("/model"),
-            Some(InputResult::Model(None))
+            Some(InputResult::Model(ModelCommandOptions {
+                provider: None,
+                model: None
+            }))
         ));
         assert!(matches!(
             handle_slash_command("/model   "),
-            Some(InputResult::Model(None))
+            Some(InputResult::Model(ModelCommandOptions {
+                provider: None,
+                model: None
+            }))
         ));
-        if let Some(InputResult::Model(Some(model))) = handle_slash_command("/model gpt-4.1") {
-            assert_eq!(model, "gpt-4.1");
+        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
+            handle_slash_command("/model gpt-4.1")
+        {
+            assert_eq!(model.as_deref(), Some("gpt-4.1"));
+            assert!(provider.is_none());
         } else {
             panic!("Expected Model");
         }
 
+        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
+            handle_slash_command("/model --provider anthropic")
+        {
+            assert_eq!(provider.as_deref(), Some("anthropic"));
+            assert!(model.is_none());
+        } else {
+            panic!("Expected Model with provider");
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
+            handle_slash_command("/model --provider anthropic claude-sonnet-4")
+        {
+            assert_eq!(provider.as_deref(), Some("anthropic"));
+            assert_eq!(model.as_deref(), Some("claude-sonnet-4"));
+        } else {
+            panic!("Expected Model with provider and model");
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
+            handle_slash_command("/model --provider")
+        {
+            assert_eq!(provider.as_deref(), Some(""));
+            assert!(model.is_none());
+        } else {
+            panic!("Expected Model with empty provider");
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
+            handle_slash_command("/model --provider ")
+        {
+            assert_eq!(provider.as_deref(), Some(""));
+            assert!(model.is_none());
+        } else {
+            panic!("Expected Model with empty provider (trailing space)");
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
+            handle_slash_command("/model --provider   anthropic    claude-sonnet-4")
+        {
+            assert_eq!(provider.as_deref(), Some("anthropic"));
+            assert_eq!(model.as_deref(), Some("claude-sonnet-4"));
+        } else {
+            panic!("Expected Model with extra whitespace handled");
+        }
+
         // Test unknown commands
         assert!(handle_slash_command("/unknown").is_none());
+    }
+
+    #[test]
+    fn test_handle_slash_command_new() {
+        assert!(matches!(
+            handle_slash_command("/new"),
+            Some(InputResult::New)
+        ));
+    }
+
+    #[test]
+    fn help_lists_builtin_agent_commands() {
+        let help = help_text();
+
+        for command in goose::agents::execute_commands::list_commands() {
+            assert!(
+                help.contains(&format!("/{}", command.name)),
+                "help output should list /{}",
+                command.name
+            );
+        }
     }
 
     #[test]
@@ -689,26 +816,9 @@ mod tests {
     }
 
     #[test]
-    fn test_recipe_command() {
-        // Test recipe with no filepath
-        if let Some(InputResult::Recipe(filepath)) = handle_slash_command("/recipe") {
-            assert!(filepath.is_none());
-        } else {
-            panic!("Expected Recipe");
-        }
-
-        // Test recipe with filepath
-        if let Some(InputResult::Recipe(filepath)) =
-            handle_slash_command("/recipe /path/to/file.yaml")
-        {
-            assert_eq!(filepath, Some("/path/to/file.yaml".to_string()));
-        } else {
-            panic!("Expected recipe with filepath");
-        }
-
-        // Test recipe with invalid extension
-        let result = handle_slash_command("/recipe /path/to/file.txt");
-        assert!(matches!(result, Some(InputResult::Retry)));
+    fn recipe_command_is_not_builtin() {
+        assert!(handle_slash_command("/recipe").is_none());
+        assert!(handle_slash_command("/recipe recipe.yaml").is_none());
     }
 
     // --- should_use_editor_always tests ---

@@ -1,23 +1,17 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type RefObject } from 'react';
 import { IpcRendererEvent } from 'electron';
-import {
-  HashRouter,
-  Routes,
-  Route,
-  useNavigate,
-  useLocation,
-  useSearchParams,
-} from 'react-router-dom';
+import { HashRouter, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router';
 import { importNostrSessionFromDeepLink } from './sessionLinks';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import RecipeParamsModalContainer from './components/RecipeParamsModalContainer';
-import { isRecipeParamsCancelled } from './acp/errors';
+import { isRecipeParamsCancelled, isRecipeParameterScopesUnsupported } from './acp/errors';
 import { toast, ToastContainer } from 'react-toastify';
 import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
+import { acpListSessions, acpDeleteSession } from './acp/sessions';
 
 import { ChatType } from './types/chat';
 import Hub from './components/Hub';
@@ -57,6 +51,7 @@ import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
 import { registerPlatformEventHandlers } from './utils/platform_events';
+import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -64,9 +59,9 @@ function PageViewTracker() {
 }
 
 // Route Components
-const HubRouteWrapper = () => {
+const HubRouteWrapper = ({ draftRef }: { draftRef: RefObject<string> }) => {
   const setView = useNavigation();
-  return <Hub setView={setView} />;
+  return <Hub setView={setView} draftRef={draftRef} />;
 };
 
 export function resolveSessionInitialMessage(
@@ -79,7 +74,7 @@ export function resolveSessionInitialMessage(
   );
 }
 
-const PairRouteWrapper = ({
+export const PairRouteWrapper = ({
   activeSessions,
 }: {
   activeSessions: Array<{
@@ -139,6 +134,11 @@ const PairRouteWrapper = ({
           });
         } catch (error) {
           if (isRecipeParamsCancelled(error)) {
+            navigate('/');
+            return;
+          }
+          if (isRecipeParameterScopesUnsupported(error)) {
+            toast.error(error.message);
             navigate('/');
             return;
           }
@@ -318,6 +318,12 @@ export function AppInner() {
     recipe: null,
   });
 
+  // New Chat is the only chat that unmounts on navigation; the rest stay mounted in
+  // `ChatSessionsContainer` and keep their text in local state. Its unsent input lives
+  // here so it outlives that unmount, and in a ref rather than state because nothing
+  // above the outlet has to render on a keystroke.
+  const hubDraftRef = useRef('');
+
   const MAX_ACTIVE_SESSIONS = 10;
 
   const [activeSessions, setActiveSessions] = useState<
@@ -396,7 +402,26 @@ export function AppInner() {
   }, []);
 
   useEffect(() => {
-    const handleOpenSessionShare = async (_event: IpcRendererEvent, ...args: unknown[]) => {
+    const handleSystemResume = () => reconnectAcpAfterSystemResume();
+    window.electron.on('system-resume', handleSystemResume);
+    return () => window.electron.off('system-resume', handleSystemResume);
+  }, []);
+
+  useEffect(() => {
+    acpListSessions()
+      .then(({ sessions }) => {
+        const phantom = sessions.filter(
+          (s) => s.messageCount === 0 && !s.userSetName && !s.hasRecipe
+        );
+        for (const s of phantom) {
+          acpDeleteSession(s.id).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleOpenSharedSession = async (_event: IpcRendererEvent, ...args: unknown[]) => {
       const link = args[0] as string;
       window.electron.logInfo('Opening session share link');
 
@@ -430,9 +455,9 @@ export function AppInner() {
         }
       }
     };
-    window.electron.on('open-shared-session', handleOpenSessionShare);
+    window.electron.on('open-shared-session', handleOpenSharedSession);
     return () => {
-      window.electron.off('open-shared-session', handleOpenSessionShare);
+      window.electron.off('open-shared-session', handleOpenSharedSession);
     };
   }, [navigate]);
 
@@ -622,7 +647,7 @@ export function AppInner() {
                 </OnboardingGuard>
               }
             >
-              <Route index element={<HubRouteWrapper />} />
+              <Route index element={<HubRouteWrapper draftRef={hubDraftRef} />} />
               <Route
                 path="pair"
                 element={

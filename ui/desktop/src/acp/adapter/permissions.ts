@@ -1,4 +1,5 @@
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk';
+import type { AcpPermissionRequest } from '../permissionRequestTypes';
 import {
   type AcpChatStateChange,
   type AdapterState,
@@ -10,20 +11,11 @@ import {
 
 export function applyPermissionRequest(
   state: AdapterState,
-  request: RequestPermissionRequest
+  permissionRequest: AcpPermissionRequest
 ): AcpChatStateChange[] {
+  const { generation, request } = permissionRequest;
   const toolCallId = request.toolCall.toolCallId;
-  const existing = state.messages.some((message) =>
-    message.content.some(
-      (content) =>
-        content.type === 'actionRequired' &&
-        content.data.actionType === 'toolConfirmation' &&
-        content.data.id === toolCallId
-    )
-  );
-  if (existing) {
-    return messagesChange(state);
-  }
+  removePermissionRequestFromState(state, toolCallId);
 
   const identity = toolIdentity(request.toolCall);
   const prompt = permissionPrompt(request);
@@ -37,6 +29,7 @@ export function applyPermissionRequest(
         type: 'actionRequired',
         data: {
           actionType: 'toolConfirmation',
+          generation,
           id: toolCallId,
           toolName: identity.toolName ?? request.toolCall.title ?? toolCallId,
           arguments: rawInputToArguments(request.toolCall.rawInput),
@@ -48,6 +41,44 @@ export function applyPermissionRequest(
   });
 
   return messagesChange(state);
+}
+
+export function cancelPermissionRequest(
+  state: AdapterState,
+  toolCallId: string,
+  generation: string
+): AcpChatStateChange[] {
+  return removePermissionRequestFromState(state, toolCallId, generation)
+    ? messagesChange(state)
+    : [];
+}
+
+function removePermissionRequestFromState(
+  state: AdapterState,
+  toolCallId: string,
+  generation?: string
+): boolean {
+  let changed = false;
+
+  state.messages = state.messages.flatMap((message) => {
+    const content = message.content.filter((content) => {
+      const matches =
+        content.type === 'actionRequired' &&
+        content.data.actionType === 'toolConfirmation' &&
+        content.data.id === toolCallId &&
+        (generation === undefined || content.data.generation === generation);
+      changed ||= matches;
+      return !matches;
+    });
+
+    if (content.length === message.content.length) {
+      return [message];
+    }
+
+    return content.length > 0 ? [{ ...message, content }] : [];
+  });
+
+  return changed;
 }
 
 function permissionPrompt(request: RequestPermissionRequest): string | undefined {

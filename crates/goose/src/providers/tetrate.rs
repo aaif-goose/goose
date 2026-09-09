@@ -152,7 +152,10 @@ impl Provider for TetrateProvider {
             .with_retry(|| async {
                 let resp = self
                     .api_client
-                    .response_post("v1/chat/completions", &payload)
+                    .request("v1/chat/completions")
+                    .model_headers(model_config)?
+                    .streaming(true)
+                    .response_post(&payload)
                     .await?;
                 let resp = handle_status(resp)
                     .await
@@ -166,22 +169,21 @@ impl Provider for TetrateProvider {
                     .is_some_and(|v| v.contains("json"));
 
                 if is_json {
-                    // Streaming responses should be SSE; when we get JSON instead, parse it to map
-                    // explicit error payloads and otherwise fail as a protocol mismatch.
-                    let body = handle_response_openai_compat(resp)
+                    let body = goose_providers::http_status::read_error_body(resp)
                         .await
-                        .map_err(Self::enrich_credits_error)?;
-                    if body.get("error").is_some() {
-                        return Err(Self::error_from_tetrate_error_payload(
-                            body,
-                            "v1/chat/completions",
-                        ));
+                        .unwrap_or_default();
+                    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&body) {
+                        if payload.get("error").is_some() {
+                            return Err(Self::error_from_tetrate_error_payload(
+                                payload,
+                                "v1/chat/completions",
+                            ));
+                        }
                     }
 
-                    return Err(ProviderError::ExecutionError(
-                        "Expected streaming response but received non-streaming payload"
-                            .to_string(),
-                    ));
+                    return Err(ProviderError::ExecutionError(format!(
+                        "Expected streaming response but received non-streaming payload: {body}"
+                    )));
                 }
 
                 Ok(resp)

@@ -60,27 +60,25 @@ ALLOW all standard development operations within ~/projects/.
 
 ## What Gets Reviewed
 
-By default, the adversary reviews **`shell`** and **`computercontroller__automation_script`** — the tools that can execute arbitrary code.
+By default, the adversary reviews **`shell`** — the tool that can execute arbitrary code.
 
 You can expand coverage by adding a `tools:` line at the top of your `adversary.md`:
 
 ```markdown
-tools: shell, computercontroller__automation_script
+tools: shell, computercontroller__computer_control
 ---
 BLOCK if the command exfiltrates data or is destructive.
 ALLOW normal development operations.
 ```
 
-The `tools:` line is a comma-separated list of tool names to review. Everything before the `---` separator is configuration; everything after is your rules. If you omit the `tools:` line, `shell` and `computercontroller__automation_script` are reviewed by default.
+The `tools:` line is a comma-separated list of tool names to review. Everything before the `---` separator is configuration; everything after is your rules. If you omit the `tools:` line, `shell` is reviewed by default.
 
 Some tool names you might want to add:
 
 | Tool name | What it does |
 |-----------|-------------|
 | `shell` | Executes shell commands (default) |
-| `computercontroller__automation_script` | Runs shell, Ruby, AppleScript, or PowerShell scripts (default) |
-| `computercontroller__computer_control` | UI automation — clicks, keystrokes, typing |
-| `computercontroller__web_scrape` | Fetches arbitrary URLs |
+| `computercontroller__computer_control` | macOS UI automation via peekaboo — clicks, keystrokes, typing |
 
 ## See Also
 

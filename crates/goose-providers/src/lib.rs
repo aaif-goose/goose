@@ -1,22 +1,24 @@
 pub mod anthropic;
 pub mod api_client;
-pub mod base;
-pub mod canonical;
-pub mod conversation;
+pub mod azure_foundry;
+pub mod databricks;
+pub mod databricks_auth;
+pub mod databricks_v2;
+pub mod google;
+pub use goose_provider_types::{
+    base, cache_semantics, canonical, context_limit, conversation, documents, errors, formats,
+    goose_mode, images, json, model, permission, request_log, retry, thinking, utils,
+};
 pub mod declarative;
-pub mod errors;
-pub mod formats;
-pub mod goose_mode;
 pub mod http_status;
-pub mod images;
-pub mod json;
-pub(crate) mod mcp_utils;
-pub mod model;
+#[cfg(feature = "local-inference")]
+pub mod local_inference;
 pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
-pub mod permission;
-pub mod request_log;
-pub mod retry;
-pub mod thinking;
-pub mod utils;
+pub mod openrouter;
+pub mod openrouter_format;
+
+pub use declarative::declarative_providers::*;
+
+pub mod snowflake;

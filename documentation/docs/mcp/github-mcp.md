@@ -16,10 +16,10 @@ This tutorial covers how to add the [GitHub MCP Server](https://github.com/githu
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-   [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fapi.githubcopilot.com%2Fmcp%2F&id=github&name=GitHub&description=GitHub%20repository%20management%20and%20operations&header=Authorization%3DBearer%20YOUR_GITHUB_PERSONAL_ACCESS_TOKEN)
+   [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fapi.githubcopilot.com%2Fmcp%2F&id=github-mcp&name=GitHub&description=GitHub%20repository%20management%20and%20operations&header=Authorization%3DBearer%20YOUR_GITHUB_PERSONAL_ACCESS_TOKEN)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-  Add a `Remote Extension (Streaming HTTP)` extension type with:
+  Add a `Remote Extension (Streamable HTTP)` extension type with:
 
   **Endpoint URL**
   ```
@@ -40,7 +40,7 @@ These steps configure the Remote MCP Server. For other deployment options, see t
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
     <GooseDesktopInstaller
-      extensionId="github"
+      extensionId="github-mcp"
       extensionName="GitHub"
       description="GitHub repository management and operations"
       type="http"

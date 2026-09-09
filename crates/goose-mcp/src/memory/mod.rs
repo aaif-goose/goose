@@ -3,8 +3,8 @@ use indoc::formatdoc;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolResult, Content, ErrorCode, ErrorData, Implementation, InitializeResult, Meta,
-        ServerCapabilities, ServerInfo,
+        CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
+        MetaObject, ServerCapabilities, ServerInfo,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -20,12 +20,40 @@ use std::{
 
 const WORKING_DIR_HEADER: &str = "agent-working-dir";
 
-fn extract_working_dir_from_meta(meta: &Meta) -> Option<PathBuf> {
+fn is_reserved_windows_category(category: &str) -> bool {
+    let basename = category
+        .split('.')
+        .next()
+        .unwrap_or(category)
+        .trim_end_matches([' ', '.']);
+    let uppercase = basename.to_ascii_uppercase();
+
+    matches!(uppercase.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            uppercase.strip_prefix(prefix).is_some_and(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+        })
+}
+
+fn extract_working_dir_from_meta(meta: &MetaObject) -> Option<PathBuf> {
     meta.0
         .get(WORKING_DIR_HEADER)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
+}
+
+fn memory_error(error: io::Error) -> ErrorData {
+    let code = if error.kind() == io::ErrorKind::InvalidInput {
+        ErrorCode::INVALID_PARAMS
+    } else {
+        ErrorCode::INTERNAL_ERROR
+    };
+    ErrorData::new(code, error.to_string(), None)
 }
 
 /// Parameters for the remember_memory tool
@@ -158,7 +186,22 @@ impl MemoryServer {
         category: &str,
         is_global: bool,
         working_dir: Option<&PathBuf>,
-    ) -> PathBuf {
+    ) -> io::Result<PathBuf> {
+        if category.is_empty()
+            || category == "*"
+            || category == "."
+            || category == ".."
+            || category.contains('/')
+            || category.contains('\\')
+            || category.contains(':')
+            || is_reserved_windows_category(category)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "memory category must be a single filename component",
+            ));
+        }
+
         let base_dir = if is_global {
             self.global_memory_dir.clone()
         } else {
@@ -168,7 +211,7 @@ impl MemoryServer {
                 .unwrap_or_else(|| PathBuf::from("."));
             local_base.join(".goose").join("memory")
         };
-        base_dir.join(format!("{}.txt", category))
+        Ok(base_dir.join(format!("{}.txt", category)))
     }
 
     pub fn retrieve_all(
@@ -190,11 +233,23 @@ impl MemoryServer {
             for entry in fs::read_dir(&base_dir)? {
                 let entry = entry?;
                 if entry.file_type()?.is_file() {
-                    let category = entry.file_name().to_string_lossy().replace(".txt", "");
-                    let category_memories = self.retrieve(&category, is_global, working_dir)?;
+                    let file_name = entry.file_name();
+                    let Some(category) = file_name
+                        .to_str()
+                        .and_then(|name| name.strip_suffix(".txt"))
+                    else {
+                        continue;
+                    };
+                    if self
+                        .get_memory_file(category, is_global, working_dir)
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    let category_memories = self.retrieve(category, is_global, working_dir)?;
                     memories.insert(
-                        category,
-                        category_memories.into_iter().flat_map(|(_, v)| v).collect(),
+                        category.to_string(),
+                        category_memories.into_values().flatten().collect(),
                     );
                 }
             }
@@ -211,7 +266,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<()> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
 
         if let Some(parent) = memory_file_path.parent() {
             fs::create_dir_all(parent)?;
@@ -235,7 +290,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<HashMap<String, Vec<String>>> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if !memory_file_path.exists() {
             return Ok(HashMap::new());
         }
@@ -276,7 +331,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<()> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if !memory_file_path.exists() {
             return Ok(());
         }
@@ -303,7 +358,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<()> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if memory_file_path.exists() {
             fs::remove_file(memory_file_path)?;
         }
@@ -361,9 +416,9 @@ impl MemoryServer {
             params.is_global,
             working_dir.as_ref(),
         )
-        .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        .map_err(memory_error)?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Stored memory in category: {}",
             params.category
         ))]))
@@ -387,9 +442,9 @@ impl MemoryServer {
         } else {
             self.retrieve(&params.category, params.is_global, working_dir.as_ref())
         }
-        .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        .map_err(memory_error)?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Retrieved memories: {:?}",
             memories
         ))]))
@@ -410,18 +465,18 @@ impl MemoryServer {
 
         let message = if params.category == "*" {
             self.clear_all_global_or_local_memories(params.is_global, working_dir.as_ref())
-                .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+                .map_err(memory_error)?;
             format!(
                 "Cleared all memory {} categories",
                 if params.is_global { "global" } else { "local" }
             )
         } else {
             self.clear_memory(&params.category, params.is_global, working_dir.as_ref())
-                .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+                .map_err(memory_error)?;
             format!("Cleared memories in category: {}", params.category)
         };
 
-        Ok(CallToolResult::success(vec![Content::text(message)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(message)]))
     }
 
     /// Removes a specific memory within a specified category
@@ -443,9 +498,9 @@ impl MemoryServer {
             params.is_global,
             working_dir.as_ref(),
         )
-        .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        .map_err(memory_error)?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Removed specific memory from category: {}",
             params.category
         ))]))
@@ -664,5 +719,133 @@ mod tests {
             .values()
             .any(|v| v.iter().any(|content| content.contains("keep_this")));
         assert!(has_kept);
+    }
+
+    #[test]
+    fn test_memory_operations_reject_escape_capable_categories() {
+        let temp_dir = tempdir().unwrap();
+        let working_dir = temp_dir.path().join("working");
+        let outside_file = temp_dir.path().join("outside.txt");
+        fs::write(&outside_file, "secret").unwrap();
+
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: temp_dir.path().join("global"),
+        };
+
+        for category in [
+            "",
+            "*",
+            ".",
+            "..",
+            "../../../outside",
+            "/tmp/outside",
+            r"..\..\outside",
+            "C:outside",
+            r"C:\outside",
+            "NUL",
+            "con",
+            "AUX.log",
+            "COM1",
+            "lpt9",
+        ] {
+            assert_eq!(
+                router
+                    .remember(
+                        "context",
+                        category,
+                        "malicious",
+                        &[],
+                        false,
+                        Some(&working_dir)
+                    )
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+            assert_eq!(
+                router
+                    .retrieve(category, false, Some(&working_dir))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+            assert_eq!(
+                router
+                    .remove_specific_memory_internal(category, "secret", false, Some(&working_dir),)
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+            assert_eq!(
+                router
+                    .clear_memory(category, false, Some(&working_dir))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+
+        assert_eq!(fs::read_to_string(outside_file).unwrap(), "secret");
+        assert!(!working_dir.join(".goose").exists());
+    }
+
+    #[test]
+    fn test_memory_category_allows_safe_filename_characters() {
+        let temp_dir = tempdir().unwrap();
+        let working_dir = temp_dir.path().join("working");
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: temp_dir.path().join("global"),
+        };
+
+        router
+            .remember(
+                "context",
+                "project notes_2026",
+                "safe",
+                &[],
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+
+        assert!(working_dir
+            .join(".goose/memory/project notes_2026.txt")
+            .is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_retrieve_all_skips_invalid_legacy_categories() {
+        let temp_dir = tempdir().unwrap();
+        let working_dir = temp_dir.path().join("working");
+        let memory_dir = working_dir.join(".goose/memory");
+        fs::create_dir_all(&memory_dir).unwrap();
+        fs::write(memory_dir.join("valid.txt"), "kept").unwrap();
+        fs::write(memory_dir.join("work:api.txt"), "legacy").unwrap();
+        fs::write(memory_dir.join(r"work\api.txt"), "legacy").unwrap();
+
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: temp_dir.path().join("global"),
+        };
+
+        let memories = router.retrieve_all(false, Some(&working_dir)).unwrap();
+
+        assert_eq!(memories.len(), 1);
+        assert!(memories["valid"].iter().any(|entry| entry == "kept"));
+    }
+
+    #[test]
+    fn test_memory_error_preserves_invalid_parameter_distinction() {
+        let invalid = memory_error(io::Error::new(io::ErrorKind::InvalidInput, "bad category"));
+        assert_eq!(invalid.code, ErrorCode::INVALID_PARAMS);
+
+        let filesystem = memory_error(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
+        assert_eq!(filesystem.code, ErrorCode::INTERNAL_ERROR);
     }
 }

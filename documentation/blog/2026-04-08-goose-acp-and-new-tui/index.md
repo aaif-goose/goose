@@ -73,7 +73,7 @@ This is all happening in the open. Follow along or jump in:
 
 - **Tracking issue:** [#6642](https://github.com/aaif-goose/goose/issues/6642)
 - **Try the TUI:** `npx @aaif/goose`
-- **Discord:** Follow along and give feedback in [#goose-2-dev](https://discord.gg/goose-oss).
+- **Discord:** Follow along and give feedback in [#goose-2-dev](https://discord.gg/n8R5VaWDAn).
 - **Feedback?** Open an issue or drop a comment on #6642 — we'd love to hear from you.
 
 <head>

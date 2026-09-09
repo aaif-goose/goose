@@ -16,7 +16,7 @@ This tutorial covers how to add the [YouTube Transcript MCP Server](https://gith
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=uvx&arg=--from&arg=git%2Bhttps%3A%2F%2Fgithub.com%2Fjkawamoto%2Fmcp-youtube-transcript&arg=mcp-youtube-transcript&id=youtube-transcript&name=YouTube%20Transcript&description=Access%20YouTube%20video%20transcripts)
+  [Launch the installer](goose://extension?cmd=uvx&arg=--from&arg=git%2Bhttps%3A%2F%2Fgithub.com%2Fjkawamoto%2Fmcp-youtube-transcript&arg=mcp-youtube-transcript&id=youtube-transcript-mcp&name=YouTube%20Transcript&description=Access%20YouTube%20video%20transcripts)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
@@ -37,7 +37,7 @@ Note that you'll need [uv](https://docs.astral.sh/uv/#installation) installed on
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
-    extensionId="youtube-transcript"
+    extensionId="youtube-transcript-mcp"
     extensionName="YouTube Transcript"
     description="Access YouTube video transcripts"
     command="uvx"

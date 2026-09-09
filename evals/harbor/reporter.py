@@ -32,6 +32,15 @@ class LoadedJob:
         return self.summary.started_at
 
 
+@dataclass(frozen=True)
+class TokenTotals:
+    input_tokens: int | None
+    cache_read_tokens: int | None
+    cache_write_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+
+
 def load_job(job_dir: Path) -> LoadedJob:
     summary = JobResult.model_validate_json((job_dir / "result.json").read_text())
     results: list[TrialResult] = []
@@ -65,9 +74,25 @@ def trial_duration(trial: TrialResult) -> float | None:
     return (trial.finished_at - trial.started_at).total_seconds()
 
 
-def trial_token_totals(trial: TrialResult) -> tuple[int | None, int | None, float | None]:
-    n_in, _n_cache, n_out, cost = trial.compute_token_cost_totals()
-    return n_in, n_out, cost
+def trial_token_totals(trial: TrialResult) -> TokenTotals:
+    n_in, n_cache_read, n_out, cost = trial.compute_token_cost_totals()
+    if trial.agent_result is not None:
+        contexts = [trial.agent_result]
+    else:
+        contexts = [
+            step.agent_result
+            for step in trial.step_results or []
+            if step.agent_result is not None
+        ]
+
+    cache_write_values = [
+        context.metadata.get("cache_write_input_tokens")
+        for context in contexts
+        if context.metadata is not None
+        and context.metadata.get("cache_write_input_tokens") is not None
+    ]
+    n_cache_write = sum(cache_write_values) if cache_write_values else None
+    return TokenTotals(n_in, n_cache_read, n_cache_write, n_out, cost)
 
 
 def _trial_dir(trial: TrialResult, job_dir: Path) -> Path:
@@ -145,12 +170,14 @@ def job_turn_totals(job: LoadedJob) -> int:
     return sum((trial_turns(t, job.job_dir) or 0) for t in job.results)
 
 
-def job_token_totals(job: LoadedJob) -> tuple[int, int, float]:
+def job_token_totals(job: LoadedJob) -> TokenTotals:
     totals = [trial_token_totals(t) for t in job.results]
-    return (
-        sum((n_in or 0) for n_in, _, _ in totals),
-        sum((n_out or 0) for _, n_out, _ in totals),
-        sum((c or 0.0) for _, _, c in totals),
+    return TokenTotals(
+        input_tokens=sum((total.input_tokens or 0) for total in totals),
+        cache_read_tokens=sum((total.cache_read_tokens or 0) for total in totals),
+        cache_write_tokens=sum((total.cache_write_tokens or 0) for total in totals),
+        output_tokens=sum((total.output_tokens or 0) for total in totals),
+        cost_usd=sum((total.cost_usd or 0.0) for total in totals),
     )
 
 
@@ -250,7 +277,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         counts = status_counts(job.results)
         total = len(job.results)
         rate = f"{100 * counts['pass'] / total:.1f}%" if total else "-"
-        tok_in, tok_out, cost = job_token_totals(job)
+        tokens = job_token_totals(job)
         breakdown = f"{counts['pass']}/{counts['fail']}/{counts['error']}/{counts['timeout']}"
         rows.append(
             (
@@ -258,10 +285,12 @@ def cmd_list(args: argparse.Namespace) -> int:
                 job_model(job),
                 rate,
                 fmt_duration(job_duration(job)),
-                fmt_tokens(tok_in),
-                fmt_tokens(tok_out),
+                fmt_tokens(tokens.input_tokens),
+                fmt_tokens(tokens.cache_read_tokens),
+                fmt_tokens(tokens.cache_write_tokens),
+                fmt_tokens(tokens.output_tokens),
                 fmt_tokens(job_turn_totals(job)),
-                fmt_cost(cost),
+                fmt_cost(tokens.cost_usd),
                 breakdown,
             )
         )
@@ -271,13 +300,15 @@ def cmd_list(args: argparse.Namespace) -> int:
         return 0
     print(
         f"{'job_name':<40} {'model':<25} {'rate':>7} {'compute':>8} "
-        f"{'in':>7} {'out':>7} {'turns':>6} {'cost':>8} {'pass/fail/err/tout':>18}"
+        f"{'in':>7} {'read':>7} {'write':>7} {'out':>7} "
+        f"{'turns':>6} {'cost':>8} {'pass/fail/err/tout':>18}"
     )
-    print("-" * 131)
+    print("-" * 147)
     for row in rows:
         print(
             f"{row[0]:<40} {row[1]:<25} {row[2]:>7} {row[3]:>8} "
-            f"{row[4]:>7} {row[5]:>7} {row[6]:>6} {row[7]:>8} {row[8]:>18}"
+            f"{row[4]:>7} {row[5]:>7} {row[6]:>7} {row[7]:>7} "
+            f"{row[8]:>6} {row[9]:>8} {row[10]:>18}"
         )
     return 0
 
@@ -298,16 +329,22 @@ def cmd_show(args: argparse.Namespace) -> int:
     )
     if total:
         print(f"Pass rate:    {100 * counts['pass'] / total:.1f}%")
-    total_in, total_out, total_cost = job_token_totals(job)
-    print(f"Tokens:       in={fmt_tokens(total_in)}  out={fmt_tokens(total_out)}")
+    tokens = job_token_totals(job)
+    print(
+        f"Tokens:       in={fmt_tokens(tokens.input_tokens)}  "
+        f"cache-read={fmt_tokens(tokens.cache_read_tokens)}  "
+        f"cache-write={fmt_tokens(tokens.cache_write_tokens)}  "
+        f"out={fmt_tokens(tokens.output_tokens)}"
+    )
     print(f"Turns:        {fmt_tokens(job_turn_totals(job))}")
-    print(f"Cost:         {fmt_cost(total_cost)}")
+    print(f"Cost:         {fmt_cost(tokens.cost_usd)}")
     print()
     print(
         f"{'task':<45} {'status':<10} {'reward':>7} {'dur':>7} "
-        f"{'in':>7} {'out':>7} {'turns':>6} {'cost':>7}  error"
+        f"{'in':>7} {'read':>7} {'write':>7} {'out':>7} "
+        f"{'turns':>6} {'cost':>7}  error"
     )
-    print("-" * 137)
+    print("-" * 153)
     for trial in sorted(job.results, key=task_name):
         status = trial_status(trial)
         if args.status and status != args.status:
@@ -323,16 +360,18 @@ def cmd_show(args: argparse.Namespace) -> int:
             err_str = ""
         if len(err_str) > 50:
             err_str = err_str[:47] + "..."
-        n_in, n_out, cost = trial_token_totals(trial)
+        tokens = trial_token_totals(trial)
         turns = trial_turns(trial, job.job_dir)
         turns_str = str(turns) if turns is not None else "-"
         print(
             f"{task_name(trial):<45} {status:<10} {reward_str:>7} "
             f"{fmt_duration(trial_duration(trial)):>7} "
-            f"{fmt_tokens(n_in):>7} "
-            f"{fmt_tokens(n_out):>7} "
+            f"{fmt_tokens(tokens.input_tokens):>7} "
+            f"{fmt_tokens(tokens.cache_read_tokens):>7} "
+            f"{fmt_tokens(tokens.cache_write_tokens):>7} "
+            f"{fmt_tokens(tokens.output_tokens):>7} "
             f"{turns_str:>6} "
-            f"{fmt_cost(cost):>7}  {err_str}"
+            f"{fmt_cost(tokens.cost_usd):>7}  {err_str}"
         )
     return 0
 
@@ -354,11 +393,16 @@ def cmd_task(args: argparse.Namespace) -> int:
         print(f"Duration:     {fmt_duration(trial_duration(trial))}")
         print(f"Started:      {trial.started_at}")
         print(f"Ended:        {trial.finished_at}")
-        n_in, n_out, cost = trial_token_totals(trial)
-        print(f"Tokens:       in={fmt_tokens(n_in)}  out={fmt_tokens(n_out)}")
+        tokens = trial_token_totals(trial)
+        print(
+            f"Tokens:       in={fmt_tokens(tokens.input_tokens)}  "
+            f"cache-read={fmt_tokens(tokens.cache_read_tokens)}  "
+            f"cache-write={fmt_tokens(tokens.cache_write_tokens)}  "
+            f"out={fmt_tokens(tokens.output_tokens)}"
+        )
         turns = trial_turns(trial, job_dir)
         print(f"Turns:        {turns if turns is not None else '-'}")
-        print(f"Cost:         {fmt_cost(cost)}")
+        print(f"Cost:         {fmt_cost(tokens.cost_usd)}")
         error = trial_error(trial)
         if error is not None:
             exception_class, message = error
@@ -480,13 +524,30 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if na and nb:
         row("pass rate %", 100 * ca["pass"] / na, 100 * cb["pass"] / nb, "{:.1f}")
 
-    a_in, a_out, a_cost = job_token_totals(job_a)
-    b_in, b_out, b_cost = job_token_totals(job_b)
-    print(f"{'tokens in':<18} {fmt_tokens(a_in):>10} {fmt_tokens(b_in):>10}")
-    print(f"{'tokens out':<18} {fmt_tokens(a_out):>10} {fmt_tokens(b_out):>10}")
+    a_tokens = job_token_totals(job_a)
+    b_tokens = job_token_totals(job_b)
+    print(
+        f"{'tokens in':<18} {fmt_tokens(a_tokens.input_tokens):>10} "
+        f"{fmt_tokens(b_tokens.input_tokens):>10}"
+    )
+    print(
+        f"{'cache reads':<18} {fmt_tokens(a_tokens.cache_read_tokens):>10} "
+        f"{fmt_tokens(b_tokens.cache_read_tokens):>10}"
+    )
+    print(
+        f"{'cache writes':<18} {fmt_tokens(a_tokens.cache_write_tokens):>10} "
+        f"{fmt_tokens(b_tokens.cache_write_tokens):>10}"
+    )
+    print(
+        f"{'tokens out':<18} {fmt_tokens(a_tokens.output_tokens):>10} "
+        f"{fmt_tokens(b_tokens.output_tokens):>10}"
+    )
     print(f"{'turns':<18} {fmt_tokens(job_turn_totals(job_a)):>10} "
           f"{fmt_tokens(job_turn_totals(job_b)):>10}")
-    print(f"{'cost':<18} {fmt_cost(a_cost):>10} {fmt_cost(b_cost):>10}")
+    print(
+        f"{'cost':<18} {fmt_cost(a_tokens.cost_usd):>10} "
+        f"{fmt_cost(b_tokens.cost_usd):>10}"
+    )
     print(f"{'compute time':<18} {fmt_duration(job_duration(job_a)):>10} "
           f"{fmt_duration(job_duration(job_b)):>10}")
 

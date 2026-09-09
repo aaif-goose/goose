@@ -66,6 +66,8 @@ export const SAFE_PROTOCOLS = [
   'goose:',
 ];
 
+export type OpenExternalUrlResult = 'opened' | 'blocked' | 'cancelled';
+
 /**
  * Check if a URL uses a protocol that is safe to open without user confirmation.
  * Dangerous protocols are blocked centrally in main.ts open-external handler.

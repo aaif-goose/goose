@@ -13,7 +13,7 @@ proc-macro = true
 
 [dependencies]
 quote = { version = "1.0.40", default-features = false }
-syn = { version = "2.0.104", default-features = false, features = ["full", "extra-traits"] }
+syn = { version = "3.0.3", default-features = false, features = ["full", "extra-traits"] }
 
 [lints]
 workspace = true

@@ -68,14 +68,12 @@ Asana: Create a new task in my Asana workspace called 'Review Q4 metrics' and se
 GitHub: Create a new branch called hello-world in my angiejones/goose-demo repository. Update the README.md file to say "this was written by goose" and commit it. Open a pull request with your changes.
 ```
 
-To see more examples just like this, along with the results you can get, check out this [Prompt Library](https://goose-docs.ai/prompt-library)! This is your central directory for discovering and using effective prompts with Goose.
-
 ## The Possibilities Are Endless
 While some are developed by official providers, a vast majority of MCP servers you see are actually developed by community members! Plus, because MCP is an open standard, anyone can build an MCP server for any resource. You could even use Goose to help you build one!
 
 Hopefully now, instead of spending hours manually gathering data and creating your next marketing report, or manually sorting through your todo-backlog on a Monday, you will use MCP with Goose and have it done for you in minutes.
 
-*To learn more about using MCP servers and Goose, check out the [Goose documentation](https://goose-docs.ai/docs/category/getting-started), or join the [Block Open Source Discord](https://discord.gg/goose-oss) to connect with other open source community members.*
+*To learn more about using MCP servers and goose, check out the [goose documentation](https://goose-docs.ai/docs/category/getting-started), or join the [Block Open Source Discord](https://discord.gg/n8R5VaWDAn) to connect with other open source community members.*
 
 <head>
   <meta property="og:title" content="MCP Explained for Non-Developers" />

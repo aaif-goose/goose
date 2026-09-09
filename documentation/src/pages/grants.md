@@ -4,7 +4,6 @@ description: $100K grants for open source devs building the future of agentic AI
 ---
 
 import Link from "@docusaurus/Link";
-import { Button } from "@site/src/components/ui/button";
 
 ![](/img/goose-grant-program.png)
 
@@ -17,9 +16,7 @@ We’ve created a grant program to accelerate goose in the open source community
 </Link>
 
 <br/>
-  <Link className="button button--primary button-grant">
-    ## what makes a good proposal
-  </Link>
+## what makes a good proposal
 <br/>
 
 We're looking for clear, compelling, and ambitious ideas that align with goose’s values: openness, modularity, and user empowerment.
@@ -35,9 +32,7 @@ Above all, we want to fund work that aligns with these values and demonstrates a
 
 
 <br/>
-  <Link className="button button--primary button-grant">
-    ## grant details
-  </Link>
+## grant details
 <br/>
 
 - **Project Length:** 12 months
@@ -47,9 +42,7 @@ Above all, we want to fund work that aligns with these values and demonstrates a
 _subject to applicable law_
 
 <br/>
-  <Link className="button button--primary button-grant">
-    ## faq
-  </Link>
+## faq
 <br/>
 **When are proposals accepted?**
 
@@ -93,9 +86,7 @@ Anyone. We welcome individuals, working on their own or in small teams, as long 
 
 
 <br/>
-  <Link className="button button--primary button-grant">
-    ## contact us
-  </Link>
+## contact us
 <br/>
 
 If you have additional questions, feel free to reach out in [Discord](https://discord.com/channels/1287729918100246654/1397943505216868444) in the #goose-grants forum.
@@ -105,10 +96,10 @@ If you have additional questions, feel free to reach out in [Discord](https://di
   <meta property="og:type" content="article" />
   <meta property="og:url" content="https://goose-docs.ai/grants" />
   <meta property="og:description" content="$100K grants for open source devs building the future of agentic AI." />
-  <meta property="og:image" content="https://goose-docs.ai/assets/images/goose-grant-program-3ede164a454d9f29e779108c63773416.png" />
+  <meta property="og:image" content="https://goose-docs.ai/img/goose-grant-program.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta property="twitter:domain" content="goose-docs.ai" />
   <meta name="twitter:title" content="goose grant program" />
   <meta name="twitter:description" content="$100K grants for open source devs building the future of agentic AI." />
-  <meta name="twitter:image" content="https://goose-docs.ai/assets/images/goose-grant-program-3ede164a454d9f29e779108c63773416.png" />
+  <meta name="twitter:image" content="https://goose-docs.ai/img/goose-grant-program.png" />
 </head>

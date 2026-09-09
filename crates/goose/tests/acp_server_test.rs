@@ -1,14 +1,19 @@
+#![recursion_limit = "256"]
 #[allow(dead_code)]
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ListSessionsRequest, ListSessionsResponse, NewSessionRequest, SessionConfigKind,
-    SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
-    SetSessionConfigOptionRequest,
+    ContentBlock, ListSessionsRequest, ListSessionsResponse, NewSessionRequest, PromptRequest,
+    SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
+    SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
-use common_tests::fixtures::server::AcpServerConnection;
-use common_tests::fixtures::{run_test, Connection, OpenAiFixture, Session, TestConnectionConfig};
+use common_tests::fixtures::server::{
+    assert_session_response_precedes_available_commands, AcpServerConnection,
+};
+use common_tests::fixtures::{
+    run_test, spawn_acp_server_in_process, Connection, OpenAiFixture, Session, TestConnectionConfig,
+};
 #[cfg(feature = "code-mode")]
 use common_tests::run_prompt_codemode;
 use common_tests::{
@@ -21,11 +26,14 @@ use common_tests::{
     run_new_session_uses_current_config_mode, run_permission_persistence, run_prompt_basic,
     run_prompt_error, run_prompt_image, run_prompt_image_attachment, run_prompt_mcp,
     run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification,
-    run_shell_terminal_false, run_shell_terminal_true,
+    run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
+    OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
-use goose::custom_requests::{GetSessionInfoRequest, GetSessionInfoResponse};
+use goose::custom_requests::{
+    GetSessionInfoRequest, GetSessionInfoResponse, UpdateSessionProjectRequest,
+};
 use goose::recipe::{Recipe, Settings};
 use goose::recipe_deeplink;
 use goose::session::{SessionManager, SessionType};
@@ -117,6 +125,51 @@ async fn get_session_info_request(
 fn assert_invalid_params(error: anyhow::Error) {
     let acp_error = error.downcast::<agent_client_protocol::Error>().unwrap();
     assert_eq!(acp_error.code, ErrorCode::InvalidParams);
+}
+
+fn session_title_meta(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    let mut meta = serde_json::Map::new();
+    meta.insert("sessionTitle".to_string(), value);
+    meta
+}
+
+async fn new_session_with_meta(
+    conn: &AcpServerConnection,
+    work_dir: &Path,
+    meta: serde_json::Map<String, serde_json::Value>,
+) -> anyhow::Result<String> {
+    let response = conn
+        .cx()
+        .send_request(NewSessionRequest::new(work_dir).meta(meta))
+        .block_task()
+        .await?;
+    Ok(response.session_id.0.to_string())
+}
+
+/// Returns the session's title and whether it is recorded as user-set.
+async fn session_title(conn: &AcpServerConnection, session_id: &str) -> (String, bool) {
+    let response = get_session_info_request(
+        conn,
+        GetSessionInfoRequest {
+            session_id: session_id.to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let user_set_name = response
+        .session
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get("userSetName"))
+        .and_then(serde_json::Value::as_bool)
+        .expect("session info should include userSetName");
+    (
+        response
+            .session
+            .title
+            .expect("session info should include a title"),
+        user_set_name,
+    )
 }
 
 fn include_last_message_snippet_meta(
@@ -464,6 +517,176 @@ fn test_get_session_info() {
 }
 
 #[test]
+fn test_update_session_project_rejects_hidden_session_types() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let working_dir = tempfile::tempdir().unwrap();
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let mut hidden_sessions = Vec::new();
+
+        for session_type in [
+            SessionType::Gateway,
+            SessionType::SubAgent,
+            SessionType::Hidden,
+            SessionType::Terminal,
+        ] {
+            hidden_sessions.push(
+                session_manager
+                    .create_session(
+                        working_dir.path().to_path_buf(),
+                        format!("{session_type} session"),
+                        session_type,
+                        GooseMode::default(),
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        let conn = new_connection(data_root.path()).await;
+        for session in hidden_sessions {
+            let error = conn
+                .cx()
+                .send_request(UpdateSessionProjectRequest {
+                    session_id: session.id.clone(),
+                    project_id: Some("untrusted-project".to_string()),
+                })
+                .block_task()
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, ErrorCode::ResourceNotFound);
+
+            let stored = session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap();
+            assert_eq!(stored.project_id, None);
+        }
+    });
+}
+
+#[test]
+fn test_update_session_project_rejects_unknown_persisted_session_type() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let working_dir = tempfile::tempdir().unwrap();
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let session = session_manager
+            .create_session(
+                working_dir.path().to_path_buf(),
+                "Future session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let db_path = data_root
+            .path()
+            .join(goose::session::session_manager::SESSIONS_FOLDER)
+            .join(goose::session::session_manager::DB_NAME);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(db_path))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE sessions SET session_type = 'future_type' WHERE id = ?")
+            .bind(&session.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap()
+                .session_type,
+            SessionType::User
+        );
+
+        let conn = new_connection(data_root.path()).await;
+        let error = conn
+            .cx()
+            .send_request(UpdateSessionProjectRequest {
+                session_id: session.id.clone(),
+                project_id: Some("untrusted-project".to_string()),
+            })
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceNotFound);
+
+        let project_id =
+            sqlx::query_scalar::<_, Option<String>>("SELECT project_id FROM sessions WHERE id = ?")
+                .bind(&session.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(project_id, None);
+    });
+}
+
+#[test]
+fn test_update_session_project_allows_visible_session_types() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let working_dir = tempfile::tempdir().unwrap();
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let mut visible_sessions = Vec::new();
+
+        for session_type in [SessionType::User, SessionType::Scheduled, SessionType::Acp] {
+            visible_sessions.push(
+                session_manager
+                    .create_session(
+                        working_dir.path().to_path_buf(),
+                        format!("{session_type} session"),
+                        session_type,
+                        GooseMode::default(),
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        let conn = new_connection(data_root.path()).await;
+        for session in visible_sessions {
+            conn.cx()
+                .send_request(UpdateSessionProjectRequest {
+                    session_id: session.id.clone(),
+                    project_id: Some("project".to_string()),
+                })
+                .block_task()
+                .await
+                .unwrap();
+            assert_eq!(
+                session_manager
+                    .get_session(&session.id, false)
+                    .await
+                    .unwrap()
+                    .project_id,
+                Some("project".to_string())
+            );
+
+            conn.cx()
+                .send_request(UpdateSessionProjectRequest {
+                    session_id: session.id.clone(),
+                    project_id: None,
+                })
+                .block_task()
+                .await
+                .unwrap();
+            assert_eq!(
+                session_manager
+                    .get_session(&session.id, false)
+                    .await
+                    .unwrap()
+                    .project_id,
+                None
+            );
+        }
+    });
+}
+
+#[test]
 fn test_session_name_update_notification() {
     run_test(async { run_session_name_update_notification::<AcpServerConnection>().await });
 }
@@ -522,6 +745,41 @@ fn test_config_option_thinking_effort_set() {
         };
 
         assert_eq!(select.current_value.0.as_ref(), "high");
+    });
+}
+
+#[test]
+fn test_config_option_non_value_id_returns_error_and_keeps_connection() {
+    run_test(async {
+        let openai = OpenAiFixture::new(
+            vec![],
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let mut conn =
+            <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+        let data = conn.new_session().await.unwrap();
+
+        let err = conn
+            .cx()
+            .send_request(SetSessionConfigOptionRequest::new(
+                data.session.session_id().clone(),
+                "mode".to_string(),
+                SessionConfigOptionValue::boolean(true),
+            ))
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            agent_client_protocol::Error::invalid_params().data("Expected a value ID")
+        );
+
+        conn.cx()
+            .send_request(ListSessionsRequest::new())
+            .block_task()
+            .await
+            .expect("connection should survive an invalid set_config_option");
     });
 }
 
@@ -593,6 +851,38 @@ fn test_new_session_returns_initial_config() {
 #[test]
 fn test_new_session_uses_current_config_mode() {
     run_test(async { run_new_session_uses_current_config_mode::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_new_session_response_precedes_available_commands() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        let openai = OpenAiFixture::new(
+            vec![],
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let (transport, _handle, _permission_manager) = spawn_acp_server_in_process(
+            openai.uri(),
+            &[],
+            data_root.path(),
+            GooseMode::default(),
+            None,
+            goose_test_support::TEST_MODEL,
+            true,
+        )
+        .await;
+        assert_session_response_precedes_available_commands(
+            transport,
+            "session/new",
+            serde_json::json!({
+                "cwd": work_dir.path(),
+                "mcpServers": []
+            }),
+        )
+        .await;
+    });
 }
 
 #[test]
@@ -677,6 +967,199 @@ fn test_new_session_cleans_up_when_config_fails() {
             .await
             .unwrap();
         assert!(sessions.is_empty());
+    });
+}
+
+#[test]
+fn test_new_session_titles_session_from_meta_session_title() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+
+        let session_id = new_session_with_meta(
+            &conn,
+            work_dir.path(),
+            session_title_meta(serde_json::json!("  Duncan in #general  ")),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            session_title(&conn, &session_id).await,
+            ("Duncan in #general".to_string(), true)
+        );
+    });
+}
+
+#[test]
+fn test_new_session_prefers_recipe_title_over_meta_session_title() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let recipe = Recipe::builder()
+            .title("Recipe title")
+            .description("A recipe with a title")
+            .instructions("Follow the recipe")
+            .build()
+            .unwrap();
+        let mut meta = session_title_meta(serde_json::json!("Client title"));
+        meta.insert(
+            "recipeDeeplink".to_string(),
+            serde_json::Value::String(recipe_deeplink::encode(&recipe).unwrap()),
+        );
+
+        let session_id = new_session_with_meta(&conn, work_dir.path(), meta)
+            .await
+            .unwrap();
+
+        // The recipe title wins, and the session is not marked user-set so
+        // goose's own recipe-title naming path still applies.
+        assert_eq!(
+            session_title(&conn, &session_id).await,
+            ("Recipe title".to_string(), false)
+        );
+    });
+}
+
+#[test]
+fn test_new_session_without_meta_session_title_uses_default_name() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+
+        for meta in [
+            serde_json::Map::new(),
+            session_title_meta(serde_json::Value::Null),
+            session_title_meta(serde_json::json!("   ")),
+        ] {
+            let session_id = new_session_with_meta(&conn, work_dir.path(), meta)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                session_title(&conn, &session_id).await,
+                ("New Chat".to_string(), false)
+            );
+        }
+    });
+}
+
+#[test]
+fn test_new_session_rejects_non_string_meta_session_title() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let recipe = Recipe::builder()
+            .title("Recipe title")
+            .description("A recipe with a title")
+            .instructions("Follow the recipe")
+            .build()
+            .unwrap();
+
+        // Rejected on its own, and also when a recipe title would have won —
+        // validation does not depend on precedence.
+        let mut with_recipe = session_title_meta(serde_json::json!(42));
+        with_recipe.insert(
+            "recipeDeeplink".to_string(),
+            serde_json::Value::String(recipe_deeplink::encode(&recipe).unwrap()),
+        );
+        for meta in [session_title_meta(serde_json::json!(42)), with_recipe] {
+            let error = new_session_with_meta(&conn, work_dir.path(), meta)
+                .await
+                .unwrap_err();
+            assert_invalid_params(error);
+        }
+
+        let sessions = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap();
+        assert!(sessions.is_empty());
+    });
+}
+
+/// Drives one naming-enabled turn and returns the session's title once name
+/// generation has had a chance to run.
+async fn title_after_naming_turn(
+    data_root: &Path,
+    meta: serde_json::Map<String, serde_json::Value>,
+) -> (String, bool) {
+    let openai = OpenAiFixture::new(
+        vec![
+            (
+                format!("what is 1+1{TURN_CONTEXT_OPEN}"),
+                include_str!("acp_test_data/openai_basic.txt"),
+            ),
+            (
+                "Generate a short title for the above messages.".to_string(),
+                OPENAI_SESSION_NAME_RESPONSE,
+            ),
+        ],
+        <AcpServerConnection as Connection>::expected_session_id(),
+    )
+    .await;
+    let conn = <AcpServerConnection as Connection>::new(
+        TestConnectionConfig {
+            data_root: data_root.to_path_buf(),
+            disable_session_naming: false,
+            ..Default::default()
+        },
+        openai,
+    )
+    .await;
+    let work_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_meta(&conn, work_dir.path(), meta)
+        .await
+        .unwrap();
+
+    let response = conn
+        .cx()
+        .send_request(PromptRequest::new(
+            agent_client_protocol::schema::v1::SessionId::new(session_id.clone()),
+            vec![ContentBlock::Text(TextContent::new("what is 1+1"))],
+        ))
+        .block_task()
+        .await
+        .unwrap();
+    assert_eq!(response.stop_reason, StopReason::EndTurn);
+
+    // Naming runs in a spawned task: wait for it to land, or for the deadline
+    // to prove it never will.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let title = session_title(&conn, &session_id).await;
+        if title.0 == GENERATED_SESSION_TITLE || tokio::time::Instant::now() >= deadline {
+            return title;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+#[test]
+fn test_generated_name_does_not_replace_meta_session_title() {
+    run_test(async {
+        // Control arm: with no client title, generation names the session.
+        let data_root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            title_after_naming_turn(data_root.path(), serde_json::Map::new()).await,
+            (GENERATED_SESSION_TITLE.to_string(), false),
+            "name generation must work here, or the assertion below proves nothing"
+        );
+
+        // A client title is recorded as user-set, which generation must respect.
+        let data_root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            title_after_naming_turn(
+                data_root.path(),
+                session_title_meta(serde_json::json!("Client title"))
+            )
+            .await,
+            ("Client title".to_string(), true)
+        );
     });
 }
 

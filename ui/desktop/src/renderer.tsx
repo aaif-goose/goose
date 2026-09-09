@@ -4,9 +4,6 @@ import { IntlProvider } from 'react-intl';
 import { ConfigProvider } from './components/ConfigContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import SuspenseLoader from './suspense-loader';
-import { client } from './api/client.gen';
-import { setTelemetryEnabled } from './utils/analytics';
-import { acpReadConfig } from './acp/config';
 import { applyThemeTokens } from './theme/theme-tokens';
 import { currentLocale, currentMessageLocale, loadMessages } from './i18n';
 
@@ -14,8 +11,6 @@ import { currentLocale, currentMessageLocale, loadMessages } from './i18n';
 applyThemeTokens();
 
 const App = lazy(() => import('./App'));
-
-const TELEMETRY_CONFIG_KEY = 'GOOSE_TELEMETRY_ENABLED';
 
 let warnedFallbackLocale = false;
 function handleIntlError(err: { code: string; message?: string }) {
@@ -32,32 +27,6 @@ function handleIntlError(err: { code: string; message?: string }) {
 }
 
 (async () => {
-  // Check if we're in the launcher view (doesn't need goosed connection)
-  const isLauncher = window.location.hash === '#/launcher';
-
-  if (!isLauncher) {
-    const gooseApiHost = await window.electron.getGoosedHostPort();
-    if (gooseApiHost === null) {
-      window.alert('failed to start goose backend process');
-      return;
-    }
-    client.setConfig({
-      baseUrl: gooseApiHost,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Secret-Key': await window.electron.getSecretKey(),
-      },
-    });
-
-    try {
-      const telemetryValue = await acpReadConfig(TELEMETRY_CONFIG_KEY, false);
-      const isTelemetryEnabled = telemetryValue !== false;
-      setTelemetryEnabled(isTelemetryEnabled);
-    } catch (error) {
-      console.warn('[Analytics] Failed to initialize analytics:', error);
-    }
-  }
-
   const messages = await loadMessages(currentMessageLocale);
 
   ReactDOM.createRoot(document.getElementById('root')!).render(

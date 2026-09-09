@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use nostr::nips::nip19::{FromBech32, Nip19Event, ToBech32};
 use nostr::nips::nip44;
 use nostr::prelude::*;
-use nostr_sdk::Client;
+use nostr_sdk::client::Client;
 
 use crate::config::{Config, ConfigError};
 
@@ -57,9 +57,10 @@ impl NostrPublisher for LiveNostrClient {
                 .with_context(|| format!("Failed to add relay {relay}"))?;
         }
 
-        client.try_connect(Duration::from_secs(8)).await;
+        client.try_connect().timeout(Duration::from_secs(8)).await;
         let output = client
-            .send_event_to(relays.iter().map(String::as_str), &event)
+            .send_event(&event)
+            .to(relays.iter().map(String::as_str))
             .await
             .context("Failed to publish session to Nostr relays")?;
         client.shutdown().await;
@@ -87,17 +88,18 @@ impl NostrFetcher for LiveNostrClient {
                 .with_context(|| format!("Failed to add relay {relay}"))?;
         }
 
-        client.try_connect(Duration::from_secs(8)).await;
+        client.try_connect().timeout(Duration::from_secs(8)).await;
         let filter = Filter::new()
             .id(event_id)
             .kind(Kind::Custom(EVENT_KIND))
             .limit(1);
+        let targets = relays
+            .iter()
+            .map(|relay| (relay.as_str(), vec![filter.clone()]))
+            .collect::<Vec<_>>();
         let events = client
-            .fetch_events_from(
-                relays.iter().map(String::as_str),
-                filter,
-                Duration::from_secs(10),
-            )
+            .fetch_events(targets)
+            .timeout(Duration::from_secs(10))
             .await
             .context("Failed to fetch shared session from Nostr relays")?;
         client.shutdown().await;
@@ -177,7 +179,7 @@ where
             uuid::Uuid::now_v7()
         )))
         .tag(Tag::parse(["client", "goose"])?)
-        .sign_with_keys(&publish_keys)?;
+        .finalize(&publish_keys)?;
 
     publisher.publish(event.clone(), &relays).await?;
 

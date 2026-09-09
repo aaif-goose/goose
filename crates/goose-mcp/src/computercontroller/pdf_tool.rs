@@ -1,12 +1,12 @@
 use lopdf::{content::Content as PdfContent, Document, Object};
-use rmcp::model::{Content, ErrorCode, ErrorData};
+use rmcp::model::{ContentBlock, ErrorCode, ErrorData};
 use std::{fs, path::Path};
 
 pub async fn pdf_tool(
     path: &str,
     operation: &str,
     cache_dir: &Path,
-) -> Result<Vec<Content>, ErrorData> {
+) -> Result<Vec<ContentBlock>, ErrorData> {
     // Open and parse the PDF file
     let doc = Document::load(path).map_err(|e| {
         ErrorData::new(
@@ -84,11 +84,11 @@ pub async fn pdf_tool(
                                                                             last_was_text = false;
                                                                         }
                                                                     }
-                                                                    Object::Real(offset) => {
-                                                                        if *offset < -100.0 {
-                                                                            text.push(' ');
-                                                                            last_was_text = false;
-                                                                        }
+                                                                    Object::Real(offset)
+                                                                        if *offset < -100.0 =>
+                                                                    {
+                                                                        text.push(' ');
+                                                                        last_was_text = false;
                                                                     }
                                                                     _ => {}
                                                                 }
@@ -356,7 +356,7 @@ pub async fn pdf_tool(
         }
     };
 
-    Ok(vec![Content::text(result)])
+    Ok(vec![ContentBlock::text(result)])
 }
 
 #[cfg(test)]

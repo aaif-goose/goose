@@ -127,7 +127,7 @@ I hope this clarifies how to converse with an agent and accomplish complex tasks
 
 <iframe class="aspect-ratio" src="https://www.youtube.com/embed/zGyXfA3kKTk" title="How to Successfully Migrate Your App with an AI Agent" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
-*Ready to try AI-assisted migration with goose? Get started with our [quickstart guide](/docs/quickstart) and share your experience in our [Discord community](http://discord.gg/goose-oss).*
+*Ready to try AI-assisted migration with goose? Get started with our [quickstart guide](/docs/quickstart) and share your experience in our [Discord community](http://discord.gg/n8R5VaWDAn).*
 
 
 <head>

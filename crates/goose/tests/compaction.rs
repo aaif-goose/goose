@@ -21,12 +21,21 @@ use tempfile::TempDir;
 struct MockCompactionProvider {
     /// Tracks whether compaction has occurred (for context limit recovery case)
     has_compacted: Arc<AtomicBool>,
+    manages_own_context: bool,
 }
 
 impl MockCompactionProvider {
     fn new() -> Self {
         Self {
             has_compacted: Arc::new(AtomicBool::new(false)),
+            manages_own_context: false,
+        }
+    }
+
+    fn context_owning() -> Self {
+        Self {
+            has_compacted: Arc::new(AtomicBool::new(false)),
+            manages_own_context: true,
         }
     }
 
@@ -98,6 +107,10 @@ impl MockCompactionProvider {
 
 #[async_trait]
 impl Provider for MockCompactionProvider {
+    fn manages_own_context(&self) -> bool {
+        self.manages_own_context
+    }
+
     async fn stream(
         &self,
         _model_config: &ModelConfig,
@@ -185,8 +198,8 @@ impl goose::providers::base::ProviderDescriptor for MockCompactionProvider {
             model_doc_link: "".to_string(),
             config_keys: vec![],
             setup_steps: vec![],
-            model_selection_hint: None,
-            fast_model: None,
+            setup: None,
+            deprecated: None,
         }
     }
 }
@@ -238,6 +251,58 @@ async fn setup_test_session(
         .await?;
 
     Ok(session)
+}
+
+#[tokio::test]
+async fn context_owning_provider_rejects_clear_and_compact_without_changing_session() -> Result<()>
+{
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+    let messages = vec![
+        Message::user().with_text("Remember this"),
+        Message::assistant().with_text("I will"),
+    ];
+    let session = setup_test_session(
+        &agent,
+        &temp_dir,
+        "context-owning-provider",
+        messages.clone(),
+    )
+    .await?;
+    let before = agent
+        .config
+        .session_manager
+        .get_session(&session.id, true)
+        .await?;
+    let conversation_before = before.conversation.unwrap();
+    let usage_before = before.usage;
+    let provider = Arc::new(MockCompactionProvider::context_owning());
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+
+    for command in ["clear", "compact"] {
+        let error = agent
+            .execute_command(&format!("/{command}"), &session.id)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "/{command} is not available for provider 'mock-compaction' because it manages its own conversation context"
+            )
+        );
+    }
+
+    let unchanged = agent
+        .config
+        .session_manager
+        .get_session(&session.id, true)
+        .await?;
+    assert_eq!(unchanged.conversation.unwrap(), conversation_before);
+    assert_eq!(unchanged.usage, usage_before);
+
+    Ok(())
 }
 
 /// Helper: Assert conversation has been compacted with proper message visibility
@@ -310,16 +375,33 @@ fn assert_conversation_compacted(conversation: &Conversation) {
         }
     }
 
-    // Any messages AFTER the continuation (e.g., preserved recent user message)
-    // should be fully visible to both agent and user
+    // The projected replay of the preserved user message is agent-only. Any
+    // ordinary messages appended after it should remain visible to both sides.
     let continuation_end = summary_index + 2;
     for (idx, msg) in messages.iter().enumerate() {
         if idx >= continuation_end {
             assert!(
-                msg.is_agent_visible() && msg.is_user_visible(),
-                "Message after compaction at index {} should be fully visible",
+                msg.is_agent_visible(),
+                "Message after compaction at index {} should be agent visible",
                 idx
             );
+            if msg.is_turn_context() {
+                assert!(
+                    !msg.is_user_visible(),
+                    "Carried turn-context event should be user-invisible"
+                );
+            } else if idx == continuation_end && matches!(msg.role, rmcp::model::Role::User) {
+                assert!(
+                    !msg.is_user_visible(),
+                    "Projected preserved user message should be user-invisible"
+                );
+            } else {
+                assert!(
+                    msg.is_user_visible(),
+                    "Ordinary message after compaction at index {} should be user visible",
+                    idx
+                );
+            }
         }
     }
 }
@@ -368,20 +450,16 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
     // - Single "summarize" message: 100 tokens
     // - Total input observed: ~6100 tokens
     //
-    // After compaction:
-    // - current input_tokens = summary output (200) - the new compact context
-    // - current output_tokens = None (compaction doesn't produce new output)
-    // - current total_tokens = 200
-    // - accumulated_total = initial (1000) + compaction cost
-    let expected_summary_output = 200; // compact summary
-
-    // Verify the key invariants after manual compaction:
-    // After compaction, the current context is ONLY the summary (200 tokens)
-    // This is the new agent-visible input context
-    assert_eq!(
-        updated_session.usage.input_tokens,
-        Some(expected_summary_output),
-        "Input tokens should be exactly the summary output (200 tokens)"
+    // After compaction the baseline is the estimated retained conversation
+    // (summary + continuation), not the provider-reported output count
+    let input_after = updated_session
+        .usage
+        .input_tokens
+        .expect("Input tokens should be set after compaction");
+    assert!(
+        input_after > 0 && input_after < 200,
+        "Input tokens should be the estimated retained context (smaller than the mock's claimed 200 output tokens). Got: {}",
+        input_after
     );
     assert_eq!(
         updated_session.usage.output_tokens, None,
@@ -389,19 +467,20 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
     );
     assert_eq!(
         updated_session.usage.total_tokens,
-        Some(expected_summary_output),
-        "Total should equal input (200 tokens) after compaction"
+        Some(input_after),
+        "Total should equal input after compaction"
     );
 
     // Accumulated tokens increased by the compaction cost
     // Initial: 1000
-    // Compaction input: ~6400 (system 6000 + 4 messages ~400)
+    // Compaction input: ~6700 (system 6000 + compaction prompt + 4 messages;
+    // the mock derives input tokens from the rendered prompt length, so the
+    // band must absorb compaction.md wording changes)
     // Compaction output: 200
-    // Expected accumulated: 1000 + 6400 + 200 = 7600
     let accumulated = updated_session.accumulated_usage.total_tokens.unwrap();
     assert!(
-        (7300..=7900).contains(&accumulated),
-        "Accumulated should be ~7600 (1000 initial + 6400 input + 200 output). Got: {}",
+        (7300..=8600).contains(&accumulated),
+        "Accumulated should be ~7900 (1000 initial + ~6700 input + 200 output). Got: {}",
         accumulated
     );
 
@@ -674,22 +753,20 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     // 1. Initial attempt: >20000 tokens -> Context limit exceeded
     // 2. Compaction triggered:
     //    - Input: system prompt + messages (including long_tool_call with 15k tokens)
-    //    - Output: 200 tokens (summary)
-    //    - New context size: 200 tokens
+    //    - Output: 200 tokens (summary, as claimed by the mock)
+    //    - New context size: estimated tokens of the retained conversation
     // 3. Retry with compacted context:
-    //    - Input: system prompt + summary (200) + new message
+    //    - Input: system prompt + summary + new message
     //    - Output: 100 tokens (response)
 
     // Verify that current input context is dramatically reduced after compaction
     let tokens_after =
         input_tokens_after_compaction.expect("Should have captured tokens after compaction");
 
-    // After compaction, the input context should be ONLY the summary: 200 tokens
     // Before: system (6000) + long_tool_call messages (~15,400) = 21,400 (exceeded limit!)
-    // After: only summary (200 tokens)
-    assert_eq!(
-        tokens_after, 200,
-        "Input tokens after compaction should be exactly 200 (summary only). Got: {}",
+    assert!(
+        tokens_after > 0 && tokens_after < 200,
+        "Input tokens after compaction should be the estimated retained context (under the mock's claimed 200). Got: {}",
         tokens_after
     );
 

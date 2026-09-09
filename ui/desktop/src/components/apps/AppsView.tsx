@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { Button } from '../ui/button';
-import { AlertTriangle, Download, Play, Upload } from 'lucide-react';
+import { AlertTriangle, Download, Play, Trash2, Upload } from 'lucide-react';
 import type { GooseApp } from '../../types/apps';
-import { exportMcpApp, importMcpApp, listMcpApps } from '../../acp/mcp-apps';
+import { deleteMcpApp, exportMcpApp, importMcpApp, listMcpApps } from '../../acp/mcp-apps';
 import { useChatContext } from '../../contexts/ChatContext';
 import { formatAppName } from '../../utils/conversionUtils';
 import { errorMessage } from '../../utils/conversionUtils';
@@ -61,6 +61,18 @@ const i18n = defineMessages({
     id: 'appsView.retiredChatAppDetail',
     defaultMessage: 'We removed this feature because MCP sampling is no longer supported.',
   },
+  deleteConfirm: {
+    id: 'appsView.deleteConfirm',
+    defaultMessage: 'Delete "{name}"? This cannot be undone.',
+  },
+  deleteApp: {
+    id: 'appsView.deleteApp',
+    defaultMessage: 'Delete app',
+  },
+  errorPrefix: {
+    id: 'appsView.errorPrefix',
+    defaultMessage: 'Error: {error}',
+  },
 });
 
 const GridLayout = ({ children }: { children: React.ReactNode }) => {
@@ -82,6 +94,7 @@ export default function AppsView() {
   const [apps, setApps] = useState<GooseApp[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deletesInProgress, setDeletesInProgress] = useState<Set<string>>(new Set());
   const chatContext = useChatContext();
   const sessionId = chatContext?.chat.sessionId;
 
@@ -102,30 +115,42 @@ export default function AppsView() {
     loadCachedApps();
   }, []);
 
-  // When sessionId becomes available, fetch fresh apps and update cache
+  const refreshAppsExtensionList = useCallback(async (activeSessionId?: string) => {
+    const appsExtension = 'apps';
+    const cacheApps = (await listMcpApps()).filter((a) => a.mcpServers?.includes(appsExtension));
+
+    if (!activeSessionId) {
+      setApps(cacheApps);
+      return;
+    }
+
+    try {
+      const sessionApps = (await listMcpApps(activeSessionId)).filter((a) =>
+        a.mcpServers?.includes(appsExtension)
+      );
+      const merged = new Map<string, GooseApp>();
+      for (const app of cacheApps) {
+        merged.set(app.uri, app);
+      }
+      for (const app of sessionApps) {
+        merged.set(app.uri, app);
+      }
+      setApps(Array.from(merged.values()));
+      setError(null);
+    } catch (err) {
+      console.warn('Failed to refresh apps from session:', err);
+      setApps(cacheApps);
+      if (cacheApps.length === 0) {
+        setError(errorMessage(err, 'Failed to load apps'));
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!sessionId) return;
 
-    const refreshApps = async () => {
-      try {
-        const freshApps = await listMcpApps(sessionId);
-        // Only show apps from the "apps" extension (vibe coded apps built by Goose)
-        setApps(freshApps.filter((a) => a.mcpServers?.includes('apps')));
-        setError(null);
-      } catch (err) {
-        console.warn('Failed to refresh apps:', err);
-        // Don't set error if we already have cached apps
-        if (apps.length === 0) {
-          setError(errorMessage(err, 'Failed to load apps'));
-        }
-      }
-    };
-
-    refreshApps();
-    // apps.length intentionally not in deps: we want to capture the initial apps.length to check
-    // "did we have cached apps when refresh started?" Adding it would cause infinite loop since setApps() changes apps.length
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+    refreshAppsExtensionList(sessionId);
+  }, [sessionId, refreshAppsExtensionList]);
 
   useEffect(() => {
     const handlePlatformEvent = (event: Event) => {
@@ -134,38 +159,26 @@ export default function AppsView() {
 
       if (eventData?.extension === 'apps') {
         const eventSessionId = eventData.sessionId || sessionId;
-
-        // Refresh apps list to get latest state
-        if (eventSessionId) {
-          listMcpApps(eventSessionId).then((apps) => {
-            setApps(apps.filter((a) => a.mcpServers?.includes('apps')));
-          });
-        }
+        refreshAppsExtensionList(eventSessionId).catch((err) => {
+          console.warn('Failed to refresh apps after platform event:', err);
+        });
       }
     };
 
     window.addEventListener('platform-event', handlePlatformEvent);
     return () => window.removeEventListener('platform-event', handlePlatformEvent);
-  }, [sessionId]);
+  }, [sessionId, refreshAppsExtensionList]);
 
   const loadApps = useCallback(async () => {
     if (!sessionId) return;
 
     try {
       setLoading(true);
-      const fetchedApps = await listMcpApps(sessionId);
-      // Only show apps from the "apps" extension (vibe coded apps built by Goose)
-      setApps(fetchedApps.filter((a) => a.mcpServers?.includes('apps')));
-      setError(null);
-    } catch (err) {
-      // Only set error if we don't have apps to show
-      if (apps.length === 0) {
-        setError(errorMessage(err, 'Failed to load apps'));
-      }
+      await refreshAppsExtensionList(sessionId);
     } finally {
       setLoading(false);
     }
-  }, [sessionId, apps.length]);
+  }, [sessionId, refreshAppsExtensionList]);
 
   const handleLaunchApp = async (app: GooseApp) => {
     try {
@@ -173,6 +186,34 @@ export default function AppsView() {
     } catch (err) {
       console.error('Failed to launch app:', err);
       // App launch errors shouldn't hide the apps list, just log it
+    }
+  };
+
+  const handleDeleteApp = async (app: GooseApp) => {
+    if (
+      !window.confirm(
+        intl.formatMessage(i18n.deleteConfirm, { name: formatAppName(app.name) })
+      )
+    ) {
+      return;
+    }
+
+    setDeletesInProgress((prev) => new Set(prev).add(app.name));
+    setError(null);
+
+    try {
+      await deleteMcpApp(app.name);
+      await window.electron.closeApp(app.name).catch(() => undefined);
+      setApps((prev) => prev.filter((a) => a.name !== app.name));
+    } catch (err) {
+      console.error('Failed to delete app:', err);
+      setError(errorMessage(err, 'Failed to delete app'));
+    } finally {
+      setDeletesInProgress((prev) => {
+        const next = new Set(prev);
+        next.delete(app.name);
+        return next;
+      });
     }
   };
 
@@ -264,6 +305,13 @@ export default function AppsView() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 pb-8">
+          {error && apps.length > 0 && (
+            <div className="mb-4">
+              <p className="text-text-danger text-sm">
+                {intl.formatMessage(i18n.errorPrefix, { error })}
+              </p>
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-text-secondary">{intl.formatMessage(i18n.loading)}</p>
@@ -282,6 +330,8 @@ export default function AppsView() {
               {apps.map((app) => {
                 const isCustomApp = app.mcpServers?.includes('apps') ?? false;
                 const retiredChatApp = isRetiredGooseChatApp(app);
+                const canDelete = isCustomApp && app.deletable === true;
+                const deleteInProgress = deletesInProgress.has(app.name);
                 return (
                   <div
                     key={`${app.uri}-${app.mcpServers?.join(',')}`}
@@ -334,6 +384,18 @@ export default function AppsView() {
                           className="flex items-center gap-2"
                         >
                           <Download className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteApp(app)}
+                          disabled={deleteInProgress}
+                          className="flex items-center gap-2 text-destructive hover:text-destructive"
+                          aria-label={intl.formatMessage(i18n.deleteApp)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>

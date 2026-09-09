@@ -25,17 +25,12 @@ export const saveRecipe = async (
     if (typeof error === 'object' && error !== null && 'message' in error) {
       error_message = error.message as string;
     }
-    throw new Error(error_message);
+    throw new Error(error_message, { cause: error });
   }
 };
 
 export const listSavedRecipes = async (): Promise<RecipeManifest[]> => {
-  try {
-    return await acpListRecipes();
-  } catch (error) {
-    console.warn('Failed to list saved recipes:', error);
-    return [];
-  }
+  return await acpListRecipes();
 };
 
 export const deleteRecipe = async (id: string): Promise<void> => {

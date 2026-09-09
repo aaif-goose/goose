@@ -238,9 +238,13 @@ pub fn apply_inspection_results_to_permissions(
 
                 if let Some(request) = all_requests.get(request_id) {
                     if !permission_result
-                        .needs_approval
+                        .denied
                         .iter()
                         .any(|req| req.id == *request_id)
+                        && !permission_result
+                            .needs_approval
+                            .iter()
+                            .any(|req| req.id == *request_id)
                     {
                         permission_result.needs_approval.push(request.clone());
                     }

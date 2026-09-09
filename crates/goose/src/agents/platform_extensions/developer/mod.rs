@@ -1,6 +1,7 @@
 pub mod edit;
 pub mod image;
 pub mod shell;
+mod shell_output_streaming;
 pub mod tree;
 
 use crate::agents::extension::PlatformExtensionContext;
@@ -12,8 +13,8 @@ use edit::{EditTools, FileEditParams, FileWriteParams};
 use image::{ImageReadParams, ImageTool};
 use indoc::indoc;
 use rmcp::model::{
-    CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    ServerCapabilities, Tool, ToolAnnotations,
+    Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
+    ListToolsResult, ServerCapabilities, TextContent, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde_json::Value;
@@ -23,6 +24,12 @@ use tokio_util::sync::CancellationToken;
 use tree::{TreeParams, TreeTool};
 
 pub static EXTENSION_NAME: &str = "developer";
+
+fn visible_text(text: impl Into<String>) -> ContentBlock {
+    ContentBlock::Text(
+        TextContent::new(text).with_annotations(Annotations::default().with_priority(0.0)),
+    )
+}
 
 pub struct DeveloperClient {
     info: InitializeResult,
@@ -124,18 +131,24 @@ impl DeveloperClient {
                 Some(false),
                 Some(false),
             )),
-            Tool::new(
-                "shell".to_string(),
-                format!(
+            {
+                let shell = shell_display_name();
+                let newline_note = if shell == "cmd" {
+                    " Commands must be on a single line — cmd.exe silently truncates at the \
+                     first newline. Use `&` to chain (e.g. `echo a & echo b`) or set \
+                     GOOSE_SHELL=powershell for multi-line support."
+                } else {
+                    ""
+                };
+                let description = format!(
                     "Execute a shell command in the current dir. Commands run under `{shell}` \
                      (set GOOSE_SHELL to override) - write command strings in that shell's \
-                     syntax. Returns an object with stdout and stderr as separate fields. The \
-                     output of each stream is limited to up to 2000 lines, and longer outputs \
-                     will be saved to a temporary file.",
-                    shell = shell_display_name(),
-                ),
-                Self::schema::<ShellParams>(),
-            )
+                     syntax.{newline_note} Returns an object with stdout and stderr as separate \
+                     fields. The output of each stream is limited to up to 2000 lines, and \
+                     longer outputs will be saved to a temporary file.",
+                );
+                Tool::new("shell".to_string(), description, Self::schema::<ShellParams>())
+            }
             .with_output_schema::<ShellOutput>()
             .annotate(ToolAnnotations::from_raw(
                 Some("Shell".to_string()),
@@ -163,10 +176,10 @@ impl DeveloperClient {
             )
             .annotate(ToolAnnotations::from_raw(
                 Some("Read Image".to_string()),
-                Some(true),
+                Some(false),
                 Some(false),
                 Some(true),
-                Some(false),
+                Some(true),
             )),
         ]
     }
@@ -184,6 +197,7 @@ impl McpClientTrait for DeveloperClient {
             tools: Self::get_tools(),
             next_cursor: None,
             meta: None,
+            ..Default::default()
         })
     }
 
@@ -192,49 +206,53 @@ impl McpClientTrait for DeveloperClient {
         ctx: &ToolCallContext,
         name: &str,
         arguments: Option<JsonObject>,
-        _cancel_token: CancellationToken,
+        cancel_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
         let working_dir = ctx.working_dir.as_deref();
         match name {
             "shell" => match Self::parse_args::<ShellParams>(arguments) {
-                Ok(params) => Ok(self.shell_tool.shell_with_cwd(params, working_dir).await),
+                Ok(params) => Ok(self
+                    .shell_tool
+                    .shell_with_cwd_and_emitter(
+                        params,
+                        working_dir,
+                        Some(&ctx.session_id),
+                        ctx.notification_emitter().cloned(),
+                        cancel_token,
+                    )
+                    .await),
                 Err(error) => Ok(ShellTool::error_result(&format!("Error: {error}"), None)),
             },
             "write" => match Self::parse_args::<FileWriteParams>(arguments) {
                 Ok(params) => Ok(self.edit_tools.file_write_with_cwd(params, working_dir)),
-                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
                     "Error: {error}"
-                ))
-                .with_priority(0.0)])),
+                ))])),
             },
             "edit" => match Self::parse_args::<FileEditParams>(arguments) {
                 Ok(params) => Ok(self.edit_tools.file_edit_with_cwd(params, working_dir)),
-                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
                     "Error: {error}"
-                ))
-                .with_priority(0.0)])),
+                ))])),
             },
             "tree" => match Self::parse_args::<TreeParams>(arguments) {
                 Ok(params) => Ok(self.tree_tool.tree_with_cwd(params, working_dir)),
-                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
                     "Error: {error}"
-                ))
-                .with_priority(0.0)])),
+                ))])),
             },
             "read_image" => match Self::parse_args::<ImageReadParams>(arguments) {
                 Ok(params) => Ok(self
                     .image_tool
                     .image_read_with_cwd(params, working_dir)
                     .await),
-                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
                     "Error: {error}"
-                ))
-                .with_priority(0.0)])),
+                ))])),
             },
-            _ => Ok(CallToolResult::error(vec![Content::text(format!(
+            _ => Ok(CallToolResult::error(vec![visible_text(format!(
                 "Error: Unknown tool: {name}"
-            ))
-            .with_priority(0.0)])),
+            ))])),
         }
     }
 
@@ -247,7 +265,7 @@ impl McpClientTrait for DeveloperClient {
 mod tests {
     use super::*;
     use crate::session::SessionManager;
-    use rmcp::model::RawContent;
+    use rmcp::model::ContentBlock;
     use rmcp::object;
     use std::fs;
 
@@ -261,18 +279,31 @@ mod tests {
         assert_eq!(names, vec!["write", "edit", "shell", "tree", "read_image"]);
     }
 
+    #[test]
+    fn read_image_annotations_reflect_network_access() {
+        let read_image = DeveloperClient::get_tools()
+            .into_iter()
+            .find(|tool| tool.name == "read_image")
+            .unwrap();
+        let annotations = read_image.annotations.unwrap();
+
+        assert_eq!(annotations.read_only_hint, Some(false));
+        assert_eq!(annotations.open_world_hint, Some(true));
+    }
+
     fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {
         PlatformExtensionContext {
             extension_manager: None,
             session_manager: Arc::new(SessionManager::new(data_dir)),
+            scheduler: None,
             session: None,
             use_login_shell_path: false,
         }
     }
 
     fn first_text(result: &CallToolResult) -> &str {
-        match &result.content[0].raw {
-            RawContent::Text(text) => &text.text,
+        match &result.content[0] {
+            ContentBlock::Text(text) => &text.text,
             _ => panic!("expected text content"),
         }
     }
@@ -321,6 +352,29 @@ mod tests {
             fs::read_to_string(cwd.join("notes.txt")).unwrap(),
             "updated line"
         );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn developer_client_passes_session_id_to_shell_tool() {
+        let temp = tempfile::tempdir().unwrap();
+        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let ctx = ToolCallContext::new("session-789".to_owned(), None, None);
+
+        let result = client
+            .call_tool(
+                &ctx,
+                "shell",
+                Some(object!({
+                    "command": "printenv AGENT_SESSION_ID"
+                })),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(first_text(&result), "session-789");
     }
 
     #[cfg(not(windows))]

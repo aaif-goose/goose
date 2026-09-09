@@ -5,7 +5,7 @@ import type {
   LocalInferenceModelDownloadRequest_unstable,
   LocalInferenceModelDto,
   LocalInferenceModelSettingsDto,
-} from '@aaif/goose-sdk';
+} from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 
 export type LocalModelResponse = LocalInferenceModelDto;
@@ -54,6 +54,11 @@ export async function cancelLocalModelDownload(modelId: string): Promise<void> {
 export async function deleteLocalModel(modelId: string): Promise<void> {
   const client = await getAcpClient();
   await client.goose.localInferenceModelsDelete_unstable({ modelId });
+}
+
+export async function evictLocalModel(modelId: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.localInferenceModelsEvict_unstable({ modelId });
 }
 
 export async function getModelSettings(modelId: string): Promise<ModelSettings> {

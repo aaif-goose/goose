@@ -124,7 +124,7 @@ async fn test_adversary_custom_tool_filter() {
     let tmp = tempfile::tempdir().unwrap();
     write_adversary_md(
         tmp.path(),
-        "tools: shell, computercontroller__automation_script\n---\nBLOCK bad stuff",
+        "tools: shell, developer__shell\n---\nBLOCK bad stuff",
     );
 
     let provider = Arc::new(Mutex::new(None));
@@ -156,13 +156,13 @@ async fn test_adversary_custom_tool_filter() {
         .unwrap();
     assert_eq!(results.len(), 1);
 
-    // automation_script — reviewed
+    // developer__shell — reviewed
     let results = inspector
         .inspect(
             "test",
             &[make_request(
                 "r2",
-                "computercontroller__automation_script",
+                "developer__shell",
                 object!({"script": "echo hi", "language": "shell"}),
             )],
             &messages,

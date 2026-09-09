@@ -58,6 +58,18 @@ export OTEL_METRICS_EXPORTER=none
 export OTEL_LOGS_EXPORTER=none
 ```
 
+To include model messages and tool arguments/results in traces, explicitly enable
+GenAI message content capture:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
+:::warning
+Message content can contain sensitive data and produce large traces. Leave this
+setting disabled unless your telemetry storage is appropriate for that data.
+:::
+
 ## Run goose with MLflow enabled
 
 Start goose normally. With the OTLP environment variables set, goose will automatically export traces to MLflow:

@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { ScrollArea } from '../../ui/scroll-area';
 import BackButton from '../../ui/BackButton';
 import ProviderGrid from './ProviderGrid';
-import { acpListProviderDetails } from '../../../acp/providers';
+import {
+  acpListSettingsProviderDetails,
+  acpListSetupProviderDetails,
+} from '../../../acp/providers';
 import type { ProviderDetails } from '../../../types/providers';
 import { createNavigationHandler } from '../../../utils/navigationUtils';
 import { defineMessages, useIntl } from '../../../i18n';
@@ -51,7 +54,9 @@ export default function ProviderSettings({
   const loadProviders = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await acpListProviderDetails();
+      const result = await (isOnboarding
+        ? acpListSetupProviderDetails()
+        : acpListSettingsProviderDetails());
       if (result) {
         setProviders(result);
         initialLoadDone.current = true;
@@ -61,7 +66,7 @@ export default function ProviderSettings({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isOnboarding]);
 
   // Load providers only once when component mounts
   useEffect(() => {
@@ -72,10 +77,12 @@ export default function ProviderSettings({
   // This function will be passed to ProviderGrid for manual refreshes after config changes
   const refreshProviders = useCallback(async () => {
     if (initialLoadDone.current) {
-      const result = await acpListProviderDetails();
+      const result = await (isOnboarding
+        ? acpListSetupProviderDetails()
+        : acpListSettingsProviderDetails());
       if (result) setProviders(result);
     }
-  }, []);
+  }, [isOnboarding]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-background-primary text-text-primary">

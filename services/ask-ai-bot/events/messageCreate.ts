@@ -9,6 +9,17 @@ import { answerQuestion } from "../utils/ai";
 import { buildServerContext } from "../utils/discord/server-context";
 import { logger } from "../utils/logger";
 
+const followUpInstructions = {
+  embeds: [
+    {
+      title: "Want to ask a follow-up?",
+      description:
+        "Reply to one of my messages or @mention me in this thread so I know to answer.",
+      color: 0x6a9f58,
+    },
+  ],
+};
+
 export default {
   event: Events.MessageCreate,
   handler: async (
@@ -58,6 +69,8 @@ export default {
           );
           return;
         }
+
+        await message.channel.sendTyping();
 
         // Fetch last 10 messages from the thread for context
         const messages = await message.channel.messages.fetch({ limit: 10 });
@@ -111,6 +124,8 @@ export default {
             statusMessage,
             serverContext,
           });
+
+          await thread.send(followUpInstructions);
 
           logger.verbose(`Answered question for ${message.author.username}`);
         } catch (error) {

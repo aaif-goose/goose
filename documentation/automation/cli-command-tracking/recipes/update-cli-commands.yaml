@@ -65,7 +65,6 @@ instructions: |
   - Core Commands (configure, info, version, update)
   - Session Management (session and subcommands)
   - Task Execution (run, bench, recipe, schedule, mcp, acp)
-  - Project Management (project, projects)
   - Interface (web)
   - Interactive Session Features (slash commands, themes, etc.)
   

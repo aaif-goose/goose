@@ -192,6 +192,12 @@ export default function ConfigSettings() {
           return false;
         }
 
+        // skip nested structures - they can't be edited as a single-line string
+        const value: unknown = configValues[key];
+        if (typeof value === 'object' && value !== null) {
+          return false;
+        }
+
         // Only show provider-specific entries for the current provider
         const providerSpecific = allProviderPrefixes.some((prefix: string) =>
           key.startsWith(prefix)

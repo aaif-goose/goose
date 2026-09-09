@@ -135,7 +135,10 @@
             }).catch(function (err) {
                 // Remove any error artefacts mermaid injected (bomb-icon SVGs, etc.)
                 document.querySelectorAll('[id^="d' + uid + '"]').forEach(function (el) { el.remove(); });
-                output.innerHTML = '<div class="mermaid-error">' + (err.message || err) + "</div>";
+                var errorEl = document.createElement("div");
+                errorEl.className = "mermaid-error";
+                errorEl.textContent = String(err.message || err);
+                output.replaceChildren(errorEl);
                 setTimeout(McpAppBridge.reportSize, 80);
             });
         }

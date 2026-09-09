@@ -101,6 +101,14 @@ impl GooseAcpAgent {
         self.on_import_app(req).await
     }
 
+    #[custom_method(AppsDeleteRequest)]
+    async fn dispatch_delete_app(
+        &self,
+        req: AppsDeleteRequest,
+    ) -> Result<AppsDeleteResponse, agent_client_protocol::Error> {
+        self.on_delete_app(req).await
+    }
+
     #[custom_method(UpdateWorkingDirRequest)]
     async fn dispatch_update_working_dir(
         &self,
@@ -165,26 +173,11 @@ impl GooseAcpAgent {
         self.on_reset_prompt(req).await
     }
 
-    #[custom_method(DeleteSessionRequest)]
-    async fn dispatch_delete_session(
-        &self,
-        req: DeleteSessionRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_delete_session(req).await
-    }
-
     #[custom_method(GetConfigExtensionsRequest)]
     async fn dispatch_get_config_extensions(
         &self,
     ) -> Result<GetConfigExtensionsResponse, agent_client_protocol::Error> {
         self.on_get_config_extensions().await
-    }
-
-    #[custom_method(GetAvailableExtensionsRequest)]
-    async fn dispatch_get_available_extensions(
-        &self,
-    ) -> Result<GetAvailableExtensionsResponse, agent_client_protocol::Error> {
-        self.on_get_available_extensions().await
     }
 
     #[custom_method(AddConfigExtensionRequest)]
@@ -299,6 +292,14 @@ impl GooseAcpAgent {
         self.on_refresh_provider_inventory(req).await
     }
 
+    #[custom_method(ProviderReadinessCheckRequest)]
+    async fn dispatch_check_provider_readiness(
+        &self,
+        req: ProviderReadinessCheckRequest,
+    ) -> Result<ProviderReadinessCheckResponse, agent_client_protocol::Error> {
+        self.on_check_provider_readiness(req).await
+    }
+
     #[custom_method(ProviderConfigReadRequest)]
     async fn dispatch_read_provider_config(
         &self,
@@ -377,14 +378,6 @@ impl GooseAcpAgent {
         req: PreferencesSaveRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         self.on_preferences_save(req).await
-    }
-
-    #[custom_method(PreferencesRemoveRequest)]
-    async fn dispatch_preferences_remove(
-        &self,
-        req: PreferencesRemoveRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_preferences_remove(req).await
     }
 
     #[custom_method(ConfigReadRequest)]
@@ -771,22 +764,6 @@ impl GooseAcpAgent {
         self.on_dictation_config(_req).await
     }
 
-    #[custom_method(DictationSecretSaveRequest)]
-    async fn dispatch_dictation_secret_save(
-        &self,
-        req: DictationSecretSaveRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_dictation_secret_save(req).await
-    }
-
-    #[custom_method(DictationSecretDeleteRequest)]
-    async fn dispatch_dictation_secret_delete(
-        &self,
-        req: DictationSecretDeleteRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_dictation_secret_delete(req).await
-    }
-
     #[custom_method(DictationModelsListRequest)]
     async fn dispatch_dictation_models_list(
         &self,
@@ -827,14 +804,6 @@ impl GooseAcpAgent {
         self.on_dictation_model_delete(_req).await
     }
 
-    #[custom_method(DictationModelSelectRequest)]
-    async fn dispatch_dictation_model_select(
-        &self,
-        req: DictationModelSelectRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_dictation_model_select(req).await
-    }
-
     #[custom_method(LocalInferenceModelsListRequest)]
     async fn dispatch_local_inference_models_list(
         &self,
@@ -873,6 +842,14 @@ impl GooseAcpAgent {
         req: LocalInferenceModelDeleteRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         self.on_local_inference_model_delete(req).await
+    }
+
+    #[custom_method(LocalInferenceModelEvictRequest)]
+    async fn dispatch_local_inference_model_evict(
+        &self,
+        req: LocalInferenceModelEvictRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_local_inference_model_evict(req).await
     }
 
     #[custom_method(LocalInferenceModelSettingsReadRequest)]

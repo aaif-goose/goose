@@ -2,8 +2,9 @@ use crate::conversation::message::MessageContent;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use rmcp::model::Role;
 use serde::Serialize;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,7 +97,7 @@ impl<'a> ChatHistorySearch<'a> {
 
     async fn fetch_rows(&self, keywords: &[String]) -> Result<Vec<SqlQueryRow>> {
         let sql = self.build_sql(keywords);
-        let mut query_builder = sqlx::query_as::<_, SqlQueryRow>(&sql);
+        let mut query_builder = sqlx::query_as::<_, SqlQueryRow>(AssertSqlSafe(sql));
 
         for keyword in keywords {
             query_builder = query_builder.bind(keyword);
@@ -142,9 +143,31 @@ impl<'a> ChatHistorySearch<'a> {
                 m.timestamp
             FROM messages m
             INNER JOIN sessions s ON m.session_id = s.id
-            WHERE EXISTS (
-                SELECT 1 FROM json_each(m.content_json) 
-                WHERE json_extract(value, '$.type') = 'text' 
+            WHERE COALESCE(
+                CASE
+                    WHEN json_valid(m.metadata_json)
+                    THEN json_extract(m.metadata_json, '$.agentVisible')
+                END,
+                1
+            ) = 1
+            AND COALESCE(
+                CASE
+                    WHEN json_valid(m.metadata_json)
+                    THEN json_extract(m.metadata_json, '$.turnContext')
+                END,
+                0
+            ) = 0
+            AND EXISTS (
+                SELECT 1 FROM json_each(m.content_json) AS content
+                WHERE json_extract(content.value, '$.type') = 'text'
+                AND (
+                    json_type(content.value, '$.annotations.audience') IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM json_each(content.value, '$.annotations.audience') AS audience
+                        WHERE audience.value = 'assistant'
+                    )
+                )
                 AND (
         "#,
         );
@@ -153,7 +176,7 @@ impl<'a> ChatHistorySearch<'a> {
             if i > 0 {
                 sql.push_str(" OR ");
             }
-            sql.push_str("LOWER(json_extract(value, '$.text')) LIKE ?");
+            sql.push_str("LOWER(json_extract(content.value, '$.text')) LIKE ?");
         }
 
         sql.push_str(
@@ -203,7 +226,11 @@ impl<'a> ChatHistorySearch<'a> {
         ) in rows
         {
             if let Ok(content_vec) = serde_json::from_str::<Vec<MessageContent>>(&content_json) {
-                let text_parts = Self::extract_text_content(content_vec);
+                let agent_visible_content = content_vec
+                    .into_iter()
+                    .filter_map(|content| content.filter_for_audience(Role::Assistant))
+                    .collect();
+                let text_parts = Self::extract_text_content(agent_visible_content);
 
                 if !text_parts.is_empty() {
                     let entry = session_messages.entry(session_id.clone()).or_insert((
@@ -243,12 +270,29 @@ impl<'a> ChatHistorySearch<'a> {
     ) -> Result<HashMap<String, usize>> {
         let mut session_totals: HashMap<String, usize> = HashMap::new();
         for session_id in session_messages.keys() {
-            let count: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id = ?")
-                    .bind(session_id)
-                    .fetch_one(self.pool)
-                    .await
-                    .unwrap_or(0);
+            let count: i64 = sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*) FROM messages m WHERE m.session_id = ?
+                AND COALESCE(
+                    CASE
+                        WHEN json_valid(m.metadata_json)
+                        THEN json_extract(m.metadata_json, '$.agentVisible')
+                    END,
+                    1
+                ) = 1
+                AND COALESCE(
+                    CASE
+                        WHEN json_valid(m.metadata_json)
+                        THEN json_extract(m.metadata_json, '$.turnContext')
+                    END,
+                    0
+                ) = 0
+                "#,
+            )
+            .bind(session_id)
+            .fetch_one(self.pool)
+            .await
+            .unwrap_or(0);
             session_totals.insert(session_id.clone(), count as usize);
         }
         Ok(session_totals)
@@ -293,12 +337,156 @@ impl<'a> ChatHistorySearch<'a> {
             )
             .collect();
 
-        results.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+        results.sort_by_key(|result| std::cmp::Reverse(result.last_activity));
 
         let total_matches = results.iter().map(|r| r.messages.len()).sum();
         ChatRecallResults {
             results,
             total_matches,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::conversation::message::{Message, MessageContent, MessageMetadata};
+    use rmcp::model::{Annotations, TextContent};
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    fn user_only_text(text: &str) -> MessageContent {
+        MessageContent::Text(
+            TextContent::new(text)
+                .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+        )
+    }
+
+    async fn insert_message(pool: &Pool<Sqlite>, message: &Message, timestamp: DateTime<Utc>) {
+        sqlx::query(
+            r#"
+            INSERT INTO messages (session_id, role, content_json, timestamp, metadata_json)
+            VALUES ('session-1', ?, ?, ?, ?)
+            "#,
+        )
+        .bind(match message.role {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+        })
+        .bind(serde_json::to_string(&message.content).unwrap())
+        .bind(timestamp)
+        .bind(serde_json::to_string(&message.metadata).unwrap())
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_projects_audience_before_matching_and_limiting() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                working_dir TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                session_type TEXT NOT NULL
+            );
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                metadata_json TEXT
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, description, working_dir, created_at, session_type) VALUES ('session-1', 'test', '/tmp', ?, 'user')",
+        )
+        .bind(Utc::now())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        insert_message(
+            &pool,
+            &Message::user().with_text("needle public"),
+            now - chrono::Duration::seconds(3),
+        )
+        .await;
+        insert_message(
+            &pool,
+            &Message::user()
+                .with_text("haystack visible")
+                .with_content(user_only_text("needle secret-only")),
+            now - chrono::Duration::seconds(2),
+        )
+        .await;
+        insert_message(
+            &pool,
+            &Message::user()
+                .with_text("needle hidden row")
+                .with_metadata(MessageMetadata::user_only()),
+            now - chrono::Duration::seconds(1),
+        )
+        .await;
+
+        let needle = ChatHistorySearch::new(&pool, "needle", Some(1), None, None, None, vec![])
+            .execute()
+            .await
+            .unwrap();
+        assert_eq!(needle.total_matches, 1);
+        assert_eq!(needle.results[0].messages[0].content, "needle public");
+
+        let haystack =
+            ChatHistorySearch::new(&pool, "haystack", Some(10), None, None, None, vec![])
+                .execute()
+                .await
+                .unwrap();
+        assert_eq!(haystack.total_matches, 1);
+        assert!(haystack.results[0].messages[0]
+            .content
+            .contains("haystack visible"));
+        assert!(!haystack.results[0].messages[0]
+            .content
+            .contains("needle secret-only"));
+
+        let hidden_only =
+            ChatHistorySearch::new(&pool, "secret-only", Some(10), None, None, None, vec![])
+                .execute()
+                .await
+                .unwrap();
+        assert_eq!(hidden_only.total_matches, 0);
+
+        insert_message(
+            &pool,
+            &Message::user()
+                .with_text("<turn-context>needle in operational context</turn-context>")
+                .with_metadata(MessageMetadata::agent_only().with_turn_context()),
+            now,
+        )
+        .await;
+        let needle = ChatHistorySearch::new(&pool, "needle", Some(10), None, None, None, vec![])
+            .execute()
+            .await
+            .unwrap();
+        assert_eq!(
+            needle.total_matches, 1,
+            "turn-context events are operational context, not searchable conversation"
+        );
+        assert_eq!(
+            needle.results[0].total_messages_in_session, 2,
+            "session totals must not count turn-context or user-only rows"
+        );
     }
 }

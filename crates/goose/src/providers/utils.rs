@@ -1,15 +1,12 @@
 use crate::config::paths::Paths;
 use anyhow::{anyhow, Result};
 use fs_err::File;
-use goose_providers::errors::{GoogleErrorCode, ProviderError};
 use goose_providers::request_log::{install_logger, RequestLogHandle, RequestLogger};
-use reqwest::{Response, StatusCode};
 use serde_json::Value;
 use std::error::Error;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::time::Duration;
 use uuid::Uuid;
 
 pub fn filter_extensions_from_system_prompt(system: &str) -> String {
@@ -37,16 +34,6 @@ pub fn filter_extensions_from_system_prompt(system: &str) -> String {
     }
 }
 
-fn format_server_error_message(status_code: StatusCode, payload: Option<&Value>) -> String {
-    match payload {
-        Some(Value::Null) | None => format!(
-            "HTTP {}: No response body received from server",
-            status_code.as_u16()
-        ),
-        Some(p) => format!("HTTP {}: {}", status_code.as_u16(), p),
-    }
-}
-
 pub fn is_google_model(payload: &Value) -> bool {
     payload
         .get("model")
@@ -54,114 +41,6 @@ pub fn is_google_model(payload: &Value) -> bool {
         .unwrap_or("")
         .to_lowercase()
         .contains("google")
-}
-
-/// Extracts `StatusCode` from response status or payload error code.
-/// This function first checks the status code of the response. If the status is successful (2xx),
-/// it then checks the payload for any error codes and maps them to appropriate `StatusCode`.
-/// If the status is not successful (e.g., 4xx or 5xx), the original status code is returned.
-fn get_google_final_status(status: StatusCode, payload: Option<&Value>) -> StatusCode {
-    // If the status is successful, check for an error in the payload
-    if status.is_success() {
-        if let Some(payload) = payload {
-            if let Some(error) = payload.get("error") {
-                if let Some(code) = error.get("code").and_then(|c| c.as_u64()) {
-                    if let Some(google_error) = GoogleErrorCode::from_code(code) {
-                        return google_error.to_status_code();
-                    }
-                }
-            }
-        }
-    }
-    status
-}
-
-fn parse_google_retry_delay(payload: &Value) -> Option<Duration> {
-    payload
-        .get("error")
-        .and_then(|error| error.get("details"))
-        .and_then(|details| details.as_array())
-        .and_then(|details_array| {
-            details_array.iter().find_map(|detail| {
-                if detail
-                    .get("@type")
-                    .and_then(|t| t.as_str())
-                    .is_some_and(|s| s.ends_with("RetryInfo"))
-                {
-                    detail
-                        .get("retryDelay")
-                        .and_then(|delay| delay.as_str())
-                        .and_then(|s| s.strip_suffix('s'))
-                        .and_then(|num| num.parse::<u64>().ok())
-                        .map(Duration::from_secs)
-                } else {
-                    None
-                }
-            })
-        })
-}
-
-/// Handle response from Google Gemini API-compatible endpoints.
-///
-/// Processes HTTP responses, handling specific statuses and parsing the payload
-/// for error messages. Logs the response payload for debugging purposes.
-///
-/// ### References
-/// - Error Codes: https://ai.google.dev/gemini-api/docs/troubleshooting?lang=python
-///
-/// ### Arguments
-/// - `response`: The HTTP response to process.
-///
-/// ### Returns
-/// - `Ok(Value)`: Parsed JSON on success.
-/// - `Err(ProviderError)`: Describes the failure reason.
-pub async fn handle_response_google_compat(response: Response) -> Result<Value, ProviderError> {
-    let status = response.status();
-    let url = super::http_status::sanitize_url(response.url().as_str());
-    let payload: Option<Value> = response.json().await.ok();
-    let final_status = get_google_final_status(status, payload.as_ref());
-
-    match final_status {
-        StatusCode::OK =>  payload.ok_or_else( || ProviderError::RequestFailed("Response body is not valid JSON".to_string()) ),
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            Err(ProviderError::Authentication(format!("Authentication failed for {url}. Please ensure your API keys are valid and have the required permissions. \
-                Status: {}. Response: {:?}", final_status, payload )))
-        }
-        StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND => {
-            let mut error_msg = "Unknown error".to_string();
-            if let Some(payload) = &payload {
-                if let Some(error) = payload.get("error") {
-                    error_msg = error.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error").to_string();
-                    let error_status = error.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown status");
-                    if error_status == "INVALID_ARGUMENT"
-                        && goose_providers::http_status::is_context_length_exceeded_message(&error_msg)
-                    {
-                        return Err(ProviderError::ContextLengthExceeded(error_msg.to_string()));
-                    }
-                }
-            }
-            tracing::debug!(
-                "{}", format!("Provider request failed with status: {}. Payload: {:?}", final_status, payload)
-            );
-            Err(ProviderError::RequestFailed(format!("Request failed with status {} at {url}. Message: {}", final_status, error_msg)))
-        }
-        StatusCode::TOO_MANY_REQUESTS => {
-            let retry_delay = payload.as_ref().and_then(parse_google_retry_delay);
-            Err(ProviderError::RateLimitExceeded {
-                details: format!("{:?}", payload),
-                retry_delay,
-            })
-        }
-        _ if final_status.is_server_error() => Err(ProviderError::ServerError(
-            format!("Server error ({}) at {url}: {}", final_status, format_server_error_message(final_status, payload.as_ref())),
-        )),
-        _ => {
-            tracing::debug!(
-                "{}", format!("Provider request failed with status: {}. Payload: {:?}", final_status, payload)
-            );
-            Err(ProviderError::RequestFailed(format!("Request failed with status {} at {url}", final_status)))
-        }
-    }
 }
 
 /// Extract the model name from a JSON object. Common with most providers to have this top level attribute.
@@ -195,18 +74,16 @@ fn unescape_json_values_in_place(value: &mut Value) {
                 unescape_json_values_in_place(v);
             }
         }
-        Value::String(s) => {
-            if s.contains('\\') {
-                *s = s
-                    .replace("\\\\n", "\n")
-                    .replace("\\\\t", "\t")
-                    .replace("\\\\r", "\r")
-                    .replace("\\\\\"", "\"")
-                    .replace("\\n", "\n")
-                    .replace("\\t", "\t")
-                    .replace("\\r", "\r")
-                    .replace("\\\"", "\"");
-            }
+        Value::String(s) if s.contains('\\') => {
+            *s = s
+                .replace("\\\\n", "\n")
+                .replace("\\\\t", "\t")
+                .replace("\\\\r", "\r")
+                .replace("\\\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\\r", "\r")
+                .replace("\\\"", "\"");
         }
         _ => {}
     }
@@ -381,70 +258,5 @@ mod tests {
         for (payload, expected_result) in test_cases {
             assert_eq!(is_google_model(&payload), expected_result);
         }
-    }
-
-    #[test]
-    fn test_get_google_final_status_success() {
-        let status = StatusCode::OK;
-        let payload = json!({});
-        let result = get_google_final_status(status, Some(&payload));
-        assert_eq!(result, StatusCode::OK);
-    }
-
-    #[test]
-    fn test_get_google_final_status_with_error_code() {
-        // Test error code mappings for different payload error codes
-        let test_cases = vec![
-            // (error code, status, expected status code)
-            (200, None, StatusCode::OK),
-            (429, Some(StatusCode::OK), StatusCode::TOO_MANY_REQUESTS),
-            (400, Some(StatusCode::OK), StatusCode::BAD_REQUEST),
-            (401, Some(StatusCode::OK), StatusCode::UNAUTHORIZED),
-            (403, Some(StatusCode::OK), StatusCode::FORBIDDEN),
-            (404, Some(StatusCode::OK), StatusCode::NOT_FOUND),
-            (500, Some(StatusCode::OK), StatusCode::INTERNAL_SERVER_ERROR),
-            (503, Some(StatusCode::OK), StatusCode::SERVICE_UNAVAILABLE),
-            (999, Some(StatusCode::OK), StatusCode::INTERNAL_SERVER_ERROR),
-            (500, Some(StatusCode::BAD_REQUEST), StatusCode::BAD_REQUEST),
-            (
-                404,
-                Some(StatusCode::INTERNAL_SERVER_ERROR),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-        ];
-
-        for (error_code, status, expected_status) in test_cases {
-            let payload = if let Some(_status) = status {
-                json!({
-                    "error": {
-                        "code": error_code,
-                        "message": "Error message"
-                    }
-                })
-            } else {
-                json!({})
-            };
-
-            let result = get_google_final_status(status.unwrap_or(StatusCode::OK), Some(&payload));
-            assert_eq!(result, expected_status);
-        }
-    }
-
-    #[test]
-    fn test_parse_google_retry_delay() {
-        let payload = json!({
-            "error": {
-                "details": [
-                    {
-                        "@type": "type.googleapis.com/google.rpc.RetryInfo",
-                        "retryDelay": "42s"
-                    }
-                ]
-            }
-        });
-        assert_eq!(
-            parse_google_retry_delay(&payload),
-            Some(Duration::from_secs(42))
-        );
     }
 }

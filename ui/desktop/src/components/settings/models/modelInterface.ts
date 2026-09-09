@@ -1,5 +1,5 @@
 import { listLocalModels } from '../../../acp/local-inference';
-import { acpListProviderDetails, acpListProviderModels } from '../../../acp/providers';
+import { acpGetProviderDetails, acpListProviderModels } from '../../../acp/providers';
 import type { ProviderDetails, ThinkingEffort } from '../../../types/providers';
 import { errorMessage as getErrorMessage } from '../../../utils/conversionUtils';
 
@@ -15,32 +15,8 @@ export default interface Model {
   request_params?: Record<string, unknown> & { thinking_effort?: ThinkingEffort }; // provider-specific request parameters
 }
 
-export function createModelStruct(
-  modelName: string,
-  provider: string,
-  id?: number, // Make `id` optional to allow user-defined models
-  lastUsed?: string,
-  alias?: string, // optional model display name
-  subtext?: string
-): Model {
-  // use the metadata to create a Model
-  return {
-    name: modelName,
-    provider: provider,
-    alias: alias,
-    id: id,
-    lastUsed: lastUsed,
-    subtext: subtext,
-  };
-}
-
 export async function getProviderMetadata(providerName: string) {
-  const providers = await acpListProviderDetails();
-  const matches = providers.find((providerMatch) => providerMatch.name === providerName);
-  if (!matches) {
-    throw Error(`No match for provider: ${providerName}`);
-  }
-  return matches.metadata;
+  return (await acpGetProviderDetails(providerName)).metadata;
 }
 
 export interface ProviderModelsResult {

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { NAV_DIMENSIONS } from './constants';
 
 /**
  * When the window is narrower than this many CSS pixels, we auto-collapse
@@ -15,9 +16,14 @@ import React, {
  */
 const NARROW_WINDOW_THRESHOLD = 700;
 
+export const MIN_NAV_WIDTH = 160;
+export const MAX_NAV_WIDTH = 400;
+
 interface NavigationContextValue {
   isNavExpanded: boolean;
   setIsNavExpanded: (expanded: boolean) => void;
+  navWidth: number;
+  setNavWidth: (width: number) => void;
 }
 
 const NavigationContext = createContext<NavigationContextValue | null>(null);
@@ -47,6 +53,23 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
   const setIsNavExpanded = useCallback((expanded: boolean) => {
     setIsNavExpandedState(expanded);
     localStorage.setItem('navigation_expanded', String(expanded));
+  }, []);
+
+  const [navWidth, setNavWidthState] = useState<number>(() => {
+    const stored = localStorage.getItem('navigation_width');
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed) && parsed >= MIN_NAV_WIDTH && parsed <= MAX_NAV_WIDTH) {
+        return parsed;
+      }
+    }
+    return NAV_DIMENSIONS.NAV_WIDTH;
+  });
+
+  const setNavWidth = useCallback((width: number) => {
+    const clamped = Math.min(MAX_NAV_WIDTH, Math.max(MIN_NAV_WIDTH, width));
+    setNavWidthState(clamped);
+    localStorage.setItem('navigation_width', String(clamped));
   }, []);
 
   const isNavExpandedRef = useRef(isNavExpanded);
@@ -90,6 +113,8 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
   const value: NavigationContextValue = {
     isNavExpanded,
     setIsNavExpanded,
+    navWidth,
+    setNavWidth,
   };
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

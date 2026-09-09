@@ -22,6 +22,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
             // new_session/load_session on this connection. Set-once per
             // connection; the result is ignored on later requests.
             let _ = agent.client_cx.set(cx.clone());
+            agent.start_thinking_effort_update_forwarder(&cx).await;
 
             // InitializeRequest runs inline: it sets connection-scoped state
             // (client fs/terminal capabilities) that later handlers read with
@@ -44,7 +45,32 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                         let agent = agent.clone();
                         let cx_clone = cx.clone();
                         cx.spawn(async move {
-                            responder.respond_with_result(agent.on_new_session(&cx_clone, req).await)?;
+                            match agent.on_new_session(&cx_clone, req).await {
+                                Ok(response) => {
+                                    let session_id = response.session_id.0.to_string();
+                                    responder.respond(response)?;
+                                    let session_setup =
+                                        agent.prepare_session_setup_by_id(&session_id).await;
+                                    if let Err(error) = session_setup.and_then(|(session, totals, context_limit)| {
+                                        send_session_setup_notifications(
+                                            &cx_clone,
+                                            &session,
+                                            &totals,
+                                            context_limit,
+                                            agent.supports_goose_custom_notifications(),
+                                        )
+                                    }) {
+                                        tracing::warn!(
+                                            session_id = %session_id,
+                                            error = ?error,
+                                            "Failed to send ACP session setup notifications"
+                                        );
+                                    }
+                                }
+                                Err(error) => {
+                                    responder.respond_with_error(error)?;
+                                }
+                            }
                             Ok(())
                         })?;
                         Ok(())
@@ -60,6 +86,25 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             match agent.on_load_session(&cx_clone, req).await {
                                 Ok(response) => {
                                     responder.respond(response)?;
+                                    let session_setup =
+                                        agent.prepare_session_setup_by_id(&session_id).await;
+                                    if let Err(error) = session_setup.and_then(
+                                        |(session, totals, context_limit)| {
+                                            send_session_setup_notifications(
+                                                &cx_clone,
+                                                &session,
+                                                &totals,
+                                                context_limit,
+                                                agent.supports_goose_custom_notifications(),
+                                            )
+                                        },
+                                    ) {
+                                        tracing::warn!(
+                                            session_id = %session_id,
+                                            error = ?error,
+                                            "Failed to send ACP session setup notifications"
+                                        );
+                                    }
                                 }
                                 Err(e) => {
                                     tracing::error!(
@@ -109,13 +154,17 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                         let cx_spawn = cx.clone();
                         cx.spawn(async move {
                             let cx = cx_spawn;
-                            let value_id = req.value.as_value_id()
-                                .ok_or_else(|| agent_client_protocol::Error::invalid_params().data("Expected a value ID"))?
-                                .clone();
+                            let value_id = match req.value.as_value_id() {
+                                Some(value_id) => value_id.clone(),
+                                None => {
+                                    responder.respond_with_error(
+                                        agent_client_protocol::Error::invalid_params().data("Expected a value ID")
+                                    )?;
+                                    return Ok(());
+                                }
+                            };
                             let session_id = req.session_id.clone();
-                            let sid = sid_short(session_id.0.as_ref());
                             let config_id = req.config_id.0.to_string();
-                            let t_handler = std::time::Instant::now();
                             match config_id.as_ref() {
                                 "provider" => {
                                     Config::global().invalidate_secrets_cache();
@@ -150,7 +199,19 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 }
                             }
                             // Respond immediately using the current provider inventory snapshot.
-                            let (notification, config_options) = agent.build_config_update(&session_id).await?;
+                            let (notification, config_options) = match agent.build_config_update(&session_id).await {
+                                Ok(update) => update,
+                                Err(e) => {
+                                    warn!(
+                                        session_id = %session_id.0,
+                                        config_id = %config_id,
+                                        error = ?e,
+                                        "failed to build config update after config change"
+                                    );
+                                    responder.respond_with_error(e)?;
+                                    return Ok(());
+                                }
+                            };
                             cx.send_notification(notification)?;
                             responder.respond(SetSessionConfigOptionResponse::new(config_options))?;
 
@@ -289,7 +350,6 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 });
                             }
 
-                            debug!(target: "perf", sid = %sid, ms = t_handler.elapsed().as_millis() as u64, config_id = %config_id, "perf: set_config_option done");
                             Ok(())
                         })?;
                         Ok(())
@@ -344,9 +404,27 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                 .if_request({
                     let agent = agent.clone();
                     let cx = cx.clone();
+                    |req: DeleteSessionRequest, responder: Responder<DeleteSessionResponse>| async move {
+                        cx.spawn(async move {
+                            match agent.on_delete_session(req).await {
+                                Ok(response) => responder.respond(response)?,
+                                Err(e) => responder.respond_with_error(e)?,
+                            }
+                            Ok(())
+                        })?;
+                        Ok(())
+                    }
+                })
+                .await
+                .if_request({
+                    let agent = agent.clone();
+                    let cx = cx.clone();
                     |req: CloseSessionRequest, responder: Responder<CloseSessionResponse>| async move {
                         cx.spawn(async move {
-                            responder.respond(agent.on_close_session(&req.session_id.0).await?)?;
+                            match agent.on_close_session(&req.session_id.0).await {
+                                Ok(response) => responder.respond(response)?,
+                                Err(e) => responder.respond_with_error(e)?,
+                            }
                             Ok(())
                         })?;
                         Ok(())
@@ -359,7 +437,32 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                     |req: ForkSessionRequest, responder: Responder<ForkSessionResponse>| async move {
                         let cx_spawn = cx.clone();
                         cx.spawn(async move {
-                            responder.respond_with_result(agent.on_fork_session(&cx_spawn, req).await)?;
+                            match agent.on_fork_session(&cx_spawn, req).await {
+                                Ok(response) => {
+                                    let session_id = response.session_id.0.to_string();
+                                    responder.respond(response)?;
+                                    let session_setup =
+                                        agent.prepare_session_setup_by_id(&session_id).await;
+                                    if let Err(error) = session_setup.and_then(|(session, totals, context_limit)| {
+                                        send_session_setup_notifications(
+                                            &cx_spawn,
+                                            &session,
+                                            &totals,
+                                            context_limit,
+                                            agent.supports_goose_custom_notifications(),
+                                        )
+                                    }) {
+                                        tracing::warn!(
+                                            session_id = %session_id,
+                                            error = ?error,
+                                            "Failed to send ACP forked session setup notifications"
+                                        );
+                                    }
+                                }
+                                Err(error) => {
+                                    responder.respond_with_error(error)?;
+                                }
+                            }
                             Ok(())
                         })?;
                         Ok(())
@@ -383,7 +486,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             }
                             Dispatch::Response(result, router) => {
                                 debug!(method = %router.method(), id = %router.id(), ok = result.is_ok(), "routing response");
-                                router.respond_with_result(result)?;
+                                router.route_with_result(result)?;
                                 Ok(())
                             }
                             Dispatch::Notification(notif) => {

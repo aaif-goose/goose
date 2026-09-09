@@ -15,6 +15,10 @@ const i18n = defineMessages({
     id: 'providerCard.unknownProvider',
     defaultMessage: 'Unknown Provider',
   },
+  deprecatedReplacement: {
+    id: 'providerCard.deprecatedReplacement',
+    defaultMessage: 'Deprecated — use {replacement} instead.',
+  },
 });
 
 type ProviderCardProps = {
@@ -46,6 +50,11 @@ export const ProviderCard = function ProviderCard({
       onConfigure();
     }
   };
+  const description = provider.deprecated
+    ? `${metadata.description} ${intl.formatMessage(i18n.deprecatedReplacement, {
+        replacement: provider.replacement ?? intl.formatMessage(i18n.unknownProvider),
+      })}`
+    : metadata.description;
 
   return (
     <CardContainer
@@ -55,7 +64,7 @@ export const ProviderCard = function ProviderCard({
       header={
         <CardHeader
           name={metadata.display_name || provider?.name || intl.formatMessage(i18n.unknownProvider)}
-          description={metadata.description || ''}
+          description={description}
           isConfigured={provider?.is_configured || false}
         />
       }

@@ -5,7 +5,7 @@
  * allowed-failure list, agentic-provider list, and environment detection.
  */
 
-import { test } from 'vitest';
+import { test, type TestContext } from 'vitest';
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -85,10 +85,9 @@ function getProviders(): ProviderConfig[] {
     {
       provider: 'google',
       models: [
-        'gemini-2.5-pro',
-        { name: 'gemini-2.5-flash', flaky: true },
-        { name: 'gemini-3-pro-preview', flaky: true },
-        'gemini-3-flash-preview',
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.6-flash',
       ],
       available: () => hasEnv('GOOGLE_API_KEY'),
     },
@@ -304,7 +303,7 @@ export function discoverTestCases(options?: { skipAgentic?: boolean }): TestCase
 // Test registration helpers
 // ---------------------------------------------------------------------------
 
-type ProviderTestFn = (tc: TestCase) => Promise<void>;
+type ProviderTestFn = (tc: TestCase, context: TestContext) => Promise<void>;
 
 function registerTests(label: string, cases: TestCase[], fn: ProviderTestFn): void {
   const available = cases.filter((tc) => tc.available && !tc.flaky);
@@ -312,24 +311,24 @@ function registerTests(label: string, cases: TestCase[], fn: ProviderTestFn): vo
   const skipped = cases.filter((tc) => !tc.available);
 
   if (available.length > 0) {
-    test.each(available)(`${label} — $provider / $model`, async (tc) => {
-      await fn(tc);
+    test.concurrent.for(available)(`${label} — $provider / $model`, async (tc, context) => {
+      await fn(tc, context);
     });
   }
 
   if (flaky.length > 0) {
     // Use a longer vitest timeout (90s) so the internal runGoose timeout (55s)
     // fires first — that rejection is catchable and the test passes as "allowed".
-    test.each(flaky)(
+    test.concurrent.for(flaky)(
       `${label} — $provider / $model (flaky)`,
-      async (tc) => {
+      { timeout: 90_000 },
+      async (tc, context) => {
         try {
-          await fn(tc);
+          await fn(tc, context);
         } catch (err) {
           console.warn(`Flaky test ${tc.provider}/${tc.model} failed (allowed): ${err}`);
         }
-      },
-      90_000
+      }
     );
   }
 
@@ -369,7 +368,8 @@ export function runGoose(
   prompt: string,
   builtins: string,
   env: Record<string, string>,
-  timeoutMs: number = 55_000
+  timeoutMs: number = 55_000,
+  success?: (output: string) => boolean
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child: ChildProcess = spawn(
@@ -377,7 +377,7 @@ export function runGoose(
       ['run', '--text', prompt, '--with-builtin', builtins],
       {
         cwd,
-        env: { ...process.env, ...env },
+        env: { ...process.env, ...env, GOOSE_MODE: 'auto' },
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
@@ -393,12 +393,18 @@ export function runGoose(
       }
     }, timeoutMs);
 
-    child.stdout?.on('data', (d) => {
-      output += String(d);
-    });
-    child.stderr?.on('data', (d) => {
-      output += String(d);
-    });
+    const captureOutput = (data: unknown) => {
+      output += String(data);
+      if (!settled && success?.(output)) {
+        settled = true;
+        clearTimeout(timer);
+        child.kill('SIGKILL');
+        resolve(output);
+      }
+    };
+
+    child.stdout?.on('data', captureOutput);
+    child.stderr?.on('data', captureOutput);
 
     child.on('close', () => {
       if (!settled) {

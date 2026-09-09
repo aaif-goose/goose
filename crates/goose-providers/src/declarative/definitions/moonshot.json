@@ -1,0 +1,31 @@
+{
+  "name": "moonshot",
+  "engine": "openai",
+  "display_name": "Moonshot",
+  "description": "Moonshot AI (Kimi) models. Set MOONSHOT_BASE_URL to override the default endpoint (e.g. https://api.moonshot.ai/v1 for international users).",
+  "api_key_env": "MOONSHOT_API_KEY",
+  "base_url": "${MOONSHOT_BASE_URL}",
+  "env_vars": [
+    {
+      "name": "MOONSHOT_BASE_URL",
+      "required": false,
+      "secret": false,
+      "default": "https://api.moonshot.cn/v1/chat/completions",
+      "description": "Moonshot API base URL. Use https://api.moonshot.ai/v1 for international access outside China Mainland."
+    }
+  ],
+  "models": [
+    {"name": "kimi-k2-0711-preview", "context_limit": 131072},
+    {"name": "kimi-k2-0905-preview", "context_limit": 262144},
+    {"name": "kimi-k2-thinking", "context_limit": 262144},
+    {"name": "kimi-k2-thinking-turbo", "context_limit": 262144},
+    {"name": "kimi-k2-turbo-preview", "context_limit": 262144},
+    {"name": "kimi-k2.5", "context_limit": 262144},
+    {"name": "kimi-k2.6", "context_limit": 262144},
+    {"name": "kimi-k2.7-code", "context_limit": 262144},
+    {"name": "kimi-k2.7-code-highspeed", "context_limit": 262144},
+    {"name": "kimi-k3", "context_limit": 1048576}
+  ],
+  "preserves_thinking": true,
+  "supports_streaming": true
+}

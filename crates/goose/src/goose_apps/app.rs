@@ -3,11 +3,10 @@ use rmcp::model::ErrorData;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-use utoipa::ToSchema;
 
 use super::resource::McpAppResource;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowProps {
     pub width: u32,
@@ -15,7 +14,7 @@ pub struct WindowProps {
     pub resizable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GooseApp {
     #[serde(flatten)]
@@ -26,6 +25,9 @@ pub struct GooseApp {
     pub window_props: Option<WindowProps>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prd: Option<String>,
+    /// Whether this app can be deleted by the user (i.e. not a bundled default).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deletable: bool,
 }
 
 impl GooseApp {
@@ -120,6 +122,7 @@ impl GooseApp {
             mcp_servers,
             window_props,
             prd,
+            deletable: false,
         })
     }
 
@@ -291,6 +294,7 @@ pub async fn fetch_mcp_apps(
                         mcp_servers: vec![extension_name],
                         window_props,
                         prd: None,
+                        deletable: false,
                     };
 
                     apps.push(app);

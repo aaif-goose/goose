@@ -1,36 +1,3 @@
-export const formatToLocalDateTime = (dateString?: string | null): string => {
-  if (!dateString) {
-    return 'N/A';
-  }
-  try {
-    const date = new Date(dateString);
-    // Check if the date is valid
-    if (isNaN(date.getTime())) {
-      return 'Invalid Date';
-    }
-    return date.toLocaleString(); // Uses user's locale and timezone
-  } catch (e) {
-    console.error('Error formatting date:', e);
-    return 'Invalid Date';
-  }
-};
-
-export const formatDate = (dateString?: string | null): string => {
-  if (!dateString) {
-    return 'N/A';
-  }
-  try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return 'Invalid Date';
-    }
-    return date.toLocaleDateString(); // Uses user's locale
-  } catch (e) {
-    console.error('Error formatting date:', e);
-    return 'Invalid Date';
-  }
-};
-
 export const formatToLocalDateWithTimezone = (dateString?: string | null): string => {
   if (!dateString) {
     return 'N/A';

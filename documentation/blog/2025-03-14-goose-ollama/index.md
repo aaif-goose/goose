@@ -19,7 +19,7 @@ Together, they create a self-contained AI agent workflow that puts advanced capa
 
 Before diving deep into various capabilities, Rizel walked us through how to set yourself up for success by integrating goose with Ollama. To follow along, you can [download goose](https://goose-docs.ai/) and follow a step-by-step walk through in the [Configure LLM Provider](https://goose-docs.ai/docs/getting-started/providers) guide.
 
-If you have any questions or get stuck, feel free to chat with us on [Discord](https://discord.gg/goose-oss) or post an issue/discussion on [GitHub](https://github.com/aaif-goose/goose/). Thanks for reading!
+If you have any questions or get stuck, feel free to chat with us on [Discord](https://discord.gg/n8R5VaWDAn) or post an issue/discussion on [GitHub](https://github.com/aaif-goose/goose/). Thanks for reading!
 
 # Why Go Local?
 Using cloud-based LLMs and providers make it so you don't need substantial computing resources, so why go local? Here's some benefits you may want to consider:

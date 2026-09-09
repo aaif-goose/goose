@@ -27,17 +27,26 @@ sudo dnf install dpkg-dev fakeroot gcc gcc-c++ make libxcb-devel vulkan-headers 
 sudo zypper install dpkg fakeroot gcc gcc-c++ make vulkan-headers vulkan-loader glslc
 ```
 
-**android / termux:**
+**Android / Termux:**
 
-goose is not officially support termux build yet, you need some minor patch to fix build issues.
-We will publish goose (block-goose) into termux-packages. <!-- NOTE: package name kept for backwards compat -->
-If you want to try there is a non-official build, https://github.com/shawn111/goose/releases/download/termux/goose-termux-aarch64.tar.bz2
-For more details, see: https://github.com/aaif-goose/goose/pull/3890
+The `download_cli.sh` installer detects Termux and automatically selects the
+musl portable build (`GOOSE_LINUX_VARIANT=musl`). To install:
 
 ```bash
-pkg install rust
-pkg install cmake protobuf clang build-essential
+curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
 ```
+
+To build from source in Termux:
+
+```bash
+pkg install rust cmake protobuf clang build-essential
+cargo build --release -p goose-cli --bin goose --no-default-features --features portable-default
+```
+
+> **Note:** The musl/portable build disables `local-inference` (V8) and
+> `system-keyring` (D-Bus SecretService) since neither is available on Android.
+
+Original PR: https://github.com/aaif-goose/goose/pull/3890
 
 ### Development Tools
 
@@ -59,13 +68,7 @@ cd goose
 Build Goose CLI:
 
 ```bash
-cargo build --release -p goose-cli
-```
-
-Build Goose Server:
-
-```bash
-cargo build --release -p goose-server
+cargo build --release -p goose-cli --bin goose
 ```
 
 This command should give you a list of possible packages in the
@@ -80,9 +83,9 @@ cargo test -p
 cd ui/desktop
 pnpm install
 
-# Copy the server binary to the expected location
+# Copy the goose binary to the expected location
 mkdir -p src/bin
-cp ../../target/release/goosed src/bin/
+cp ../../target/release/goose src/bin/
 ```
 
 ### 4. Build the Application
@@ -143,10 +146,10 @@ cd /path/to/goose/ui/desktop/out/goose-linux-x64
 ./goose 2>&1 | grep -v "GLib-GObject" | grep -v "browser_main_loop"
 ```
 
-#### Server Binary Not Found
-If you see "Could not find goosed binary", ensure you've:
-1. Built the Rust backend: `cargo build --release -p goose-server`
-2. Copied it to the right location: `cp ../../target/release/goosed src/bin/`
+#### Goose Binary Not Found
+If you see "Goose binary not found", ensure you've:
+1. Built the Rust binary: `cargo build --release -p goose-cli --bin goose`
+2. Copied it to the right location: `cp ../../target/release/goose src/bin/`
 3. Rebuilt the application: `pnpm run make`
 
 ### Distribution-Specific Notes
@@ -177,7 +180,7 @@ Building as Snap packages is not currently supported but may be added in the fut
 
 For active development:
 
-1. **Backend changes**: Rebuild with `cargo build --release -p goose-server` and copy the binary
+1. **Backend changes**: Rebuild with `cargo build --release -p goose-cli --bin goose` and copy the binary
 2. **Frontend changes**: Use `pnpm run start` for hot reload during development
 3. **Full rebuild**: Run the complete build process above
 

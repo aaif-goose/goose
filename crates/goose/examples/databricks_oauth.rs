@@ -2,7 +2,7 @@ use anyhow::Result;
 use dotenvy::dotenv;
 use goose::conversation::message::Message;
 use goose::providers::create_with_named_model;
-use goose::providers::databricks::DATABRICKS_DEFAULT_MODEL;
+use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 
 #[tokio::main]
 async fn main() -> Result<()> {

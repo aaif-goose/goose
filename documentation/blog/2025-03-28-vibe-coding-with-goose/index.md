@@ -77,7 +77,7 @@ To try the Speech MCP server yourself:
 
 ## Join the Development
 
-The Speech MCP server is [open-source](https://github.com/Kvadratni/speech-mcp) and welcomes contributions. You can also connect with Max on [Discord](https://discord.gg/goose-oss) for questions and collaboration.
+The Speech MCP server is [open-source](https://github.com/Kvadratni/speech-mcp) and welcomes contributions. You can also connect with Max on [Discord](https://discord.gg/n8R5VaWDAn) for questions and collaboration.
 
 Voice interactions with AI agents like Goose with the power and tools to act on instructions provides a different kind of vibe that makes the future feel closer than ever. Whether you're interested in vibe coding, accessibility improvements, or just want to feel a bit more like Tony Stark while getting Goose to pull a J.A.R.V.I.S, the Speech MCP server offers a glimpse into the future of human-AI collaboration - and it's available today.
 

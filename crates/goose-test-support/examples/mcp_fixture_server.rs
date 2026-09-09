@@ -1,5 +1,4 @@
 use goose_test_support::mcp::McpFixtureServer;
-use rmcp::service::ServiceExt;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
@@ -7,7 +6,7 @@ use rmcp::transport::streamable_http_server::{
 #[tokio::main]
 async fn main() {
     let service = StreamableHttpService::new(
-        || Ok(McpFixtureServer::new().into_dyn()),
+        || Ok(McpFixtureServer::new()),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default(),
     );

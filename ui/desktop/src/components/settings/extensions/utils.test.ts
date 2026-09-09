@@ -7,6 +7,7 @@ import {
   extractCommand,
   extractExtensionName,
   splitCmdAndArgs,
+  combineCmdAndArgs,
   DEFAULT_EXTENSION_TIMEOUT,
 } from './utils';
 import type { FixedExtensionEntry } from '../../ConfigContext';
@@ -107,6 +108,32 @@ describe('Extension Utils', () => {
           { key: 'Authorization', value: 'Bearer token', isEdited: false },
           { key: 'Content-Type', value: 'application/json', isEdited: false },
         ],
+      });
+    });
+
+    it('should preserve streamable_http OAuth client fields and socket through a form round-trip', () => {
+      const extension: FixedExtensionEntry = {
+        type: 'streamable_http',
+        name: 'oauth-extension',
+        description: 'OAuth description',
+        uri: 'http://api.example.com',
+        enabled: true,
+        headers: {},
+        socket: '@egress.sock',
+        client_id: 'registered-client',
+        client_secret_key: 'OAUTH_CLIENT_SECRET',
+        scopes: ['scope.read'],
+      };
+
+      const formData = extensionToFormData(extension);
+      const config = createExtensionConfig(formData);
+
+      expect(config).toMatchObject({
+        type: 'streamable_http',
+        socket: '@egress.sock',
+        client_id: 'registered-client',
+        client_secret_key: 'OAUTH_CLIENT_SECRET',
+        scopes: ['scope.read'],
       });
     });
 
@@ -211,7 +238,7 @@ describe('Extension Utils', () => {
 
       const formData = extensionToFormData(extension);
       expect(formData.cmd).toBe(
-        '"/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home/bin/java" -classpath "/path/with spaces/lib.jar" Main'
+        "'/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home/bin/java' -classpath '/path/with spaces/lib.jar' Main"
       );
     });
 
@@ -262,6 +289,32 @@ describe('Extension Utils', () => {
       const { cmd, args } = splitCmdAndArgs(formData.cmd || '');
       expect(cmd).toBe('node');
       expect(args).toEqual(['/My "Project"/bin/run']);
+    });
+
+    it.each([
+      ['-"c"', 'touch /tmp/pwned'],
+      ['--flag=value;next', '|', '>', '*'],
+      ['', 'both\'and"quotes', '$HOME', '`command`'],
+      ['line one\nline two', 'trailing\\', 'café'],
+    ])('faithfully roundtrips metacharacter-bearing argv %#', (...args) => {
+      const combined = combineCmdAndArgs('npx', args);
+      expect(splitCmdAndArgs(combined)).toEqual({ cmd: 'npx', args });
+    });
+
+    it('does not synthesize a blocked npx flag through the extension form', () => {
+      const extension: FixedExtensionEntry = {
+        type: 'stdio',
+        name: 'quoted-flag',
+        description: 'quoted flag regression',
+        cmd: 'npx',
+        args: ['-"c"', 'touch /tmp/pwned'],
+        enabled: true,
+      };
+
+      expect(createExtensionConfig(extensionToFormData(extension))).toMatchObject({
+        cmd: 'npx',
+        args: ['-"c"', 'touch /tmp/pwned'],
+      });
     });
   });
 
@@ -346,29 +399,6 @@ describe('Extension Utils', () => {
         name: 'developer',
         description: 'developer',
         timeout: 300,
-      });
-    });
-
-    it('should create sse extension config', () => {
-      const formData = {
-        name: 'test-sse',
-        description: 'Test SSE extension',
-        type: 'sse' as const,
-        cmd: '',
-        endpoint: 'http://api.example.com/sse',
-        enabled: true,
-        timeout: 300,
-        envVars: [],
-        headers: [],
-      };
-
-      const config = createExtensionConfig(formData);
-
-      expect(config).toEqual({
-        type: 'sse',
-        name: 'test-sse',
-        description: 'Test SSE extension',
-        uri: 'http://api.example.com/sse',
       });
     });
 
@@ -464,11 +494,38 @@ describe('Extension Utils', () => {
         });
       });
 
+      it('treats apostrophes as literal Windows command-line characters', () => {
+        expect(splitCmdAndArgs("node C:\\Users\\O'Connor\\ext.js --owner=O'Connor")).toEqual({
+          cmd: 'node',
+          args: ["C:\\Users\\O'Connor\\ext.js", "--owner=O'Connor"],
+        });
+      });
+
       it('handles a quoted Windows path containing spaces', () => {
         expect(splitCmdAndArgs('"C:\\Program Files\\app\\ext.js"')).toEqual({
           cmd: 'C:\\Program Files\\app\\ext.js',
           args: [],
         });
+      });
+
+      it('preserves a quoted UNC path', () => {
+        expect(splitCmdAndArgs(String.raw`node "\\server\share with space\extension.js"`)).toEqual({
+          cmd: 'node',
+          args: [String.raw`\\server\share with space\extension.js`],
+        });
+      });
+
+      it('preserves a quoted path ending in a backslash', () => {
+        expect(splitCmdAndArgs(String.raw`node "C:\dir with space\\"`)).toEqual({
+          cmd: 'node',
+          args: ['C:\\dir with space\\'],
+        });
+      });
+
+      it('roundtrips quoted Windows paths and metacharacters', () => {
+        const cmd = 'C:\\Program Files\\nodejs\\npx.cmd';
+        const args = ["C:\\Users\\O'Connor\\extension.js", '-"c"', 'a&b', 'quoted "value"\\'];
+        expect(splitCmdAndArgs(combineCmdAndArgs(cmd, args))).toEqual({ cmd, args });
       });
     });
   });

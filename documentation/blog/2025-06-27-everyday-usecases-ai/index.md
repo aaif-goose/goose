@@ -108,7 +108,7 @@ No dead ends. No 404s. Just tidy documentation.
 Most AI posts show off what's possible. I'm focused on what was promised.
 The whole point was to offload the tedious stuff so we could focus on the work that actually matters, and that's exactly what I'm using AI for.
 
-What everyday tasks are you delegating to AI agents? Let us know in [Discord](https://discord.gg/goose-oss).
+What everyday tasks are you delegating to AI agents? Let us know in [Discord](https://discord.gg/n8R5VaWDAn).
 
 
 <head>

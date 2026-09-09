@@ -1,11 +1,11 @@
 use indoc::indoc;
 use rmcp::model::{Tool, ToolAnnotations};
 use rmcp::object;
-pub const PLATFORM_MANAGE_SCHEDULE_TOOL_NAME: &str = "platform__manage_schedule";
+pub const MANAGE_SCHEDULE_TOOL_NAME: &str = "manage_schedule";
 
 pub fn manage_schedule_tool() -> Tool {
     Tool::new(
-        PLATFORM_MANAGE_SCHEDULE_TOOL_NAME.to_string(),
+        MANAGE_SCHEDULE_TOOL_NAME.to_string(),
         indoc! {r#"
             Manage goose's internal scheduled recipe execution.
 

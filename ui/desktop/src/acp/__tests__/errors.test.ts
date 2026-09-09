@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseAcpCreditsExhaustedError } from '../errors';
+import { RequestError } from '@agentclientprotocol/sdk';
+import { formatAcpError, parseAcpCreditsExhaustedError } from '../errors';
+
+describe('formatAcpError', () => {
+  it('explains how to recover from an authentication error', () => {
+    expect(formatAcpError(RequestError.authRequired())).toBe(
+      'Sign in to your provider, then try again.'
+    );
+  });
+});
 
 describe('parseAcpCreditsExhaustedError', () => {
   it('parses structured ACP credits exhausted errors', () => {

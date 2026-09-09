@@ -78,7 +78,7 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
   :::tip Quick Install
   <Tabs groupId="interface">
     <TabItem value="ui" label="goose Desktop" default>
-    [Launch the installer](goose://extension?cmd=npx&arg=square-mcp-server&arg=start&id=mcp_square_api&name=Square%20MCP%20Server&description=Square%20API%20MCP%20Server&env=ACCESS_TOKEN%3DYour%20Access%20Token&env=SANDBOX%3Dtrue)
+    [Launch the installer](goose://extension?cmd=npx&arg=square-mcp-server&arg=start&id=square-mcp&name=Square%20MCP%20Server&description=Square%20API%20MCP%20Server&env=ACCESS_TOKEN%3DYour%20Access%20Token&env=SANDBOX%3Dtrue)
 
     </TabItem>
     <TabItem value="cli" label="goose CLI">
@@ -101,7 +101,7 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
   <Tabs groupId="interface">
     <TabItem value="ui" label="goose Desktop" default>
     <GooseDesktopInstaller
-      extensionId="mcp_square_api"
+      extensionId="square-mcp"
       extensionName="Square MCP Server"
       description="Square API MCP Server"
       command="npx"
@@ -183,4 +183,3 @@ Here's a summary of what was created:
 
 All items are now available in your Square catalog and ready for use in your point of sale system. Each burger includes its complete description and comes with a "Regular" variation at the specified price. The items are set as both sellable and stockable by default, and they're available at all locations.
 ```
-

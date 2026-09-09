@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { View } from '../../../utils/navigationUtils';
 import ModelSettingsButtons from './subcomponents/ModelSettingsButtons';
-import { acpListProviderDetails, acpReadDefaults } from '../../../acp/providers';
+import { acpGetProviderDetails, acpReadDefaults } from '../../../acp/providers';
 import { modelAndProviderMessages, useModelAndProvider } from '../../ModelAndProviderContext';
 import { toastError } from '../../../toasts';
 
@@ -51,18 +51,19 @@ export default function ModelsSection({ setView }: ModelsSectionProps) {
       } else {
         // Fallback to original provider lookup
         const { providerId: gooseProvider } = await acpReadDefaults();
-        const providers = await acpListProviderDetails();
-        const providerDetailsList = providers.filter((provider) => provider.name === gooseProvider);
-
-        if (providerDetailsList.length != 1) {
+        if (!gooseProvider) {
+          setProvider('');
+          return;
+        }
+        try {
+          const providerDetails = await acpGetProviderDetails(gooseProvider);
+          setProvider(providerDetails.metadata.display_name);
+        } catch {
           toastError({
             title: intl.formatMessage(modelAndProviderMessages.unknownProviderTitle),
             msg: intl.formatMessage(modelAndProviderMessages.unknownProviderMsg),
           });
           setProvider(gooseProvider);
-        } else {
-          const fallbackProviderDisplayName = providerDetailsList[0].metadata.display_name;
-          setProvider(fallbackProviderDisplayName);
         }
       }
     } catch (error) {

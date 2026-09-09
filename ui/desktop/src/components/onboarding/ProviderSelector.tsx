@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { acpCreateCustomProviderFromRequest, acpListProviderDetails } from '../../acp/providers';
+import {
+  acpCreateCustomProviderFromRequest,
+  acpListSetupProviderDetails,
+} from '../../acp/providers';
 import type { ProviderDetails, UpdateCustomProviderRequest } from '../../types/providers';
 import { Select } from '../ui/Select';
 import ProviderConfigForm from './ProviderConfigForm';
@@ -53,7 +56,7 @@ interface ProviderOption {
 }
 
 interface ProviderSelectorProps {
-  onConfigured: (providerName: string, modelId?: string) => void;
+  onConfigured: (providerName: string, modelId?: string) => void | Promise<void>;
   onFirstSelection?: () => void;
 }
 
@@ -71,8 +74,7 @@ export default function ProviderSelector({
   useEffect(() => {
     const load = async () => {
       try {
-        const list = await acpListProviderDetails();
-        setProviderList(list);
+        setProviderList(await acpListSetupProviderDetails());
       } catch (err) {
         console.error('Failed to fetch providers:', err);
       }
@@ -123,7 +125,7 @@ export default function ProviderSelector({
     const result = await acpCreateCustomProviderFromRequest(data);
     setShowCustomModal(false);
     if (result.provider_name) {
-      onConfigured(result.provider_name);
+      await onConfigured(result.provider_name);
     }
   };
 

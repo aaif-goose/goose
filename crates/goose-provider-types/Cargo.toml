@@ -1,0 +1,40 @@
+[package]
+name = "goose-provider-types"
+version = "0.1.0-alpha.9"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+once_cell = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true, features = ["unicode"] }
+reqwest = { workspace = true }
+rmcp = { workspace = true, features = ["server", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+tracing = { workspace = true }
+unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
+uuid = { workspace = true, features = ["v4", "std"] }
+
+[dev-dependencies]
+env-lock = { workspace = true }
+tempfile = { workspace = true }
+test-case = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio-stream = { workspace = true }

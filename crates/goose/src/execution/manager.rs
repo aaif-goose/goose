@@ -1,9 +1,7 @@
 use crate::agents::mcp_client::GooseMcpHostInfo;
 use crate::agents::{Agent, AgentConfig, ExtensionLoadResult, GoosePlatform};
-use crate::config::paths::Paths;
 use crate::config::permission::PermissionManager;
 use crate::config::Config;
-use crate::scheduler::Scheduler;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::session::{SessionManager, SessionNameUpdate};
 use anyhow::Result;
@@ -72,15 +70,11 @@ impl AgentManager {
                     .get_goose_max_active_agents()
                     .unwrap_or(DEFAULT_MAX_SESSION);
                 let default_mode = config.get_goose_mode().unwrap_or_default();
-                let schedule_file_path = Paths::data_dir().join("schedule.json");
                 let session_manager = Arc::new(SessionManager::instance());
-                let scheduler = Scheduler::new(schedule_file_path, Arc::clone(&session_manager))
-                    .await
-                    .map(|scheduler| scheduler as Arc<dyn SchedulerTrait>)?;
                 let agent_config = AgentConfig::new(
                     session_manager,
                     PermissionManager::instance(),
-                    Some(scheduler),
+                    None,
                     default_mode,
                     config.get_goose_disable_session_naming().unwrap_or(false),
                     GoosePlatform::GooseDesktop,
@@ -92,13 +86,8 @@ impl AgentManager {
             .cloned()
     }
 
-    pub fn scheduler(&self) -> Arc<dyn SchedulerTrait> {
-        Arc::clone(
-            self.agent_config
-                .scheduler_service
-                .as_ref()
-                .expect("AgentManager scheduler is not configured"),
-        )
+    pub fn scheduler(&self) -> Option<Arc<dyn SchedulerTrait>> {
+        self.agent_config.scheduler_service.as_ref().map(Arc::clone)
     }
 
     /// Get the shared SessionManager for session-only operations
@@ -225,15 +214,23 @@ impl AgentManager {
                     "Restoring evicted session {} (provider: {:?})",
                     session_id, session.provider_name
                 );
-                if let Err(e) = agent.restore_provider_from_session(&session).await {
+                if let Err(error) = agent.restore_provider_from_session(&session).await {
+                    if crate::acp::is_auth_required(&error) {
+                        return Err(error);
+                    }
                     tracing::warn!(
                         "Failed to restore provider for session {}: {}",
                         session_id,
-                        e
+                        error
                     );
                 }
             }
             extension_results = agent.load_extensions_from_session(&session).await;
+            if let Some(recipe) = &session.recipe {
+                agent
+                    .apply_recipe_components(recipe.response.clone(), true)
+                    .await?;
+            }
         }
 
         if agent.provider().await.is_err() {
@@ -323,6 +320,21 @@ impl AgentManager {
         // HashMap doesn't grow unbounded.  Any caller still holding a
         // clone of the Arc keeps the underlying Mutex alive until it
         // releases its guard.
+        self.prune_creation_lock(session_id).await;
+        info!("Removed session {}", session_id);
+        Ok(())
+    }
+
+    /// Drops an in-memory agent when one is loaded for `session_id`.
+    pub async fn remove_session_if_loaded(&self, session_id: &str) -> Result<()> {
+        if let Some(token) = self.cancel_tokens.write().await.remove(session_id) {
+            token.cancel();
+        }
+        let mut sessions = self.sessions.write().await;
+        if sessions.pop(session_id).is_none() {
+            return Ok(());
+        }
+        drop(sessions);
         self.prune_creation_lock(session_id).await;
         info!("Removed session {}", session_id);
         Ok(())
@@ -482,6 +494,20 @@ mod tests {
         assert!(!manager.has_session(&session).await);
 
         assert!(manager.remove_session(&session).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_remove_session_if_loaded() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = create_test_manager(&temp_dir).await;
+        let session = String::from("remove-if-loaded-test");
+
+        manager.remove_session_if_loaded(&session).await.unwrap();
+
+        manager.get_or_create_agent(session.clone()).await.unwrap();
+        manager.remove_session_if_loaded(&session).await.unwrap();
+        assert!(!manager.has_session(&session).await);
+        manager.remove_session_if_loaded(&session).await.unwrap();
     }
 
     #[tokio::test]
@@ -743,6 +769,100 @@ mod tests {
 
         let agent = manager.get_or_create_agent(session.id).await.unwrap();
         assert_eq!(agent.goose_mode().await, mode);
+    }
+
+    #[tokio::test]
+    async fn test_final_output_tool_restored_after_lru_eviction() {
+        use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+        use crate::recipe::{Recipe, Response};
+        use serde_json::json;
+
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let agent_config = AgentConfig::new(
+            Arc::clone(&session_manager),
+            PermissionManager::instance(),
+            None,
+            GooseMode::default(),
+            false,
+            GoosePlatform::GooseDesktop,
+        );
+        let manager = AgentManager::new(agent_config, Some(1)).await.unwrap();
+
+        let session = session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "recipe-session".into(),
+                crate::session::SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let recipe = Recipe {
+            version: "1.0.0".into(),
+            title: "Test".into(),
+            description: "Test recipe".into(),
+            response: Some(Response {
+                json_schema: Some(json!({
+                    "type": "object",
+                    "properties": { "result": { "type": "string" } },
+                    "required": ["result"]
+                })),
+            }),
+            instructions: None,
+            prompt: None,
+            extensions: None,
+            settings: None,
+            activities: None,
+            author: None,
+            parameters: None,
+            sub_recipes: None,
+            retry: None,
+        };
+
+        session_manager
+            .update(&session.id)
+            .recipe(Some(recipe))
+            .apply()
+            .await
+            .unwrap();
+
+        // Fill the cache (capacity 1) then evict it
+        let agent = manager
+            .get_or_create_agent(session.id.clone())
+            .await
+            .unwrap();
+        let tools = agent.list_tools(&session.id, None).await;
+        assert!(
+            tools
+                .iter()
+                .any(|t| t.name.as_ref() == FINAL_OUTPUT_TOOL_NAME),
+            "final_output_tool must be present on first creation"
+        );
+
+        // Evict by adding a second session
+        manager
+            .get_or_create_agent("evict-trigger".into())
+            .await
+            .unwrap();
+        assert!(
+            !manager.has_session(&session.id).await,
+            "session should be evicted"
+        );
+
+        // Recreate agent via slow path (create_agent_locked)
+        let restored_agent = manager
+            .get_or_create_agent(session.id.clone())
+            .await
+            .unwrap();
+        let tools = restored_agent.list_tools(&session.id, None).await;
+        assert!(
+            tools
+                .iter()
+                .any(|t| t.name.as_ref() == FINAL_OUTPUT_TOOL_NAME),
+            "final_output_tool must be restored after LRU eviction"
+        );
     }
 
     #[tokio::test]

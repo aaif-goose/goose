@@ -2,7 +2,7 @@ use crate::conversation::message::Message;
 use crate::session::session_manager::Session;
 use anyhow::Result;
 use rmcp::model::Role;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use std::collections::HashMap;
 
 const LAST_MESSAGE_SNIPPET_MAX_CHARS: usize = 128;
@@ -78,7 +78,7 @@ async fn recent_message_rows(
         .collect::<Vec<_>>()
         .join(" UNION ALL ");
 
-    let mut query = sqlx::query_as::<_, RecentMessageRow>(&sql);
+    let mut query = sqlx::query_as::<_, RecentMessageRow>(AssertSqlSafe(sql));
     for session_id in session_ids {
         query = query
             .bind(session_id)
@@ -207,16 +207,11 @@ mod tests {
     }
 
     fn assistant_audience_text(text: &str) -> MessageContent {
-        use rmcp::model::{AnnotateAble, RawTextContent};
+        use rmcp::model::TextContent;
 
-        MessageContent::Text(
-            RawTextContent {
-                text: text.to_string(),
-                meta: None,
-            }
-            .no_annotation()
-            .with_audience(vec![Role::Assistant]),
-        )
+        MessageContent::Text(TextContent::new(text.to_string()).with_annotations(
+            rmcp::model::Annotations::default().with_audience(vec![Role::Assistant]),
+        ))
     }
 
     #[test]
@@ -306,7 +301,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_live_last_message_snippet_ignores_tool_messages() {
-        use rmcp::model::{CallToolRequestParams, CallToolResult, Content};
+        use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -333,7 +328,7 @@ mod tests {
             &id,
             &Message::user().with_tool_response(
                 "t1",
-                Ok(CallToolResult::success(vec![Content::text("done")])),
+                Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
             ),
         )
         .await

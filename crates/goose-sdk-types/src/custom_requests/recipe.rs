@@ -223,6 +223,15 @@ pub enum RecipeExtensionDto {
         timeout: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         socket: Option<String>,
+        /// Pre-registered OAuth client ID for the server's authorization server.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_id: Option<String>,
+        /// Name of the env/secret key holding the OAuth client secret.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_secret_key: Option<String>,
+        /// OAuth scopes to request with `client_id`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scopes: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bundled: Option<bool>,
         /// Tool allowlist for this extension. Omit this field to allow all tools.
@@ -256,11 +265,14 @@ pub struct RecipeListEntryDto {
     pub slash_command: Option<String>,
 }
 
+/// Ask the client to provide values for a recipe's parameters.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestRecipeParams {
     pub session_id: String,
     pub parameters: Vec<RecipeParameterDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_scope_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
@@ -280,6 +292,7 @@ pub struct RecipeParamsResponse {
     pub values: HashMap<String, String>,
 }
 
+/// Encode a recipe as a goose deep link.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/recipes/encode",
@@ -294,6 +307,7 @@ pub struct EncodeRecipeResponse {
     pub deeplink: String,
 }
 
+/// Decode a goose deep link into a recipe.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/recipes/decode",
@@ -308,6 +322,7 @@ pub struct DecodeRecipeResponse {
     pub recipe: RecipeDto,
 }
 
+/// Scan a recipe for security warnings.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/recipes/scan", response = ScanRecipeResponse)]
 pub struct ScanRecipeRequest {
@@ -319,6 +334,7 @@ pub struct ScanRecipeResponse {
     pub has_security_warnings: bool,
 }
 
+/// Save a recipe to the local recipe library.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/recipes/save", response = SaveRecipeResponse)]
 pub struct SaveRecipeRequest {
@@ -334,6 +350,7 @@ pub struct SaveRecipeResponse {
     pub file_path: String,
 }
 
+/// Parse serialized recipe content.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/recipes/parse", response = ParseRecipeResponse)]
 pub struct ParseRecipeRequest {
@@ -345,12 +362,14 @@ pub struct ParseRecipeResponse {
     pub recipe: RecipeDto,
 }
 
+/// Delete a recipe from the local recipe library.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/recipes/delete", response = EmptyResponse)]
 pub struct DeleteRecipeRequest {
     pub id: String,
 }
 
+/// List recipes in the local recipe library.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/recipes/list", response = ListRecipesResponse)]
 pub struct ListRecipesRequest {}
@@ -360,6 +379,7 @@ pub struct ListRecipesResponse {
     pub recipes: Vec<RecipeListEntryDto>,
 }
 
+/// Set or clear a recipe's cron schedule.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/recipes/schedule", response = EmptyResponse)]
 pub struct ScheduleRecipeRequest {
@@ -368,6 +388,7 @@ pub struct ScheduleRecipeRequest {
     pub cron_schedule: Option<String>,
 }
 
+/// Set or clear a recipe's slash command.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/recipes/slash-command",
@@ -379,6 +400,7 @@ pub struct SetRecipeSlashCommandRequest {
     pub slash_command: Option<String>,
 }
 
+/// Serialize a recipe as YAML.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/recipes/to-yaml",

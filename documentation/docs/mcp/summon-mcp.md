@@ -1,6 +1,6 @@
 ---
 title: Summon Extension
-description: Load skills and delegate tasks to subagents
+description: Load sources and delegate tasks to subagents
 ---
 
 import Tabs from '@theme/Tabs';
@@ -8,13 +8,14 @@ import TabItem from '@theme/TabItem';
 import { PlatformExtensionNote } from '@site/src/components/PlatformExtensionNote';
 import GooseBuiltinInstaller from '@site/src/components/GooseBuiltinInstaller';
 
-The Summon extension lets you load knowledge into goose's context and delegate tasks to [subagents](/docs/guides/context-engineering/subagents). 
+The Summon extension lets you load reusable task sources into goose's context and delegate work to [subagents](/docs/guides/context-engineering/subagents).
 
 You can load different types of sources:
-- [**Skills**](/docs/guides/context-engineering/using-skills) - Reusable instruction sets that teach goose specific workflows
 - [**Recipes**](/docs/guides/recipes) - Automated task definitions with prompts and parameters
+- **Agents** - Reusable agent definitions stored in agent directories
+- **Subrecipes** - Recipe-local tasks available from the current recipe
 
-This is useful for teaching goose how to perform tasks and running work in parallel through subagents.
+This is useful when you want goose to reuse a task definition, hand work to another agent, or run read-only research in parallel. Skills are loaded by the separate [Skills platform extension](/docs/guides/context-engineering/using-skills).
 
 :::info
 This extension is available in v1.25.0+.
@@ -28,7 +29,7 @@ This extension is available in v1.25.0+.
   <TabItem value="ui" label="goose Desktop" default>
   <GooseBuiltinInstaller
     extensionName="Summon"
-    description="Load knowledge and delegate tasks to subagents"
+    description="Load sources and delegate tasks to subagents"
   />
   </TabItem>
   <TabItem value="cli" label="goose CLI">
@@ -56,83 +57,56 @@ This extension is available in v1.25.0+.
 
 ## Example Usage
 
-In this example, we'll create a custom skill that teaches goose a 90s web aesthetic, then use Summon to load that skill and delegate a subagent to build a retro homepage.
+In this example, we'll create a reusable recipe and use Summon to delegate it to a subagent.
 
-### Create a Skill
+### Create a Recipe
 
-```markdown title=".agents/skills/retro/SKILL.md"
----
-name: retro
-description: Creates content with 90s web aesthetic
----
-
-# Retro Web Guidelines
-
-Channel the 90s internet:
-1. Bright colors, especially neon
-2. Comic Sans or pixel fonts
-3. Animated GIF energy (use emojis as a substitute)
-4. "Under construction" vibes
-5. Visitor counters, guestbook mentions
-6. Marquee-style excitement
+```yaml title=".agents/recipes/release-notes.yaml"
+title: Release Notes
+description: Draft release notes from recent git changes
+instructions: |
+  Review the recent git history and changed files.
+  Write concise release notes with:
+  - user-facing changes
+  - fixes
+  - migration notes, if any
+prompt: Draft release notes for the current branch.
 ```
 
 ### goose Prompt
 
 ```
-Load the retro skill with summon. Then delegate a subagent to create an HTML page called my-site.html for a personal homepage.
+Use summon to delegate the release-notes recipe for this branch.
 ```
 
 ### goose Output
 
 ```
-─── load | summon ───────────────────────────────────────────
-source: retro
-
-# Loaded: retro (skill)
-
-## retro (skill)
-
-Creates content with 90s web aesthetic
-
-### Content
-
-# Retro Web Guidelines
-
-Channel the 90s internet:
-1. Bright colors, especially neon
-2. Comic Sans or pixel fonts
-3. Animated GIF energy (use emojis as substitute)
-4. "Under construction" vibes
-5. Visitor counters, guestbook mentions
-6. Marquee-style excitement
-
----
-This knowledge is now available in your context.
-
-
 ─── delegate | summon ───────────────────────────────────────
-instructions: Create an HTML file called my-site.html for a personal homepage 
-using the 90s web aesthetic...
+source: release-notes
 
-I've created your 90s-style personal homepage at `my-site.html`! 🌟
+The release-notes subagent reviewed the branch and drafted release notes:
 
-The page includes all the classic retro web elements:
+## User-facing changes
+- Added support for configuring project-specific extensions.
+- Improved error messages when extension startup fails.
 
-- **Marquee tags** - Scrolling welcome message and bouncing text
-- **Neon colors** - Hot pink, lime green, cyan, yellow on a navy blue background
-- **Comic Sans font** - The quintessential 90s typeface
-- **Visitor counter** - You're visitor #001337 with a blinking effect
-- **"Under Construction" section** - With 🚧 emojis
-- **About Me box** - With neon border styling
-- **Favorite Links table** - Classic link collection
-- **Guestbook section** - Sign and view options
-- **Retro badges** - "Best viewed in Netscape Navigator 4.0"
-- **Lots of emojis** - 🌟✨💫🔥⭐🌈🎉 throughout
-
-Open it in your browser to experience the full nostalgic glory! 🎉
+## Fixes
+- Fixed stale extension state after disabling an extension.
 ```
 
-### Results
+## Common Summon Commands
 
-![Retro 90s Homepage](/img/summon-retro-site.png)
+Ask goose to use Summon in natural language, or call the tools directly:
+
+```text
+load()
+load(source: "release-notes")
+delegate(source: "release-notes")
+delegate(instructions: "Review these docs and report stale links")
+delegate(source: "release-notes", async: true)
+load(source: "20260219_1", peek: true)
+load(source: "20260219_1")
+```
+
+Calling `load()` with no arguments lists available sources. For background tasks, `delegate(..., async: true)` returns a task id, and `load(source: "<task_id>")` waits for the result.

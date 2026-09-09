@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { acpAuthenticateProvider } from '../../acp/providers';
+import { useProviderDeviceCode } from '../../hooks/useProviderDeviceCode';
 import type { ProviderDetails } from '../../types/providers';
 import DefaultProviderSetupForm, {
   ConfigInput,
@@ -7,9 +8,13 @@ import DefaultProviderSetupForm, {
 import { providerConfigSubmitHandler } from '../settings/providers/modal/subcomponents/handlers/DefaultSubmitHandler';
 import ProviderLogo from '../settings/providers/modal/subcomponents/ProviderLogo';
 import { SecureStorageNotice } from '../settings/providers/modal/subcomponents/SecureStorageNotice';
+import AcpReadinessPanel from '../settings/providers/AcpReadinessPanel';
 import { Button } from '../ui/button';
-import { LogIn, ChevronRight } from 'lucide-react';
+import { ChevronRight, LogIn } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
+import { errorMessage } from '../../utils/conversionUtils';
+
+type OnConfigured = (name: string) => void | Promise<void>;
 
 const i18n = defineMessages({
   browserWindowOpen: {
@@ -19,7 +24,7 @@ const i18n = defineMessages({
   deviceCodeFlowHint: {
     id: 'providerConfigForm.deviceCodeFlowHint',
     defaultMessage:
-      'A browser window will open and the verification code will be copied to your clipboard. Paste it in the browser to complete sign-in.',
+      'A browser window will open. The verification code will appear here so you can enter it to complete sign-in.',
   },
   signingIn: {
     id: 'providerConfigForm.signingIn',
@@ -40,6 +45,18 @@ const i18n = defineMessages({
   continue: {
     id: 'providerConfigForm.continue',
     defaultMessage: 'Continue',
+  },
+  deviceCodeVisit: {
+    id: 'providerConfigForm.deviceCodeVisit',
+    defaultMessage: 'Visit',
+  },
+  deviceCodeAndEnter: {
+    id: 'providerConfigForm.deviceCodeAndEnter',
+    defaultMessage: 'and enter:',
+  },
+  deviceCodeCopy: {
+    id: 'providerConfigForm.deviceCodeCopy',
+    defaultMessage: 'Copy',
   },
 });
 
@@ -69,19 +86,21 @@ function OAuthForm({
   onError,
 }: {
   provider: ProviderDetails;
-  onConfigured: (name: string) => void;
+  onConfigured: OnConfigured;
   onError: (msg: string) => void;
 }) {
   const intl = useIntl();
   const [isLoading, setIsLoading] = useState(false);
+  const { deviceCode, clearDeviceCode } = useProviderDeviceCode(provider.name);
 
   const handleLogin = async () => {
     setIsLoading(true);
+    clearDeviceCode();
     try {
       await acpAuthenticateProvider(provider.name);
-      onConfigured(provider.name);
+      await onConfigured(provider.name);
     } catch (err) {
-      onError(`Sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
+      onError(`Setup failed: ${errorMessage(err)}`);
     } finally {
       setIsLoading(false);
     }
@@ -102,11 +121,42 @@ function OAuthForm({
           ? intl.formatMessage(i18n.signingIn)
           : intl.formatMessage(i18n.signInWith, { providerName: provider.metadata.display_name })}
       </Button>
-      <p className="text-xs text-text-muted text-center">
-        {isDeviceCodeFlow
-          ? intl.formatMessage(i18n.deviceCodeFlowHint)
-          : intl.formatMessage(i18n.browserWindowOpen)}
-      </p>
+      {isDeviceCodeFlow && isLoading && deviceCode ? (
+        <div className="flex flex-col items-center gap-2 w-full">
+          <p className="text-xs text-text-muted text-center">
+            {intl.formatMessage(i18n.deviceCodeVisit)}{' '}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                window.electron.openExternal(deviceCode.verificationUri);
+              }}
+              className="underline"
+            >
+              {deviceCode.verificationUri}
+            </a>{' '}
+            {intl.formatMessage(i18n.deviceCodeAndEnter)}
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="text-lg font-mono tracking-widest bg-background-muted px-3 py-1 rounded">
+              {deviceCode.userCode}
+            </code>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(deviceCode.userCode)}
+              className="text-xs text-text-muted hover:text-text-default underline"
+            >
+              {intl.formatMessage(i18n.deviceCodeCopy)}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-text-muted text-center">
+          {isDeviceCodeFlow
+            ? intl.formatMessage(i18n.deviceCodeFlowHint)
+            : intl.formatMessage(i18n.browserWindowOpen)}
+        </p>
+      )}
     </div>
   );
 }
@@ -117,7 +167,7 @@ function ApiKeyForm({
   onError,
 }: {
   provider: ProviderDetails;
-  onConfigured: (name: string) => void;
+  onConfigured: OnConfigured;
   onError: (msg: string) => void;
 }) {
   const intl = useIntl();
@@ -150,22 +200,22 @@ function ApiKeyForm({
 
     const toSubmit = Object.fromEntries(
       Object.entries(configValues)
-        .filter(([, entry]) => !!entry.value)
-        .map(([k, entry]) => [k, entry.value || ''])
+        .filter(
+          ([, entry]) =>
+            !!entry.value || (entry.serverValue != null && typeof entry.serverValue === 'string')
+        )
+        .map(([k, entry]) => [
+          k,
+          entry.value ?? (typeof entry.serverValue === 'string' ? entry.serverValue : ''),
+        ])
     );
 
     setIsSubmitting(true);
     try {
       await providerConfigSubmitHandler(provider, toSubmit);
-      onConfigured(provider.name);
+      await onConfigured(provider.name);
     } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'object' && err !== null && 'message' in err
-            ? String((err as Record<string, unknown>).message)
-            : JSON.stringify(err);
-      onError(msg);
+      onError(errorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -214,15 +264,26 @@ function ApiKeyForm({
 
 interface ProviderConfigFormProps {
   provider: ProviderDetails;
-  onConfigured: (providerName: string) => void;
+  onConfigured: OnConfigured;
 }
 
 export default function ProviderConfigForm({ provider, onConfigured }: ProviderConfigFormProps) {
+  const intl = useIntl();
   const [error, setError] = useState<string | null>(null);
 
   const isOAuthProvider = provider.metadata.config_keys.some((key) => key.oauth_flow);
 
   const renderForm = () => {
+    if (provider.uses_acp) {
+      return (
+        <AcpReadinessPanel
+          provider={provider}
+          actionLabel={intl.formatMessage(i18n.continue)}
+          onConfigured={(configured) => onConfigured(configured.name)}
+          onError={setError}
+        />
+      );
+    }
     if (isOAuthProvider) {
       return <OAuthForm provider={provider} onConfigured={onConfigured} onError={setError} />;
     }

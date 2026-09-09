@@ -20,11 +20,20 @@
   "appsView.customApp": {
     "defaultMessage": "Ứng dụng tùy chỉnh"
   },
+  "appsView.deleteApp": {
+    "defaultMessage": "Delete app"
+  },
+  "appsView.deleteConfirm": {
+    "defaultMessage": "Delete \"{name}\"? This cannot be undone."
+  },
   "appsView.description": {
     "defaultMessage": "Các ứng dụng từ máy chủ MCP của bạn và các ứng dụng do goose tự tạo. Bạn có thể yêu cầu nó tạo ứng dụng mới thông qua giao diện trò chuyện và chúng sẽ xuất hiện ở đây."
   },
   "appsView.errorLoading": {
     "defaultMessage": "Lỗi khi tải ứng dụng: {error}"
+  },
+  "appsView.errorPrefix": {
+    "defaultMessage": "Error: {error}"
   },
   "appsView.importApp": {
     "defaultMessage": "Nhập ứng dụng"
@@ -41,14 +50,14 @@
   "appsView.noAppsTitle": {
     "defaultMessage": "Không có ứng dụng nào"
   },
-  "appsView.retry": {
-    "defaultMessage": "Thử lại"
-  },
   "appsView.retiredChatApp": {
     "defaultMessage": "Chat app retired"
   },
   "appsView.retiredChatAppDetail": {
     "defaultMessage": "We removed this feature because MCP sampling is no longer supported."
+  },
+  "appsView.retry": {
+    "defaultMessage": "Thử lại"
   },
   "appsView.title": {
     "defaultMessage": "Ứng dụng"
@@ -121,6 +130,12 @@
   },
   "baseChat.goHome": {
     "defaultMessage": "Về trang chủ"
+  },
+  "baseChat.reconnecting": {
+    "defaultMessage": "Mất kết nối. Đang kết nối lại…"
+  },
+  "baseChat.retry": {
+    "defaultMessage": "Thử lại"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Đã cập nhật tiện ích mở rộng"
@@ -602,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Thêm"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Luôn sử dụng Toolshim cho nhà cung cấp này"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Tương thích Anthropic"
   },
@@ -902,6 +920,15 @@
   "dirSwitcher.currentDirectory": {
     "defaultMessage": "Thư mục hiện tại"
   },
+  "dirSwitcher.enterPath": {
+    "defaultMessage": "Enter path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+  },
+  "dirSwitcher.enterPathInvalid": {
+    "defaultMessage": "Working directory must be an absolute path"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Không thể cập nhật thư mục làm việc"
   },
@@ -916,6 +943,18 @@
   },
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Thư mục gần đây"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "Không thể chuyển sang {branch}"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "Không tìm thấy nhánh"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Tìm kiếm nhánh…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "Bạn có thể có các thay đổi chưa commit."
   },
   "elicitationRequest.accept": {
     "defaultMessage": "Chấp nhận"
@@ -1015,9 +1054,6 @@
   },
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "Loại"
-  },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (không được hỗ trợ)"
   },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "Standard IO (STDIO)"
@@ -1185,7 +1221,7 @@
     "defaultMessage": "Khóa bí mật"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "Khóa bí mật được cấu hình trên máy chủ goosed (GOOSE_SERVER__SECRET_KEY)"
+    "defaultMessage": "Khóa bí mật được cấu hình trên máy chủ Goose (GOOSE_SERVER__SECRET_KEY)"
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "Nhập khóa bí mật của máy chủ"
@@ -1193,8 +1229,14 @@
   "externalBackendSection.serverUrl": {
     "defaultMessage": "URL máy chủ"
   },
+  "externalBackendSection.serverUrlHelp": {
+    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+  },
   "externalBackendSection.title": {
     "defaultMessage": "Máy chủ Goose"
+  },
+  "externalBackendSection.urlBaseError": {
+    "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
   },
   "externalBackendSection.urlFormatError": {
     "defaultMessage": "Định dạng URL không hợp lệ"
@@ -1207,6 +1249,15 @@
   },
   "externalBackendSection.useExternalServerDescription": {
     "defaultMessage": "Kết nối tới một máy chủ goose đang chạy ở nơi khác (cần khởi động lại ứng dụng)"
+  },
+  "externalBackendSection.workingDir": {
+    "defaultMessage": "Thư mục làm việc từ xa (tùy chọn)"
+  },
+  "externalBackendSection.workingDirHelp": {
+    "defaultMessage": "Đường dẫn tuyệt đối trên backend bên ngoài. Để trống để gửi thư mục làm việc cục bộ."
+  },
+  "externalBackendSection.workingDirPlaceholder": {
+    "defaultMessage": "/home/goose/workspace"
   },
   "goosehintsModal.close": {
     "defaultMessage": "Đóng"
@@ -1707,13 +1758,10 @@
     "defaultMessage": "Xóa mô hình này? Bạn có thể tải lại sau."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Tải xuống và quản lý các mô hình LLM cục bộ để suy luận mà không cần khóa API. Tìm kiếm các mô hình GGUF hoặc MLX trên HuggingFace, hoặc sử dụng các lựa chọn nổi bật bên dưới."
+    "defaultMessage": "Tải xuống và quản lý các mô hình LLM cục bộ để suy luận mà không cần khóa API. Tìm kiếm các mô hình GGUF hoặc MLX trên Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Bỏ qua"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Tải xuống"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "Đã hủy tải xuống"
@@ -1730,11 +1778,14 @@
   "localInferenceSettings.downloading": {
     "defaultMessage": "Đang tải xuống"
   },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Mô hình nổi bật"
+  "localInferenceSettings.evictFromMemory": {
+    "defaultMessage": "Evict from memory"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Đăng nhập để tăng giới hạn tốc độ khi tìm kiếm và tải xuống mô hình, và để truy cập các kho lưu trữ Hugging Face riêng tư hoặc bị giới hạn."
+  },
+  "localInferenceSettings.loadedInMemory": {
+    "defaultMessage": "Loaded in memory"
   },
   "localInferenceSettings.modelSettings": {
     "defaultMessage": "Cài đặt mô hình"
@@ -1753,12 +1804,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Thử lại"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Hiển thị tất cả nổi bật (thêm {count})"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Chỉ hiển thị được đề xuất"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Mô hình suy luận cục bộ"
@@ -1853,9 +1898,6 @@
   "localModelPicker.useModel": {
     "defaultMessage": "Sử dụng {modelId}"
   },
-  "markdownContent.cancel": {
-    "defaultMessage": "Hủy"
-  },
   "markdownContent.copyCode": {
     "defaultMessage": "Sao chép mã"
   },
@@ -1865,23 +1907,8 @@
   "markdownContent.noApplicationFound": {
     "defaultMessage": "Không tìm thấy ứng dụng nào để mở liên kết này."
   },
-  "markdownContent.open": {
-    "defaultMessage": "Mở"
-  },
-  "markdownContent.openExternalLink": {
-    "defaultMessage": "Mở liên kết bên ngoài"
-  },
-  "markdownContent.openProtocolLink": {
-    "defaultMessage": "Mở liên kết {protocol}?"
-  },
-  "markdownContent.thisWillOpen": {
-    "defaultMessage": "Thao tác này sẽ mở: {href}"
-  },
   "mcpAppRenderer.appFallbackTitle": {
     "defaultMessage": "Ứng dụng"
-  },
-  "mcpAppRenderer.cancelButton": {
-    "defaultMessage": "Hủy"
   },
   "mcpAppRenderer.close": {
     "defaultMessage": "Đóng"
@@ -1906,18 +1933,6 @@
   },
   "mcpAppRenderer.movePipWindow": {
     "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình (dùng phím mũi tên)"
-  },
-  "mcpAppRenderer.openButton": {
-    "defaultMessage": "Mở"
-  },
-  "mcpAppRenderer.openExternalLinkTitle": {
-    "defaultMessage": "Mở liên kết bên ngoài"
-  },
-  "mcpAppRenderer.openLinkDetail": {
-    "defaultMessage": "Thao tác này sẽ mở: {url}"
-  },
-  "mcpAppRenderer.openProtocolLink": {
-    "defaultMessage": "Mở liên kết {protocol}?"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Hình-trong-hình"
@@ -2005,6 +2020,51 @@
   },
   "messageQueue.waiting": {
     "defaultMessage": "đang chờ"
+  },
+  "messageUsageStats.cacheHitRate": {
+    "defaultMessage": "({percent}% đầu vào)"
+  },
+  "messageUsageStats.cacheRead": {
+    "defaultMessage": "đọc cache"
+  },
+  "messageUsageStats.cacheWrite": {
+    "defaultMessage": "ghi cache"
+  },
+  "messageUsageStats.compaction": {
+    "defaultMessage": "Nén"
+  },
+  "messageUsageStats.cost": {
+    "defaultMessage": "Chi phí"
+  },
+  "messageUsageStats.estimated": {
+    "defaultMessage": "(ước tính)"
+  },
+  "messageUsageStats.firstToken": {
+    "defaultMessage": "Token đầu tiên"
+  },
+  "messageUsageStats.input": {
+    "defaultMessage": "Đầu vào"
+  },
+  "messageUsageStats.output": {
+    "defaultMessage": "Đầu ra"
+  },
+  "messageUsageStats.reported": {
+    "defaultMessage": "(được báo cáo)"
+  },
+  "messageUsageStats.speed": {
+    "defaultMessage": "Tốc độ"
+  },
+  "messageUsageStats.tokenUnit": {
+    "defaultMessage": "tok"
+  },
+  "messageUsageStats.tokensPerSecondUnit": {
+    "defaultMessage": "tok/s"
+  },
+  "messageUsageStats.total": {
+    "defaultMessage": "Tổng"
+  },
+  "messageUsageStats.totalTime": {
+    "defaultMessage": "Tổng thời gian"
   },
   "microphoneSelector.chooseDescription": {
     "defaultMessage": "Chọn micrô nào để sử dụng cho việc đọc chính tả"
@@ -2291,8 +2351,35 @@
   "navigationPanel.chats": {
     "defaultMessage": "Cuộc trò chuyện"
   },
+  "navigationPanel.metaCreated": {
+    "defaultMessage": "Đã tạo"
+  },
+  "navigationPanel.metaDirectory": {
+    "defaultMessage": "Thư mục"
+  },
+  "navigationPanel.metaModel": {
+    "defaultMessage": "Mô hình"
+  },
+  "navigationPanel.metaStatus": {
+    "defaultMessage": "Trạng thái"
+  },
+  "navigationPanel.metaUpdated": {
+    "defaultMessage": "Đã cập nhật"
+  },
   "navigationPanel.noChats": {
     "defaultMessage": "Không có cuộc trò chuyện gần đây"
+  },
+  "navigationPanel.statusError": {
+    "defaultMessage": "Lỗi"
+  },
+  "navigationPanel.statusIdle": {
+    "defaultMessage": "Nhàn rỗi"
+  },
+  "navigationPanel.statusStreaming": {
+    "defaultMessage": "Đang truyền"
+  },
+  "navigationPanel.statusUnread": {
+    "defaultMessage": "Hoạt động chưa đọc"
   },
   "navigationPanel.untitledSession": {
     "defaultMessage": "Phiên chưa đặt tên"
@@ -2652,7 +2739,7 @@
     "defaultMessage": "Tiếp tục"
   },
   "providerConfigForm.deviceCodeFlowHint": {
-    "defaultMessage": "Một cửa sổ trình duyệt sẽ mở ra và mã xác minh sẽ được sao chép vào bộ nhớ tạm của bạn. Dán mã vào trình duyệt để hoàn tất đăng nhập."
+    "defaultMessage": "Một cửa sổ trình duyệt sẽ mở ra. Mã xác minh sẽ xuất hiện tại đây để bạn nhập và hoàn tất đăng nhập."
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "Bạn chưa có khóa API?"
@@ -2691,7 +2778,7 @@
     "defaultMessage": "Thao tác này sẽ xóa vĩnh viễn cấu hình nhà cung cấp hiện tại."
   },
   "providerConfigurationModal.deviceCodeFlowHint": {
-    "defaultMessage": "Một cửa sổ trình duyệt sẽ mở ra và mã xác minh sẽ được sao chép vào bộ nhớ tạm của bạn. Dán mã vào trình duyệt để hoàn tất đăng nhập."
+    "defaultMessage": "Một cửa sổ trình duyệt sẽ mở ra. Mã xác minh sẽ xuất hiện tại đây để bạn nhập và hoàn tất đăng nhập."
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "Đã xảy ra lỗi khi kiểm tra cấu hình nhà cung cấp này."
@@ -2746,6 +2833,12 @@
   },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Từ mẫu hoặc thiết lập thủ công"
+  },
+  "providerGrid.noMatch": {
+    "defaultMessage": "Không có nhà cung cấp nào khớp với \"{query}\""
+  },
+  "providerGrid.searchPlaceholder": {
+    "defaultMessage": "Tìm kiếm nhà cung cấp..."
   },
   "providerLogo.alt": {
     "defaultMessage": "Logo {providerName}"
@@ -2951,12 +3044,6 @@
   "recipeModelSelector.useDefaultProvider": {
     "defaultMessage": "Sử dụng nhà cung cấp mặc định"
   },
-  "recipeNameField.defaultLabel": {
-    "defaultMessage": "Tên công thức"
-  },
-  "recipeNameField.formatHint": {
-    "defaultMessage": "Sẽ được định dạng tự động (chữ thường, dấu gạch ngang thay cho khoảng trắng)"
-  },
   "recipeWarningModal.cancel": {
     "defaultMessage": "Hủy"
   },
@@ -3072,7 +3159,7 @@
     "defaultMessage": "Chưa có công thức nào được lưu"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Các công thức được lưu từ cuộc trò chuyện sẽ hiển thị ở đây."
+    "defaultMessage": "Các công thức đã lưu sẽ hiển thị ở đây."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Mở trong cửa sổ mới"
@@ -3335,6 +3422,9 @@
   "scheduleDetailView.viewingScheduleId": {
     "defaultMessage": "Đang xem ID lịch trình: {id}"
   },
+  "scheduleModal.alreadyScheduledOption": {
+    "defaultMessage": "{title} (đã lên lịch)"
+  },
   "scheduleModal.browseYaml": {
     "defaultMessage": "Duyệt tìm tệp YAML..."
   },
@@ -3359,6 +3449,9 @@
   "scheduleModal.editSchedule": {
     "defaultMessage": "Sửa lịch trình"
   },
+  "scheduleModal.failedLoadRecipes": {
+    "defaultMessage": "Không thể tải công thức."
+  },
   "scheduleModal.failedParseRecipe": {
     "defaultMessage": "Không thể phân tích công thức từ tệp."
   },
@@ -3371,14 +3464,23 @@
   "scheduleModal.invalidFileType": {
     "defaultMessage": "Loại tệp không hợp lệ: Vui lòng chọn tệp YAML (.yaml hoặc .yml)"
   },
+  "scheduleModal.loadingRecipes": {
+    "defaultMessage": "Đang tải công thức..."
+  },
   "scheduleModal.nameLabel": {
     "defaultMessage": "Tên:"
   },
   "scheduleModal.namePlaceholder": {
     "defaultMessage": "ví dụ: daily-summary-job"
   },
+  "scheduleModal.noSavedRecipes": {
+    "defaultMessage": "Không tìm thấy công thức đã lưu."
+  },
   "scheduleModal.provideValidRecipe": {
     "defaultMessage": "Vui lòng cung cấp nguồn công thức hợp lệ."
+  },
+  "scheduleModal.recipeAlreadyScheduled": {
+    "defaultMessage": "Công thức này đã có lịch. Chỉnh sửa từ danh sách Công thức."
   },
   "scheduleModal.recipeDescription": {
     "defaultMessage": "Mô tả: {description}"
@@ -3389,11 +3491,17 @@
   "scheduleModal.recipeTitle": {
     "defaultMessage": "Tiêu đề: {title}"
   },
+  "scheduleModal.savedRecipes": {
+    "defaultMessage": "Công thức đã lưu"
+  },
   "scheduleModal.scheduleIdRequired": {
     "defaultMessage": "Bắt buộc phải có ID lịch trình."
   },
   "scheduleModal.scheduleLabel": {
     "defaultMessage": "Lịch trình:"
+  },
+  "scheduleModal.selectRecipePlaceholder": {
+    "defaultMessage": "Chọn một công thức đã lưu"
   },
   "scheduleModal.selected": {
     "defaultMessage": "Đã chọn: {path}"
@@ -3587,6 +3695,9 @@
   "sessionActionsHeader.copiedJson": {
     "defaultMessage": "Đã sao chép JSON của phiên"
   },
+  "sessionActionsHeader.copiedModelInteractions": {
+    "defaultMessage": "Đã sao chép tương tác mô hình gần đây"
+  },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "Đã sao chép văn bản"
   },
@@ -3617,6 +3728,12 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "Đang tải JSON..."
   },
+  "sessionActionsHeader.modelInteractionsFailed": {
+    "defaultMessage": "Không thể tải tương tác mô hình: {error}"
+  },
+  "sessionActionsHeader.modelInteractionsTitle": {
+    "defaultMessage": "Tương tác mô hình gần đây"
+  },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Không thể đổi tên phiên: {error}"
   },
@@ -3641,6 +3758,9 @@
   "sessionActionsHeader.viewJson": {
     "defaultMessage": "Xem JSON của phiên"
   },
+  "sessionActionsHeader.viewModelInteractions": {
+    "defaultMessage": "Xem tương tác mô hình gần đây"
+  },
   "sessionIndicators.error": {
     "defaultMessage": "Phiên gặp lỗi"
   },
@@ -3650,23 +3770,8 @@
   "sessionIndicators.streaming": {
     "defaultMessage": "Đang truyền phát"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "Phiên này không chứa tin nhắn nào"
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "Không tìm thấy tin nhắn nào"
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "Lỗi khi tải chi tiết phiên"
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "Thử lại"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "Bạn"
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
   },
   "sessions.action.delete": {
     "defaultMessage": "Xóa phiên"
@@ -3679,6 +3784,12 @@
   },
   "sessions.action.export": {
     "defaultMessage": "Xuất phiên"
+  },
+  "sessions.action.exportJson": {
+    "defaultMessage": "JSON"
+  },
+  "sessions.action.exportMarkdown": {
+    "defaultMessage": "Markdown"
   },
   "sessions.action.openNewWindow": {
     "defaultMessage": "Mở trong cửa sổ mới"
@@ -3740,6 +3851,9 @@
   "sessions.importing": {
     "defaultMessage": "Đang nhập..."
   },
+  "sessions.includeAcp": {
+    "defaultMessage": "Bao gồm phiên ACP"
+  },
   "sessions.loadingMore": {
     "defaultMessage": "Đang tải thêm phiên..."
   },
@@ -3748,6 +3862,12 @@
   },
   "sessions.saving": {
     "defaultMessage": "Đang lưu..."
+  },
+  "sessions.scheduledJobs": {
+    "defaultMessage": "Scheduled Jobs"
+  },
+  "sessions.scheduledJobsCount": {
+    "defaultMessage": "{count,plural,one{{count} job} other{{count} jobs}}"
   },
   "sessions.search.noResults": {
     "defaultMessage": "Không tìm thấy phiên phù hợp"
@@ -3778,6 +3898,9 @@
   },
   "sessions.toast.duplicated": {
     "defaultMessage": "Đã nhân bản phiên làm việc \"{name}\" thành công"
+  },
+  "sessions.toast.exportFailed": {
+    "defaultMessage": "Không thể xuất phiên làm việc: {error}"
   },
   "sessions.toast.exported": {
     "defaultMessage": "Đã xuất phiên làm việc thành công"
@@ -3977,6 +4100,9 @@
   "settingsView.tabChat": {
     "defaultMessage": "Trò chuyện"
   },
+  "settingsView.tabExternalBackend": {
+    "defaultMessage": "Backend bên ngoài"
+  },
   "settingsView.tabKeyboard": {
     "defaultMessage": "Bàn phím"
   },
@@ -3989,14 +4115,8 @@
   "settingsView.tabPrompts": {
     "defaultMessage": "Lời nhắc"
   },
-  "settingsView.tabSession": {
-    "defaultMessage": "Phiên làm việc"
-  },
   "settingsView.title": {
     "defaultMessage": "Cài đặt"
-  },
-  "sheet.close": {
-    "defaultMessage": "Đóng"
   },
   "shortcutRecorder.cancel": {
     "defaultMessage": "Hủy"
@@ -4063,15 +4183,6 @@
   },
   "stringUtils.configuredProvider": {
     "defaultMessage": "Nhà cung cấp {name} đã được định cấu hình"
-  },
-  "stringUtils.ollamaApp": {
-    "defaultMessage": "Ứng dụng Ollama"
-  },
-  "stringUtils.ollamaNotConfiguredPrefix": {
-    "defaultMessage": "Để sử dụng, hoặc là"
-  },
-  "stringUtils.ollamaNotConfiguredSuffix": {
-    "defaultMessage": "phải được cài đặt trên máy của bạn và đang mở, hoặc bạn phải nhập một giá trị cho OLLAMA_HOST."
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Thêm hiện có"
@@ -4328,6 +4439,9 @@
   "telemetrySettings.updateError": {
     "defaultMessage": "Không thể cập nhật cài đặt đo từ xa."
   },
+  "themeSelector.aura": {
+    "defaultMessage": "Aura"
+  },
   "themeSelector.dark": {
     "defaultMessage": "Tối"
   },
@@ -4409,9 +4523,6 @@
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Tải xuống tự động đã bị tắt. Nhấp vào \"Tải ngay\" để tải xuống theo cách thủ công."
   },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "Không cần cài đặt thủ công."
-  },
   "updateSection.checkForUpdates": {
     "defaultMessage": "Kiểm tra bản cập nhật"
   },
@@ -4442,26 +4553,11 @@
   "updateSection.installAndRestart": {
     "defaultMessage": "Cài đặt & khởi động lại"
   },
-  "updateSection.installNowHint": {
-    "defaultMessage": "Nhấp vào \"Cài đặt & khởi động lại\" để cập nhật ngay."
-  },
   "updateSection.latestVersion": {
     "defaultMessage": "Bạn đang chạy phiên bản mới nhất!"
   },
   "updateSection.loading": {
     "defaultMessage": "Đang tải..."
-  },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "Sau khi tải xuống, bạn sẽ cần cài đặt bản cập nhật theo cách thủ công."
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "Cần cài đặt thủ công cho phương thức cập nhật này."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Bản cập nhật đã sẵn sàng. Khởi động lại Goose để hoàn tất cài đặt, hoặc thoát khi bạn đã xong."
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ Bản cập nhật đã sẵn sàng! Nhấp vào \"Cài đặt & khởi động lại\" để xem hướng dẫn cài đặt."
   },
   "updateSection.upToDate": {
     "defaultMessage": "(đã cập nhật)"
@@ -4486,6 +4582,9 @@
   },
   "userMessage.editButton": {
     "defaultMessage": "Chỉnh sửa"
+  },
+  "userMessage.editImagesHeading": {
+    "defaultMessage": "Hình ảnh đính kèm:"
   },
   "userMessage.editInPlace": {
     "defaultMessage": "Chỉnh sửa tại chỗ"
@@ -4519,5 +4618,56 @@
   },
   "userMessage.forkSessionTitle": {
     "defaultMessage": "Tạo một phiên làm việc mới với tin nhắn đã chỉnh sửa"
+  },
+  "userMessage.removeImageFromEdit": {
+    "defaultMessage": "Xóa hình ảnh khỏi tin nhắn"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Gần đây"
+  },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "Chọn mô hình"
+  },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "Không còn được dùng — hãy sử dụng {replacement}."
+  },
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "Đã tìm thấy bộ điều hợp ACP"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "Không tìm thấy bộ điều hợp ACP"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "Đăng nhập qua CLI của nhà cung cấp, sau đó kiểm tra lại."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "Kiểm tra lại"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "Đang kiểm tra..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "Kết nối thành công"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "Hãy kiểm tra kết nối tài khoản trước khi tiếp tục."
+  },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "và nhập:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "Sao chép"
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "Truy cập"
+  },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "và nhập:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "Sao chép"
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "Truy cập"
   }
 }

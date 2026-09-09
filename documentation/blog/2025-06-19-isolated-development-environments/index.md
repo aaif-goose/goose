@@ -102,7 +102,7 @@ extensions:
 
 ---
 
-*Questions? Join our [GitHub discussions](https://github.com/aaif-goose/goose) or [Discord](https://discord.gg/goose-oss). Learn more about Dagger at [dagger.io](https://dagger.io/).*
+*Questions? Join our [GitHub discussions](https://github.com/aaif-goose/goose) or [Discord](https://discord.gg/n8R5VaWDAn). Learn more about Dagger at [dagger.io](https://dagger.io/).*
 
 {/* Video Player */}
 <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto' }}>

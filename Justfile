@@ -13,28 +13,28 @@ check-everything:
     cargo clippy --all-targets -- -D warnings
     @echo "  → Checking UI code formatting..."
     cd ui/desktop && pnpm run lint:check
-    @echo "  → Validating OpenAPI schema..."
-    ./scripts/check-openapi-schema.sh
     @echo ""
     @echo "✅ All style checks passed!"
+
+test-buzz:
+    node --test buzz/*.test.mjs
+    for file in buzz/create_github_manager buzz/create_issue_channel buzz/list_issue_work buzz/syncissues buzz/github_manager.mjs; do node --check "$file"; done
 
 # Default release command
 release-binary:
     @echo "Building release version..."
-    cargo build --release
+    cargo build --release -p goose-cli --bin goose
     @just copy-binary
-    @echo "Generating OpenAPI schema..."
-    cargo run -p goose-server --bin generate_schema
 
 # Build Windows executable on a Windows host
 [unix]
 release-windows:
-    @echo "just release-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-desktop-windows.yml for CI builds."
+    @echo "just release-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-windows.yml for CI builds."
     @exit 1
 
 [windows]
 release-windows:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p goose-server; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/goosed.exe"'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --bin goose; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/goose.exe"'
 
 # Build for Intel Mac
 release-intel:
@@ -43,14 +43,7 @@ release-intel:
     @just copy-binary-intel
 
 copy-binary BUILD_MODE="release":
-    @if [ -f ./target/{{BUILD_MODE}}/goosed ]; then \
-        echo "Copying goosed binary from target/{{BUILD_MODE}}..."; \
-        rm -f ./ui/desktop/src/bin/goosed; \
-        cp -p ./target/{{BUILD_MODE}}/goosed ./ui/desktop/src/bin/; \
-    else \
-        echo "Binary not found in target/{{BUILD_MODE}}"; \
-        exit 1; \
-    fi
+    @rm -f ./ui/desktop/src/bin/goosed
     @if [ -f ./target/{{BUILD_MODE}}/goose ]; then \
         echo "Copying goose CLI binary from target/{{BUILD_MODE}}..."; \
         rm -f ./ui/desktop/src/bin/goose; \
@@ -62,14 +55,7 @@ copy-binary BUILD_MODE="release":
 
 # Copy binary command for Intel build
 copy-binary-intel:
-    @if [ -f ./target/x86_64-apple-darwin/release/goosed ]; then \
-        echo "Copying Intel goosed binary to ui/desktop/src/bin with permissions preserved..."; \
-        rm -f ./ui/desktop/src/bin/goosed; \
-        cp -p ./target/x86_64-apple-darwin/release/goosed ./ui/desktop/src/bin/; \
-    else \
-        echo "Intel release binary not found."; \
-        exit 1; \
-    fi
+    @rm -f ./ui/desktop/src/bin/goosed
     @if [ -f ./target/x86_64-apple-darwin/release/goose ]; then \
         echo "Copying Intel goose CLI binary to ui/desktop/src/bin..."; \
         rm -f ./ui/desktop/src/bin/goose; \
@@ -87,10 +73,11 @@ copy-binary-windows:
 
 [windows]
 copy-binary-windows:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (Test-Path ./target/x86_64-pc-windows-msvc/release/goosed.exe) { \
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (Test-Path ./target/x86_64-pc-windows-msvc/release/goose.exe) { \
         Write-Host "Copying Windows binary to ui/desktop/src/bin..."; \
         New-Item -ItemType Directory -Force "./ui/desktop/src/bin" | Out-Null; \
-        Copy-Item -Path "./target/x86_64-pc-windows-msvc/release/goosed.exe" -Destination "./ui/desktop/src/bin/" -Force; \
+        Remove-Item -Path "./ui/desktop/src/bin/goosed.exe" -Force -ErrorAction SilentlyContinue; \
+        Copy-Item -Path "./target/x86_64-pc-windows-msvc/release/goose.exe" -Destination "./ui/desktop/src/bin/" -Force; \
     } else { \
         Write-Host "Windows binary not found." -ForegroundColor Red; \
         exit 1; \
@@ -116,7 +103,7 @@ run-ui-only:
     cd ui/desktop && pnpm install && pnpm run start-gui
 
 debug-ui:
-    @echo "🚀 Starting goose frontend in external backend mode"
+    @echo "🚀 Starting goose frontend in external ACP backend mode"
     cd ui/desktop && \
     export GOOSE_EXTERNAL_BACKEND=true && \
     export GOOSE_SERVER__SECRET_KEY="${GOOSE_SERVER__SECRET_KEY:-test}" && \
@@ -161,33 +148,22 @@ run-docs:
 
 # Run server
 run-server:
-    @echo "Running server..."
-    cargo run -p goose-server --bin goosed agent
+    @echo "Running external ACP backend..."
+    GOOSE_SERVER__SECRET_KEY="${GOOSE_SERVER__SECRET_KEY:-test}" cargo run -p goose-cli --bin goose -- serve --platform desktop --enable-scheduler --host 127.0.0.1 --port 3000
 
-# Check if OpenAPI schema is up-to-date
-check-openapi-schema: generate-openapi
-    ./scripts/check-openapi-schema.sh
-
-# Generate OpenAPI specification without starting the UI
-generate-openapi:
-    @echo "Generating OpenAPI schema..."
-    cargo run -p goose-server --bin generate_schema
-    @echo "Generating frontend API..."
-    cd ui/desktop && npx @hey-api/openapi-ts
-
-# Check if generated ACP schema and TypeScript types are up-to-date
-check-acp-schema: generate-acp-types
+# Check if checked-in ACP artifacts are up-to-date and the docs can be rendered
+check-acp-artifacts: generate-acp-types generate-acp-docs
     #!/usr/bin/env bash
     set -e
-    echo "🔍 Checking ACP schema and generated types are up-to-date..."
-    if ! git diff --exit-code crates/goose/acp-schema.json crates/goose/acp-meta.json ui/sdk/src/generated/; then
+    echo "🔍 Checking generated ACP artifacts are up-to-date..."
+    if ! git diff --exit-code crates/goose/acp-schema.json crates/goose/acp-meta.json ui/goose-acp-client/src/generated/; then
       echo ""
       echo "❌ ACP generated files are out of date!"
       echo ""
       echo "Run 'just generate-acp-types' locally, then commit the changes."
       exit 1
     fi
-    echo "✅ ACP schema and generated types are up-to-date"
+    echo "✅ Generated ACP artifacts are up-to-date"
 
 # Generate ACP JSON schema from Rust types
 generate-acp-schema:
@@ -198,14 +174,20 @@ generate-acp-schema:
 # Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
 generate-acp-types: generate-acp-schema
     @echo "Generating ACP TypeScript types..."
-    cd ui/sdk && npx tsx generate-schema.ts
-    @echo "ACP TypeScript types generated in ui/sdk/src/generated/"
+    cd ui/goose-acp-client && npx tsx generate-schema.ts
+    @echo "ACP TypeScript types generated for the ACP client package."
 
-# Build SDK TypeScript package (schema + types + compile)
-build-sdk: generate-acp-types
+# Generate ACP documentation from the existing JSON schema and metadata
+generate-acp-docs:
+    @echo "Generating ACP documentation..."
+    node documentation/scripts/generate-acp-docs.js
+    @echo "ACP documentation generated for the docs build."
+
+# Build ACP client TypeScript package (schema + types + compile)
+build-acp-client: generate-acp-types
     @echo "Compiling ACP TypeScript..."
-    cd ui/sdk && pnpm run build:ts
-    @echo "ACP package built."
+    cd ui/goose-acp-client && pnpm run build:ts
+    @echo "ACP client package built."
 
 # Generate manpages for the CLI
 generate-manpages:
@@ -225,7 +207,7 @@ make-ui:
 # make GUI with latest Windows binary on a Windows host
 [unix]
 make-ui-windows:
-    @echo "just make-ui-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-desktop-windows.yml for CI builds."
+    @echo "just make-ui-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-windows.yml for CI builds."
     @exit 1
 
 [windows]
@@ -316,9 +298,13 @@ bump-version version:
     @just validate {{ version }} || exit 1
     @uvx --from=toml-cli toml set --toml-path=Cargo.toml "workspace.package.version" {{ version }}
     @cd ui/desktop && npm pkg set "version={{ version }}"
+    @node ui/scripts/npm-versions.mjs set {{ version }}
     # update Cargo.lock after bumping versions in Cargo.toml
     @cargo update --workspace
-    @just set-openapi-version {{ version }}
+    @just check-npm-versions
+
+check-npm-versions:
+    @node ui/scripts/npm-versions.mjs check
 
 # rebuild canonical model registry and mapping report from models.dev
 build-canonical-models:
@@ -332,14 +318,13 @@ prepare-release version:
         Cargo.toml \
         Cargo.lock \
         ui/desktop/package.json \
+        ui/goose-acp-client/package.json \
+        ui/goose-acp/package.json \
+        ui/goose-binary/*/package.json \
         ui/pnpm-lock.yaml \
-        ui/desktop/openapi.json \
-        crates/goose-providers/src/canonical/data/canonical_models.json \
-        crates/goose-providers/src/canonical/data/provider_metadata.json
+        crates/goose-provider-types/src/canonical/data/canonical_models.json \
+        crates/goose-provider-types/src/canonical/data/provider_metadata.json
     @git commit --message "chore(release): release version {{ version }}"
-
-set-openapi-version version:
-    @jq '.info.version |= "{{ version }}"' ui/desktop/openapi.json > ui/desktop/openapi.json.tmp && mv ui/desktop/openapi.json.tmp ui/desktop/openapi.json
 
 # extract version from Cargo.toml
 get-tag-version:
@@ -375,7 +360,6 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 ### profile = --release or "" for debug
 ### allparam = OR/AND/ANY/NONE --workspace --all-features --all-targets
 win-bld profile allparam:
-  cargo run {{profile}} -p goose-server --bin  generate_schema
   cargo build {{profile}} {{allparam}}
 
 ### Build just debug
@@ -404,6 +388,7 @@ win-app-deps:
 win-copy-win profile:
   copy target{{s}}{{profile}}{{s}}*.exe ui{{s}}desktop{{s}}src{{s}}bin
   copy target{{s}}{{profile}}{{s}}*.dll ui{{s}}desktop{{s}}src{{s}}bin
+  if exist ui{{s}}desktop{{s}}src{{s}}bin{{s}}goosed.exe del /f /q ui{{s}}desktop{{s}}src{{s}}bin{{s}}goosed.exe
 
 ### "Other" copy {release|debug} files to ui/desktop/src/bin
 ### s = os dependent file separator
@@ -445,6 +430,33 @@ win-total-dbg *allparam:
 win-total-rls *allparam:
   just win-bld-rls{{allparam}}
   just win-run-rls
+
+# Build the binaries the MCP conformance driver needs.
+mcp-conformance-build:
+  cargo build -p goose-cli --bin goose --bin mcp_conformance_driver
+
+# suite: all, core, extensions, backcompat, auth, metadata, draft, sep-835
+# build: "false" reuses the existing target/debug binaries instead of rebuilding
+# Example: just mcp-conformance
+# Example: just mcp-conformance 2025-11-25 auth
+# Example: just mcp-conformance 2025-11-25 auth 0.2.0-alpha.10
+# Example: just mcp-conformance 2025-11-25 auth 0.2.0-alpha.10 false
+# Example: just mcp-conformance 2025-11-25 all 0.2.0-alpha.10 true crates/goose-cli/tests/mcp-conformance/expected-failures-2025-11-25-0.2.0-alpha.10.yaml
+[doc("Run an MCP client conformance suite against Goose.")]
+mcp-conformance version="2025-11-25" suite="all" conformance_version="0.2.0-alpha.10" build="true" baseline="":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [ "{{build}}" = "true" ]; then
+    just mcp-conformance-build
+  elif [ ! -x target/debug/mcp_conformance_driver ]; then
+    echo "target/debug/mcp_conformance_driver not found; run 'just mcp-conformance-build' first" >&2
+    exit 1
+  fi
+  baseline_args=()
+  if [ -n "{{baseline}}" ]; then
+    baseline_args=(--expected-failures "{{baseline}}")
+  fi
+  GOOSE_DISABLE_KEYRING=1 npx -y @modelcontextprotocol/conformance@{{conformance_version}} client --command "target/debug/mcp_conformance_driver" --spec-version "{{version}}" --suite "{{suite}}" ${baseline_args[@]+"${baseline_args[@]}"}
 
 build-test-tools:
   cargo build -p goose-test

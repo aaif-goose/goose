@@ -22,7 +22,7 @@ This tutorial covers how to add the [Apify MCP server](https://mcp.apify.com) as
    [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fmcp.apify.com&id=apify&name=Apify&description=Extract%20data%20from%20any%20website%20with%20thousands%20of%20scrapers%2C%20crawlers%2C%20and%20automations%20on%20Apify%20Store&header=Authorization%3DBearer%20YOUR_APIFY_TOKEN)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-  Add a `Remote Extension (Streaming HTTP)` extension type with:
+  Add a `Remote Extension (Streamable HTTP)` extension type with:
 
   **Endpoint URL**
   ```

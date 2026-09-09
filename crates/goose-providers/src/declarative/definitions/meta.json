@@ -1,0 +1,30 @@
+{
+  "name": "meta",
+  "engine": "openai",
+  "display_name": "Meta",
+  "description": "Meta's Model API, home of the Muse Spark models",
+  "api_key_env": "META_MODEL_API_KEY",
+  "base_url": "https://api.meta.ai/v1",
+  "catalog_provider_id": "meta",
+  "dynamic_models": true,
+  "models": [
+    {
+      "name": "muse-spark-1.1",
+      "context_limit": 1000000,
+      "max_tokens": 32000,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00000425,
+      "currency": "USD",
+      "reasoning": true
+    }
+  ],
+  "preserves_thinking": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://dev.meta.ai/docs",
+  "setup_steps": [
+    "Sign in to https://dev.meta.ai",
+    "Navigate to API Keys in your account settings",
+    "Create a new API key",
+    "Copy the key and paste it above"
+  ]
+}

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import Layout from "@theme/Layout";
 import { Copy, Check, Plus, X } from "lucide-react";
 import { Button } from "@site/src/components/ui/button";
+import { cn } from "@site/src/utils/cn";
 
 interface EnvironmentVariable {
   name: string;
@@ -68,7 +69,7 @@ export default function DeeplinkGenerator() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.toString()) {
       try {
-        if (urlParams.get('cmd') === 'goosed' && urlParams.getAll('arg').includes('mcp')) {
+        if (urlParams.get('cmd') === 'goose' && urlParams.getAll('arg').includes('mcp')) {
           const args = urlParams.getAll('arg');
           const extensionId = args[args.indexOf('mcp') + 1];
           if (!extensionId) {
@@ -187,7 +188,7 @@ export default function DeeplinkGenerator() {
   const generateDeeplink = (server: ServerConfig): string => {
     if (server.is_builtin) {
       const queryParams = [
-        'cmd=goosed',
+        'cmd=goose',
         'arg=mcp',
         `arg=${encodeURIComponent(server.id)}`,
         `description=${encodeURIComponent(server.id)}`
@@ -320,26 +321,28 @@ export default function DeeplinkGenerator() {
         <div className="bg-bgApp border border-borderSubtle rounded-lg p-6 mb-8 shadow-sm">
           <div className="tabs mb-6">
             <div className="flex p-1 bg-bgSubtle rounded-lg">
-              <Button
+              <button
                 onClick={() => setActiveTab('form')}
-                className={`flex-1 rounded-none ${activeTab === "form" ? "bg-secondary dark:bg-black" : "bg-transparent dark:bg-transparent hover:bg-bgApp"}`}
+                className={cn(
+                  "flex-1 px-6 py-3",
+                  activeTab === "form"
+                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    : "bg-bgApp text-textStandard"
+                )}
               >
-                <span
-                  className={`${activeTab === "form" ? "text-textProminent text-white" : "text-black dark:text-white"}`}
-                >
-                  Form
-                </span>
-              </Button>
-              <Button
+                Form
+              </button>
+              <button
                 onClick={() => setActiveTab('json')}
-                className={`flex-1 rounded-none ${activeTab === "json" ? "bg-secondary dark:bg-black" : "bg-transparent dark:bg-transparent hover:bg-bgApp"}`}
+                className={cn(
+                  "flex-1 px-6 py-3",
+                  activeTab === "json"
+                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    : "bg-bgApp text-textStandard"
+                )}
               >
-                <span
-                  className={`${activeTab === "json" ? "text-textProminent text-white" : "text-black dark:text-white"}`}
-                >
-                  JSON
-                </span>
-              </Button>
+                JSON
+              </button>
             </div>
           </div>
 

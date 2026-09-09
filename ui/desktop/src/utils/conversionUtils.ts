@@ -6,13 +6,18 @@ export async function safeJsonParse<T>(
     return (await response.json()) as T;
   } catch (error) {
     if (error instanceof SyntaxError) {
-      throw new Error(errorMessage);
+      throw new Error(errorMessage, { cause: error });
     }
     throw error;
   }
 }
 
 export function errorMessage(err: Error | unknown, default_value?: string) {
+  const acpData = acpErrorData(err);
+  if (typeof acpData === 'string') {
+    return acpData;
+  }
+
   if (err instanceof Error) {
     return err.message;
   } else if (typeof err === 'object' && err !== null && 'message' in err) {
@@ -20,6 +25,19 @@ export function errorMessage(err: Error | unknown, default_value?: string) {
   } else {
     return default_value || String(err);
   }
+}
+
+function acpErrorData(err: unknown): unknown {
+  if (typeof err !== 'object' || err === null) {
+    return undefined;
+  }
+
+  const candidate = 'error' in err && isRecord(err.error) ? err.error : err;
+  return isRecord(candidate) ? candidate.data : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 export function formatErrorForLogging(error: unknown): string {

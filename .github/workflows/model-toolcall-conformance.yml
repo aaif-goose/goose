@@ -1,0 +1,77 @@
+name: Model Tool Call Conformance
+
+# Sweeps many models and reports which ones can actually drive an MCP tool call
+# through goose. This is deliberately NOT a PR gate: it exercises third-party
+# models over the network, so a failure here usually means a provider or model
+# regressed, not that a goose change broke. Running it on a schedule keeps the
+# signal without turning unrelated PRs red.
+on:
+  schedule:
+    # 03:00 UTC daily
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      model_count:
+        description: 'Number of top OpenRouter tool-capable models to test'
+        required: false
+        default: '10'
+        type: string
+      models:
+        description: 'Comma-separated explicit model list (overrides model_count)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  openrouter-toolcalls:
+    name: OpenRouter Tool Calls
+    runs-on: ubuntu-latest
+    # Only meaningful on the upstream repo, which holds the provider secrets.
+    if: github.repository == 'aaif-goose/goose'
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev jq
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+
+      - name: Build Binary
+        run: cargo build --bin goose
+
+      - name: Run OpenRouter Tool Call Sweep
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          HOME: /tmp/goose-home
+          GOOSE_DISABLE_KEYRING: 1
+          SKIP_BUILD: 1
+          GOOSE_BIN: ${{ github.workspace }}/target/debug/goose
+        run: |
+          mkdir -p /tmp/goose-home
+          if [ -n "${{ inputs.models }}" ]; then
+            bash scripts/test_openrouter_toolcalls.sh \
+              --models "${{ inputs.models }}" \
+              --output-dir openrouter-toolcall-results
+          else
+            bash scripts/test_openrouter_toolcalls.sh \
+              --count "${{ inputs.model_count || '10' }}" \
+              --output-dir openrouter-toolcall-results
+          fi
+
+      - name: Upload Per-Model Logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: openrouter-toolcall-logs
+          path: openrouter-toolcall-results
+          retention-days: 14

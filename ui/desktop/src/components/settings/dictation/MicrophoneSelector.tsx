@@ -74,6 +74,7 @@ export const MicrophoneSelector = ({
   const testCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
   const testTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const testGenerationRef = useRef(0);
 
   const enumerate = useCallback(async () => {
     try {
@@ -103,6 +104,7 @@ export const MicrophoneSelector = ({
   };
 
   const stopTest = useCallback(() => {
+    testGenerationRef.current += 1;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
     if (testTimerRef.current) clearTimeout(testTimerRef.current);
@@ -117,6 +119,9 @@ export const MicrophoneSelector = ({
 
   const startTest = async () => {
     stopTest();
+    const generation = testGenerationRef.current;
+    setIsTesting(true);
+
     try {
       const constraints: MediaTrackConstraints = {
         echoCancellation: true,
@@ -128,6 +133,10 @@ export const MicrophoneSelector = ({
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+      if (testGenerationRef.current !== generation) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       testStreamRef.current = stream;
 
       const ctx = new AudioContext();
@@ -140,6 +149,8 @@ export const MicrophoneSelector = ({
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
       const poll = () => {
+        if (testGenerationRef.current !== generation) return;
+
         analyser.getByteTimeDomainData(dataArray);
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
@@ -151,10 +162,13 @@ export const MicrophoneSelector = ({
         rafRef.current = requestAnimationFrame(poll);
       };
 
-      setIsTesting(true);
       rafRef.current = requestAnimationFrame(poll);
-      testTimerRef.current = setTimeout(stopTest, TEST_DURATION_MS);
+      testTimerRef.current = setTimeout(() => {
+        if (testGenerationRef.current === generation) stopTest();
+      }, TEST_DURATION_MS);
     } catch (e) {
+      if (testGenerationRef.current !== generation) return;
+
       console.error('Mic test failed:', e);
       stopTest();
     }
@@ -211,7 +225,9 @@ export const MicrophoneSelector = ({
                 value={selectedDeviceId ?? 'system_default'}
                 onValueChange={(v) => onDeviceChange(v === 'system_default' ? null : v)}
               >
-                <DropdownMenuRadioItem value="system_default">{intl.formatMessage(i18n.systemDefault)}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="system_default">
+                  {intl.formatMessage(i18n.systemDefault)}
+                </DropdownMenuRadioItem>
                 {devices.map((device, i) => (
                   <DropdownMenuRadioItem key={device.deviceId} value={device.deviceId}>
                     <span className="truncate">{getDeviceLabel(device, i)}</span>

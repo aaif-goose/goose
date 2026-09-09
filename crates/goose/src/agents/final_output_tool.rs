@@ -1,13 +1,25 @@
 use crate::agents::tool_execution::ToolCallResult;
 use crate::recipe::Response;
 use indoc::formatdoc;
-use rmcp::model::{CallToolRequestParams, Content, ErrorCode, ErrorData, Tool, ToolAnnotations};
+use rmcp::model::{
+    CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Tool, ToolAnnotations,
+};
 use serde_json::Value;
 use std::borrow::Cow;
 
 pub const FINAL_OUTPUT_TOOL_NAME: &str = "recipe__final_output";
+pub const FINAL_OUTPUT_SUCCESS_MESSAGE: &str = "Final output successfully collected.";
 pub const FINAL_OUTPUT_CONTINUATION_MESSAGE: &str =
     "You MUST call the `final_output` tool NOW with the final output for the user.";
+
+pub(crate) fn structured_output_unsupported_message(provider_name: &str) -> String {
+    format!(
+        "This recipe declares a structured `response`, but provider `{provider_name}` can't \
+         support it because it never receives goose's built-in `final_output` tool, so the \
+         model can never satisfy this recipe. Remove the entire `response` block from the recipe \
+         or run it with a different provider."
+    )
+}
 
 pub struct FinalOutputTool {
     pub response: Response,
@@ -16,23 +28,23 @@ pub struct FinalOutputTool {
 }
 
 impl FinalOutputTool {
-    pub fn new(response: Response) -> Self {
-        if response.json_schema.is_none() {
-            panic!("Cannot create FinalOutputTool: json_schema is required");
+    pub fn try_new(response: Response) -> Result<Self, String> {
+        let schema_value = response
+            .json_schema
+            .as_ref()
+            .ok_or_else(|| "json_schema is required".to_string())?;
+        let schema = schema_value
+            .as_object()
+            .ok_or_else(|| "json_schema must be an object".to_string())?;
+        if schema.is_empty() {
+            return Err("empty json_schema is not allowed".to_string());
         }
-        let schema = response.json_schema.as_ref().unwrap();
+        jsonschema::validator_for(schema_value).map_err(|error| error.to_string())?;
 
-        if let Some(obj) = schema.as_object() {
-            if obj.is_empty() {
-                panic!("Cannot create FinalOutputTool: empty json_schema is not allowed");
-            }
-        }
-
-        jsonschema::meta::validate(schema).unwrap();
-        Self {
+        Ok(Self {
             response,
             final_output: None,
-        }
+        })
     }
 
     pub fn tool(&self) -> Tool {
@@ -102,7 +114,7 @@ impl FinalOutputTool {
 
         let validation_errors: Vec<String> = compiled_schema
             .iter_errors(output)
-            .map(|error| format!("- {}: {}", error.instance_path, error))
+            .map(|error| format!("- {}: {}", error.instance_path(), error))
             .collect();
 
         if validation_errors.is_empty() {
@@ -124,7 +136,7 @@ impl FinalOutputTool {
                     Ok(parsed_value) => {
                         self.final_output = Some(Self::parsed_final_output_string(parsed_value));
                         ToolCallResult::from(Ok(rmcp::model::CallToolResult::success(vec![
-                            Content::text("Final output successfully collected.".to_string()),
+                            ContentBlock::text(FINAL_OUTPUT_SUCCESS_MESSAGE.to_string()),
                         ])))
                     }
                     Err(error) => ToolCallResult::from(Err(ErrorData {
@@ -178,24 +190,27 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Cannot create FinalOutputTool: json_schema is required")]
-    fn test_new_with_missing_schema() {
+    fn test_try_new_with_missing_schema() {
         let response = Response { json_schema: None };
-        FinalOutputTool::new(response);
+        assert_eq!(
+            FinalOutputTool::try_new(response).err().unwrap(),
+            "json_schema is required"
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Cannot create FinalOutputTool: empty json_schema is not allowed")]
-    fn test_new_with_empty_schema() {
+    fn test_try_new_with_empty_schema() {
         let response = Response {
             json_schema: Some(json!({})),
         };
-        FinalOutputTool::new(response);
+        assert_eq!(
+            FinalOutputTool::try_new(response).err().unwrap(),
+            "empty json_schema is not allowed"
+        );
     }
 
     #[test]
-    #[should_panic]
-    fn test_new_with_invalid_schema() {
+    fn test_try_new_with_invalid_schema() {
         let response = Response {
             json_schema: Some(json!({
                 "type": "invalid_type",
@@ -206,7 +221,24 @@ mod tests {
                 }
             })),
         };
-        FinalOutputTool::new(response);
+        assert!(FinalOutputTool::try_new(response).is_err());
+    }
+
+    #[test]
+    fn test_try_new_with_invalid_pattern() {
+        let response = Response {
+            json_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "pattern": "["
+                    }
+                }
+            })),
+        };
+
+        assert!(FinalOutputTool::try_new(response).is_err());
     }
 
     #[tokio::test]
@@ -226,7 +258,7 @@ mod tests {
             })),
         };
 
-        let mut tool = FinalOutputTool::new(response);
+        let mut tool = FinalOutputTool::try_new(response).unwrap();
         let tool_call =
             CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME).with_arguments(object!({
                 "message": "Hello"  // Missing required "count" field
@@ -246,7 +278,7 @@ mod tests {
             json_schema: Some(create_complex_test_schema()),
         };
 
-        let mut tool = FinalOutputTool::new(response);
+        let mut tool = FinalOutputTool::try_new(response).unwrap();
         let tool_call =
             CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME).with_arguments(object!({
                 "user": {

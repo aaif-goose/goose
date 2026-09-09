@@ -323,4 +323,4 @@ Whether you're looking to streamline your CI/CD pipelines, automate server maint
 3. **Test in a safe environment** before deploying to production
 4. **Integrate with your existing workflows** and watch your productivity soar
 
-Connect with us on our [Discord community](https://discord.gg/goose-oss) to share your headless mode success stories, ask questions, and collaborate with other developers who want to push the boundaries of AI automation.
+Connect with us on our [Discord community](https://discord.gg/n8R5VaWDAn) to share your headless mode success stories, ask questions, and collaborate with other developers who want to push the boundaries of AI automation.

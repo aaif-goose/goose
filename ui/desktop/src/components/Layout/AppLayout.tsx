@@ -1,15 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { IpcRendererEvent } from 'electron';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router';
 import { motion } from 'framer-motion';
-import { Menu, PanelLeft } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
 import { Button } from '../ui/button';
 import ChatSessionsContainer from '../ChatSessionsContainer';
 import { useChatContext } from '../../contexts/ChatContext';
 import { NavigationProvider, useNavigationContext } from './NavigationContext';
 import { Navigation } from './NavigationPanel';
-import { NAV_DIMENSIONS, Z_INDEX } from './constants';
+import { Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { UserInput } from '../../types/message';
 
@@ -54,7 +54,41 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
     return () => window.electron.off('fullscreen-change', handler);
   }, [safeIsMacOS]);
 
-  const { isNavExpanded, setIsNavExpanded } = useNavigationContext();
+  const { isNavExpanded, setIsNavExpanded, navWidth, setNavWidth } = useNavigationContext();
+  const [isDragging, setIsDragging] = useState(false);
+  const isResizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      isResizing.current = true;
+      startX.current = e.clientX;
+      startWidth.current = navWidth;
+      setIsDragging(true);
+      e.preventDefault();
+    },
+    [navWidth]
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      setNavWidth(startWidth.current + (e.clientX - startX.current));
+    };
+    const handleMouseUp = () => {
+      if (isResizing.current) {
+        isResizing.current = false;
+        setIsDragging(false);
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [setNavWidth]);
 
   if (!chatContext) {
     throw new Error('AppLayoutContent must be used within ChatProvider');
@@ -83,7 +117,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
           title={navToggleTitle}
           aria-label={navToggleTitle}
         >
-          {isNavExpanded ? <PanelLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          <PanelLeft className="w-5 h-5" />
         </Button>
       </div>
 
@@ -93,14 +127,22 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         <motion.div
           key="nav"
           initial={false}
-          animate={{ width: isNavExpanded ? NAV_DIMENSIONS.NAV_WIDTH : 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+          animate={{ width: isNavExpanded ? navWidth : 0 }}
+          transition={
+            isDragging ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 40 }
+          }
           style={{ height: '100%' }}
           className="relative flex-shrink-0 overflow-hidden h-full p-2"
         >
           <div className="w-full h-full overflow-hidden rounded-xl border border-border-primary">
             <Navigation />
           </div>
+          {isNavExpanded && (
+            <div
+              className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-border-primary/30 transition-colors"
+              onMouseDown={handleResizeMouseDown}
+            />
+          )}
         </motion.div>
 
         {/* Main content — no border / no card; just flows on the canvas. */}

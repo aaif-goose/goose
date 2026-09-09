@@ -9,8 +9,10 @@ use super::GooseAcpAgent;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
 use goose_providers::model::ModelConfig;
+use goose_providers::thinking::ThinkingEffortSupport;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tracing::warn;
 
 struct InitialSessionConfig {
     provider: String,
@@ -18,28 +20,40 @@ struct InitialSessionConfig {
     extension_data: ExtensionData,
     recipe: Option<Recipe>,
     user_recipe_values: Option<HashMap<String, String>>,
+    meta: NewSessionMetaFields,
+}
+
+/// Session fields read from `_meta` on `session/new` that are applied to the
+/// session row after it is created.
+struct NewSessionMetaFields {
     project_id: Option<String>,
+    /// Client-supplied title, recorded as user-set so goose's own name
+    /// generation leaves it alone. `None` when a recipe title took precedence.
+    client_title: Option<String>,
 }
 
 impl GooseAcpAgent {
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,
-        args: NewSessionRequest,
+        mut args: NewSessionRequest,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
+        // When the host imposes a working directory (e.g. roaming, where the
+        // connector's absolute path is meaningless on this machine), ignore the
+        // cwd the client sent and use the host-controlled one instead.
+        if let Some(host_cwd) = &self.session_cwd {
+            args.cwd = host_cwd.clone();
+        }
         validate_absolute_cwd(&args.cwd)?;
         let config = Config::global();
-        let project_id = meta_string(args.meta.as_ref(), "projectId")?;
-        let session_type = match meta_string(args.meta.as_ref(), "client")? {
-            Some(_) => SessionType::User,
-            None => SessionType::Acp,
-        };
+        let session_type = session_type_from_meta(args.meta.as_ref())?;
         let current_mode: GooseMode = config.get_goose_mode().unwrap_or_default();
         let recipe = self.resolve_recipe_from_meta(args.meta.as_ref()).await?;
-        let session_name = match recipe.as_ref() {
-            Some((recipe, _)) if !recipe.title.trim().is_empty() => recipe.title.clone(),
-            _ => "New Chat".to_string(),
-        };
+        let meta = new_session_meta_fields(args.meta.as_ref(), recipe.as_ref())?;
+        let session_name = recipe_title(recipe.as_ref())
+            .map(str::to_string)
+            .or_else(|| meta.client_title.clone())
+            .unwrap_or_else(|| "New Chat".to_string());
 
         let session = self
             .session_manager
@@ -47,7 +61,7 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to create session")?;
         match self
-            .finish_new_session_setup(cx, config, &session, args, recipe, project_id)
+            .finish_new_session_setup(cx, config, &session, args, recipe, meta)
             .await
         {
             Ok(response) => Ok(response),
@@ -65,36 +79,49 @@ impl GooseAcpAgent {
         session: &Session,
         args: NewSessionRequest,
         recipe: Option<(Recipe, PathBuf)>,
-        project_id: Option<String>,
+        meta: NewSessionMetaFields,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         let rendered_recipe = self
-            .configure_new_session(cx, config, session, args, recipe, project_id)
+            .configure_new_session(cx, config, session, args, recipe, meta)
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (agent, extension_results) = self
-            .activate_acp_session(cx, &reloaded_session, HashMap::new())
-            .await?;
+        let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
         if let Some(recipe) = &rendered_recipe {
-            self.apply_recipe(&agent, recipe).await;
+            self.apply_recipe(&agent, recipe).await?;
         }
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
-            .build_new_session_response(&reloaded_session, &extension_results)
+            .build_new_session_response(
+                &reloaded_session,
+                &extension_results,
+                &super::agent_thinking_effort_support(&agent).await,
+            )
             .await?;
-        super::send_session_setup_notifications(
-            cx,
-            &reloaded_session,
-            self.supports_goose_custom_notifications(),
-        )?;
         Ok(response)
     }
 
     async fn cleanup_failed_new_session(&self, session_id: &str) {
-        let _ = self.session_manager.delete_session(session_id).await;
+        if let Err(error) = self.session_manager.delete_session(session_id).await {
+            warn!(
+                session_id,
+                %error,
+                "Failed to delete session during new-session cleanup"
+            );
+        }
         self.sessions.lock().await.remove(session_id);
-        let _ = self.agent_manager.remove_session(session_id).await;
+        if let Err(error) = self
+            .agent_manager
+            .remove_session_if_loaded(session_id)
+            .await
+        {
+            warn!(
+                session_id,
+                %error,
+                "Failed to remove in-memory agent during new-session cleanup"
+            );
+        }
     }
 
     async fn configure_new_session(
@@ -104,10 +131,16 @@ impl GooseAcpAgent {
         session: &Session,
         args: NewSessionRequest,
         recipe: Option<(Recipe, PathBuf)>,
-        project_id: Option<String>,
+        meta: NewSessionMetaFields,
     ) -> Result<Option<Recipe>, agent_client_protocol::Error> {
+        let recipe_parameter_scope_id = meta_string(args.meta.as_ref(), "recipeParameterScopeId")?;
         let (rendered, user_recipe_values) = self
-            .render_recipe_for_session(cx, &session.id, recipe.as_ref())
+            .render_recipe_for_session(
+                cx,
+                &session.id,
+                recipe.as_ref(),
+                recipe_parameter_scope_id.as_deref(),
+            )
             .await?;
 
         let recipe_settings = rendered.as_ref().and_then(|r| r.settings.as_ref());
@@ -133,7 +166,7 @@ impl GooseAcpAgent {
                 extension_data,
                 recipe: recipe.map(|(recipe, _)| recipe),
                 user_recipe_values,
-                project_id,
+                meta,
             },
         )
         .await?;
@@ -204,8 +237,11 @@ impl GooseAcpAgent {
         if config.user_recipe_values.is_some() {
             builder = builder.user_recipe_values(config.user_recipe_values);
         }
-        if let Some(project_id) = config.project_id {
+        if let Some(project_id) = config.meta.project_id {
             builder = builder.project_id(Some(project_id));
+        }
+        if let Some(client_title) = config.meta.client_title {
+            builder = builder.user_provided_name(client_title);
         }
         builder
             .apply()
@@ -218,9 +254,11 @@ impl GooseAcpAgent {
         &self,
         session: &Session,
         extension_results: &[ExtensionLoadResult],
+        effort_support: &ThinkingEffortSupport,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         let (mode_state, config_options) =
-            super::build_session_setup_config(&self.provider_inventory, session).await?;
+            super::build_session_setup_config(&self.provider_inventory, session, effort_support)
+                .await?;
 
         let mut response =
             NewSessionResponse::new(SessionId::new(session.id.clone())).modes(mode_state);
@@ -240,6 +278,52 @@ fn model_config_from_recipe_settings(
         .internal_err_ctx("Failed to build model config from recipe settings")
 }
 
+fn session_type_from_meta(
+    meta: Option<&Meta>,
+) -> Result<SessionType, agent_client_protocol::Error> {
+    if meta_bool(meta, "hidden")? {
+        return Ok(SessionType::Hidden);
+    }
+    Ok(match meta_string(meta, "client")? {
+        Some(_) => SessionType::User,
+        None => SessionType::Acp,
+    })
+}
+
+fn meta_bool(meta: Option<&Meta>, key: &str) -> Result<bool, agent_client_protocol::Error> {
+    let Some(value) = meta.and_then(|m| m.get(key)) else {
+        return Ok(false);
+    };
+    if value.is_null() {
+        return Ok(false);
+    }
+    value.as_bool().ok_or_else(|| {
+        agent_client_protocol::Error::invalid_params().data(format!("{key} must be a boolean"))
+    })
+}
+
+fn recipe_title(recipe: Option<&(Recipe, PathBuf)>) -> Option<&str> {
+    recipe
+        .map(|(recipe, _)| recipe.title.trim())
+        .filter(|title| !title.is_empty())
+}
+
+fn new_session_meta_fields(
+    meta: Option<&Meta>,
+    recipe: Option<&(Recipe, PathBuf)>,
+) -> Result<NewSessionMetaFields, agent_client_protocol::Error> {
+    let session_title = meta_string(meta, "sessionTitle")?
+        .map(|title| title.trim().to_string())
+        .filter(|title| !title.is_empty());
+    Ok(NewSessionMetaFields {
+        project_id: meta_string(meta, "projectId")?,
+        // A recipe title is a server-side declaration, so it keeps the
+        // precedence it has today and a client title only replaces the
+        // "New Chat" fallback.
+        client_title: session_title.filter(|_| recipe_title(recipe).is_none()),
+    })
+}
+
 fn meta_goose_extensions(
     meta: Option<&Meta>,
 ) -> Result<Option<Vec<GooseExtension>>, agent_client_protocol::Error> {
@@ -254,4 +338,60 @@ fn meta_goose_extensions(
         .map_err(|e| {
             agent_client_protocol::Error::invalid_params().data(format!("enabledExtensions: {e}"))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn meta(value: serde_json::Value) -> Meta {
+        match value {
+            serde_json::Value::Object(map) => map,
+            other => panic!("expected object, got {other}"),
+        }
+    }
+
+    #[test]
+    fn hidden_meta_yields_hidden_session() {
+        let meta = meta(json!({ "hidden": true }));
+        assert_eq!(
+            session_type_from_meta(Some(&meta)).unwrap(),
+            SessionType::Hidden
+        );
+    }
+
+    #[test]
+    fn hidden_overrides_client() {
+        let meta = meta(json!({ "hidden": true, "client": "desktop" }));
+        assert_eq!(
+            session_type_from_meta(Some(&meta)).unwrap(),
+            SessionType::Hidden
+        );
+    }
+
+    #[test]
+    fn absent_hidden_preserves_acp() {
+        assert_eq!(session_type_from_meta(None).unwrap(), SessionType::Acp);
+        let meta = meta(json!({ "hidden": false }));
+        assert_eq!(
+            session_type_from_meta(Some(&meta)).unwrap(),
+            SessionType::Acp
+        );
+    }
+
+    #[test]
+    fn non_bool_hidden_is_rejected() {
+        let meta = meta(json!({ "hidden": "yes", "client": "desktop" }));
+        assert!(session_type_from_meta(Some(&meta)).is_err());
+    }
+
+    #[test]
+    fn client_meta_yields_user_session() {
+        let meta = meta(json!({ "client": "desktop" }));
+        assert_eq!(
+            session_type_from_meta(Some(&meta)).unwrap(),
+            SessionType::User
+        );
+    }
 }

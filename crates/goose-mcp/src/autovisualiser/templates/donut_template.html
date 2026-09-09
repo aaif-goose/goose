@@ -134,9 +134,25 @@
                 var total = cd.values.reduce(function (a, b) { return a + b; }, 0);
                 cd.labels.forEach(function (label, i) {
                     var pct = total > 0 ? ((cd.values[i] / total) * 100).toFixed(1) : "0";
-                    legendEl.innerHTML += '<div class="legend-item"><div class="legend-dot" style="background:' + cd.colors[i] + '"></div>' +
-                        '<span class="legend-label">' + label + '</span>' +
-                        '<span class="legend-value">' + pct + '%</span></div>';
+                    var item = document.createElement("div");
+                    item.className = "legend-item";
+
+                    var dot = document.createElement("div");
+                    dot.className = "legend-dot";
+                    dot.style.background = cd.colors[i];
+                    item.appendChild(dot);
+
+                    var labelEl = document.createElement("span");
+                    labelEl.className = "legend-label";
+                    labelEl.textContent = label;
+                    item.appendChild(labelEl);
+
+                    var valueEl = document.createElement("span");
+                    valueEl.className = "legend-value";
+                    valueEl.textContent = pct + "%";
+                    item.appendChild(valueEl);
+
+                    legendEl.appendChild(item);
                 });
                 card.appendChild(legendEl);
                 grid.appendChild(card);

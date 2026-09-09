@@ -1,5 +1,5 @@
 use axum::{
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Query, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 const GUEST_HTML_TTL_SECS: u64 = 300;
 const GUEST_HTML_MAX_ENTRIES: usize = 64;
+const GUEST_HTML_MAX_BYTES: usize = 16 * 1024 * 1024;
 const MCP_APP_PROXY_HTML: &str = include_str!("templates/mcp_app_proxy.html");
 
 type GuestHtmlStore = Arc<RwLock<HashMap<String, GuestHtmlEntry>>>;
@@ -216,6 +217,7 @@ fn build_outer_csp(
          media-src 'self' data: blob:{resources}; \
          {frame_src}; \
          object-src 'none'; \
+         form-action 'none'; \
          base-uri 'self'{base_uris}"
     )
 }
@@ -382,14 +384,23 @@ pub(crate) fn routes(secret_key: String) -> Router {
 
     Router::new()
         .route("/mcp-app-proxy", get(mcp_app_proxy))
-        .route("/mcp-app-guest", post(store_guest_html))
+        .route(
+            "/mcp-app-guest",
+            post(store_guest_html).layer(DefaultBodyLimit::max(GUEST_HTML_MAX_BYTES)),
+        )
         .with_state(state)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_csp_source, parse_domains, peer_addr_is_loopback};
+    use super::{build_outer_csp, normalize_csp_source, parse_domains, peer_addr_is_loopback};
+    use axum::{
+        body::Body,
+        extract::ConnectInfo,
+        http::{header, Request, StatusCode},
+    };
     use std::net::SocketAddr;
+    use tower::ServiceExt;
 
     #[test]
     fn normalizes_url_sources_to_origins() {
@@ -455,5 +466,37 @@ mod tests {
         assert!(!peer_addr_is_loopback(
             &"192.168.1.10:12345".parse::<SocketAddr>().unwrap()
         ));
+    }
+
+    #[test]
+    fn outer_csp_blocks_form_submission() {
+        let csp = build_outer_csp(&[], &[], &[], &[], &[], "http://127.0.0.1:12345");
+
+        assert!(csp.contains("form-action 'none'"));
+    }
+
+    #[tokio::test]
+    async fn stores_guest_html_larger_than_default_body_limit() {
+        let app = super::routes("test-secret".to_string());
+        let large_html = "x".repeat(3 * 1024 * 1024);
+        let body = serde_json::json!({
+            "secret": "test-secret",
+            "html": large_html,
+        })
+        .to_string();
+
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/mcp-app-guest")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:12345".parse::<SocketAddr>().unwrap(),
+        ));
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

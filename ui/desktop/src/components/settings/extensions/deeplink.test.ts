@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { addExtensionFromDeepLink } from './deeplink';
+import { toastService } from '../../../toasts';
 
 vi.mock('../../../toasts', () => ({
   toastService: {
@@ -83,6 +84,45 @@ describe('addExtensionFromDeepLink', () => {
           }),
         })
       );
+    });
+  });
+
+  describe('stdio command validation', () => {
+    it('should allow goose for bundled MCP deeplinks', async () => {
+      const url =
+        'goose://extension?cmd=goose&arg=mcp&arg=memory&name=Memory&description=Memory';
+
+      await addExtensionFromDeepLink(url, mockAddExtension, mockSetView);
+
+      expect(mockAddExtension).toHaveBeenCalledWith(
+        'Memory',
+        expect.objectContaining({
+          type: 'stdio',
+          cmd: 'goose',
+          args: ['mcp', 'memory'],
+        }),
+        true
+      );
+    });
+
+    it('should reject legacy goosed deeplinks', async () => {
+      vi.mocked(toastService.handleError).mockImplementationOnce(() => {
+        throw new Error('Invalid command');
+      });
+
+      const url =
+        'goose://extension?cmd=goosed&arg=mcp&arg=memory&name=Memory&description=Memory';
+
+      await expect(addExtensionFromDeepLink(url, mockAddExtension, mockSetView)).rejects.toThrow(
+        'Invalid command'
+      );
+
+      expect(toastService.handleError).toHaveBeenCalledWith(
+        'Invalid Command',
+        expect.stringContaining('Invalid command: goosed'),
+        { shouldThrow: true }
+      );
+      expect(mockAddExtension).not.toHaveBeenCalled();
     });
   });
 });

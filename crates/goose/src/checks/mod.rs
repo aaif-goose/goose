@@ -74,7 +74,13 @@ pub struct Check {
 impl Check {
     /// Read and parse a check file from disk.
     pub fn from_path(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("check {}: invalid path", path.display()))?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| anyhow!("check {}: invalid filename", path.display()))?;
+        let content = crate::skills::read_source_file(parent, Path::new(file_name))
             .with_context(|| format!("read check file: {}", path.display()))?;
         Self::parse(&content, path)
     }
@@ -272,6 +278,21 @@ fn synthesize_review_md_check(scope_dir: &str, path: &Path, body: &str) -> Check
     }
 }
 
+fn read_review_md(path: &Path, canonical_repo_root: &Path) -> Result<Option<String>> {
+    let canonical_path = match path.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return Ok(None),
+    };
+
+    if !canonical_path.starts_with(canonical_repo_root) || !canonical_path.is_file() {
+        return Ok(None);
+    }
+
+    fs::read_to_string(&canonical_path)
+        .map(Some)
+        .with_context(|| format!("read REVIEW.md {}", path.display()))
+}
+
 /// Locations searched for global checks, in priority order.
 ///
 /// The first existing directory wins for a given check name; closer scopes
@@ -309,6 +330,9 @@ pub fn discover_with_globals(
     global_dirs: &[PathBuf],
 ) -> Result<DiscoveredReview> {
     let scope_dirs = candidate_scope_dirs(touched_files);
+    let canonical_repo_root = repo_root
+        .canonicalize()
+        .with_context(|| format!("canonicalize repo root {}", repo_root.display()))?;
 
     // Collect raw checks keyed by name with explicit per-source priority so
     // closer/more-specific sources shadow broader ones. Globals get priority
@@ -327,36 +351,41 @@ pub fn discover_with_globals(
     };
 
     for dir in global_dirs {
-        for check in read_checks_dir(dir, "", LoadMode::Lenient)? {
+        let Ok(canonical_dir) = dir.canonicalize() else {
+            continue;
+        };
+        for mut check in read_checks_dir(&canonical_dir, &canonical_dir, "", LoadMode::Lenient)? {
+            if let Some(file_name) = check.path.file_name().map(ToOwned::to_owned) {
+                check.path = dir.join(file_name);
+            }
             record(check, 0);
         }
     }
 
-    let root_dir = repo_root.join(".agents").join("checks");
-    for check in read_checks_dir(&root_dir, "", LoadMode::Strict)? {
+    let root_dir = canonical_repo_root.join(".agents").join("checks");
+    for check in read_checks_dir(&canonical_repo_root, &root_dir, "", LoadMode::Strict)? {
         record(check, scope_priority(""));
     }
 
     for scope in &scope_dirs {
-        let dir = repo_root.join(scope).join(".agents").join("checks");
-        for check in read_checks_dir(&dir, scope, LoadMode::Strict)? {
+        let dir = canonical_repo_root
+            .join(scope)
+            .join(".agents")
+            .join("checks");
+        for check in read_checks_dir(&canonical_repo_root, &dir, scope, LoadMode::Strict)? {
             let p = scope_priority(scope);
             record(check, p);
         }
     }
 
     let root_review = repo_root.join(".agents").join("REVIEW.md");
-    if root_review.is_file() {
-        let body = fs::read_to_string(&root_review)
-            .with_context(|| format!("read REVIEW.md {}", root_review.display()))?;
+    if let Some(body) = read_review_md(&root_review, &canonical_repo_root)? {
         let check = synthesize_review_md_check("", &root_review, &body);
         record(check, scope_priority(""));
     }
     for scope in &scope_dirs {
         let path = repo_root.join(scope).join(".agents").join("REVIEW.md");
-        if path.is_file() {
-            let body = fs::read_to_string(&path)
-                .with_context(|| format!("read REVIEW.md {}", path.display()))?;
+        if let Some(body) = read_review_md(&path, &canonical_repo_root)? {
             let check = synthesize_review_md_check(scope, &path, &body);
             let p = scope_priority(scope);
             record(check, p);
@@ -379,9 +408,22 @@ enum LoadMode {
     Lenient,
 }
 
-fn read_checks_dir(dir: &Path, scope_dir: &str, mode: LoadMode) -> Result<Vec<Check>> {
-    if !dir.is_dir() {
+fn read_checks_dir(
+    scan_root: &Path,
+    dir: &Path,
+    scope_dir: &str,
+    mode: LoadMode,
+) -> Result<Vec<Check>> {
+    if !checks_dir_is_unlinked(scan_root, dir)? {
         return Ok(Vec::new());
+    }
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(Vec::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("inspect checks dir {}", dir.display()))
+        }
     }
     let mut out = Vec::new();
     let entries =
@@ -389,7 +431,7 @@ fn read_checks_dir(dir: &Path, scope_dir: &str, mode: LoadMode) -> Result<Vec<Ch
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        if !path.is_file() {
+        if !entry.file_type()?.is_file() {
             continue;
         }
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
@@ -418,6 +460,30 @@ fn read_checks_dir(dir: &Path, scope_dir: &str, mode: LoadMode) -> Result<Vec<Ch
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
+}
+
+fn checks_dir_is_unlinked(scan_root: &Path, dir: &Path) -> Result<bool> {
+    let relative = dir
+        .strip_prefix(scan_root)
+        .with_context(|| format!("checks dir {} is outside scan root", dir.display()))?;
+    let mut current = scan_root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Ok(false);
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Ok(false),
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(_) => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("inspect checks dir component {}", current.display()))
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// Priority of a scope for shadowing checks/overrides. Higher = closer.
@@ -708,6 +774,29 @@ tools: [Bash, Read, Grep]
         assert_eq!(result.checks[0].description.as_deref(), Some("repo"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn allows_symlinked_global_check_directories() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("repo");
+        fs::create_dir_all(&root).unwrap();
+        let global = dir.path().join("global");
+        write(
+            &global.join("perf.md"),
+            "---\nname: perf\ndescription: global\n---\nglobal body",
+        );
+        let global_link = dir.path().join("global-link");
+        symlink(&global, &global_link).unwrap();
+
+        let result = discover_with_globals(&root, &[], std::slice::from_ref(&global_link)).unwrap();
+
+        assert_eq!(result.checks.len(), 1);
+        assert_eq!(result.checks[0].body, "global body");
+        assert_eq!(result.checks[0].path, global_link.join("perf.md"));
+    }
+
     #[test]
     fn user_check_named_repo_rules_is_not_overwritten_by_root_review_md() {
         let dir = tempdir().unwrap();
@@ -738,5 +827,96 @@ tools: [Bash, Read, Grep]
         );
         let result = discover_with_globals(root, &[], &[]).unwrap();
         assert_eq!(result.checks.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_symlinked_check_directories() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("repo");
+        let external_checks = dir.path().join("external-checks");
+        write(
+            &external_checks.join("secret.md"),
+            "---\nname: secret\n---\nexternal body",
+        );
+        fs::create_dir_all(root.join(".agents")).unwrap();
+        symlink(&external_checks, root.join(".agents/checks")).unwrap();
+
+        let result = discover_with_globals(&root, &[], &[]).unwrap();
+
+        assert!(result.checks.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_checks_behind_symlinked_agent_directory() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("repo");
+        let external_agents = dir.path().join("external-agents");
+        write(
+            &external_agents.join("checks/secret.md"),
+            "---\nname: secret\n---\nexternal body",
+        );
+        fs::create_dir_all(&root).unwrap();
+        symlink(&external_agents, root.join(".agents")).unwrap();
+
+        let result = discover_with_globals(&root, &[], &[]).unwrap();
+
+        assert!(result.checks.is_empty());
+    }
+
+    #[test]
+    fn strict_project_check_read_failures_are_not_skipped() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("repo");
+        let check = root.join(".agents/checks/oversized.md");
+        let oversized = "x".repeat(crate::scheduler::MAX_SCHEDULE_RECIPE_BYTES as usize + 1);
+        write(&check, &oversized);
+
+        let error = discover_with_globals(&root, &[], &[]).unwrap_err();
+
+        assert!(error.to_string().contains("read check file"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_review_md_symlinks_outside_repo() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("repo");
+        fs::create_dir_all(root.join(".agents")).unwrap();
+        fs::create_dir_all(root.join("api/.agents")).unwrap();
+        let root_secret = dir.path().join("root-secret.txt");
+        let scoped_secret = dir.path().join("scoped-secret.txt");
+        fs::write(&root_secret, "root secret").unwrap();
+        fs::write(&scoped_secret, "scoped secret").unwrap();
+        symlink(&root_secret, root.join(".agents/REVIEW.md")).unwrap();
+        symlink(&scoped_secret, root.join("api/.agents/REVIEW.md")).unwrap();
+
+        let result = discover_with_globals(&root, &["api/users.rs".to_string()], &[]).unwrap();
+
+        assert!(result.checks.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn allows_review_md_symlinks_within_repo() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join(".agents")).unwrap();
+        fs::write(root.join("review-rules.md"), "review rules").unwrap();
+        symlink(root.join("review-rules.md"), root.join(".agents/REVIEW.md")).unwrap();
+
+        let result = discover_with_globals(root, &[], &[]).unwrap();
+
+        assert_eq!(result.checks.len(), 1);
+        assert!(result.checks[0].body.ends_with("review rules"));
     }
 }

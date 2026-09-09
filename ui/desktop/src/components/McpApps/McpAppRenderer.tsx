@@ -34,12 +34,12 @@ import type { CallToolResult, JSONRPCRequest, Tool } from '@modelcontextprotocol
 import { GripHorizontal, Maximize2, PictureInPicture2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { callMcpAppTool, readMcpAppResource } from '../../acp/mcp-apps';
+import { httpBaseFromAcpWebSocketUrl, isLoopbackAcpWebSocketUrl } from '../../acp/url';
 import { getCachedTools } from './toolsCache';
 import { AppEvents } from '../../constants/events';
 import { useTheme } from '../../contexts/ThemeContext';
 import { cn } from '../../utils';
 import { errorMessage } from '../../utils/conversionUtils';
-import { getProtocol, isProtocolSafe } from '../../utils/urlSecurity';
 import { defineMessages, useIntl } from '../../i18n';
 import FlyingBird from '../FlyingBird';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
@@ -97,26 +97,6 @@ const i18n = defineMessages({
   invalidUrl: {
     id: 'mcpAppRenderer.invalidUrl',
     defaultMessage: 'Invalid URL',
-  },
-  openExternalLinkTitle: {
-    id: 'mcpAppRenderer.openExternalLinkTitle',
-    defaultMessage: 'Open External Link',
-  },
-  openProtocolLink: {
-    id: 'mcpAppRenderer.openProtocolLink',
-    defaultMessage: 'Open {protocol} link?',
-  },
-  openLinkDetail: {
-    id: 'mcpAppRenderer.openLinkDetail',
-    defaultMessage: 'This will open: {url}',
-  },
-  cancelButton: {
-    id: 'mcpAppRenderer.cancelButton',
-    defaultMessage: 'Cancel',
-  },
-  openButton: {
-    id: 'mcpAppRenderer.openButton',
-    defaultMessage: 'Open',
   },
   failedToLoadResource: {
     id: 'mcpAppRenderer.failedToLoadResource',
@@ -181,31 +161,37 @@ function getContainerDimensions(
 
 async function fetchMcpAppProxyUrl(csp: McpUiResourceCsp | null): Promise<string | null> {
   try {
-    const baseUrl = await window.electron.getGoosedHostPort();
+    const acpUrl = await window.electron.getAcpUrl();
     const secretKey = await window.electron.getSecretKey();
 
-    if (!baseUrl || !secretKey) {
-      console.error('[McpAppRenderer] Failed to get goosed host/port or secret key');
+    if (!acpUrl || !secretKey) {
+      console.error('[McpAppRenderer] Failed to get ACP URL or secret key');
       return null;
     }
 
-    const params = new URLSearchParams();
-    params.set('secret', secretKey);
+    if (!isLoopbackAcpWebSocketUrl(acpUrl)) {
+      console.error('[McpAppRenderer] MCP app proxy is only supported for loopback ACP backends');
+      return null;
+    }
+
+    const httpBase = httpBaseFromAcpWebSocketUrl(acpUrl).replace(/\/+$/, '');
+    const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
+    proxyUrl.searchParams.set('secret', secretKey);
 
     if (csp?.connectDomains?.length) {
-      params.set('connect_domains', csp.connectDomains.join(','));
+      proxyUrl.searchParams.set('connect_domains', csp.connectDomains.join(','));
     }
     if (csp?.resourceDomains?.length) {
-      params.set('resource_domains', csp.resourceDomains.join(','));
+      proxyUrl.searchParams.set('resource_domains', csp.resourceDomains.join(','));
     }
     if (csp?.frameDomains?.length) {
-      params.set('frame_domains', csp.frameDomains.join(','));
+      proxyUrl.searchParams.set('frame_domains', csp.frameDomains.join(','));
     }
     if (csp?.baseUriDomains?.length) {
-      params.set('base_uri_domains', csp.baseUriDomains.join(','));
+      proxyUrl.searchParams.set('base_uri_domains', csp.baseUriDomains.join(','));
     }
 
-    return `${baseUrl}/mcp-app-proxy?${params.toString()}`;
+    return proxyUrl.toString();
   } catch (error) {
     console.error('[McpAppRenderer] Error fetching MCP App Proxy URL:', error);
     return null;
@@ -253,7 +239,9 @@ interface GooseAppFrameProps {
   onMessage: (params: {
     content: Array<{ type: string; text?: string }>;
   }) => Promise<Record<string, unknown>>;
-  onOpenLink: (params: { url: string }) => Promise<{ status: 'success' | 'error'; message?: string }>;
+  onOpenLink: (params: {
+    url: string;
+  }) => Promise<{ status: 'success' | 'error'; message?: string }>;
   onCallTool: (params: {
     name: string;
     arguments?: Record<string, unknown>;
@@ -334,12 +322,9 @@ function GooseAppFrame({
       logging: {},
       message: { text: {} },
     };
-    const bridge = new AppBridge(
-      null,
-      { name: 'MCP-UI Host', version: '1.0.0' },
-      capabilities,
-      { hostContext: hostContextRef.current }
-    );
+    const bridge = new AppBridge(null, { name: 'MCP-UI Host', version: '1.0.0' }, capabilities, {
+      hostContext: hostContextRef.current,
+    });
     bridge.onmessage = (params) => onMessageRef.current(params);
     bridge.onopenlink = (params) => onOpenLinkRef.current(params);
     bridge.onloggingmessage = (params) => onLoggingMessageRef.current(params);
@@ -793,31 +778,15 @@ export default function McpAppRenderer({
 
   const handleOpenLink = useCallback(
     async ({ url }: { url: string }) => {
-      if (isProtocolSafe(url)) {
-        await window.electron.openExternal(url);
+      const result = await window.electron.openExternal(url);
+      if (result === 'opened') {
         return { status: 'success' as const };
       }
 
-      const protocol = getProtocol(url);
-      if (!protocol) {
-        return { status: 'error' as const, message: intl.formatMessage(i18n.invalidUrl) };
-      }
-
-      const result = await window.electron.showMessageBox({
-        type: 'question',
-        buttons: [intl.formatMessage(i18n.cancelButton), intl.formatMessage(i18n.openButton)],
-        defaultId: 0,
-        title: intl.formatMessage(i18n.openExternalLinkTitle),
-        message: intl.formatMessage(i18n.openProtocolLink, { protocol }),
-        detail: intl.formatMessage(i18n.openLinkDetail, { url }),
-      });
-
-      if (result.response !== 1) {
-        return { status: 'error' as const, message: 'User cancelled' };
-      }
-
-      await window.electron.openExternal(url);
-      return { status: 'success' as const };
+      return {
+        status: 'error' as const,
+        message: result === 'cancelled' ? 'User cancelled' : intl.formatMessage(i18n.invalidUrl),
+      };
     },
     [intl]
   );

@@ -1,0 +1,331 @@
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'macOS Rust target'
+        required: true
+        type: choice
+        default: aarch64-apple-darwin
+        options:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+      signing:
+        description: 'Whether to perform signing and notarization'
+        required: false
+        default: false
+        type: boolean
+      package_cli:
+        description: 'Whether to package and upload the CLI artifact'
+        required: false
+        default: false
+        type: boolean
+      package_desktop:
+        description: 'Whether to package and upload the Desktop artifact'
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to set for the build'
+        required: false
+        default: ""
+        type: string
+      target:
+        description: 'macOS Rust target: aarch64-apple-darwin or x86_64-apple-darwin'
+        required: true
+        type: string
+      signing:
+        description: 'Whether to perform signing and notarization'
+        required: false
+        default: false
+        type: boolean
+      package_cli:
+        description: 'Whether to package and upload the CLI artifact'
+        required: false
+        default: false
+        type: boolean
+      package_desktop:
+        description: 'Whether to package and upload the Desktop artifact'
+        required: false
+        default: false
+        type: boolean
+      environment:
+        description: 'GitHub Environment containing signing secrets. Leave empty for unsigned builds.'
+        required: false
+        default: ''
+        type: string
+      ref:
+        description: 'Git ref to checkout (branch, tag, or SHA). Defaults to main branch if not specified.'
+        required: false
+        type: string
+        default: ''
+
+name: "Bundle CLI and Desktop (macOS)"
+
+jobs:
+  build-goose:
+    name: Build Goose (macOS)
+    runs-on: ${{ inputs.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    permissions:
+      contents: read
+    steps:
+      - name: Debug workflow info
+        env:
+          WORKFLOW_NAME: ${{ github.workflow }}
+          WORKFLOW_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_SIGNING: ${{ inputs.signing }}
+          INPUT_PACKAGE_CLI: ${{ inputs.package_cli }}
+          INPUT_PACKAGE_DESKTOP: ${{ inputs.package_desktop }}
+        run: |
+          echo "=== Workflow Information ==="
+          echo "Workflow: ${WORKFLOW_NAME}"
+          echo "Ref: ${WORKFLOW_REF}"
+          echo "Event: ${EVENT_NAME}"
+          echo "Repo: ${REPOSITORY}"
+          echo ""
+          echo "=== Input Parameters ==="
+          echo "Build ref: ${INPUT_REF:-<default branch>}"
+          echo "Version: ${INPUT_VERSION:-not set}"
+          echo "Target: ${INPUT_TARGET}"
+          echo "Signing: ${INPUT_SIGNING:-false}"
+          echo "Package CLI: ${INPUT_PACKAGE_CLI:-false}"
+          echo "Package Desktop: ${INPUT_PACKAGE_DESKTOP:-false}"
+
+      - name: Check initial disk space
+        run: df -h
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      - name: Debug git status
+        run: |
+          echo "=== Git Status ==="
+          git status
+          echo ""
+          echo "=== Current Commit ==="
+          git rev-parse HEAD
+          git rev-parse --abbrev-ref HEAD
+          echo ""
+          echo "=== Recent Commits ==="
+          git log --oneline -n 5
+          echo ""
+          echo "=== Remote Branches ==="
+          git branch -r
+
+      - name: Update Cargo version
+        if: ${{ inputs.version != '' }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: bash scripts/set-cargo-version.sh "$VERSION"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-macos-deployment-target-12' || 'macos-deployment-target-12' }}
+
+      - name: Build goose
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          source ./bin/activate-hermit
+          rustup target add "$TARGET"
+          cargo build --release -p goose-cli --bin goose --target "$TARGET"
+
+      - name: Prepare binary artifact
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          mkdir -p artifacts
+          cp "target/${TARGET}/release/goose" "artifacts/internal-goose-${TARGET}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: internal-goose-${{ inputs.target }}
+          path: artifacts/internal-goose-${{ inputs.target }}
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  package-cli:
+    name: Package CLI (macOS)
+    if: ${{ inputs.package_cli }}
+    needs: build-goose
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Download binary artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: internal-goose-${{ inputs.target }}
+          path: package
+
+      - name: Package CLI
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          mv "package/internal-goose-${TARGET}" package/goose
+          chmod +x package/goose
+          mkdir -p dist
+          tar -cjf "dist/goose-${TARGET}.tar.bz2" -C package .
+          tar -czf "dist/goose-${TARGET}.tar.gz" -C package .
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: goose-${{ inputs.target }}
+          path: |
+            dist/goose-${{ inputs.target }}.tar.bz2
+            dist/goose-${{ inputs.target }}.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+  package-desktop:
+    name: Package Desktop (macOS)
+    if: ${{ inputs.package_desktop }}
+    needs: build-goose
+    runs-on: ${{ inputs.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
+    environment: ${{ inputs.environment || '' }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    permissions:
+      contents: read
+    outputs:
+      artifact-url: ${{ steps.upload-app-bundle.outputs.artifact-url }}
+    steps:
+      - name: Check initial disk space
+        run: df -h
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      - name: Update desktop version
+        if: ${{ inputs.version != '' }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          source ./bin/activate-hermit
+          cd ui/desktop
+          npm pkg set "version=${VERSION}"
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: internal-goose-${{ inputs.target }}
+          path: ui/desktop/src/bin
+
+      - name: Prepare desktop backend
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          rm -f ui/desktop/src/bin/goose
+          mv "ui/desktop/src/bin/internal-goose-${TARGET}" ui/desktop/src/bin/goose
+          chmod +x ui/desktop/src/bin/goose
+          ls -la ui/desktop/src/bin/
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ui/desktop/node_modules
+            .hermit/node/cache
+          key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-pnpm-cache-v1' || 'macos-pnpm-cache-v1' }}-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-pnpm-cache-v1' || 'macos-pnpm-cache-v1' }}-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
+        working-directory: ui/desktop
+
+      - name: Configure for Intel build
+        if: ${{ inputs.target == 'x86_64-apple-darwin' }}
+        run: jq '.build.mac.target[0].arch = "x64"' package.json > package.json.tmp && mv package.json.tmp package.json
+        working-directory: ui/desktop
+
+      - name: Import Apple signing certificate
+        if: ${{ inputs.signing }}
+        uses: ./.github/actions/apple-codesign
+        with:
+          certificate-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Check disk space before bundling
+        run: df -h
+
+      - name: Build App
+        env:
+          APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
+          BUNDLE_SCRIPT: ${{ inputs.target == 'x86_64-apple-darwin' && 'bundle:intel' || 'bundle:default' }}
+        run: |
+          source ../../bin/activate-hermit
+          attempt=0
+          max_attempts=2
+          until [ $attempt -ge $max_attempts ]; do
+            pnpm run "$BUNDLE_SCRIPT" && break
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt failed. Retrying..."
+            sleep 5
+          done
+          if [ $attempt -ge $max_attempts ]; then
+            echo "Action failed after $max_attempts attempts."
+            exit 1
+          fi
+        working-directory: ui/desktop
+
+      - name: Verify macOS updater resources
+        env:
+          APP_PATH: ${{ inputs.target == 'x86_64-apple-darwin' && 'out/Goose-darwin-x64/Goose.app' || 'out/Goose-darwin-arm64/Goose.app' }}
+        run: node scripts/verify-mac-update-resources.js "$APP_PATH"
+        working-directory: ui/desktop
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+      - name: Final cleanup before artifact upload
+        run: |
+          rm -f ui/desktop/src/bin/goose
+          df -h
+
+      - name: Upload Desktop artifact
+        id: upload-app-bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ inputs.target == 'x86_64-apple-darwin' && 'Goose-darwin-x64' || 'Goose-darwin-arm64' }}
+          path: ${{ inputs.target == 'x86_64-apple-darwin' && 'ui/desktop/out/Goose-darwin-x64/Goose_intel_mac.zip' || 'ui/desktop/out/Goose-darwin-arm64/Goose.zip' }}
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Quick launch test (macOS)
+        env:
+          APP_PATH: ${{ inputs.target == 'x86_64-apple-darwin' && 'ui/desktop/out/Goose-darwin-x64/Goose.app' || 'ui/desktop/out/Goose-darwin-arm64/Goose.app' }}
+        run: |
+          xattr -cr "$APP_PATH"
+          echo "Opening Goose.app..."
+          open -g "$APP_PATH"
+          sleep 5
+
+          if pgrep -f "Goose.app/Contents/MacOS/Goose" > /dev/null; then
+            echo "App appears to be running."
+          else
+            echo "App did not stay open. Possible crash or startup error."
+            exit 1
+          fi
+          pkill -f "Goose.app/Contents/MacOS/Goose"

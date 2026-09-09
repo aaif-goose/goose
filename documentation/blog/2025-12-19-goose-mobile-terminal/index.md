@@ -50,7 +50,7 @@ A session in goose from native terminal, cli, desktop, IDE and now mobile are al
 
 It doesn't matter how you use goose. Your sessions are yours, and you can use and re-use them from anywhere: desktop, terminal, or mobile (and all on your machine). 
 
-Try them out and let us know what you think in our [Discord](https://discord.gg/goose-oss)!
+Try them out and let us know what you think in our [Discord](https://discord.gg/n8R5VaWDAn)!
 
 <head>
   <meta property="og:title" content="goose Mobile Access and Native Terminal Support" />

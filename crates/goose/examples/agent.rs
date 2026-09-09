@@ -4,8 +4,8 @@ use goose::agents::{Agent, AgentEvent, ExtensionConfig, SessionConfig};
 use goose::config::{GooseMode, DEFAULT_EXTENSION_DESCRIPTION, DEFAULT_EXTENSION_TIMEOUT};
 use goose::conversation::message::Message;
 use goose::providers::create_with_named_model;
-use goose::providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use goose::session::session_manager::SessionType;
+use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use std::path::PathBuf;
 
 #[tokio::main]

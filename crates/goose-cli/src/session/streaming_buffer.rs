@@ -224,6 +224,19 @@ static INLINE_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
 #[derive(Default)]
 pub struct MarkdownBuffer {
     buffer: String,
+    checkpoint: ScanCheckpoint,
+}
+
+/// Scan progress carried across `push` calls: `pos` is a line-start byte
+/// offset in `buffer`; `state`/`last_safe` are the parse state and last clean
+/// boundary as of `pos`. Only persisted at line starts on or before
+/// `stable_scan_limit`, past which line-start decisions could still be
+/// re-interpreted as the buffer grows.
+#[derive(Default, Debug, Clone)]
+struct ScanCheckpoint {
+    pos: usize,
+    state: ParseState,
+    last_safe: usize,
 }
 
 /// Tracks the current parsing state for markdown constructs.
@@ -287,6 +300,10 @@ impl MarkdownBuffer {
             // - The regex tokenizer operates on &str which guarantees UTF-8
             let to_render = self.buffer[..safe_end].to_string();
             self.buffer = self.buffer[safe_end..].to_string();
+            // A drain changes how the remainder parses (its first byte becomes
+            // a line start), so the next scan must start from scratch exactly
+            // like a full rescan of the remainder would.
+            self.checkpoint = ScanCheckpoint::default();
             Some(truncate_code_blocks(&to_render))
         } else {
             None
@@ -298,19 +315,59 @@ impl MarkdownBuffer {
     /// Call this at the end of a stream to get any buffered content,
     /// even if markdown constructs are unclosed.
     pub fn flush(&mut self) -> String {
+        self.checkpoint = ScanCheckpoint::default();
         std::mem::take(&mut self.buffer)
     }
 
-    /// Find the last byte position where the parse state is "clean".
-    fn find_safe_end(&self) -> usize {
-        let mut state = ParseState::default();
-        let mut last_safe: usize = 0;
+    /// Byte offset where the buffer's "mutable tail" begins: the trailing
+    /// incomplete line, plus any run of complete lines above it containing
+    /// only whitespace and/or fence characters. Line-start decisions inside
+    /// this region (blank-line lookahead, fence runs still growing at the
+    /// buffer edge) can be re-interpreted when more bytes arrive, so no
+    /// checkpoint may be persisted past it.
+    fn stable_scan_limit(&self) -> usize {
+        let bytes = self.buffer.as_bytes();
+        let mut limit = match self.buffer.rfind('\n') {
+            Some(nl) => nl + 1,
+            None => 0,
+        };
+        while limit > 0 {
+            let prev_start = match self.buffer[..limit - 1].rfind('\n') {
+                Some(nl) => nl + 1,
+                None => 0,
+            };
+            let reinterpretable = bytes[prev_start..limit]
+                .iter()
+                .all(|&c| matches!(c, b'`' | b'~' | b' ' | b'\t' | b'\r' | b'\n'));
+            if !reinterpretable {
+                break;
+            }
+            limit = prev_start;
+        }
+        limit
+    }
+
+    /// Find the last byte position where the parse state is "clean",
+    /// resuming from the previous call's checkpoint so each push scans only
+    /// the new tail of the buffer.
+    fn find_safe_end(&mut self) -> usize {
+        let mut state = self.checkpoint.state.clone();
+        let mut last_safe: usize = self.checkpoint.last_safe;
         let bytes = self.buffer.as_bytes();
         let len = bytes.len();
-        let mut pos: usize = 0;
+        let mut pos: usize = self.checkpoint.pos;
+        let stable_limit = self.stable_scan_limit();
 
         while pos < len {
             let at_line_start = pos == 0 || bytes[pos - 1] == b'\n';
+
+            if at_line_start && pos <= stable_limit {
+                self.checkpoint = ScanCheckpoint {
+                    pos,
+                    state: state.clone(),
+                    last_safe,
+                };
+            }
 
             if at_line_start {
                 if let Some(new_pos) = self.process_line_start(&mut state, pos) {
@@ -524,10 +581,8 @@ impl MarkdownBuffer {
                 }
             }
             "]" => {}
-            ")" => {
-                if state.in_link_url {
-                    state.in_link_url = false;
-                }
+            ")" if state.in_link_url => {
+                state.in_link_url = false;
             }
             _ => {}
         }
@@ -824,5 +879,155 @@ mod tests {
         assert_eq!(parse_positive_lines(""), None);
         assert_eq!(parse_positive_lines("not-a-number"), None);
         assert_eq!(parse_positive_lines("3.14"), None);
+    }
+
+    // ===========================================
+    // Incremental scan checkpointing
+    // ===========================================
+
+    #[test_case(
+        &["``", "`rust\n", "fn main() {}\n", "``", "`\n"],
+        &["```rust\nfn main() {}\n```\n"]
+        ; "fence marker split across pushes"
+    )]
+    #[test_case(
+        &["intro\n\n", "```rust\n", "code\n", "```\n"],
+        &["intro\n\n", "```rust\ncode\n```\n"]
+        ; "blank line drained before fence arrives"
+    )]
+    #[test_case(
+        &["a **b", "** c\nd `e", "` f\n"],
+        &["a ", "**b** c\nd ", "`e` f\n"]
+        ; "consecutive split constructs drain independently"
+    )]
+    fn test_checkpoint_boundaries(chunks: &[&str], expected: &[&str]) {
+        assert_eq!(stream(chunks), expected);
+    }
+
+    /// Streaming any chunking of an input must emit exactly the input,
+    /// in order, once flushed — regardless of where checkpoints landed.
+    #[test]
+    fn chunked_output_reassembles_input() {
+        let corpus = "# Title\n\nSome **bold** and `code`.\n\n\
+                      ```python\nfor i in range(3):\n    print(i)\n```\n\n\
+                      A [link](https://example.com) and *italic*.\n\
+                      | a | b |\n|---|---|\n| 1 | 2 |\n\ntail";
+        for chunk_size in [1, 2, 3, 7, 16, corpus.len()] {
+            let chunks: Vec<&str> = corpus
+                .as_bytes()
+                .chunks(chunk_size)
+                .map(|c| std::str::from_utf8(c).unwrap())
+                .collect();
+            let reassembled = stream(&chunks).concat();
+            assert_eq!(reassembled, corpus, "chunk_size={chunk_size}");
+        }
+    }
+
+    /// Per-push scanning must not degrade with accumulated block size.
+    /// Run manually for perf evidence:
+    ///   cargo test -p goose-cli --release -- --ignored large_code_block --nocapture
+    #[test]
+    #[ignore]
+    fn large_code_block_streams_in_linear_time() {
+        let line = "let x = compute_something_interesting(1234);\n";
+        let start = std::time::Instant::now();
+        let mut buf = MarkdownBuffer::new();
+        buf.push("```rust\n");
+        for _ in 0..4000 {
+            for chunk in line.as_bytes().chunks(8) {
+                buf.push(std::str::from_utf8(chunk).unwrap());
+            }
+        }
+        let out = buf.push("```\n").expect("block should drain at close");
+        let elapsed = start.elapsed();
+        println!("4000-line block, 8-byte chunks: {elapsed:?}");
+        assert!(out.starts_with("```rust\n"));
+        assert!(buf.flush().is_empty());
+    }
+
+    /// Differential check: the checkpointed scan must produce exactly the
+    /// same drain sequence as a full rescan from scratch (a zeroed checkpoint
+    /// degenerates to the pre-checkpoint algorithm), across randomized
+    /// markdown streams and randomized chunk boundaries.
+    // SAFETY: `j` is advanced to a char boundary before every slice, and `i`
+    // always takes its value from a previous `j`.
+    #[allow(clippy::string_slice)]
+    #[test]
+    fn incremental_scan_matches_full_rescan_on_random_streams() {
+        const TOKENS: &[&str] = &[
+            "text ",
+            "word",
+            "\u{e9}\u{2713}",
+            "\n",
+            "\n\n",
+            " ",
+            "**",
+            "*",
+            "___",
+            "~~",
+            "`",
+            "``",
+            "```",
+            "```rust\n",
+            "~~~",
+            "#",
+            "## ",
+            "|",
+            "| a | b |\n",
+            "[",
+            "](",
+            ")",
+            "![",
+            "]",
+            "\\*",
+            "code line\n",
+            "```\n",
+        ];
+        let mut seed: u64 = 0x00C0_FFEE;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as usize
+        };
+
+        for case in 0..500 {
+            let doc: String = (0..(next() % 80 + 1))
+                .map(|_| TOKENS[next() % TOKENS.len()])
+                .collect();
+
+            let mut incremental = MarkdownBuffer::new();
+            let mut full_rescan = MarkdownBuffer::new();
+            let mut inc_out: Vec<String> = Vec::new();
+            let mut full_out: Vec<String> = Vec::new();
+
+            let mut i = 0;
+            while i < doc.len() {
+                let mut j = (i + next() % 9 + 1).min(doc.len());
+                while !doc.is_char_boundary(j) {
+                    j += 1;
+                }
+                let chunk = &doc[i..j];
+                i = j;
+
+                if let Some(s) = incremental.push(chunk) {
+                    inc_out.push(s);
+                }
+                full_rescan.checkpoint = ScanCheckpoint::default();
+                if let Some(s) = full_rescan.push(chunk) {
+                    full_out.push(s);
+                }
+                assert_eq!(
+                    incremental.buffer, full_rescan.buffer,
+                    "case {case}: buffers diverged, doc={doc:?}"
+                );
+            }
+            inc_out.push(incremental.flush());
+            full_out.push(full_rescan.flush());
+            assert_eq!(
+                inc_out, full_out,
+                "case {case}: outputs diverged, doc={doc:?}"
+            );
+        }
     }
 }

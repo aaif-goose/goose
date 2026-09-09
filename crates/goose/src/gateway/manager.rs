@@ -4,7 +4,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use utoipa::ToSchema;
 
 use crate::config::Config;
 use crate::execution::manager::AgentManager;
@@ -32,9 +31,10 @@ pub struct GatewayInstance {
     pub gateway: Arc<dyn Gateway>,
     pub cancel: CancellationToken,
     pub handle: tokio::task::JoinHandle<()>,
+    handler: GatewayHandler,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairedUserInfo {
     pub platform: String,
     pub user_id: String,
@@ -43,7 +43,7 @@ pub struct PairedUserInfo {
     pub paired_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayStatus {
     pub gateway_type: String,
     pub running: bool,
@@ -130,6 +130,7 @@ impl GatewayManager {
             .remove(gateway_type)
             .ok_or_else(|| anyhow::anyhow!("Gateway '{}' is not running", gateway_type))?;
 
+        instance.handler.deny_pending_confirmations().await;
         instance.cancel.cancel();
         let _ = instance.handle.await;
 
@@ -141,6 +142,7 @@ impl GatewayManager {
     pub async fn remove_gateway(&self, gateway_type: &str) -> anyhow::Result<()> {
         // Stop if running (ignore error if not running).
         if let Some(instance) = self.gateways.write().await.remove(gateway_type) {
+            instance.handler.deny_pending_confirmations().await;
             instance.cancel.cancel();
             let _ = instance.handle.await;
         }
@@ -196,13 +198,14 @@ impl GatewayManager {
             gateway.clone(),
             config.clone(),
         );
+        let handler_for_task = handler.clone();
 
         let gateway_clone = gateway.clone();
         let cancel_clone = cancel.clone();
         let gateway_type_for_task = gw_type.clone();
 
         let handle = tokio::spawn(async move {
-            if let Err(e) = gateway_clone.start(handler, cancel_clone).await {
+            if let Err(e) = gateway_clone.start(handler_for_task, cancel_clone).await {
                 tracing::error!(gateway = %gateway_type_for_task, error = %e, "gateway stopped with error");
             }
         });
@@ -212,6 +215,7 @@ impl GatewayManager {
             gateway,
             cancel,
             handle,
+            handler,
         };
 
         self.gateways.write().await.insert(gw_type, instance);
@@ -223,6 +227,7 @@ impl GatewayManager {
         let instances: Vec<(String, GatewayInstance)> =
             self.gateways.write().await.drain().collect();
         for (gateway_type, instance) in instances {
+            instance.handler.deny_pending_confirmations().await;
             instance.cancel.cancel();
             let _ = instance.handle.await;
             tracing::info!(gateway = %gateway_type, "gateway stopped");

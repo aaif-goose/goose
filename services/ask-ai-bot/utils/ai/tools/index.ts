@@ -5,6 +5,11 @@ import { listCodebaseFiles, searchCodebase } from "./codebase-search";
 import { viewCodebaseFiles } from "./codebase-viewer";
 import { searchDocs } from "./docs-search";
 import { viewDocs } from "./docs-viewer";
+import { getGitHubItem, getGitHubItemComments, searchGitHub } from "./github";
+
+function truncateBody(body: string, maxLen: number = 500): string {
+  return body.length > maxLen ? body.slice(0, maxLen) + "..." : body;
+}
 
 export const aiTools = {
   search_docs: tool({
@@ -117,7 +122,7 @@ export const aiTools = {
       filePaths: z
         .union([z.string(), z.array(z.string())])
         .describe(
-          "Path or array of paths to source files relative to the repo root (example: 'crates/goose/src/agents/agent.rs' or ['ui/desktop/src/main.ts', 'crates/goose-server/src/main.rs'])",
+          "Path or array of paths to source files relative to the repo root (example: 'crates/goose/src/agents/agent.rs' or ['ui/desktop/src/main.ts', 'crates/goose/src/acp/server.rs'])",
         ),
       startLine: z
         .number()
@@ -170,6 +175,140 @@ export const aiTools = {
           error instanceof Error ? error.message : "Unknown error";
         logger.error(`Error listing codebase files: ${errorMsg}`);
         return `Error listing files: ${errorMsg}`;
+      }
+    },
+  }),
+  search_github: tool({
+    description:
+      "Search GitHub issues and pull requests in the aaif-goose/goose repository. Use this to find bugs, feature requests, or discussions. Results can be sorted by recency, relevance, or comment count.",
+    inputSchema: z.object({
+      query: z
+        .string()
+        .describe(
+          "Search query (supports GitHub qualifiers like 'label:bug', 'is:issue', 'is:pr', 'author:username')",
+        ),
+      sort: z
+        .enum(["created", "updated", "comments"])
+        .optional()
+        .describe(
+          "Sort by created date, last updated, or comment count. Omit for relevance-based sorting (default).",
+        ),
+      order: z
+        .enum(["asc", "desc"])
+        .optional()
+        .describe("Sort order (default: desc)"),
+      state: z
+        .enum(["open", "closed", "all"])
+        .optional()
+        .describe("Filter by issue state (default: all)"),
+      limit: z
+        .number()
+        .optional()
+        .describe("Maximum number of results (default 10)"),
+    }),
+    execute: async ({ query, sort, order, state, limit }) => {
+      try {
+        const results = await searchGitHub(query, {
+          sort,
+          order,
+          state,
+          limit,
+        });
+
+        if (results.length === 0) {
+          return "Nothing found on GitHub matching your query. Try different keywords.";
+        }
+
+        return results
+          .map((r) => {
+            const status =
+              r.state === "closed"
+                ? r.isMerged
+                  ? "merged"
+                  : "closed"
+                : r.state;
+            return (
+              `**#${r.number}** (${status}) - ${r.title}\n` +
+              `Author: ${r.author} | Created: ${r.createdAt.slice(0, 10)} | Comments: ${r.comments}\n` +
+              `Labels: ${r.labels.join(", ") || "none"}\n` +
+              `${r.body ? truncateBody(r.body) + "\n" : ""}` +
+              `URL: <${r.url}>`
+            );
+          })
+          .join("\n\n");
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : "Unknown error";
+        logger.error(`Error searching GitHub: ${errorMsg}`);
+        return `Error searching GitHub: ${errorMsg}`;
+      }
+    },
+  }),
+  get_github_issue_or_pr: tool({
+    description:
+      "Get detailed information about a specific GitHub issue or pull request in the aaif-goose/goose repository, including its description and comments.",
+    inputSchema: z.object({
+      issueNumber: z.number().describe("The issue or pull request number"),
+      includeComments: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to include comments in the response (default: true)",
+        ),
+      commentLimit: z
+        .number()
+        .optional()
+        .describe("Maximum number of comments to fetch (default: 30)"),
+    }),
+    execute: async ({
+      issueNumber,
+      includeComments = true,
+      commentLimit = 30,
+    }) => {
+      try {
+        const item = await getGitHubItem(issueNumber);
+
+        const status =
+          item.state === "closed"
+            ? item.isMerged
+              ? "merged"
+              : "closed"
+            : item.state;
+        let result =
+          `## #${item.number}: ${item.title}\n` +
+          `**State:** ${status} | **Author:** ${item.author}\n` +
+          `**Created:** ${item.createdAt} | **Updated:** ${item.updatedAt}\n` +
+          `**Labels:** ${item.labels.join(", ") || "none"}\n` +
+          `**URL:** <${item.url}>\n\n`;
+
+        if (item.body) {
+          result += `**Description:**\n${item.body.slice(0, 4000)}\n`;
+        }
+
+        if (includeComments && item.comments > 0) {
+          const comments = await getGitHubItemComments(
+            issueNumber,
+            commentLimit,
+          );
+          result += `\n**Comments (${comments.length}):**\n`;
+          result += comments
+            .slice(0, commentLimit)
+            .map(
+              (c) =>
+                `\n**${c.author}** (${c.createdAt.slice(0, 10)}):\n${c.body.slice(0, 1500)}`,
+            )
+            .join("\n---");
+          if (item.comments > comments.length) {
+            result += `\n\n... and ${item.comments - comments.length} more comments. Use get_github_issue_or_pr with includeComments=true and a larger commentLimit to fetch more.`;
+          }
+        }
+
+        return result;
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : "Unknown error";
+        logger.error(`Error getting GitHub item: ${errorMsg}`);
+        return `Error getting item: ${errorMsg}`;
       }
     },
   }),

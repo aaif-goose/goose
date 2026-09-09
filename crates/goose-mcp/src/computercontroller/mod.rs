@@ -1,116 +1,30 @@
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 use crate::subprocess::merged_path;
-use crate::subprocess::SubprocessExt;
 #[cfg(target_os = "macos")]
 use base64::Engine;
 use etcetera::{choose_app_strategy, AppStrategy};
 use indoc::{formatdoc, indoc};
-use reqwest::{Client, Url};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        AnnotateAble, CallToolResult, Content, ErrorCode, ErrorData, Implementation,
-        InitializeResult, ListResourcesResult, PaginatedRequestParams, RawResource,
-        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+        CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
         ServerCapabilities, ServerInfo,
     },
     schemars::JsonSchema,
-    service::RequestContext,
-    tool, tool_handler, tool_router, RoleServer, ServerHandler,
+    tool, tool_handler, tool_router, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, sync::Mutex};
-use tokio::process::Command;
+use std::{fs, path::PathBuf};
 
 #[cfg(target_os = "macos")]
-use rmcp::model::Role;
-#[cfg(target_os = "macos")]
-use std::sync::atomic::{AtomicBool, Ordering};
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 mod docx_tool;
 mod pdf_tool;
 mod xlsx_tool;
-
-mod platform;
-use platform::{create_system_automation, SystemAutomation};
-
-/// Enum for save_as parameter in web_scrape tool
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum SaveAsFormat {
-    /// Save as text (for HTML pages)
-    #[default]
-    Text,
-    /// Save as JSON (for API responses)
-    Json,
-    /// Save as binary (for images and other files)
-    Binary,
-}
-
-/// Parameters for the web_scrape tool
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct WebScrapeParams {
-    /// The URL to fetch content from
-    pub url: String,
-    /// Format of the response.
-    #[serde(default)]
-    pub save_as: SaveAsFormat,
-}
-
-/// Enum for language parameter in automation_script tool
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum ScriptLanguage {
-    /// Shell/Bash script
-    Shell,
-    /// Batch script (Windows)
-    Batch,
-    /// Ruby script
-    Ruby,
-    /// PowerShell script
-    Powershell,
-}
-
-/// Enum for command parameter in cache tool
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum CacheCommand {
-    /// List all cached files
-    List,
-    /// View content of a cached file
-    View,
-    /// Delete a cached file
-    Delete,
-    /// Clear all cached files
-    Clear,
-}
-
-/// Parameters for the automation_script tool
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct AutomationScriptParams {
-    /// The scripting language to use
-    #[serde(rename = "language")]
-    pub language: ScriptLanguage,
-    /// The script content
-    pub script: String,
-    /// Whether to save the script output to a file
-    #[serde(default)]
-    pub save_output: bool,
-}
-
-/// Parameters for the computer_control tool (Windows, Linux)
-#[cfg(not(target_os = "macos"))]
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ComputerControlParams {
-    /// The automation script content (PowerShell for Windows, shell for Linux)
-    pub script: String,
-    /// Whether to save the script output to a file
-    #[serde(default)]
-    pub save_output: bool,
-}
 
 /// Parameters for the computer_control tool (macOS — Peekaboo CLI passthrough)
 #[cfg(target_os = "macos")]
@@ -131,15 +45,6 @@ pub struct ComputerControlParams {
     /// Useful after click/type actions to see the updated UI state.
     #[serde(default)]
     pub capture_screenshot: bool,
-}
-
-/// Parameters for the cache tool
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct CacheParams {
-    /// The command to perform
-    pub command: CacheCommand,
-    /// Path to the cached file for view/delete commands
-    pub path: Option<String>,
 }
 
 /// Parameters for the pdf_tool
@@ -313,10 +218,7 @@ pub struct XlsxToolParams {
 pub struct ComputerControllerServer {
     tool_router: ToolRouter<Self>,
     cache_dir: PathBuf,
-    active_resources: Arc<Mutex<HashMap<String, ResourceContents>>>,
-    http_client: Client,
     instructions: String,
-    system_automation: Arc<Box<dyn SystemAutomation + Send + Sync>>,
     #[cfg(target_os = "macos")]
     peekaboo_installed: Arc<AtomicBool>,
 }
@@ -336,7 +238,7 @@ impl ComputerControllerServer {
         // keep previous behavior of defaulting to /tmp/
         let cache_dir = choose_app_strategy(crate::APP_STRATEGY.clone())
             .map(|strategy| strategy.in_cache_dir("computer_controller"))
-            .unwrap_or_else(|_| create_system_automation().get_temp_path());
+            .unwrap_or_else(|_| std::env::temp_dir());
 
         fs::create_dir_all(&cache_dir).unwrap_or_else(|_| {
             println!(
@@ -345,34 +247,9 @@ impl ComputerControllerServer {
             )
         });
 
-        let system_automation: Arc<Box<dyn SystemAutomation + Send + Sync>> =
-            Arc::new(create_system_automation());
-
-        let has_display = system_automation.has_display();
-
-        let os_specific_instructions = match (std::env::consts::OS, has_display) {
-            ("windows", _) => indoc! {r#"
+        #[cfg(target_os = "macos")]
+        let os_specific_instructions = indoc! {r#"
             Here are some extra tools:
-            automation_script
-              - Create and run PowerShell or Batch scripts
-              - PowerShell is recommended for most tasks
-              - Scripts can save their output to files
-              - Windows-specific features:
-                - PowerShell for system automation and UI control
-                - Windows Management Instrumentation (WMI)
-                - Registry access and system settings
-              - Use the screenshot tool if needed to help with tasks
-
-            computer_control
-              - System automation using PowerShell
-              - Consider the screenshot tool to work out what is on screen and what to do to help with the control task.
-            "#},
-            ("macos", _) => indoc! {r#"
-            Here are some extra tools:
-            automation_script
-              - Create and run Shell, Ruby, or AppleScript scripts
-              - Scripts can save their output to files
-
             computer_control — Peekaboo CLI for macOS UI automation (auto-installed via Homebrew).
               Peekaboo captures/inspects screens, targets UI elements, drives input, and manages
               apps/windows/menus. Pass a peekaboo subcommand string as the `command` parameter.
@@ -460,583 +337,53 @@ impl ComputerControllerServer {
               - Use `--screen-index` for multi-monitor setups
               - If something fails, check `permissions status` for missing permissions
               - Use `capture_screenshot: true` on click/type/press actions to verify the result
-            "#},
-            (_, true) => indoc! {r#"
-            Here are some extra tools:
-            automation_script
-              - Create and run Shell scripts
-              - Shell (bash) is recommended for most tasks
-              - Scripts can save their output to files
-              - Linux-specific features:
-                - System automation through shell scripting
-                - X11/Wayland window management
-                - D-Bus system services integration
-                - Desktop environment control
-              - Use the screenshot tool if needed to help with tasks
+            "#};
 
-            computer_control
-              - System automation using shell commands and system tools
-              - Desktop environment automation (GNOME, KDE, etc.)
-              - Consider the screenshot tool to work out what is on screen and what to do to help with the control task.
-
-            When you need to interact with websites or web applications, consider using tools like xdotool or wmctrl for:
-              - Window management
-              - Simulating keyboard/mouse input
-              - Automating UI interactions
-              - Desktop environment control
-            "#},
-            (_, false) => indoc! {r#"
-            Here are some extra tools:
-            automation_script
-              - Create and run Shell scripts
-              - Shell (bash) is recommended for most tasks
-              - Scripts can save their output to files
-              - Linux-specific features:
-                - System automation through shell scripting
-                - D-Bus system services integration
-
-            Note: No display server detected (headless mode). The computer_control tool
-            is not available in this environment. Use automation_script for shell-based tasks.
-            "#},
-        };
+        #[cfg(not(target_os = "macos"))]
+        let os_specific_instructions = indoc! {r#"
+            Use the shell (developer extension) for system automation and scripting tasks.
+        "#};
 
         let instructions = formatdoc! {r#"
             You are a helpful assistant to a power user who is not a professional developer, but you may use development tools to help assist them.
             The user may not know how to break down tasks, so you will need to ensure that you do, and run things in batches as needed.
-            The ComputerControllerExtension helps you with common tasks like web scraping,
-            data processing, and automation without requiring programming expertise.
+            The ComputerControllerExtension helps you with common tasks like controlling the computer,
+            document processing, and automation without requiring programming expertise.
 
-            You can use scripting as needed to work with text files of data, such as csvs, json, or text files etc.
-            Using the developer extension is allowed for more sophisticated tasks or instructed to (js or py can be helpful for more complex tasks if tools are available).
-
-            Accessing web sites, even apis, may be common (you can use scripting to do this) without troubling them too much (they won't know what limits are).
+            Use the shell (developer extension) for scripting, working with data files (csv, json, text),
+            and accessing web sites or APIs when needed.
             Try to do your best to find ways to complete a task without too many questions or offering options unless it is really unclear, find a way if you can.
             You can also guide them steps if they can help out as you go along.
 
             There is already a screenshot tool available you can use if needed to see what is on screen.
 
             {os_instructions}
-
-            web_scrape
-              - Fetch content from html websites and APIs
-              - Save as text, JSON, or binary files
-              - Content is cached locally for later use
-              - This is not optimised for complex websites, so don't use this as the first tool.
-            cache
-              - Manage your cached files
-              - List, view, delete files
-              - Clear all cached data
-            The extension automatically manages:
-            - Cache directory: {cache_dir}
-            - File organization and cleanup
             "#,
             os_instructions = os_specific_instructions,
-            cache_dir = cache_dir.display()
         };
 
+        #[allow(unused_mut)]
         let mut tool_router = Self::tool_router();
-        if !has_display {
-            tool_router.remove_route("computer_control");
+        #[cfg(target_os = "macos")]
+        {
+            tool_router += Self::tool_router_macos();
         }
 
         Self {
             tool_router,
             cache_dir,
-            active_resources: Arc::new(Mutex::new(HashMap::new())),
-            http_client: Client::builder().user_agent("goose/1.0").build().unwrap(),
             instructions,
-            system_automation,
             #[cfg(target_os = "macos")]
             peekaboo_installed: Arc::new(AtomicBool::new(crate::peekaboo::is_peekaboo_installed())),
         }
     }
 
     // Helper function to generate a cache file path
+    #[cfg(target_os = "macos")]
     fn get_cache_path(&self, prefix: &str, extension: &str) -> PathBuf {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         self.cache_dir
             .join(format!("{}_{}.{}", prefix, timestamp, extension))
-    }
-
-    // Helper function to save content to cache
-    async fn save_to_cache(
-        &self,
-        content: &[u8],
-        prefix: &str,
-        extension: &str,
-    ) -> Result<PathBuf, ErrorData> {
-        let cache_path = self.get_cache_path(prefix, extension);
-        fs::write(&cache_path, content).map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("Failed to write to cache: {}", e),
-                None,
-            )
-        })?;
-        Ok(cache_path)
-    }
-
-    // Helper function to register a file as a resource
-    fn register_as_resource(&self, cache_path: &PathBuf, mime_type: &str) -> Result<(), ErrorData> {
-        let uri = Url::from_file_path(cache_path)
-            .map_err(|_| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    "Invalid cache path".to_string(),
-                    None,
-                )
-            })?
-            .to_string();
-
-        let resource = ResourceContents::TextResourceContents {
-            uri: uri.clone(),
-            text: String::new(), // We'll read it when needed
-            mime_type: Some(mime_type.to_string()),
-            meta: None,
-        };
-
-        self.active_resources.lock().unwrap().insert(uri, resource);
-        Ok(())
-    }
-
-    /// Fetch and save content from a web page
-    #[tool(
-        name = "web_scrape",
-        description = "
-            Fetch and save content from a web page. The content can be saved as:
-            - text (for HTML pages)
-            - json (for API responses)
-            - binary (for images and other files)
-            Returns 'Content saved to: <path>'. Use cache to read the content.
-        "
-    )]
-    pub async fn web_scrape(
-        &self,
-        params: Parameters<WebScrapeParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let params = params.0;
-        let url = &params.url;
-        let save_as = params.save_as;
-
-        // Fetch the content
-        let response = self
-            .http_client
-            .get(url)
-            .header("Accept", "text/markdown, */*")
-            .send()
-            .await
-            .map_err(|e| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Failed to fetch URL: {}", e),
-                    None,
-                )
-            })?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("HTTP request failed with status: {}", status),
-                None,
-            ));
-        }
-
-        // Process based on save_as parameter
-        let (content, extension, mime_type) = match save_as {
-            SaveAsFormat::Text => {
-                let text = response.text().await.map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to get text: {}", e),
-                        None,
-                    )
-                })?;
-                (text.into_bytes(), "txt", "text/plain")
-            }
-            SaveAsFormat::Json => {
-                let text = response.text().await.map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to get text: {}", e),
-                        None,
-                    )
-                })?;
-                // Verify it's valid JSON
-                serde_json::from_str::<serde_json::Value>(&text).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Invalid JSON response: {}", e),
-                        None,
-                    )
-                })?;
-                (text.into_bytes(), "json", "application/json")
-            }
-            SaveAsFormat::Binary => {
-                let bytes = response.bytes().await.map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to get bytes: {}", e),
-                        None,
-                    )
-                })?;
-                (bytes.to_vec(), "bin", "application/octet-stream")
-            }
-        };
-
-        // Save to cache
-        let cache_path = self.save_to_cache(&content, "web", extension).await?;
-
-        // Register as a resource
-        self.register_as_resource(&cache_path, mime_type)?;
-
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Content saved to: {}",
-            cache_path.display()
-        ))]))
-    }
-
-    /// Create and run small scripts for automation tasks
-    #[cfg(target_os = "windows")]
-    #[tool(
-        name = "automation_script",
-        description = "
-            Create and run small PowerShell or Batch scripts for automation tasks.
-            PowerShell is recommended for most tasks.
-
-            The script is saved to a temporary file and executed.
-            Some examples:
-            - Sort unique lines: Get-Content file.txt | Sort-Object -Unique
-            - Extract CSV column: Import-Csv file.csv | Select-Object -ExpandProperty Column2
-            - Find text: Select-String -Pattern 'pattern' -Path file.txt
-        "
-    )]
-    pub async fn automation_script(
-        &self,
-        params: Parameters<AutomationScriptParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.automation_script_impl(params).await
-    }
-
-    /// Create and run small scripts for automation tasks
-    #[cfg(target_os = "macos")]
-    #[tool(
-        name = "automation_script",
-        description = "
-            Create and run Shell, Ruby, or AppleScript (via osascript) scripts.
-            Use shell (bash) for most tasks. AppleScript for app scripting and system settings.
-            Examples:
-                - sort file.txt | uniq
-                - awk -F ',' '{ print $2}' file.csv
-                - osascript -e 'tell app \"Finder\" to get name of every window'
-        "
-    )]
-    pub async fn automation_script(
-        &self,
-        params: Parameters<AutomationScriptParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.automation_script_impl(params).await
-    }
-
-    /// Create and run small scripts for automation tasks
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    #[tool(
-        name = "automation_script",
-        description = "
-            Create and run Shell scripts for automation tasks.
-            Consider using shell script (bash) for most simple tasks first.
-            Examples:
-                - sort file.txt | uniq
-                - awk -F ',' '{ print $2}' file.csv
-                - grep pattern file.txt
-        "
-    )]
-    pub async fn automation_script(
-        &self,
-        params: Parameters<AutomationScriptParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.automation_script_impl(params).await
-    }
-
-    #[allow(clippy::too_many_lines)]
-    async fn automation_script_impl(
-        &self,
-        params: Parameters<AutomationScriptParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let params = params.0;
-        let language = params.language;
-        let script = &params.script;
-        let save_output = params.save_output;
-
-        // Create a temporary directory for the script
-        let script_dir = tempfile::tempdir().map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("Failed to create temporary directory: {}", e),
-                None,
-            )
-        })?;
-
-        let (shell, shell_arg) = self.system_automation.get_shell_command();
-
-        let command = match language {
-            ScriptLanguage::Shell | ScriptLanguage::Batch => {
-                let script_path = script_dir.path().join(format!(
-                    "script.{}",
-                    if cfg!(windows) { "bat" } else { "sh" }
-                ));
-                fs::write(&script_path, script).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to write script: {}", e),
-                        None,
-                    )
-                })?;
-
-                // Set execute permissions on Unix systems
-                #[cfg(unix)]
-                {
-                    let mut perms = fs::metadata(&script_path)
-                        .map_err(|e| {
-                            ErrorData::new(
-                                ErrorCode::INTERNAL_ERROR,
-                                format!("Failed to get file metadata: {}", e),
-                                None,
-                            )
-                        })?
-                        .permissions();
-                    perms.set_mode(0o755); // rwxr-xr-x
-                    fs::set_permissions(&script_path, perms).map_err(|e| {
-                        ErrorData::new(
-                            ErrorCode::INTERNAL_ERROR,
-                            format!("Failed to set execute permissions: {}", e),
-                            None,
-                        )
-                    })?;
-                }
-
-                script_path.display().to_string()
-            }
-            ScriptLanguage::Ruby => {
-                let script_path = script_dir.path().join("script.rb");
-                fs::write(&script_path, script).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to write script: {}", e),
-                        None,
-                    )
-                })?;
-
-                format!("ruby {}", script_path.display())
-            }
-            ScriptLanguage::Powershell => {
-                let script_path = script_dir.path().join("script.ps1");
-                fs::write(&script_path, script).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to write script: {}", e),
-                        None,
-                    )
-                })?;
-
-                script_path.display().to_string()
-            }
-        };
-
-        // Run the script
-        let output = match language {
-            ScriptLanguage::Powershell => {
-                // For PowerShell, we need to use -File instead of -Command
-                Command::new("powershell")
-                    .arg("-NoProfile")
-                    .arg("-NonInteractive")
-                    .arg("-File")
-                    .arg(&command)
-                    .env("GOOSE_TERMINAL", "1")
-                    .env("AGENT", "goose")
-                    .set_no_window()
-                    .output()
-                    .await
-                    .map_err(|e| {
-                        ErrorData::new(
-                            ErrorCode::INTERNAL_ERROR,
-                            format!("Failed to run script: {}", e),
-                            None,
-                        )
-                    })?
-            }
-            _ => {
-                let mut cmd = Command::new(shell);
-                cmd.arg(shell_arg)
-                    .arg(&command)
-                    .env("GOOSE_TERMINAL", "1")
-                    .env("AGENT", "goose");
-                #[cfg(not(windows))]
-                if let Some(path) = merged_path() {
-                    cmd.env("PATH", path);
-                }
-                cmd.set_no_window().output().await.map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to run script: {}", e),
-                        None,
-                    )
-                })?
-            }
-        };
-
-        let output_str = String::from_utf8_lossy(&output.stdout).into_owned();
-        let error_str = String::from_utf8_lossy(&output.stderr).into_owned();
-
-        let mut result = if output.status.success() {
-            format!("Script completed successfully.\n\nOutput:\n{}", output_str)
-        } else {
-            format!(
-                "Script failed with error code {}.\n\nError:\n{}\nOutput:\n{}",
-                output.status, error_str, output_str
-            )
-        };
-
-        // Save output if requested
-        if save_output && !output_str.is_empty() {
-            let cache_path = self
-                .save_to_cache(output_str.as_bytes(), "script_output", "txt")
-                .await?;
-            result.push_str(&format!("\n\nOutput saved to: {}", cache_path.display()));
-
-            // Register as a resource
-            self.register_as_resource(&cache_path, "text")?;
-        }
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
-
-    /// Control the computer using system automation
-    #[cfg(target_os = "windows")]
-    #[tool(
-        name = "computer_control",
-        description = "
-            Control the computer using Windows system automation.
-
-            Features available:
-            - PowerShell automation for system control
-            - UI automation through PowerShell
-            - File and system management
-            - Windows-specific features and settings
-
-            Can be combined with screenshot tool for visual task assistance.
-        "
-    )]
-    pub async fn computer_control(
-        &self,
-        params: Parameters<ComputerControlParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.computer_control_impl(params).await
-    }
-
-    /// Control the computer using Peekaboo CLI for macOS GUI automation.
-    /// Auto-installs via Homebrew on first use.
-    #[cfg(target_os = "macos")]
-    #[tool(
-        name = "computer_control",
-        description = "
-            macOS UI automation via Peekaboo CLI. Pass a subcommand string as `command`.
-
-            Core workflow: see → click → type
-            1. see --app Safari --annotate  (get annotated screenshot with element IDs)
-            2. click --on B3               (click element by ID)
-            3. type \"hello\" --return       (type text, press enter)
-
-            Key commands: see, image, click, type, press, hotkey, paste, scroll, drag,
-            swipe, move, app, window, list, menu, menubar, dock, dialog, clipboard,
-            space, open, permissions.
-
-            Targeting: --app Name, --window-title, --window-id, --on ID, --coords x,y
-            Set capture_screenshot=true to verify UI state after actions.
-            See extension instructions for full command reference and examples.
-        "
-    )]
-    pub async fn computer_control(
-        &self,
-        params: Parameters<ComputerControlParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.peekaboo_impl(params).await
-    }
-
-    /// Control the computer using system automation
-    #[cfg(target_os = "linux")]
-    #[tool(
-        name = "computer_control",
-        description = "
-            Control the computer using Linux system automation.
-
-            Features available:
-            - Shell scripting for system control
-            - X11/Wayland window management
-            - D-Bus for system services
-            - File and system management
-            - Desktop environment control (GNOME, KDE, etc.)
-            - Process management and monitoring
-            - System settings and configurations
-
-            Can be combined with screenshot tool for visual task assistance.
-        "
-    )]
-    pub async fn computer_control(
-        &self,
-        params: Parameters<ComputerControlParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.computer_control_impl(params).await
-    }
-
-    /// Control the computer using system automation (fallback for other OS)
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    #[tool(
-        name = "computer_control",
-        description = "Control the computer using system automation. Features available depend on your operating system. Can be combined with screenshot tool for visual task assistance."
-    )]
-    pub async fn computer_control(
-        &self,
-        params: Parameters<ComputerControlParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.computer_control_impl(params).await
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    async fn computer_control_impl(
-        &self,
-        params: Parameters<ComputerControlParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let params = params.0;
-        let script = &params.script;
-        let save_output = params.save_output;
-
-        // Use platform-specific automation
-        let output = self
-            .system_automation
-            .execute_system_script(script)
-            .map_err(|e| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Failed to execute script: {}", e),
-                    None,
-                )
-            })?;
-
-        let mut result = format!("Script completed successfully.\n\nOutput:\n{}", output);
-
-        // Save output if requested
-        if save_output && !output.is_empty() {
-            let cache_path = self
-                .save_to_cache(output.as_bytes(), "automation_output", "txt")
-                .await?;
-            result.push_str(&format!("\n\nOutput saved to: {}", cache_path.display()));
-
-            // Register as a resource
-            self.register_as_resource(&cache_path, "text")?;
-        }
-
-        Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
     #[cfg(target_os = "macos")]
@@ -1169,7 +516,7 @@ impl ComputerControllerServer {
             if image_path.exists() {
                 if let Ok(bytes) = fs::read(&image_path) {
                     let data = base64::prelude::BASE64_STANDARD.encode(&bytes);
-                    contents.push(Content::image(data, "image/png").with_priority(0.0));
+                    contents.push(ContentBlock::image(data, "image/png"));
                 }
             }
         }
@@ -1184,7 +531,7 @@ impl ComputerControllerServer {
             {
                 if let Ok(bytes) = fs::read(&cap_path) {
                     let data = base64::prelude::BASE64_STANDARD.encode(&bytes);
-                    contents.push(Content::image(data, "image/png").with_priority(0.0));
+                    contents.push(ContentBlock::image(data, "image/png"));
                 }
             }
         }
@@ -1200,7 +547,15 @@ impl ComputerControllerServer {
             stdout
         };
 
-        contents.insert(0, Content::text(&text).with_audience(vec![Role::Assistant]));
+        contents.insert(
+            0,
+            ContentBlock::Text(
+                rmcp::model::TextContent::new(&text).with_annotations(
+                    rmcp::model::Annotations::default()
+                        .with_audience(vec![rmcp::model::Role::Assistant]),
+                ),
+            ),
+        );
 
         Ok(CallToolResult::success(contents))
     }
@@ -1237,7 +592,7 @@ impl ComputerControllerServer {
                 let worksheets = xlsx
                     .list_worksheets()
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "{:#?}",
                     worksheets
                 ))]))
@@ -1257,7 +612,7 @@ impl ComputerControllerServer {
                 let columns = xlsx
                     .get_column_names(worksheet)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "{:#?}",
                     columns
                 ))]))
@@ -1285,7 +640,7 @@ impl ComputerControllerServer {
                 let range_data = xlsx
                     .get_range(worksheet, range)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "{:#?}",
                     range_data
                 ))]))
@@ -1315,7 +670,7 @@ impl ComputerControllerServer {
                 let matches = xlsx
                     .find_in_worksheet(worksheet, search_text, case_sensitive)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "Found matches at: {:#?}",
                     matches
                 ))]))
@@ -1351,7 +706,7 @@ impl ComputerControllerServer {
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 xlsx.save(path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "Updated cell ({}, {}) to '{}' in worksheet '{}'",
                     row, col, value, worksheet_name
                 ))]))
@@ -1361,7 +716,7 @@ impl ComputerControllerServer {
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 xlsx.save(path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(
+                Ok(CallToolResult::success(vec![ContentBlock::text(
                     "File saved successfully.",
                 )]))
             }
@@ -1396,7 +751,7 @@ impl ComputerControllerServer {
                 let cell_value = xlsx
                     .get_cell_value(worksheet, row as u32, col as u32)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "{:#?}",
                     cell_value
                 ))]))
@@ -1486,183 +841,48 @@ impl ComputerControllerServer {
 
         Ok(CallToolResult::success(result))
     }
+}
 
-    /// Manage cached files and data
+#[cfg(target_os = "macos")]
+#[tool_router(router = tool_router_macos)]
+impl ComputerControllerServer {
+    /// Control the computer using Peekaboo CLI for macOS GUI automation.
+    /// Auto-installs via Homebrew on first use.
     #[tool(
-        name = "cache",
+        name = "computer_control",
         description = "
-            Manage cached files and data:
-            - list: List all cached files
-            - view: View content of a cached file
-            - delete: Delete a cached file
-            - clear: Clear all cached files
+            macOS UI automation via Peekaboo CLI. Pass a subcommand string as `command`.
+
+            Core workflow: see → click → type
+            1. see --app Safari --annotate  (get annotated screenshot with element IDs)
+            2. click --on B3               (click element by ID)
+            3. type \"hello\" --return       (type text, press enter)
+
+            Key commands: see, image, click, type, press, hotkey, paste, scroll, drag,
+            swipe, move, app, window, list, menu, menubar, dock, dialog, clipboard,
+            space, open, permissions.
+
+            Targeting: --app Name, --window-title, --window-id, --on ID, --coords x,y
+            Set capture_screenshot=true to verify UI state after actions.
+            See extension instructions for full command reference and examples.
         "
     )]
-    pub async fn cache(
+    pub async fn computer_control(
         &self,
-        params: Parameters<CacheParams>,
+        params: Parameters<ComputerControlParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let command = params.0.command;
-        let path = params.0.path.as_deref();
-
-        match command {
-            CacheCommand::List => {
-                let mut files = Vec::new();
-                for entry in fs::read_dir(&self.cache_dir).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to read cache directory: {}", e),
-                        None,
-                    )
-                })? {
-                    let entry = entry.map_err(|e| {
-                        ErrorData::new(
-                            ErrorCode::INTERNAL_ERROR,
-                            format!("Failed to read directory entry: {}", e),
-                            None,
-                        )
-                    })?;
-                    files.push(format!("{}", entry.path().display()));
-                }
-                files.sort();
-                Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Cached files:\n{}",
-                    files.join("\n")
-                ))]))
-            }
-            CacheCommand::View => {
-                let path = path.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Missing 'path' parameter for view".to_string(),
-                        None,
-                    )
-                })?;
-
-                let content = fs::read_to_string(path).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to read file: {}", e),
-                        None,
-                    )
-                })?;
-
-                Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Content of {}:\n\n{}",
-                    path, content
-                ))]))
-            }
-            CacheCommand::Delete => {
-                let path = path.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Missing 'path' parameter for delete".to_string(),
-                        None,
-                    )
-                })?;
-
-                fs::remove_file(path).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to delete file: {}", e),
-                        None,
-                    )
-                })?;
-
-                // Remove from active resources if present
-                if let Ok(url) = Url::from_file_path(path) {
-                    self.active_resources
-                        .lock()
-                        .unwrap()
-                        .remove(&url.to_string());
-                }
-
-                Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Deleted file: {}",
-                    path
-                ))]))
-            }
-            CacheCommand::Clear => {
-                fs::remove_dir_all(&self.cache_dir).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to clear cache directory: {}", e),
-                        None,
-                    )
-                })?;
-                fs::create_dir_all(&self.cache_dir).map_err(|e| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!("Failed to recreate cache directory: {}", e),
-                        None,
-                    )
-                })?;
-
-                // Clear active resources
-                self.active_resources.lock().unwrap().clear();
-
-                Ok(CallToolResult::success(vec![Content::text(
-                    "Cache cleared successfully.",
-                )]))
-            }
-        }
+        self.peekaboo_impl(params).await
     }
 }
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for ComputerControllerServer {
     fn get_info(&self) -> ServerInfo {
-        InitializeResult::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_resources()
-                .build(),
-        )
-        .with_server_info(Implementation::new(
-            "goose-computercontroller",
-            env!("CARGO_PKG_VERSION"),
-        ))
-        .with_instructions(self.instructions.clone())
-    }
-
-    async fn list_resources(
-        &self,
-        _pagination: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListResourcesResult, ErrorData> {
-        let active_resources = self.active_resources.lock().unwrap();
-        let resources: Vec<Resource> = active_resources
-            .keys()
-            .map(|uri| {
-                RawResource::new(
-                    uri.clone(),
-                    uri.split('/').next_back().unwrap_or("").to_string(),
-                )
-                .no_annotation()
-            })
-            .collect();
-        Ok(ListResourcesResult {
-            resources,
-            next_cursor: None,
-            meta: None,
-        })
-    }
-
-    async fn read_resource(
-        &self,
-        params: ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
-        let active_resources = self.active_resources.lock().unwrap();
-        let resource = active_resources.get(&params.uri).ok_or_else(|| {
-            ErrorData::new(
-                ErrorCode::INVALID_REQUEST,
-                format!("Resource not found: {}", params.uri),
-                None,
-            )
-        })?;
-
-        // Clone the resource to return
-        Ok(ReadResourceResult::new(vec![resource.clone()]))
+        InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(
+                "goose-computercontroller",
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_instructions(self.instructions.clone())
     }
 }

@@ -26,7 +26,7 @@ Thank you so much for your continued support and contributions, BestCodes! Your 
 To show how grateful we are for your contributions, we've granted you the exclusive ✨Top Contributor✨ badge on the Block Open Source Discord! Plus, you'll also be receiving exclusive codename goose swag. 👀🪿
 
 ## Become A Top Contributor
-Interested in contributing to goose and having your work featured? Whether it's fixing bugs, sharing ideas, or helping others, every contribution from the open source community has the chance to help someone. You can [join the Block Open Source Discord](https://discord.gg/goose-oss) or [get started using codename goose](https://goose-docs.ai/) today.
+Interested in contributing to goose and having your work featured? Whether it's fixing bugs, sharing ideas, or helping others, every contribution from the open source community has the chance to help someone. You can [join the Block Open Source Discord](https://discord.gg/n8R5VaWDAn) or [get started using codename goose](https://goose-docs.ai/) today.
 
 <head>
   <meta property="og:title" content="How One Contribution Can Spark Many Wins" />

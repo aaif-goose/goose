@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 /// Content Security Policy metadata for MCP Apps
 /// Specifies allowed domains for network connections and resource loading
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CspMetadata {
     /// Domains allowed for connect-src (fetch, XHR, WebSocket)
@@ -23,7 +22,7 @@ pub struct CspMetadata {
 /// Sandbox permissions for MCP Apps
 /// Specifies which browser capabilities the UI needs access to.
 /// Maps to the iframe Permission Policy `allow` attribute.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionsMetadata {
     /// Request camera access (maps to Permission Policy `camera` feature)
@@ -45,7 +44,7 @@ fn is_default_permissions(p: &PermissionsMetadata) -> bool {
 }
 
 /// UI-specific metadata for MCP resources
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UiMetadata {
     /// Content Security Policy configuration
@@ -63,7 +62,7 @@ pub struct UiMetadata {
 }
 
 /// Resource metadata containing UI configuration
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceMetadata {
     /// UI-specific configuration
@@ -73,7 +72,7 @@ pub struct ResourceMetadata {
 
 /// MCP App Resource
 /// Represents a UI resource that can be rendered in an MCP App
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpAppResource {
     /// URI of the resource (must use ui:// scheme)

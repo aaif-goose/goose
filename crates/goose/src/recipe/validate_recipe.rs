@@ -1,11 +1,35 @@
 use crate::recipe::read_recipe_file_content::RecipeFile;
-use crate::recipe::template_recipe::parse_recipe_content;
+use crate::recipe::template_recipe::{
+    parse_recipe_content, parse_recipe_template, ParsedRecipeTemplate,
+};
 use crate::recipe::{
     Recipe, RecipeParameter, RecipeParameterInputType, RecipeParameterRequirement,
     BUILT_IN_RECIPE_DIR_PARAM,
 };
 use anyhow::Result;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+pub(crate) struct ValidatedRecipeTemplate {
+    parsed: ParsedRecipeTemplate,
+}
+
+impl ValidatedRecipeTemplate {
+    pub(crate) fn recipe(&self) -> &Recipe {
+        self.parsed.recipe()
+    }
+
+    pub(crate) fn into_recipe(self) -> Recipe {
+        self.parsed.into_recipe()
+    }
+
+    pub(crate) fn render(self, params: &HashMap<String, String>) -> Result<Recipe> {
+        let (rendered_content, template_variables) = self.parsed.render(params)?;
+        let recipe = Recipe::from_content(&rendered_content)?;
+        validate_recipe_parameters(&recipe, &template_variables)?;
+        validate_recipe_non_parameter_invariants(&recipe)?;
+        Ok(recipe)
+    }
+}
 
 pub fn parse_and_validate_parameters(
     recipe_file_content: &str,
@@ -13,17 +37,25 @@ pub fn parse_and_validate_parameters(
 ) -> Result<Recipe> {
     let (recipe_template, template_variables) =
         parse_recipe_content(recipe_file_content, recipe_dir_str)?;
-    let recipe_parameters = &recipe_template.parameters;
-    validate_optional_parameters(recipe_parameters)?;
-    validate_parameters_in_template(recipe_parameters, &template_variables)?;
+    validate_recipe_parameters(&recipe_template, &template_variables)?;
     Ok(recipe_template)
 }
 
+fn validate_recipe_parameters(recipe: &Recipe, template_variables: &HashSet<String>) -> Result<()> {
+    validate_optional_parameters(&recipe.parameters)?;
+    validate_parameters_in_template(&recipe.parameters, template_variables)
+}
+
 fn validate_json_schema(schema: &serde_json::Value) -> Result<()> {
-    match jsonschema::validator_for(schema) {
-        Ok(_) => Ok(()),
-        Err(err) => Err(anyhow::anyhow!("JSON schema validation failed: {}", err)),
+    let schema_object = schema
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("JSON schema must be an object"))?;
+    if schema_object.is_empty() {
+        return Err(anyhow::anyhow!("Empty JSON schema is not allowed"));
     }
+    jsonschema::validator_for(schema)
+        .map(|_| ())
+        .map_err(|error| anyhow::anyhow!("JSON schema validation failed: {error}"))
 }
 
 pub fn validate_recipe_template_from_file(recipe_file: &RecipeFile) -> Result<Recipe> {
@@ -40,18 +72,30 @@ pub fn validate_recipe_template_from_content(
     recipe_content: &str,
     recipe_dir: Option<String>,
 ) -> Result<Recipe> {
-    parse_and_validate_parameters(recipe_content, recipe_dir.clone())?;
-    let (recipe, _) = parse_recipe_content(recipe_content, recipe_dir)?;
+    Ok(validate_recipe_template(recipe_content, recipe_dir)?.into_recipe())
+}
 
-    validate_prompt_or_instructions(&recipe)?;
-    validate_retry_config(&recipe)?;
+pub(crate) fn validate_recipe_template(
+    recipe_content: &str,
+    recipe_dir: Option<String>,
+) -> Result<ValidatedRecipeTemplate> {
+    let parsed = parse_recipe_template(recipe_content, recipe_dir)?;
+    validate_recipe_parameters(parsed.recipe(), parsed.template_variables())?;
+    validate_recipe_non_parameter_invariants(parsed.recipe())?;
+
+    Ok(ValidatedRecipeTemplate { parsed })
+}
+
+pub(crate) fn validate_recipe_non_parameter_invariants(recipe: &Recipe) -> Result<()> {
+    validate_prompt_or_instructions(recipe)?;
+    validate_retry_config(recipe)?;
     if let Some(response) = &recipe.response {
         if let Some(json_schema) = &response.json_schema {
             validate_json_schema(json_schema)?;
         }
     }
 
-    Ok(recipe)
+    Ok(())
 }
 
 fn validate_retry_config(recipe: &Recipe) -> Result<()> {
@@ -94,12 +138,15 @@ fn validate_parameters_in_template(
     let mut template_variables = template_variables.clone();
     template_variables.remove(BUILT_IN_RECIPE_DIR_PARAM);
 
-    let param_keys: HashSet<String> = recipe_parameters
-        .as_ref()
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|p| p.key.clone())
-        .collect();
+    let mut param_keys = HashSet::new();
+    for parameter in recipe_parameters.as_deref().unwrap_or_default() {
+        if !param_keys.insert(parameter.key.clone()) {
+            return Err(anyhow::anyhow!(
+                "Duplicate parameter definition: {}.",
+                parameter.key
+            ));
+        }
+    }
 
     let missing_keys = template_variables
         .difference(&param_keys)
@@ -172,6 +219,57 @@ fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Re
 mod tests {
     use super::*;
 
+    fn recipe_with_duplicate_parameter_keys(parameters: &str) -> String {
+        format!(
+            r#"
+version: 1.0.0
+title: Duplicate parameters
+description: Duplicate parameter validation
+instructions: Test {{{{ value }}}}
+parameters:
+{parameters}
+"#
+        )
+    }
+
+    #[test]
+    fn test_rejects_string_then_file_parameter_with_same_key() {
+        let recipe_content = recipe_with_duplicate_parameter_keys(
+            r#"  - key: value
+    input_type: string
+    requirement: optional
+    default: file.txt
+    description: A string parameter
+  - key: value
+    input_type: file
+    requirement: required
+    description: A file parameter"#,
+        );
+
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+
+        assert_eq!(error.to_string(), "Duplicate parameter definition: value.");
+    }
+
+    #[test]
+    fn test_rejects_file_then_string_parameter_with_same_key() {
+        let recipe_content = recipe_with_duplicate_parameter_keys(
+            r#"  - key: value
+    input_type: file
+    requirement: required
+    description: A file parameter
+  - key: value
+    input_type: string
+    requirement: optional
+    default: file.txt
+    description: A string parameter"#,
+        );
+
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+
+        assert_eq!(error.to_string(), "Duplicate parameter definition: value.");
+    }
+
     #[test]
     fn test_validate_recipe_template_from_content_success() {
         let recipe_content = r#"
@@ -209,5 +307,60 @@ parameters:
         assert_eq!(recipe.description, "A test recipe for validation");
         assert!(recipe.instructions.is_some());
         println!("Recipe: {:?}", recipe.prompt);
+    }
+
+    #[test]
+    fn response_json_schema_must_be_an_object() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Boolean schema
+description: Boolean schema
+instructions: Return structured output
+response:
+  json_schema: true
+"#;
+
+        let error = validate_recipe_template_from_content(recipe_content, None).unwrap_err();
+
+        assert_eq!(error.to_string(), "JSON schema must be an object");
+    }
+
+    #[test]
+    fn response_json_schema_accepts_an_object_schema() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Object schema
+description: Object schema
+instructions: Return structured output
+response:
+  json_schema:
+    type: object
+    properties:
+      result:
+        type: string
+"#;
+
+        validate_recipe_template_from_content(recipe_content, None).unwrap();
+    }
+
+    #[test]
+    fn response_json_schema_must_compile() {
+        let recipe_content = r#"
+version: 1.0.0
+title: Invalid pattern
+description: Invalid pattern
+instructions: Return structured output
+response:
+  json_schema:
+    type: object
+    properties:
+      result:
+        type: string
+        pattern: "["
+"#;
+
+        let error = validate_recipe_template_from_content(recipe_content, None).unwrap_err();
+
+        assert!(error.to_string().contains("JSON schema validation failed"));
     }
 }

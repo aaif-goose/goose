@@ -2,7 +2,10 @@ use super::*;
 use crate::config::declarative_providers;
 use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
+use goose_providers::base::ModelInfo;
 use std::str::FromStr;
+
+const ACP_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn provider_secret_to_dto(secret: provider_secrets::ProviderSecret) -> ProviderSecretDto {
     let storage = match secret.storage {
@@ -42,8 +45,12 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         description: entry.description,
         default_model: entry.default_model,
         configured: entry.configured,
+        available: entry.available,
         provider_type: format!("{:?}", entry.provider_type),
-        category: provider_setup_category_to_dto(entry.category),
+        acp: entry.acp,
+        visible_in_setup: entry.visible_in_setup,
+        deprecated: entry.deprecated,
+        replacement: entry.replacement,
         config_keys: entry
             .config_keys
             .into_iter()
@@ -68,7 +75,6 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         last_refresh_attempt_at: entry.last_refresh_attempt_at.map(|t| t.to_rfc3339()),
         last_refresh_error: entry.last_refresh_error,
         stale,
-        model_selection_hint: entry.model_selection_hint,
     }
 }
 
@@ -85,22 +91,15 @@ fn provider_config_key_to_dto(key: crate::providers::base::ConfigKey) -> Provide
 }
 
 const SECRET_MASK_PREFIX_LEN: usize = 4;
-const SECRET_MASK_SUFFIX_LEN: usize = 3;
 const SECRET_MASK_FALLBACK: &str = "***";
 
 fn mask_secret_value(value: &str) -> String {
-    let prefix: String = value.chars().take(SECRET_MASK_PREFIX_LEN).collect();
-    let suffix_chars: Vec<char> = value.chars().rev().take(SECRET_MASK_SUFFIX_LEN).collect();
-    let suffix: String = suffix_chars.into_iter().rev().collect();
-
-    if prefix.is_empty()
-        || suffix.is_empty()
-        || value.chars().count() <= SECRET_MASK_PREFIX_LEN + SECRET_MASK_SUFFIX_LEN
-    {
+    if value.chars().count() < SECRET_MASK_PREFIX_LEN * 2 {
         return SECRET_MASK_FALLBACK.to_string();
     }
 
-    format!("{prefix}...{suffix}")
+    let prefix: String = value.chars().take(SECRET_MASK_PREFIX_LEN).collect();
+    format!("{prefix}...")
 }
 
 fn config_value_to_string(value: &serde_json::Value) -> Option<String> {
@@ -214,6 +213,7 @@ fn provider_setup_entry_to_dto(
         provider_id: entry.provider_id,
         name: entry.display_name,
         category: provider_setup_category_to_dto(entry.category),
+        acp: entry.acp,
         description: entry.description,
         setup_method: provider_setup_method_to_dto(entry.setup_method),
         native_connect_query: entry.native_connect_query,
@@ -377,6 +377,34 @@ fn custom_provider_headers(headers: HashMap<String, String>) -> Option<HashMap<S
     (!headers.is_empty()).then_some(headers)
 }
 
+fn custom_provider_models(
+    names: Vec<String>,
+    existing: &[ModelInfo],
+    catalog_provider_id: Option<&str>,
+) -> Vec<ModelInfo> {
+    let catalog_models = catalog_provider_id
+        .and_then(crate::providers::catalog::get_provider_template)
+        .map(|template| template.models)
+        .unwrap_or_default();
+
+    names
+        .into_iter()
+        .map(|name| {
+            existing
+                .iter()
+                .find(|model| model.name == name)
+                .cloned()
+                .or_else(|| {
+                    catalog_models
+                        .iter()
+                        .find(|model| model.id == name)
+                        .map(|model| ModelInfo::new(&name).with_context_limit(model.context_limit))
+                })
+                .unwrap_or_else(|| ModelInfo::new(name))
+        })
+        .collect()
+}
+
 fn load_declarative_provider_for_client(
     provider_id: &str,
 ) -> Result<declarative_providers::LoadedProvider, agent_client_protocol::Error> {
@@ -420,6 +448,7 @@ fn custom_provider_config_to_dto(
         requires_auth: config.requires_auth,
         catalog_provider_id: config.catalog_provider_id.clone(),
         base_path: config.base_path.clone(),
+        toolshim: config.toolshim,
         api_key_env,
         api_key_set,
         preserves_thinking: config.preserves_thinking,
@@ -475,17 +504,68 @@ impl GooseAcpAgent {
         req: ProviderSupportedModelsListRequest,
     ) -> Result<ProviderSupportedModelsListResponse, agent_client_protocol::Error> {
         let provider = self
-            .create_provider(&req.provider_id, Vec::new(), None)
+            .create_provider(&req.provider_id, Vec::new(), None, true)
             .await
             .internal_err_ctx("Failed to initialize provider")?;
-        let models = provider
-            .fetch_supported_models()
-            .await
-            .internal_err_ctx("Failed to fetch provider supported models")?;
+        let models = match provider.fetch_supported_models().await {
+            Ok(models) => models,
+            Err(goose_providers::errors::ProviderError::Authentication(error)) => {
+                return Err(agent_client_protocol::Error::auth_required().data(error));
+            }
+            Err(goose_providers::errors::ProviderError::NotConfigured) => {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data(format!("Provider is not configured: {}", req.provider_id)));
+            }
+            Err(error) => {
+                return Err(agent_client_protocol::Error::internal_error().data(format!(
+                    "Failed to fetch provider supported models: {error}"
+                )));
+            }
+        };
 
         Ok(ProviderSupportedModelsListResponse {
             provider_id: req.provider_id,
             models,
+        })
+    }
+
+    pub(super) async fn on_check_provider_readiness(
+        &self,
+        req: ProviderReadinessCheckRequest,
+    ) -> Result<ProviderReadinessCheckResponse, agent_client_protocol::Error> {
+        let provider = self
+            .provider_inventory
+            .find_entry_for_provider(&req.provider_id)
+            .await;
+        if !provider.is_some_and(|entry| entry.acp) {
+            return Err(agent_client_protocol::Error::invalid_params().data(format!(
+                "Provider is not an ACP provider: {}",
+                req.provider_id
+            )));
+        }
+
+        let result = tokio::time::timeout(
+            ACP_READINESS_TIMEOUT,
+            self.create_provider(&req.provider_id, Vec::new(), None, true),
+        )
+        .await;
+        let (ready, error) = match result {
+            Ok(Ok(provider)) => {
+                tokio::task::spawn_blocking(move || drop(provider))
+                    .await
+                    .internal_err_ctx("Failed to stop provider readiness check")?;
+                (true, None)
+            }
+            Ok(Err(error)) => (false, Some(error.to_string())),
+            Err(_) => (
+                false,
+                Some(format!("Timed out while checking {}", req.provider_id)),
+            ),
+        };
+        Ok(ProviderReadinessCheckResponse {
+            provider_id: req.provider_id,
+            ready,
+            error,
         })
     }
 
@@ -552,6 +632,7 @@ impl GooseAcpAgent {
         &self,
         req: CustomProviderCreateRequest,
     ) -> Result<CustomProviderCreateResponse, agent_client_protocol::Error> {
+        let toolshim = req.toolshim;
         let provider = normalize_custom_provider_upsert(req.provider, true)?;
         let config = declarative_providers::create_custom_provider(
             declarative_providers::CreateCustomProviderParams {
@@ -559,13 +640,19 @@ impl GooseAcpAgent {
                 display_name: provider.display_name,
                 api_url: provider.api_url,
                 api_key: provider.api_key,
-                models: provider.models,
+                models: custom_provider_models(
+                    provider.models,
+                    &[],
+                    provider.catalog_provider_id.as_deref(),
+                ),
                 supports_streaming: provider.supports_streaming,
                 headers: custom_provider_headers(provider.headers),
                 requires_auth: provider.requires_auth,
                 catalog_provider_id: provider.catalog_provider_id,
                 base_path: provider.base_path,
+                toolshim,
                 preserves_thinking: provider.preserves_thinking,
+                auth: None,
             },
         )
         .internal_err_ctx("Failed to create custom provider")?;
@@ -610,7 +697,7 @@ impl GooseAcpAgent {
         }
 
         let provider = normalize_custom_provider_upsert(req.provider, false)?;
-        if provider.requires_auth && provider.api_key.is_none() {
+        if provider.requires_auth && provider.api_key.is_none() && loaded.config.auth.is_none() {
             let api_key_env = if loaded.config.api_key_env.is_empty() {
                 declarative_providers::generate_api_key_name(&req.provider_id)
             } else {
@@ -627,14 +714,32 @@ impl GooseAcpAgent {
                 engine: provider.engine,
                 display_name: provider.display_name,
                 api_url: provider.api_url,
-                api_key: provider.api_key,
-                models: provider.models,
+                api_key: if loaded.config.auth.is_some() {
+                    None
+                } else {
+                    provider.api_key
+                },
+                models: custom_provider_models(
+                    provider.models,
+                    &loaded.config.models,
+                    provider.catalog_provider_id.as_deref(),
+                ),
                 supports_streaming: provider.supports_streaming,
                 headers: Some(provider.headers),
                 requires_auth: provider.requires_auth,
                 catalog_provider_id: provider.catalog_provider_id,
                 base_path: provider.base_path,
+                toolshim: req.toolshim,
                 preserves_thinking: provider.preserves_thinking,
+                // The desktop/ACP form doesn't yet support editing command-based
+                // auth, so carry the existing setting forward unchanged rather
+                // than silently clearing it — but only while auth stays enabled;
+                // disabling auth must actually stop the credential command.
+                auth: if provider.requires_auth {
+                    loaded.config.auth.clone()
+                } else {
+                    None
+                },
             },
         )
         .internal_err_ctx("Failed to update custom provider")?;
@@ -691,6 +796,21 @@ impl GooseAcpAgent {
     pub(super) async fn provider_config_status(provider_id: String) -> ProviderConfigStatusDto {
         let is_configured = match crate::providers::get_from_registry(&provider_id).await {
             Ok(entry) => {
+                if entry
+                    .metadata()
+                    .setup
+                    .as_ref()
+                    .is_some_and(|setup| setup.acp)
+                {
+                    return ProviderConfigStatusDto {
+                        provider_id: provider_id.clone(),
+                        is_configured: crate::config::get_provider_entry(
+                            Config::global(),
+                            &provider_id,
+                        )
+                        .is_some_and(|entry| entry.enabled && entry.configured),
+                    };
+                }
                 match tokio::task::spawn_blocking(move || entry.inventory_configured()).await {
                     Ok(is_configured) => is_configured,
                     Err(error) => {
@@ -742,36 +862,36 @@ impl GooseAcpAgent {
             let provider_factory = Arc::clone(&self.provider_factory);
             let provider_id = refresh_job.provider_id.clone();
             let identity = refresh_job.identity.clone();
+            let toolshim = refresh_job.toolshim;
             tokio::spawn(async move {
                 let mut refresh_guard = provider_inventory.refresh_guard(&identity);
                 let provider_result = AssertUnwindSafe(async {
-                    provider_factory(provider_id.clone(), Vec::new(), None).await
+                    provider_factory(provider_id.clone(), Vec::new(), None, true).await
                 })
                 .catch_unwind()
                 .await;
 
-                let fetch_result: Result<Vec<String>> =
-                    match provider_result {
-                        Ok(Ok(provider)) => {
-                            match ensure_refresh_identity_current(&provider_id, &identity).await {
-                                Ok(()) => match AssertUnwindSafe(provider.fetch_recommended_models(
-                                    crate::model_config::global_toolshim(),
-                                ))
-                                .catch_unwind()
-                                .await
+                let fetch_result: Result<Vec<String>> = match provider_result {
+                    Ok(Ok(provider)) => {
+                        match ensure_refresh_identity_current(&provider_id, &identity).await {
+                            Ok(()) => {
+                                match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
+                                    .catch_unwind()
+                                    .await
                                 {
                                     Ok(Ok(models)) => Ok(models),
                                     Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
                                     Err(_) => Err(anyhow::anyhow!(
                                         "provider inventory refresh task panicked"
                                     )),
-                                },
-                                Err(error) => Err(error),
+                                }
                             }
+                            Err(error) => Err(error),
                         }
-                        Ok(Err(error)) => Err(error),
-                        Err(_) => Err(anyhow::anyhow!("provider inventory refresh task panicked")),
-                    };
+                    }
+                    Ok(Err(error)) => Err(error),
+                    Err(_) => Err(anyhow::anyhow!("provider inventory refresh task panicked")),
+                };
 
                 match fetch_result {
                     Ok(models) => match provider_inventory
@@ -911,6 +1031,22 @@ impl GooseAcpAgent {
             .set_secret_values(&secret_updates)
             .internal_err_ctx("Failed to save provider secret fields")?;
 
+        if metadata.setup.as_ref().is_some_and(|setup| setup.acp) {
+            let model = crate::config::get_provider_entry(config, &req.provider_id)
+                .map(|entry| entry.model)
+                .unwrap_or_else(|| metadata.default_model.clone());
+            crate::config::set_provider_entry(
+                config,
+                &req.provider_id,
+                &crate::config::ProviderEntry {
+                    enabled: true,
+                    model,
+                    configured: true,
+                },
+            )
+            .internal_err_ctx("Failed to enable ACP provider")?;
+        }
+
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
         let refresh = self.start_provider_inventory_refresh(&provider_ids).await?;
@@ -941,6 +1077,15 @@ impl GooseAcpAgent {
         config
             .delete_secret_values(&secret_keys)
             .internal_err_ctx("Failed to delete provider secret fields")?;
+        if metadata.setup.as_ref().is_some_and(|setup| setup.acp) {
+            if let Some(mut provider) = crate::config::get_provider_entry(config, &req.provider_id)
+            {
+                provider.enabled = false;
+                provider.configured = false;
+                crate::config::set_provider_entry(config, &req.provider_id, &provider)
+                    .internal_err_ctx("Failed to disable ACP provider")?;
+            }
+        }
         crate::providers::cleanup_provider(&req.provider_id)
             .await
             .internal_err_ctx("Failed to clean up provider state")?;
@@ -976,10 +1121,42 @@ impl GooseAcpAgent {
                 .create_with_default_model(Vec::new())
                 .await
                 .internal_err_ctx("Failed to initialize provider")?;
-            provider
-                .configure_oauth()
+
+            if self.supports_goose_custom_notifications() {
+                let client_cx = self.client_cx.get().cloned();
+                let provider_id = req.provider_id.clone();
+                let announce: Box<dyn Fn(String, String, u64) + Send + Sync> =
+                    Box::new(move |user_code, verification_uri, expires_in| {
+                        let _ = arboard::Clipboard::new()
+                            .ok()
+                            .and_then(|mut cb| cb.set_text(&user_code).ok());
+                        if let Err(e) = webbrowser::open(&verification_uri) {
+                            tracing::warn!("Failed to open browser: {}", e);
+                        }
+                        if let Some(ref cx) = client_cx {
+                            let notification = ProviderDeviceCodeNotification {
+                                provider_id: provider_id.clone(),
+                                user_code,
+                                verification_uri,
+                                expires_in,
+                            };
+                            if let Err(e) = cx.send_notification(notification) {
+                                tracing::warn!("Failed to send device code notification: {}", e);
+                            }
+                        }
+                    });
+                crate::providers::oauth_device_flow::with_device_code_announce(
+                    announce,
+                    provider.configure_oauth(),
+                )
                 .await
                 .internal_err_ctx("Failed to authenticate provider")?;
+            } else {
+                provider
+                    .configure_oauth()
+                    .await
+                    .internal_err_ctx("Failed to authenticate provider")?;
+            }
         }
         Config::global().invalidate_secrets_cache();
 
@@ -1022,24 +1199,83 @@ impl GooseAcpAgent {
     ) -> Result<CanonicalModelInfoResponse, agent_client_protocol::Error> {
         use goose_providers::model::ModelConfig;
 
+        let config_info =
+            crate::providers::canonical_cost::configured_model_info(&req.provider, &req.model);
+        // Config-declared prices carry the config's currency; without them the
+        // response reports registry rates, which are USD.
+        let currency = crate::providers::canonical_cost::display_currency(config_info.as_ref());
         let model_info =
-            crate::providers::canonical::maybe_get_canonical_model(&req.provider, &req.model).map(
-                |canonical_model| CanonicalModelInfoDto {
-                    provider: req.provider.clone(),
-                    model: req.model.clone(),
-                    context_limit: canonical_model.limit.context,
-                    max_output_tokens: canonical_model.limit.output,
-                    reasoning: canonical_model
-                        .reasoning
-                        .unwrap_or_else(|| ModelConfig::new(&req.model).is_reasoning_model()),
-                    input_token_cost: canonical_model.cost.input,
-                    output_token_cost: canonical_model.cost.output,
-                    cache_read_token_cost: canonical_model.cost.cache_read,
-                    cache_write_token_cost: canonical_model.cost.cache_write,
-                    currency: "$".to_string(),
-                },
-            );
+            crate::providers::canonical::maybe_get_canonical_model(&req.provider, &req.model)
+                .map(|canonical_model| {
+                    // Config-declared prices outrank the registry's catalog rates;
+                    // registry cache rates survive, so tooltip math matches
+                    // estimate_model_cost exactly.
+                    let pricing = crate::providers::canonical_cost::resolve_pricing(
+                        &req.provider,
+                        &req.model,
+                    )
+                    .unwrap_or_else(|| canonical_model.cost.clone());
+                    CanonicalModelInfoDto {
+                        provider: req.provider.clone(),
+                        model: req.model.clone(),
+                        context_limit: canonical_model.limit.context,
+                        max_output_tokens: canonical_model.limit.output,
+                        reasoning: canonical_model
+                            .reasoning
+                            .unwrap_or_else(|| ModelConfig::new(&req.model).is_reasoning_model()),
+                        input_token_cost: pricing.input,
+                        output_token_cost: pricing.output,
+                        cache_read_token_cost: pricing.cache_read,
+                        cache_write_token_cost: pricing.cache_write,
+                        currency: currency.clone(),
+                    }
+                })
+                .or_else(|| {
+                    crate::providers::canonical_cost::resolve_pricing(&req.provider, &req.model)
+                        .and_then(|pricing| {
+                            config_info.map(|info| CanonicalModelInfoDto {
+                                provider: req.provider.clone(),
+                                model: req.model.clone(),
+                                context_limit: info.context_limit.unwrap_or_else(|| {
+                                    ModelConfig::new(&req.model).context_limit()
+                                }),
+                                // ModelInfo carries no max-output limit.
+                                max_output_tokens: None,
+                                // Configs deserialize a missing `reasoning` as false; keep
+                                // name-based detection for accustomed reasoning models.
+                                reasoning: info.reasoning
+                                    || ModelConfig::new(&req.model).is_reasoning_model(),
+                                input_token_cost: pricing.input,
+                                output_token_cost: pricing.output,
+                                cache_read_token_cost: pricing.cache_read,
+                                cache_write_token_cost: pricing.cache_write,
+                                currency: currency.clone(),
+                            })
+                        })
+                });
 
         Ok(CanonicalModelInfoResponse { model_info })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_secret_value;
+
+    #[test]
+    fn mask_secret_value_hides_suffix_and_never_reveals_majority() {
+        for (secret, expected) in [
+            ("", "***"),
+            ("abcdefg", "***"),
+            ("abcdefgh", "abcd..."),
+            ("abcdefghijkl", "abcd..."),
+        ] {
+            assert_eq!(mask_secret_value(secret), expected);
+        }
+    }
+
+    #[test]
+    fn mask_secret_value_counts_unicode_characters() {
+        assert_eq!(mask_secret_value("密碼安全令牌甲乙"), "密碼安全...");
     }
 }

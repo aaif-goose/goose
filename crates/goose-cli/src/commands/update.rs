@@ -1,4 +1,16 @@
+// On riscv64, update() bails early because no release artifacts are published,
+// so the implementation below (and most of this module) is cfg-disabled and
+// would otherwise trigger dead_code/unused warnings that fail clippy.
+#![cfg_attr(
+    target_arch = "riscv64",
+    allow(dead_code, unused_imports, unused_variables)
+)]
+
 use anyhow::{bail, Context, Result};
+use reqwest::{
+    header::{HeaderValue, AUTHORIZATION},
+    StatusCode,
+};
 use sha2::{Digest, Sha256};
 use sigstore_verify::trust_root::{TrustedRoot, SIGSTORE_PRODUCTION_TRUSTED_ROOT};
 use sigstore_verify::types::{Bundle, Sha256Hash};
@@ -33,6 +45,12 @@ fn asset_name() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "aarch64", target_env = "musl"))]
     {
         "goose-aarch64-unknown-linux-musl.tar.bz2"
+    }
+    // RISC-V builds compile with this asset name, but update() rejects the
+    // platform until release artifacts are published. See update() below.
+    #[cfg(all(target_os = "linux", target_arch = "riscv64", target_env = "gnu"))]
+    {
+        "goose-riscv64gc-unknown-linux-gnu.tar.bz2"
     }
     #[cfg(all(target_os = "windows", target_arch = "x86_64", feature = "cuda"))]
     {
@@ -74,10 +92,39 @@ struct AttestationResponse {
 
 #[derive(serde::Deserialize)]
 struct AttestationEntry {
-    bundle: serde_json::Value,
+    #[serde(default)]
+    bundle: Option<serde_json::Value>,
+    #[serde(default)]
+    bundle_url: Option<String>,
 }
 
 const GITHUB_ACTIONS_ISSUER: &str = "https://token.actions.githubusercontent.com";
+
+fn sanitized_token(token: Option<&str>) -> Option<&str> {
+    token.map(str::trim).filter(|tok| !tok.is_empty())
+}
+
+fn authorization_header_value(token: &str) -> Option<HeaderValue> {
+    HeaderValue::from_str(&format!("Bearer {token}")).ok()
+}
+
+fn github_token() -> Option<String> {
+    env::var("GITHUB_TOKEN")
+        .ok()
+        .and_then(|tok| sanitized_token(Some(&tok)).map(str::to_owned))
+        .or_else(|| {
+            env::var("GH_TOKEN")
+                .ok()
+                .and_then(|tok| sanitized_token(Some(&tok)).map(str::to_owned))
+        })
+}
+
+fn should_retry_attestations_without_token(status: StatusCode, token: Option<&str>) -> bool {
+    sanitized_token(token)
+        .and_then(authorization_header_value)
+        .is_some()
+        && matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+}
 
 async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<serde_json::Value>> {
     let url = format!(
@@ -86,17 +133,14 @@ async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<ser
     );
 
     let client = reqwest::Client::new();
-    let mut req = client
-        .get(&url)
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "goose-cli");
+    let token = sanitized_token(token);
+    let resp = fetch_attestations_response(&client, &url, token).await?;
 
-    if let Some(tok) = token {
-        req = req.header("Authorization", format!("Bearer {tok}"));
-    }
-
-    let resp = req.send().await.context("Failed to fetch attestations")?;
+    let resp = if should_retry_attestations_without_token(resp.status(), token) {
+        fetch_attestations_response(&client, &url, None).await?
+    } else {
+        resp
+    };
 
     if !resp.status().is_success() {
         bail!("GitHub attestation API returned HTTP {}", resp.status());
@@ -107,7 +151,71 @@ async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<ser
         .await
         .context("Failed to parse attestation response")?;
 
-    Ok(body.attestations.into_iter().map(|a| a.bundle).collect())
+    // GitHub no longer embeds bundles in attestation list responses; they are
+    // served from blob storage via bundle_url instead.
+    let mut bundles = Vec::with_capacity(body.attestations.len());
+    for entry in body.attestations {
+        match (entry.bundle, entry.bundle_url) {
+            (Some(bundle), _) if !bundle.is_null() => bundles.push(bundle),
+            (_, Some(url)) => bundles.push(fetch_bundle(&client, &url).await?),
+            _ => bail!("Attestation has neither a bundle nor a bundle URL"),
+        }
+    }
+
+    Ok(bundles)
+}
+
+// The bundle URL is pre-signed for blob storage, so no API credentials are sent.
+async fn fetch_bundle(client: &reqwest::Client, url: &str) -> Result<serde_json::Value> {
+    let resp = client
+        .get(url)
+        .header("User-Agent", "goose-cli")
+        .send()
+        .await
+        .context("Failed to fetch attestation bundle")?;
+
+    if !resp.status().is_success() {
+        bail!(
+            "Attestation bundle download returned HTTP {}",
+            resp.status()
+        );
+    }
+
+    let body = resp
+        .bytes()
+        .await
+        .context("Failed to read attestation bundle")?;
+    parse_bundle_bytes(&body)
+}
+
+fn parse_bundle_bytes(body: &[u8]) -> Result<serde_json::Value> {
+    if let Ok(bundle) = serde_json::from_slice(body) {
+        return Ok(bundle);
+    }
+
+    // Offloaded bundles are served as snappy-compressed JSON.
+    let decompressed = snap::raw::Decoder::new()
+        .decompress_vec(body)
+        .context("Failed to decompress attestation bundle")?;
+    serde_json::from_slice(&decompressed).context("Failed to parse attestation bundle")
+}
+
+async fn fetch_attestations_response(
+    client: &reqwest::Client,
+    url: &str,
+    token: Option<&str>,
+) -> Result<reqwest::Response> {
+    let mut req = client
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "goose-cli");
+
+    if let Some(value) = token.and_then(authorization_header_value) {
+        req = req.header(AUTHORIZATION, value);
+    }
+
+    req.send().await.context("Failed to fetch attestations")
 }
 
 // Verify a single attestation bundle against the artifact digest and workflow.
@@ -125,10 +233,6 @@ fn verify_bundle(
     let result = sigstore_verify::verify(artifact_digest, &bundle, policy, trusted_root)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    if !result.success {
-        bail!("Verification unsuccessful");
-    }
-
     let identity = result
         .identity
         .as_deref()
@@ -142,8 +246,8 @@ fn verify_bundle(
     Ok(())
 }
 
-/// Returns `Ok(true)` verified, `Ok(false)` skipped (soft warning), `Err` hard failure.
-async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
+/// Returns `Ok(())` when the downloaded archive has verified provenance.
+async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<()> {
     let digest = sha256_hex(archive_data);
     println!("Archive SHA-256: {digest}");
 
@@ -152,30 +256,19 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
         _ => "release.yml",
     };
 
-    let token = env::var("GITHUB_TOKEN")
-        .ok()
-        .or_else(|| env::var("GH_TOKEN").ok());
+    let token = github_token();
 
     println!("Verifying SLSA provenance via Sigstore...");
 
-    let bundles = match fetch_attestations(&digest, token.as_deref()).await {
-        Ok(b) if b.is_empty() => {
-            eprintln!(
-                "Warning: No Sigstore attestation found for this build. \
-                 This may be expected for canary or nightly builds."
-            );
-            return Ok(false);
-        }
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!(
-                "Warning: Sigstore provenance check could not complete: {e}\n\
-                 This may be expected for releases published before provenance \
-                 attestations were enabled."
-            );
-            return Ok(false);
-        }
-    };
+    let bundles = fetch_attestations(&digest, token.as_deref())
+        .await
+        .context(
+            "Sigstore provenance check could not complete; refusing to install unverifiable update",
+        )?;
+
+    if bundles.is_empty() {
+        bail!("No Sigstore attestation found for downloaded archive; refusing to install unverifiable update");
+    }
 
     let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
         .context("Failed to load Sigstore trusted root")?;
@@ -195,7 +288,7 @@ async fn verify_provenance(archive_data: &[u8], tag: &str) -> Result<bool> {
         ) {
             Ok(()) => {
                 println!("Sigstore provenance verification passed.");
-                return Ok(true);
+                return Ok(());
             }
             Err(e) => last_err = Some(e),
         }
@@ -218,7 +311,14 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         bail!("Update is disabled in this build.");
     }
 
-    #[cfg(not(feature = "disable-update"))]
+    // RISC-V release artifacts are not published yet, so reject self-update
+    // rather than downloading a nonexistent asset.
+    #[cfg(all(target_arch = "riscv64", not(feature = "disable-update")))]
+    {
+        bail!("Self-update is not supported on riscv64: no release artifacts are published for this platform.");
+    }
+
+    #[cfg(all(not(target_arch = "riscv64"), not(feature = "disable-update")))]
     {
         let tag = if canary { "canary" } else { "stable" };
         let asset = asset_name();
@@ -247,7 +347,7 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         println!("Downloaded {} bytes.", bytes.len());
 
         // --- Verify SLSA provenance via Sigstore --------------------------------
-        let provenance_verified = verify_provenance(&bytes, tag).await?;
+        verify_provenance(&bytes, tag).await?;
 
         // --- Extract to temp dir (hardened against path traversal) --------------
         let tmp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
@@ -274,11 +374,7 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         #[cfg(target_os = "windows")]
         copy_dlls(&extracted_binary, &current_exe)?;
 
-        if provenance_verified {
-            println!("goose updated successfully (verified with Sigstore SLSA provenance).");
-        } else {
-            println!("goose updated successfully.");
-        }
+        println!("goose updated successfully (verified with Sigstore SLSA provenance).");
 
         // --- Reconfigure if requested -------------------------------------------
         if reconfigure {
@@ -737,6 +833,98 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_sanitized_token_trims_blank_values() {
+        assert_eq!(sanitized_token(None), None);
+        assert_eq!(sanitized_token(Some("")), None);
+        assert_eq!(sanitized_token(Some("   ")), None);
+        assert_eq!(sanitized_token(Some(" token\n")), Some("token"));
+    }
+
+    #[test]
+    fn test_authorization_header_value_rejects_malformed_tokens() {
+        assert!(authorization_header_value("token").is_some());
+        assert!(authorization_header_value("bad\ntoken").is_none());
+    }
+
+    #[test]
+    fn test_attestation_lookup_retries_auth_failures_without_token() {
+        assert!(should_retry_attestations_without_token(
+            StatusCode::UNAUTHORIZED,
+            Some("token")
+        ));
+        assert!(should_retry_attestations_without_token(
+            StatusCode::FORBIDDEN,
+            Some("token")
+        ));
+        assert!(!should_retry_attestations_without_token(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Some("token")
+        ));
+        assert!(!should_retry_attestations_without_token(
+            StatusCode::UNAUTHORIZED,
+            Some("")
+        ));
+        assert!(!should_retry_attestations_without_token(
+            StatusCode::UNAUTHORIZED,
+            Some("bad\ntoken")
+        ));
+        assert!(!should_retry_attestations_without_token(
+            StatusCode::UNAUTHORIZED,
+            None
+        ));
+    }
+
+    #[test]
+    fn test_attestation_entry_parses_embedded_bundle() {
+        let response: AttestationResponse = serde_json::from_str(
+            r#"{"attestations":[{"repository_id":1,"bundle":{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}}]}"#,
+        )
+        .unwrap();
+        assert!(response.attestations[0].bundle.is_some());
+        assert!(response.attestations[0].bundle_url.is_none());
+    }
+
+    #[test]
+    fn test_attestation_entry_parses_offloaded_bundle() {
+        let response: AttestationResponse = serde_json::from_str(
+            r#"{"attestations":[{"repository_id":1,"bundle_url":"https://example.com/bundle.json.sn","initiator":"user","bundle":null}]}"#,
+        )
+        .unwrap();
+        assert!(response.attestations[0].bundle.is_none());
+        assert_eq!(
+            response.attestations[0].bundle_url.as_deref(),
+            Some("https://example.com/bundle.json.sn")
+        );
+    }
+
+    #[test]
+    fn test_parse_bundle_bytes_plain_json() {
+        let bundle =
+            parse_bundle_bytes(br#"{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}"#)
+                .unwrap();
+        assert_eq!(
+            bundle["mediaType"],
+            "application/vnd.dev.sigstore.bundle.v0.3+json"
+        );
+    }
+
+    #[test]
+    fn test_parse_bundle_bytes_snappy_compressed() {
+        let json = br#"{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}"#;
+        let compressed = snap::raw::Encoder::new().compress_vec(json).unwrap();
+        let bundle = parse_bundle_bytes(&compressed).unwrap();
+        assert_eq!(
+            bundle["mediaType"],
+            "application/vnd.dev.sigstore.bundle.v0.3+json"
+        );
+    }
+
+    #[test]
+    fn test_parse_bundle_bytes_rejects_garbage() {
+        assert!(parse_bundle_bytes(&[0xff, 0x00, 0x12]).is_err());
+    }
+
     // -----------------------------------------------------------------------
     // Path validation and extraction hardening tests
     // -----------------------------------------------------------------------
@@ -808,13 +996,11 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn test_verify_provenance_warns_on_missing_attestation() {
+    async fn test_verify_provenance_fails_closed_when_unverifiable() {
         let result = verify_provenance(b"not a real archive", "stable").await;
-        // Network failures and missing attestations are soft warnings: Ok(false), not hard errors.
-        assert_eq!(
-            result.ok(),
-            Some(false),
-            "verify_provenance should return Ok(false) when attestations cannot be fetched"
+        assert!(
+            result.is_err(),
+            "verify_provenance must fail closed when provenance cannot be verified"
         );
     }
 

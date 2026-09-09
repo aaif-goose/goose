@@ -11,11 +11,7 @@ on:
 name: Release
 
 permissions:
-  id-token: write   # Required for Sigstore OIDC signing and AWS OIDC (Windows signing)
-  contents: write   # Required for creating releases and by actions/checkout
-  actions: read     # May be needed for some workflows
-  pull-requests: write  # Required for npm publish workflow
-  attestations: write  # Required for SLSA build provenance attestations
+  contents: read
 
 env:
   # Set this repository Actions variable to "true" in GitHub Settings > Secrets and variables
@@ -28,10 +24,12 @@ concurrency:
 
 jobs:
   # ------------------------------------
-  # 1) Build CLI for multiple OS/Arch
+  # 1) Bundle CLI and Desktop (Linux)
   # ------------------------------------
-  build-cli:
-    uses: ./.github/workflows/build-cli.yml
+  build-cli-linux:
+    uses: ./.github/workflows/build-cli-linux.yml
+    with:
+      package_desktop: true
 
   # ------------------------------------
   # 2) Upload Install CLI Script
@@ -39,88 +37,97 @@ jobs:
   install-script:
     name: Upload Install Script
     runs-on: ubuntu-latest
-    needs: [build-cli]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: download_cli.sh
           path: download_cli.sh
 
   # ------------------------------------------------------------
-  # 3) Bundle Desktop App (macOS)
+  # 3) Bundle CLI and Desktop (macOS ARM64)
   # ------------------------------------------------------------
-  bundle-desktop:
-    uses: ./.github/workflows/bundle-desktop.yml
+  bundle-macos-arm64:
+    uses: ./.github/workflows/bundle-macos.yml
     permissions:
-      id-token: write
       contents: read
     with:
+      target: aarch64-apple-darwin
+      package_cli: true
+      package_desktop: true
       signing: ${{ startsWith(github.ref, 'refs/tags/') }}
       environment: ${{ startsWith(github.ref, 'refs/tags/') && 'signing' || '' }}
     secrets: inherit
 
   # ------------------------------------------------------------
-  # 4) Bundle Desktop App (macOS)
+  # 4) Bundle CLI and Desktop (macOS x64)
   # ------------------------------------------------------------
-  bundle-desktop-intel:
-    uses: ./.github/workflows/bundle-desktop-intel.yml
+  bundle-macos-x64:
+    uses: ./.github/workflows/bundle-macos.yml
     permissions:
-      id-token: write
       contents: read
     with:
+      target: x86_64-apple-darwin
+      package_cli: true
+      package_desktop: true
       signing: ${{ startsWith(github.ref, 'refs/tags/') }}
       environment: ${{ startsWith(github.ref, 'refs/tags/') && 'signing' || '' }}
     secrets: inherit
 
   # ------------------------------------------------------------
-  # 5) Bundle Desktop App (Linux)
+  # 5) Bundle CLI and Desktop (Windows)
   # ------------------------------------------------------------
-  bundle-desktop-linux:
-    uses: ./.github/workflows/bundle-desktop-linux.yml
-
-#  # ------------------------------------------------------------
-#  # 6) Bundle Desktop App (Windows)
-#  # ------------------------------------------------------------
-  bundle-desktop-windows:
-    uses: ./.github/workflows/bundle-desktop-windows.yml
+  bundle-windows:
+    uses: ./.github/workflows/bundle-windows.yml
     permissions:
       id-token: write
       contents: read
-      actions: read
     with:
+      package_cli: true
+      package_desktop: true
       signing: ${{ startsWith(github.ref, 'refs/tags/') }}
+      environment: ${{ startsWith(github.ref, 'refs/tags/') && 'signing' || '' }}
     secrets: inherit
 
-  bundle-desktop-windows-cuda:
-    uses: ./.github/workflows/bundle-desktop-windows.yml
+  bundle-windows-cuda:
+    uses: ./.github/workflows/bundle-windows.yml
     permissions:
       id-token: write
       contents: read
-      actions: read
     with:
+      package_cli: true
+      package_desktop: true
       signing: ${{ startsWith(github.ref, 'refs/tags/') }}
+      environment: ${{ startsWith(github.ref, 'refs/tags/') && 'signing' || '' }}
       windows_variant: cuda
     secrets: inherit
 
   # ------------------------------------
-  # 7) Create/Update GitHub Release
+  # 6) Create/Update GitHub Release
   # ------------------------------------
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    needs: [build-cli, install-script, bundle-desktop, bundle-desktop-intel, bundle-desktop-linux, bundle-desktop-windows, bundle-desktop-windows-cuda]
+    needs: [build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
     permissions:
       contents: write
       id-token: write      # Required for Sigstore OIDC signing
       attestations: write  # Required for SLSA build provenance attestations
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Download all artifacts
+      - name: Create source code bundles
+        run: |
+          git archive --format=tar.gz --prefix="goose-${GITHUB_REF_NAME}/" --output="goose-source-${GITHUB_REF_NAME}.tar.gz" HEAD
+          git archive --format=zip --prefix="goose-${GITHUB_REF_NAME}/" --output="goose-source-${GITHUB_REF_NAME}.zip" HEAD
+
+      - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
+          pattern: '!internal-*'
           merge-multiple: true
 
       - name: Generate macOS update manifest
@@ -129,12 +136,12 @@ jobs:
 
       - name: Attest macOS update manifest
         if: ${{ env.ENABLE_MAC_NATIVE_AUTO_UPDATE == 'true' }}
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: latest-mac.yml
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: |
             goose-*.tar.bz2

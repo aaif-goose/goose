@@ -9,6 +9,9 @@
 use crate::config::paths::Paths;
 
 pub const LOCAL_WHISPER_MODEL_CONFIG_KEY: &str = "LOCAL_WHISPER_MODEL";
+pub const LOCAL_WHISPER_LANGUAGE_CONFIG_KEY: &str = "LOCAL_WHISPER_LANGUAGE";
+const ENGLISH_LANGUAGE_TOKEN: u32 = 50259;
+const LANGUAGE_TOKEN_COUNT: u32 = 99;
 use anyhow::{Context, Result};
 use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::ops::log_softmax;
@@ -16,14 +19,15 @@ use candle_transformers::models::whisper::{self as m, audio, Config, N_FRAMES};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use symphonia::core::audio::{AudioBufferRef, Layout, Signal};
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::audio::conv::FromSample;
+use symphonia::core::audio::sample::Sample;
+use symphonia::core::audio::{Audio, AudioBuffer, GenericAudioBufferRef};
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 use tokenizers::Tokenizer;
-use utoipa::ToSchema;
 
 // Common suppress tokens for all Whisper models
 const SUPPRESS_TOKENS: &[u32] = &[
@@ -41,8 +45,11 @@ const TRANSCRIBE_TOKEN: u32 = 50359;
 const EOT_TOKEN: u32 = 50257;
 const TIMESTAMP_BEGIN: u32 = 50364;
 const SAMPLE_BEGIN: usize = 3;
+const MIN_SUPPORTED_AUDIO_SAMPLE_RATE: u32 = 8_000;
+const MAX_SUPPORTED_AUDIO_SAMPLE_RATE: u32 = 96_000;
+const MAX_WHISPER_AUDIO_SAMPLES: usize = 50 * 1024 * 1024;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhisperModel {
     /// Model identifier (e.g., "tiny", "base", "small")
     pub id: &'static str,
@@ -256,6 +263,8 @@ impl WhisperTranscriber {
         let tokenizer = Self::load_tokenizer(model_path_ref, Some(bundled_tokenizer))?;
         tracing::debug!("tokenizer loaded successfully");
 
+        let language_token = Self::resolve_language_token(&tokenizer);
+
         Ok(Self {
             model,
             config,
@@ -264,9 +273,18 @@ impl WhisperTranscriber {
             tokenizer,
             eot_token: 50257,
             no_timestamps_token: 50363,
-            language_token: 50259,
+            language_token,
             max_initial_timestamp_index: 50,
         })
+    }
+
+    fn resolve_language_token(tokenizer: &Tokenizer) -> u32 {
+        let configured = crate::config::Config::global()
+            .get(LOCAL_WHISPER_LANGUAGE_CONFIG_KEY, false)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+        language_token(tokenizer, configured.as_deref())
     }
 
     fn load_tokenizer(model_dir: &Path, bundled_tokenizer: Option<&str>) -> Result<Tokenizer> {
@@ -302,6 +320,8 @@ impl WhisperTranscriber {
             tracing::debug!("empty audio data received");
             return Ok(String::new());
         }
+
+        self.language_token = Self::resolve_language_token(&self.tokenizer);
 
         let (mel_tensor, actual_content_frames) = self.prepare_audio_input(audio_data)?;
         let (_, _, padded_frames) = mel_tensor.dims3()?;
@@ -719,6 +739,35 @@ impl WhisperTranscriber {
     }
 }
 
+/// Resolve an ISO 639-1 language code to its Whisper language token.
+///
+/// Whisper tokenizers expose one `<|xx|>` token per supported language, so the code is looked up
+/// in the tokenizer rather than mapped through a table that would drift from the model.
+/// Unset or unrecognized codes fall back to English.
+///
+/// The result is bounded to the language block because the tokenizer also contains task and
+/// control tokens such as `<|translate|>`, which would otherwise resolve here and produce an
+/// invalid decoder prompt.
+fn language_token(tokenizer: &Tokenizer, code: Option<&str>) -> u32 {
+    let Some(code) = code else {
+        return ENGLISH_LANGUAGE_TOKEN;
+    };
+
+    let code = code.trim().to_lowercase();
+    let languages = ENGLISH_LANGUAGE_TOKEN..ENGLISH_LANGUAGE_TOKEN + LANGUAGE_TOKEN_COUNT;
+
+    match tokenizer.token_to_id(&format!("<|{}|>", code)) {
+        Some(token) if languages.contains(&token) => token,
+        _ => {
+            tracing::warn!(
+                language = %code,
+                "unsupported LOCAL_WHISPER_LANGUAGE, transcribing as English"
+            );
+            ENGLISH_LANGUAGE_TOKEN
+        }
+    }
+}
+
 /// Remove repeated phrases from transcribed text.
 ///
 /// Whisper models (especially smaller/quantized ones) tend to loop, producing output like
@@ -891,50 +940,50 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
 
     let hint = Hint::new();
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .context("Failed to probe audio format - unsupported format")?;
 
-    let mut format = probed.format;
-
     let track = format
-        .default_track()
+        .default_track(TrackType::Audio)
         .context("No default audio track found")?;
 
-    let sample_rate = track
+    let codec_params = track
         .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+        .context("No audio codec parameters found")?
+        .clone();
+
+    let sample_rate = codec_params
         .sample_rate
         .context("No sample rate in audio track")?;
+    checked_resampled_sample_count(0, sample_rate, 16_000)?;
 
-    let channels = if let Some(ch) = track.codec_params.channels {
-        ch.count()
-    } else if let Some(layout) = track.codec_params.channel_layout {
-        match layout {
-            Layout::Mono => 1,
-            Layout::Stereo => 2,
-            _ => 1,
-        }
-    } else {
-        anyhow::bail!("No channel information in audio track (neither channels nor channel_layout)")
-    };
+    let channels = codec_params
+        .channels
+        .as_ref()
+        .map(|channels| channels.count())
+        .context("No channel information in audio track")?;
 
     tracing::debug!(sample_rate, channels, "audio format detected");
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
         .context("Failed to create audio decoder - please ensure browser sends WAV format audio")?;
 
-    let mut pcm_data = Vec::new();
+    let mut mono_data = Vec::new();
     let mut packet_count = 0;
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(symphonia::core::errors::Error::IoError(e))
                 if e.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
@@ -945,7 +994,9 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
 
         match decoder.decode(&packet) {
             Ok(decoded) => {
-                pcm_data.extend(audio_buffer_to_f32(&decoded));
+                checked_decoded_sample_count(mono_data.len(), decoded.frames(), sample_rate)?;
+                mono_data.try_reserve(decoded.frames())?;
+                append_audio_buffer_as_mono(&decoded, &mut mono_data);
                 packet_count += 1;
             }
             Err(symphonia::core::errors::Error::DecodeError(_)) => {
@@ -957,16 +1008,9 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
 
     tracing::debug!(
         packet_count,
-        pcm_samples = pcm_data.len(),
+        mono_samples = mono_data.len(),
         "decoded audio packets"
     );
-
-    let mono_data = if channels > 1 {
-        tracing::debug!(channels, "converting to mono");
-        convert_to_mono(&pcm_data, channels)
-    } else {
-        pcm_data
-    };
 
     let resampled = if sample_rate != 16000 {
         tracing::debug!(from_rate = sample_rate, to_rate = 16000, "resampling audio");
@@ -996,71 +1040,47 @@ fn decode_audio_simple(audio_data: &[u8]) -> Result<Vec<f32>> {
     Ok(resampled)
 }
 
-fn audio_buffer_to_f32(buffer: &AudioBufferRef) -> Vec<f32> {
-    let num_channels = buffer.spec().channels.count();
-    let num_frames = buffer.frames();
-    let mut samples = Vec::with_capacity(num_frames * num_channels);
-
+fn append_audio_buffer_as_mono(buffer: &GenericAudioBufferRef<'_>, samples: &mut Vec<f32>) {
     match buffer {
-        AudioBufferRef::F32(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx]);
-                }
-            }
-        }
-        AudioBufferRef::S16(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx] as f32 / 32768.0);
-                }
-            }
-        }
-        AudioBufferRef::S32(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx] as f32 / 2147483648.0);
-                }
-            }
-        }
-        AudioBufferRef::F64(buf) => {
-            for frame_idx in 0..num_frames {
-                for ch_idx in 0..num_channels {
-                    samples.push(buf.chan(ch_idx)[frame_idx] as f32);
-                }
-            }
-        }
-        _ => {
-            tracing::warn!("Unsupported audio buffer format, returning silence");
-        }
+        GenericAudioBufferRef::U8(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::U16(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::U24(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::U32(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::S8(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::S16(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::S24(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::S32(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::F32(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
+        GenericAudioBufferRef::F64(buffer) => append_typed_audio_buffer_as_mono(buffer, samples),
     }
-
-    samples
 }
 
-fn convert_to_mono(data: &[f32], channels: usize) -> Vec<f32> {
-    if channels == 1 {
-        return data.to_vec();
-    }
+fn append_typed_audio_buffer_as_mono<S>(buffer: &AudioBuffer<S>, samples: &mut Vec<f32>)
+where
+    S: Sample,
+    f32: FromSample<S>,
+{
+    let num_channels = buffer.num_planes();
+    let channel_scale = 1.0 / num_channels as f32;
 
-    let frames = data.len() / channels;
-    let mut mono = Vec::with_capacity(frames);
-
-    for frame_idx in 0..frames {
+    for frame_idx in 0..buffer.frames() {
         let mut sum = 0.0;
-        for ch in 0..channels {
-            sum += data[frame_idx * channels + ch];
+        for ch_idx in 0..num_channels {
+            if let Some(plane) = buffer.plane(ch_idx) {
+                sum += f32::from_sample(plane[frame_idx]);
+            }
         }
-        mono.push(sum / channels as f32);
+        samples.push(sum * channel_scale);
     }
-
-    mono
 }
 
 fn resample_audio(data: &[f32], from_rate: u32, to_rate: u32) -> Result<Vec<f32>> {
     use rubato::{
-        Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+        audioadapter_buffers::direct::SequentialSliceOfVecs, Async, FixedAsync, Resampler,
+        SincInterpolationParameters, SincInterpolationType, WindowFunction,
     };
+
+    let output_samples = checked_resampled_sample_count(data.len(), from_rate, to_rate)?;
 
     if from_rate == to_rate {
         return Ok(data.to_vec());
@@ -1070,39 +1090,139 @@ fn resample_audio(data: &[f32], from_rate: u32, to_rate: u32) -> Result<Vec<f32>
         from_rate,
         to_rate,
         input_samples = data.len(),
+        output_samples,
         "resampling audio"
     );
 
     let params = SincInterpolationParameters {
         sinc_len: 256,
-        f_cutoff: 0.95,
+        f_cutoff: Some(0.95),
         interpolation: SincInterpolationType::Linear,
         oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
     };
 
-    let mut resampler = SincFixedIn::<f32>::new(
+    let mut resampler = Async::<f32>::new_sinc(
         to_rate as f64 / from_rate as f64,
         2.0,
-        params,
-        data.len(),
+        &params,
+        1024,
         1,
+        FixedAsync::Input,
     )?;
 
     let waves_in = vec![data.to_vec()];
-    let waves_out = resampler.process(&waves_in, None)?;
+    let input = SequentialSliceOfVecs::new(&waves_in, 1, data.len())?;
+    let output = resampler.process_all(&input, data.len(), None)?;
+    let output = output.take_data();
 
-    tracing::debug!(output_samples = waves_out[0].len(), "resampling complete");
-    Ok(waves_out[0].clone())
+    tracing::debug!(output_samples = output.len(), "resampling complete");
+    Ok(output)
+}
+
+fn checked_resampled_sample_count(
+    input_samples: usize,
+    from_rate: u32,
+    to_rate: u32,
+) -> Result<usize> {
+    anyhow::ensure!(
+        (MIN_SUPPORTED_AUDIO_SAMPLE_RATE..=MAX_SUPPORTED_AUDIO_SAMPLE_RATE).contains(&from_rate),
+        "Unsupported audio sample rate {from_rate} Hz; supported range is {MIN_SUPPORTED_AUDIO_SAMPLE_RATE}-{MAX_SUPPORTED_AUDIO_SAMPLE_RATE} Hz"
+    );
+
+    let from_rate = from_rate as usize;
+    let to_rate = to_rate as usize;
+    let whole_seconds = input_samples / from_rate;
+    let partial_second_samples = input_samples % from_rate;
+    let output_samples = whole_seconds
+        .checked_mul(to_rate)
+        .and_then(|whole| {
+            partial_second_samples
+                .checked_mul(to_rate)
+                .and_then(|partial| whole.checked_add(partial.div_ceil(from_rate)))
+        })
+        .ok_or_else(|| anyhow::anyhow!("Resampled audio size overflow"))?;
+
+    anyhow::ensure!(
+        output_samples <= MAX_WHISPER_AUDIO_SAMPLES,
+        "Whisper audio would contain {output_samples} samples; maximum is {MAX_WHISPER_AUDIO_SAMPLES}"
+    );
+
+    Ok(output_samples)
+}
+
+fn checked_decoded_sample_count(
+    current_samples: usize,
+    decoded_frames: usize,
+    sample_rate: u32,
+) -> Result<usize> {
+    let decoded_samples = current_samples
+        .checked_add(decoded_frames)
+        .ok_or_else(|| anyhow::anyhow!("Decoded audio size overflow"))?;
+
+    anyhow::ensure!(
+        decoded_samples <= MAX_WHISPER_AUDIO_SAMPLES,
+        "Decoded audio would contain {decoded_samples} samples; maximum is {MAX_WHISPER_AUDIO_SAMPLES}"
+    );
+    checked_resampled_sample_count(decoded_samples, sample_rate, 16_000)?;
+
+    Ok(decoded_samples)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use symphonia::core::audio::{AudioSpec, Position};
     use test_case::test_case;
 
     const TS: u32 = 50364; // A timestamp token for tests
+
+    #[test]
+    fn decodes_pcm_wav() {
+        let input = [-32768i16, 0, 32767];
+        let data_size = (input.len() * std::mem::size_of::<i16>()) as u32;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_size).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&16000u32.to_le_bytes());
+        wav.extend_from_slice(&32000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_size.to_le_bytes());
+        for sample in input {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+
+        let decoded = decode_audio_simple(&wav).unwrap();
+
+        assert_eq!(decoded.len(), input.len());
+        assert_eq!(decoded[0], -1.0);
+        assert_eq!(decoded[1], 0.0);
+        assert!((decoded[2] - 32767.0 / 32768.0).abs() < f32::EPSILON);
+    }
+
+    #[test_case(None, ENGLISH_LANGUAGE_TOKEN ; "unset falls back to english")]
+    #[test_case(Some("en"), ENGLISH_LANGUAGE_TOKEN ; "english")]
+    #[test_case(Some("de"), 50261 ; "german")]
+    #[test_case(Some("ru"), 50263 ; "russian")]
+    #[test_case(Some("DE"), 50261 ; "uppercase code is normalized")]
+    #[test_case(Some("klingon"), ENGLISH_LANGUAGE_TOKEN ; "unsupported falls back to english")]
+    #[test_case(Some("su"), 50357 ; "last language in the block")]
+    #[test_case(Some("translate"), ENGLISH_LANGUAGE_TOKEN ; "task token is not a language")]
+    #[test_case(Some("notimestamps"), ENGLISH_LANGUAGE_TOKEN ; "control token is not a language")]
+    #[test_case(Some("startoftranscript"), ENGLISH_LANGUAGE_TOKEN ; "sot token is not a language")]
+    fn test_language_token(code: Option<&str>, expected: u32) {
+        let tokenizer =
+            Tokenizer::from_bytes(include_bytes!("whisper_data/tokens.json")).expect("tokenizer");
+
+        assert_eq!(language_token(&tokenizer, code), expected);
+    }
 
     // detect_repetition_impl tests
     // sample_begin=3 means tokens[0..3] are SOT, language, transcribe
@@ -1197,5 +1317,92 @@ mod tests {
     #[test_case("Really? Yes! Ok.", vec!["Really? ", "Yes! ", "Ok."] ; "mixed punctuation")]
     fn test_split_into_sentences(input: &str, expected: Vec<&str>) {
         assert_eq!(split_into_sentences(input), expected);
+    }
+
+    #[test_case(8_000, 48_000, 96_000 ; "minimum supported rate")]
+    #[test_case(16_000, 48_000, 48_000 ; "whisper rate no-op")]
+    #[test_case(96_000, 96_000, 16_000 ; "maximum supported rate")]
+    fn supported_resample_rates_preserve_expected_size(
+        from_rate: u32,
+        input_samples: usize,
+        expected_output_samples: usize,
+    ) {
+        assert_eq!(
+            checked_resampled_sample_count(input_samples, from_rate, 16_000).unwrap(),
+            expected_output_samples
+        );
+    }
+
+    #[test]
+    fn resampling_rejects_attacker_controlled_extreme_rate() {
+        let error = resample_audio(&[0.0; 16], 1, 16_000).unwrap_err();
+
+        assert!(error.to_string().contains("Unsupported audio sample rate"));
+    }
+
+    #[test]
+    fn resampled_sample_budget_accepts_boundary_and_rejects_excess() {
+        let boundary_input = MAX_WHISPER_AUDIO_SAMPLES / 2;
+        assert_eq!(
+            checked_resampled_sample_count(boundary_input, 8_000, 16_000).unwrap(),
+            MAX_WHISPER_AUDIO_SAMPLES
+        );
+
+        let error = checked_resampled_sample_count(boundary_input + 1, 8_000, 16_000).unwrap_err();
+        assert!(error.to_string().contains("maximum"));
+    }
+
+    #[test]
+    fn decoded_audio_budget_enforces_native_whisper_rate() {
+        assert_eq!(
+            checked_decoded_sample_count(MAX_WHISPER_AUDIO_SAMPLES - 1, 1, 16_000).unwrap(),
+            MAX_WHISPER_AUDIO_SAMPLES
+        );
+
+        let error =
+            checked_decoded_sample_count(MAX_WHISPER_AUDIO_SAMPLES - 1, 2, 16_000).unwrap_err();
+        assert!(error.to_string().contains("maximum"));
+    }
+
+    #[test]
+    fn decoded_audio_budget_caps_high_rate_pcm() {
+        let error = checked_decoded_sample_count(MAX_WHISPER_AUDIO_SAMPLES, 1, 96_000).unwrap_err();
+
+        assert!(error.to_string().contains("maximum"));
+    }
+
+    #[test]
+    fn decoded_stereo_frames_are_appended_as_mono() {
+        let spec = AudioSpec::new(
+            16_000,
+            (Position::FRONT_LEFT | Position::FRONT_RIGHT).into(),
+        );
+        let mut buffer = AudioBuffer::<f32>::new(spec, 2);
+        buffer
+            .render_with(Some(2), |frame, planes| {
+                planes[0][frame] = if frame == 0 { 1.0 } else { -1.0 };
+                planes[1][frame] = if frame == 0 { 3.0 } else { 1.0 };
+                Ok(())
+            })
+            .unwrap();
+        let mut samples = vec![4.0];
+
+        append_audio_buffer_as_mono(&GenericAudioBufferRef::F32(&buffer), &mut samples);
+
+        assert_eq!(samples, vec![4.0, 2.0, 0.0]);
+    }
+
+    #[test]
+    fn resampled_sample_count_rejects_overflow() {
+        let error = checked_resampled_sample_count(usize::MAX, 8_000, 16_000).unwrap_err();
+
+        assert!(error.to_string().contains("overflow"));
+    }
+
+    #[test]
+    fn same_rate_resampling_preserves_samples() {
+        let samples = vec![0.25, -0.5, 0.75];
+
+        assert_eq!(resample_audio(&samples, 16_000, 16_000).unwrap(), samples);
     }
 }

@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
+    redirect::Policy,
     Client, Response, StatusCode,
 };
 #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
@@ -13,8 +14,10 @@ use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use url::Host;
 
-const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
 
 pub type RequestBuilderDecorator =
     Arc<dyn Fn(reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> + Send + Sync>;
@@ -28,6 +31,15 @@ pub struct ApiClient {
     timeout: Duration,
     tls_config: Option<TlsConfig>,
     request_builder: Option<RequestBuilderDecorator>,
+    transport_policy: TransportPolicy,
+}
+
+#[derive(Clone)]
+enum TransportPolicy {
+    Default,
+    HttpsOnly,
+    LoopbackHttp,
+    SameOrigin(url::Origin),
 }
 
 pub enum AuthMethod {
@@ -147,8 +159,14 @@ impl Default for TlsConfig {
 /// Note: the rustls code path (`Identity::from_pem`) accepts all formats natively,
 /// so this conversion is only needed for native-tls.
 #[cfg(feature = "native-tls")]
+const RSA_ALGORITHM_ID: pkcs8::AlgorithmIdentifierRef<'static> = pkcs8::AlgorithmIdentifierRef {
+    oid: pkcs8::ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
+    parameters: Some(pkcs8::der::asn1::AnyRef::NULL),
+};
+
+#[cfg(feature = "native-tls")]
 fn convert_key_to_pkcs8_pem(key_pem_str: &str) -> Result<String> {
-    use pkcs8::der::{Decode, Encode};
+    use pkcs8::der::{asn1::OctetStringRef, Decode, Encode};
 
     let parsed =
         pem::parse(key_pem_str).map_err(|e| anyhow::anyhow!("Failed to parse PEM key: {}", e))?;
@@ -156,7 +174,8 @@ fn convert_key_to_pkcs8_pem(key_pem_str: &str) -> Result<String> {
     match parsed.tag() {
         "PRIVATE KEY" => Ok(key_pem_str.to_string()),
         "RSA PRIVATE KEY" => {
-            let info = pkcs8::PrivateKeyInfo::new(pkcs1::ALGORITHM_ID, parsed.contents());
+            let private_key = OctetStringRef::new(parsed.contents())?;
+            let info = pkcs8::PrivateKeyInfoRef::new(RSA_ALGORITHM_ID, private_key);
             let der_bytes = info
                 .to_der()
                 .map_err(|e| anyhow::anyhow!("Failed to encode PKCS#8: {}", e))?;
@@ -178,7 +197,8 @@ fn convert_key_to_pkcs8_pem(key_pem_str: &str) -> Result<String> {
                 oid: sec1::ALGORITHM_OID,
                 parameters: Some((&curve_oid).into()),
             };
-            let info = pkcs8::PrivateKeyInfo::new(algorithm, parsed.contents());
+            let private_key = OctetStringRef::new(parsed.contents())?;
+            let info = pkcs8::PrivateKeyInfoRef::new(algorithm, private_key);
             let der_bytes = info
                 .to_der()
                 .map_err(|e| anyhow::anyhow!("Failed to encode PKCS#8: {}", e))?;
@@ -195,6 +215,10 @@ fn convert_key_to_pkcs8_pem(key_pem_str: &str) -> Result<String> {
 #[async_trait]
 pub trait AuthProvider: Send + Sync {
     async fn get_auth_header(&self) -> Result<(String, String)>;
+
+    async fn refresh_credentials(&self) -> Result<()> {
+        anyhow::bail!("credential refresh not supported")
+    }
 }
 
 pub struct ApiResponse {
@@ -229,6 +253,7 @@ pub struct ApiRequestBuilder<'a> {
     client: &'a ApiClient,
     path: &'a str,
     headers: HeaderMap,
+    streaming: bool,
 }
 
 impl ApiClient {
@@ -251,7 +276,7 @@ impl ApiClient {
         timeout: Duration,
         tls_config: Option<TlsConfig>,
     ) -> Result<Self> {
-        let mut client_builder = Client::builder().timeout(timeout);
+        let mut client_builder = Self::client_builder(timeout);
 
         if let Some(ref config) = tls_config {
             client_builder = Self::configure_tls(client_builder, config)?;
@@ -268,6 +293,7 @@ impl ApiClient {
             timeout,
             tls_config,
             request_builder: None,
+            transport_policy: TransportPolicy::Default,
         })
     }
 
@@ -275,10 +301,20 @@ impl ApiClient {
         &self.host
     }
 
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    fn client_builder(timeout: Duration) -> reqwest::ClientBuilder {
+        Client::builder()
+            .connect_timeout(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+            .read_timeout(timeout)
+    }
+
     fn rebuild_client(&mut self) -> Result<()> {
-        let mut client_builder = Client::builder()
-            .timeout(self.timeout)
-            .default_headers(self.default_headers.clone());
+        let mut client_builder =
+            Self::client_builder(self.timeout).default_headers(self.default_headers.clone());
+        client_builder = Self::configure_transport(client_builder, &self.transport_policy);
 
         // Configure TLS if needed
         if let Some(ref tls_config) = self.tls_config {
@@ -287,6 +323,51 @@ impl ApiClient {
 
         self.client = client_builder.build()?;
         Ok(())
+    }
+
+    fn configure_transport(
+        client_builder: reqwest::ClientBuilder,
+        transport_policy: &TransportPolicy,
+    ) -> reqwest::ClientBuilder {
+        match transport_policy {
+            TransportPolicy::Default => client_builder,
+            TransportPolicy::HttpsOnly => client_builder.https_only(true),
+            TransportPolicy::LoopbackHttp => {
+                client_builder
+                    .no_proxy()
+                    .redirect(Policy::custom(|attempt| {
+                        if attempt.previous().len() > 10 {
+                            return attempt.error("too many redirects");
+                        }
+                        let url = attempt.url();
+                        let is_loopback_http = url.scheme() == "http"
+                            && match url.host() {
+                                Some(Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+                                Some(Host::Ipv4(address)) => address.is_loopback(),
+                                Some(Host::Ipv6(address)) => address.is_loopback(),
+                                None => false,
+                            };
+                        if url.scheme() == "https" || is_loopback_http {
+                            attempt.follow()
+                        } else {
+                            attempt.error("redirect violates the loopback transport policy")
+                        }
+                    }))
+            }
+            TransportPolicy::SameOrigin(origin) => {
+                let origin = origin.clone();
+                client_builder.redirect(Policy::custom(move |attempt| {
+                    if attempt.previous().len() >= 10 {
+                        return attempt.error("too many redirects");
+                    }
+                    if attempt.url().origin() == origin {
+                        attempt.follow()
+                    } else {
+                        attempt.error("redirect crosses the authenticated request origin")
+                    }
+                }))
+            }
+        }
     }
 
     /// Configure TLS settings on a reqwest ClientBuilder
@@ -348,11 +429,47 @@ impl ApiClient {
         self
     }
 
+    // Auth is applied fresh on every request, so unlike `with_headers` this
+    // doesn't need to rebuild the underlying `reqwest::Client`.
+    pub fn with_auth(mut self, auth: AuthMethod) -> Self {
+        self.auth = auth;
+        self
+    }
+
+    pub fn with_https_only(mut self) -> Result<Self> {
+        self.transport_policy = TransportPolicy::HttpsOnly;
+        self.rebuild_client()?;
+        Ok(self)
+    }
+
+    pub fn with_loopback_http_only(mut self) -> Result<Self> {
+        self.transport_policy = TransportPolicy::LoopbackHttp;
+        self.rebuild_client()?;
+        Ok(self)
+    }
+
+    pub fn with_same_origin_redirects(mut self) -> Result<Self> {
+        let origin = url::Url::parse(&self.host)
+            .map_err(|error| anyhow::anyhow!("Invalid base URL: {}", error))?
+            .origin();
+        self.transport_policy = TransportPolicy::SameOrigin(origin);
+        self.rebuild_client()?;
+        Ok(self)
+    }
+
     pub fn request<'a>(&'a self, path: &'a str) -> ApiRequestBuilder<'a> {
         ApiRequestBuilder {
             client: self,
             path,
             headers: HeaderMap::new(),
+            streaming: false,
+        }
+    }
+
+    pub async fn refresh_credentials(&self) -> Result<()> {
+        match &self.auth {
+            AuthMethod::Custom(provider) => provider.refresh_credentials().await,
+            _ => anyhow::bail!("credential refresh not supported"),
         }
     }
 
@@ -408,14 +525,38 @@ impl<'a> ApiRequestBuilder<'a> {
         self
     }
 
+    /// Apply per-request headers from a model config, overriding any static
+    /// client headers on key collision.
+    pub fn model_headers(self, model_config: &crate::model::ModelConfig) -> Result<Self> {
+        match &model_config.request_headers {
+            Some(headers) => headers
+                .iter()
+                .try_fold(self, |builder, (key, value)| builder.header(key, value)),
+            None => Ok(self),
+        }
+    }
+
+    pub fn streaming(mut self, streaming: bool) -> Self {
+        self.streaming = streaming;
+        self
+    }
+
     pub async fn api_post(self, payload: &Value) -> Result<ApiResponse> {
         let response = self.response_post(payload).await?;
         ApiResponse::from_response(response).await
     }
 
+    async fn send_bounded(&self, request: reqwest::RequestBuilder) -> Result<Response> {
+        if self.streaming {
+            Ok(crate::http_status::send_bounded(request, self.client.timeout).await?)
+        } else {
+            Ok(request.send().await?)
+        }
+    }
+
     pub async fn response_post(self, payload: &Value) -> Result<Response> {
         let request = self.send_request(|url, client| client.post(url)).await?;
-        Ok(request.json(payload).send().await?)
+        self.send_bounded(request.json(payload)).await
     }
 
     pub async fn multipart_post(self, form: reqwest::multipart::Form) -> Result<Response> {
@@ -430,7 +571,7 @@ impl<'a> ApiRequestBuilder<'a> {
 
     pub async fn response_get(self) -> Result<Response> {
         let request = self.send_request(|url, client| client.get(url)).await?;
-        Ok(request.send().await?)
+        self.send_bounded(request).await
     }
 
     async fn send_request<F>(&self, request_builder: F) -> Result<reqwest::RequestBuilder>
@@ -441,6 +582,10 @@ impl<'a> ApiRequestBuilder<'a> {
         let headers = self.headers.clone();
         let mut request = request_builder(url, &self.client.client);
         request = request.headers(headers);
+
+        if !self.streaming {
+            request = request.timeout(self.client.timeout);
+        }
 
         if let Some(decorator) = &self.client.request_builder {
             request = decorator(request)?;
@@ -559,7 +704,7 @@ ShGoCNbfNS+COlPMRAujyDlATZcLs9p4tA==
         let re_parsed = pem::parse(&result).unwrap();
         assert_eq!(re_parsed.tag(), "PRIVATE KEY");
         use pkcs8::der::Decode;
-        pkcs8::PrivateKeyInfo::from_der(re_parsed.contents()).unwrap();
+        pkcs8::PrivateKeyInfoRef::from_der(re_parsed.contents()).unwrap();
     }
 
     #[test]
@@ -572,7 +717,7 @@ ShGoCNbfNS+COlPMRAujyDlATZcLs9p4tA==
         let re_parsed = pem::parse(&result).unwrap();
         assert_eq!(re_parsed.tag(), "PRIVATE KEY");
         use pkcs8::der::Decode;
-        pkcs8::PrivateKeyInfo::from_der(re_parsed.contents()).unwrap();
+        pkcs8::PrivateKeyInfoRef::from_der(re_parsed.contents()).unwrap();
     }
 
     #[test]
@@ -597,6 +742,319 @@ ShGoCNbfNS+COlPMRAujyDlATZcLs9p4tA==
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::SocketAddr;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    async fn spawn_chunked_server(gap_ms: u64, chunks: usize) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 8192];
+                    let _ = sock.read(&mut buf).await;
+                    if sock
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\n\
+                              content-type: text/event-stream\r\n\
+                              transfer-encoding: chunked\r\n\r\n",
+                        )
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    for i in 0..chunks {
+                        if i > 0 {
+                            tokio::time::sleep(Duration::from_millis(gap_ms)).await;
+                        }
+                        let data = format!("data: {}\n\n", i);
+                        let chunk = format!("{:x}\r\n{}\r\n", data.len(), data);
+                        if sock.write_all(chunk.as_bytes()).await.is_err() {
+                            return;
+                        }
+                        let _ = sock.flush().await;
+                    }
+                    let _ = sock.write_all(b"0\r\n\r\n").await;
+                });
+            }
+        });
+        addr
+    }
+
+    fn client_with_timeout(addr: SocketAddr, timeout_ms: u64) -> ApiClient {
+        let mut client = ApiClient::with_timeout_and_tls(
+            format!("http://{}", addr),
+            AuthMethod::NoAuth,
+            Duration::from_millis(timeout_ms),
+            None,
+        )
+        .unwrap();
+        client.client = Client::builder()
+            .no_proxy()
+            .connect_timeout(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+            .read_timeout(client.timeout)
+            .build()
+            .unwrap();
+        client
+    }
+
+    async fn drain_counting_data_lines(mut response: Response) -> Result<usize, reqwest::Error> {
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            body.extend_from_slice(&chunk);
+        }
+        Ok(String::from_utf8_lossy(&body).matches("data:").count())
+    }
+
+    #[tokio::test]
+    async fn https_only_rejects_http_after_client_rebuild() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = ApiClient::new_with_tls(
+            format!("http://{addr}"),
+            AuthMethod::BearerToken("secret".to_string()),
+            None,
+        )
+        .unwrap()
+        .with_https_only()
+        .unwrap()
+        .with_header("x-test", "value")
+        .unwrap();
+
+        assert!(client.response_get("models").await.is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn loopback_transport_rejects_remote_http_redirect() {
+        for status in ["307 Temporary Redirect", "308 Permanent Redirect"] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0u8; 4096];
+                let _ = socket.read(&mut request).await;
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nLocation: http://192.0.2.1/capture\r\nContent-Length: 0\r\n\r\n"
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            });
+            let client = ApiClient::new_with_tls(
+                format!("http://{addr}"),
+                AuthMethod::BearerToken("secret".to_string()),
+                None,
+            )
+            .unwrap()
+            .with_loopback_http_only()
+            .unwrap()
+            .with_header("x-test", "value")
+            .unwrap();
+
+            let error = client
+                .response_post("chat", &serde_json::json!({ "secret": "prompt" }))
+                .await
+                .unwrap_err();
+
+            assert!(
+                format!("{error:#}").contains("redirect violates the loopback transport policy"),
+                "unexpected redirect error: {error:#}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn streaming_request_survives_beyond_total_timeout() {
+        let addr = spawn_chunked_server(50, 12).await;
+        let client = client_with_timeout(addr, 400);
+
+        let response = client
+            .request("v1/messages")
+            .streaming(true)
+            .response_post(&serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let count = drain_counting_data_lines(response).await.unwrap();
+        assert_eq!(count, 12);
+    }
+
+    #[tokio::test]
+    async fn streaming_request_fails_when_stream_stalls() {
+        let addr = spawn_chunked_server(5_000, 2).await;
+        let client = client_with_timeout(addr, 400);
+
+        let response = client
+            .request("v1/messages")
+            .streaming(true)
+            .response_post(&serde_json::json!({}))
+            .await
+            .unwrap();
+
+        let err = drain_counting_data_lines(response)
+            .await
+            .expect_err("stalled stream should time out, not complete");
+        assert!(err.is_timeout(), "expected a timeout error, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn non_streaming_request_enforces_total_deadline() {
+        let addr = spawn_chunked_server(50, 12).await;
+        let client = client_with_timeout(addr, 400);
+
+        let response = client
+            .request("v1/messages")
+            .response_post(&serde_json::json!({}))
+            .await
+            .unwrap();
+
+        let err = drain_counting_data_lines(response)
+            .await
+            .expect_err("total deadline should cut off the response body");
+        assert!(err.is_timeout(), "expected a timeout error, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn streaming_request_times_out_before_response_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 8192];
+                    while sock.read(&mut buf).await.is_ok_and(|n| n > 0) {}
+                });
+            }
+        });
+        let client = client_with_timeout(addr, 400);
+
+        let started = std::time::Instant::now();
+        let err = client
+            .request("v1/messages")
+            .streaming(true)
+            .response_post(&serde_json::json!({}))
+            .await
+            .expect_err("the phase before the response body must stay bounded");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "should fail near the configured timeout, took {:?}",
+            started.elapsed()
+        );
+        assert!(matches!(
+            crate::errors::ProviderError::from(err),
+            crate::errors::ProviderError::NetworkError(message)
+                if message.starts_with("Request timed out")
+        ));
+    }
+
+    #[tokio::test]
+    async fn streaming_error_body_shares_send_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 8192];
+            let _ = socket.read(&mut buf).await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            socket
+                .write_all(b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 1\r\n\r\n")
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let _ = socket.write_all(b"x").await;
+        });
+
+        let client = client_with_timeout(addr, 400);
+        let started = std::time::Instant::now();
+        let response = client
+            .request("v1/messages")
+            .streaming(true)
+            .response_post(&serde_json::json!({}))
+            .await
+            .unwrap();
+        crate::http_status::handle_status(response)
+            .await
+            .unwrap_err();
+
+        assert!(
+            started.elapsed() < Duration::from_millis(550),
+            "send and error body used separate deadlines: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn test_model_headers_applied_and_override_static_headers() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let client = ApiClient::new_with_tls(
+                "http://localhost:8080".to_string(),
+                AuthMethod::NoAuth,
+                None,
+            )
+            .unwrap()
+            .with_header("x-static", "static-value")
+            .unwrap()
+            .with_header("queue_threshold", "1000")
+            .unwrap();
+
+            let model_config = crate::model::ModelConfig::new("test-model").with_request_headers(
+                Some(std::collections::HashMap::from([
+                    ("queue_threshold".to_string(), "500".to_string()),
+                    ("Idempotency-Key".to_string(), "abc-123".to_string()),
+                ])),
+            );
+
+            let request = client
+                .request("/test")
+                .model_headers(&model_config)
+                .unwrap()
+                .send_request(|url, client| client.get(url))
+                .await
+                .unwrap();
+
+            let headers = request.build().unwrap().headers().clone();
+            let get = |name: &str| {
+                headers
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string)
+            };
+            assert_eq!(get("queue_threshold"), Some("500".to_string()));
+            assert_eq!(get("Idempotency-Key"), Some("abc-123".to_string()));
+        });
+    }
+
+    #[test]
+    fn test_model_headers_rejects_invalid_header_name() {
+        let client = ApiClient::new_with_tls(
+            "http://localhost:8080".to_string(),
+            AuthMethod::NoAuth,
+            None,
+        )
+        .unwrap();
+
+        let model_config = crate::model::ModelConfig::new("test-model").with_request_headers(Some(
+            std::collections::HashMap::from([("bad header name".to_string(), "value".to_string())]),
+        ));
+
+        assert!(client
+            .request("/test")
+            .model_headers(&model_config)
+            .is_err());
+    }
 
     #[test]
     fn test_request_builder_decorator() {

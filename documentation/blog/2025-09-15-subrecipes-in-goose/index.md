@@ -7,6 +7,8 @@ authors:
 
 ![goose Subrecipes](goose-subrecipes.png)
 
+> **Update:** This post is preserved for historical reference. The public Recipe Cookbook submission program has ended, and we are no longer accepting new recipe submissions.
+
 Remember when you first learned to cook? You probably started with simple recipes like scrambled eggs or toast. But eventually you wanted to make something more complex, like a full dinner with multiple dishes. That's how subrecipes work in goose: each recipe can run stand-alone for a dedicated task, and a main recipe can orchestrate how they run.
 
 Let's explore [goose subrecipes](/docs/tutorials/subrecipes-in-parallel) together! You're about to learn know how to orchestrate multiple AI models, coordinate tasks, and build workflows that will turn you into a "head chef" user with goose.
@@ -377,14 +379,9 @@ Each recipe becomes a reusable component that you can mix and match. Build a lib
 
 Ready to start building your own subrecipe workflows? The kitchen is open, and all the ingredients are waiting for you.
 
-## Share Your Recipes with Us!
+## Recipe Submissions Are Closed
 
-Do you have a recipe you'd like to share with the community? We'd love to feature them in our [Recipe Cookbook](https://goose-docs.ai/recipes/)! 
-**How to contribute:**
-1. [Fork the goose repository](https://github.com/aaif-goose/goose/fork)
-2. Add your recipe YAML file to the [`documentation/src/pages/recipes/data/recipes/`](https://github.com/aaif-goose/goose/tree/main/documentation/src/pages/recipes/data/recipes) directory
-3. Create a pull request following our [Recipe Contribution Guide](https://github.com/aaif-goose/goose/blob/main/CONTRIBUTING_RECIPES.md)
-Browse [existing recipes](https://github.com/aaif-goose/goose/tree/main/documentation/src/pages/recipes/data/recipes) for inspiration and formatting examples.
+The Recipe Cookbook remains available to browse, but we are no longer accepting new community recipe submissions.
 
 
 <head>

@@ -137,7 +137,7 @@ By explicitly importing developer, Code Mode ensured the tests ran in my actual 
 
 ## 6. Code Mode Is Portable Across Editors
 
-goose is more than an agent; it's also an [ACP (Agent Client Protocol)](/docs/guides/acp-clients) server. This means you can connect it to any editor that supports ACP, like Zed or Neovim. Plus, any MCP server you use in goose will work there, too.
+goose is more than an agent; it's also an [ACP (Agent Client Protocol)](/docs/gdk/acp) server. This means you can connect it to any editor that supports ACP, like Zed or Neovim. Plus, any MCP server you use in goose will work there, too.
 
 I wanted to try this myself, so I set up Neovim to connect to goose **with Code Mode enabled**. Here's the configuration I used:
 
@@ -210,7 +210,7 @@ Based on my experiments, here is when Code Mode makes sense:
 If you want to experiment with Code Mode, here are some resources:
 
 **Documentation:**
-- [ACP client setup](/docs/guides/acp-clients)
+- [ACP client setup](/docs/gdk/acp)
 - [Extensions guide](/docs/getting-started/using-extensions)
 
 **Previous posts:**
@@ -218,7 +218,7 @@ If you want to experiment with Code Mode, here are some resources:
 - [Code Mode Doesn't Replace MCP](/blog/2025/12/21/code-mode-doesnt-replace-mcp) by me
 
 **Community:**
-- Join our [Discord](https://discord.gg/goose-oss) to share what you learn
+- Join our [Discord](https://discord.gg/n8R5VaWDAn) to share what you learn
 - File issues on [GitHub](https://github.com/aaif-goose/goose) if something does not work as expected
 
 Run your own experiments and let us know what you find.

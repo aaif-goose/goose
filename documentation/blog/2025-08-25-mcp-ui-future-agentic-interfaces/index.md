@@ -133,7 +133,7 @@ The future of interacting with AI relies on smarter interfaces. And with MCP-UI,
 
 <iframe src="https://www.youtube.com/embed/GS-kmreZDgU" title="MCP-UI: The Future of Agentic Interfaces" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="aspect-ratio"></iframe>
 
-*Join the conversation on [Discord](https://discord.gg/goose-oss) and follow our progress as we continue pushing the boundaries of what's possible with AI agents.*
+*Join the conversation on [Discord](https://discord.gg/n8R5VaWDAn) and follow our progress as we continue pushing the boundaries of what's possible with AI agents.*
 
 <head>
   <meta property="og:title" content="MCP-UI: The Future of Agentic Interfaces" />

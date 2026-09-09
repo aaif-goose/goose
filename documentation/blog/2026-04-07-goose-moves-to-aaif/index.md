@@ -36,7 +36,7 @@ git remote set-url origin git@github.com:aaif-goose/goose.git
 
 ## Migration in progress
 
-We're still working through some migration issues (broken links, redirects, CI, etc). If you hit anything that seems off, please reach out on [Discord](https://discord.gg/goose-oss) and let us know.
+We're still working through some migration issues (broken links, redirects, CI, etc). If you hit anything that seems off, please reach out on [Discord](https://discord.gg/n8R5VaWDAn) and let us know.
 ## Learn more
 
 Visit [aaif.io](https://aaif.io/) to learn more about the foundation and its mission.

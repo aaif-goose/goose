@@ -1,0 +1,21 @@
+{
+  "name": "friendli",
+  "engine": "openai",
+  "display_name": "Friendli AI",
+  "description": "Friendli Model APIs provide instant access to a curated set of models, powered by a proprietary inference stack called Friendli Engine for high-performance, cost-efficient inference.",
+  "api_key_env": "FRIENDLI_API_KEY",
+  "base_url": "https://api.friendli.ai/serverless/v1",
+  "catalog_provider_id": "friendli",
+  "model_doc_link": "https://friendli.ai/docs/guides/serverless_endpoints/introduction",
+  "preserves_thinking": true,
+  "supports_streaming": true,
+  "dynamic_models": true,
+  "models": [
+    {"name": "zai-org/GLM-5.2", "context_limit": 1048576},
+    {"name": "zai-org/GLM-5.1", "context_limit": 202752},
+    {"name": "MiniMaxAI/MiniMax-M2.5", "context_limit": 196608},
+    {"name": "deepseek-ai/DeepSeek-V3.2", "context_limit": 163840},
+    {"name": "Qwen/Qwen3-235B-A22B-Instruct-2507", "context_limit": 262144},
+    {"name": "google/gemma-4-31B-it", "context_limit": 262144}
+  ]
+}

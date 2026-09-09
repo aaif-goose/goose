@@ -70,17 +70,12 @@ pub const KNOWN_MODELS: &[&str] = &[
     "claude-haiku-4-5@20251001",
     "claude-opus-4@20250514",
     "claude-sonnet-4@20250514",
-    "claude-3-5-haiku@20241022",
-    "claude-3-haiku@20240307",
     "gemini-3.1-flash-lite",
     "gemini-3.1-pro-preview",
-    "gemini-3-pro-preview",
     "gemini-3-flash-preview",
     "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
 ];
 
 /// Represents available GCP Vertex AI models for goose.

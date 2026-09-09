@@ -90,26 +90,17 @@ export default function RecipePage() {
     <Layout>
       <div className="container mx-auto px-4 py-8 md:p-24">
         <div className="pb-8 md:pb-16">
-          <div className="flex justify-between items-start mb-4">
+          <div className="mb-4">
             <h1 className="text-4xl md:text-[64px] font-medium text-textProminent">
               Recipes Cookbook
             </h1>
-            <Button
-              onClick={() => window.open('https://github.com/aaif-goose/goose/blob/main/CONTRIBUTING_RECIPES.md', '_blank')}
-              className="bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-2 cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12h14"/>
-              </svg>
-              Submit Recipe
-            </Button>
           </div>
           <p className="text-textProminent">
             Save time and skip setup. Launch any{" "}
             <Link to="/docs/guides/recipes/session-recipes" className="text-purple-600 hover:underline">
               goose recipe
             </Link>{" "}
-            shared by the community with a single click.
+            in this archived community collection with a single click. The public submission program has ended, and we are not accepting new community recipe submissions.
           </p>
         </div>
 

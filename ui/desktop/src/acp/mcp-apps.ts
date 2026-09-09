@@ -1,7 +1,8 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { ToolListItem } from '@aaif/goose-sdk';
+import type { ToolListItem } from '@aaif/goose-acp-client';
 import type { GooseApp } from '../types/apps';
 import { getAcpClient } from './acpConnection';
+import { normalizeAcpError } from './errors';
 
 type JsonRecord = Record<string, unknown>;
 export type McpAppTool = ToolListItem;
@@ -74,14 +75,31 @@ export async function listMcpApps(sessionId?: string): Promise<GooseApp[]> {
 }
 
 export async function exportMcpApp(name: string): Promise<string> {
-  const client = await getAcpClient();
-  const response = await client.goose.appsExport_unstable({ name });
-  return response.html;
+  try {
+    const client = await getAcpClient();
+    const response = await client.goose.appsExport_unstable({ name });
+    return response.html;
+  } catch (error) {
+    throw normalizeAcpError(error, 'Failed to export app');
+  }
 }
 
 export async function importMcpApp(html: string): Promise<void> {
-  const client = await getAcpClient();
-  await client.goose.appsImport_unstable({ html });
+  try {
+    const client = await getAcpClient();
+    await client.goose.appsImport_unstable({ html });
+  } catch (error) {
+    throw normalizeAcpError(error, 'Failed to import app');
+  }
+}
+
+export async function deleteMcpApp(name: string): Promise<void> {
+  try {
+    const client = await getAcpClient();
+    await client.goose.appsDelete_unstable({ name });
+  } catch (error) {
+    throw normalizeAcpError(error, 'Failed to delete app');
+  }
 }
 
 export async function listMcpAppTools(
@@ -121,6 +139,7 @@ export async function callMcpAppTool(
   const client = await getAcpClient();
   const response = await client.goose.toolsCall_unstable({
     sessionId,
+    extensionName,
     name: fullToolName,
     arguments: args || {},
   });

@@ -3,16 +3,16 @@ use crate::conversation::message::Message;
 use crate::providers::api_client::RequestBuilderDecorator;
 use crate::providers::base::{
     ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
+    DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
 use crate::providers::google::GOOGLE_DOC_URL;
+use crate::providers::private_file::write_private_file;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 
 const GEMINI_OAUTH_DEFAULT_MODEL: &str = "gemini-3-flash-preview";
-const GEMINI_OAUTH_DEFAULT_FAST_MODEL: &str = "gemini-2.5-flash-lite";
 use crate::providers::retry::ProviderRetry;
 use anyhow::{anyhow, Result};
 use async_stream::try_stream;
@@ -39,7 +39,8 @@ use tokio_util::io::StreamReader;
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+        .read_timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .build()
         .expect("failed to build HTTP client")
 });
@@ -144,7 +145,7 @@ struct SetupData {
 }
 
 #[derive(Debug, Clone)]
-struct TokenCache {
+pub(crate) struct TokenCache {
     cache_path: PathBuf,
 }
 
@@ -153,7 +154,7 @@ fn get_cache_path() -> PathBuf {
 }
 
 impl TokenCache {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let cache_path = get_cache_path();
         if let Some(parent) = cache_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -167,12 +168,13 @@ impl TokenCache {
             .and_then(|contents| serde_json::from_str(&contents).ok())
     }
 
+    pub(crate) fn has_token(&self) -> bool {
+        self.load().is_some()
+    }
+
     fn save(&self, data: &SetupData) -> Result<()> {
-        if let Some(parent) = self.cache_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let contents = serde_json::to_string(data)?;
-        std::fs::write(&self.cache_path, contents)?;
+        write_private_file(&self.cache_path, &contents)?;
         Ok(())
     }
 
@@ -252,6 +254,7 @@ async fn exchange_code_for_tokens(
 
     let resp = client
         .post(GOOGLE_TOKEN_ENDPOINT)
+        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .form(&params)
         .send()
@@ -279,6 +282,7 @@ async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse> {
 
     let resp = client
         .post(GOOGLE_TOKEN_ENDPOINT)
+        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .form(&params)
         .send()
@@ -341,6 +345,7 @@ async fn code_assist_request(access_token: &str, method: &str, body: &Value) -> 
     let client = &*HTTP_CLIENT;
     let resp = client
         .post(&url)
+        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .header("Authorization", format!("Bearer {}", access_token))
         .header("Content-Type", "application/json")
         .json(body)
@@ -369,6 +374,7 @@ async fn code_assist_get(access_token: &str, path: &str) -> Result<Value> {
     let client = &*HTTP_CLIENT;
     let resp = client
         .get(&url)
+        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
         .header("Authorization", format!("Bearer {}", access_token))
         .send()
         .await?;
@@ -882,18 +888,19 @@ impl GeminiOAuthProvider {
             )
             .header("Content-Type", "application/json");
 
-        let response = (self.request_builder)(request.json(&wrapped))
-            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?
-            .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        let request = (self.request_builder)(request.json(&wrapped))
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+        let response = goose_providers::http_status::send_bounded(
+            request,
+            Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let text = response
-                .text()
+            let text = goose_providers::http_status::read_error_body(response)
                 .await
-                .unwrap_or_else(|_| "unknown error".to_string());
+                .unwrap_or_else(|| "unknown error".to_string());
 
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 // Parse retry delay from the error message if available
@@ -926,7 +933,7 @@ impl goose_providers::base::ProviderDescriptor for GeminiOAuthProvider {
         ProviderMetadata::new(
             GEMINI_OAUTH_PROVIDER_NAME,
             "Gemini",
-            "Sign in with your Google account to use Gemini models — no API key needed",
+            "[Deprecated: use the Google provider with a Gemini API key or Vertex AI instead] Sign in with your Google account to use Gemini models — no API key needed",
             GEMINI_OAUTH_DEFAULT_MODEL,
             GEMINI_OAUTH_KNOWN_MODELS.to_vec(),
             GOOGLE_DOC_URL,
@@ -938,7 +945,6 @@ impl goose_providers::base::ProviderDescriptor for GeminiOAuthProvider {
                 false,
             )],
         )
-        .with_fast_model(GEMINI_OAUTH_DEFAULT_FAST_MODEL)
     }
 }
 
@@ -1096,8 +1102,15 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_token_cache_roundtrip() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root_path.as_str()))]);
+
         let cache = TokenCache::new();
+        cache.clear();
+        assert!(!cache.has_token());
         let data = SetupData {
             project_id: "test-project".to_string(),
             token: TokenData {
@@ -1111,7 +1124,37 @@ mod tests {
         assert_eq!(loaded.project_id, "test-project");
         assert_eq!(loaded.token.access_token, "test-access");
         assert_eq!(loaded.token.refresh_token, "test-refresh");
+        assert!(cache.has_token());
         cache.clear();
         assert!(cache.load().is_none());
+        assert!(!cache.has_token());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_cache_replaces_loose_file_with_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let cache_path = directory.path().join("tokens.json");
+        std::fs::write(&cache_path, "{}").unwrap();
+        std::fs::set_permissions(&cache_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let cache = TokenCache {
+            cache_path: cache_path.clone(),
+        };
+
+        cache
+            .save(&SetupData {
+                project_id: "project".to_string(),
+                token: TokenData {
+                    access_token: "access".to_string(),
+                    refresh_token: "refresh".to_string(),
+                    expires_at: Utc::now() + chrono::Duration::hours(1),
+                },
+            })
+            .unwrap();
+
+        let mode = std::fs::metadata(cache_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

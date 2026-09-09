@@ -201,10 +201,95 @@ const darkColorTokens: ColorTokens = {
 };
 
 // ---------------------------------------------------------------------------
+// Aura theme — colors & shadows (dark variant)
+// Ported from OpenChamber's Aura preset: purple-black surfaces, purple accent,
+// mint/peach/cyan/coral status colors, monospace typography.
+// ---------------------------------------------------------------------------
+const auraColorTokens: ColorTokens = {
+  // Backgrounds
+  '--color-background-primary': '#15141b',
+  '--color-background-secondary': '#1a1921',
+  '--color-background-tertiary': '#201e2b',
+  '--color-background-inverse': '#a277ff',
+  '--color-background-ghost': 'transparent',
+  '--color-background-info': '#82e2ff',
+  '--color-background-danger': '#ff6767',
+  '--color-background-success': '#61ffca',
+  '--color-background-warning': '#ffca85',
+  '--color-background-disabled': '#25232f',
+
+  // Text
+  '--color-text-primary': '#edecee',
+  '--color-text-secondary': '#8a8282',
+  '--color-text-tertiary': '#6d6d6d',
+  '--color-text-inverse': '#15141b',
+  '--color-text-ghost': '#8a8282',
+  '--color-text-info': '#82e2ff',
+  '--color-text-danger': '#ff6767',
+  '--color-text-success': '#61ffca',
+  '--color-text-warning': '#ffca85',
+  '--color-text-disabled': '#525b68',
+
+  // Borders
+  '--color-border-primary': '#2d2b38',
+  '--color-border-secondary': '#47415a',
+  '--color-border-tertiary': '#4e496c',
+  '--color-border-inverse': '#edecee',
+  '--color-border-ghost': 'transparent',
+  '--color-border-info': '#82e2ff',
+  '--color-border-danger': '#ff6767',
+  '--color-border-success': '#61ffca',
+  '--color-border-warning': '#ffca85',
+  '--color-border-disabled': '#2d2b38',
+
+  // Rings
+  '--color-ring-primary': '#47415a',
+  '--color-ring-secondary': '#2d2b38',
+  '--color-ring-inverse': '#15141b',
+  '--color-ring-info': '#82e2ff',
+  '--color-ring-danger': '#ff6767',
+  '--color-ring-success': '#61ffca',
+  '--color-ring-warning': '#ffca85',
+
+  // Shadows (dark)
+  '--shadow-hairline': '0 0 0 1px rgba(0, 0, 0, 0.2)',
+  '--shadow-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.2)',
+  '--shadow-md': '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2)',
+  '--shadow-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2)',
+};
+
+// Aura is monospace-first — override the shared sans family.
+const auraFontTokens: Partial<Pick<ThemeTokens, BaseTokenKey>> = {
+  '--font-sans': 'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace',
+  '--font-mono': 'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace',
+};
+
+// ---------------------------------------------------------------------------
 // Merged token maps — used by applyThemeTokens() and buildMcpHostStyles()
 // ---------------------------------------------------------------------------
 export const lightTokens: ThemeTokens = { ...baseTokens, ...lightColorTokens };
 export const darkTokens: ThemeTokens = { ...baseTokens, ...darkColorTokens };
+export const auraTokens: ThemeTokens = { ...baseTokens, ...auraFontTokens, ...auraColorTokens };
+
+// ---------------------------------------------------------------------------
+// Theme registry — the set of selectable named themes.
+// `variant` drives the .dark/.light class and colorScheme for anything outside
+// the token system; `tokens` is the map applied to :root. Adding a future theme
+// is a single entry here plus its token map above.
+// ---------------------------------------------------------------------------
+export type ThemeId = 'light' | 'dark' | 'aura';
+export type ThemeVariant = 'light' | 'dark';
+
+interface ThemeDefinition {
+  variant: ThemeVariant;
+  tokens: ThemeTokens;
+}
+
+export const themes: Record<ThemeId, ThemeDefinition> = {
+  light: { variant: 'light', tokens: lightTokens },
+  dark: { variant: 'dark', tokens: darkTokens },
+  aura: { variant: 'dark', tokens: auraTokens },
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -244,43 +329,51 @@ const HOST_FONT_CSS = `
 
 /**
  * Build the McpUiHostStyles object for MCP apps.
- * Color keys use light-dark() so a single payload works for both themes.
- * Non-color keys (fonts, radii, shadows) use plain values from baseTokens
- * (or light as the default when values differ, e.g. shadows).
+ *
+ * For the built-in light/dark pair, color keys use light-dark() so a single
+ * payload resolves correctly against the guest's color-scheme. Custom themes
+ * (e.g. aura) share a variant with dark but carry their own palette and fonts,
+ * so light-dark() can't express them — emit that theme's concrete token values
+ * instead. Non-color keys always use the theme's own values so overrides like
+ * Aura's monospace font family reach the guest.
  * css.fonts provides @font-face rules so sandboxed apps can load host fonts.
  */
-export function buildMcpHostStyles(): McpUiHostStyles {
+export function buildMcpHostStyles(themeId: ThemeId = 'light'): McpUiHostStyles {
+  const tokens = (themes[themeId] ?? themes.light).tokens;
+  const isBuiltinVariant = themeId === 'light' || themeId === 'dark';
   const variables: McpUiStyles = {} as McpUiStyles;
   for (const key of Object.keys(lightTokens) as McpUiStyleVariableKey[]) {
-    const light = lightTokens[key];
-    const dark = darkTokens[key];
-    if (key.startsWith('--color-')) {
-      variables[key] = `light-dark(${light}, ${dark})`;
+    if (key.startsWith('--color-') && isBuiltinVariant) {
+      variables[key] = `light-dark(${lightTokens[key]}, ${darkTokens[key]})`;
     } else {
-      variables[key] = light;
+      variables[key] = tokens[key];
     }
   }
   return { variables, css: { fonts: HOST_FONT_CSS } };
 }
 
 /**
- * Resolve the current theme from localStorage / system preference.
+ * Resolve the current theme id from localStorage / system preference.
+ * Best-effort pre-paint resolution; the authoritative preference lives in the
+ * Electron settings store and is applied by ThemeContext once loaded.
  */
-export function getResolvedTheme(): 'light' | 'dark' {
+export function getResolvedTheme(): ThemeId {
   const useSystem = localStorage.getItem('use_system_theme') !== 'false';
   if (useSystem) {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
-  return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+  const stored = localStorage.getItem('theme');
+  if (stored === 'aura') return 'aura';
+  return stored === 'dark' ? 'dark' : 'light';
 }
 
 /**
- * Apply theme tokens to the document root as CSS custom properties.
+ * Apply a theme's tokens to the document root as CSS custom properties.
  * When called without an argument, resolves the theme from localStorage.
  */
-export function applyThemeTokens(theme?: 'light' | 'dark'): void {
+export function applyThemeTokens(theme?: ThemeId): void {
   const resolved = theme ?? getResolvedTheme();
-  const tokens = resolved === 'dark' ? darkTokens : lightTokens;
+  const { tokens } = themes[resolved] ?? themes.light;
   const root = document.documentElement;
   for (const [key, value] of Object.entries(tokens)) {
     root.style.setProperty(key, value);

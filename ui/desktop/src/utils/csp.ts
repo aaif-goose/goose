@@ -1,4 +1,4 @@
-import type { ExternalGoosedConfig } from './settings';
+import type { ExternalBackendConfig } from './settings';
 
 const DEFAULT_CONNECT_SOURCES = [
   "'self'",
@@ -15,17 +15,17 @@ const DEFAULT_CONNECT_SOURCES = [
   'https://objects.githubusercontent.com',
 ];
 
-export function buildConnectSrc(externalGoosed?: ExternalGoosedConfig): string {
+export function buildConnectSrc(externalBackend?: ExternalBackendConfig): string {
   const sources = [...DEFAULT_CONNECT_SOURCES];
 
-  if (externalGoosed?.enabled && externalGoosed.url) {
+  if (externalBackend?.enabled && externalBackend.url) {
     try {
-      const externalUrl = new URL(externalGoosed.url);
+      const externalUrl = new URL(externalBackend.url);
       sources.push(externalUrl.origin);
       externalUrl.protocol = externalUrl.protocol === 'https:' ? 'wss:' : 'ws:';
       sources.push(externalUrl.origin);
     } catch {
-      console.warn('Invalid external goosed URL in settings, skipping CSP entry');
+      console.warn('Invalid external backend URL in settings, skipping CSP entry');
     }
   }
 
@@ -43,22 +43,22 @@ export function buildConnectSrc(externalGoosed?: ExternalGoosedConfig): string {
  * Loopback addresses (127.0.0.1 / localhost) are exempt from the upgrade
  * per the CSP spec, which is why the built-in local backend is unaffected.
  */
-export function shouldUpgradeInsecureRequests(externalGoosed?: ExternalGoosedConfig): boolean {
-  if (!externalGoosed?.enabled || !externalGoosed.url) {
+export function shouldUpgradeInsecureRequests(externalBackend?: ExternalBackendConfig): boolean {
+  if (!externalBackend?.enabled || !externalBackend.url) {
     return true;
   }
 
   try {
-    const parsed = new URL(externalGoosed.url);
+    const parsed = new URL(externalBackend.url);
     return parsed.protocol !== 'http:';
   } catch {
     return true;
   }
 }
 
-export function buildCSP(externalGoosed?: ExternalGoosedConfig): string {
-  const connectSrc = buildConnectSrc(externalGoosed);
-  const upgradeDirective = shouldUpgradeInsecureRequests(externalGoosed)
+export function buildCSP(externalBackend?: ExternalBackendConfig): string {
+  const connectSrc = buildConnectSrc(externalBackend);
+  const upgradeDirective = shouldUpgradeInsecureRequests(externalBackend)
     ? 'upgrade-insecure-requests;'
     : '';
 

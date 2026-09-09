@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if command -v gradle >/dev/null 2>&1; then
+  exec gradle "$@"
+fi
+
+echo "gradle is required to build the goose-sdk Maven package" >&2
+echo "Install gradle or run inside the Hermit environment." >&2
+exit 1

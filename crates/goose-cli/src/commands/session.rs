@@ -1,4 +1,3 @@
-use crate::session::message_to_markdown;
 use anyhow::{Context, Result};
 
 use cliclack::{confirm, multiselect, select};
@@ -8,7 +7,8 @@ use goose::config::Config;
 #[cfg(feature = "nostr")]
 use goose::session::nostr_share;
 use goose::session::{
-    generate_diagnostics, DiagnosticsLevel, Session, SessionManager, SessionType,
+    export_session_to_markdown, generate_diagnostics, DiagnosticsLevel, Session, SessionManager,
+    SessionType,
 };
 use goose::utils::safe_truncate;
 use regex::Regex;
@@ -155,6 +155,18 @@ fn session_activity_at(session: &Session) -> chrono::DateTime<chrono::Utc> {
     session.last_message_at.unwrap_or(session.updated_at)
 }
 
+fn session_list_limit_if_safe_to_push_down(
+    ascending: bool,
+    working_dir: Option<&Path>,
+    limit: Option<usize>,
+) -> Option<usize> {
+    if !ascending && working_dir.is_none() {
+        limit
+    } else {
+        None
+    }
+}
+
 pub async fn handle_session_list(
     format: String,
     ascending: bool,
@@ -162,7 +174,13 @@ pub async fn handle_session_list(
     limit: Option<usize>,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
-    let mut sessions = session_manager.list_sessions().await?;
+    let mut sessions = if let Some(limit) =
+        session_list_limit_if_safe_to_push_down(ascending, working_dir.as_deref(), limit)
+    {
+        session_manager.list_sessions_with_limit(limit).await?
+    } else {
+        session_manager.list_sessions().await?
+    };
 
     if let Some(ref pat) = working_dir {
         let pat_lower = pat.to_string_lossy().to_lowercase();
@@ -223,6 +241,31 @@ pub async fn handle_session_list(
     Ok(())
 }
 
+#[cfg(test)]
+mod session_list_tests {
+    use super::*;
+
+    #[test]
+    fn pushes_down_only_safe_session_list_limits() {
+        assert_eq!(
+            session_list_limit_if_safe_to_push_down(false, None, Some(50)),
+            Some(50)
+        );
+        assert_eq!(
+            session_list_limit_if_safe_to_push_down(true, None, Some(50)),
+            None
+        );
+        assert_eq!(
+            session_list_limit_if_safe_to_push_down(false, Some(Path::new("/tmp")), Some(50)),
+            None
+        );
+        assert_eq!(
+            session_list_limit_if_safe_to_push_down(false, None, None),
+            None
+        );
+    }
+}
+
 pub async fn handle_session_export(
     session_id: String,
     output_path: Option<PathBuf>,
@@ -249,7 +292,7 @@ pub async fn handle_session_export(
             let conversation = session
                 .conversation
                 .ok_or_else(|| anyhow::anyhow!("Session has no messages"))?;
-            export_session_to_markdown(conversation.messages().to_vec(), &session.name)
+            export_session_to_markdown(conversation.user_visible_messages(), &session.name)
         }
         _ => return Err(anyhow::anyhow!("Unsupported format: {}", format)),
     };
@@ -327,6 +370,47 @@ pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn open_diagnostics_output(path: &Path) -> io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+}
+
+#[cfg(windows)]
+fn open_diagnostics_output(path: &Path) -> io::Result<fs::File> {
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    use winapi::um::winbase::FILE_FLAG_OPEN_REPARSE_POINT;
+    use winapi::um::winnt::FILE_ATTRIBUTE_REPARSE_POINT;
+
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "diagnostics output must be a regular file",
+        ));
+    }
+    file.set_len(0)?;
+    Ok(file)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_diagnostics_output(path: &Path) -> io::Result<fs::File> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
 pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) -> Result<()> {
     println!(
         "Generating diagnostics report for session '{}'...",
@@ -352,7 +436,7 @@ pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) 
         PathBuf::from(format!("diagnostics_{}.json", session_id))
     };
 
-    let mut file = fs::File::create(&output_file).context(format!(
+    let mut file = open_diagnostics_output(&output_file).context(format!(
         "Failed to create output file: {}",
         output_file.display()
     ))?;
@@ -363,74 +447,6 @@ pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) 
     println!("Diagnostics report saved to: {}", output_file.display());
 
     Ok(())
-}
-
-fn export_session_to_markdown(
-    messages: Vec<goose::conversation::message::Message>,
-    session_name: &String,
-) -> String {
-    let mut markdown_output = String::new();
-
-    markdown_output.push_str(&format!("# Session Export: {}\n\n", session_name));
-
-    if messages.is_empty() {
-        markdown_output.push_str("*(This session has no messages)*\n");
-        return markdown_output;
-    }
-
-    markdown_output.push_str(&format!("*Total messages: {}*\n\n---\n\n", messages.len()));
-
-    // Track if the last message had tool requests to properly handle tool responses
-    let mut skip_next_if_tool_response = false;
-
-    for message in &messages {
-        // Check if this is a User message containing only ToolResponses
-        let is_only_tool_response = message.role == rmcp::model::Role::User
-            && message.content.iter().all(|content| {
-                matches!(
-                    content,
-                    goose::conversation::message::MessageContent::ToolResponse(_)
-                )
-            });
-
-        // If the previous message had tool requests and this one is just tool responses,
-        // don't create a new User section - we'll attach the responses to the tool calls
-        if skip_next_if_tool_response && is_only_tool_response {
-            // Export the tool responses without a User heading
-            markdown_output.push_str(&message_to_markdown(message, false));
-            markdown_output.push_str("\n\n---\n\n");
-            skip_next_if_tool_response = false;
-            continue;
-        }
-
-        // Reset the skip flag - we'll update it below if needed
-        skip_next_if_tool_response = false;
-
-        // Output the role prefix except for tool response-only messages
-        if !is_only_tool_response {
-            let role_prefix = match message.role {
-                rmcp::model::Role::User => "### User:\n",
-                rmcp::model::Role::Assistant => "### Assistant:\n",
-            };
-            markdown_output.push_str(role_prefix);
-        }
-
-        // Add the message content
-        markdown_output.push_str(&message_to_markdown(message, false));
-        markdown_output.push_str("\n\n---\n\n");
-
-        // Check if this message has any tool requests, to handle the next message differently
-        if message.content.iter().any(|content| {
-            matches!(
-                content,
-                goose::conversation::message::MessageContent::ToolRequest(_)
-            )
-        }) {
-            skip_next_if_tool_response = true;
-        }
-    }
-
-    markdown_output
 }
 
 /// Prompt the user to interactively select a session
@@ -485,5 +501,82 @@ pub async fn prompt_interactive_session_selection(
         Ok(session.id.clone())
     } else {
         Err(anyhow::anyhow!("Invalid selection"))
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_output_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn creates_new_output_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let output = temp_dir.path().join("diagnostics.json");
+
+        let mut file = open_diagnostics_output(&output).unwrap();
+        file.write_all(b"diagnostics").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read(&output).unwrap(), b"diagnostics");
+    }
+
+    #[test]
+    fn truncates_existing_regular_output_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let output = temp_dir.path().join("diagnostics.json");
+        fs::write(&output, "old diagnostics").unwrap();
+
+        let mut file = open_diagnostics_output(&output).unwrap();
+        file.write_all(b"new").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read(&output).unwrap(), b"new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_existing_symlink_output() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("target.json");
+        let output = temp_dir.path().join("diagnostics.json");
+        fs::write(&target, "preserve").unwrap();
+        symlink(&target, &output).unwrap();
+
+        assert!(open_diagnostics_output(&output).is_err());
+        assert_eq!(fs::read_to_string(target).unwrap(), "preserve");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_dangling_symlink_output() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("missing.json");
+        let output = temp_dir.path().join("diagnostics.json");
+        symlink(&target, &output).unwrap();
+
+        assert!(open_diagnostics_output(&output).is_err());
+        assert!(!target.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn refuses_existing_symlink_output() {
+        use std::os::windows::fs::symlink_file;
+
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("target.json");
+        let output = temp_dir.path().join("diagnostics.json");
+        fs::write(&target, "preserve").unwrap();
+        if symlink_file(&target, &output).is_err() {
+            return;
+        }
+
+        assert!(open_diagnostics_output(&output).is_err());
+        assert_eq!(fs::read_to_string(target).unwrap(), "preserve");
     }
 }

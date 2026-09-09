@@ -11,6 +11,23 @@ use reqwest::header::HeaderMap;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+tokio::task_local! {
+    /// When set, called instead of the default CLI announce when a device code
+    /// is obtained. Args: (user_code, verification_uri, expires_in_secs).
+    /// Set by the ACP server to forward the code to the desktop UI.
+    static DEVICE_CODE_ANNOUNCE: Box<dyn Fn(String, String, u64) + Send + Sync>;
+}
+
+pub async fn with_device_code_announce<F, T>(
+    announce: Box<dyn Fn(String, String, u64) + Send + Sync>,
+    fut: F,
+) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    DEVICE_CODE_ANNOUNCE.scope(announce, fut).await
+}
+
 /// Fallback poll interval when the server omits `interval` (RFC 8628 §3.2).
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
 
@@ -78,6 +95,14 @@ pub struct DeviceFlowTokens {
     /// Derived from `expires_in` on the token response. `None` when the server
     /// omits it (RFC 6749 §5.1 permits that).
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("token refresh failed ({status}): {body}")]
+pub struct DeviceFlowTokenRefreshError {
+    pub status: reqwest::StatusCode,
+    pub error: Option<String>,
+    body: String,
 }
 
 // ── Public entry points ──────────────────────────────────────────────────────
@@ -202,14 +227,25 @@ pub async fn refresh_device_flow_token(
         refresh_token,
     };
 
-    let raw: TokenResponseBody = send_request(client, cfg, cfg.token_url, &req)
+    let response = send_request(client, cfg, cfg.token_url, &req)
         .await
-        .context("failed to refresh token")?
-        .error_for_status()
-        .context("token refresh failed")?
-        .json()
+        .context("failed to refresh token")?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
         .await
-        .context("failed to parse token refresh response")?;
+        .context("failed to read token refresh response")?;
+    let raw = serde_json::from_slice::<TokenResponseBody>(&bytes);
+
+    if !status.is_success() {
+        return Err(anyhow::Error::new(DeviceFlowTokenRefreshError {
+            status,
+            error: raw.ok().and_then(|body| body.error),
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+        }));
+    }
+
+    let raw = raw.context("failed to parse token refresh response")?;
 
     let access_token = raw
         .access_token
@@ -287,7 +323,12 @@ async fn send_request<T: Serialize + ?Sized>(
     url: &str,
     body: &T,
 ) -> reqwest::Result<reqwest::Response> {
-    let builder = client.post(url).headers(cfg.extra_headers.clone());
+    let builder = client
+        .post(url)
+        .timeout(std::time::Duration::from_secs(
+            super::base::DEFAULT_PROVIDER_TIMEOUT_SECS,
+        ))
+        .headers(cfg.extra_headers.clone());
     let builder = match cfg.encoding {
         RequestEncoding::Form => builder.form(body),
         RequestEncoding::Json => builder.json(body),
@@ -296,19 +337,32 @@ async fn send_request<T: Serialize + ?Sized>(
 }
 
 fn announce_user_action(device: &DeviceCodeResponse) {
-    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        if let Err(e) = clipboard.set_text(&device.user_code) {
-            tracing::warn!("Failed to copy verification code to clipboard: {}", e);
-        }
+    let verify_url = device.verification_url().to_string();
+
+    if DEVICE_CODE_ANNOUNCE
+        .try_with(|f| {
+            let expires_in = device
+                .expires_in
+                .unwrap_or(DEFAULT_DEVICE_CODE_LIFETIME_SECS);
+            f(device.user_code.clone(), verify_url.clone(), expires_in)
+        })
+        .is_ok()
+    {
+        return;
     }
-    let verify_url = device.verification_url();
-    if let Err(e) = webbrowser::open(verify_url) {
+
+    let copied = arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut cb| cb.set_text(&device.user_code).ok())
+        .is_some();
+    if let Err(e) = webbrowser::open(&verify_url) {
         tracing::warn!("Failed to open browser: {}", e);
     }
     // stderr keeps stdout clean for CLI workflows parsing provider output.
+    let clipboard_hint = if copied { " (copied to clipboard)" } else { "" };
     eprintln!(
-        "Please visit {} and enter code {}",
-        verify_url, device.user_code
+        "Please visit {} and enter code {}{}",
+        verify_url, device.user_code, clipboard_hint
     );
 }
 

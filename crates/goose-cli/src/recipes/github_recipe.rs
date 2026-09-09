@@ -5,12 +5,11 @@ use goose::recipe::RECIPE_FILE_EXTENSIONS;
 use serde::{Deserialize, Serialize};
 
 use goose::recipe::read_recipe_file_content::RecipeFile;
-use goose::subprocess::SubprocessExt;
+use goose::subprocess::{git_command, SubprocessExt};
 use std::env;
 use std::fs;
 
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::process::Stdio;
 use tar::Archive;
@@ -129,7 +128,13 @@ pub fn ensure_gh_authenticated() -> Result<()> {
     }
 }
 
-fn temp_child_name(name: &str) -> String {
+fn temp_child_name(name: &str) -> Result<String> {
+    if !name.is_empty() && name.trim_end_matches([' ', '.']).is_empty() {
+        return Err(anyhow!(
+            "Recipe name does not map to a safe temporary directory"
+        ));
+    }
+
     let mut child = String::with_capacity(name.len());
     for ch in name.chars() {
         match ch {
@@ -142,10 +147,34 @@ fn temp_child_name(name: &str) -> String {
     }
 
     if child.is_empty() {
-        "_".to_string()
-    } else {
-        child
+        child.push('_');
     }
+
+    if child.trim_end_matches([' ', '.']) != child {
+        return Err(anyhow!(
+            "Recipe name does not map to a safe temporary directory"
+        ));
+    }
+
+    let mut components = Path::new(&child).components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => Ok(child),
+        _ => Err(anyhow!(
+            "Recipe name does not map to a safe temporary directory"
+        )),
+    }
+}
+
+fn temp_child_path(parent: &Path, name: &str) -> Result<PathBuf> {
+    Ok(parent.join(temp_child_name(name)?))
+}
+
+fn clean_temp_child_path(parent: &Path, name: &str) -> Result<PathBuf> {
+    let output_dir = temp_child_path(parent, name)?;
+    if output_dir.exists() {
+        fs::remove_dir_all(&output_dir)?;
+    }
+    Ok(output_dir)
 }
 
 fn get_local_repo_path(
@@ -155,9 +184,7 @@ fn get_local_repo_path(
     let (owner, repo_name) = recipe_repo_full_name
         .split_once('/')
         .ok_or_else(|| anyhow::anyhow!("Invalid repository name format"))?;
-    let local_repo_path = local_repo_parent_path
-        .to_path_buf()
-        .join(temp_child_name(&format!("{owner}/{repo_name}")));
+    let local_repo_path = temp_child_path(local_repo_parent_path, &format!("{owner}/{repo_name}"))?;
     Ok(local_repo_path)
 }
 
@@ -190,7 +217,7 @@ fn ensure_repo_cloned(recipe_repo_full_name: &str) -> Result<PathBuf> {
 
 fn fetch_origin(local_repo_path: &Path) -> Result<()> {
     let error_message: String = format!("Failed to fetch at {}", local_repo_path.to_str().unwrap());
-    let status = Command::new("git")
+    let status = git_command()
         .args(["fetch", "origin"])
         .current_dir(local_repo_path)
         .set_no_window()
@@ -206,14 +233,10 @@ fn fetch_origin(local_repo_path: &Path) -> Result<()> {
 
 fn get_folder_from_github(local_repo_path: &Path, recipe_name: &str) -> Result<PathBuf> {
     let ref_and_path = format!("origin/main:{}", recipe_name);
-    let output_dir = env::temp_dir().join(temp_child_name(recipe_name));
-
-    if output_dir.exists() {
-        fs::remove_dir_all(&output_dir)?;
-    }
+    let output_dir = clean_temp_child_path(&env::temp_dir(), recipe_name)?;
     fs::create_dir_all(&output_dir)?;
 
-    let archive_output = Command::new("git")
+    let archive_output = git_command()
         .args(["archive", &ref_and_path])
         .current_dir(local_repo_path)
         .stdout(Stdio::piped())
@@ -395,10 +418,91 @@ mod tests {
     #[test]
     fn temp_child_name_keeps_recipe_downloads_under_temp_dir() {
         let parent = Path::new("goose-recipes");
-        let child = temp_child_name("../outside");
+        let child = temp_child_name("../outside").unwrap();
         let output_dir = parent.join(&child);
 
         assert_eq!(child, "..__outside");
         assert!(output_dir.starts_with(parent));
+    }
+
+    #[test]
+    fn temp_child_path_rejects_reserved_components() {
+        let parent = Path::new("goose-recipes");
+
+        for name in [
+            ".",
+            "..",
+            "...",
+            "....",
+            ". ",
+            ".. ",
+            ". .",
+            ".. .",
+            "report.",
+            "report...",
+        ] {
+            assert!(temp_child_path(parent, name).is_err(), "accepted {name}");
+        }
+    }
+
+    #[test]
+    fn temp_child_path_preserves_safe_recipe_names() {
+        let parent = Path::new("goose-recipes");
+
+        for (name, child) in [
+            ("daily-report", "daily-report"),
+            ("team/weekly", "team__weekly"),
+            ("../outside", "..__outside"),
+            ("daily report ", "daily_report_"),
+            ("", "_"),
+        ] {
+            assert_eq!(temp_child_path(parent, name).unwrap(), parent.join(child));
+        }
+    }
+
+    #[test]
+    fn cleanup_rejects_reserved_components_before_removing_files() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = root.path().join("recipe-temp");
+        fs::create_dir(&parent).unwrap();
+        let parent_sentinel = root.path().join("parent-sentinel");
+        let child_sentinel = parent.join("child-sentinel");
+        fs::write(&parent_sentinel, "keep").unwrap();
+        fs::write(&child_sentinel, "keep").unwrap();
+
+        for name in [
+            ".",
+            "..",
+            "...",
+            "....",
+            ". ",
+            ".. ",
+            ". .",
+            ".. .",
+            "report.",
+            "report...",
+        ] {
+            assert!(clean_temp_child_path(&parent, name).is_err());
+            assert!(parent_sentinel.exists());
+            assert!(child_sentinel.exists());
+        }
+    }
+
+    #[test]
+    fn cleanup_removes_only_the_existing_recipe_child() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = root.path().join("recipe-temp");
+        let child = parent.join("daily-report");
+        fs::create_dir_all(&child).unwrap();
+        let parent_sentinel = parent.join("keep");
+        fs::write(&parent_sentinel, "keep").unwrap();
+        fs::write(child.join("old-recipe.yaml"), "old").unwrap();
+
+        assert_eq!(
+            clean_temp_child_path(&parent, "daily-report").unwrap(),
+            child
+        );
+        assert!(!child.exists());
+        assert!(parent_sentinel.exists());
     }
 }

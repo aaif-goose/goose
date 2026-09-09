@@ -189,7 +189,7 @@ impl Connection for AcpProviderConnection {
                 .iter()
                 .map(|v| {
                     let mode = GooseMode::from_str(v).unwrap();
-                    (mode, mode.to_string())
+                    (mode, vec![mode.to_string()])
                 })
                 .collect(),
             notification_callback: Some(Arc::new(move |n| {
@@ -197,7 +197,7 @@ impl Connection for AcpProviderConnection {
             })),
         };
 
-        let transport: DynConnectTo<Client> = DynConnectTo::new(transport);
+        let transport: DynConnectTo<Client> = DynConnectTo::new(transport.into_byte_streams());
         let provider = AcpProvider::connect_with_transport(
             "acp-test".to_string(),
             goose_mode,
@@ -300,8 +300,7 @@ impl Connection for AcpProviderConnection {
     }
 
     fn reset_permissions(&self) {
-        // "" matches all extensions, clearing all stored permission decisions
-        self.permission_manager.remove_extension("");
+        self.permission_manager.clear_permissions();
     }
 }
 

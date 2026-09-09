@@ -1,0 +1,34 @@
+{
+  "name": "lmstudio",
+  "engine": "openai",
+  "display_name": "LM Studio",
+  "description": "Run local models with LM Studio",
+  "api_key_env": "LMSTUDIO_API_KEY",
+  "base_url": "${LMSTUDIO_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "LMSTUDIO_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:1234",
+      "description": "Base URL of the LMStudio server (default: http://localhost:1234)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true,
+  "setup": {
+    "category": "model",
+    "setup_method": "config_fields",
+    "group": "additional",
+    "docs_url": "https://lmstudio.ai/docs/app/api",
+    "field_overrides": [{
+      "key": "LMSTUDIO_HOST",
+      "label": "Host URL",
+      "placeholder": "http://localhost:1234/v1/chat/completions"
+    }]
+  }
+}

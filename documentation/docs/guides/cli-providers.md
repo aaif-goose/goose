@@ -8,10 +8,10 @@ description: Use Claude Code, Codex, Cursor Agent, or Gemini CLI subscriptions i
 # CLI Providers
 
 :::warning Deprecated — Use ACP Providers
-The Claude Code (`claude-code`), Codex (`codex`), and Gemini CLI (`gemini-cli`) providers are deprecated. Use the [ACP providers](/docs/guides/acp-providers) (`claude-acp`, `codex-acp`) instead, which support goose extensions via MCP and use the standardized Agent Client Protocol. For Gemini, use the `Gemini` (`gemini_oauth`) provider which authenticates via OAuth. CLI providers are kept for backward compatibility only.
+The Claude Code (`claude-code`), Codex (`codex`), Gemini CLI (`gemini-cli`), and Gemini OAuth (`gemini_oauth`) providers are deprecated. Use the [ACP providers](/docs/guides/acp-providers) (`claude-acp`, `codex-acp`) instead for Claude and Codex. For Gemini, use the [Google provider](/docs/getting-started/providers#google-gemini) with a Gemini API key or [Vertex AI](https://cloud.google.com/vertex-ai). Deprecated providers remain available for backward compatibility only.
 :::
 
-goose can make use of pass-through providers that integrate with existing CLI tools from Anthropic, OpenAI, Cursor, and Google. These providers allow you to use your existing Claude Code, Codex, Cursor Agent, and Google Gemini CLI subscriptions through goose's interface, adding session management, persistence, and workflow integration capabilities to these tools.
+goose can make use of pass-through providers that integrate with existing CLI tools from Anthropic, OpenAI, Cursor, and Google. These providers allow you to use your existing Claude Code, Codex, Cursor Agent, and Google Gemini CLI subscriptions through goose's interface, adding session management, persistence, and workflow integration capabilities to these tools. The Gemini OAuth provider is deprecated because Google no longer supports the underlying Code Assist login flow for some account types. See Google's [announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) and [deprecation notice](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals).
 
 :::warning Limitations
 These providers don’t fully support all goose features, may have platform or capability limitations, and can sometimes require advanced debugging if issues arise. They’re included here purely as a convenience.

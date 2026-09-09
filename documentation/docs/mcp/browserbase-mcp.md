@@ -14,12 +14,12 @@ This tutorial covers how to add the Browserbase MCP Server as a goose extension 
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=@browserbasehq/mcp&id=browserbase&name=Browserbase&description=Automate%20web%20browsing%20and%20data%20extraction&env=BROWSERBASE_PROJECT_ID%3DBrowserbase%20Project%20ID&env=BROWSERBASE_API_KEY%3DBrowserbase%20API%20Key)
+  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=%40browserbasehq%2Fmcp&id=browserbase-mcp&name=Browserbase&description=Automate%20web%20browsing%20and%20data%20extraction&env=BROWSERBASE_PROJECT_ID%3DBrowserbase%20Project%20ID&env=BROWSERBASE_API_KEY%3DBrowserbase%20API%20Key&env=GEMINI_API_KEY%3DGemini%20API%20Key)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
   ```sh
-  npx @browserbasehq/mcp
+  npx -y @browserbasehq/mcp
   ```
   </TabItem>
 </Tabs>
@@ -27,6 +27,7 @@ This tutorial covers how to add the Browserbase MCP Server as a goose extension 
   ```
   BROWSERBASE_PROJECT_ID: <YOUR_PROJECT_ID>
   BROWSERBASE_API_KEY: <YOUR_API_KEY>
+  GEMINI_API_KEY: <YOUR_GEMINI_API_KEY>
   ```
 :::
 
@@ -39,14 +40,15 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
-    extensionId="browserbase"
+    extensionId="browserbase-mcp"
     extensionName="Browserbase"
     description="Automate web browsing and data extraction"
     command="npx"
-    args={["@browserbasehq/mcp"]}
+    args={["-y", "@browserbasehq/mcp"]}
     envVars={[
       { name: "BROWSERBASE_PROJECT_ID", label: "Browserbase Project ID" },
-      { name: "BROWSERBASE_API_KEY", label: "Browserbase API Key" }
+      { name: "BROWSERBASE_API_KEY", label: "Browserbase API Key" },
+      { name: "GEMINI_API_KEY", label: "Gemini API Key" }
     ]}
     apiKeyLink="https://browserbase.io/dashboard"
     apiKeyLinkText="Browserbase credentials"
@@ -56,14 +58,15 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
     <CLIExtensionInstructions
       name="Browserbase"
       description="Automate web browsing and data extraction"
-      command="npx @browserbasehq/mcp"
+      command="npx -y @browserbasehq/mcp"
       envVars={[
-        { key: "BROWSERBASE_PROJECT_ID", value: "▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪" },
-        { key: "BROWSERBASE_API_KEY", value: "▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪" }
+        { key: "BROWSERBASE_PROJECT_ID", value: "▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪" },
+        { key: "BROWSERBASE_API_KEY", value: "▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪" },
+        { key: "GEMINI_API_KEY", value: "▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪" }
       ]}
       infoNote={
         <>
-          Obtain your <a href="https://browserbase.io/dashboard" target="_blank" rel="noopener noreferrer">Browserbase credentials</a> and paste them in.
+          Obtain your <a href="https://browserbase.io/dashboard" target="_blank" rel="noopener noreferrer">Browserbase credentials</a> and <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Gemini API key</a> and paste them in.
         </>
       }
     />

@@ -103,7 +103,7 @@ Code Mode helps us take a step forward in building agents that can scale to hand
 
 ---
 
-*Ready to try Code Mode? Enable the "Code Mode" extension in [goose](/docs/quickstart) v1.17.0 or later. Join our [Discord](https://discord.gg/goose-oss) to share your experience!*
+*Ready to try Code Mode? Enable the "Code Mode" extension in [goose](/docs/quickstart) v1.17.0 or later. Join our [Discord](https://discord.gg/n8R5VaWDAn) to share your experience!*
 
 <head>
   <meta property="og:title" content="Code Mode Doesn't Replace MCP (Here's What It Actually Does)" />

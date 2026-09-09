@@ -1,8 +1,4 @@
-import type {
-  CreateElicitationRequest,
-  RequestPermissionRequest,
-  SessionNotification,
-} from '@agentclientprotocol/sdk';
+import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../types/message';
@@ -15,6 +11,8 @@ import {
   acpChatSessionStore,
   useAcpChatSessionSnapshot,
 } from '../chatSessionStore';
+import type { AcpElicitationRequest } from '../elicitationRequests';
+import type { AcpPermissionRequest } from '../permissionRequestTypes';
 
 function message(id: string, text: string): Message {
   return {
@@ -42,8 +40,8 @@ function session(id: string, conversation: Message[] = []): Session {
   } as Session;
 }
 
-function permissionRequest(sessionId: string, toolCallId = 'tool-1'): RequestPermissionRequest {
-  return {
+function permissionRequest(sessionId: string, toolCallId = 'tool-1'): AcpPermissionRequest {
+  const request: RequestPermissionRequest = {
     sessionId,
     options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
     toolCall: {
@@ -65,16 +63,10 @@ function permissionRequest(sessionId: string, toolCallId = 'tool-1'): RequestPer
       },
     },
   };
+  return { generation: `generation-${toolCallId}`, request };
 }
 
-function elicitationRequest(sessionId: string): {
-  id: string;
-  sessionId: string;
-  request: CreateElicitationRequest & {
-    mode: 'form';
-    sessionId: string;
-  };
-} {
+function elicitationRequest(sessionId: string): AcpElicitationRequest {
   return {
     id: 'acp_elicitation_1',
     sessionId,
@@ -170,6 +162,20 @@ function activeRunNotification(sessionId: string, activeRunId: string | null): S
   };
 }
 
+function queuedSteerNotification(sessionId: string, messageId: string): SessionNotification {
+  return {
+    sessionId,
+    update: {
+      sessionUpdate: 'session_info_update',
+      _meta: {
+        goose: {
+          queuedSteer: { messageId, runId: 'run-1' },
+        },
+      },
+    } as SessionNotification['update'],
+  };
+}
+
 describe('acpChatSessionStore', () => {
   const sessionIds = new Set<string>();
   const sessionId = (id: string): string => {
@@ -228,13 +234,9 @@ describe('acpChatSessionStore', () => {
     acpChatSessionActions.startPromptAttempt(currentSessionId, 'attempt-a');
     acpChatSessionActions.startPromptAttempt(currentSessionId, 'attempt-b');
 
-    expect(
-      acpChatSessionActions.finishPromptAttemptIfCurrent(
-        currentSessionId,
-        'attempt-a',
-        'late error'
-      )
-    ).toBe(false);
+    expect(acpChatSessionActions.finishPromptAttemptIfCurrent(currentSessionId, 'attempt-a')).toBe(
+      false
+    );
 
     expect(acpChatSessionStore.getSnapshot(currentSessionId)).toMatchObject({
       activePromptAttemptId: 'attempt-b',
@@ -417,6 +419,36 @@ describe('acpChatSessionStore', () => {
     expect(firstMessage?.content[0]).toMatchObject({ type: 'text', text: 'hello' });
   });
 
+  it('keeps steer message confirmed when queuedSteer arrives before addPendingLocalSteerMessage', () => {
+    const currentSessionId = sessionId('session-1');
+    const localSteerMessage = {
+      ...message('steer-1', 'hello'),
+      metadata: { userVisible: true, agentVisible: true, steer: true },
+    };
+
+    acpChatSessionActions.startPromptAttempt(currentSessionId, 'attempt-1');
+
+    // queuedSteer notification arrives before addPendingLocalSteerMessage (race condition)
+    acpChatSessionActions.applyAcpSessionNotification(
+      queuedSteerNotification(currentSessionId, 'steer-1')
+    );
+
+    // Now the UI adds the pending message after the RPC response returns
+    acpChatSessionActions.addPendingLocalSteerMessage(currentSessionId, localSteerMessage);
+
+    // Message should be present and NOT in pending (already confirmed via queuedSteer)
+    const snapshot = acpChatSessionStore.getSnapshot(currentSessionId);
+    expect(snapshot?.messages).toHaveLength(1);
+
+    // Cancellation should keep it because it's confirmed, not pending
+    const cancellationSnapshot = acpChatSessionActions.startPromptCancellation(
+      currentSessionId,
+      'attempt-1'
+    );
+    expect(cancellationSnapshot?.messages).toHaveLength(1);
+    expect(cancellationSnapshot?.messages[0].id).toBe('steer-1');
+  });
+
   it('stores active run ids from session info notifications', () => {
     const currentSessionId = sessionId('session-1');
 
@@ -495,10 +527,19 @@ describe('acpChatSessionStore', () => {
     const loadingSnapshot = acpChatSessionActions.startSessionLoad(currentSessionId);
     expect(loadingSnapshot.messages).toEqual([]);
 
+    // While a load replay is in flight, per-notification snapshots stay frozen
+    // at the load-start state (avoids O(n^2) cloning on large sessions); the
+    // replayed conversation materializes in the finishSessionLoad snapshot.
     const replayedSnapshot = acpChatSessionActions.applyAcpSessionNotification(replayedChunk);
+    expect(replayedSnapshot.messages).toEqual([]);
 
-    expect(replayedSnapshot.messages).toHaveLength(1);
-    expect(replayedSnapshot.messages[0].content).toEqual([{ type: 'text', text: 'Hello' }]);
+    const finishedSnapshot = acpChatSessionActions.finishSessionLoad(
+      currentSessionId,
+      session(currentSessionId)
+    );
+
+    expect(finishedSnapshot.messages).toHaveLength(1);
+    expect(finishedSnapshot.messages[0].content).toEqual([{ type: 'text', text: 'Hello' }]);
   });
 
   it('applies permission requests as waiting action-required messages', () => {
@@ -518,6 +559,20 @@ describe('acpChatSessionStore', () => {
         id: 'tool-1',
       },
     });
+  });
+
+  it('removes the current permission card when the request is cancelled', () => {
+    const currentSessionId = sessionId('session-1');
+    const request = permissionRequest(currentSessionId, 'tool-1');
+    acpChatSessionActions.applyPermissionRequest(request);
+
+    const snapshot = acpChatSessionActions.cancelPermissionRequest(
+      currentSessionId,
+      'tool-1',
+      request.generation
+    );
+
+    expect(snapshot?.messages).toEqual([]);
   });
 
   it('resumes streaming only after the final pending user input request resolves', () => {

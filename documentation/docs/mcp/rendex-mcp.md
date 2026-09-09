@@ -15,10 +15,10 @@ This tutorial covers how to add the [Rendex MCP Server](https://github.com/coppe
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fmcp.rendex.dev%2Fmcp&id=rendex&name=Rendex&description=Capture%20screenshots%2C%20generate%20PDFs%2C%20and%20render%20HTML%20to%20images%20via%20AI%20agents&header=Authorization%3DBearer%20YOUR_RENDEX_API_KEY)
+  [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fmcp.rendex.dev%2Fmcp&id=rendex-mcp&name=Rendex&description=Capture%20screenshots%2C%20generate%20PDFs%2C%20and%20render%20HTML%20to%20images%20via%20AI%20agents&header=Authorization%3DBearer%20YOUR_RENDEX_API_KEY)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-  Add a `Remote Extension (Streaming HTTP)` extension type with:
+  Add a `Remote Extension (Streamable HTTP)` extension type with:
 
   **Endpoint URL**
   ```
@@ -36,7 +36,7 @@ This tutorial covers how to add the [Rendex MCP Server](https://github.com/coppe
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
     <GooseDesktopInstaller
-      extensionId="rendex"
+      extensionId="rendex-mcp"
       extensionName="Rendex"
       description="Capture screenshots, generate PDFs, and render HTML to images via AI agents"
       type="http"

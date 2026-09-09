@@ -11,7 +11,7 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use tracing::{Level, Metadata};
 use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
-use tracing_subscriber::filter::FilterFn;
+use tracing_subscriber::filter::{EnvFilter, FilterExt, FilterFn};
 use tracing_subscriber::Layer as _;
 
 pub type OtlpTracingLayer =
@@ -480,6 +480,10 @@ pub fn is_otlp_initialized() -> bool {
 /// - Events from specific modules related to telemetry
 fn create_otlp_tracing_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
     FilterFn::new(|metadata: &Metadata<'_>| {
+        if is_otlp_suppressed_target(metadata.target()) {
+            return false;
+        }
+
         if metadata.level() <= &Level::INFO {
             return true;
         }
@@ -534,39 +538,44 @@ fn parse_level(s: &str) -> Option<Level> {
 }
 
 fn otel_logs_level() -> Level {
-    env::var("RUST_LOG")
+    env::var("OTEL_LOG_LEVEL")
         .ok()
         .and_then(|s| parse_level(&s))
-        .or_else(|| {
-            env::var("OTEL_LOG_LEVEL")
-                .ok()
-                .and_then(|s| parse_level(&s))
-        })
         .unwrap_or(Level::INFO)
 }
 
-/// Targets suppressed from OTLP log export.
+/// Targets suppressed from OTLP trace and log export.
 ///
 /// `rmcp::service` logs the full `InitializeResult` (including extension instructions
 /// and user memory content) as a `peer_info` attribute on every MCP handshake.
 /// This can be 400KB+ per session init and contains PII/sensitive data.
-/// These logs have no analytical value in OTLP — suppress them entirely.
-const OTLP_LOGS_SUPPRESSED_TARGETS: &[&str] = &["rmcp::service"];
+/// These events have no analytical value in OTLP — suppress them entirely.
+const OTLP_SUPPRESSED_TARGETS: &[&str] = &["rmcp::service"];
+
+fn is_otlp_suppressed_target(target: &str) -> bool {
+    OTLP_SUPPRESSED_TARGETS.iter().any(|suppressed| {
+        target == *suppressed
+            || target
+                .strip_prefix(suppressed)
+                .is_some_and(|suffix| suffix.starts_with("::"))
+    })
+}
 
 /// Creates a custom filter for OTLP logs.
-/// Level is resolved via RUST_LOG → OTEL_LOG_LEVEL → default INFO.
-/// Suppresses targets listed in `OTLP_LOGS_SUPPRESSED_TARGETS`.
-fn create_otlp_logs_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
-    let min_level = otel_logs_level();
-    FilterFn::new(move |metadata: &Metadata<'_>| {
-        if metadata.level() > &min_level {
-            return false;
-        }
-        let target = metadata.target();
-        !OTLP_LOGS_SUPPRESSED_TARGETS
-            .iter()
-            .any(|suppressed| target.starts_with(suppressed))
-    })
+/// Valid RUST_LOG directives take precedence over OTEL_LOG_LEVEL and default INFO.
+/// Invalid RUST_LOG values fall back to OTEL_LOG_LEVEL and default INFO.
+/// Suppresses targets listed in `OTLP_SUPPRESSED_TARGETS`.
+fn create_otlp_logs_filter() -> impl tracing_subscriber::layer::Filter<tracing_subscriber::Registry>
+{
+    let filter = match env::var("RUST_LOG") {
+        Ok(value) if !value.trim().is_empty() => EnvFilter::try_new(value)
+            .unwrap_or_else(|_| EnvFilter::new(otel_logs_level().to_string())),
+        _ => EnvFilter::new(otel_logs_level().to_string()),
+    };
+
+    filter.and(FilterFn::new(|metadata: &Metadata<'_>| {
+        !is_otlp_suppressed_target(metadata.target())
+    }))
 }
 
 pub fn shutdown_otlp() {
@@ -625,7 +634,75 @@ mod tests {
     use crate::session_context::{session_host, session_user};
     use goose_test_support::otel::clear_otel_env;
     use opentelemetry_sdk::metrics::Temporality;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use test_case::test_case;
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::layer::{Context, SubscriberExt};
+
+    #[derive(Clone)]
+    struct EventCounter(Arc<AtomicUsize>);
+
+    impl<S> tracing_subscriber::Layer<S> for EventCounter
+    where
+        S: Subscriber,
+    {
+        fn on_event(&self, _event: &Event<'_>, _ctx: Context<'_, S>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn count_otlp_log_events(env: &[(&'static str, &'static str)], emit: impl FnOnce()) -> usize {
+        let _guard = clear_otel_env(env);
+        let seen = Arc::new(AtomicUsize::new(0));
+        let subscriber = tracing_subscriber::Registry::default()
+            .with(EventCounter(Arc::clone(&seen)).with_filter(create_otlp_logs_filter()));
+
+        tracing::subscriber::with_default(subscriber, emit);
+        seen.load(Ordering::Relaxed)
+    }
+
+    fn count_otlp_trace_events(emit: impl FnOnce()) -> usize {
+        let seen = Arc::new(AtomicUsize::new(0));
+        let subscriber = tracing_subscriber::Registry::default()
+            .with(EventCounter(Arc::clone(&seen)).with_filter(create_otlp_tracing_filter()));
+
+        tracing::subscriber::with_default(subscriber, emit);
+        seen.load(Ordering::Relaxed)
+    }
+
+    #[test_case("rmcp::service", true; "exact target")]
+    #[test_case("rmcp::service::client", true; "module descendant")]
+    #[test_case("rmcp::services", false; "plural neighbor")]
+    #[test_case("rmcp::service_worker", false; "underscore neighbor")]
+    fn otlp_suppressed_target_boundaries(target: &str, expected: bool) {
+        assert_eq!(is_otlp_suppressed_target(target), expected);
+    }
+
+    #[test]
+    fn otlp_trace_filter_suppresses_sensitive_targets() {
+        let seen = count_otlp_trace_events(|| {
+            tracing::info!(target: "rmcp::service", peer_info = "SENSITIVE", "suppressed root");
+            tracing::warn!(target: "rmcp::service::client", "suppressed descendant");
+            tracing::info!(target: "rmcp::services", "allowed plural neighbor");
+            tracing::info!(target: "rmcp::service_worker", "allowed underscore neighbor");
+            tracing::info!(target: "goose::test", "allowed ordinary event");
+        });
+
+        assert_eq!(seen, 3);
+    }
+
+    #[test]
+    fn otlp_log_filter_uses_the_same_sensitive_target_boundary() {
+        let seen = count_otlp_log_events(&[("RUST_LOG", "trace")], || {
+            tracing::info!(target: "rmcp::service", "suppressed root");
+            tracing::error!(target: "rmcp::service::client", "suppressed descendant");
+            tracing::info!(target: "rmcp::services", "allowed plural neighbor");
+            tracing::info!(target: "rmcp::service_worker", "allowed underscore neighbor");
+            tracing::info!(target: "goose::test", "allowed ordinary event");
+        });
+
+        assert_eq!(seen, 3);
+    }
 
     #[test]
     fn exporter_type_from_env_value() {
@@ -897,16 +974,98 @@ mod tests {
     }
 
     #[test_case(&[("RUST_LOG", "")], Level::INFO; "default is info")]
-    #[test_case(&[("RUST_LOG", "debug")], Level::DEBUG; "RUST_LOG takes precedence")]
     #[test_case(&[("RUST_LOG", ""), ("OTEL_LOG_LEVEL", "error")], Level::ERROR; "OTEL_LOG_LEVEL fallback")]
-    #[test_case(&[("RUST_LOG", "warn"), ("OTEL_LOG_LEVEL", "error")], Level::WARN; "RUST_LOG wins over OTEL_LOG_LEVEL")]
-    #[test_case(&[("RUST_LOG", "goose=debug"), ("OTEL_LOG_LEVEL", "trace")], Level::TRACE; "directive RUST_LOG falls through to OTEL_LOG_LEVEL")]
-    #[test_case(&[("RUST_LOG", "goose=debug")], Level::INFO; "directive RUST_LOG falls through to default")]
     #[test_case(&[("RUST_LOG", ""), ("OTEL_LOG_LEVEL", "INFO")], Level::INFO; "case insensitive")]
     #[test_case(&[("RUST_LOG", ""), ("OTEL_LOG_LEVEL", "bogus")], Level::INFO; "unknown defaults to info")]
     fn otel_logs_level_from_env(env: &[(&'static str, &'static str)], expected: Level) {
         let _guard = clear_otel_env(env);
         assert_eq!(otel_logs_level(), expected);
+    }
+
+    #[test]
+    fn otlp_logs_filter_honors_bare_rust_log_level() {
+        let seen = count_otlp_log_events(&[("RUST_LOG", "warn")], || {
+            tracing::error!(target: "goose::test", "error event");
+            tracing::warn!(target: "goose::test", "warn event");
+            tracing::info!(target: "goose::test", "info event");
+        });
+
+        assert_eq!(seen, 2);
+    }
+
+    #[test]
+    fn otlp_logs_filter_honors_scoped_and_mixed_rust_log_directives() {
+        let seen = count_otlp_log_events(
+            &[(
+                "RUST_LOG",
+                "goose=error,goose::agents::retry=debug,other=warn",
+            )],
+            || {
+                tracing::debug!(target: "goose::agents::retry", "retry detail");
+                tracing::info!(target: "goose::providers", "provider detail");
+                tracing::warn!(target: "other::component", "other warning");
+                tracing::info!(target: "other::component", "other detail");
+            },
+        );
+
+        assert_eq!(seen, 2);
+    }
+
+    #[test]
+    fn otlp_logs_filter_falls_back_for_invalid_rust_log() {
+        let seen = count_otlp_log_events(
+            &[
+                ("RUST_LOG", "goose=definitely-not-a-level"),
+                ("OTEL_LOG_LEVEL", "error"),
+            ],
+            || {
+                tracing::error!(target: "goose::test", "error event");
+                tracing::warn!(target: "goose::test", "warn event");
+            },
+        );
+
+        assert_eq!(seen, 1);
+    }
+
+    #[test]
+    fn otlp_logs_filter_uses_otel_and_default_fallbacks() {
+        let otel_seen =
+            count_otlp_log_events(&[("RUST_LOG", ""), ("OTEL_LOG_LEVEL", "error")], || {
+                tracing::error!(target: "goose::test", "error event");
+                tracing::warn!(target: "goose::test", "warn event");
+            });
+        let default_seen = count_otlp_log_events(&[("RUST_LOG", "")], || {
+            tracing::info!(target: "goose::test", "info event");
+            tracing::debug!(target: "goose::test", "debug event");
+        });
+
+        assert_eq!(otel_seen, 1);
+        assert_eq!(default_seen, 1);
+    }
+
+    #[test]
+    fn otlp_logs_filter_always_suppresses_sensitive_targets() {
+        let seen =
+            count_otlp_log_events(&[("RUST_LOG", "trace,rmcp::service::client=trace")], || {
+                tracing::info!(target: "rmcp::service", "suppressed root");
+                tracing::error!(target: "rmcp::service::client", "suppressed descendant");
+                tracing::info!(target: "goose::test", "allowed event");
+            });
+
+        assert_eq!(seen, 1);
+    }
+
+    #[test]
+    fn otlp_logs_filter_excludes_sensitive_info_event_for_goose_error() {
+        let seen = count_otlp_log_events(&[("RUST_LOG", "goose=error")], || {
+            tracing::info!(
+                target: "goose::agents::retry",
+                command = "curl -H Authorization:Bearer_REDACTED_TEST_VALUE",
+                "success check passed"
+            );
+        });
+
+        assert_eq!(seen, 0);
     }
 
     fn test_config(

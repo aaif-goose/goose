@@ -1,9 +1,11 @@
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, TokenState};
+use crate::conversation::message::{Message, MessageUsage, TokenState};
 use crate::conversation::Conversation;
+use crate::providers::base::CostSource;
 use crate::providers::base::Provider;
 use crate::recipe::Recipe;
+use crate::session::export_markdown::export_session_to_markdown;
 use crate::session::extension_data::ExtensionData;
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
@@ -15,18 +17,18 @@ use goose_providers::model::ModelConfig;
 use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
-use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 14;
+pub const CURRENT_SCHEMA_VERSION: i32 = 16;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
+const SESSION_COUNT_BATCH_SIZE: usize = 900;
 
 #[derive(
     Debug,
@@ -34,7 +36,6 @@ const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
     Copy,
     Serialize,
     Deserialize,
-    ToSchema,
     PartialEq,
     Eq,
     Default,
@@ -57,10 +58,9 @@ pub enum SessionType {
 static SESSION_STORAGE: LazyLock<Arc<SessionStorage>> =
     LazyLock::new(|| Arc::new(SessionStorage::new(Paths::data_dir())));
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
-    #[schema(value_type = String)]
     pub working_dir: PathBuf,
     #[serde(alias = "description")]
     pub name: String,
@@ -92,6 +92,8 @@ pub struct Session {
     #[serde(default)]
     pub project_id: Option<String>,
     #[serde(default)]
+    pub parent_session_id: Option<String>,
+    #[serde(default)]
     pub last_message_snippet: Option<String>,
 }
 
@@ -119,6 +121,31 @@ impl From<&Session> for TokenState {
     }
 }
 
+pub fn token_state_from_session_and_totals(
+    session: &Session,
+    totals: &SessionUsageTotals,
+) -> TokenState {
+    TokenState {
+        input_tokens: session.usage.input_tokens.unwrap_or(0),
+        output_tokens: session.usage.output_tokens.unwrap_or(0),
+        total_tokens: session.usage.total_tokens.unwrap_or(0),
+        cache_read_tokens: session.usage.cache_read_input_tokens.unwrap_or(0),
+        cache_write_tokens: session.usage.cache_write_input_tokens.unwrap_or(0),
+        accumulated_input_tokens: totals.accumulated_usage.input_tokens.unwrap_or(0),
+        accumulated_output_tokens: totals.accumulated_usage.output_tokens.unwrap_or(0),
+        accumulated_total_tokens: totals.accumulated_usage.total_tokens.unwrap_or(0),
+        accumulated_cache_read_tokens: totals
+            .accumulated_usage
+            .cache_read_input_tokens
+            .unwrap_or(0),
+        accumulated_cache_write_tokens: totals
+            .accumulated_usage
+            .cache_write_input_tokens
+            .unwrap_or(0),
+        accumulated_cost: totals.accumulated_cost,
+    }
+}
+
 pub struct SessionUpdateBuilder<'a> {
     session_manager: &'a SessionManager,
     session_id: String,
@@ -139,13 +166,20 @@ pub struct SessionUpdateBuilder<'a> {
     archived_at: Option<Option<DateTime<Utc>>>,
 
     project_id: Option<Option<String>>,
+    parent_session_id: Option<Option<String>>,
 }
 
-#[derive(Serialize, ToSchema, Debug)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInsights {
     pub total_sessions: usize,
     pub total_tokens: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SessionUsageTotals {
+    pub accumulated_usage: Usage,
+    pub accumulated_cost: Option<f64>,
 }
 
 impl<'a> SessionUpdateBuilder<'a> {
@@ -169,6 +203,7 @@ impl<'a> SessionUpdateBuilder<'a> {
             goose_mode: None,
             archived_at: None,
             project_id: None,
+            parent_session_id: None,
         }
     }
 
@@ -271,6 +306,11 @@ impl<'a> SessionUpdateBuilder<'a> {
         self.project_id = Some(project_id);
         self
     }
+
+    pub fn parent_session_id(mut self, parent_session_id: Option<String>) -> Self {
+        self.parent_session_id = Some(parent_session_id);
+        self
+    }
 }
 
 pub struct SessionManager {
@@ -326,12 +366,14 @@ fn message_keyword_clause(keyword_count: usize) -> String {
         .collect::<Vec<_>>()
         .join(" OR ");
 
+    let visible = user_visible_message_sql("mq.metadata_json");
     format!(
         r#"
         EXISTS (
             SELECT 1
             FROM messages mq
             WHERE mq.session_id = s.id
+              AND {visible}
               AND EXISTS (
                   SELECT 1
                   FROM json_each(mq.content_json)
@@ -369,6 +411,12 @@ impl SessionManager {
         &self.storage
     }
 
+    pub(crate) fn action_required(
+        &self,
+    ) -> Arc<crate::action_required_manager::ActionRequiredManager> {
+        self.storage.action_required.clone()
+    }
+
     pub async fn create_session(
         &self,
         working_dir: PathBuf,
@@ -389,6 +437,17 @@ impl SessionManager {
         SessionUpdateBuilder::new(self, id.to_string())
     }
 
+    pub(crate) async fn update_project_for_session_types(
+        &self,
+        id: &str,
+        project_id: Option<String>,
+        session_types: &[SessionType],
+    ) -> Result<bool> {
+        self.storage
+            .update_project_for_session_types(id, project_id, session_types)
+            .await
+    }
+
     async fn apply_update_inner(&self, builder: SessionUpdateBuilder<'_>) -> Result<()> {
         self.storage.apply_update(builder).await
     }
@@ -403,6 +462,19 @@ impl SessionManager {
 
     pub async fn list_sessions(&self) -> Result<Vec<Session>> {
         self.storage.list_sessions().await
+    }
+
+    pub async fn list_sessions_with_limit(&self, limit: usize) -> Result<Vec<Session>> {
+        self.storage
+            .list_sessions_matching(SessionListQuery {
+                filters: SessionListFilters {
+                    types: Some(&[SessionType::User, SessionType::Scheduled]),
+                    ..Default::default()
+                },
+                limit: Some(limit),
+                ..Default::default()
+            })
+            .await
     }
 
     pub async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
@@ -430,8 +502,34 @@ impl SessionManager {
             .await
     }
 
+    pub async fn get_session_usage_totals(&self, id: &str) -> Result<SessionUsageTotals> {
+        self.storage.get_session_usage_totals(id).await
+    }
+
+    pub async fn record_usage_metrics(
+        &self,
+        session_id: &str,
+        schedule_id: Option<String>,
+        current_usage: Usage,
+        model: &str,
+        ledger: &MessageUsage,
+    ) -> Result<()> {
+        self.storage
+            .record_usage_metrics(session_id, schedule_id, current_usage, model, ledger)
+            .await
+    }
+
     pub async fn export_session(&self, id: &str) -> Result<String> {
         self.storage.export_session(id).await
+    }
+
+    pub async fn export_session_markdown(&self, id: &str) -> Result<String> {
+        let session = self.get_session(id, true).await?;
+        let messages = session
+            .conversation
+            .map(|conversation| conversation.user_visible_messages())
+            .unwrap_or_default();
+        Ok(export_session_to_markdown(messages, &session.name))
     }
 
     pub async fn import_session(
@@ -530,12 +628,24 @@ impl SessionManager {
         let user_message_count = conversation
             .messages()
             .iter()
-            .filter(|m| matches!(m.role, Role::User))
+            .filter(|m| matches!(m.role, Role::User) && m.is_user_visible())
             .count();
 
-        if user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION {
-            let name =
-                generate_session_name(provider.as_ref(), &model_config, id, &conversation).await?;
+        let should_generate_name = if provider.manages_own_context() {
+            user_message_count == 1
+        } else {
+            user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION
+        };
+
+        if should_generate_name {
+            let name = generate_session_name(
+                provider.as_ref(),
+                &model_config,
+                id,
+                &conversation,
+                Some(session.working_dir.as_path()),
+            )
+            .await?;
             return Ok(Some(self.system_generated_name_update(id, name).await?));
         }
         Ok(None)
@@ -562,14 +672,13 @@ impl SessionManager {
             .await
     }
 
-    pub async fn update_message_metadata<F>(id: &str, message_id: &str, f: F) -> Result<()>
+    pub async fn update_message_metadata<F>(&self, id: &str, message_id: &str, f: F) -> Result<()>
     where
         F: FnOnce(
             crate::conversation::message::MessageMetadata,
         ) -> crate::conversation::message::MessageMetadata,
     {
-        Self::instance()
-            .storage
+        self.storage
             .update_message_metadata(id, message_id, f)
             .await
     }
@@ -577,16 +686,16 @@ impl SessionManager {
     /// Patch `tool_meta` on a specific `ToolRequest` within a stored message.
     /// Used to persist LLM-generated tool titles and chain summaries so they
     /// survive session reload. Merge-based: existing keys not in `patch` are
-    /// preserved. No-op if the message or tool_call_id is not found.
+    /// preserved. Searches the most recently inserted messages in the session
+    /// and is a no-op if the tool_call_id is not found.
     pub async fn update_tool_request_meta(
         &self,
         session_id: &str,
-        message_id: &str,
         tool_call_id: &str,
         patch: serde_json::Value,
     ) -> Result<()> {
         self.storage
-            .update_tool_request_meta(session_id, message_id, tool_call_id, patch)
+            .update_tool_request_meta(session_id, tool_call_id, patch)
             .await
     }
 }
@@ -595,6 +704,7 @@ pub struct SessionStorage {
     pool: Pool<Sqlite>,
     initialized: tokio::sync::OnceCell<()>,
     session_dir: PathBuf,
+    action_required: Arc<crate::action_required_manager::ActionRequiredManager>,
 }
 
 pub(crate) fn role_to_string(role: &Role) -> &'static str {
@@ -617,6 +727,10 @@ fn normalized_message_timestamp_sql(column: &str) -> String {
     format!(
         "CASE WHEN {column} > {MILLISECOND_TIMESTAMP_THRESHOLD} THEN {column} / 1000 ELSE {column} END"
     )
+}
+
+fn user_visible_message_sql(column: &str) -> String {
+    format!("COALESCE(json_extract({column}, '$.userVisible'), 1) != 0")
 }
 
 fn session_sort_at(session: &Session) -> DateTime<Utc> {
@@ -648,6 +762,7 @@ impl Default for Session {
             goose_mode: GooseMode::default(),
             archived_at: None,
             project_id: None,
+            parent_session_id: None,
             last_message_snippet: None,
         }
     }
@@ -658,6 +773,27 @@ impl Session {
         self.conversation = None;
         self
     }
+}
+
+fn deserialize_session_model_config(
+    provider_name: Option<&str>,
+    json: &str,
+) -> Option<ModelConfig> {
+    let mut model_config: ModelConfig = serde_json::from_str(json).ok()?;
+    // TODO: Remove this workaround once ModelConfig guarantees deserialize(serialize(config)) == config.
+    if provider_name == Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME) {
+        #[derive(Deserialize)]
+        struct AzurePersistedFields {
+            model_name: String,
+            #[serde(default)]
+            request_params: Option<HashMap<String, serde_json::Value>>,
+        }
+
+        let persisted: AzurePersistedFields = serde_json::from_str(json).ok()?;
+        model_config.model_name = persisted.model_name;
+        model_config.request_params = persisted.request_params;
+    }
+    Some(model_config)
 }
 
 impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
@@ -671,8 +807,11 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
         let user_recipe_values =
             user_recipe_values_json.and_then(|json| serde_json::from_str(&json).ok());
 
+        let provider_name: Option<String> = row.try_get("provider_name").ok().flatten();
         let model_config_json: Option<String> = row.try_get("model_config_json").ok().flatten();
-        let model_config = model_config_json.and_then(|json| serde_json::from_str(&json).ok());
+        let model_config = model_config_json
+            .as_deref()
+            .and_then(|json| deserialize_session_model_config(provider_name.as_deref(), json));
 
         let name: String = {
             let name_val: String = row.try_get("name").unwrap_or_default();
@@ -733,7 +872,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             conversation: None,
             message_count: row.try_get("message_count").unwrap_or(0) as usize,
             last_message_at,
-            provider_name: row.try_get("provider_name").ok().flatten(),
+            provider_name,
             model_config,
             goose_mode: row
                 .try_get::<String, _>("goose_mode")
@@ -742,15 +881,59 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .unwrap_or_default(),
             archived_at: row.try_get("archived_at").ok(),
             project_id: row.try_get("project_id").ok().flatten(),
+            parent_session_id: row.try_get("parent_session_id").ok().flatten(),
             last_message_snippet: None,
         })
     }
+}
+
+async fn insert_usage_ledger_row(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    session_id: &str,
+    model: Option<&str>,
+    usage: &MessageUsage,
+) -> Result<()> {
+    let cost_source = usage.cost_source.map(|cs| match cs {
+        CostSource::ProviderReported => "provider_reported",
+        CostSource::Estimated => "estimated",
+    });
+
+    sqlx::query(
+        r#"
+        INSERT INTO usage_ledger (
+            session_id, created_timestamp, model,
+            input_tokens, output_tokens, total_tokens,
+            cache_read_tokens, cache_write_tokens,
+            cost, cost_source, is_compaction
+        )
+        VALUES (?, strftime('%s','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(session_id)
+    .bind(model)
+    .bind(usage.input_tokens)
+    .bind(usage.output_tokens)
+    .bind(usage.total_tokens)
+    .bind(usage.cache_read_tokens)
+    .bind(usage.cache_write_tokens)
+    .bind(usage.cost)
+    .bind(cost_source)
+    .bind(usage.is_compaction as i64)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 impl SessionStorage {
     fn create_pool(path: &Path) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("Failed to create session database directory");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+                    .expect("Failed to secure session database directory");
+            }
         }
 
         let options = SqliteConnectOptions::new()
@@ -770,6 +953,7 @@ impl SessionStorage {
             pool: Self::create_pool(&db_path),
             initialized: tokio::sync::OnceCell::new(),
             session_dir,
+            action_required: Arc::new(crate::action_required_manager::ActionRequiredManager::new()),
         }
     }
 
@@ -795,12 +979,6 @@ impl SessionStorage {
             })
             .await?;
         Ok(&self.pool)
-    }
-
-    pub async fn create(session_dir: &Path) -> Result<Self> {
-        let storage = Self::new(session_dir.to_path_buf());
-        Self::create_schema(&storage.pool).await?;
-        Ok(storage)
     }
 
     async fn create_schema(pool: &Pool<Sqlite>) -> Result<()> {
@@ -864,7 +1042,8 @@ impl SessionStorage {
                 model_config_json TEXT,
                 goose_mode TEXT NOT NULL DEFAULT 'auto',
                 archived_at TIMESTAMP,
-                project_id TEXT
+                project_id TEXT,
+                parent_session_id TEXT
             )
         "#,
         )
@@ -889,6 +1068,27 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS usage_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                created_timestamp INTEGER NOT NULL,
+                model TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                total_tokens INTEGER,
+                cache_read_tokens INTEGER,
+                cache_write_tokens INTEGER,
+                cost REAL,
+                cost_source TEXT,
+                is_compaction INTEGER DEFAULT 0
+            )
+        "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
             .execute(&mut *tx)
             .await?;
@@ -898,19 +1098,36 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)")
             .execute(&mut *tx)
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_timestamp, id)",
+        )
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)")
             .execute(&mut *tx)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type)")
             .execute(&mut *tx)
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id)",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_usage_ledger_session ON usage_ledger(session_id)",
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Create the inventory tables inside the same transaction so that a
+        // second SessionStorage opening the same DB file never observes a
+        // committed schema_version (and thus takes the migration path) while
+        // the inventory tables don't yet exist — which raced as
+        // `no such table: provider_inventory_entries`.
+        crate::providers::inventory::create_tables(&mut tx).await?;
 
         tx.commit().await?;
-
-        // The inventory tables already use `CREATE TABLE IF NOT EXISTS`
-        // and run on the shared pool, so they don't need to be inside
-        // the same transaction.
-        crate::providers::inventory::create_tables(pool).await?;
 
         Ok(())
     }
@@ -1264,7 +1481,7 @@ impl SessionStorage {
                     .await?;
             }
             11 => {
-                crate::providers::inventory::create_tables_in_tx(tx).await?;
+                crate::providers::inventory::create_tables(tx).await?;
             }
             12 => {
                 // Add archived_at, project_id columns to sessions.
@@ -1320,11 +1537,64 @@ impl SessionStorage {
                     .await?
                         > 0;
                     if !has_column {
-                        sqlx::query(&format!("ALTER TABLE sessions ADD COLUMN {column} INTEGER"))
-                            .execute(&mut **tx)
-                            .await?;
+                        sqlx::query(AssertSqlSafe(format!(
+                            "ALTER TABLE sessions ADD COLUMN {column} INTEGER"
+                        )))
+                        .execute(&mut **tx)
+                        .await?;
                     }
                 }
+            }
+            15 => {
+                let has_parent = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'parent_session_id'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_parent {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT")
+                        .execute(&mut **tx)
+                        .await?;
+                    sqlx::query(
+                        "CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id)",
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                }
+
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS usage_ledger (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        created_timestamp INTEGER NOT NULL,
+                        model TEXT,
+                        input_tokens INTEGER,
+                        output_tokens INTEGER,
+                        total_tokens INTEGER,
+                        cache_read_tokens INTEGER,
+                        cache_write_tokens INTEGER,
+                        cost REAL,
+                        cost_source TEXT,
+                        is_compaction INTEGER DEFAULT 0
+                    )
+                    "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_usage_ledger_session ON usage_ledger(session_id)",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
+            16 => {
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_timestamp, id)",
+                )
+                .execute(&mut **tx)
+                .await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
@@ -1391,7 +1661,7 @@ impl SessionStorage {
                accumulated_cost,
                schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
-               archived_at, project_id
+               archived_at, project_id, parent_session_id
         FROM sessions
         WHERE id = ?
     "#,
@@ -1403,7 +1673,11 @@ impl SessionStorage {
 
         if include_messages {
             let conv = self.get_conversation(&session.id).await?;
-            session.message_count = conv.messages().len();
+            session.message_count = conv
+                .messages()
+                .iter()
+                .filter(|m| m.is_user_visible())
+                .count();
             session.last_message_at = conv
                 .messages()
                 .iter()
@@ -1412,13 +1686,15 @@ impl SessionStorage {
             session.conversation = Some(conv);
         } else {
             let sql = format!(
-                "SELECT COUNT(*), MAX({}) FROM messages WHERE session_id = ?",
+                "SELECT COUNT(*) FILTER (WHERE {}), MAX({}) FROM messages WHERE session_id = ?",
+                user_visible_message_sql("metadata_json"),
                 normalized_message_timestamp_sql("created_timestamp")
             );
-            let (count, last_message_timestamp): (i64, Option<i64>) = sqlx::query_as(&sql)
-                .bind(&session.id)
-                .fetch_one(pool)
-                .await?;
+            let (count, last_message_timestamp): (i64, Option<i64>) =
+                sqlx::query_as(AssertSqlSafe(sql))
+                    .bind(&session.id)
+                    .fetch_one(pool)
+                    .await?;
             session.message_count = count as usize;
             session.last_message_at =
                 last_message_timestamp.and_then(message_timestamp_to_datetime);
@@ -1470,6 +1746,7 @@ impl SessionStorage {
         add_update!(builder.archived_at, "archived_at");
 
         add_update!(builder.project_id, "project_id");
+        add_update!(builder.parent_session_id, "parent_session_id");
 
         if updates.is_empty() {
             return Ok(());
@@ -1478,7 +1755,7 @@ impl SessionStorage {
         query.push_str(", ");
         query.push_str("updated_at = datetime('now') WHERE id = ?");
 
-        let mut q = sqlx::query(&query);
+        let mut q = sqlx::query(AssertSqlSafe(query));
 
         if let Some(name) = builder.name {
             q = q.bind(name);
@@ -1546,6 +1823,9 @@ impl SessionStorage {
         if let Some(ref project_id) = builder.project_id {
             q = q.bind(project_id.as_ref());
         }
+        if let Some(ref parent_session_id) = builder.parent_session_id {
+            q = q.bind(parent_session_id.as_ref());
+        }
 
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -1558,6 +1838,34 @@ impl SessionStorage {
 
         tx.commit().await?;
         Ok(())
+    }
+
+    async fn update_project_for_session_types(
+        &self,
+        id: &str,
+        project_id: Option<String>,
+        session_types: &[SessionType],
+    ) -> Result<bool> {
+        if session_types.is_empty() {
+            return Ok(false);
+        }
+
+        let placeholders = session_types
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query = format!(
+            "UPDATE sessions SET project_id = ?, updated_at = datetime('now') \
+             WHERE id = ? AND session_type IN ({placeholders})"
+        );
+        let pool = self.pool().await?;
+        let mut query = sqlx::query(AssertSqlSafe(query)).bind(project_id).bind(id);
+        for session_type in session_types {
+            query = query.bind(session_type.to_string());
+        }
+
+        Ok(query.execute(pool).await?.rows_affected() == 1)
     }
 
     async fn get_conversation(&self, session_id: &str) -> Result<Conversation> {
@@ -1603,6 +1911,16 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let metadata_json = serde_json::to_string(&message.metadata)?;
+        // Messages are read back ordered by (created_timestamp, id), so one built
+        // before the messages it is appended after would sort ahead of them —
+        // operations do that whenever they prepare a reply and fill it in while a
+        // tool runs. Never move a message ahead of what is already stored.
+        let latest: Option<i64> =
+            sqlx::query_scalar("SELECT MAX(created_timestamp) FROM messages WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let created = message.created.max(latest.unwrap_or(message.created));
 
         let message_id = message
             .id
@@ -1619,7 +1937,7 @@ impl SessionStorage {
         .bind(session_id)
         .bind(role_to_string(&message.role))
         .bind(serde_json::to_string(&message.content)?)
-        .bind(message.created)
+        .bind(created)
         .bind(metadata_json)
         .execute(&mut *tx)
         .await?;
@@ -1688,6 +2006,7 @@ impl SessionStorage {
             return Ok(Vec::new());
         }
 
+        let has_limit = query.limit.is_some();
         let keywords = keyword_terms(filters.keyword);
         let mut where_clauses = Vec::new();
         let mut having_clauses = Vec::new();
@@ -1728,6 +2047,14 @@ impl SessionStorage {
         let order_by = "ORDER BY sort_timestamp DESC, s.id DESC";
         let limit_clause = if query.limit.is_some() { "LIMIT ?" } else { "" };
 
+        let message_count_sql = if has_limit {
+            "0".to_string()
+        } else {
+            format!(
+                "COUNT(m.id) FILTER (WHERE {})",
+                user_visible_message_sql("m.metadata_json")
+            )
+        };
         let sql = format!(
             r#"
             SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
@@ -1738,8 +2065,8 @@ impl SessionStorage {
                    s.accumulated_cost,
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode,
-                   s.archived_at, s.project_id,
-                   COUNT(m.id) as message_count,
+                   s.archived_at, s.project_id, s.parent_session_id,
+                   {} as message_count,
                    MAX({}) as last_message_timestamp,
                    {} as sort_timestamp
             FROM sessions s
@@ -1750,6 +2077,7 @@ impl SessionStorage {
             {}
             {}
             "#,
+            message_count_sql,
             normalized_message_timestamp,
             sort_timestamp_sql,
             message_join,
@@ -1759,7 +2087,7 @@ impl SessionStorage {
             limit_clause
         );
 
-        let mut q = sqlx::query_as::<_, Session>(&sql);
+        let mut q = sqlx::query_as::<_, Session>(AssertSqlSafe(sql));
         if let Some(types) = filters.types {
             for session_type in types {
                 q = q.bind(session_type.to_string());
@@ -1782,7 +2110,50 @@ impl SessionStorage {
         }
 
         let pool = self.pool().await?;
-        q.fetch_all(pool).await.map_err(Into::into)
+        if has_limit {
+            let mut tx = pool.begin().await?;
+            let mut sessions = q.fetch_all(&mut *tx).await?;
+            Self::populate_visible_message_counts(&mut tx, &mut sessions).await?;
+            tx.commit().await?;
+            Ok(sessions)
+        } else {
+            q.fetch_all(pool).await.map_err(Into::into)
+        }
+    }
+
+    async fn populate_visible_message_counts(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        sessions: &mut [Session],
+    ) -> Result<()> {
+        let mut counts = HashMap::with_capacity(sessions.len());
+
+        for chunk in sessions.chunks(SESSION_COUNT_BATCH_SIZE) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let sql = format!(
+                r#"
+                SELECT m.session_id,
+                       COUNT(m.id) FILTER (WHERE {}) as message_count
+                FROM messages m
+                WHERE m.session_id IN ({})
+                GROUP BY m.session_id
+                "#,
+                user_visible_message_sql("m.metadata_json"),
+                placeholders
+            );
+            let mut q = sqlx::query_as::<_, (String, i64)>(AssertSqlSafe(sql));
+            for session in chunk {
+                q = q.bind(&session.id);
+            }
+            for (session_id, message_count) in q.fetch_all(&mut **tx).await? {
+                counts.insert(session_id, message_count as usize);
+            }
+        }
+
+        for session in sessions {
+            session.message_count = counts.get(&session.id).copied().unwrap_or_default();
+        }
+
+        Ok(())
     }
 
     async fn list_sessions_by_types(&self, types: Option<&[SessionType]>) -> Result<Vec<Session>> {
@@ -1864,6 +2235,11 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
 
+        sqlx::query("DELETE FROM usage_ledger WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
         sqlx::query("DELETE FROM sessions WHERE id = ?")
             .bind(session_id)
             .execute(&mut *tx)
@@ -1893,7 +2269,7 @@ impl SessionStorage {
         );
 
         let pool = self.pool().await?;
-        let mut q = sqlx::query_as::<_, (i64, Option<i64>)>(&query);
+        let mut q = sqlx::query_as::<_, (i64, Option<i64>)>(AssertSqlSafe(query));
         for t in types {
             q = q.bind(t.to_string());
         }
@@ -1903,6 +2279,180 @@ impl SessionStorage {
         Ok(SessionInsights {
             total_sessions: row.0 as usize,
             total_tokens: row.1.unwrap_or(0),
+        })
+    }
+
+    async fn record_usage_metrics(
+        &self,
+        session_id: &str,
+        schedule_id: Option<String>,
+        current_usage: Usage,
+        model: &str,
+        ledger: &MessageUsage,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO usage_ledger (
+                session_id, created_timestamp,
+                input_tokens, output_tokens, total_tokens,
+                cache_read_tokens, cache_write_tokens,
+                cost, cost_source
+            )
+            SELECT s.id, strftime('%s','now'),
+                   MAX(COALESCE(s.accumulated_input_tokens, 0) - l.input_sum, 0),
+                   MAX(COALESCE(s.accumulated_output_tokens, 0) - l.output_sum, 0),
+                   MAX(COALESCE(s.accumulated_total_tokens, 0) - l.total_sum, 0),
+                   MAX(COALESCE(s.accumulated_cache_read_tokens, 0) - l.cache_read_sum, 0),
+                   MAX(COALESCE(s.accumulated_cache_write_tokens, 0) - l.cache_write_sum, 0),
+                   CASE WHEN s.accumulated_cost IS NULL OR s.accumulated_cost <= l.cost_sum THEN NULL
+                        ELSE s.accumulated_cost - l.cost_sum END,
+                   'carried_forward'
+            FROM sessions s,
+                 (SELECT COALESCE(SUM(input_tokens), 0) AS input_sum,
+                         COALESCE(SUM(output_tokens), 0) AS output_sum,
+                         COALESCE(SUM(total_tokens), 0) AS total_sum,
+                         COALESCE(SUM(cache_read_tokens), 0) AS cache_read_sum,
+                         COALESCE(SUM(cache_write_tokens), 0) AS cache_write_sum,
+                         COALESCE(SUM(cost), 0.0) AS cost_sum
+                  FROM usage_ledger WHERE session_id = ?) l
+            WHERE s.id = ?
+              AND (COALESCE(s.accumulated_input_tokens, 0) > l.input_sum
+                   OR COALESCE(s.accumulated_output_tokens, 0) > l.output_sum
+                   OR COALESCE(s.accumulated_total_tokens, 0) > l.total_sum
+                   OR COALESCE(s.accumulated_cost, 0.0) > l.cost_sum + 1e-9)
+            "#,
+        )
+        .bind(session_id)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE sessions SET
+                schedule_id = ?,
+                total_tokens = ?, input_tokens = ?, output_tokens = ?,
+                cache_read_tokens = ?, cache_write_tokens = ?,
+                accumulated_total_tokens = COALESCE(accumulated_total_tokens, 0) + ?,
+                accumulated_input_tokens = COALESCE(accumulated_input_tokens, 0) + ?,
+                accumulated_output_tokens = COALESCE(accumulated_output_tokens, 0) + ?,
+                accumulated_cache_read_tokens = COALESCE(accumulated_cache_read_tokens, 0) + ?,
+                accumulated_cache_write_tokens = COALESCE(accumulated_cache_write_tokens, 0) + ?,
+                accumulated_cost = CASE
+                    WHEN ? IS NULL THEN accumulated_cost
+                    ELSE COALESCE(accumulated_cost, 0) + ?
+                END,
+                updated_at = datetime('now')
+            WHERE id = ?
+            "#,
+        )
+        .bind(schedule_id)
+        .bind(current_usage.total_tokens)
+        .bind(current_usage.input_tokens)
+        .bind(current_usage.output_tokens)
+        .bind(current_usage.cache_read_input_tokens)
+        .bind(current_usage.cache_write_input_tokens)
+        .bind(ledger.total_tokens.unwrap_or(0))
+        .bind(ledger.input_tokens.unwrap_or(0))
+        .bind(ledger.output_tokens.unwrap_or(0))
+        .bind(ledger.cache_read_tokens.unwrap_or(0))
+        .bind(ledger.cache_write_tokens.unwrap_or(0))
+        .bind(ledger.cost)
+        .bind(ledger.cost)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+
+        insert_usage_ledger_row(&mut tx, session_id, Some(model), ledger).await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn get_session_usage_totals(&self, session_id: &str) -> Result<SessionUsageTotals> {
+        let pool = self.pool().await?;
+        let rows = sqlx::query_as::<
+            _,
+            (
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<f64>,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<f64>,
+            ),
+        >(
+            r#"
+            WITH RECURSIVE tree(id) AS (
+                SELECT id FROM sessions WHERE id = ?
+                UNION
+                SELECT s.id FROM sessions s JOIN tree ON s.parent_session_id = tree.id
+            )
+            SELECT
+                s.accumulated_input_tokens, s.accumulated_output_tokens, s.accumulated_total_tokens,
+                s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens, s.accumulated_cost,
+                SUM(u.input_tokens), SUM(u.output_tokens), SUM(u.total_tokens),
+                SUM(u.cache_read_tokens), SUM(u.cache_write_tokens), SUM(u.cost)
+            FROM sessions s
+            LEFT JOIN usage_ledger u ON u.session_id = s.id
+            WHERE s.id IN (SELECT id FROM tree)
+            GROUP BY s.id
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(pool)
+        .await?;
+
+        let mut input = 0i64;
+        let mut output = 0i64;
+        let mut total = 0i64;
+        let mut cache_read = 0i64;
+        let mut cache_write = 0i64;
+        let mut cost: Option<f64> = None;
+
+        let larger =
+            |acc: Option<i64>, ledger: Option<i64>| acc.unwrap_or(0).max(ledger.unwrap_or(0));
+
+        for row in rows {
+            let (
+                acc_in,
+                acc_out,
+                acc_total,
+                acc_cr,
+                acc_cw,
+                acc_cost,
+                l_in,
+                l_out,
+                l_total,
+                l_cr,
+                l_cw,
+                l_cost,
+            ) = row;
+            input += larger(acc_in, l_in);
+            output += larger(acc_out, l_out);
+            total += larger(acc_total, l_total);
+            cache_read += larger(acc_cr, l_cr);
+            cache_write += larger(acc_cw, l_cw);
+            if acc_cost.is_some() || l_cost.is_some() {
+                let c = acc_cost.unwrap_or(0.0).max(l_cost.unwrap_or(0.0));
+                cost = Some(cost.unwrap_or(0.0) + c);
+            }
+        }
+
+        let opt = |v: i64| Some(i32::try_from(v).unwrap_or(i32::MAX));
+        Ok(SessionUsageTotals {
+            accumulated_usage: Usage::new(opt(input), opt(output), opt(total))
+                .with_cache_tokens(opt(cache_read), opt(cache_write)),
+            accumulated_cost: cost,
         })
     }
 
@@ -2108,12 +2658,58 @@ impl SessionStorage {
         Ok(())
     }
 
+    async fn update_tool_request_meta(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<()> {
+        use crate::conversation::message::MessageContent;
+
+        let pool = self.pool().await?;
+        let rows = sqlx::query_as::<_, (Option<String>, String)>(
+            "SELECT message_id, content_json FROM messages \
+             WHERE session_id = ? \
+             ORDER BY id DESC \
+             LIMIT 100",
+        )
+        .bind(session_id)
+        .fetch_all(pool)
+        .await?;
+
+        for (message_id, content_json) in rows {
+            let content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+            let contains_tool_request = content.iter().any(|block| {
+                matches!(
+                    block,
+                    MessageContent::ToolRequest(tool_request)
+                        if tool_request.id == tool_call_id
+                )
+            });
+            if contains_tool_request {
+                let Some(message_id) = message_id else {
+                    return Ok(());
+                };
+                return self
+                    .update_tool_request_meta_by_message_id(
+                        session_id,
+                        &message_id,
+                        tool_call_id,
+                        patch,
+                    )
+                    .await;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Patch `tool_meta` on a specific `ToolRequest` within a stored message's
     /// `content_json`. Finds the row(s) with matching `message_id`, scans each
     /// row's content for a `ToolRequest` with the given `tool_call_id`, and
     /// merges `patch` into its `tool_meta`. Uses `BEGIN IMMEDIATE` so
     /// concurrent writers serialize correctly.
-    async fn update_tool_request_meta(
+    async fn update_tool_request_meta_by_message_id(
         &self,
         session_id: &str,
         message_id: &str,
@@ -2189,7 +2785,7 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use crate::providers::base::MessageStream;
-    use goose_providers::conversation::token_usage::ProviderUsage;
+    use goose_providers::conversation::token_usage::{CostSource, ProviderUsage};
     use goose_providers::errors::ProviderError;
     use rmcp::model::Tool;
     use tempfile::TempDir;
@@ -2198,7 +2794,131 @@ mod tests {
     const NUM_CONCURRENT_SESSIONS: i32 = 10;
     const GENERATED_SESSION_NAME: &str = "Generated session name";
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn session_directory_is_owner_private_for_fresh_and_existing_database() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let session_dir = temp_dir.path().join(SESSIONS_FOLDER);
+        let database_path = session_dir.join(DB_NAME);
+
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        storage.pool().await.unwrap();
+        assert_eq!(
+            fs::metadata(&session_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        storage.pool.close().await;
+        drop(storage);
+
+        fs::set_permissions(&database_path, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::set_permissions(&session_dir, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            fs::metadata(&database_path).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        assert_eq!(
+            fs::metadata(&session_dir).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = session_manager
+            .create_session(
+                PathBuf::from("/tmp/private-session-store"),
+                "Private session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let loaded = session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+
+        assert_eq!(loaded.id, session.id);
+        assert_eq!(loaded.name, "Private session");
+        assert_eq!(
+            fs::metadata(&session_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[test]
+    fn azure_session_model_config_preserves_suffixed_deployment_id() {
+        let json = serde_json::to_string(&ModelConfig {
+            model_name: "gpt-5-high".to_string(),
+            context_limit: None,
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            request_params: None,
+            reasoning: None,
+            supports_vision: None,
+            request_headers: None,
+        })
+        .unwrap();
+
+        let config = deserialize_session_model_config(
+            Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
+            &json,
+        )
+        .unwrap();
+
+        assert_eq!(config.model_name, "gpt-5-high");
+        assert_eq!(config.thinking_effort(), None);
+        assert!(!json.contains("context_limit"));
+    }
+
+    #[test]
+    fn legacy_session_context_limit_is_ignored() {
+        let config = deserialize_session_model_config(
+            Some("openai"),
+            r#"{"model_name":"gpt-4o","context_limit":64000,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null}"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.context_limit, None);
+    }
+
+    #[test]
+    fn azure_session_model_config_preserves_explicit_thinking_effort() {
+        let config = deserialize_session_model_config(
+            Some(goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME),
+            r#"{"model_name":"gpt-5-high","context_limit":null,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null,"request_params":{"thinking_effort":"low"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.model_name, "gpt-5-high");
+        assert_eq!(
+            config.thinking_effort(),
+            Some(goose_providers::thinking::ThinkingEffort::Low)
+        );
+    }
+
+    #[test]
+    fn non_azure_session_model_config_keeps_suffix_normalization() {
+        let config = deserialize_session_model_config(
+            Some(goose_providers::openai::OPEN_AI_PROVIDER_NAME),
+            r#"{"model_name":"gpt-5-high","context_limit":null,"temperature":null,"max_tokens":null,"toolshim":false,"toolshim_model":null}"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.model_name, "gpt-5");
+        assert_eq!(
+            config.thinking_effort(),
+            Some(goose_providers::thinking::ThinkingEffort::High)
+        );
+    }
+
     struct NamingTestProvider;
+
+    struct StatefulNamingTestProvider;
+
+    struct LocalNamingTestProvider;
 
     #[async_trait::async_trait]
     impl Provider for NamingTestProvider {
@@ -2227,6 +2947,48 @@ mod tests {
                 Message::assistant().with_text(GENERATED_SESSION_NAME),
                 ProviderUsage::new("test".to_string(), Default::default()),
             ))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for StatefulNamingTestProvider {
+        fn get_name(&self) -> &str {
+            "stateful-naming-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            panic!("stateful session naming must not call the provider")
+        }
+
+        fn manages_own_context(&self) -> bool {
+            true
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for LocalNamingTestProvider {
+        fn get_name(&self) -> &str {
+            "local-naming-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            panic!("local session naming must not call the provider")
+        }
+
+        fn uses_local_session_naming(&self) -> bool {
+            true
         }
     }
 
@@ -2372,6 +3134,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn messages_read_back_in_the_order_they_arrived() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Arrival order".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        // A message built well before the one it is appended after: operations do
+        // this whenever they prepare a reply and fill it in while a tool runs.
+        let mut held = Message::user().with_text("built first");
+        held.created -= 5;
+        sm.add_message(&session.id, &Message::user().with_text("appended first"))
+            .await
+            .unwrap();
+        sm.add_message(&session.id, &held).await.unwrap();
+
+        let conversation = sm
+            .get_session(&session.id, true)
+            .await
+            .unwrap()
+            .conversation
+            .expect("session has a conversation");
+        let texts: Vec<_> = conversation
+            .messages()
+            .iter()
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(texts, ["appended first", "built first"]);
+    }
+
+    #[tokio::test]
+    async fn test_messages_session_created_index_avoids_disk_sort() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage.pool().await.unwrap();
+
+        let index_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_messages_session_created')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(
+            index_exists,
+            "idx_messages_session_created should exist after schema init"
+        );
+
+        let plan_rows = sqlx::query(
+            "EXPLAIN QUERY PLAN \
+             SELECT content_json FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
+        )
+        .bind("nonexistent_session")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        let plan_text: String = plan_rows
+            .iter()
+            .map(|r| r.try_get::<String, _>("detail").unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            plan_text.contains("idx_messages_session_created"),
+            "loading a session's messages should use idx_messages_session_created, got: {plan_text}"
+        );
+        assert!(
+            !plan_text.contains("TEMP B-TREE"),
+            "loading a session's messages must not require an on-disk sort, got: {plan_text}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_last_message_at_is_derived_from_messages() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -2403,6 +3245,48 @@ mod tests {
         let with_messages = sm.get_session(&session.id, true).await.unwrap();
         assert_eq!(with_messages.message_count, 2);
         assert_eq!(with_messages.last_message_at, Some(expected));
+    }
+
+    #[tokio::test]
+    async fn test_message_count_excludes_agent_only_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Hidden events".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        add_user_message(&sm, &session.id).await;
+        sm.add_message(
+            &session.id,
+            &Message::user()
+                .with_text("<turn-context>frozen</turn-context>")
+                .with_visibility(false, true),
+        )
+        .await
+        .unwrap();
+        sm.add_message(&session.id, &Message::assistant().with_text("hi"))
+            .await
+            .unwrap();
+
+        let counted = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(counted.message_count, 2);
+
+        let with_messages = sm.get_session(&session.id, true).await.unwrap();
+        assert_eq!(with_messages.message_count, 2);
+
+        let listed = sm.list_sessions().await.unwrap();
+        let listed_session = listed.iter().find(|s| s.id == session.id).unwrap();
+        assert_eq!(listed_session.message_count, 2);
+
+        let limited = sm.list_sessions_with_limit(1).await.unwrap();
+        assert_eq!(limited[0].id, session.id);
+        assert_eq!(limited[0].message_count, 2);
     }
 
     #[tokio::test]
@@ -2476,6 +3360,12 @@ mod tests {
             .await
             .unwrap();
 
+        sm.update(&session.id)
+            .model_config(ModelConfig::new("test-model"))
+            .apply()
+            .await
+            .unwrap();
+
         add_user_message(&sm, &session.id).await;
 
         let update = sm
@@ -2490,6 +3380,76 @@ mod tests {
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.name, GENERATED_SESSION_NAME);
         assert!(!reloaded.user_set_name);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_update_name_uses_local_name_for_stateful_provider() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "New Chat".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        sm.update(&session.id)
+            .model_config(ModelConfig::new("test-model"))
+            .apply()
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("investigate session naming with ACP providers"),
+        )
+        .await
+        .unwrap();
+
+        let update = sm
+            .maybe_update_name(&session.id, Arc::new(StatefulNamingTestProvider))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(update.name, "investigate session naming with");
+    }
+
+    #[tokio::test]
+    async fn test_maybe_update_name_uses_local_name_for_stateless_provider() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "New Chat".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        sm.update(&session.id)
+            .model_config(ModelConfig::new("test-model"))
+            .apply()
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("investigate local naming without provider completion"),
+        )
+        .await
+        .unwrap();
+
+        let update = sm
+            .maybe_update_name(&session.id, Arc::new(LocalNamingTestProvider))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(update.name, "investigate local naming without");
     }
 
     #[tokio::test]
@@ -2816,6 +3776,114 @@ mod tests {
             assert_session_list_page(&sm, cursor.as_ref(), None, 2, &expected_ids[2..4], true)
                 .await;
         assert_session_list_page(&sm, cursor.as_ref(), None, 2, &expected_ids[4..5], false).await;
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_with_limit_counts_visible_and_legacy_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let older = create_session_for_list(&sm, "/tmp/session-list", false).await;
+        add_message_at(&sm, &older, "older", "2026-01-01T00:00:00Z").await;
+
+        let selected = create_session_for_list(&sm, "/tmp/session-list", false).await;
+        sm.add_message(
+            &selected,
+            &Message::user().with_id("legacy").with_text("legacy"),
+        )
+        .await
+        .unwrap();
+        set_message_timestamp(&sm, &selected, "legacy", "2026-01-02T00:00:00Z").await;
+        sqlx::query(
+            "UPDATE messages SET metadata_json = '{}' WHERE session_id = ? AND message_id = ?",
+        )
+        .bind(&selected)
+        .bind("legacy")
+        .execute(sm.storage().pool().await.unwrap())
+        .await
+        .unwrap();
+
+        sm.add_message(
+            &selected,
+            &Message::user()
+                .with_id("hidden")
+                .with_text("hidden")
+                .with_visibility(false, true),
+        )
+        .await
+        .unwrap();
+        set_message_timestamp(&sm, &selected, "hidden", "2026-01-03T00:00:00Z").await;
+
+        sm.add_message(
+            &selected,
+            &Message::assistant().with_id("visible").with_text("visible"),
+        )
+        .await
+        .unwrap();
+        set_message_timestamp(&sm, &selected, "visible", "2026-01-04T00:00:00Z").await;
+
+        let sessions = sm.list_sessions_with_limit(1).await.unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, selected);
+        assert_eq!(sessions[0].message_count, 2);
+        assert_eq!(
+            sessions[0].last_message_at,
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2026-01-04T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_includes_hidden_only_session_with_zero_count() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let hidden_only = create_session_for_list(&sm, "/tmp/session-list", false).await;
+        sm.add_message(
+            &hidden_only,
+            &Message::user()
+                .with_text("hidden")
+                .with_visibility(false, true),
+        )
+        .await
+        .unwrap();
+        create_session_for_list(&sm, "/tmp/session-list", false).await;
+
+        let types = [SessionType::User];
+        let page = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(page.sessions.len(), 1);
+        assert_eq!(page.sessions[0].id, hidden_only);
+        assert_eq!(page.sessions[0].message_count, 0);
+        assert!(page.sessions[0].last_message_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_with_limit_returns_empty_session_with_zero_count() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let empty = create_session_for_list(&sm, "/tmp/session-list", false).await;
+
+        let sessions = sm.list_sessions_with_limit(1).await.unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, empty);
+        assert_eq!(sessions[0].message_count, 0);
+        assert_eq!(sessions[0].last_message_at, None);
     }
 
     #[tokio::test]
@@ -3573,10 +4641,12 @@ mod tests {
             "accumulated_cache_read_tokens",
             "accumulated_cache_write_tokens",
         ] {
-            sqlx::query(&format!("ALTER TABLE sessions DROP COLUMN {column}"))
-                .execute(&pool)
-                .await
-                .unwrap();
+            sqlx::query(AssertSqlSafe(format!(
+                "ALTER TABLE sessions DROP COLUMN {column}"
+            )))
+            .execute(&pool)
+            .await
+            .unwrap();
         }
         sqlx::query("UPDATE schema_version SET version = 13")
             .execute(&pool)
@@ -3618,5 +4688,272 @@ mod tests {
         let loaded = sm.get_session("cache_id", false).await.unwrap();
         assert_eq!(loaded.usage, usage);
         assert_eq!(loaded.accumulated_usage, accumulated_usage);
+    }
+
+    fn message_usage(input: i32, output: i32, cost: f64, is_compaction: bool) -> MessageUsage {
+        MessageUsage {
+            input_tokens: Some(input),
+            output_tokens: Some(output),
+            total_tokens: Some(input + output),
+            cost: Some(cost),
+            cost_source: Some(CostSource::Estimated),
+            is_compaction,
+            ..Default::default()
+        }
+    }
+
+    async fn new_session(sm: &SessionManager) -> String {
+        sm.create_session(
+            PathBuf::from("/tmp"),
+            "s".to_string(),
+            SessionType::User,
+            GooseMode::default(),
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    async fn seed_ledger(
+        sm: &SessionManager,
+        session_id: &str,
+        usage: &MessageUsage,
+    ) -> Result<()> {
+        let pool = sm.storage().pool().await?;
+        let mut tx = pool.begin().await?;
+        insert_usage_ledger_row(&mut tx, session_id, None, usage).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_usage_totals_include_subagent_tree() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let parent = new_session(&sm).await;
+        let child = new_session(&sm).await;
+        sm.update(&child)
+            .parent_session_id(Some(parent.clone()))
+            .apply()
+            .await
+            .unwrap();
+
+        seed_ledger(&sm, &parent, &message_usage(100, 20, 0.10, false))
+            .await
+            .unwrap();
+        seed_ledger(&sm, &child, &message_usage(40, 8, 0.04, false))
+            .await
+            .unwrap();
+
+        let parent_totals = sm.get_session_usage_totals(&parent).await.unwrap();
+        assert_eq!(parent_totals.accumulated_usage.input_tokens, Some(140));
+        assert!((parent_totals.accumulated_cost.unwrap() - 0.14).abs() < 1e-9);
+
+        let child_totals = sm.get_session_usage_totals(&child).await.unwrap();
+        assert_eq!(child_totals.accumulated_usage.input_tokens, Some(40));
+        assert!((child_totals.accumulated_cost.unwrap() - 0.04).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_ledger_reconciles_spend_recorded_on_pre_v15_builds() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        sm.update(&id)
+            .accumulated_usage(Usage::new(Some(5000), Some(1000), Some(6000)))
+            .accumulated_cost(Some(5.0))
+            .apply()
+            .await
+            .unwrap();
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(100), Some(20), Some(120)),
+            "test-model",
+            &message_usage(100, 20, 0.01, false),
+        )
+        .await
+        .unwrap();
+
+        let totals = sm.get_session_usage_totals(&id).await.unwrap();
+        assert_eq!(totals.accumulated_usage.total_tokens, Some(6120));
+        assert!((totals.accumulated_cost.unwrap() - 5.01).abs() < 1e-9);
+
+        let session = sm.get_session(&id, false).await.unwrap();
+        sm.update(&id)
+            .accumulated_usage(
+                session.accumulated_usage + Usage::new(Some(500), Some(50), Some(550)),
+            )
+            .accumulated_cost(Some(session.accumulated_cost.unwrap() + 0.50))
+            .apply()
+            .await
+            .unwrap();
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(30), Some(5), Some(35)),
+            "test-model",
+            &message_usage(30, 5, 0.03, false),
+        )
+        .await
+        .unwrap();
+
+        let totals = sm.get_session_usage_totals(&id).await.unwrap();
+        assert_eq!(totals.accumulated_usage.input_tokens, Some(5630));
+        assert_eq!(totals.accumulated_usage.output_tokens, Some(1075));
+        assert_eq!(totals.accumulated_usage.total_tokens, Some(6705));
+        assert!((totals.accumulated_cost.unwrap() - 5.54).abs() < 1e-9);
+
+        let session = sm.get_session(&id, false).await.unwrap();
+        assert_eq!(session.accumulated_usage, totals.accumulated_usage);
+        assert!((session.accumulated_cost.unwrap() - 5.54).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_usage_totals_read_through_unreconciled_drift() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(100), Some(20), Some(120)),
+            "test-model",
+            &message_usage(100, 20, 0.10, false),
+        )
+        .await
+        .unwrap();
+
+        let session = sm.get_session(&id, false).await.unwrap();
+        sm.update(&id)
+            .accumulated_usage(
+                session.accumulated_usage + Usage::new(Some(500), Some(50), Some(550)),
+            )
+            .accumulated_cost(Some(session.accumulated_cost.unwrap() + 0.50))
+            .apply()
+            .await
+            .unwrap();
+
+        let totals = sm.get_session_usage_totals(&id).await.unwrap();
+        assert_eq!(totals.accumulated_usage.input_tokens, Some(600));
+        assert_eq!(totals.accumulated_usage.total_tokens, Some(670));
+        assert!((totals.accumulated_cost.unwrap() - 0.60).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_usage_totals_fall_back_to_accumulated_for_legacy_sessions() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        sm.update(&id)
+            .accumulated_usage(Usage::new(Some(500), Some(100), Some(600)))
+            .accumulated_cost(Some(0.42))
+            .apply()
+            .await
+            .unwrap();
+
+        let totals = sm.get_session_usage_totals(&id).await.unwrap();
+        assert_eq!(totals.accumulated_usage.input_tokens, Some(500));
+        assert_eq!(totals.accumulated_cost, Some(0.42));
+    }
+
+    #[tokio::test]
+    async fn test_usage_ledger_survives_conversation_replace() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        seed_ledger(&sm, &id, &message_usage(1000, 200, 1.0, false))
+            .await
+            .unwrap();
+        seed_ledger(&sm, &id, &message_usage(50, 10, 0.05, true))
+            .await
+            .unwrap();
+
+        sm.replace_conversation(&id, &Conversation::default())
+            .await
+            .unwrap();
+
+        let totals = sm.get_session_usage_totals(&id).await.unwrap();
+        assert_eq!(totals.accumulated_usage.total_tokens, Some(1260));
+        assert!((totals.accumulated_cost.unwrap() - 1.05).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_usage_totals_mixed_legacy_and_ledger_tree() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let parent = new_session(&sm).await;
+        let child = new_session(&sm).await;
+        sm.update(&child)
+            .parent_session_id(Some(parent.clone()))
+            .apply()
+            .await
+            .unwrap();
+
+        seed_ledger(&sm, &parent, &message_usage(100, 20, 0.10, false))
+            .await
+            .unwrap();
+        sm.update(&child)
+            .accumulated_usage(Usage::new(Some(300), Some(60), Some(360)))
+            .accumulated_cost(Some(0.25))
+            .apply()
+            .await
+            .unwrap();
+
+        let totals = sm.get_session_usage_totals(&parent).await.unwrap();
+        assert_eq!(totals.accumulated_usage.input_tokens, Some(400));
+        assert_eq!(totals.accumulated_usage.output_tokens, Some(80));
+        assert!((totals.accumulated_cost.unwrap() - 0.35).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_with_ledger_rows() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        seed_ledger(&sm, &id, &message_usage(100, 20, 0.10, false))
+            .await
+            .unwrap();
+
+        sm.delete_session(&id).await.unwrap();
+        assert!(sm.get_session(&id, false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_pre_v15_delete_cascades_ledger_rows() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        seed_ledger(&sm, &id, &message_usage(100, 20, 0.10, false))
+            .await
+            .unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        sqlx::query("DELETE FROM messages WHERE session_id = ?")
+            .bind(&id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(&id)
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM usage_ledger WHERE session_id = ?")
+                .bind(&id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!(remaining, 0);
     }
 }

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use ignore::WalkBuilder;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -46,19 +46,17 @@ impl TreeTool {
 
     fn tree_at(&self, root: PathBuf, depth: u32) -> CallToolResult {
         if !root.exists() {
-            return CallToolResult::error(vec![Content::text(format!(
+            return CallToolResult::error(vec![ContentBlock::text(format!(
                 "Path does not exist: {}",
                 root.display()
-            ))
-            .with_priority(0.0)]);
+            ))]);
         }
 
         if !root.is_dir() {
-            return CallToolResult::error(vec![Content::text(format!(
+            return CallToolResult::error(vec![ContentBlock::text(format!(
                 "Path is not a directory: {}",
                 root.display()
-            ))
-            .with_priority(0.0)]);
+            ))]);
         }
 
         let max_depth = if depth == 0 {
@@ -76,7 +74,7 @@ impl TreeTool {
             output.push_str("(empty directory)");
         }
 
-        CallToolResult::success(vec![Content::text(output).with_priority(0.0)])
+        CallToolResult::success(vec![ContentBlock::text(output)])
     }
 }
 
@@ -224,12 +222,12 @@ fn format_lines(lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::RawContent;
+    use rmcp::model::ContentBlock;
     use tempfile::TempDir;
 
     fn extract_text(result: &CallToolResult) -> &str {
-        match &result.content[0].raw {
-            RawContent::Text(t) => &t.text,
+        match &result.content[0] {
+            ContentBlock::Text(t) => &t.text,
             _ => panic!("expected text"),
         }
     }

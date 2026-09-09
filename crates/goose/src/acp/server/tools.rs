@@ -1,5 +1,5 @@
 use super::*;
-use crate::agents::extension_manager::get_parameter_names;
+use crate::agents::extension_manager::{get_parameter_names, is_tool_owned_by_extension};
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::config::permission::PermissionLevel;
 use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
@@ -63,9 +63,13 @@ impl GooseAcpAgent {
     ) -> Result<GooseToolCallResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
-        let tools = agent.list_tools(session_id, None).await;
+        let tools = agent
+            .list_tools(session_id, Some(req.extension_name.clone()))
+            .await;
 
-        let Some(tool) = tools.iter().find(|t| *t.name == req.name) else {
+        let Some(tool) = tools.iter().find(|tool| {
+            *tool.name == req.name && is_tool_owned_by_extension(tool, &req.extension_name)
+        }) else {
             return Err(agent_client_protocol::Error::invalid_params().data("tool not found"));
         };
 
@@ -91,10 +95,33 @@ impl GooseAcpAgent {
             params
         };
 
-        let ctx = crate::agents::ToolCallContext::new(session_id.clone(), None, None);
+        if agent.goose_mode().await != GooseMode::Auto {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("app tool calls require auto mode"));
+        }
+
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                    .data(format!("Session not found: {}", session_id))
+            })?;
+
+        let ctx = crate::agents::ToolCallContext::new(
+            session_id.clone(),
+            Some(session.working_dir),
+            None,
+        );
         let tool_result = agent
             .extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::new())
+            .dispatch_app_tool_call(
+                &ctx,
+                tool_call,
+                &req.extension_name,
+                CancellationToken::new(),
+            )
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 

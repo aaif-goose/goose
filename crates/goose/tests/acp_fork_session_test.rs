@@ -1,10 +1,15 @@
+#![recursion_limit = "256"]
 #[allow(dead_code)]
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 
 use agent_client_protocol::schema::v1::{ForkSessionRequest, ForkSessionResponse, SessionId};
-use common_tests::fixtures::server::AcpServerConnection;
-use common_tests::fixtures::{run_test, Connection, OpenAiFixture, TestConnectionConfig};
+use common_tests::fixtures::server::{
+    assert_session_response_precedes_available_commands, AcpServerConnection,
+};
+use common_tests::fixtures::{
+    run_test, spawn_acp_server_in_process, Connection, OpenAiFixture, TestConnectionConfig,
+};
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageContent};
 use goose::session::{SessionManager, SessionType};
@@ -89,6 +94,42 @@ fn conversation_before_meta(timestamp: i64) -> serde_json::Map<String, serde_jso
         serde_json::Value::Number(timestamp.into()),
     );
     meta
+}
+
+#[test]
+fn fork_session_response_precedes_available_commands() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let source = seed_session_with_messages(&session_manager, cwd.path(), &[]).await;
+        let openai = OpenAiFixture::new(
+            vec![],
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let (transport, _handle, _permission_manager) = spawn_acp_server_in_process(
+            openai.uri(),
+            &[],
+            data_root.path(),
+            GooseMode::default(),
+            None,
+            goose_test_support::TEST_MODEL,
+            true,
+        )
+        .await;
+
+        assert_session_response_precedes_available_commands(
+            transport,
+            "session/fork",
+            serde_json::json!({
+                "sessionId": source.id,
+                "cwd": cwd.path(),
+                "mcpServers": []
+            }),
+        )
+        .await;
+    });
 }
 
 #[test]

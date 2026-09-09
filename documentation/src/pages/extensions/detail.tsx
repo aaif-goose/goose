@@ -225,7 +225,14 @@ const getDocumentationPath = (serverId: string): string => {
                         <span>Install</span>
                         <Download className="h-4 w-4" />
                       </a>
-                    ) : null}
+                    ) : (
+                      <div
+                        className="manual-setup-badge"
+                        title="This extension requires manual setup. See the installation notes above."
+                      >
+                        Manual setup
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

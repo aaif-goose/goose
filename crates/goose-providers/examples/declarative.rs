@@ -19,15 +19,9 @@ async fn complete(provider: &dyn Provider, model: ModelConfig) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let deepseek = include_str!("deepseek.json");
-    let deepseek_model = ModelConfig::new("deepseek-v4-flash");
-    let zai = include_str!("zai.json");
-    let zai_model = ModelConfig::new("glm-4.5-flash");
+    let model = ModelConfig::new("deepseek-v4-flash");
+    let provider = goose_providers::deepseek::create(None, EnvKeyResolver {})?;
+    complete(provider.as_ref(), model).await?;
 
-    for (json, model) in [(deepseek, deepseek_model), (zai, zai_model)] {
-        let provider = goose_providers::declarative::from_json(json, None, EnvKeyResolver {})?;
-        println!("{}:", provider.get_name());
-        complete(provider.as_ref(), model).await?;
-    }
     Ok(())
 }

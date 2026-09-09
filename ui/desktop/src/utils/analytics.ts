@@ -70,7 +70,11 @@ export type AnalyticsEvent =
     }
   | {
       name: 'schedule_created';
-      properties: { source_type: 'file' | 'deeplink'; success: boolean; error_details?: string };
+      properties: {
+        source_type: 'file' | 'deeplink' | 'saved';
+        success: boolean;
+        error_details?: string;
+      };
     }
   | { name: 'schedule_deleted'; properties: { success: boolean; error_details?: string } }
   | { name: 'schedule_run_now'; properties: { success: boolean; error_details?: string } }
@@ -141,7 +145,6 @@ export type AnalyticsEvent =
     }
   | { name: 'input_mode_changed'; properties: { from_mode: string; to_mode: string } }
   | { name: 'input_diagnostics_opened'; properties: Record<string, never> }
-  | { name: 'input_create_recipe_opened'; properties: Record<string, never> }
   | { name: 'input_edit_recipe_opened'; properties: Record<string, never> }
   // Auto-update tracking events
   | {
@@ -188,7 +191,7 @@ export type AnalyticsEvent =
       properties: {
         version: string;
         method: 'electron-updater' | 'github-fallback';
-        action: 'quit_and_install' | 'open_folder_and_quit' | 'open_folder_only';
+        action: 'quit_and_install' | 'auto_swap_and_relaunch';
       };
     };
 // NOTE: slash_command_used is tracked by the backend (posthog.rs) with command_type info
@@ -419,7 +422,7 @@ export function trackExtensionDeleted(
 // ============================================================================
 
 export function trackScheduleCreated(
-  sourceType: 'file' | 'deeplink',
+  sourceType: 'file' | 'deeplink' | 'saved',
   success: boolean,
   errorDetails?: string
 ): void {
@@ -446,27 +449,6 @@ export function trackScheduleRunNow(success: boolean, errorDetails?: string): vo
 // ============================================================================
 // Recipe Tracking
 // ============================================================================
-
-export function trackRecipeCreated(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_created',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeImported(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_imported',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeEdited(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_edited',
-    properties: { success, error_details: errorDetails },
-  });
-}
 
 export function trackRecipeDeleted(success: boolean, errorDetails?: string): void {
   trackEvent({
@@ -556,30 +538,9 @@ export function trackVoiceDictation(
   });
 }
 
-export function trackModeChanged(fromMode: string, toMode: string): void {
-  trackEvent({
-    name: 'input_mode_changed',
-    properties: { from_mode: fromMode, to_mode: toMode },
-  });
-}
-
 export function trackDiagnosticsOpened(): void {
   trackEvent({
     name: 'input_diagnostics_opened',
-    properties: {},
-  });
-}
-
-export function trackCreateRecipeOpened(): void {
-  trackEvent({
-    name: 'input_create_recipe_opened',
-    properties: {},
-  });
-}
-
-export function trackEditRecipeOpened(): void {
-  trackEvent({
-    name: 'input_edit_recipe_opened',
     properties: {},
   });
 }
@@ -688,7 +649,7 @@ export function trackUpdateDownloadCompleted(
 export function trackUpdateInstallInitiated(
   version: string,
   method: UpdateMethod,
-  action: 'quit_and_install' | 'open_folder_and_quit' | 'open_folder_only'
+  action: 'quit_and_install' | 'auto_swap_and_relaunch'
 ): void {
   trackEvent({
     name: 'update_install_initiated',

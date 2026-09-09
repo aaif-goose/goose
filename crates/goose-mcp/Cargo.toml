@@ -13,31 +13,29 @@ workspace = true
 
 [features]
 default = []
-rustls-tls = ["reqwest/rustls"]
-native-tls = ["reqwest/native-tls"]
+rustls-tls = []
+native-tls = []
 
 [dependencies]
 rmcp = { workspace = true, features = ["server", "client", "transport-io", "macros"] }
 anyhow = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["process", "io-util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing-appender = { workspace = true }
-url = { workspace = true }
 base64 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 indoc = { workspace = true }
-reqwest = { workspace = true, features = ["json", "system-proxy"] }
 chrono = { workspace = true }
 etcetera = { workspace = true }
 tempfile = { workspace = true }
 include_dir = { workspace = true }
 once_cell = { workspace = true }
-lopdf = { version = "0.42", default-features = false }
+lopdf = { version = "0.44", default-features = false }
 docx-rs = { version = "0.4.18", default-features = false, features = ["image"] }
 image = { version = "0.24.4", default-features = false, features = ["bmp", "dds", "dxt", "farbfeld", "gif", "hdr", "ico", "jpeg", "jpeg_rayon", "openexr", "png", "pnm", "tga", "tiff", "webp"] }
-umya-spreadsheet = { version = "2", default-features = false }
+umya-spreadsheet = { version = "3", default-features = false }
 shell-words = { workspace = true }
-process-wrap = { version = "9", default-features = false, features = ["std"] }
+process-wrap = { version = "9", default-features = false, features = ["std", "process-session"] }

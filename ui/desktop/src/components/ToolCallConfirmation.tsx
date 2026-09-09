@@ -2,6 +2,7 @@ import type { ActionRequired } from '../types/message';
 import { defineMessages, useIntl } from '../i18n';
 import { snakeToTitleCase } from '../utils';
 import ToolApprovalButtons from './ToolApprovalButtons';
+import { ToolCallArguments, type ToolCallArgumentValue } from './ToolCallArguments';
 
 const i18n = defineMessages({
   allowToolCallWithName: {
@@ -35,7 +36,7 @@ export default function ToolConfirmation({
 }: ToolConfirmationProps) {
   const intl = useIntl();
   const data = actionRequiredContent.data as ToolConfirmationData;
-  const { id, toolName, prompt } = data;
+  const { generation, id, toolName, arguments: toolArguments, prompt } = data;
   const displayName = formatToolName(toolName);
 
   return (
@@ -45,9 +46,13 @@ export default function ToolConfirmation({
           ? intl.formatMessage(i18n.allowToolCallWithName, { toolName: displayName })
           : intl.formatMessage(i18n.gooseWouldLikeToCallWithName, { toolName: displayName })}
       </div>
-      <ToolApprovalButtons
-        data={{ id, toolName, prompt: prompt ?? undefined, sessionId, isClicked }}
-      />
+      <div className="px-4 pb-2">
+        {prompt && <div className="py-2 text-sm text-amber-600 dark:text-amber-400">{prompt}</div>}
+        <ToolCallArguments args={toolArguments as Record<string, ToolCallArgumentValue>} />
+        <ToolApprovalButtons
+          data={{ generation, id, toolName, prompt: prompt ?? undefined, sessionId, isClicked }}
+        />
+      </div>
     </div>
   );
 }

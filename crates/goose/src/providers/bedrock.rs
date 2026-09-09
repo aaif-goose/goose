@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
+    ProviderMetadata, DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::openai_compatible::{handle_status, stream_responses_compat};
 use super::retry::{ProviderRetry, RetryConfig};
 use crate::conversation::message::Message;
@@ -28,7 +31,8 @@ use smithy_transport_reqwest::ReqwestHttpClient;
 
 use super::formats::bedrock::{
     bedrock_anthropic_thinking_fields, bedrock_inference_config, from_bedrock_message,
-    from_bedrock_usage, to_bedrock_message_with_caching, to_bedrock_tool_config,
+    from_bedrock_usage, sanitize_json_unicode_tags, to_bedrock_message_with_caching,
+    to_bedrock_tool_config,
 };
 
 pub(crate) const BEDROCK_PROVIDER_NAME: &str = "aws_bedrock";
@@ -36,15 +40,134 @@ pub const BEDROCK_DOC_LINK: &str =
     "https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html";
 
 pub const BEDROCK_DEFAULT_MODEL: &str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
-pub const BEDROCK_KNOWN_MODELS: &[&str] = &[
-    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-    "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-    "us.anthropic.claude-opus-4-20250514-v1:0",
-    "us.anthropic.claude-opus-4-1-20250805-v1:0",
-    "openai.gpt-5.5",
-    "openai.gpt-5.4",
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BedrockEndpoint {
+    Converse,
+    MantleResponses,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BedrockModelEntry {
+    name: &'static str,
+    wire_model_id: &'static str,
+    endpoint: BedrockEndpoint,
+    context_limit: Option<u32>,
+}
+
+const BEDROCK_MODEL_TABLE: &[BedrockModelEntry] = &[
+    BedrockModelEntry {
+        name: "global.anthropic.claude-sonnet-5",
+        wire_model_id: "global.anthropic.claude-sonnet-5",
+        endpoint: BedrockEndpoint::Converse,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        wire_model_id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        endpoint: BedrockEndpoint::Converse,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        wire_model_id: "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        endpoint: BedrockEndpoint::Converse,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        wire_model_id: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        endpoint: BedrockEndpoint::Converse,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "us.anthropic.claude-opus-4-20250514-v1:0",
+        wire_model_id: "us.anthropic.claude-opus-4-20250514-v1:0",
+        endpoint: BedrockEndpoint::Converse,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        wire_model_id: "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        endpoint: BedrockEndpoint::Converse,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "openai.gpt-5.5",
+        wire_model_id: "openai.gpt-5.5",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "openai.gpt-5.4",
+        wire_model_id: "openai.gpt-5.4",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "openai.gpt-5.6-sol",
+        wire_model_id: "openai.gpt-5.6-sol",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "openai.gpt-5.6-terra",
+        wire_model_id: "openai.gpt-5.6-terra",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "openai.gpt-5.6-luna",
+        wire_model_id: "openai.gpt-5.6-luna",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: None,
+    },
+    BedrockModelEntry {
+        name: "google.gemma-4-31b",
+        wire_model_id: "google.gemma-4-31b",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: Some(262144),
+    },
+    BedrockModelEntry {
+        name: "google.gemma-4-26b-a4b",
+        wire_model_id: "google.gemma-4-26b-a4b",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: Some(262144),
+    },
+    BedrockModelEntry {
+        name: "google.gemma-4-e2b",
+        wire_model_id: "google.gemma-4-e2b",
+        endpoint: BedrockEndpoint::MantleResponses,
+        context_limit: None,
+    },
 ];
+
+pub(crate) fn local_context_limit(model: &str) -> Option<usize> {
+    BEDROCK_MODEL_TABLE
+        .iter()
+        .find(|entry| entry.name.eq_ignore_ascii_case(model))
+        .and_then(|entry| entry.context_limit)
+        .map(|limit| limit as usize)
+}
+
+fn find_model_entry(name: &str) -> Option<&'static BedrockModelEntry> {
+    // Direct lookup first (handles exact names like "google.gemma-4-31b")
+    if let Some(entry) = BEDROCK_MODEL_TABLE.iter().find(|e| e.name == name) {
+        return Some(entry);
+    }
+    // For openai.* names, strip the prefix, extract effort suffix, then reconstruct
+    if let Some(without_prefix) = name.strip_prefix("openai.") {
+        let (base, _) = extract_reasoning_effort(without_prefix);
+        let candidate = format!("openai.{}", base);
+        return BEDROCK_MODEL_TABLE.iter().find(|e| e.name == candidate);
+    }
+    // For other names, try stripping effort suffix directly
+    let (base_name, _) = extract_reasoning_effort(name);
+    if let Some(entry) = BEDROCK_MODEL_TABLE.iter().find(|e| e.name == base_name) {
+        return Some(entry);
+    }
+    let candidate = format!("openai.{}", base_name);
+    BEDROCK_MODEL_TABLE.iter().find(|e| e.name == candidate)
+}
 
 pub const BEDROCK_DEFAULT_MAX_RETRIES: usize = 6;
 pub const BEDROCK_DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 2000;
@@ -161,6 +284,9 @@ impl BedrockProvider {
                     token.clone(),
                     None,
                 ))
+                .auth_scheme_preference([
+                    aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+                ])
                 .build();
 
             Client::from_conf(bedrock_config)
@@ -176,7 +302,12 @@ impl BedrockProvider {
             name: BEDROCK_PROVIDER_NAME.to_string(),
             region: resolved_region,
             bearer_token,
-            http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+                .read_timeout(std::time::Duration::from_secs(
+                    DEFAULT_PROVIDER_TIMEOUT_SECS,
+                ))
+                .build()?,
             mantle_base_url: None,
         })
     }
@@ -228,7 +359,7 @@ impl BedrockProvider {
         let enabled = config
             .get_param::<bool>("BEDROCK_ENABLE_CACHING")
             .unwrap_or(false);
-        enabled && model.model_name.contains("anthropic.claude")
+        enabled && model.model_name.contains("anthropic.claude") && !model.prompt_cache_disabled()
     }
 
     async fn post_mantle_streaming(
@@ -269,10 +400,11 @@ impl BedrockProvider {
             }
         }
 
-        let response = req
-            .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(format!("Mantle request failed: {}", e)))?;
+        let response = goose_providers::http_status::send_bounded(
+            req,
+            std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )
+        .await?;
 
         handle_status(response).await
     }
@@ -313,13 +445,32 @@ impl BedrockProvider {
         let visible_messages: Vec<&Message> =
             messages.iter().filter(|m| m.is_agent_visible()).collect();
 
-        let last_idx = visible_messages.len().saturating_sub(1);
+        let mut bedrock_messages: Vec<bedrock::Message> = Vec::new();
+        for message in visible_messages {
+            let formatted =
+                to_bedrock_message_with_caching(message, false, Some(&model.model_name))?;
+            if formatted.content().is_empty() {
+                continue;
+            }
+            if let Some(previous) = bedrock_messages.last_mut() {
+                if previous.role() == formatted.role() {
+                    previous.content.extend(formatted.content);
+                    continue;
+                }
+            }
+            bedrock_messages.push(formatted);
+        }
 
-        let bedrock_messages = visible_messages
-            .iter()
-            .enumerate()
-            .map(|(idx, m)| to_bedrock_message_with_caching(m, enable_caching && idx == last_idx))
-            .collect::<Result<Vec<_>>>()?;
+        if enable_caching {
+            if let Some(last) = bedrock_messages.last_mut() {
+                last.content.push(bedrock::ContentBlock::CachePoint(
+                    bedrock::CachePointBlock::builder()
+                        .r#type(bedrock::CachePointType::Default)
+                        .build()
+                        .map_err(|error| ProviderError::ExecutionError(error.to_string()))?,
+                ));
+            }
+        }
 
         let tool_config = if tools.is_empty() {
             None
@@ -654,9 +805,13 @@ fn process_stream_event(
                         .with_arguments(object(serde_json::json!({}))))
                 } else {
                     match serde_json::from_str::<Value>(&input_json) {
-                        Ok(parsed) => {
-                            Ok(CallToolRequestParams::new(name).with_arguments(object(parsed)))
-                        }
+                        Ok(parsed) => sanitize_json_unicode_tags(parsed)
+                            .map(|arguments| {
+                                CallToolRequestParams::new(name).with_arguments(object(arguments))
+                            })
+                            .map_err(|error| {
+                                ErrorData::new(ErrorCode::INVALID_PARAMS, error.to_string(), None)
+                            }),
                         Err(_) => Err(ErrorData::new(
                             ErrorCode::INVALID_PARAMS,
                             format!("Could not parse tool arguments: {}", input_json),
@@ -686,12 +841,21 @@ fn process_stream_event(
 
 impl goose_providers::base::ProviderDescriptor for BedrockProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        let models = BEDROCK_MODEL_TABLE
+            .iter()
+            .map(|entry| {
+                entry.context_limit.map_or_else(
+                    || model_info_for_provider_model(BEDROCK_PROVIDER_NAME, entry.name),
+                    |limit| ModelInfo::new(entry.name).with_context_limit(limit as usize),
+                )
+            })
+            .collect();
+        ProviderMetadata::with_models(
             BEDROCK_PROVIDER_NAME,
             "Amazon Bedrock",
             "Run models through Amazon Bedrock. Supports AWS SSO profiles - run 'aws sso login --profile <profile-name>' before using. Configure with AWS_PROFILE and AWS_REGION, use environment variables/credentials, or use AWS_BEARER_TOKEN_BEDROCK for bearer token authentication. Region is required for bearer token auth (can be set via AWS_REGION, AWS_DEFAULT_REGION, or AWS profile). Prompt caching can be enabled for Anthropic Claude models by setting BEDROCK_ENABLE_CACHING=true. Responses stream via the ConverseStream API; set BEDROCK_DISABLE_STREAMING=true to fall back to blocking Converse calls.",
             BEDROCK_DEFAULT_MODEL,
-            BEDROCK_KNOWN_MODELS.to_vec(),
+            models,
             BEDROCK_DOC_LINK,
             vec![
                 ConfigKey::new("AWS_PROFILE", false, false, Some("default"), true),
@@ -706,6 +870,14 @@ impl goose_providers::base::ProviderDescriptor for BedrockProvider {
                     false,
                 ),
             ],
+        )
+        .with_setup(
+            crate::providers::catalog::ProviderSetupMetadata::new(
+                crate::providers::catalog::ProviderSetupCategory::Model,
+                crate::providers::catalog::ProviderSetupMethod::CloudCredentials,
+                crate::providers::catalog::ProviderSetupGroup::Additional,
+            )
+            .with_field("AWS_REGION", "AWS Region", Some("us-west-2"), None),
         )
     }
 }
@@ -731,8 +903,23 @@ impl Provider for BedrockProvider {
         self.retry_config.clone()
     }
 
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        let configured_limits = BEDROCK_MODEL_TABLE.iter().filter_map(|entry| {
+            entry
+                .context_limit
+                .map(|limit| (entry.name.to_string(), limit as usize))
+        });
+        goose_providers::context_limit::ContextLimitResolver::new(&self.name)
+            .with_configured_limits(configured_limits)
+            .resolve(model, override_limit, || async { Ok(None) })
+            .await
+    }
+
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        Ok(BEDROCK_KNOWN_MODELS.iter().map(|s| s.to_string()).collect())
+        Ok(BEDROCK_MODEL_TABLE
+            .iter()
+            .map(|e| e.name.to_string())
+            .collect())
     }
 
     async fn stream(
@@ -749,44 +936,30 @@ impl Provider for BedrockProvider {
             Some(session_id.as_str())
         };
 
-        let without_prefix = model_config
-            .model_name
-            .strip_prefix("openai.")
-            .unwrap_or(&model_config.model_name);
-        let (base_name, effort) = extract_reasoning_effort(without_prefix);
-        let bedrock_model_id = format!("openai.{}", base_name);
+        if let Some(entry) = find_model_entry(&model_config.model_name) {
+            if entry.endpoint == BedrockEndpoint::MantleResponses {
+                let capability_model_name =
+                    entry.name.strip_prefix("openai.").unwrap_or(entry.name);
+                let mut normalized_config = model_config.clone();
+                normalized_config.model_name = capability_model_name.to_string();
+                let mut payload =
+                    create_responses_request(&normalized_config, system, messages, tools)?;
+                payload["model"] = Value::String(entry.wire_model_id.to_string());
+                payload["stream"] = Value::Bool(true);
+                if entry.name.starts_with("google.gemma-4-") {
+                    payload["parallel_tool_calls"] = Value::Bool(false);
+                }
+                let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
 
-        let is_mantle_model = BEDROCK_KNOWN_MODELS.contains(&bedrock_model_id.as_str());
+                let response = self
+                    .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
+                    .await
+                    .inspect_err(|e| {
+                        let _ = log.error(e);
+                    })?;
 
-        if is_mantle_model {
-            let mut normalized_config = ModelConfig {
-                model_name: base_name,
-                ..model_config.clone()
-            };
-            // `ModelConfig::new` cannot normalize the effort suffix for `openai.gpt-*` names
-            // because the `openai.` prefix breaks the reasoning-model regex. Inject it here.
-            if let Some(e) = effort {
-                let params = normalized_config
-                    .request_params
-                    .get_or_insert_with(Default::default);
-                params
-                    .entry("thinking_effort".to_string())
-                    .or_insert_with(|| serde_json::json!(e));
+                return stream_responses_compat(response, log);
             }
-            let mut payload =
-                create_responses_request(&normalized_config, system, messages, tools)?;
-            payload["model"] = Value::String(bedrock_model_id.clone());
-            payload["stream"] = Value::Bool(true);
-            let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
-
-            let response = self
-                .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
-                .await
-                .inspect_err(|e| {
-                    let _ = log.error(e);
-                })?;
-
-            return stream_responses_compat(response, log);
         }
 
         let model_name = model_config.model_name.clone();
@@ -940,6 +1113,8 @@ mod tests {
                 toolshim_model: None,
                 request_params: None,
                 reasoning: None,
+                supports_vision: None,
+                request_headers: None,
             },
         )
     }
@@ -1016,6 +1191,41 @@ mod tests {
     }
 
     #[test]
+    fn stale_reasoning_only_turn_is_removed_and_neighboring_roles_are_merged() {
+        use crate::conversation::message::{InferenceMetadata, MessageContent};
+
+        let (provider, model) = create_mock_provider_and_model("anthropic.claude-sonnet-4");
+        let messages = vec![
+            Message::user().with_text("first"),
+            Message::assistant()
+                .with_content(MessageContent::thinking("internal", "sig-abc"))
+                .with_inference(InferenceMetadata {
+                    provider: "aws_bedrock".to_string(),
+                    requested_model: "anthropic.claude-opus-4".to_string(),
+                    resolved_model: None,
+                    provider_session_id: None,
+                }),
+            Message::user().with_text("second"),
+        ];
+
+        let parts = provider
+            .build_request_parts(&model, "system", &messages, &[])
+            .unwrap();
+
+        assert_eq!(parts.messages.len(), 1);
+        assert_eq!(parts.messages[0].role(), &bedrock::ConversationRole::User);
+        let text: Vec<&str> = parts.messages[0]
+            .content()
+            .iter()
+            .filter_map(|content| match content {
+                bedrock::ContentBlock::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, vec!["first", "second"]);
+    }
+
+    #[test]
     #[serial]
     fn test_caching_enabled_for_claude_model() {
         std::env::set_var("BEDROCK_ENABLE_CACHING", "true");
@@ -1025,6 +1235,15 @@ mod tests {
         assert!(
             provider.should_enable_caching(&model),
             "Caching should be enabled for Claude models when BEDROCK_ENABLE_CACHING=true"
+        );
+
+        let one_shot = model.with_merged_request_params(HashMap::from([(
+            "disable_prompt_cache".to_string(),
+            serde_json::json!(true),
+        )]));
+        assert!(
+            !provider.should_enable_caching(&one_shot),
+            "One-shot requests must not create cache points"
         );
 
         std::env::remove_var("BEDROCK_ENABLE_CACHING");
@@ -1128,6 +1347,70 @@ mod tests {
         assert_eq!(received.len(), 1);
         let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
         assert_eq!(body["model"].as_str().unwrap(), "openai.gpt-5.5");
+    }
+
+    #[tokio::test]
+    async fn test_mantle_stream_returns_text_message_gpt_5_6() {
+        use futures::StreamExt;
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        let sse_body = [
+            r#"data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#,
+            r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#,
+            "data: [DONE]",
+        ]
+        .join("\n");
+
+        Mock::given(method("POST"))
+            .and(path("/openai/v1/responses"))
+            .and(header("authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+            .mount(&server)
+            .await;
+
+        let sdk_config = aws_config::SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new("us-east-1"))
+            .build();
+
+        let model = ModelConfig::new("openai.gpt-5.6-terra");
+        let provider = BedrockProvider {
+            client: Client::new(&sdk_config),
+            retry_config: RetryConfig::default(),
+            name: "aws_bedrock".to_string(),
+            region: Some("us-east-1".to_string()),
+            bearer_token: Some("test-token".to_string()),
+            http_client: reqwest::Client::new(),
+            mantle_base_url: Some(format!("{}/openai/v1/responses", server.uri())),
+        };
+
+        let messages = vec![crate::conversation::message::Message::user().with_text("hi")];
+        let mut stream = provider
+            .stream(&model.clone(), "", &messages, &[])
+            .await
+            .unwrap();
+
+        let mut text = String::new();
+        while let Some(item) = stream.next().await {
+            let (msg, _usage) = item.unwrap();
+            if let Some(m) = msg {
+                for c in m.content {
+                    if let MessageContent::Text(t) = c {
+                        text.push_str(&t.text);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text, "Hello world");
+
+        let received = server.received_requests().await.unwrap();
+        assert_eq!(received.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+        assert_eq!(body["model"].as_str().unwrap(), "openai.gpt-5.6-terra");
     }
 
     // ── ConverseStream event processing ──────────────────────────────────
@@ -1245,6 +1528,41 @@ mod tests {
             }
             other => panic!("expected ToolRequest, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_stream_tool_use_sanitizes_nested_arguments() {
+        let mut state = StreamBlockState::default();
+
+        process_stream_event(
+            tool_start_event(1, "tool-1", "lookup"),
+            &mut state,
+            TEST_MESSAGE_ID,
+        );
+        process_stream_event(
+            tool_delta_event(
+                1,
+                "{\"query\":\"visible\u{E0041}text\",\"nested\":[{\"cit\u{E0042}y\":\"東京🌍\u{E0043}\"}]}",
+            ),
+            &mut state,
+            TEST_MESSAGE_ID,
+        );
+
+        let (messages, _) = process_stream_event(stop_event(1), &mut state, TEST_MESSAGE_ID);
+        let MessageContent::ToolRequest(request) = &messages[0].content[0] else {
+            panic!("expected tool request");
+        };
+        let call = request
+            .tool_call
+            .as_ref()
+            .expect("expected valid tool call");
+        assert_eq!(
+            call.arguments,
+            Some(object(serde_json::json!({
+                "query": "visibletext",
+                "nested": [{"city": "東京🌍"}]
+            })))
+        );
     }
 
     #[test]
@@ -1496,5 +1814,161 @@ mod tests {
             }
             other => panic!("expected RedactedThinking, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_gemma_no_reasoning_effort() {
+        let entry = find_model_entry("google.gemma-4-31b").unwrap();
+        assert_eq!(entry.endpoint, BedrockEndpoint::MantleResponses);
+
+        let entry_26b = find_model_entry("google.gemma-4-26b-a4b").unwrap();
+        assert_eq!(entry_26b.endpoint, BedrockEndpoint::MantleResponses);
+
+        let entry_e2b = find_model_entry("google.gemma-4-e2b").unwrap();
+        assert_eq!(entry_e2b.endpoint, BedrockEndpoint::MantleResponses);
+    }
+
+    #[test]
+    fn test_metadata_includes_gemma_models() {
+        let meta = BedrockProvider::metadata();
+        let model_names: Vec<&str> = meta.known_models.iter().map(|m| m.name.as_str()).collect();
+        assert!(
+            model_names.contains(&"google.gemma-4-31b"),
+            "metadata should include google.gemma-4-31b"
+        );
+        assert!(
+            model_names.contains(&"google.gemma-4-26b-a4b"),
+            "metadata should include google.gemma-4-26b-a4b"
+        );
+        assert!(
+            model_names.contains(&"google.gemma-4-e2b"),
+            "metadata should include google.gemma-4-e2b"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mantle_stream_gemma_4_31b() {
+        use futures::StreamExt;
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        let sse_body = [
+            r#"data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#,
+            r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#,
+            "data: [DONE]",
+        ]
+        .join("\n");
+
+        Mock::given(method("POST"))
+            .and(path("/openai/v1/responses"))
+            .and(header("authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"))
+            .mount(&server)
+            .await;
+
+        let sdk_config = aws_config::SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new("us-east-1"))
+            .build();
+
+        let model = ModelConfig::new("google.gemma-4-31b");
+        let provider = BedrockProvider {
+            client: Client::new(&sdk_config),
+            retry_config: RetryConfig::default(),
+            name: "aws_bedrock".to_string(),
+            region: Some("us-east-1".to_string()),
+            bearer_token: Some("test-token".to_string()),
+            http_client: reqwest::Client::new(),
+            mantle_base_url: Some(format!("{}/openai/v1/responses", server.uri())),
+        };
+
+        let messages = vec![crate::conversation::message::Message::user().with_text("hi")];
+        let mut stream = provider
+            .stream(&model.clone(), "", &messages, &[])
+            .await
+            .unwrap();
+
+        let mut text = String::new();
+        while let Some(item) = stream.next().await {
+            let (msg, _usage) = item.unwrap();
+            if let Some(m) = msg {
+                for c in m.content {
+                    if let MessageContent::Text(t) = c {
+                        text.push_str(&t.text);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text, "Hello world");
+
+        let received = server.received_requests().await.unwrap();
+        assert_eq!(received.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+        // The wire model ID must be the full google.gemma-4-31b, not mangled
+        assert_eq!(body["model"].as_str().unwrap(), "google.gemma-4-31b");
+        // Gemma models should NOT inject thinking_effort
+        assert!(
+            body.get("reasoning").is_none(),
+            "Gemma model should not have a reasoning block"
+        );
+        assert!(
+            body.get("thinking_effort").is_none(),
+            "Gemma model should not inject thinking_effort"
+        );
+        // Gemma does not support parallel tool calls per AWS docs
+        assert_eq!(
+            body["parallel_tool_calls"].as_bool(),
+            Some(false),
+            "Gemma model must set parallel_tool_calls=false"
+        );
+    }
+
+    #[test]
+    fn test_gpt_routing_entry_with_effort_suffix() {
+        let entry = find_model_entry("openai.gpt-5.5-high").unwrap();
+        assert_eq!(entry.endpoint, BedrockEndpoint::MantleResponses);
+        assert_eq!(entry.wire_model_id, "openai.gpt-5.5");
+    }
+
+    #[test]
+    fn test_bare_gpt_name_routes_to_mantle() {
+        for model in ["gpt-5.5", "gpt-5.5-high"] {
+            let entry = find_model_entry(model).unwrap();
+            assert_eq!(entry.endpoint, BedrockEndpoint::MantleResponses);
+        }
+    }
+
+    #[test]
+    fn test_gemma_context_limit_in_metadata() {
+        let metadata = BedrockProvider::metadata();
+        let model = metadata
+            .known_models
+            .iter()
+            .find(|model| model.name == "google.gemma-4-31b")
+            .unwrap();
+        assert!(model.context_limit.is_some_and(|limit| limit >= 262144));
+    }
+
+    #[tokio::test]
+    async fn test_gemma_context_limit_resolution() {
+        let (provider, _) = create_mock_provider_and_model("google.gemma-4-31b");
+        assert_eq!(
+            provider.get_context_limit("google.gemma-4-31b", None).await,
+            262_144
+        );
+        assert_eq!(
+            provider
+                .get_context_limit("google.gemma-4-31b", Some(64_000))
+                .await,
+            64_000
+        );
+    }
+    #[test]
+    fn test_converse_model_not_mantle() {
+        let entry = find_model_entry("us.anthropic.claude-sonnet-4-5-20250929-v1:0").unwrap();
+        assert_eq!(entry.endpoint, BedrockEndpoint::Converse);
     }
 }

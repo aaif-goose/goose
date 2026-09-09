@@ -6,10 +6,13 @@ on:
 jobs:
   bundle-desktop:
     if: startsWith(github.head_ref, 'release/')
-    uses: ./.github/workflows/bundle-desktop.yml
+    uses: ./.github/workflows/bundle-macos.yml
     permissions:
-      id-token: write
       contents: read
+    with:
+      target: aarch64-apple-darwin
+      package_cli: false
+      package_desktop: true
 
   comment-on-pr:
     needs: bundle-desktop

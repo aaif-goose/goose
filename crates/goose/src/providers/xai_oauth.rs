@@ -1,9 +1,10 @@
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::openai_compatible::OpenAiCompatibleProvider;
-use super::xai::{XAI_API_HOST, XAI_DEFAULT_MODEL, XAI_KNOWN_MODELS};
+use super::xai::{xai_known_model_info, XAI_API_HOST, XAI_DEFAULT_MODEL};
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
+use crate::providers::private_file::write_private_file;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use axum::{extract::Query, response::Html, routing::get, Router};
@@ -123,11 +124,8 @@ impl TokenCache {
     }
 
     fn save(&self, token_data: &TokenData) -> Result<()> {
-        if let Some(parent) = self.cache_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let contents = serde_json::to_string(token_data)?;
-        std::fs::write(&self.cache_path, contents)?;
+        write_private_file(&self.cache_path, &contents)?;
         Ok(())
     }
 
@@ -223,7 +221,7 @@ async fn exchange_code_for_tokens(code: &str, pkce: &PkceChallenge) -> Result<To
     Ok(resp.json().await?)
 }
 
-async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse> {
+async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse, ProviderError> {
     let client = reqwest::Client::new();
     let params = [
         ("grant_type", "refresh_token"),
@@ -237,15 +235,38 @@ async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse> {
         .header("Accept", "application/json")
         .form(&params)
         .send()
-        .await?;
+        .await
+        .map_err(ProviderError::from)?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("xAI token refresh failed ({}): {}", status, text));
+        return Err(token_refresh_error(status, text));
     }
 
-    Ok(resp.json().await?)
+    resp.json()
+        .await
+        .map_err(|error| ProviderError::RequestFailed(error.to_string()))
+}
+
+fn token_refresh_error(status: reqwest::StatusCode, body: String) -> ProviderError {
+    let details = format!("xAI token refresh failed ({status}): {body}");
+    let oauth_error = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| value.get("error")?.as_str().map(str::to_owned));
+
+    if oauth_error.as_deref() == Some("invalid_grant") {
+        return ProviderError::Authentication(details);
+    }
+
+    match status {
+        reqwest::StatusCode::TOO_MANY_REQUESTS => ProviderError::RateLimitExceeded {
+            details,
+            retry_delay: None,
+        },
+        _ if status.is_server_error() => ProviderError::ServerError(details),
+        _ => ProviderError::RequestFailed(details),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -608,7 +629,7 @@ impl XaiOAuthAuthProvider {
         }
     }
 
-    async fn get_valid_token(&self) -> Result<TokenData> {
+    async fn get_valid_token(&self) -> Result<TokenData, ProviderError> {
         if let Some(mut token_data) = self.cache.load() {
             if token_data.expires_at
                 > Utc::now() + chrono::Duration::seconds(ACCESS_TOKEN_REFRESH_SKEW_SECS)
@@ -640,30 +661,25 @@ impl XaiOAuthAuthProvider {
                     }
                     token_data.expires_at = Utc::now()
                         + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
-                    self.cache.save(&token_data)?;
+                    self.cache.save(&token_data).map_err(ProviderError::from)?;
                     tracing::info!("xAI access token refreshed");
                     return Ok(token_data);
                 }
-                Err(e) => {
-                    tracing::warn!("xAI token refresh failed, will re-authenticate: {}", e);
+                Err(error @ ProviderError::Authentication(_)) => {
+                    tracing::warn!("xAI token refresh rejected: {}", error);
                     self.cache.clear();
+                    return Err(error);
+                }
+                Err(error) => {
+                    if token_data.expires_at > Utc::now() {
+                        return Ok(token_data);
+                    }
+                    return Err(error);
                 }
             }
         }
 
-        tracing::info!("Starting xAI OAuth flow (SuperGrok subscription)");
-        let token_data = match perform_loopback_oauth_flow(self.state.as_ref()).await {
-            Ok(td) => td,
-            Err(e) => {
-                tracing::warn!(
-                    "xAI loopback OAuth failed ({}); falling back to device-code flow",
-                    e
-                );
-                perform_device_code_flow().await?
-            }
-        };
-        self.cache.save(&token_data)?;
-        Ok(token_data)
+        Err(ProviderError::NotConfigured)
     }
 }
 
@@ -710,12 +726,14 @@ impl Provider for XaiOAuthProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        self.auth_provider.get_valid_token().await?;
         self.inner
             .stream(model_config, system, messages, tools)
             .await
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+        self.auth_provider.get_valid_token().await?;
         self.inner.fetch_supported_models().await
     }
 
@@ -757,17 +775,27 @@ impl Provider for XaiOAuthProvider {
 
 impl goose_providers::base::ProviderDescriptor for XaiOAuthProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        ProviderMetadata::with_models(
             XAI_OAUTH_PROVIDER_NAME,
             "xAI (SuperGrok Subscription)",
             "Use your xAI SuperGrok subscription via OAuth instead of an API key. Falls back to a device-code flow on headless / remote machines.",
             XAI_DEFAULT_MODEL,
-            XAI_KNOWN_MODELS.to_vec(),
+            xai_known_model_info(),
             XAI_OAUTH_DOC_URL,
             vec![
                 ConfigKey::new_oauth("XAI_OAUTH_TOKEN", true, true, None, false),
                 ConfigKey::new("XAI_HOST", false, false, Some(XAI_API_HOST), false),
             ],
+        )
+        .with_setup(
+            crate::providers::catalog::ProviderSetupMetadata::new(
+                crate::providers::catalog::ProviderSetupCategory::Model,
+                crate::providers::catalog::ProviderSetupMethod::OauthBrowser,
+                crate::providers::catalog::ProviderSetupGroup::Default,
+            )
+            .with_docs_url("https://x.ai/grok")
+            .with_native_connect_query("xAI Grok")
+            .with_capabilities(false, true, false),
         )
     }
 }
@@ -872,5 +900,109 @@ mod tests {
             s
         );
         assert!(s.ends_with("tokens.json"));
+    }
+
+    #[tokio::test]
+    async fn missing_token_does_not_start_oauth() {
+        let directory = tempfile::tempdir().unwrap();
+        let auth_provider = XaiOAuthAuthProvider {
+            cache: TokenCache {
+                cache_path: directory.path().join("missing.json"),
+            },
+            state: XaiAuthState::instance(),
+        };
+
+        let error = auth_provider.get_valid_token().await.unwrap_err();
+
+        assert_eq!(error, ProviderError::NotConfigured);
+    }
+
+    #[tokio::test]
+    async fn stream_preserves_not_configured_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let auth_provider = Arc::new(XaiOAuthAuthProvider {
+            cache: TokenCache {
+                cache_path: directory.path().join("missing.json"),
+            },
+            state: XaiAuthState::instance(),
+        });
+        let api_client =
+            ApiClient::new_with_tls("http://127.0.0.1:1".to_string(), AuthMethod::NoAuth, None)
+                .unwrap();
+        let provider = XaiOAuthProvider {
+            inner: OpenAiCompatibleProvider::new(
+                XAI_OAUTH_PROVIDER_NAME.to_string(),
+                api_client,
+                String::new(),
+            ),
+            auth_provider,
+        };
+
+        let error = provider
+            .stream(&ModelConfig::new(XAI_DEFAULT_MODEL), "", &[], &[])
+            .await
+            .err()
+            .unwrap();
+
+        assert_eq!(error, ProviderError::NotConfigured);
+    }
+
+    #[test]
+    fn token_refresh_errors_distinguish_rejected_and_transient_requests() {
+        assert!(matches!(
+            token_refresh_error(
+                reqwest::StatusCode::BAD_REQUEST,
+                r#"{"error":"invalid_grant"}"#.to_string()
+            ),
+            ProviderError::Authentication(_)
+        ));
+        assert!(matches!(
+            token_refresh_error(
+                reqwest::StatusCode::UNAUTHORIZED,
+                r#"{"error":"invalid_client"}"#.to_string()
+            ),
+            ProviderError::RequestFailed(_)
+        ));
+        assert!(matches!(
+            token_refresh_error(
+                reqwest::StatusCode::FORBIDDEN,
+                "request rejected by proxy".to_string()
+            ),
+            ProviderError::RequestFailed(_)
+        ));
+        assert!(matches!(
+            token_refresh_error(reqwest::StatusCode::TOO_MANY_REQUESTS, String::new()),
+            ProviderError::RateLimitExceeded { .. }
+        ));
+        assert!(matches!(
+            token_refresh_error(reqwest::StatusCode::SERVICE_UNAVAILABLE, String::new()),
+            ProviderError::ServerError(_)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_cache_replaces_loose_file_with_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let cache_path = directory.path().join("tokens.json");
+        std::fs::write(&cache_path, "{}").unwrap();
+        std::fs::set_permissions(&cache_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let cache = TokenCache {
+            cache_path: cache_path.clone(),
+        };
+
+        cache
+            .save(&TokenData {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                id_token: None,
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+            })
+            .unwrap();
+
+        let mode = std::fs::metadata(cache_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

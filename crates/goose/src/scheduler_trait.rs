@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 
-use crate::scheduler::{ScheduledJob, SchedulerError};
+use crate::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
 use crate::session::Session;
 
 #[async_trait]
@@ -11,6 +11,11 @@ pub trait SchedulerTrait: Send + Sync {
         &self,
         job: ScheduledJob,
         copy_recipe: bool,
+    ) -> Result<(), SchedulerError>;
+    async fn add_scheduled_job_with_recipe(
+        &self,
+        job: ScheduledJob,
+        validated_recipe: ValidatedScheduleRecipe,
     ) -> Result<(), SchedulerError>;
     async fn schedule_recipe(
         &self,

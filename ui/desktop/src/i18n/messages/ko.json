@@ -20,11 +20,20 @@
   "appsView.customApp": {
     "defaultMessage": "사용자 지정 앱"
   },
+  "appsView.deleteApp": {
+    "defaultMessage": "앱 삭제"
+  },
+  "appsView.deleteConfirm": {
+    "defaultMessage": "\"{name}\"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+  },
   "appsView.description": {
     "defaultMessage": "MCP 서버의 애플리케이션과 goose 자체에서 구축한 앱입니다. 채팅 인터페이스를 통해 새 앱을 생성하도록 요청할 수 있으며 여기에 표시됩니다."
   },
   "appsView.errorLoading": {
     "defaultMessage": "앱 로딩 오류: {error}"
+  },
+  "appsView.errorPrefix": {
+    "defaultMessage": "오류: {error}"
   },
   "appsView.importApp": {
     "defaultMessage": "앱 가져오기"
@@ -41,14 +50,14 @@
   "appsView.noAppsTitle": {
     "defaultMessage": "사용 가능한 앱이 없습니다."
   },
-  "appsView.retry": {
-    "defaultMessage": "다시 시도"
-  },
   "appsView.retiredChatApp": {
-    "defaultMessage": "Chat app retired"
+    "defaultMessage": "채팅 앱 중단됨"
   },
   "appsView.retiredChatAppDetail": {
-    "defaultMessage": "We removed this feature because MCP sampling is no longer supported."
+    "defaultMessage": "MCP 샘플링이 더 이상 지원되지 않아 이 기능을 제거했습니다."
+  },
+  "appsView.retry": {
+    "defaultMessage": "다시 시도"
   },
   "appsView.title": {
     "defaultMessage": "앱"
@@ -65,14 +74,14 @@
   "authSettings.deleteCredential": {
     "defaultMessage": "자격 증명 삭제"
   },
-  "authSettings.deleted": {
-    "defaultMessage": "자격 증명이 삭제되었습니다."
-  },
   "authSettings.deleteMessage": {
     "defaultMessage": "{provider}의 {name} 자격 증명을 삭제하시겠습니까?"
   },
   "authSettings.deleteTitle": {
     "defaultMessage": "자격 증명 삭제"
+  },
+  "authSettings.deleted": {
+    "defaultMessage": "자격 증명이 삭제되었습니다."
   },
   "authSettings.description": {
     "defaultMessage": "goose에 로컬로 저장된 제공업체 자격 증명을 관리합니다."
@@ -98,11 +107,11 @@
   "authSettings.reauthorize": {
     "defaultMessage": "재승인"
   },
-  "authSettings.signedIn": {
-    "defaultMessage": "자격 증명이 설정되었습니다."
-  },
   "authSettings.signIn": {
     "defaultMessage": "로그인"
+  },
+  "authSettings.signedIn": {
+    "defaultMessage": "자격 증명이 설정되었습니다."
   },
   "authSettings.storageProviderCache": {
     "defaultMessage": "제공업체 캐시"
@@ -122,11 +131,11 @@
   "baseChat.goHome": {
     "defaultMessage": "홈으로 이동"
   },
-  "bottomMenuExtensionSelection.extensionsForNewChats": {
-    "defaultMessage": "새 채팅에 사용할 익스텐션"
+  "baseChat.reconnecting": {
+    "defaultMessage": "연결이 끊어졌습니다. 다시 연결하는 중…"
   },
-  "bottomMenuExtensionSelection.extensionsForThisSession": {
-    "defaultMessage": "이 채팅 세션의 익스텐션"
+  "baseChat.retry": {
+    "defaultMessage": "다시 시도"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "익스텐션이 업데이트되었습니다."
@@ -136,6 +145,12 @@
   },
   "bottomMenuExtensionSelection.extensionWillBeEnabled": {
     "defaultMessage": "{name}은 새 채팅에서 활성화됩니다."
+  },
+  "bottomMenuExtensionSelection.extensionsForNewChats": {
+    "defaultMessage": "새 채팅에 사용할 익스텐션"
+  },
+  "bottomMenuExtensionSelection.extensionsForThisSession": {
+    "defaultMessage": "이 채팅 세션의 익스텐션"
   },
   "bottomMenuExtensionSelection.manageExtensions": {
     "defaultMessage": "익스텐션 관리"
@@ -156,7 +171,7 @@
     "defaultMessage": "실행"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "Goose에 다시 초점을 맞추려면 여기를 클릭하세요."
+    "defaultMessage": "goose에 다시 포커스를 맞추려면 여기를 클릭하세요."
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "goose가 작업을 완료했습니다."
@@ -210,10 +225,10 @@
     "defaultMessage": "이미지 저장을 기다리는 중..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "goose가 도구 및 익스텐션과 상호작용하는 방식을 설정합니다."
+    "defaultMessage": "새 세션에 goose가 사용할 기본 모드를 선택합니다. 기존 세션은 현재 모드를 유지합니다."
   },
   "chatSettings.modeTitle": {
-    "defaultMessage": "모드"
+    "defaultMessage": "기본 모드"
   },
   "chatSettings.responseStylesDescription": {
     "defaultMessage": "goose가 응답을 구성하고 표시하는 방식을 선택합니다."
@@ -225,7 +240,7 @@
     "defaultMessage": "구성 재설정"
   },
   "configSettings.configResetMsg": {
-    "defaultMessage": "모든 변경사항이 되돌려졌습니다."
+    "defaultMessage": "모든 변경 사항이 되돌려졌습니다."
   },
   "configSettings.configUpdated": {
     "defaultMessage": "구성이 업데이트되었습니다."
@@ -240,7 +255,7 @@
     "defaultMessage": "goose 구성 설정을 편집합니다."
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "goose 구성 설정을 편집합니다. 현재 설정: {provider}"
+    "defaultMessage": "goose 구성 설정을 편집합니다 ({provider}의 현재 설정)"
   },
   "configSettings.done": {
     "defaultMessage": "완료"
@@ -273,7 +288,7 @@
     "defaultMessage": "취소"
   },
   "configureApproveMode.description": {
-    "defaultMessage": "모든 도구 요청에 승인을 요구하거나, 위험도에 따라 승인 필요 여부를 판단할 수 있습니다."
+    "defaultMessage": "모든 도구 요청에 승인을 요구하거나, 어떤 작업에 승인이 필요한지 판단할 수 있습니다."
   },
   "configureApproveMode.manualApproval": {
     "defaultMessage": "수동 승인"
@@ -396,13 +411,13 @@
     "defaultMessage": "취소"
   },
   "createSubRecipeInline.closeModal": {
-    "defaultMessage": "하위 레시피 생성 모달 닫기"
+    "defaultMessage": "서브레시피 생성 모달 닫기"
   },
   "createSubRecipeInline.createAndAdd": {
-    "defaultMessage": "하위 레시피 생성 및 추가"
+    "defaultMessage": "서브레시피 생성 및 추가"
   },
   "createSubRecipeInline.createdSuccess": {
-    "defaultMessage": "하위 레시피가 성공적으로 생성되었습니다."
+    "defaultMessage": "서브레시피가 성공적으로 생성되었습니다."
   },
   "createSubRecipeInline.creating": {
     "defaultMessage": "생성 중..."
@@ -411,13 +426,13 @@
     "defaultMessage": "중복된 이름"
   },
   "createSubRecipeInline.duplicateNameMsg": {
-    "defaultMessage": "\"{name}\"이라는 하위 레시피가 이미 존재합니다. 고유한 이름을 사용하세요."
+    "defaultMessage": "\"{name}\"이라는 서브레시피가 이미 존재합니다. 고유한 이름을 사용하세요."
   },
   "createSubRecipeInline.instructionsLabel": {
     "defaultMessage": "지침"
   },
   "createSubRecipeInline.instructionsPlaceholder": {
-    "defaultMessage": "이 하위 레시피가 호출될 때 AI에 제공할 지침..."
+    "defaultMessage": "이 서브레시피가 호출될 때 AI에 제공할 지침..."
   },
   "createSubRecipeInline.nameHint": {
     "defaultMessage": "도구 이름을 생성하는 데 사용되는 고유 식별자"
@@ -432,7 +447,7 @@
     "defaultMessage": "사전 구성된 값"
   },
   "createSubRecipeInline.preconfiguredValuesHint": {
-    "defaultMessage": "항상 하위 레시피에 전달되는 선택적 매개변수 값"
+    "defaultMessage": "항상 서브레시피에 전달되는 선택적 매개변수 값"
   },
   "createSubRecipeInline.recipeDescriptionLabel": {
     "defaultMessage": "레시피 설명"
@@ -450,19 +465,19 @@
     "defaultMessage": "저장 실패"
   },
   "createSubRecipeInline.saveFailedMsg": {
-    "defaultMessage": "하위 레시피 저장 실패: {error}"
+    "defaultMessage": "서브레시피 저장 실패: {error}"
   },
   "createSubRecipeInline.sequentialHint": {
-    "defaultMessage": "(여러 인스턴스를 순차적으로 강제 실행)"
+    "defaultMessage": "(여러 인스턴스의 순차적 실행을 강제합니다)"
   },
   "createSubRecipeInline.sequentialLabel": {
     "defaultMessage": "반복 시 순차 실행"
   },
   "createSubRecipeInline.subtitle": {
-    "defaultMessage": "기본 레시피에서 호출 가능한 도구로 사용할 간단한 레시피를 만듭니다."
+    "defaultMessage": "메인 레시피에서 호출 가능한 도구로 사용할 간단한 레시피를 만듭니다."
   },
   "createSubRecipeInline.title": {
-    "defaultMessage": "새 하위 레시피 생성"
+    "defaultMessage": "새 서브레시피 생성"
   },
   "createSubRecipeInline.toolDescriptionLabel": {
     "defaultMessage": "도구 설명"
@@ -483,127 +498,130 @@
     "defaultMessage": "부족한 크레딧"
   },
   "cronPicker.april": {
-    "defaultMessage": "4월"
+    "defaultMessage": "April"
   },
   "cronPicker.at": {
-    "defaultMessage": "에"
+    "defaultMessage": "at"
   },
   "cronPicker.atMinute": {
-    "defaultMessage": "분에"
+    "defaultMessage": "at minute"
   },
   "cronPicker.atSecond": {
-    "defaultMessage": "초에"
+    "defaultMessage": "at second"
   },
   "cronPicker.august": {
-    "defaultMessage": "8월"
+    "defaultMessage": "August"
   },
   "cronPicker.cronExpression": {
-    "defaultMessage": "cron 표현식"
+    "defaultMessage": "Cron expression"
   },
   "cronPicker.custom": {
-    "defaultMessage": "사용자 지정 cron"
+    "defaultMessage": "Custom cron"
   },
   "cronPicker.day": {
-    "defaultMessage": "일"
+    "defaultMessage": "Day"
   },
   "cronPicker.december": {
-    "defaultMessage": "12월"
+    "defaultMessage": "December"
   },
   "cronPicker.emptyCronError": {
-    "defaultMessage": "크론 표현식은 비워둘 수 없습니다."
+    "defaultMessage": "Cron expression cannot be empty"
   },
   "cronPicker.every": {
-    "defaultMessage": "모든"
+    "defaultMessage": "Every"
   },
   "cronPicker.february": {
-    "defaultMessage": "2월"
+    "defaultMessage": "February"
   },
   "cronPicker.friday": {
-    "defaultMessage": "금요일"
+    "defaultMessage": "Friday"
   },
   "cronPicker.hour": {
-    "defaultMessage": "시간"
+    "defaultMessage": "Hour"
   },
   "cronPicker.inMonth": {
-    "defaultMessage": "에"
+    "defaultMessage": "in"
   },
   "cronPicker.invalidDayOfMonth": {
-    "defaultMessage": "일은 1에서 {max} 사이여야 합니다."
+    "defaultMessage": "Day must be between 1 and {max}"
   },
   "cronPicker.january": {
-    "defaultMessage": "1월"
+    "defaultMessage": "January"
   },
   "cronPicker.july": {
-    "defaultMessage": "7월"
+    "defaultMessage": "July"
   },
   "cronPicker.june": {
-    "defaultMessage": "6월"
+    "defaultMessage": "June"
   },
   "cronPicker.march": {
-    "defaultMessage": "3월"
+    "defaultMessage": "March"
   },
   "cronPicker.may": {
-    "defaultMessage": "5월"
+    "defaultMessage": "May"
   },
   "cronPicker.minute": {
-    "defaultMessage": "분"
+    "defaultMessage": "Minute"
   },
   "cronPicker.mode": {
-    "defaultMessage": "모드"
+    "defaultMessage": "Mode"
   },
   "cronPicker.monday": {
-    "defaultMessage": "월요일"
+    "defaultMessage": "Monday"
   },
   "cronPicker.month": {
-    "defaultMessage": "월"
+    "defaultMessage": "Month"
   },
   "cronPicker.november": {
-    "defaultMessage": "11월"
+    "defaultMessage": "November"
   },
   "cronPicker.october": {
-    "defaultMessage": "10월"
+    "defaultMessage": "October"
   },
   "cronPicker.on": {
-    "defaultMessage": "에"
+    "defaultMessage": "on"
   },
   "cronPicker.onDay": {
-    "defaultMessage": "일에"
+    "defaultMessage": "on day"
   },
   "cronPicker.quarter": {
-    "defaultMessage": "분기"
+    "defaultMessage": "Quarter"
   },
   "cronPicker.saturday": {
-    "defaultMessage": "토요일"
+    "defaultMessage": "Saturday"
   },
   "cronPicker.september": {
-    "defaultMessage": "9월"
+    "defaultMessage": "September"
   },
   "cronPicker.startingMonth": {
-    "defaultMessage": "시작 월"
+    "defaultMessage": "starting month"
   },
   "cronPicker.sunday": {
-    "defaultMessage": "일요일"
+    "defaultMessage": "Sunday"
   },
   "cronPicker.thursday": {
-    "defaultMessage": "목요일"
+    "defaultMessage": "Thursday"
   },
   "cronPicker.tuesday": {
-    "defaultMessage": "화요일"
+    "defaultMessage": "Tuesday"
   },
   "cronPicker.wednesday": {
-    "defaultMessage": "수요일"
+    "defaultMessage": "Wednesday"
   },
   "cronPicker.week": {
-    "defaultMessage": "주"
+    "defaultMessage": "Week"
   },
   "cronPicker.year": {
-    "defaultMessage": "연도"
+    "defaultMessage": "Year"
   },
   "customProviderForm.add": {
     "defaultMessage": "추가"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "이 제공업체에 항상 Toolshim 사용"
+  },
   "customProviderForm.anthropicCompatible": {
-    "defaultMessage": "Anthropic 호환 가능"
+    "defaultMessage": "Anthropic 호환"
   },
   "customProviderForm.apiBasePath": {
     "defaultMessage": "API 기본 경로(선택)"
@@ -638,11 +656,11 @@
   "customProviderForm.attachments": {
     "defaultMessage": "첨부파일"
   },
-  "customProviderForm.authentication": {
-    "defaultMessage": "인증"
-  },
   "customProviderForm.authHint": {
     "defaultMessage": "Ollama와 같은 로컬 LLM에는 일반적으로 API 키가 필요하지 않습니다."
+  },
+  "customProviderForm.authentication": {
+    "defaultMessage": "인증"
   },
   "customProviderForm.availableModels": {
     "defaultMessage": "사용 가능한 모델(쉼표로 구분)"
@@ -654,7 +672,7 @@
     "defaultMessage": "취소"
   },
   "customProviderForm.cannotDeleteActive": {
-    "defaultMessage": "현재 사용 중인 동안에는 이 제공업체를 삭제할 수 없습니다. 먼저 다른 모델로 전환해 보세요."
+    "defaultMessage": "현재 사용 중인 동안에는 이 제공업체를 삭제할 수 없습니다. 먼저 다른 모델로 전환해 주세요."
   },
   "customProviderForm.chooseSetup": {
     "defaultMessage": "제공업체 설정 방법을 선택하세요."
@@ -711,16 +729,16 @@
     "defaultMessage": "헤더 이름에는 공백이 포함될 수 없습니다."
   },
   "customProviderForm.modelsPlaceholder": {
-    "defaultMessage": "모델-a, 모델-b, 모델-c"
+    "defaultMessage": "model-a, model-b, model-c"
   },
   "customProviderForm.modelsRequired": {
     "defaultMessage": "모델이 1개 이상 필요합니다."
   },
   "customProviderForm.ollamaCompatible": {
-    "defaultMessage": "Ollama 호환 가능"
+    "defaultMessage": "Ollama 호환"
   },
   "customProviderForm.openaiCompatible": {
-    "defaultMessage": "OpenAI 호환 가능"
+    "defaultMessage": "OpenAI 호환"
   },
   "customProviderForm.providerType": {
     "defaultMessage": "제공업체 유형"
@@ -789,7 +807,7 @@
     "defaultMessage": "모델"
   },
   "defaultProviderSetupForm.modelsPlaceholder": {
-    "defaultMessage": "모델-a, 모델-b"
+    "defaultMessage": "model-a, model-b"
   },
   "defaultProviderSetupForm.noConfigParameters": {
     "defaultMessage": "이 제공업체에 대한 구성 매개변수가 없습니다."
@@ -807,10 +825,10 @@
     "defaultMessage": "구성 설정"
   },
   "diagnosticsModal.description": {
-    "defaultMessage": "진단 zip 파일을 다운로드하여 팀과 공유하거나 시스템 세부 정보가 미리 입력된 상태로 GitHub에 직접 버그를 신고할 수 있습니다. 진단 보고서에는 다음이 포함됩니다."
+    "defaultMessage": "JSON 진단 보고서를 다운로드하여 팀과 공유하거나 시스템 세부 정보가 미리 입력된 상태로 GitHub에 직접 버그를 신고할 수 있습니다. 진단 보고서에는 다음이 포함됩니다."
   },
   "diagnosticsModal.diagnosticsErrorMsg": {
-    "defaultMessage": "진단을 다운로드하지 못했습니다."
+    "defaultMessage": "진단 보고서를 다운로드하지 못했습니다."
   },
   "diagnosticsModal.diagnosticsErrorTitle": {
     "defaultMessage": "진단 오류"
@@ -828,7 +846,7 @@
     "defaultMessage": "최근 로그 파일"
   },
   "diagnosticsModal.opening": {
-    "defaultMessage": "열기..."
+    "defaultMessage": "여는 중..."
   },
   "diagnosticsModal.reportProblem": {
     "defaultMessage": "문제 신고"
@@ -861,7 +879,7 @@
     "defaultMessage": "취소"
   },
   "dictationSettings.chooseVoiceConversion": {
-    "defaultMessage": "음성을 텍스트로 변환하는 방식을 선택합니다."
+    "defaultMessage": "음성을 텍스트로 변환하는 방식을 선택하세요."
   },
   "dictationSettings.configureApiKey": {
     "defaultMessage": "<b>{settingsPath}</b>에서 API 키를 설정합니다."
@@ -902,6 +920,15 @@
   "dirSwitcher.currentDirectory": {
     "defaultMessage": "현재 디렉터리"
   },
+  "dirSwitcher.enterPath": {
+    "defaultMessage": "Enter path"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+  },
+  "dirSwitcher.enterPathInvalid": {
+    "defaultMessage": "Working directory must be an absolute path"
+  },
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
   },
@@ -917,6 +944,18 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "최근 디렉터리"
   },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "{branch} 브랜치로 전환하지 못했습니다"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "브랜치를 찾을 수 없습니다"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "브랜치 검색…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "커밋되지 않은 변경 사항이 있을 수 있습니다."
+  },
   "elicitationRequest.accept": {
     "defaultMessage": "수락"
   },
@@ -924,25 +963,22 @@
     "defaultMessage": "정보 요청이 취소되었습니다."
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose에 추가 정보가 필요합니다."
+    "defaultMessage": "goose에 사용자의 정보가 필요합니다."
   },
   "elicitationRequest.expired": {
-    "defaultMessage": "이 요청은 만료되었습니다. 익스텐션에서 다시 질문해야 합니다."
+    "defaultMessage": "이 요청은 만료되었습니다. 익스텐션이 다시 질문해야 합니다."
   },
   "elicitationRequest.submit": {
     "defaultMessage": "제출"
   },
   "elicitationRequest.submitError": {
-    "defaultMessage": "이 요청은 더 이상 활성 상태가 아닙니다. 익스텐션에서 다시 요청해야 합니다."
+    "defaultMessage": "이 요청은 더 이상 활성 상태가 아닙니다. 익스텐션이 다시 요청해야 합니다."
   },
   "elicitationRequest.submitted": {
-    "defaultMessage": "제출된 정보"
+    "defaultMessage": "정보가 제출되었습니다"
   },
   "elicitationRequest.waitingForResponse": {
     "defaultMessage": "답변을 기다리는 중입니다. ({timeRemaining} 남음)"
-  },
-  "environmentBadge.dev": {
-    "defaultMessage": "Dev"
   },
   "envVarsSection.add": {
     "defaultMessage": "추가"
@@ -950,11 +986,11 @@
   "envVarsSection.bothRequired": {
     "defaultMessage": "변수 이름과 값을 모두 입력해야 합니다."
   },
-  "envVarsSection.environmentVariables": {
-    "defaultMessage": "환경 변수"
-  },
   "envVarsSection.envVarsDescription": {
     "defaultMessage": "환경 변수에 대한 키-값 쌍을 추가합니다. 두 필드를 모두 채운 후 \"+\" 버튼을 클릭하여 추가하세요. 기존 비밀 값의 경우 편집 버튼을 클릭하여 수정하세요."
+  },
+  "envVarsSection.environmentVariables": {
+    "defaultMessage": "환경 변수"
   },
   "envVarsSection.noSpaces": {
     "defaultMessage": "변수 이름에는 공백이 포함될 수 없습니다."
@@ -965,11 +1001,14 @@
   "envVarsSection.variableName": {
     "defaultMessage": "변수 이름"
   },
+  "environmentBadge.dev": {
+    "defaultMessage": "Dev"
+  },
   "errorBoundary.errorGeneric": {
     "defaultMessage": "오류가 발생했습니다."
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Goose v{version}에서 오류가 발생했습니다."
+    "defaultMessage": "goose v{version}에서 오류가 발생했습니다."
   },
   "errorBoundary.heading": {
     "defaultMessage": "꽥!"
@@ -1016,9 +1055,6 @@
   "extensionInfoFields.typeLabel": {
     "defaultMessage": "유형"
   },
-  "extensionInfoFields.typeSseUnsupported": {
-    "defaultMessage": "SSE (미지원)"
-  },
   "extensionInfoFields.typeStandardIo": {
     "defaultMessage": "표준 IO(STDIO)"
   },
@@ -1053,7 +1089,7 @@
     "defaultMessage": "아니요"
   },
   "extensionInstallModal.ok": {
-    "defaultMessage": "좋아요"
+    "defaultMessage": "확인"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "{name} 익스텐션을 설치하시겠습니까? 명령: {command}"
@@ -1119,10 +1155,13 @@
     "defaultMessage": "익스텐션 제거"
   },
   "extensionModal.unsavedChangesMessage": {
-    "defaultMessage": "익스텐션 구성에 저장되지 않은 변경사항이 있습니다. 저장하지 않고 닫으시겠습니까?"
+    "defaultMessage": "익스텐션 구성에 저장되지 않은 변경 사항이 있습니다. 저장하지 않고 닫으시겠습니까?"
   },
   "extensionModal.unsavedChangesTitle": {
-    "defaultMessage": "저장되지 않은 변경사항"
+    "defaultMessage": "저장되지 않은 변경 사항"
+  },
+  "extensionTimeoutField.timeoutLabel": {
+    "defaultMessage": "시간 초과"
   },
   "extensionsSection.addCustomExtension": {
     "defaultMessage": "사용자 지정 익스텐션 추가"
@@ -1160,9 +1199,6 @@
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "익스텐션 검색..."
   },
-  "extensionTimeoutField.timeoutLabel": {
-    "defaultMessage": "시간 초과"
-  },
   "externalBackendSection.certFingerprint": {
     "defaultMessage": "인증서 지문(선택 사항)"
   },
@@ -1173,28 +1209,34 @@
     "defaultMessage": "AA:BB:CC:... 또는 sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "기본적으로 goose가 서버를 자동으로 실행합니다. 외부 goose 서버에 연결하려면 이 옵션을 사용하세요."
+    "defaultMessage": "기본적으로 goose가 로컬 백엔드를 시작합니다. 외부 ACP 호환 백엔드에 연결하려면 이 옵션을 사용하세요."
   },
   "externalBackendSection.fingerprintRequiresHttps": {
-    "defaultMessage": "Certificate fingerprint requires an https URL"
+    "defaultMessage": "인증서 지문은 https URL이 필요합니다"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "변경 사항을 적용하려면 goose를 다시 시작해야 합니다. 새 채팅 창은 외부 서버에 연결됩니다."
+    "defaultMessage": "변경 사항은 새 채팅 창에 적용됩니다. 기존 창을 업데이트하려면 goose를 다시 시작하세요."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "비밀 키"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "goosed 서버에 설정된 비밀 키 (GOOSE_SERVER__SECRET_KEY)"
+    "defaultMessage": "외부 백엔드에 설정된 비밀 키 (GOOSE_SERVER__SECRET_KEY)."
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "서버의 비밀 키를 입력하세요"
   },
   "externalBackendSection.serverUrl": {
-    "defaultMessage": "서버 URL"
+    "defaultMessage": "백엔드 기본 URL"
+  },
+  "externalBackendSection.serverUrlHelp": {
+    "defaultMessage": "HTTP(S) 기본 URL을 입력하세요. goose는 /status를 확인하고 이 기본 주소 아래의 /acp에 연결합니다."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "goose 서버"
+    "defaultMessage": "외부 백엔드 (ACP)"
+  },
+  "externalBackendSection.urlBaseError": {
+    "defaultMessage": "URL은 /acp 이전의 백엔드 기본 URL이어야 하며, 쿼리 매개변수나 프래그먼트를 포함할 수 없습니다"
   },
   "externalBackendSection.urlFormatError": {
     "defaultMessage": "잘못된 URL 형식입니다."
@@ -1206,7 +1248,16 @@
     "defaultMessage": "외부 서버 사용"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "다른 곳에서 실행 중인 goose 서버에 연결합니다. 앱을 다시 시작해야 합니다."
+    "defaultMessage": "다른 곳에서 실행 중인 ACP 호환 백엔드에 연결합니다."
+  },
+  "externalBackendSection.workingDir": {
+    "defaultMessage": "원격 작업 디렉터리(선택 사항)"
+  },
+  "externalBackendSection.workingDirHelp": {
+    "defaultMessage": "외부 백엔드의 절대 경로입니다. 비워 두면 로컬 작업 디렉터리를 전송합니다."
+  },
+  "externalBackendSection.workingDirPlaceholder": {
+    "defaultMessage": "/home/goose/workspace"
   },
   "goosehintsModal.close": {
     "defaultMessage": "닫기"
@@ -1266,7 +1317,7 @@
     "defaultMessage": "프로젝트의 .goosehints 파일을 설정하여 goose에 추가 컨텍스트를 제공합니다."
   },
   "goosehintsSection.title": {
-    "defaultMessage": "프로젝트 힌트 (.goosehints)"
+    "defaultMessage": "프로젝트 힌트(.goosehints)"
   },
   "groupedExtensionLoadingToast.askGoose": {
     "defaultMessage": "goose에게 묻기"
@@ -1376,11 +1427,11 @@
   "huggingFaceSignInPrompt.failedToConfigure": {
     "defaultMessage": "Hugging Face에 로그인하지 못했습니다: {error}"
   },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "Hugging Face 로그인됨"
-  },
   "huggingFaceSignInPrompt.signIn": {
     "defaultMessage": "로그인"
+  },
+  "huggingFaceSignInPrompt.signedIn": {
+    "defaultMessage": "Hugging Face 로그인됨"
   },
   "huggingFaceSignInPrompt.signingIn": {
     "defaultMessage": "로그인 중..."
@@ -1415,14 +1466,14 @@
   "importRecipeForm.expectedRecipeStructure": {
     "defaultMessage": "예상 레시피 구조"
   },
-  "importRecipeForm.importing": {
-    "defaultMessage": "가져오는 중..."
-  },
   "importRecipeForm.importRecipeButton": {
     "defaultMessage": "레시피 가져오기"
   },
   "importRecipeForm.importRecipeTitle": {
     "defaultMessage": "레시피 가져오기"
+  },
+  "importRecipeForm.importing": {
+    "defaultMessage": "가져오는 중..."
   },
   "importRecipeForm.or": {
     "defaultMessage": "또는"
@@ -1523,6 +1574,18 @@
   "jsonSchemaForm.submit": {
     "defaultMessage": "제출"
   },
+  "keyValueEditor.addValue": {
+    "defaultMessage": "사전 구성된 값 추가"
+  },
+  "keyValueEditor.defaultKeyPlaceholder": {
+    "defaultMessage": "매개변수 이름..."
+  },
+  "keyValueEditor.defaultValuePlaceholder": {
+    "defaultMessage": "매개변수 값..."
+  },
+  "keyValueEditor.removeValue": {
+    "defaultMessage": "사전 구성된 값 제거: {key}"
+  },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "창을 항상 위에 표시할지 전환합니다."
   },
@@ -1536,13 +1599,13 @@
     "defaultMessage": "앱 단축키"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Goose가 활성 앱일 때 작동하는 단축키입니다."
+    "defaultMessage": "goose가 활성 앱일 때 작동하는 단축키입니다."
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "전역 단축키"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Goose가 활성화되어 있지 않아도 시스템 전체에서 작동하는 단축키입니다."
+    "defaultMessage": "goose에 포커스가 맞춰져 있지 않아도 시스템 전체에서 작동하는 단축키입니다."
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "검색 단축키"
@@ -1584,10 +1647,10 @@
     "defaultMessage": "이전 찾기"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "어디서든 Goose 창을 앞으로 가져옵니다."
+    "defaultMessage": "어디서든 goose 창을 앞으로 가져옵니다."
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Goose 창 포커스"
+    "defaultMessage": "goose 창 포커스"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "로드 중..."
@@ -1599,7 +1662,7 @@
     "defaultMessage": "새 채팅"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "새 Goose 창을 엽니다."
+    "defaultMessage": "새 goose 창을 엽니다."
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "새 채팅 창"
@@ -1667,26 +1730,14 @@
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "탐색 메뉴 전환"
   },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "사전 구성된 값 추가"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "매개변수 이름..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "매개변수 값..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "사전 구성된 값 제거: {key}"
-  },
   "launcher.placeholder": {
     "defaultMessage": "goose에게 무엇이든 물어보세요..."
   },
   "loadingGoose.compacting": {
-    "defaultMessage": "goose가 대화를 압축하고 있습니다..."
+    "defaultMessage": "goose가 대화를 압축하고 있어요..."
   },
   "loadingGoose.idle": {
-    "defaultMessage": "goose가 작업 중…"
+    "defaultMessage": "goose가 작업 중이에요…"
   },
   "loadingGoose.loadingConversation": {
     "defaultMessage": "대화 로드 중..."
@@ -1695,46 +1746,46 @@
     "defaultMessage": "세션 다시 시작 중..."
   },
   "loadingGoose.streaming": {
-    "defaultMessage": "goose가 작업 중…"
+    "defaultMessage": "goose가 작업 중이에요…"
   },
   "loadingGoose.thinking": {
-    "defaultMessage": "goose가 생각 중…"
+    "defaultMessage": "goose가 생각하고 있어요…"
   },
   "loadingGoose.waiting": {
-    "defaultMessage": "goose가 기다리고 있습니다…"
+    "defaultMessage": "goose가 기다리고 있어요…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "이 모델을 삭제하시겠습니까? 나중에 다시 다운로드할 수 있습니다."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "API 키 없이 추론에 사용할 로컬 LLM 모델을 다운로드하고 관리하세요. Hugging Face에서 GGUF 또는 MLX 모델을 검색하거나 아래 추천 모델을 사용하세요."
+    "defaultMessage": "API 키 없이 추론에 사용할 로컬 LLM 모델을 다운로드하고 관리하세요. Hugging Face에서 GGUF 또는 MLX 모델을 검색하세요."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "닫기"
   },
-  "localInferenceSettings.download": {
-    "defaultMessage": "다운로드"
-  },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "다운로드가 취소되었습니다."
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "다운로드한 모델"
   },
   "localInferenceSettings.downloadFailed": {
     "defaultMessage": "다운로드 실패"
   },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "다운로드 중"
-  },
   "localInferenceSettings.downloadProgress": {
     "defaultMessage": "{downloaded} / {total} ({percent}%)"
   },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "주요 모델"
+  "localInferenceSettings.downloadedModels": {
+    "defaultMessage": "다운로드한 모델"
+  },
+  "localInferenceSettings.downloading": {
+    "defaultMessage": "다운로드 중"
+  },
+  "localInferenceSettings.evictFromMemory": {
+    "defaultMessage": "메모리에서 제거"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "모델 검색 및 다운로드 시 속도 제한 한도를 높이고 비공개 또는 접근 제한된 Hugging Face 리포지토리에 액세스하려면 로그인하세요."
+  },
+  "localInferenceSettings.loadedInMemory": {
+    "defaultMessage": "메모리에 로드됨"
   },
   "localInferenceSettings.modelSettings": {
     "defaultMessage": "모델 설정"
@@ -1754,12 +1805,6 @@
   "localInferenceSettings.retry": {
     "defaultMessage": "다시 시도"
   },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "모든 추천 항목 표시({count}개 이상)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "추천만 표시"
-  },
   "localInferenceSettings.title": {
     "defaultMessage": "로컬 추론 모델"
   },
@@ -1767,7 +1812,7 @@
     "defaultMessage": "비전"
   },
   "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "Vision 인코더 다운로드 중…"
+    "defaultMessage": "비전 인코더 다운로드 중…"
   },
   "localInferenceSettings.visionEncoderNotDownloaded": {
     "defaultMessage": "비전 인코더가 다운로드되지 않았습니다."
@@ -1797,7 +1842,7 @@
     "defaultMessage": "하드웨어에 권장됨"
   },
   "localModelManager.showAllModels": {
-    "defaultMessage": "모든 모델 보기({count}개 더 보기)"
+    "defaultMessage": "모든 모델 보기({count}개 더)"
   },
   "localModelManager.showRecommendedOnly": {
     "defaultMessage": "추천만 표시"
@@ -1811,11 +1856,11 @@
   "localModelPicker.checkingModels": {
     "defaultMessage": "사용 가능한 모델을 확인하는 중..."
   },
-  "localModelPicker.downloading": {
-    "defaultMessage": "{modelId} 다운로드 중"
-  },
   "localModelPicker.downloadModel": {
     "defaultMessage": "{modelId} 다운로드 ({size})"
+  },
+  "localModelPicker.downloading": {
+    "defaultMessage": "{modelId} 다운로드 중"
   },
   "localModelPicker.failedToLoad": {
     "defaultMessage": "사용 가능한 모델을 로드하지 못했습니다. 다시 시도해 주세요."
@@ -1853,9 +1898,6 @@
   "localModelPicker.useModel": {
     "defaultMessage": "{modelId} 사용"
   },
-  "markdownContent.cancel": {
-    "defaultMessage": "취소"
-  },
   "markdownContent.copyCode": {
     "defaultMessage": "코드 복사"
   },
@@ -1865,23 +1907,8 @@
   "markdownContent.noApplicationFound": {
     "defaultMessage": "이 링크를 열 수 있는 애플리케이션을 찾을 수 없습니다."
   },
-  "markdownContent.open": {
-    "defaultMessage": "열기"
-  },
-  "markdownContent.openExternalLink": {
-    "defaultMessage": "외부 링크 열기"
-  },
-  "markdownContent.openProtocolLink": {
-    "defaultMessage": "{protocol} 링크를 열까요?"
-  },
-  "markdownContent.thisWillOpen": {
-    "defaultMessage": "열립니다: {href}"
-  },
   "mcpAppRenderer.appFallbackTitle": {
     "defaultMessage": "앱"
-  },
-  "mcpAppRenderer.cancelButton": {
-    "defaultMessage": "취소"
   },
   "mcpAppRenderer.close": {
     "defaultMessage": "닫기"
@@ -1907,18 +1934,6 @@
   "mcpAppRenderer.movePipWindow": {
     "defaultMessage": "Picture-in-Picture 창 이동(화살표 키 사용)"
   },
-  "mcpAppRenderer.openButton": {
-    "defaultMessage": "열기"
-  },
-  "mcpAppRenderer.openExternalLinkTitle": {
-    "defaultMessage": "외부 링크 열기"
-  },
-  "mcpAppRenderer.openLinkDetail": {
-    "defaultMessage": "열립니다: {url}"
-  },
-  "mcpAppRenderer.openProtocolLink": {
-    "defaultMessage": "{protocol} 링크를 열까요?"
-  },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "PIP(Picture-in-Picture)"
   },
@@ -1932,7 +1947,7 @@
     "defaultMessage": "명령 로드 중..."
   },
   "mentionPopover.noCommandsFound": {
-    "defaultMessage": "\"{query}\"과 일치하는 명령을 찾을 수 없습니다."
+    "defaultMessage": "\"{query}\"과(와) 일치하는 명령을 찾을 수 없습니다."
   },
   "mentionPopover.noItemsFound": {
     "defaultMessage": "\"{query}\"과(와) 일치하는 항목이 없습니다."
@@ -1977,19 +1992,19 @@
     "defaultMessage": "다음"
   },
   "messageQueue.paused": {
-    "defaultMessage": "일시중지됨"
+    "defaultMessage": "일시 중지됨"
+  },
+  "messageQueue.queuePaused": {
+    "defaultMessage": "대기열 일시 중지됨"
+  },
+  "messageQueue.queuePausedCompact": {
+    "defaultMessage": "대기열이 일시 중지되었습니다. 재개하려면 \"보내기\"를 클릭하거나 새 메시지를 추가하세요."
+  },
+  "messageQueue.queuePausedExpanded": {
+    "defaultMessage": "중단으로 인해 대기열이 일시 중지되었습니다. 재개하려면 \"지금 보내기\"를 사용하거나 새 메시지를 추가하세요."
   },
   "messageQueue.queued": {
     "defaultMessage": "대기 중"
-  },
-  "messageQueue.queuePaused": {
-    "defaultMessage": "대기열이 일시중지되었습니다."
-  },
-  "messageQueue.queuePausedCompact": {
-    "defaultMessage": "대기열이 일시중지되었습니다. 재개하려면 '보내기'를 클릭하거나 새 메시지를 추가하세요."
-  },
-  "messageQueue.queuePausedExpanded": {
-    "defaultMessage": "중단으로 인해 대기열이 일시중지되었습니다. 재개하려면 \"지금 보내기\"를 사용하거나 새 메시지를 추가하세요."
   },
   "messageQueue.removeFromQueue": {
     "defaultMessage": "대기열에서 이 메시지 제거"
@@ -2005,6 +2020,51 @@
   },
   "messageQueue.waiting": {
     "defaultMessage": "대기 중"
+  },
+  "messageUsageStats.cacheHitRate": {
+    "defaultMessage": "(입력의 {percent}%)"
+  },
+  "messageUsageStats.cacheRead": {
+    "defaultMessage": "캐시 읽기"
+  },
+  "messageUsageStats.cacheWrite": {
+    "defaultMessage": "캐시 쓰기"
+  },
+  "messageUsageStats.compaction": {
+    "defaultMessage": "압축"
+  },
+  "messageUsageStats.cost": {
+    "defaultMessage": "비용"
+  },
+  "messageUsageStats.estimated": {
+    "defaultMessage": "(추정)"
+  },
+  "messageUsageStats.firstToken": {
+    "defaultMessage": "첫 토큰"
+  },
+  "messageUsageStats.input": {
+    "defaultMessage": "입력"
+  },
+  "messageUsageStats.output": {
+    "defaultMessage": "출력"
+  },
+  "messageUsageStats.reported": {
+    "defaultMessage": "(보고됨)"
+  },
+  "messageUsageStats.speed": {
+    "defaultMessage": "속도"
+  },
+  "messageUsageStats.tokenUnit": {
+    "defaultMessage": "tok"
+  },
+  "messageUsageStats.tokensPerSecondUnit": {
+    "defaultMessage": "tok/s"
+  },
+  "messageUsageStats.total": {
+    "defaultMessage": "합계"
+  },
+  "messageUsageStats.totalTime": {
+    "defaultMessage": "총 시간"
   },
   "microphoneSelector.chooseDescription": {
     "defaultMessage": "받아쓰기에 사용할 마이크 선택"
@@ -2036,11 +2096,35 @@
   "microphoneSelector.test": {
     "defaultMessage": "테스트"
   },
-  "modelAndProviderContext.modelChangedTitle": {
-    "defaultMessage": "모델 변경됨"
+  "modeSelectionItem.autonomousDescription": {
+    "defaultMessage": "파일을 자유롭게 편집, 생성, 삭제할 수 있습니다."
+  },
+  "modeSelectionItem.autonomousLabel": {
+    "defaultMessage": "자율"
+  },
+  "modeSelectionItem.chatOnlyDescription": {
+    "defaultMessage": "도구나 익스텐션을 사용하지 않고 선택한 제공업체와 대화합니다."
+  },
+  "modeSelectionItem.chatOnlyLabel": {
+    "defaultMessage": "채팅 전용"
+  },
+  "modeSelectionItem.manualDescription": {
+    "defaultMessage": "모든 도구, 익스텐션, 파일 수정에는 사용자 승인이 필요합니다."
+  },
+  "modeSelectionItem.manualLabel": {
+    "defaultMessage": "수동"
+  },
+  "modeSelectionItem.smartDescription": {
+    "defaultMessage": "위험 수준에 따라 승인이 필요한 작업을 지능적으로 판단합니다."
+  },
+  "modeSelectionItem.smartLabel": {
+    "defaultMessage": "스마트"
   },
   "modelAndProviderContext.modelChangeFailed": {
     "defaultMessage": "{provider}/{model} 실패"
+  },
+  "modelAndProviderContext.modelChangedTitle": {
+    "defaultMessage": "모델 변경됨"
   },
   "modelAndProviderContext.selectModel": {
     "defaultMessage": "모델 선택"
@@ -2053,27 +2137,6 @@
   },
   "modelAndProviderContext.unknownProviderTitle": {
     "defaultMessage": "제공업체 이름 조회"
-  },
-  "modelsBottomBar.changeModel": {
-    "defaultMessage": "모델 변경"
-  },
-  "modelsBottomBar.currentModel": {
-    "defaultMessage": "현재 모델"
-  },
-  "modelsBottomBar.loadingModel": {
-    "defaultMessage": "모델 로드 중..."
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "로컬 모델 설정"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "로컬 모델 설정 — {modelName}"
-  },
-  "modelsBottomBar.resolvedModel": {
-    "defaultMessage": "확인된 모델"
-  },
-  "modelsBottomBar.selectModel": {
-    "defaultMessage": "모델 선택"
   },
   "modelSettingsButtons.configureProviders": {
     "defaultMessage": "제공업체 설정"
@@ -2127,13 +2190,13 @@
     "defaultMessage": "Eta(학습률)"
   },
   "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash Attention"
+    "defaultMessage": "Flash attention"
   },
   "modelSettingsPanel.flashAttentionDescription": {
     "defaultMessage": "Flash Attention 최적화 켜기"
   },
   "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "Frequency Penalty"
+    "defaultMessage": "Frequency penalty"
   },
   "modelSettingsPanel.frequencyPenaltyDescription": {
     "defaultMessage": "0.0 = 꺼짐"
@@ -2166,19 +2229,19 @@
     "defaultMessage": "성능"
   },
   "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "Presence Penalty"
+    "defaultMessage": "Presence penalty"
   },
   "modelSettingsPanel.presencePenaltyDescription": {
     "defaultMessage": "0.0 = 꺼짐"
   },
   "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "Repeat Penalty"
+    "defaultMessage": "Repeat penalty"
   },
   "modelSettingsPanel.repeatPenaltyDescription": {
     "defaultMessage": "1.0 = 꺼짐"
   },
   "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "Repeat Window"
+    "defaultMessage": "Repeat window"
   },
   "modelSettingsPanel.repeatWindowDescription": {
     "defaultMessage": "되돌아볼 토큰"
@@ -2234,35 +2297,32 @@
   "modelSettingsPanel.topP": {
     "defaultMessage": "Top P"
   },
+  "modelsBottomBar.changeModel": {
+    "defaultMessage": "모델 변경"
+  },
+  "modelsBottomBar.currentModel": {
+    "defaultMessage": "현재 모델"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "모델 로드 중..."
+  },
+  "modelsBottomBar.localModelSettings": {
+    "defaultMessage": "로컬 모델 설정"
+  },
+  "modelsBottomBar.localModelSettingsTitle": {
+    "defaultMessage": "로컬 모델 설정 — {modelName}"
+  },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "확인된 모델"
+  },
+  "modelsBottomBar.selectModel": {
+    "defaultMessage": "모델 선택"
+  },
   "modelsSection.resetDescription": {
     "defaultMessage": "선택한 모델 및 제공업체 설정을 지우고 새로 시작합니다."
   },
   "modelsSection.resetTitle": {
     "defaultMessage": "제공업체 및 모델 초기화"
-  },
-  "modeSelectionItem.autonomousDescription": {
-    "defaultMessage": "파일을 자유롭게 편집, 생성, 삭제할 수 있습니다."
-  },
-  "modeSelectionItem.autonomousLabel": {
-    "defaultMessage": "자율"
-  },
-  "modeSelectionItem.chatOnlyDescription": {
-    "defaultMessage": "도구나 익스텐션을 사용하지 않고 선택한 제공업체와 대화합니다."
-  },
-  "modeSelectionItem.chatOnlyLabel": {
-    "defaultMessage": "채팅 전용"
-  },
-  "modeSelectionItem.manualDescription": {
-    "defaultMessage": "모든 도구, 익스텐션, 파일 수정에는 사용자 승인이 필요합니다."
-  },
-  "modeSelectionItem.manualLabel": {
-    "defaultMessage": "수동"
-  },
-  "modeSelectionItem.smartDescription": {
-    "defaultMessage": "위험 수준에 따라 승인이 필요한 작업을 지능적으로 판단합니다."
-  },
-  "modeSelectionItem.smartLabel": {
-    "defaultMessage": "스마트"
   },
   "navigation.itemApps": {
     "defaultMessage": "앱"
@@ -2291,8 +2351,35 @@
   "navigationPanel.chats": {
     "defaultMessage": "채팅"
   },
+  "navigationPanel.metaCreated": {
+    "defaultMessage": "생성됨"
+  },
+  "navigationPanel.metaDirectory": {
+    "defaultMessage": "디렉터리"
+  },
+  "navigationPanel.metaModel": {
+    "defaultMessage": "모델"
+  },
+  "navigationPanel.metaStatus": {
+    "defaultMessage": "상태"
+  },
+  "navigationPanel.metaUpdated": {
+    "defaultMessage": "업데이트됨"
+  },
   "navigationPanel.noChats": {
     "defaultMessage": "최근 채팅 없음"
+  },
+  "navigationPanel.statusError": {
+    "defaultMessage": "오류"
+  },
+  "navigationPanel.statusIdle": {
+    "defaultMessage": "유휴"
+  },
+  "navigationPanel.statusStreaming": {
+    "defaultMessage": "스트리밍"
+  },
+  "navigationPanel.statusUnread": {
+    "defaultMessage": "읽지 않은 활동"
   },
   "navigationPanel.untitledSession": {
     "defaultMessage": "제목 없는 세션"
@@ -2301,7 +2388,7 @@
     "defaultMessage": "서버가 시작 중이거나 일시적으로 사용할 수 없습니다."
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "Goose 서버에 접속할 수 없습니다"
+    "defaultMessage": "goose 서버에 접속할 수 없습니다"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "다시 시도"
@@ -2514,19 +2601,19 @@
     "defaultMessage": "메시지 로드 중... ({renderedCount}/{totalCount})"
   },
   "progressiveMessageList.modelChanged": {
-    "defaultMessage": "모델 변경 : {previousModel} → {currentModel}"
+    "defaultMessage": "모델 변경: {previousModel} → {currentModel}"
   },
   "progressiveMessageList.searchHint": {
     "defaultMessage": "검색을 위해 모든 메시지를 즉시 로드하려면 Cmd/Ctrl+F를 누르세요."
   },
   "promptsSettings.allPromptsReset": {
-    "defaultMessage": "모든 프롬프트가 기본값으로 재설정됩니다."
+    "defaultMessage": "모든 프롬프트가 기본값으로 재설정되었습니다."
   },
   "promptsSettings.backToList": {
     "defaultMessage": "목록으로 돌아가기"
   },
   "promptsSettings.confirmReplaceWithDefault": {
-    "defaultMessage": "현재 콘텐츠를 기본값으로 바꾸시겠습니까? 변경사항이 손실됩니다."
+    "defaultMessage": "현재 콘텐츠를 기본값으로 바꾸시겠습니까? 변경 사항이 손실됩니다."
   },
   "promptsSettings.confirmResetAll": {
     "defaultMessage": "모든 프롬프트를 기본값으로 재설정하시겠습니까? 이 작업은 취소할 수 없습니다."
@@ -2535,7 +2622,7 @@
     "defaultMessage": "이 프롬프트를 기본값으로 재설정하시겠습니까? 이 작업은 취소할 수 없습니다."
   },
   "promptsSettings.confirmUnsavedBack": {
-    "defaultMessage": "저장되지 않은 변경사항이 있습니다. 정말 돌아가시겠어요?"
+    "defaultMessage": "저장되지 않은 변경 사항이 있습니다. 정말 돌아가시겠어요?"
   },
   "promptsSettings.customized": {
     "defaultMessage": "사용자 지정됨"
@@ -2543,10 +2630,10 @@
   "promptsSettings.edit": {
     "defaultMessage": "편집"
   },
-  "promptsSettings.editingLabel": {
+  "promptsSettings.editPromptTitle": {
     "defaultMessage": "편집: {name}"
   },
-  "promptsSettings.editPromptTitle": {
+  "promptsSettings.editingLabel": {
     "defaultMessage": "편집: {name}"
   },
   "promptsSettings.enterPromptContent": {
@@ -2595,7 +2682,7 @@
     "defaultMessage": "{extensionsExample} 또는 {forExample}과 같은 템플릿 변수는 런타임 시 실제 값으로 대체됩니다. 필수 변수를 제거하지 않도록 주의하세요."
   },
   "promptsSettings.unsavedChanges": {
-    "defaultMessage": "저장되지 않은 변경사항이 있습니다."
+    "defaultMessage": "저장되지 않은 변경 사항이 있습니다."
   },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCard 오류: 메타데이터가 제공되지 않았습니다."
@@ -2604,7 +2691,7 @@
     "defaultMessage": "알 수 없는 제공업체"
   },
   "providerCatalogPicker.anthropicCompatible": {
-    "defaultMessage": "Anthropic 호환 가능"
+    "defaultMessage": "Anthropic 호환"
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API 형식"
@@ -2631,7 +2718,7 @@
     "defaultMessage": "\"{query}\"에 대한 제공업체를 찾을 수 없습니다."
   },
   "providerCatalogPicker.openaiCompatible": {
-    "defaultMessage": "OpenAI 호환 가능"
+    "defaultMessage": "OpenAI 호환"
   },
   "providerCatalogPicker.requiresEnvVar": {
     "defaultMessage": "• {envVar} 필요"
@@ -2652,16 +2739,16 @@
     "defaultMessage": "계속"
   },
   "providerConfigForm.deviceCodeFlowHint": {
-    "defaultMessage": "브라우저 창이 열리고 인증 코드가 클립보드에 복사됩니다. 로그인을 완료하려면 브라우저에 붙여넣으세요."
+    "defaultMessage": "브라우저 창이 열립니다. 인증 코드가 여기에 표시되면 입력하여 로그인을 완료하세요."
   },
   "providerConfigForm.noApiKey": {
     "defaultMessage": "API 키가 없나요?"
   },
-  "providerConfigForm.signingIn": {
-    "defaultMessage": "로그인 중..."
-  },
   "providerConfigForm.signInWith": {
     "defaultMessage": "{providerName}으로 로그인"
+  },
+  "providerConfigForm.signingIn": {
+    "defaultMessage": "로그인 중..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
     "defaultMessage": "이 제공업체를 goose에 연동하려면 API 키를 추가하세요."
@@ -2691,7 +2778,7 @@
     "defaultMessage": "현재 제공업체 구성이 영구적으로 삭제됩니다."
   },
   "providerConfigurationModal.deviceCodeFlowHint": {
-    "defaultMessage": "브라우저 창이 열리고 인증 코드가 클립보드에 복사됩니다. 로그인을 완료하려면 브라우저에 붙여넣으세요."
+    "defaultMessage": "브라우저 창이 열립니다. 인증 코드가 여기에 표시되면 입력하여 로그인을 완료하세요."
   },
   "providerConfigurationModal.errorCheckingConfig": {
     "defaultMessage": "이 제공업체 구성을 확인하는 동안 오류가 발생했습니다."
@@ -2700,7 +2787,7 @@
     "defaultMessage": "오류"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "이 제공업체는 goose 외부에 구성되어 있습니다. 다음 단계를 따르세요."
+    "defaultMessage": "이 제공업체는 goose 외부에 구성되어 있습니다. 다음 단계를 따르세요:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "돌아가기"
@@ -2723,11 +2810,11 @@
   "providerConfigurationModal.seeDocumentation": {
     "defaultMessage": "자세한 내용은 <link>문서</link>를 참조하세요."
   },
-  "providerConfigurationModal.signingIn": {
-    "defaultMessage": "로그인 중..."
-  },
   "providerConfigurationModal.signInWith": {
     "defaultMessage": "{providerName}으로 로그인"
+  },
+  "providerConfigurationModal.signingIn": {
+    "defaultMessage": "로그인 중..."
   },
   "providerGrid.addProvider": {
     "defaultMessage": "제공업체 추가"
@@ -2747,6 +2834,12 @@
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "템플릿 또는 수동 설정으로 시작"
   },
+  "providerGrid.noMatch": {
+    "defaultMessage": "\"{query}\"와 일치하는 제공업체가 없습니다"
+  },
+  "providerGrid.searchPlaceholder": {
+    "defaultMessage": "제공업체 검색..."
+  },
   "providerLogo.alt": {
     "defaultMessage": "{providerName} 로고"
   },
@@ -2763,7 +2856,7 @@
     "defaultMessage": "OpenAI, Anthropic, Google 등을 연결합니다."
   },
   "providerSelector.localModelDescription": {
-    "defaultMessage": "모델을 다운로드하고 컴퓨터에서 완전히 실행하세요. API 키도 없고 계정도 없습니다."
+    "defaultMessage": "모델을 다운로드하여 이 기기에서 실행하세요. API 키나 계정이 필요하지 않습니다."
   },
   "providerSelector.selectProvider": {
     "defaultMessage": "제공업체 선택"
@@ -2847,7 +2940,7 @@
     "defaultMessage": "사용 가능한 익스텐션이 없습니다."
   },
   "recipeExtensionSelector.noExtensionsFound": {
-    "defaultMessage": "익스텐션이 없습니다."
+    "defaultMessage": "익스텐션을 찾을 수 없습니다."
   },
   "recipeExtensionSelector.searchPlaceholder": {
     "defaultMessage": "익스텐션 검색..."
@@ -2859,7 +2952,7 @@
     "defaultMessage": "고급 옵션"
   },
   "recipeFormFields.advancedOptionsHint": {
-    "defaultMessage": "활동, 매개변수, 모델, 익스텐션, 응답 스키마, 하위 레시피"
+    "defaultMessage": "활동, 매개변수, 모델, 익스텐션, 응답 스키마, 서브레시피"
   },
   "recipeFormFields.descriptionLabel": {
     "defaultMessage": "설명"
@@ -2919,7 +3012,7 @@
     "defaultMessage": "모델 목록으로 돌아가기"
   },
   "recipeModelSelector.enterCustomModel": {
-    "defaultMessage": "모델 이름을 입력하세요."
+    "defaultMessage": "사용자 지정 모델 이름을 입력하세요."
   },
   "recipeModelSelector.enterModelNotListed": {
     "defaultMessage": "목록에 없는 모델을 입력하세요..."
@@ -2951,11 +3044,38 @@
   "recipeModelSelector.useDefaultProvider": {
     "defaultMessage": "기본 제공업체 사용"
   },
-  "recipeNameField.defaultLabel": {
-    "defaultMessage": "레시피 이름"
+  "recipeWarningModal.cancel": {
+    "defaultMessage": "취소"
   },
-  "recipeNameField.formatHint": {
-    "defaultMessage": "자동으로 형식이 지정됩니다(소문자, 공백은 대시로 변환)."
+  "recipeWarningModal.descriptionLabel": {
+    "defaultMessage": "설명:"
+  },
+  "recipeWarningModal.firstTimeDescription": {
+    "defaultMessage": "이전에 실행한 적이 없는 레시피를 실행하려고 합니다."
+  },
+  "recipeWarningModal.hiddenCharsWarning": {
+    "defaultMessage": "이 레시피에는 숨겨진 문자가 포함되어 있으며, 유해한 목적으로 사용될 수 있어 안전을 위해 무시됩니다."
+  },
+  "recipeWarningModal.instructionsLabel": {
+    "defaultMessage": "지침:"
+  },
+  "recipeWarningModal.newRecipeWarningTitle": {
+    "defaultMessage": "⚠️ 새로운 레시피 경고"
+  },
+  "recipeWarningModal.recipePreview": {
+    "defaultMessage": "레시피 미리보기:"
+  },
+  "recipeWarningModal.securityWarningTitle": {
+    "defaultMessage": "⚠️ 보안 경고"
+  },
+  "recipeWarningModal.titleLabel": {
+    "defaultMessage": "제목:"
+  },
+  "recipeWarningModal.trustAndExecute": {
+    "defaultMessage": "신뢰하고 실행"
+  },
+  "recipeWarningModal.trustSource": {
+    "defaultMessage": "이 레시피의 출처를 신뢰하는 경우에만 진행하세요."
   },
   "recipesView.addSchedule": {
     "defaultMessage": "일정 추가"
@@ -3039,7 +3159,7 @@
     "defaultMessage": "저장된 레시피가 없습니다."
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "채팅에서 저장된 레시피가 여기에 표시됩니다."
+    "defaultMessage": "저장된 레시피가 여기에 표시됩니다."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "새 창에서 열기"
@@ -3063,7 +3183,7 @@
     "defaultMessage": "제거"
   },
   "recipesView.removeSchedule": {
-    "defaultMessage": "일정 삭제"
+    "defaultMessage": "일정 제거"
   },
   "recipesView.runs": {
     "defaultMessage": "{schedule} 실행"
@@ -3096,7 +3216,7 @@
     "defaultMessage": "모든 채팅에서 이 레시피를 빠르게 실행하려면 슬래시 명령을 설정하세요."
   },
   "recipesView.slashCommandPlaceholder": {
-    "defaultMessage": "명령 이름"
+    "defaultMessage": "command-name"
   },
   "recipesView.slashCommandRemovedMsg": {
     "defaultMessage": "레시피 슬래시 명령이 제거되었습니다."
@@ -3105,7 +3225,7 @@
     "defaultMessage": "슬래시 명령이 제거되었습니다."
   },
   "recipesView.slashCommandSavedMsg": {
-    "defaultMessage": "이 레시피 실행: /{command}"
+    "defaultMessage": "이 레시피를 실행하려면 /{command}를 사용하세요."
   },
   "recipesView.slashCommandSavedTitle": {
     "defaultMessage": "슬래시 명령이 저장되었습니다."
@@ -3114,7 +3234,7 @@
     "defaultMessage": "슬래시 명령"
   },
   "recipesView.slashCommandUsageHint": {
-    "defaultMessage": "채팅에서 /{command}로 이 레시피 실행"
+    "defaultMessage": "모든 채팅에서 /{command}를 사용하여 이 레시피를 실행할 수 있습니다."
   },
   "recipesView.tryAgain": {
     "defaultMessage": "다시 시도"
@@ -3131,39 +3251,6 @@
   "recipesView.yamlFiles": {
     "defaultMessage": "YAML 파일"
   },
-  "recipeWarningModal.cancel": {
-    "defaultMessage": "취소"
-  },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "설명:"
-  },
-  "recipeWarningModal.firstTimeDescription": {
-    "defaultMessage": "이전에 실행한 적이 없는 레시피를 실행하려고 합니다."
-  },
-  "recipeWarningModal.hiddenCharsWarning": {
-    "defaultMessage": "이 레시피에는 악의적인 목적으로 사용될 수 있으므로 안전을 위해 무시되는 숨겨진 문자가 포함되어 있습니다."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "지침:"
-  },
-  "recipeWarningModal.newRecipeWarningTitle": {
-    "defaultMessage": "⚠️ 새로운 레시피 경고"
-  },
-  "recipeWarningModal.recipePreview": {
-    "defaultMessage": "레시피 미리보기:"
-  },
-  "recipeWarningModal.securityWarningTitle": {
-    "defaultMessage": "⚠️ 보안 경고"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "제목:"
-  },
-  "recipeWarningModal.trustAndExecute": {
-    "defaultMessage": "신뢰하고 실행"
-  },
-  "recipeWarningModal.trustSource": {
-    "defaultMessage": "이 레시피의 출처를 신뢰하는 경우에만 진행하세요."
-  },
   "resetProviderSection.resetButton": {
     "defaultMessage": "제공업체 및 모델 초기화"
   },
@@ -3177,7 +3264,7 @@
     "defaultMessage": "간결하게"
   },
   "responseStyle.detailedDescription": {
-    "defaultMessage": "도구 호출은 기본적으로 펼쳐져 세부 정보가 표시됩니다."
+    "defaultMessage": "도구 호출은 기본적으로 펼쳐져 있으며 세부 정보가 표시됩니다."
   },
   "responseStyle.detailedLabel": {
     "defaultMessage": "자세히"
@@ -3197,11 +3284,11 @@
   "scheduleDetailView.cronExpression": {
     "defaultMessage": "cron 표현식:"
   },
-  "scheduleDetailView.currentlyRunning": {
-    "defaultMessage": "현재 실행 중"
-  },
   "scheduleDetailView.currentSession": {
     "defaultMessage": "현재 세션:"
+  },
+  "scheduleDetailView.currentlyRunning": {
+    "defaultMessage": "현재 실행 중"
   },
   "scheduleDetailView.dir": {
     "defaultMessage": "디렉터리: {path}"
@@ -3260,20 +3347,20 @@
   "scheduleDetailView.noSessions": {
     "defaultMessage": "이 일정에 대한 세션을 찾을 수 없습니다."
   },
+  "scheduleDetailView.pauseSchedule": {
+    "defaultMessage": "일정 일시 중지"
+  },
+  "scheduleDetailView.pauseUnpauseError": {
+    "defaultMessage": "일시 중지/일시 중지 해제 오류"
+  },
   "scheduleDetailView.paused": {
-    "defaultMessage": "일시중지됨"
+    "defaultMessage": "일시 중지됨"
   },
   "scheduleDetailView.pausedMsg": {
     "defaultMessage": "\"{id}\" 일시 중지됨"
   },
   "scheduleDetailView.pausedWarning": {
     "defaultMessage": "이 일정은 일시 중지되어 자동으로 실행되지 않습니다. 수동으로 실행하려면 \"지금 일정 실행\"을 사용하거나, 자동 실행을 재개하려면 일시 중지를 해제하세요."
-  },
-  "scheduleDetailView.pauseSchedule": {
-    "defaultMessage": "일정 일시 중지"
-  },
-  "scheduleDetailView.pauseUnpauseError": {
-    "defaultMessage": "일시중지/일시중지 해제 오류"
   },
   "scheduleDetailView.processStarted": {
     "defaultMessage": "프로세스 시작:"
@@ -3312,7 +3399,7 @@
     "defaultMessage": "일정이 일시 중지됨"
   },
   "scheduleDetailView.scheduleUnpaused": {
-    "defaultMessage": "일정 일시중지 해제됨"
+    "defaultMessage": "일정 일시 중지 해제됨"
   },
   "scheduleDetailView.scheduleUpdated": {
     "defaultMessage": "일정이 업데이트되었습니다"
@@ -3320,20 +3407,23 @@
   "scheduleDetailView.sessionId": {
     "defaultMessage": "세션 ID: {id}"
   },
-  "scheduleDetailView.unpausedMsg": {
-    "defaultMessage": "\"{id}\" 일시중지 해제됨"
-  },
   "scheduleDetailView.unpauseSchedule": {
-    "defaultMessage": "일정 일시중지 해제"
+    "defaultMessage": "일정 일시 중지 해제"
   },
-  "scheduleDetailView.updatedMsg": {
-    "defaultMessage": "\"{id}\" 업데이트됨"
+  "scheduleDetailView.unpausedMsg": {
+    "defaultMessage": "\"{id}\" 일시 중지 해제됨"
   },
   "scheduleDetailView.updateScheduleError": {
     "defaultMessage": "일정 업데이트 오류"
   },
+  "scheduleDetailView.updatedMsg": {
+    "defaultMessage": "\"{id}\" 업데이트됨"
+  },
   "scheduleDetailView.viewingScheduleId": {
     "defaultMessage": "일정 ID 보기: {id}"
+  },
+  "scheduleModal.alreadyScheduledOption": {
+    "defaultMessage": "{title} (이미 예약됨)"
   },
   "scheduleModal.browseYaml": {
     "defaultMessage": "YAML 파일 찾아보기..."
@@ -3359,6 +3449,9 @@
   "scheduleModal.editSchedule": {
     "defaultMessage": "일정 편집"
   },
+  "scheduleModal.failedLoadRecipes": {
+    "defaultMessage": "레시피를 불러오지 못했습니다."
+  },
   "scheduleModal.failedParseRecipe": {
     "defaultMessage": "파일에서 레시피를 구문 분석하지 못했습니다."
   },
@@ -3371,14 +3464,23 @@
   "scheduleModal.invalidFileType": {
     "defaultMessage": "잘못된 파일 형식: YAML 파일(.yaml 또는 .yml)을 선택하세요."
   },
+  "scheduleModal.loadingRecipes": {
+    "defaultMessage": "레시피 불러오는 중..."
+  },
   "scheduleModal.nameLabel": {
     "defaultMessage": "이름:"
   },
   "scheduleModal.namePlaceholder": {
-    "defaultMessage": "예: 일일 요약 작업"
+    "defaultMessage": "예: daily-summary-job"
+  },
+  "scheduleModal.noSavedRecipes": {
+    "defaultMessage": "저장된 레시피가 없습니다."
   },
   "scheduleModal.provideValidRecipe": {
     "defaultMessage": "유효한 레시피 소스를 입력하세요."
+  },
+  "scheduleModal.recipeAlreadyScheduled": {
+    "defaultMessage": "이 레시피에는 이미 일정이 있습니다. 레시피 목록에서 편집하세요."
   },
   "scheduleModal.recipeDescription": {
     "defaultMessage": "설명: {description}"
@@ -3389,11 +3491,17 @@
   "scheduleModal.recipeTitle": {
     "defaultMessage": "제목: {title}"
   },
+  "scheduleModal.savedRecipes": {
+    "defaultMessage": "저장된 레시피"
+  },
   "scheduleModal.scheduleIdRequired": {
     "defaultMessage": "일정 ID가 필요합니다."
   },
   "scheduleModal.scheduleLabel": {
     "defaultMessage": "일정:"
+  },
+  "scheduleModal.selectRecipePlaceholder": {
+    "defaultMessage": "저장된 레시피 선택"
   },
   "scheduleModal.selected": {
     "defaultMessage": "선택됨: {path}"
@@ -3429,7 +3537,7 @@
     "defaultMessage": "검사"
   },
   "schedulesView.inspectError": {
-    "defaultMessage": "작업 오류 검사"
+    "defaultMessage": "작업 검사 오류"
   },
   "schedulesView.inspectNoInfo": {
     "defaultMessage": "이 작업에 대한 자세한 정보가 없습니다."
@@ -3455,11 +3563,11 @@
   "schedulesView.pause": {
     "defaultMessage": "일시 중지"
   },
-  "schedulesView.paused": {
-    "defaultMessage": "일시중지됨"
-  },
   "schedulesView.pauseError": {
     "defaultMessage": "일정 일시 중지 오류"
+  },
+  "schedulesView.paused": {
+    "defaultMessage": "일시 중지됨"
   },
   "schedulesView.refresh": {
     "defaultMessage": "새로고침"
@@ -3477,16 +3585,13 @@
     "defaultMessage": "일정이 일시 중지됨"
   },
   "schedulesView.schedulePausedMsg": {
-    "defaultMessage": "일정 \"{id}\"을(를) 일시중지했습니다."
-  },
-  "schedulesView.scheduler": {
-    "defaultMessage": "스케줄러"
+    "defaultMessage": "일정 \"{id}\"을(를) 일시 중지했습니다."
   },
   "schedulesView.scheduleUnpaused": {
-    "defaultMessage": "일정 일시중지 해제됨"
+    "defaultMessage": "일정 일시 중지 해제됨"
   },
   "schedulesView.scheduleUnpausedMsg": {
-    "defaultMessage": "일정 \"{id}\"의 일시중지를 해제했습니다."
+    "defaultMessage": "일정 \"{id}\"의 일시 중지를 해제했습니다."
   },
   "schedulesView.scheduleUpdated": {
     "defaultMessage": "일정이 업데이트되었습니다"
@@ -3494,8 +3599,11 @@
   "schedulesView.scheduleUpdatedMsg": {
     "defaultMessage": "\"{id}\" 일정이 업데이트되었습니다."
   },
+  "schedulesView.scheduler": {
+    "defaultMessage": "스케줄러"
+  },
   "schedulesView.unpauseError": {
-    "defaultMessage": "일시중지 해제 일정 오류"
+    "defaultMessage": "일정 일시 중지 해제 오류"
   },
   "searchBar.caseSensitive": {
     "defaultMessage": "대소문자 구분"
@@ -3510,7 +3618,7 @@
     "defaultMessage": "대화 검색..."
   },
   "searchBar.previous": {
-    "defaultMessage": "이전 ({shortcut})"
+    "defaultMessage": "이전({shortcut})"
   },
   "secureStorageNotice.defaultMessage": {
     "defaultMessage": "키는 키체인에 안전하게 저장됩니다."
@@ -3543,7 +3651,7 @@
     "defaultMessage": "프롬프트 인젝션 감지에 사용할 ML 모델을 선택하세요."
   },
   "securityToggle.detectionThreshold": {
-    "defaultMessage": "감지 임계값"
+    "defaultMessage": "탐지 임계값"
   },
   "securityToggle.enableCommandInjection": {
     "defaultMessage": "명령 인젝션 ML 감지 켜기"
@@ -3587,8 +3695,11 @@
   "sessionActionsHeader.copiedJson": {
     "defaultMessage": "세션 JSON 복사됨"
   },
+  "sessionActionsHeader.copiedModelInteractions": {
+    "defaultMessage": "최근 모델 상호작용이 복사되었습니다"
+  },
   "sessionActionsHeader.copiedText": {
-    "defaultMessage": "텍스트가 복사되었습니다."
+    "defaultMessage": "텍스트가 복사되었습니다"
   },
   "sessionActionsHeader.copyJson": {
     "defaultMessage": "JSON 복사"
@@ -3596,14 +3707,14 @@
   "sessionActionsHeader.copyText": {
     "defaultMessage": "텍스트 복사"
   },
-  "sessionActionsHeader.duplicated": {
-    "defaultMessage": "세션이 복제되었습니다"
-  },
   "sessionActionsHeader.duplicateFailed": {
     "defaultMessage": "세션 복제 실패: {error}"
   },
   "sessionActionsHeader.duplicateSession": {
     "defaultMessage": "세션 복제"
+  },
+  "sessionActionsHeader.duplicated": {
+    "defaultMessage": "세션이 복제되었습니다"
   },
   "sessionActionsHeader.fullTextTitle": {
     "defaultMessage": "텍스트 값"
@@ -3617,8 +3728,11 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "JSON 불러오는 중..."
   },
-  "sessionActionsHeader.renamed": {
-    "defaultMessage": "세션 이름이 변경되었습니다"
+  "sessionActionsHeader.modelInteractionsFailed": {
+    "defaultMessage": "모델 상호작용을 불러오지 못했습니다: {error}"
+  },
+  "sessionActionsHeader.modelInteractionsTitle": {
+    "defaultMessage": "최근 모델 상호작용"
   },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "세션 이름 변경 실패: {error}"
@@ -3632,6 +3746,9 @@
   "sessionActionsHeader.renameTitle": {
     "defaultMessage": "세션 이름 변경"
   },
+  "sessionActionsHeader.renamed": {
+    "defaultMessage": "세션 이름이 변경되었습니다"
+  },
   "sessionActionsHeader.save": {
     "defaultMessage": "저장"
   },
@@ -3641,6 +3758,9 @@
   "sessionActionsHeader.viewJson": {
     "defaultMessage": "세션 JSON 보기"
   },
+  "sessionActionsHeader.viewModelInteractions": {
+    "defaultMessage": "최근 모델 상호작용 보기"
+  },
   "sessionIndicators.error": {
     "defaultMessage": "세션에 오류가 발생했습니다."
   },
@@ -3649,6 +3769,9 @@
   },
   "sessionIndicators.streaming": {
     "defaultMessage": "스트리밍"
+  },
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
   },
   "sessions.action.delete": {
     "defaultMessage": "세션 삭제"
@@ -3661,6 +3784,12 @@
   },
   "sessions.action.export": {
     "defaultMessage": "세션 내보내기"
+  },
+  "sessions.action.exportJson": {
+    "defaultMessage": "JSON"
+  },
+  "sessions.action.exportMarkdown": {
+    "defaultMessage": "Markdown"
   },
   "sessions.action.openNewWindow": {
     "defaultMessage": "새 창에서 열기"
@@ -3707,20 +3836,23 @@
   "sessions.import": {
     "defaultMessage": "세션 가져오기"
   },
-  "sessions.importing": {
-    "defaultMessage": "가져오는 중..."
-  },
   "sessions.importNostr": {
     "defaultMessage": "링크 가져오기"
   },
   "sessions.importNostr.description": {
-    "defaultMessage": "Goose Nostr 공유 링크를 붙여넣어 세션을 가져오고 복호화한 뒤 불러오세요."
+    "defaultMessage": "goose Nostr 공유 링크를 붙여넣어 세션을 가져오고 복호화한 뒤 불러오세요."
   },
   "sessions.importNostr.placeholder": {
     "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Nostr 세션 가져오기"
+  },
+  "sessions.importing": {
+    "defaultMessage": "가져오는 중..."
+  },
+  "sessions.includeAcp": {
+    "defaultMessage": "ACP 세션 포함"
   },
   "sessions.loadingMore": {
     "defaultMessage": "추가 세션 로드 중..."
@@ -3730,6 +3862,12 @@
   },
   "sessions.saving": {
     "defaultMessage": "저장 중..."
+  },
+  "sessions.scheduledJobs": {
+    "defaultMessage": "Scheduled Jobs"
+  },
+  "sessions.scheduledJobsCount": {
+    "defaultMessage": "{count,plural,one{{count} job} other{{count} jobs}}"
   },
   "sessions.search.noResults": {
     "defaultMessage": "일치하는 세션이 없습니다."
@@ -3749,26 +3887,29 @@
   "sessions.toast.copied": {
     "defaultMessage": "클립보드에 복사됨"
   },
-  "sessions.toast.deleted": {
-    "defaultMessage": "세션이 삭제되었습니다."
-  },
   "sessions.toast.deleteFailed": {
     "defaultMessage": "\"{name}\" 세션 삭제 실패: {error}"
   },
-  "sessions.toast.duplicated": {
-    "defaultMessage": "세션 \"{name}\"이(가) 성공적으로 복제되었습니다."
+  "sessions.toast.deleted": {
+    "defaultMessage": "세션이 삭제되었습니다."
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "세션 복제 실패: {error}"
   },
+  "sessions.toast.duplicated": {
+    "defaultMessage": "세션 \"{name}\"이(가) 성공적으로 복제되었습니다."
+  },
+  "sessions.toast.exportFailed": {
+    "defaultMessage": "세션 내보내기 실패: {error}"
+  },
   "sessions.toast.exported": {
     "defaultMessage": "세션을 성공적으로 내보냈습니다."
   },
-  "sessions.toast.imported": {
-    "defaultMessage": "세션을 성공적으로 가져왔습니다."
-  },
   "sessions.toast.importFailed": {
     "defaultMessage": "세션 가져오기 실패: {error}"
+  },
+  "sessions.toast.imported": {
+    "defaultMessage": "세션을 성공적으로 가져왔습니다."
   },
   "sessions.toast.shareNostr": {
     "defaultMessage": "암호화된 Nostr 공유 링크가 생성되었습니다."
@@ -3776,29 +3917,11 @@
   "sessions.toast.shareNostrFailed": {
     "defaultMessage": "Nostr 공유 링크 생성 실패: {error}"
   },
-  "sessions.toast.updated": {
-    "defaultMessage": "세션 설명이 업데이트되었습니다."
-  },
   "sessions.toast.updateFailed": {
     "defaultMessage": "세션 설명 업데이트 실패: {error}"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "이 세션에는 메시지가 없습니다."
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "메시지를 찾을 수 없습니다."
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "세션 세부정보를 로드하는 중 오류가 발생했습니다."
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "다시 시도"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "나"
+  "sessions.toast.updated": {
+    "defaultMessage": "세션 설명이 업데이트되었습니다."
   },
   "settings.appearance.description": {
     "defaultMessage": "시스템에서 goose가 표시되는 방식을 설정합니다."
@@ -3954,7 +4077,7 @@
     "defaultMessage": "잠자기 방지"
   },
   "settings.theme.description": {
-    "defaultMessage": "goose의 모양과 느낌을 사용자화합니다."
+    "defaultMessage": "goose의 모양과 느낌을 맞춤 설정합니다."
   },
   "settings.theme.title": {
     "defaultMessage": "테마"
@@ -3977,6 +4100,9 @@
   "settingsView.tabChat": {
     "defaultMessage": "채팅"
   },
+  "settingsView.tabExternalBackend": {
+    "defaultMessage": "외부 백엔드"
+  },
   "settingsView.tabKeyboard": {
     "defaultMessage": "키보드"
   },
@@ -3989,14 +4115,8 @@
   "settingsView.tabPrompts": {
     "defaultMessage": "프롬프트"
   },
-  "settingsView.tabSession": {
-    "defaultMessage": "세션"
-  },
   "settingsView.title": {
     "defaultMessage": "설정"
-  },
-  "sheet.close": {
-    "defaultMessage": "닫기"
   },
   "shortcutRecorder.cancel": {
     "defaultMessage": "취소"
@@ -4038,7 +4158,7 @@
     "defaultMessage": "스킬 검색..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Goose 기능을 확장하는 설치된 스킬을 확인하세요. {shortcut}로 검색할 수 있습니다."
+    "defaultMessage": "goose 기능을 확장하는 스킬을 확인하세요. {shortcut}로 검색할 수 있습니다."
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "스킬"
@@ -4064,38 +4184,29 @@
   "stringUtils.configuredProvider": {
     "defaultMessage": "{name} 제공업체가 구성되었습니다."
   },
-  "stringUtils.ollamaApp": {
-    "defaultMessage": "Ollama 앱"
-  },
-  "stringUtils.ollamaNotConfiguredPrefix": {
-    "defaultMessage": "사용하려면"
-  },
-  "stringUtils.ollamaNotConfiguredSuffix": {
-    "defaultMessage": "을(를) 컴퓨터에 설치하고 열어야 합니다. 또는 OLLAMA_HOST 값을 입력해야 합니다."
-  },
   "subRecipeEditor.addExisting": {
-    "defaultMessage": "기존 하위 레시피 추가"
+    "defaultMessage": "기존 서브레시피 추가"
   },
   "subRecipeEditor.createNew": {
-    "defaultMessage": "새 하위 레시피 생성"
+    "defaultMessage": "새 서브레시피 생성"
   },
   "subRecipeEditor.deleteSubrecipe": {
-    "defaultMessage": "{name} 하위 레시피 삭제"
+    "defaultMessage": "{name} 서브레시피 삭제"
   },
   "subRecipeEditor.description": {
-    "defaultMessage": "하위 레시피는 실행 중 도구로 호출할 수 있는 레시피입니다. 다단계 워크플로와 재사용 가능한 구성 요소를 만들 수 있습니다."
+    "defaultMessage": "서브레시피는 실행 중 도구로 호출할 수 있는 레시피입니다. 다단계 워크플로와 재사용 가능한 구성 요소를 만들 수 있습니다."
   },
   "subRecipeEditor.duplicateName": {
     "defaultMessage": "중복된 이름"
   },
   "subRecipeEditor.duplicateNameMsg": {
-    "defaultMessage": "\"{name}\"이라는 하위 레시피가 이미 존재합니다. 고유한 이름을 사용하세요."
+    "defaultMessage": "\"{name}\"이라는 서브레시피가 이미 존재합니다. 고유한 이름을 사용하세요."
   },
   "subRecipeEditor.editSubrecipe": {
-    "defaultMessage": "{name} 하위 레시피 편집"
+    "defaultMessage": "{name} 서브레시피 편집"
   },
   "subRecipeEditor.label": {
-    "defaultMessage": "하위 레시피"
+    "defaultMessage": "서브레시피"
   },
   "subRecipeEditor.preconfiguredValues": {
     "defaultMessage": "사전 구성된 값:"
@@ -4104,7 +4215,7 @@
     "defaultMessage": "순차 실행"
   },
   "subRecipeModal.addTitle": {
-    "defaultMessage": "하위 레시피 추가"
+    "defaultMessage": "서브레시피 추가"
   },
   "subRecipeModal.apply": {
     "defaultMessage": "적용"
@@ -4116,16 +4227,16 @@
     "defaultMessage": "취소"
   },
   "subRecipeModal.closeModal": {
-    "defaultMessage": "하위 레시피 모달 닫기"
+    "defaultMessage": "서브레시피 모달 닫기"
   },
   "subRecipeModal.configureTitle": {
-    "defaultMessage": "하위 레시피 설정"
+    "defaultMessage": "서브레시피 설정"
   },
   "subRecipeModal.descriptionLabel": {
     "defaultMessage": "설명"
   },
   "subRecipeModal.descriptionPlaceholder": {
-    "defaultMessage": "이 하위 레시피의 기능에 대한 선택적 설명..."
+    "defaultMessage": "이 서브레시피의 기능에 대한 선택적 설명..."
   },
   "subRecipeModal.invalidFile": {
     "defaultMessage": "잘못된 파일"
@@ -4155,10 +4266,10 @@
     "defaultMessage": "사전 구성된 값"
   },
   "subRecipeModal.preconfiguredValuesHint": {
-    "defaultMessage": "항상 하위 레시피에 전달되는 선택적 매개변수 값"
+    "defaultMessage": "항상 서브레시피에 전달되는 선택적 매개변수 값"
   },
   "subRecipeModal.sequentialHint": {
-    "defaultMessage": "(여러 하위 레시피 인스턴스의 순차 실행을 강제합니다)"
+    "defaultMessage": "(여러 서브레시피 인스턴스의 순차 실행을 강제합니다)"
   },
   "subRecipeModal.sequentialLabel": {
     "defaultMessage": "반복 시 순차 실행"
@@ -4185,7 +4296,7 @@
     "defaultMessage": "끔 — 확장 추론 없음"
   },
   "switchModelModal.claudeEffortHigh": {
-    "defaultMessage": "높음 — 심층 추론 (기본값)"
+    "defaultMessage": "높음 — 심층 추론(기본값)"
   },
   "switchModelModal.claudeEffortLow": {
     "defaultMessage": "낮음 — 최소 추론, 가장 빠른 응답"
@@ -4203,7 +4314,7 @@
     "defaultMessage": "제공업체에 연결할 수 없습니다."
   },
   "switchModelModal.customModelName": {
-    "defaultMessage": "모델 이름"
+    "defaultMessage": "사용자 정의 모델 이름"
   },
   "switchModelModal.description": {
     "defaultMessage": "대화에 사용할 제공업체 및 모델을 선택하세요."
@@ -4328,6 +4439,9 @@
   "telemetrySettings.updateError": {
     "defaultMessage": "원격 분석 설정을 업데이트하지 못했습니다."
   },
+  "themeSelector.aura": {
+    "defaultMessage": "Aura"
+  },
   "themeSelector.dark": {
     "defaultMessage": "다크"
   },
@@ -4340,11 +4454,11 @@
   "themeSelector.theme": {
     "defaultMessage": "테마"
   },
-  "toolApprovalButtons.allowedOnce": {
-    "defaultMessage": "한 번 허용됨"
-  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "한 번만 허용"
+  },
+  "toolApprovalButtons.allowedOnce": {
+    "defaultMessage": "한 번 허용됨"
   },
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "항상 허용"
@@ -4365,7 +4479,7 @@
     "defaultMessage": "거부"
   },
   "toolApprovalButtons.staleApprovalRequest": {
-    "defaultMessage": "This approval request is no longer active."
+    "defaultMessage": "이 승인 요청은 더 이상 활성 상태가 아닙니다."
   },
   "toolCallStatusIndicator.toolStatus": {
     "defaultMessage": "도구 상태: {status}"
@@ -4401,16 +4515,13 @@
     "defaultMessage": "goose가 {toolName}을 호출하려고 합니다. 허용하시겠습니까?"
   },
   "updateSection.autoDownload": {
-    "defaultMessage": "업데이트는 백그라운드에서 자동으로 다운로드됩니다."
+    "defaultMessage": "goose가 백그라운드에서 업데이트를 다운로드하며, 종료하거나 다시 시작할 때 설치합니다."
   },
   "updateSection.autoDownloadDisabledByEnv": {
     "defaultMessage": "자동 다운로드는 GOOSE_DISABLE_AUTO_DOWNLOAD 환경 변수를 통해 비활성화되어 있습니다."
   },
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "자동 다운로드가 비활성화되어 있습니다. 수동으로 다운로드하려면 \"지금 다운로드\"를 클릭하세요."
-  },
-  "updateSection.autoInstallNote": {
-    "defaultMessage": "앱을 종료하면 업데이트가 자동으로 설치됩니다."
   },
   "updateSection.checkForUpdates": {
     "defaultMessage": "업데이트 확인"
@@ -4425,13 +4536,7 @@
     "defaultMessage": "자동 업데이트 다운로드 비활성화"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "활성화하면 Goose가 새 버전을 알려주지만 자동으로 다운로드하지는 않습니다."
-  },
-  "updateSection.downloadingProgress": {
-    "defaultMessage": "업데이트 다운로드 중... {percent}%"
-  },
-  "updateSection.downloadingUpdate": {
-    "defaultMessage": "업데이트 다운로드 중..."
+    "defaultMessage": "활성화하면 goose가 새 버전을 알려주지만 자동으로 다운로드하지는 않습니다."
   },
   "updateSection.downloadNow": {
     "defaultMessage": "지금 다운로드"
@@ -4439,11 +4544,14 @@
   "updateSection.downloadReady": {
     "defaultMessage": "업데이트가 다운로드되었으며 설치 준비가 완료되었습니다!"
   },
+  "updateSection.downloadingProgress": {
+    "defaultMessage": "업데이트 다운로드 중... {percent}%"
+  },
+  "updateSection.downloadingUpdate": {
+    "defaultMessage": "업데이트 다운로드 중..."
+  },
   "updateSection.installAndRestart": {
     "defaultMessage": "설치 및 다시 시작"
-  },
-  "updateSection.installNowHint": {
-    "defaultMessage": "또는 지금 업데이트하려면 \"설치 및 다시 시작\"을 클릭하세요."
   },
   "updateSection.latestVersion": {
     "defaultMessage": "최신 버전을 사용 중입니다!"
@@ -4451,23 +4559,11 @@
   "updateSection.loading": {
     "defaultMessage": "로드 중..."
   },
-  "updateSection.manualInstallNote": {
-    "defaultMessage": "다운로드한 후에는 업데이트를 수동으로 설치해야 합니다."
-  },
-  "updateSection.manualInstallRequired": {
-    "defaultMessage": "이 업데이트 방법에는 수동 설치가 필요합니다."
-  },
-  "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ 업데이트가 준비되었습니다! Goose 종료 시 설치됩니다."
-  },
-  "updateSection.readyInstallManual": {
-    "defaultMessage": "✓ 업데이트가 준비되었습니다! 설치 지침을 보려면 \"설치 및 다시 시작\"을 클릭하세요."
+  "updateSection.upToDate": {
+    "defaultMessage": "(최신 상태)"
   },
   "updateSection.updateAvailable": {
     "defaultMessage": "업데이트가 있습니다!"
-  },
-  "updateSection.upToDate": {
-    "defaultMessage": "최신 상태"
   },
   "updateSection.versionAvailable": {
     "defaultMessage": "→ {version} 사용 가능"
@@ -4486,6 +4582,9 @@
   },
   "userMessage.editButton": {
     "defaultMessage": "편집"
+  },
+  "userMessage.editImagesHeading": {
+    "defaultMessage": "첨부된 이미지:"
   },
   "userMessage.editInPlace": {
     "defaultMessage": "바로 편집"
@@ -4519,5 +4618,56 @@
   },
   "userMessage.forkSessionTitle": {
     "defaultMessage": "편집한 메시지로 새 세션 만들기"
+  },
+  "userMessage.removeImageFromEdit": {
+    "defaultMessage": "메시지에서 이미지 제거"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "최근"
+  },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "모델 선택"
+  },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "더 이상 사용되지 않습니다. 대신 {replacement}을(를) 사용하세요."
+  },
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "ACP 어댑터를 찾았습니다"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "ACP 어댑터를 찾을 수 없습니다"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "제공업체 CLI에서 로그인한 후 다시 확인하세요."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "다시 확인"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "확인 중..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "연결되었습니다"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "계속하기 전에 계정 연결을 확인하세요."
+  },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "코드를 입력하세요:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "복사"
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "방문하여"
+  },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "코드를 입력하세요:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "복사"
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "방문하여"
   }
 }

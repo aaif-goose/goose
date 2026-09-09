@@ -104,14 +104,24 @@
     "id": "browserbase-mcp",
     "name": "Browserbase",
     "description": "Browser automation and web scraping",
-    "command": "npx -y @browserbasehq/mcp-server-browserbase",
+    "command": "npx -y @browserbasehq/mcp",
     "link": "https://github.com/browserbase/mcp-server-browserbase",
     "installation_notes": "Install using npx package manager.",
     "is_builtin": false,
     "endorsed": true,
     "environmentVariables": [
       {
+        "name": "BROWSERBASE_PROJECT_ID",
+        "description": "Required environment variable",
+        "required": true
+      },
+      {
         "name": "BROWSERBASE_API_KEY",
+        "description": "Required environment variable",
+        "required": true
+      },
+      {
+        "name": "GEMINI_API_KEY",
         "description": "Required environment variable",
         "required": true
       }
@@ -141,24 +151,6 @@
       {
         "name": "CLOUDINARY_URL",
         "description": "Your Cloudinary URL (cloudinary://api_key:api_secret@cloud_name)",
-        "required": true
-      }
-    ]
-  },
-  {
-    "id": "cognee-mcp",
-    "name": "Cognee",
-    "description": "Knowledge graph and cognitive AI capabilities (requires local server setup)",
-    "command": "uv --directory /path/to/cognee-mcp run python src/server.py",
-    "link": "https://github.com/topoteretes/cognee",
-    "installation_notes": "This is a local extension. You must first clone and install the Cognee MCP server locally before using this extension. Update the placeholder path before running the 'goose session' command.",
-    "is_builtin": false,
-    "endorsed": true,
-    "show_install_link": false,
-    "environmentVariables": [
-      {
-        "name": "LLM_API_KEY",
-        "description": "API key for your LLM provider",
         "required": true
       }
     ]
@@ -332,6 +324,18 @@
     "environmentVariables": []
   },
   {
+    "id": "glif",
+    "name": "Glif",
+    "description": "Generate images, video, and audio with Glif's media-generation agent",
+    "url": "https://glif.app/api/mcp",
+    "link": "https://glif.app/mcp",
+    "installation_notes": "Hosted remote server. Sign in with your Glif account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "github-mcp",
     "name": "GitHub",
     "description": "GitHub repository management and operations",
@@ -377,17 +381,6 @@
     "command": "npx -y @gotohuman/mcp-server",
     "link": "https://github.com/gotohuman/gotohuman-mcp-server",
     "installation_notes": "Install using npx package manager.",
-    "is_builtin": false,
-    "endorsed": false,
-    "environmentVariables": []
-  },
-  {
-    "id": "i-ching",
-    "name": "I Ching",
-    "description": "I Ching divination readings with Wilhelm-Baynes translation - provides traditional three coins method divination with complete hexagram meanings, judgments, and line interpretations",
-    "command": "i-ching-mcp-server",
-    "link": "https://github.com/threemachines/i-ching",
-    "installation_notes": "Install from crates.io using: cargo install i-ching",
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": []
@@ -444,34 +437,6 @@
     ]
   },
   {
-    "id": "mbot-mcp",
-    "name": "MBot",
-    "description": "Control a MakeBlock mbot2 rover through MQTT (requires local setup)",
-    "command": "/path/to/java -jar /path/to/mbotmcp-0.0.1-SNAPSHOT.jar",
-    "link": "https://github.com/deemkeen/mbotmcp",
-    "installation_notes": "This is a local extension. You must first download the JAR file from the repository, install Java, and update the placeholder paths before running the 'goose session' command.",
-    "is_builtin": false,
-    "endorsed": false,
-    "show_install_link": false,
-    "environmentVariables": [
-      {
-        "name": "MQTT_SERVER_URI",
-        "description": "MQTT server URI (example: tcp://1.2.3.4:1883)",
-        "required": true
-      },
-      {
-        "name": "MQTT_USERNAME",
-        "description": "MQTT username (empty string if no auth required)",
-        "required": true
-      },
-      {
-        "name": "MQTT_PASSWORD",
-        "description": "MQTT password (empty string if no auth required)",
-        "required": true
-      }
-    ]
-  },
-  {
     "id": "memory",
     "name": "Memory",
     "description": "Built-in memory system for persistent context and information storage",
@@ -486,9 +451,9 @@
     "id": "mongodb",
     "name": "MongoDB",
     "description": "MongoDB database integration",
-    "command": "npx -y mongodb-mcp-server --connection-string mongodb://localhost:27017",
+    "command": "npx -y mongodb-mcp-server --connectionString mongodb://localhost:27017",
     "link": "https://github.com/mongodb-js/mongodb-mcp-server",
-    "installation_notes": "Install using npx package manager. Update connection-string as needed to match your MongoDB environment.",
+    "installation_notes": "Install using npx package manager. Update connectionString as needed to match your MongoDB environment.",
     "is_builtin": false,
     "endorsed": true,
     "environmentVariables": []
@@ -602,6 +567,17 @@
     "environmentVariables": []
   },
   {
+    "id": "pngmeta",
+    "name": "PNG Metadata",
+    "description": "Read and write PNG metadata (tEXt, iTXt, zTXt chunks and XMP)",
+    "command": "uvx --from pngmeta[mcp] pngmeta-mcp",
+    "link": "https://github.com/james-see/pngmeta",
+    "installation_notes": "Install using uvx. Requires pngmeta[mcp] extra.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
     "id": "playwright",
     "name": "Playwright",
     "description": "Interact with web pages through structured accessibility snapshots using Playwright",
@@ -633,23 +609,12 @@
     "id": "reddit-mcp",
     "name": "Reddit",
     "description": "Reddit API integration for posts and comments",
-    "command": "npx -y reddit-mcp",
+    "command": "uvx --from git+https://github.com/adhikasp/mcp-reddit.git mcp-reddit",
     "link": "https://github.com/adhikasp/mcp-reddit",
-    "installation_notes": "Install using npx package manager.",
+    "installation_notes": "Install using uvx.",
     "is_builtin": false,
     "endorsed": false,
-    "environmentVariables": [
-      {
-        "name": "REDDIT_CLIENT_ID",
-        "description": "Required environment variable",
-        "required": true
-      },
-      {
-        "name": "REDDIT_CLIENT_SECRET",
-        "description": "Required environment variable",
-        "required": true
-      }
-    ]
+    "environmentVariables": []
   },
   {
     "id": "rendex-mcp",
@@ -675,7 +640,7 @@
     "id": "repomix-mcp",
     "name": "Repomix",
     "description": "Repository analysis and code organization",
-    "command": "npx -y repomix-mcp",
+    "command": "npx -y repomix --mcp",
     "link": "https://github.com/yamadashy/repomix",
     "installation_notes": "Install using npx package manager.",
     "is_builtin": false,
@@ -698,7 +663,7 @@
     "id": "selenium-mcp",
     "name": "Selenium",
     "description": "Web browser automation and testing",
-    "command": "npx -y selenium-mcp",
+    "command": "npx -y @angiejones/mcp-selenium",
     "link": "https://github.com/angiejones/mcp-selenium",
     "installation_notes": "Install using npx package manager.",
     "is_builtin": false,
@@ -752,23 +717,6 @@
       {
         "name": "SUPABASE_PERSONAL_ACCESS_TOKEN",
         "description": "Personal access token (optional; use if not authenticating via browser OAuth)",
-        "required": false
-      }
-    ]
-  },
-  {
-    "id": "sugar",
-    "name": "Sugar",
-    "description": "Autonomous AI development system - delegate tasks, run 24/7, auto-discover work from errors and GitHub issues",
-    "command": "npx -y sugarai-mcp",
-    "link": "https://github.com/cdnsteve/sugar",
-    "installation_notes": "Requires Python 3.11+ and Sugar CLI: pip install sugarai && sugar init",
-    "is_builtin": false,
-    "endorsed": false,
-    "environmentVariables": [
-      {
-        "name": "SUGAR_PROJECT_ROOT",
-        "description": "Project directory for Sugar operations (defaults to current directory)",
         "required": false
       }
     ]

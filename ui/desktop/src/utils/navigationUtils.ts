@@ -1,4 +1,4 @@
-import { NavigateFunction } from 'react-router-dom';
+import type { NavigateFunction } from 'react-router';
 import type { Recipe } from '../recipe';
 import { UserInput } from '../types/message';
 

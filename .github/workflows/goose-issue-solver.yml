@@ -30,7 +30,7 @@ env:
       - Deletion is a feature: ask "can I delete code instead of adding?"
       - Complete changes: update ALL usages when changing a type. No exceptions.
       - When changing message types, update ALL provider format functions.
-      - When changing server routes, run `just generate-openapi`.
+      - When changing ACP request/response types, run `just generate-acp-types`.
       - Your context degrades. The TODO is your memory. Update it after each step.
 
       Types:
@@ -150,7 +150,7 @@ jobs:
             -d '{"content":"eyes"}'
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: main
           fetch-depth: 1

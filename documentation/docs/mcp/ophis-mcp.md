@@ -28,9 +28,9 @@ This tutorial covers how to add [Ophis](https://ophis.fi) as a goose extension s
 
 ## What is Ophis?
 
-Ophis is an intent-based DEX aggregator with a natural-language layer and a keyless MCP server for AI agents. It is non-custodial, gasless, and MEV-protected, and returns swap surplus to the trader. Ophis is a fork of CoW Protocol. It deploys its own settlement contract on Optimism and routes through CoW Protocol on the other supported chains: Ethereum, Base, Arbitrum, Polygon, BNB Chain, Gnosis, Avalanche, Linea, Plasma, and Ink.
+Ophis is an intent-based DEX aggregator with a natural-language layer and a keyless MCP server for AI agents. It is non-custodial, gasless, and MEV-protected, and returns swap surplus to the trader. Ophis is a fork of CoW Protocol. It deploys its own settlement contracts on Optimism and Unichain and routes through CoW Protocol on the other supported chains: Ethereum, Base, Arbitrum, Polygon, BNB Chain, Gnosis, Avalanche, Linea, Plasma, and Ink.
 
-The MCP server is keyless and requires no API key or environment variables. It exposes six tools: `parse_intent`, `get_quote`, `build_order`, `submit_order`, `lookup_tier`, and `list_chains`. Trades are signed by the user's own wallet, so the server never holds keys or funds.
+The MCP server is keyless and requires no API key or environment variables. It exposes fourteen tools: `parse_intent`, `resolve_token`, `list_chains`, `get_quote`, `expected_surplus`, `build_order`, `validate_order`, `submit_order`, `lookup_tier`, `get_integrator_earnings`, `get_balances`, `get_portfolio`, `get_gas`, and `get_token_chart`. Trades are signed by the user's own wallet, so the server never holds keys or funds.
 
 ## Configuration
 
@@ -80,4 +80,5 @@ The server returns a quote and an unsigned order. The actual trade is signed by 
 - Website: [ophis.fi](https://ophis.fi)
 - App: [swap.ophis.fi](https://swap.ophis.fi)
 - Docs: [docs.ophis.fi](https://docs.ophis.fi)
+- Agent skills for shell-capable agents: [ophis.fi/.well-known/agent-skills](https://ophis.fi/.well-known/agent-skills/index.json)
 - Source: [github.com/ophis-fi/ophis](https://github.com/ophis-fi/ophis)

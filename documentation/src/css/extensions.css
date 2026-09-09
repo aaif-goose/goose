@@ -87,25 +87,6 @@
   transition: all 0.3s ease;
 }
 
-.prompt-card {
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--background-app);
-  border-radius: 15px;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  border: 1px solid var(--border-subtle);
-  overflow: hidden;
-  transition: all 0.3s ease;
-}
-.prompt-card-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 0 1.5rem 1.5rem 1.5rem;
-  min-height: 0; 
-}
-
 /* Card header styles */
 .card-header {
   padding: 1.5rem 1.5rem 0.75rem 1.5rem;
@@ -281,7 +262,8 @@
   color: #fa5204;
 }
 
-.built-in-badge {
+.built-in-badge,
+.manual-setup-badge {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
@@ -322,6 +304,7 @@ html[data-theme="dark"] .command-content {
   background-color: rgba(255, 255, 255, 0.05);
 }
 
-html[data-theme="dark"] .built-in-badge {
+html[data-theme="dark"] .built-in-badge,
+html[data-theme="dark"] .manual-setup-badge {
   background-color: rgba(255, 255, 255, 0.1);
 }

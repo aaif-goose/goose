@@ -148,8 +148,6 @@ const FileInfo = ({ filePath, found }: { filePath: string; found: boolean }) => 
   );
 };
 
-const getGoosehintsFile = async (filePath: string) => await window.electron.readFile(filePath);
-
 interface GoosehintsModalProps {
   directory: string;
   setIsGoosehintsModalOpen: (isOpen: boolean) => void;
@@ -167,23 +165,26 @@ export const GoosehintsModal = ({ directory, setIsGoosehintsModalOpen }: Goosehi
   useEffect(() => {
     const fetchGoosehintsFile = async () => {
       try {
-        const { file, error, found } = await getGoosehintsFile(goosehintsFilePath);
+        const { file, error, found } = await window.electron.readGoosehints();
         setGoosehintsFile(file);
         setGoosehintsFileFound(found);
-        setGoosehintsFileReadError(found && error ? error : '');
+        setGoosehintsFileReadError(error ?? '');
       } catch (error) {
         console.error('Error fetching .goosehints file:', error);
         setGoosehintsFileReadError(intl.formatMessage(i18n.failedToAccess));
       }
     };
     if (directory) fetchGoosehintsFile();
-  }, [directory, goosehintsFilePath, intl]);
+  }, [directory, intl]);
 
   const writeFile = async () => {
     setIsSaving(true);
     setSaveSuccess(false);
     try {
-      await window.electron.writeFile(goosehintsFilePath, goosehintsFile);
+      const saved = await window.electron.writeGoosehints(goosehintsFile);
+      if (!saved) {
+        throw new Error('Unable to save .goosehints');
+      }
       setSaveSuccess(true);
       setGoosehintsFileFound(true);
       setTimeout(() => setSaveSuccess(false), 3000);

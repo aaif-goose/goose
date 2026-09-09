@@ -48,7 +48,7 @@ pub fn format_structure(
     }
     if !lang_loc.is_empty() && total_loc > 0 {
         let mut langs: Vec<_> = lang_loc.into_iter().collect();
-        langs.sort_by(|a, b| b.1.cmp(&a.1));
+        langs.sort_by_key(|(_, loc)| std::cmp::Reverse(*loc));
         let parts: Vec<String> = langs
             .iter()
             .map(|(lang, loc)| {

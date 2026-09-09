@@ -56,14 +56,17 @@ pub(in crate::plugins) fn try_install_from_manifest_at_root(
         );
     }
 
-    copy_dir_all(checkout_dir, &destination)?;
+    let staging_dir = tempfile::tempdir_in(install_root)?;
+    let staged_destination = staging_dir.path().join(&manifest.name);
+    copy_dir_all(checkout_dir, &staged_destination)?;
     write_install_metadata(
-        &destination,
+        &staged_destination,
         source,
         "gemini",
         options.auto_update,
         last_update_check,
     )?;
+    fs::rename(&staged_destination, &destination)?;
 
     Ok(PluginInstall {
         name: manifest.name,
@@ -194,5 +197,36 @@ mod tests {
             .join(crate::plugins::INSTALL_METADATA)
             .is_file());
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
+    }
+
+    #[test]
+    fn failed_metadata_write_leaves_no_installed_plugin() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(
+            repo.path().join(MANIFEST),
+            r#"{"name":"failed-plugin","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let skill_dir = repo.path().join("skills").join("audit");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: audit\ndescription: Audit code\n---\nDo an audit.",
+        )
+        .unwrap();
+        fs::create_dir(repo.path().join(crate::plugins::INSTALL_METADATA)).unwrap();
+
+        let result = try_install_from_manifest_at_root(
+            "https://example.invalid/failed-plugin.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        );
+
+        assert!(result.is_err());
+        assert!(!install_root.path().join("failed-plugin").exists());
+        assert_eq!(fs::read_dir(install_root.path()).unwrap().count(), 0);
     }
 }

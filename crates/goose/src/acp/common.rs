@@ -65,8 +65,8 @@ impl From<&RequestPermissionOutcome> for PermissionDecision {
 }
 
 /// Map a permission decision to a response by matching the option kind from the
-/// request. Each decision tries its preferred kind first, then falls back to the
-/// closest alternative (e.g. AllowAlways falls back to AllowOnce).
+/// request. A decision may fall back only when the alternative does not increase
+/// the granted permission scope (e.g. AllowAlways falls back to AllowOnce).
 pub fn map_permission_response(
     request: &RequestPermissionRequest,
     decision: PermissionDecision,
@@ -78,7 +78,6 @@ pub fn map_permission_response(
         }
         PermissionDecision::AllowOnce => {
             find_option(&request.options, PermissionOptionKind::AllowOnce)
-                .or_else(|| find_option(&request.options, PermissionOptionKind::AllowAlways))
         }
         PermissionDecision::RejectAlways => {
             find_option(&request.options, PermissionOptionKind::RejectAlways)
@@ -176,6 +175,19 @@ mod tests {
             }
             _ => panic!("expected selected outcome"),
         }
+    }
+
+    #[test]
+    fn test_allow_once_without_matching_option_is_cancelled() {
+        let request = make_request(vec![option(
+            "allow_always",
+            PermissionOptionKind::AllowAlways,
+        )]);
+        let response = map_permission_response(&request, PermissionDecision::AllowOnce);
+        assert!(matches!(
+            response.outcome,
+            RequestPermissionOutcome::Cancelled
+        ));
     }
 
     #[test_case(PermissionDecision::Cancel; "cancelled")]

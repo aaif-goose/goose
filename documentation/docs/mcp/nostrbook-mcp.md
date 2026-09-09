@@ -15,7 +15,7 @@ This tutorial covers how to add the [Nostrbook MCP Server](https://gitlab.com/so
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-    [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=%40nostrbook%2Fmcp&id=nostrbook&name=Nostrbook&description=A%20comprehensive%20registry%20of%20Nostr%20documentation%20with%20structured%20knowledge)
+    [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=%40nostrbook%2Fmcp%40latest&id=nostrbook-mcp&name=NostrBook&description=A%20comprehensive%20registry%20of%20Nostr%20documentation%20with%20structured%20knowledge)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
     **Command**
@@ -36,11 +36,11 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
-    extensionId="nostrbook"
+    extensionId="nostrbook-mcp"
     extensionName="Nostrbook"
     description="A comprehensive registry of Nostr documentation with structured knowledge"
     command="npx"
-    args={["-y", "@nostrbook/mcp"]}
+    args={["-y", "@nostrbook/mcp@latest"]}
   />
   </TabItem>
   <TabItem value="cli" label="goose CLI">
@@ -73,7 +73,6 @@ Note that IDs have been changed to generic ones
     nip: 61
 
 </details>
-
 
 
 # NIP-61: Implementing Nutzaps

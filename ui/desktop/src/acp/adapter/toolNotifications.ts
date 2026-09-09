@@ -1,5 +1,9 @@
 import type { ToolCallUpdate } from '@agentclientprotocol/sdk';
-import type { NotificationEvent } from '../../types/message';
+import type {
+  LiveOutputNotificationChunk,
+  LiveOutputNotificationParams,
+  NotificationEvent,
+} from '../../types/message';
 import type { AcpChatStateChange } from './shared';
 import { isRecord } from './shared';
 
@@ -15,6 +19,10 @@ type ToolNotification =
   | {
       type: 'platform_event';
       params: PlatformEventParams;
+    }
+  | {
+      type: 'live_output';
+      params: LiveOutputNotificationParams;
     };
 
 type LoggingMessageNotificationParams = {
@@ -31,6 +39,14 @@ type ProgressNotificationParams = {
 };
 
 type PlatformEventParams = Record<string, unknown>;
+
+function isLiveOutputChunk(value: unknown): value is LiveOutputNotificationChunk {
+  return (
+    isRecord(value) &&
+    (value.stream === 'stdout' || value.stream === 'stderr') &&
+    typeof value.output === 'string'
+  );
+}
 
 export function toolNotificationChange(
   update: ToolCallUpdate
@@ -80,6 +96,11 @@ function parseToolNotification(meta: unknown): ToolNotification | undefined {
     return params ? { type: 'platform_event', params } : undefined;
   }
 
+  if (toolNotification.type === 'live_output') {
+    const params = parseLiveOutputParams(toolNotification.params);
+    return params ? { type: 'live_output', params } : undefined;
+  }
+
   return undefined;
 }
 
@@ -116,6 +137,24 @@ function parsePlatformEventParams(value: unknown): PlatformEventParams | undefin
   return isRecord(value) ? value : undefined;
 }
 
+function parseLiveOutputParams(value: unknown): LiveOutputNotificationParams | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.sequence !== 'number' ||
+    !Array.isArray(value.chunks) ||
+    !value.chunks.every(isLiveOutputChunk) ||
+    typeof value.truncated !== 'boolean'
+  ) {
+    return undefined;
+  }
+
+  return {
+    sequence: value.sequence,
+    chunks: value.chunks,
+    truncated: value.truncated,
+  };
+}
+
 function toNotificationEvent(
   toolCallId: string,
   toolNotification: ToolNotification
@@ -138,5 +177,7 @@ function notificationMethod(toolNotification: ToolNotification): string {
       return 'notifications/progress';
     case 'platform_event':
       return 'platform_event';
+    case 'live_output':
+      return 'goose/live_output';
   }
 }

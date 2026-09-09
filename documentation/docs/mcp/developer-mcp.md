@@ -11,7 +11,7 @@ import { Tornado } from 'lucide-react';
 
 <YouTubeShortEmbed videoUrl="https://www.youtube.com/embed/on_p-LeIrak" />
 
-The Developer extension allows goose to automate developer-centric tasks such as file editing, shell command execution, and project setup. It also provides tools for [enhanced code editing](/docs/guides/enhanced-code-editing) and [codebase analysis](/docs/guides/codebase-analysis).
+The Developer extension allows goose to automate developer-centric tasks such as file editing, shell command execution, and project setup. It also provides tools for [codebase analysis](/docs/guides/codebase-analysis).
 
 This tutorial will cover enabling and using the Developer MCP Server, which is a built-in goose extension. 
 
@@ -184,10 +184,12 @@ The Developer extension provides these tools:
 | Tool | Description | Use Cases | Risk Level |
 |------|-------------|-----------|------------|
 | `shell` | Execute shell commands | Running tests, installing packages, git operations | ⚠️ High<br />Can run any system command with your user privileges |
-| `text_editor` | Read, write, and edit files | Code refactoring, creating files, updating configs | ⚠️ High<br />Can modify any accessible file |
-| `analyze` | Analyze code structure | Understanding codebase, finding dependencies | ✅ Low<br />Read-only code analysis |
-| `screen_capture` | Take screenshots | Debugging UI issues, documenting state | ✅ Low<br />Visual information only |
-| `image_processor` | Process and resize images | Optimizing assets, format conversion | ✅ Low<br />Image manipulation only |
+| `write` | Create or overwrite files | Creating files, updating generated assets, writing configs | ⚠️ High<br />Can modify any accessible file |
+| `edit` | Replace exact text in files | Code refactoring, targeted edits, deleting matched text | ⚠️ High<br />Can modify any accessible file |
+| `tree` | List directory trees with line counts | Understanding project structure before reading files | ✅ Low<br />Read-only file listing |
+| `read_image` | Read a local or remote image for model inspection | Inspecting screenshots, diagrams, and visual assets | ✅ Low<br />Read-only image access |
+
+For code structure analysis, use the separate [Analyze platform extension](/docs/guides/codebase-analysis).
 
 ### Access Control Features
 
@@ -203,8 +205,6 @@ You can layer multiple controls to match your risk tolerance and workflow:
   | Chat Only<br />CLI: `chat` | Disable all tools | For maximum security and models that don't support tool-calling |
 
 - **[Tool Permissions](/docs/guides/managing-tools/tool-permissions)** let you set `Always allow`, `Ask before`, and `Never allow` permissions for individual extension tools when in Manual Approval or Smart Approval modes
-
-- **[.gooseignore files](/docs/guides/context-engineering/using-gooseignore)** restrict which files and directories goose can access (`.gitignore` files are fallback)
 
 :::tip Changing Modes In-Session
 You can change goose permission modes during a session without restarting:
@@ -224,16 +224,7 @@ Here's an example configuration that enables oversight:
    GOOSE_MODE: smart_approve  # or approve
    ```
 
-2. **Create a [`.gooseignore` file](/docs/guides/context-engineering/using-gooseignore)** in your project to protect sensitive files:
-   ```
-   .env*
-   secrets.*
-   *.key
-   *.pem
-   .git/
-   ```
-
-3. **Configure [tool permissions](/docs/guides/managing-tools/tool-permissions)** based on your needs
+2. **Configure [tool permissions](/docs/guides/managing-tools/tool-permissions)** based on your needs
 
 As you become more comfortable with goose's behavior, you can adjust these settings to reduce friction while maintaining appropriate safeguards for your environment.
 
@@ -247,12 +238,6 @@ import ContentCardCarousel from '@site/src/components/ContentCardCarousel';
 
 <ContentCardCarousel
   items={[
-    {
-      type: 'topic',
-      title: 'Enhanced Code Editing with AI Models',
-      description: 'Use AI models to intelligently apply code changes',
-      linkUrl: '/docs/guides/enhanced-code-editing'
-    },
     {
       type: 'topic',
       title: 'Codebase Analysis',

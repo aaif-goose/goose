@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { CoinIcon } from '../icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { fetchCanonicalModelInfo, type CanonicalModelInfo } from '../../utils/canonical';
 import { defineMessages, useIntl } from '../../i18n';
@@ -114,6 +113,8 @@ export function CostTracker({
     );
   }
 
+  const currency = costInfo?.currency || '$';
+
   if (
     accumulatedCost == null &&
     (!costInfo ||
@@ -146,8 +147,10 @@ export function CostTracker({
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="flex items-center justify-center h-full transition-colors cursor-default translate-y-[1px] text-text-primary/70 hover:text-text-primary">
-            <CoinIcon className="mr-1" size={16} />
-            <span className="text-xs font-mono">0.0000</span>
+            <span className="text-xs font-mono">
+              {currency}
+              {formatCost(0)}
+            </span>
           </div>
         </TooltipTrigger>
         <TooltipContent>{getUnavailableTooltip()}</TooltipContent>
@@ -162,8 +165,6 @@ export function CostTracker({
     if (pricingFailed) {
       return intl.formatMessage(i18n.pricingUnavailable, { model: `${currentProvider}/${currentModel}` });
     }
-
-    const currency = costInfo?.currency || '$';
 
     if (accumulatedCost != null) {
       return intl.formatMessage(i18n.totalSessionCost, { cost: `${currency}${totalCost.toFixed(4)}` })
@@ -189,8 +190,10 @@ export function CostTracker({
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex items-center justify-center h-full transition-colors cursor-default translate-y-[1px] text-text-primary/70 hover:text-text-primary">
-          <CoinIcon className="mr-1" size={16} />
-          <span className="text-xs font-mono">{formatCost(totalCost)}</span>
+          <span className="text-xs font-mono">
+            {currency}
+            {formatCost(totalCost)}
+          </span>
         </div>
       </TooltipTrigger>
       <TooltipContent>{getTooltipContent()}</TooltipContent>

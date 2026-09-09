@@ -87,8 +87,11 @@
                 .attr("d", arcGen)
                 .on("mouseover", function (event, d) {
                     fadeChords(g, d.index, 0.08);
-                    tooltipEl.style("opacity", 1)
-                        .html("<strong>" + data.labels[d.index] + "</strong><br/>Total: " + d.value.toLocaleString());
+                    setTooltip([
+                        data.labels[d.index],
+                        "Total: " + d.value.toLocaleString(),
+                    ], true);
+                    tooltipEl.style("opacity", 1);
                     McpAppBridge.positionTooltip(tooltipEl, event);
                 })
                 .on("mouseout", function () {
@@ -114,15 +117,25 @@
                     d3.select(this).style("fill-opacity", 0.8);
                     var s2t = data.matrix[d.source.index][d.target.index];
                     var t2s = data.matrix[d.target.index][d.source.index];
-                    tooltipEl.style("opacity", 1)
-                        .html(data.labels[d.source.index] + " → " + data.labels[d.target.index] + ": " + s2t.toLocaleString() +
-                            "<br/>" + data.labels[d.target.index] + " → " + data.labels[d.source.index] + ": " + t2s.toLocaleString());
+                    setTooltip([
+                        data.labels[d.source.index] + " → " + data.labels[d.target.index] + ": " + s2t.toLocaleString(),
+                        data.labels[d.target.index] + " → " + data.labels[d.source.index] + ": " + t2s.toLocaleString(),
+                    ], false);
+                    tooltipEl.style("opacity", 1);
                     McpAppBridge.positionTooltip(tooltipEl, event);
                 })
                 .on("mouseout", function () {
                     d3.select(this).style("fill-opacity", 0.55);
                     tooltipEl.style("opacity", 0);
                 });
+        }
+
+        function setTooltip(lines, boldFirst) {
+            tooltipEl.selectAll("*").remove();
+            lines.forEach(function (line, index) {
+                if (index > 0) tooltipEl.append("br");
+                tooltipEl.append(index === 0 && boldFirst ? "strong" : "span").text(line);
+            });
         }
 
         function fadeChords(g, focusIndex, opacity) {

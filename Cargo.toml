@@ -8,8 +8,8 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.40.0"
-rust-version = "1.91.1"
+version = "1.50.0"
+rust-version = "1.94.1"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
 repository = "https://github.com/aaif-goose/goose"
@@ -20,19 +20,20 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "1.4", default-features = false, features = ["schemars", "auth"] }
-agent-client-protocol-schema = { version = "1.1", default-features = false, features = ["unstable"] }
-agent-client-protocol = { version = "1.0", default-features = false }
-agent-client-protocol-http = { version = "1.0", default-features = false, features = ["server", "unstable_cancel_request"] }
+rmcp = { version = "3.2.0", default-features = false, features = ["schemars", "auth"] }
+agent-client-protocol-schema = { version = "=1.5.0", default-features = false }
+agent-client-protocol = { version = "2.0.0", default-features = false }
+agent-client-protocol-http = { version = "2.0.0", default-features = false }
 arboard = { version = "3", default-features = false }
 anyhow = { version = "1.0.102", default-features = false, features = ["std"] }
 async-stream = { version = "0.3.6", default-features = false }
 async-trait = { version = "0.1.89", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
-base64 = { version = "0.22.1", default-features = false, features = ["std"] }
+axum-server = { version = "0.8", default-features = false }
+base64 = { version = "0.23.0", default-features = false, features = ["std"] }
 bytes = { version = "1.10.1", default-features = false, features = ["std"] }
-candle-core = { version = "0.10", default-features = false }
-candle-nn = { version = "0.10", default-features = false }
+candle-core = { version = "0.11", default-features = false }
+candle-nn = { version = "0.11", default-features = false }
 chrono = { version = "0.4.44", default-features = false, features = ["serde", "std"] }
 clap = { version = "4.1.14", default-features = false, features = ["derive", "std", "help", "suggestions", "usage", "color", "error-context"] }
 dirs = { version = "6", default-features = false }
@@ -45,6 +46,8 @@ http = { version = "1.1", default-features = false, features = ["std"] }
 ignore = { version = "0.4.12", default-features = false }
 include_dir = { version = "0.7", default-features = false }
 indoc = { version = "2", default-features = false }
+iroh = { version = "=1.1.0", default-features = false }
+iroh-relay = { version = "1", default-features = false }
 keyring = { version = "3.6.3", default-features = false, features = ["vendored"] }
 lru = { version = "0.18", default-features = false }
 once_cell = { version = "1.21.3", default-features = false, features = ["std"] }
@@ -69,16 +72,16 @@ tracing-appender = { version = "0.2.1", default-features = false }
 tracing-futures = { version = "0.2.4", default-features = false, features = ["futures-03", "std", "std-future"] }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["std"] }
 urlencoding = { version = "2.1", default-features = false }
-utoipa = { version = "4.2", default-features = false }
 uuid = { version = "1.23", default-features = false, features = ["v4", "std"] }
 webbrowser = { version = "1", default-features = false }
 which = { version = "8", default-features = false, features = ["real-sys"] }
 winapi = { version = "0.3.9", default-features = false, features = ["wincred", "std"] }
 wiremock = { version = "0.6", default-features = false }
 zip = { version = "8", default-features = false, features = ["deflate"] }
-serial_test = { version = "3", default-features = false }
+serial_test = { version = "4", default-features = false }
 sha2 = { version = "0.11", default-features = false }
 shell-words = { version = "1", default-features = false, features = ["std"] }
+snap = { version = "1", default-features = false }
 test-case = { version = "3", default-features = false }
 url = { version = "2.5.4", default-features = false, features = ["std"] }
 opentelemetry = { version = "0.32", default-features = false }
@@ -112,6 +115,8 @@ icu_calendar = { version = "=2.1.1", default-features = false }
 icu_locale = { version = "=2.1.1", default-features = false }
 
 [patch.crates-io]
+agent-client-protocol = { git = "https://github.com/agentclientprotocol/rust-sdk", rev = "c97a5203d3392f7f231514d84eea014f9f43e6fb" }
+agent-client-protocol-http = { git = "https://github.com/agentclientprotocol/rust-sdk", rev = "c97a5203d3392f7f231514d84eea014f9f43e6fb" }
 v8 = { path = "vendor/v8" }
 cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 

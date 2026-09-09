@@ -7,13 +7,13 @@ use crate::session::SessionManager;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use utoipa::ToSchema;
 
-const SERVER_LOG_TAIL_LINES: usize = 400;
 const LLM_LOG_MAX_BYTES: usize = 2 * 1024 * 1024;
 const CONFIG_MAX_BYTES: usize = 256 * 1024;
+const CLI_LOG_TAIL_LINES: usize = 400;
+const CLI_LOGS_TO_INCLUDE: usize = 3;
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticsLevel {
     #[default]
@@ -21,7 +21,7 @@ pub enum DiagnosticsLevel {
     Full,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SystemInfo {
     pub app_version: String,
     pub os: String,
@@ -32,7 +32,7 @@ pub struct SystemInfo {
     pub enabled_extensions: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsConfig {
     pub config_path: String,
@@ -40,13 +40,13 @@ pub struct DiagnosticsConfig {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsExtensions {
     pub enabled: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsTextFile {
     pub path: String,
@@ -54,35 +54,35 @@ pub struct DiagnosticsTextFile {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsLogs {
-    pub server: Option<DiagnosticsTextFile>,
+    pub cli: Vec<DiagnosticsTextFile>,
     pub llm: Vec<DiagnosticsTextFile>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsPrompt {
     pub name: String,
     pub content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsScheduledRecipe {
     pub path: String,
     pub content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsError {
     pub path: Option<String>,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsReport {
     pub schema_version: u32,
@@ -150,15 +150,40 @@ pub fn config_path() -> PathBuf {
     Paths::config_dir().join("config.yaml")
 }
 
-pub fn latest_server_log_path() -> Option<PathBuf> {
-    let server_dir = Paths::in_state_dir("logs").join("server");
-    let latest_date_dir = latest_entry_by_name(&server_dir)?;
-    latest_entry_by_name(&latest_date_dir)
-}
-
 pub fn latest_llm_log_path() -> Option<PathBuf> {
     let path = Paths::in_state_dir("logs").join("llm_request.0.jsonl");
     path.exists().then_some(path)
+}
+
+pub fn recent_cli_log_paths() -> Vec<PathBuf> {
+    let component_dir = Paths::in_state_dir("logs").join("cli");
+    let mut paths = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(component_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Ok(files) = fs::read_dir(path) {
+                    paths.extend(
+                        files
+                            .flatten()
+                            .map(|entry| entry.path())
+                            .filter(|path| path.is_file()),
+                    );
+                }
+            } else if path.is_file() {
+                paths.push(path);
+            }
+        }
+    }
+
+    paths.sort_by(|left, right| {
+        log_modified(right)
+            .cmp(&log_modified(left))
+            .then_with(|| log_name(left).cmp(&log_name(right)))
+    });
+    paths.truncate(CLI_LOGS_TO_INCLUDE);
+    paths
 }
 
 fn recent_llm_log_paths() -> Vec<PathBuf> {
@@ -181,9 +206,9 @@ fn recent_llm_log_paths() -> Vec<PathBuf> {
 
     numbered.sort_by_key(|path| llm_log_index(path).unwrap_or(usize::MAX));
     temp.sort_by(|left, right| {
-        llm_log_modified(right)
-            .cmp(&llm_log_modified(left))
-            .then_with(|| llm_log_name(left).cmp(&llm_log_name(right)))
+        log_modified(right)
+            .cmp(&log_modified(left))
+            .then_with(|| log_name(left).cmp(&log_name(right)))
     });
 
     if temp.is_empty() || numbered.len() < LOGS_TO_KEEP {
@@ -210,13 +235,13 @@ fn llm_log_index(path: &std::path::Path) -> Option<usize> {
         .and_then(|name| name.parse::<usize>().ok())
 }
 
-fn llm_log_modified(path: &std::path::Path) -> std::time::SystemTime {
+fn log_modified(path: &std::path::Path) -> std::time::SystemTime {
     path.metadata()
         .and_then(|metadata| metadata.modified())
         .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
 }
 
-fn llm_log_name(path: &std::path::Path) -> String {
+fn log_name(path: &std::path::Path) -> String {
     path.file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default()
@@ -269,12 +294,6 @@ fn was_truncated(content: &str) -> bool {
     content.contains("... (") && content.contains(" bytes omitted) ...")
 }
 
-fn latest_entry_by_name(dir: &std::path::Path) -> Option<PathBuf> {
-    let mut entries: Vec<_> = fs::read_dir(dir).ok()?.filter_map(|e| e.ok()).collect();
-    entries.sort_by_key(|e| e.file_name());
-    entries.last().map(|e| e.path())
-}
-
 pub async fn generate_diagnostics(
     session_manager: &SessionManager,
     session_id: &str,
@@ -311,13 +330,16 @@ pub async fn generate_diagnostics(
 
     let logs = if is_full {
         DiagnosticsLogs {
-            server: latest_server_log_path().and_then(|path| {
-                read_tail(&path, SERVER_LOG_TAIL_LINES).map(|content| DiagnosticsTextFile {
-                    path: path.display().to_string(),
-                    content,
-                    truncated: true,
+            cli: recent_cli_log_paths()
+                .into_iter()
+                .filter_map(|path| {
+                    read_tail(&path, CLI_LOG_TAIL_LINES).map(|content| DiagnosticsTextFile {
+                        path: path.display().to_string(),
+                        content,
+                        truncated: true,
+                    })
                 })
-            }),
+                .collect(),
             llm: recent_llm_log_paths()
                 .into_iter()
                 .filter_map(|path| {

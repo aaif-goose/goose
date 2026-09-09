@@ -11,11 +11,12 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData};
+use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData};
 use serde_json::{json, Map, Value};
 
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
+use crate::utils::sanitize_unicode_tags;
 use goose_providers::conversation::token_usage::Usage;
 
 pub fn convert(content: &str) -> Result<String> {
@@ -127,11 +128,12 @@ pub fn convert(content: &str) -> Result<String> {
                 }
             }
             "toolResult" => {
-                let id = inner
-                    .get("toolCallId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let id = sanitize_unicode_tags(
+                    inner
+                        .get("toolCallId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                );
                 let is_error = inner
                     .get("isError")
                     .and_then(|v| v.as_bool())
@@ -144,11 +146,9 @@ pub fn convert(content: &str) -> Result<String> {
             }
             "bashExecution" => {
                 // Synthesize a bash tool round-trip so the export reads naturally.
-                let command = inner
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let command = sanitize_unicode_tags(
+                    inner.get("command").and_then(|v| v.as_str()).unwrap_or(""),
+                );
                 let output = inner
                     .get("output")
                     .and_then(|v| v.as_str())
@@ -170,11 +170,14 @@ pub fn convert(content: &str) -> Result<String> {
                     Some(code) if code != 0 => format!("exit {}\n{}", code, output),
                     _ => output,
                 };
+                let result_text = sanitize_unicode_tags(&result_text);
                 let mut resp = Message::user();
                 resp.created = created;
                 resp = resp.with_tool_response(
                     id,
-                    Ok(CallToolResult::success(vec![Content::text(result_text)])),
+                    Ok(CallToolResult::success(vec![ContentBlock::text(
+                        result_text,
+                    )])),
                 );
                 messages.push(resp);
             }
@@ -276,31 +279,49 @@ fn apply_assistant_content(mut msg: Message, content: Option<&Value>) -> Message
             "thinking" => {
                 let t = block.get("thinking").and_then(|v| v.as_str()).unwrap_or("");
                 if !t.is_empty() {
-                    msg = msg.with_thinking(t, "");
+                    msg = msg.with_thinking(sanitize_unicode_tags(t), "");
                 }
             }
             "toolCall" => {
-                let id = block
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let name = block
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown_tool");
+                let id =
+                    sanitize_unicode_tags(block.get("id").and_then(|v| v.as_str()).unwrap_or(""));
+                let name = sanitize_unicode_tags(
+                    block
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown_tool"),
+                );
                 let args = block
                     .get("arguments")
                     .and_then(|v| v.as_object())
                     .cloned()
-                    .unwrap_or_default();
-                let params = CallToolRequestParams::new(name.to_string()).with_arguments(args);
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(key, value)| (sanitize_unicode_tags(&key), sanitize_json_strings(value)))
+                    .collect();
+                let params = CallToolRequestParams::new(name).with_arguments(args);
                 msg = msg.with_tool_request(id, Ok(params));
             }
             _ => {}
         }
     }
     msg
+}
+
+fn sanitize_json_strings(value: Value) -> Value {
+    match value {
+        Value::String(value) => Value::String(sanitize_unicode_tags(&value)),
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(sanitize_json_strings).collect())
+        }
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (sanitize_unicode_tags(&key), sanitize_json_strings(value)))
+                .collect(),
+        ),
+        value => value,
+    }
 }
 
 fn build_tool_result(content: Option<&Value>, is_error: bool) -> Result<CallToolResult, ErrorData> {
@@ -320,11 +341,12 @@ fn build_tool_result(content: Option<&Value>, is_error: bool) -> Result<CallTool
         Some(other) => other.to_string(),
         None => String::new(),
     };
+    let text = sanitize_unicode_tags(&text);
 
     if is_error {
         Err(ErrorData::new(ErrorCode::INTERNAL_ERROR, text, None))
     } else {
-        Ok(CallToolResult::success(vec![Content::text(text)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 }
 
@@ -341,6 +363,13 @@ fn extract_first_text(msg: &Message) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_conversion_strips_unicode_tags(jsonl: &str) {
+        let converted = convert(&jsonl.replace("<TAG>", "\u{e0061}")).unwrap();
+
+        assert!(!converted.contains('\u{e0061}'));
+        assert!(converted.contains("visiblehidden"));
+    }
 
     #[test]
     fn converts_tool_call_and_result() {
@@ -375,5 +404,45 @@ mod tests {
         let v: Value = serde_json::from_str(&json).unwrap();
         let msgs = v["conversation"].as_array().unwrap();
         assert_eq!(msgs.len(), 3);
+    }
+
+    #[test]
+    fn sanitizes_thinking_blocks() {
+        let jsonl = r#"{"type":"session","version":3,"id":"s","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/w"}
+{"type":"message","id":"a","parentId":null,"timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"visible<TAG>hidden"}]}}"#;
+
+        assert_conversion_strips_unicode_tags(jsonl);
+    }
+
+    #[test]
+    fn sanitizes_tool_result_text() {
+        let jsonl = r#"{"type":"session","version":3,"id":"s","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/w"}
+{"type":"message","id":"a","parentId":null,"timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"visible<TAG>hidden"}],"isError":false}}"#;
+
+        assert_conversion_strips_unicode_tags(jsonl);
+    }
+
+    #[test]
+    fn sanitizes_tool_call_arguments() {
+        let jsonl = r#"{"type":"session","version":3,"id":"s","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/w"}
+{"type":"message","id":"a","parentId":null,"timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"nested":{"command":["visible<TAG>hidden"]}}}]}}"#;
+
+        assert_conversion_strips_unicode_tags(jsonl);
+    }
+
+    #[test]
+    fn sanitizes_bash_execution_output() {
+        let jsonl = r#"{"type":"session","version":3,"id":"s","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/w"}
+{"type":"message","id":"a","parentId":null,"timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"bashExecution","command":"printf output","output":"visible<TAG>hidden","exitCode":0,"cancelled":false,"truncated":false}}"#;
+
+        assert_conversion_strips_unicode_tags(jsonl);
+    }
+
+    #[test]
+    fn sanitizes_bash_execution_command() {
+        let jsonl = r#"{"type":"session","version":3,"id":"s","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/w"}
+{"type":"message","id":"a","parentId":null,"timestamp":"2024-12-03T14:00:01.000Z","message":{"role":"bashExecution","command":"printf visible<TAG>hidden","output":"ok","exitCode":0,"cancelled":false,"truncated":false}}"#;
+
+        assert_conversion_strips_unicode_tags(jsonl);
     }
 }

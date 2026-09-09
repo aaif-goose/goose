@@ -1,0 +1,13 @@
+# MCP conformance baseline: known-failing client scenarios.
+#
+# Spec version:        2025-11-25
+# Conformance version: 0.2.0-alpha.10
+#
+# Scenarios listed here are allowed to fail (or emit warnings) without failing
+# CI. The conformance runner will error if any of these scenarios start passing
+# (stale entry) or if a scenario not listed here fails (unexpected failure), so
+# keep this list in sync as behavior changes.
+#
+# All scenarios currently pass; keep this file so CI flags any regression as an
+# unexpected failure.
+client: []

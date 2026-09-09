@@ -52,6 +52,7 @@ const globalApprovalState = new Map<
 >();
 
 export interface ToolApprovalData {
+  generation?: string;
   id: string;
   toolName: string;
   prompt?: string;
@@ -61,9 +62,10 @@ export interface ToolApprovalData {
 
 export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }) {
   const intl = useIntl();
-  const { id, toolName, prompt, sessionId, isClicked: initialIsClicked } = data;
+  const { generation, id, toolName, prompt, sessionId, isClicked: initialIsClicked } = data;
+  const approvalStateKey = generation ?? id;
 
-  const storedState = globalApprovalState.get(id);
+  const storedState = globalApprovalState.get(approvalStateKey);
   const [decision, setDecision] = useState<Permission | null>(storedState?.decision ?? null);
   const [isClicked, setIsClicked] = useState(storedState?.isClicked ?? initialIsClicked ?? false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
@@ -75,21 +77,24 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
   };
 
   useEffect(() => {
-    const currentState = globalApprovalState.get(id);
+    const currentState = globalApprovalState.get(approvalStateKey);
     if (currentState) {
       setDecision(currentState.decision);
       setIsClicked(currentState.isClicked);
+    } else {
+      setDecision(null);
+      setIsClicked(initialIsClicked ?? false);
     }
     setApprovalError(null);
-  }, [id]);
+  }, [approvalStateKey, initialIsClicked]);
 
   useEffect(() => {
-    globalApprovalState.set(id, { decision, isClicked });
-  }, [id, decision, isClicked]);
+    globalApprovalState.set(approvalStateKey, { decision, isClicked });
+  }, [approvalStateKey, decision, isClicked]);
 
   const handleAction = async (action: Permission) => {
     try {
-      if (resolveAcpPermissionRequest(sessionId, id, action)) {
+      if (resolveAcpPermissionRequest(sessionId, id, generation, action)) {
         setResolvedDecision(action);
       } else {
         setApprovalError(intl.formatMessage(i18n.staleApprovalRequest));

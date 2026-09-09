@@ -119,9 +119,10 @@ function FeaturesSection() {
                 <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">
                   Model Context Protocol
                 </a>{" "}
-                open standard. Add community{" "}
-                <Link to="/skills">skills</Link>, or{" "}
-                <Link to="/docs/tutorials/custom-extensions">build your own</Link>.
+                open standard. Add{" "}
+                <Link to="/docs/guides/context-engineering/using-skills">skills</Link>,
+                {" "}or{" "}
+                <Link to="/docs/tutorials/custom-extensions">build your own extension</Link>.
               </p>
             }
           />
@@ -221,7 +222,7 @@ function StandardsSection() {
               an ACP server — connect from Zed, JetBrains, or VS Code — and can
               use ACP agents like Claude Code and Codex as providers.
             </p>
-            <Link to="/docs/guides/acp-clients">goose as ACP server →</Link>
+            <Link to="/docs/gdk/acp">goose as ACP server →</Link>
           </div>
           <div className={styles.standardCard}>
             <h3>Agentic AI Foundation</h3>
@@ -255,7 +256,7 @@ function CommunitySection() {
         </p>
         <div className={styles.communityGrid}>
           <a
-            href="https://discord.gg/goose-oss"
+            href="https://discord.gg/n8R5VaWDAn"
             target="_blank"
             rel="noopener"
             className={styles.communityCard}

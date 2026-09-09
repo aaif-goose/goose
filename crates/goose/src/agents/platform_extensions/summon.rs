@@ -2,7 +2,7 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
 use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
-use crate::agents::tool_execution::ToolCallContext;
+use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
 use crate::agents::AgentConfig;
 use crate::config::paths::Paths;
 use crate::config::{Config, GooseMode};
@@ -16,18 +16,20 @@ use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::operation::messages_since_kickoff;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
-    CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult, Meta,
-    ServerCapabilities, ServerNotification, Tool,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
+    MetaObject, Role, ServerCapabilities, ServerNotification, Tool,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
 
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -38,6 +40,31 @@ pub static EXTENSION_NAME: &str = "summon";
 const SUBAGENT_DESCRIPTION_BUDGET: usize = 160;
 
 const TASK_LABEL_BUDGET: usize = 60;
+
+fn durable_assistant_turn_count(conversation: &crate::conversation::Conversation) -> u32 {
+    let Ok(messages) = messages_since_kickoff(conversation) else {
+        return 0;
+    };
+    let mut turns = 0;
+    let mut in_assistant_block = false;
+    for message in messages.iter().rev() {
+        // Compaction summaries and continuation prompts are assistant-role
+        // scaffolding, but are not user-visible task turns. Ignore them
+        // without merging across a hidden user replay below.
+        if message.role == Role::Assistant && !message.is_user_visible() {
+            continue;
+        }
+        if message.role == Role::Assistant {
+            if !in_assistant_block {
+                turns += 1;
+                in_assistant_block = true;
+            }
+        } else {
+            in_assistant_block = false;
+        }
+    }
+    turns
+}
 
 fn kind_plural(kind: SourceType) -> &'static str {
     match kind {
@@ -72,7 +99,21 @@ pub struct BackgroundTask {
     pub last_activity: Arc<AtomicU64>,
     pub handle: JoinHandle<Result<String>>,
     pub cancellation_token: CancellationToken,
-    pub notification_buffer: Arc<Mutex<Vec<ServerNotification>>>,
+    completion_token: CancellationToken,
+    notification_sink: SharedNotificationSink,
+}
+
+fn spawn_background_task<F>(future: F) -> (JoinHandle<Result<String>>, CancellationToken)
+where
+    F: Future<Output = Result<String>> + Send + 'static,
+{
+    let completion_token = CancellationToken::new();
+    let completion_guard = completion_token.clone().drop_guard();
+    let handle = tokio::spawn(async move {
+        let _completion_guard = completion_guard;
+        future.await
+    });
+    (handle, completion_token)
 }
 
 pub struct CompletedTask {
@@ -82,12 +123,82 @@ pub struct CompletedTask {
     pub turns_taken: u32,
     pub duration: Duration,
     pub completed_at: Instant,
+    notification_sink: SharedNotificationSink,
+}
+
+enum NotificationSink {
+    Buffer(Vec<ServerNotification>),
+    Emitter(ToolCallNotificationEmitter),
+}
+
+type SharedNotificationSink = Arc<Mutex<NotificationSink>>;
+
+async fn yield_to_outer_tool_stream() {
+    // The outer select may have polled its receiver before this future queues a
+    // notification. Keep the result pending for the following select pass so
+    // the now-ready receiver is observed before the terminal result.
+    tokio::task::yield_now().await;
+    tokio::task::yield_now().await;
+}
+
+impl NotificationSink {
+    fn route(&mut self, notification: ServerNotification) {
+        match self {
+            Self::Buffer(buffer) => buffer.push(notification),
+            Self::Emitter(emitter) => emitter.emit_best_effort(notification),
+        }
+    }
+
+    async fn attach(&mut self, emitter: Option<ToolCallNotificationEmitter>) {
+        let Some(emitter) = emitter else {
+            return;
+        };
+        while let Self::Buffer(buffered) = self {
+            let Some(notification) = buffered.first().cloned() else {
+                break;
+            };
+            emitter.emit_best_effort(notification);
+            yield_to_outer_tool_stream().await;
+            buffered.remove(0);
+        }
+        *self = Self::Emitter(emitter);
+    }
+
+    fn detach(&mut self) {
+        if matches!(self, Self::Emitter(_)) {
+            *self = Self::Buffer(Vec::new());
+        }
+    }
+
+    fn buffered_len(&self) -> usize {
+        match self {
+            Self::Buffer(buffer) => buffer.len(),
+            Self::Emitter(_) => 0,
+        }
+    }
+}
+
+fn merge_subrecipe_parameters(
+    fixed_values: Option<&HashMap<String, String>>,
+    provided_parameters: Option<&HashMap<String, serde_json::Value>>,
+) -> HashMap<String, String> {
+    let mut merged = fixed_values.cloned().unwrap_or_default();
+    if let Some(provided_parameters) = provided_parameters {
+        for (key, value) in provided_parameters {
+            let value = match value {
+                serde_json::Value::String(value) => value.clone(),
+                other => other.to_string(),
+            };
+            merged.entry(key.clone()).or_insert(value);
+        }
+    }
+    merged
 }
 
 /// Result from handle_load_task_result with structured metadata for the caller
 #[derive(Debug)]
 struct TaskLoadResult {
-    content: Vec<Content>,
+    content: Vec<ContentBlock>,
     status: &'static str,
     turns: Option<u32>,
     duration_secs: Option<u64>,
@@ -126,6 +237,11 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         format!("Agent{}", model_info)
     });
 
+    let mut properties = std::collections::HashMap::new();
+    if let Some(model) = metadata.model {
+        properties.insert("model".to_string(), serde_json::Value::String(model));
+    }
+
     Some(SourceEntry {
         source_type: SourceType::Agent,
         name: metadata.name,
@@ -135,7 +251,7 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         global: false,
         writable: true,
         supporting_files: Vec::new(),
-        properties: std::collections::HashMap::new(),
+        properties,
     })
 }
 
@@ -146,16 +262,17 @@ fn scan_recipes_from_dir(
     sources: &mut Vec<SourceEntry>,
     seen: &mut std::collections::HashSet<String>,
 ) {
-    let entries = match std::fs::read_dir(dir) {
+    let Ok(source_dir) = dir.canonicalize() else {
+        return;
+    };
+    let entries = match std::fs::read_dir(&source_dir) {
         Ok(e) => e,
         Err(_) => return,
     };
 
     for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
+        let file_name = entry.file_name();
+        let path = source_dir.join(&file_name);
 
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if !RECIPE_FILE_EXTENSIONS.contains(&ext) {
@@ -172,7 +289,15 @@ fn scan_recipes_from_dir(
             continue;
         }
 
-        match Recipe::from_file_path(&path) {
+        let content = match crate::skills::read_source_file(&source_dir, Path::new(&file_name)) {
+            Ok(content) => content,
+            Err(error) => {
+                warn!("Failed to read recipe {}: {}", path.display(), error);
+                continue;
+            }
+        };
+
+        match Recipe::from_content(&content) {
             Ok(recipe) => {
                 seen.insert(name.clone());
                 sources.push(SourceEntry {
@@ -206,23 +331,24 @@ fn scan_agents_from_dir(
     sources: &mut Vec<SourceEntry>,
     seen: &mut std::collections::HashSet<String>,
 ) {
-    let entries = match std::fs::read_dir(dir) {
+    let Ok(source_dir) = dir.canonicalize() else {
+        return;
+    };
+    let entries = match std::fs::read_dir(&source_dir) {
         Ok(e) => e,
         Err(_) => return,
     };
 
     for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
+        let file_name = entry.file_name();
+        let path = source_dir.join(&file_name);
 
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext != "md" {
             continue;
         }
 
-        let content = match std::fs::read_to_string(&path) {
+        let content = match crate::skills::read_source_file(&source_dir, Path::new(&file_name)) {
             Ok(c) => c,
             Err(e) => {
                 warn!("Failed to read agent file {}: {}", path.display(), e);
@@ -454,7 +580,6 @@ pub struct SummonClient {
     source_cache: Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>,
     background_tasks: Mutex<HashMap<String, BackgroundTask>>,
     completed_tasks: Mutex<HashMap<String, CompletedTask>>,
-    notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
 }
 
 impl Drop for SummonClient {
@@ -479,30 +604,82 @@ impl SummonClient {
             source_cache: Mutex::new(None),
             background_tasks: Mutex::new(HashMap::new()),
             completed_tasks: Mutex::new(HashMap::new()),
-            notification_subscribers: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
-    fn spawn_notification_bridge(
-        mut notif_rx: tokio::sync::mpsc::UnboundedReceiver<ServerNotification>,
-        subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
-        buffer: Arc<Mutex<Vec<ServerNotification>>>,
+    async fn create_subagent_session(
+        &self,
+        task_config: &TaskConfig,
+        name: String,
+    ) -> Result<crate::session::Session, String> {
+        let session = self
+            .context
+            .session_manager
+            .create_session(
+                task_config.parent_working_dir.clone(),
+                name,
+                SessionType::SubAgent,
+                GooseMode::Auto,
+            )
+            .await
+            .map_err(|e| format!("Failed to create subagent session: {}", e))?;
+
+        if !task_config.parent_session_id.is_empty() {
+            self.context
+                .session_manager
+                .update(&session.id)
+                .parent_session_id(Some(task_config.parent_session_id.clone()))
+                .apply()
+                .await
+                .map_err(|e| format!("Failed to link subagent to parent session: {}", e))?;
+        }
+
+        Ok(session)
+    }
+
+    fn notification_sink(emitter: Option<ToolCallNotificationEmitter>) -> SharedNotificationSink {
+        Arc::new(Mutex::new(match emitter {
+            Some(emitter) => NotificationSink::Emitter(emitter),
+            None => NotificationSink::Buffer(Vec::new()),
+        }))
+    }
+
+    async fn attach_notification_emitter(
+        sink: &SharedNotificationSink,
+        emitter: Option<ToolCallNotificationEmitter>,
     ) {
-        tokio::spawn(async move {
-            while let Some(notification) = notif_rx.recv().await {
-                let mut subs = subscribers.lock().await;
-                if subs.is_empty() {
-                    drop(subs);
-                    buffer.lock().await.push(notification);
-                } else {
-                    subs.retain(|tx| match tx.try_send(notification.clone()) {
-                        Ok(()) => true,
-                        Err(mpsc::error::TrySendError::Full(_)) => true,
-                        Err(mpsc::error::TrySendError::Closed(_)) => false,
-                    });
+        sink.lock().await.attach(emitter).await;
+    }
+
+    async fn run_subagent_with_notifications<Run, RunFuture>(
+        sink: SharedNotificationSink,
+        run_subagent: Run,
+    ) -> Result<String>
+    where
+        Run: FnOnce(tokio::sync::mpsc::UnboundedSender<ServerNotification>) -> RunFuture,
+        RunFuture: Future<Output = Result<String>>,
+    {
+        let (notification_tx, mut notification_rx) = tokio::sync::mpsc::unbounded_channel();
+        let run = run_subagent(notification_tx);
+        tokio::pin!(run);
+
+        loop {
+            tokio::select! {
+                biased;
+                result = &mut run => {
+                    while let Ok(notification) = notification_rx.try_recv() {
+                        sink.lock().await.route(notification);
+                        yield_to_outer_tool_stream().await;
+                    }
+                    yield_to_outer_tool_stream().await;
+                    return result;
+                }
+                Some(notification) = notification_rx.recv() => {
+                    sink.lock().await.route(notification);
+                    yield_to_outer_tool_stream().await;
                 }
             }
-        });
+        }
     }
 
     fn create_load_tool(&self) -> Tool {
@@ -521,7 +698,7 @@ impl SummonClient {
                 "peek": {
                     "type": "boolean",
                     "default": false,
-                    "description": "For running background tasks: check progress without blocking. Returns turn count, idle time, and recent tool activity."
+                    "description": "For running background tasks: check progress without blocking. Returns durable assistant-turn count, idle time, and recent tool activity."
                 }
             }
         });
@@ -668,17 +845,10 @@ impl SummonClient {
     ) -> Result<Option<SourceEntry>, String> {
         let sources = self.get_sources(session_id, working_dir).await;
 
-        if let Some(mut source) = sources.iter().find(|s| s.name == name).cloned() {
-            if source.source_type == SourceType::Subrecipe && source.content.is_empty() {
-                source.content = self.load_subrecipe_content(session_id, &source.name).await;
-            }
-            return Ok(Some(source));
-        }
-
-        Ok(None)
+        Ok(sources.iter().find(|s| s.name == name).cloned())
     }
 
-    async fn load_subrecipe_content(&self, session_id: &str, name: &str) -> String {
+    async fn load_subrecipe_content(&self, session_id: &str, name: &str) -> Result<String, String> {
         let session = match self
             .context
             .session_manager
@@ -686,35 +856,36 @@ impl SummonClient {
             .await
         {
             Ok(s) => s,
-            Err(_) => return String::new(),
+            Err(_) => return Ok(String::new()),
         };
 
         let sub_recipes = match session.recipe.as_ref().and_then(|r| r.sub_recipes.as_ref()) {
             Some(sr) => sr,
-            None => return String::new(),
+            None => return Ok(String::new()),
         };
 
         let sr = match sub_recipes.iter().find(|sr| sr.name == name) {
             Some(sr) => sr,
-            None => return String::new(),
+            None => return Ok(String::new()),
         };
 
         match load_local_recipe_file(&sr.path) {
-            Ok(recipe_file) => match Recipe::from_content(&recipe_file.content) {
-                Ok(recipe) => {
-                    let mut content = recipe.instructions.unwrap_or_default();
-                    if let Some(params) = &recipe.parameters {
-                        if !params.is_empty() {
-                            content.push_str("\n\n");
-                            content.push_str(&Self::format_parameters(params));
-                        }
-                    }
-                    content
-                }
-                Err(_) => recipe_file.content,
-            },
-            Err(_) => String::new(),
+            Ok(recipe_file) => Self::format_subrecipe_content(name, &recipe_file.content),
+            Err(_) => Ok(String::new()),
         }
+    }
+
+    fn format_subrecipe_content(name: &str, raw_content: &str) -> Result<String, String> {
+        let recipe = Recipe::from_content(raw_content)
+            .map_err(|_| format!("Subrecipe '{}' is not a valid recipe", name))?;
+        let mut content = recipe.instructions.unwrap_or_default();
+        if let Some(params) = &recipe.parameters {
+            if !params.is_empty() {
+                content.push_str("\n\n");
+                content.push_str(&Self::format_parameters(params));
+            }
+        }
+        Ok(content)
     }
 
     fn discover_filesystem_sources(&self, working_dir: &Path) -> Vec<SourceEntry> {
@@ -808,6 +979,7 @@ impl SummonClient {
         &self,
         session_id: &str,
         arguments: Option<JsonObject>,
+        notification_emitter: Option<ToolCallNotificationEmitter>,
     ) -> Result<CallToolResult, String> {
         self.cleanup_completed_tasks().await;
 
@@ -840,8 +1012,10 @@ impl SummonClient {
         let name = source_name.unwrap();
 
         if is_session_id(name) {
-            let task_result = self.handle_load_task_result(name, cancel, peek).await?;
-            let mut meta = Meta::new();
+            let task_result = self
+                .handle_load_task_result(name, cancel, peek, notification_emitter)
+                .await?;
+            let mut meta = MetaObject::new();
             meta.0.insert(
                 "subagent_session_id".to_string(),
                 serde_json::Value::String(name.to_string()),
@@ -875,30 +1049,27 @@ impl SummonClient {
         task_id: &str,
         cancel: bool,
         peek: bool,
+        notification_emitter: Option<ToolCallNotificationEmitter>,
     ) -> Result<TaskLoadResult, String> {
         let mut completed = self.completed_tasks.lock().await;
 
-        let completed_entry = if peek {
-            completed.get(task_id).map(|task| {
-                (
-                    task.result.clone(),
-                    task.description.clone(),
-                    task.duration,
-                    task.turns_taken,
-                )
-            })
-        } else {
-            completed.remove(task_id).map(|task| {
-                (
-                    task.result,
-                    task.description,
-                    task.duration,
-                    task.turns_taken,
-                )
-            })
-        };
+        let completed_entry = completed.get(task_id).map(|task| {
+            (
+                task.result.clone(),
+                task.description.clone(),
+                task.duration,
+                task.turns_taken,
+                Arc::clone(&task.notification_sink),
+            )
+        });
 
-        if let Some((result, description, duration, turns_taken)) = completed_entry {
+        if let Some((result, description, duration, turns_taken, notification_sink)) =
+            completed_entry
+        {
+            if !peek {
+                Self::attach_notification_emitter(&notification_sink, notification_emitter).await;
+                completed.remove(task_id);
+            }
             let status_key = match &result {
                 Ok(_) => "completed",
                 Err(e) if e.starts_with("Task panicked:") => "panicked",
@@ -914,7 +1085,7 @@ impl SummonClient {
                 Err(error) => format!("Error: {}", error),
             };
             return Ok(TaskLoadResult {
-                content: vec![Content::text(format!(
+                content: vec![ContentBlock::text(format!(
                     "# Background Task Result: {}\n\n\
                      **Task:** {}\n\
                      **Status:** {}\n\
@@ -933,21 +1104,28 @@ impl SummonClient {
             });
         }
 
-        drop(completed);
-
         let mut running = self.background_tasks.lock().await;
+        drop(completed);
         if running.contains_key(task_id) {
             if peek {
                 let task = running.get(task_id).unwrap();
                 let elapsed = task.started_at.elapsed();
-                let turns_taken = task.turns.load(Ordering::Relaxed);
-                let now = current_epoch_millis();
-                let idle_ms = now.saturating_sub(task.last_activity.load(Ordering::Relaxed));
+                let turns = Arc::clone(&task.turns);
+                let last_activity = Arc::clone(&task.last_activity);
                 let description = task.description.clone();
-
-                let buffered_count = task.notification_buffer.lock().await.len();
+                let notification_sink = Arc::clone(&task.notification_sink);
 
                 drop(running);
+
+                let turns_taken = self.refresh_task_turns(task_id, &turns).await;
+                let now = current_epoch_millis();
+                let last_activity_at = last_activity.load(Ordering::Relaxed);
+                let idle_ms = if last_activity_at == 0 {
+                    u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+                } else {
+                    now.saturating_sub(last_activity_at)
+                };
+                let buffered_count = notification_sink.lock().await.buffered_len();
 
                 let mut output = format!(
                     "# Background Task Status: {}\n\n**Task:** {}\n**Status:** ⏳ Running\n**Elapsed:** {}\n**Turns taken:** {}\n**Idle:** {}\n**Buffered tool calls:** {}",
@@ -959,12 +1137,12 @@ impl SummonClient {
                     buffered_count,
                 );
 
-                if buffered_count == 0 && turns_taken == 0 {
+                if buffered_count == 0 && last_activity_at == 0 {
                     output.push_str("\n\n_Task is initialising (no tool activity yet)._");
                 }
 
                 return Ok(TaskLoadResult {
-                    content: vec![Content::text(output)],
+                    content: vec![ContentBlock::text(output)],
                     status: "running",
                     turns: Some(turns_taken),
                     duration_secs: Some(elapsed.as_secs()),
@@ -972,13 +1150,12 @@ impl SummonClient {
             }
 
             if cancel {
+                let notification_sink =
+                    Arc::clone(&running.get(task_id).unwrap().notification_sink);
+                Self::attach_notification_emitter(&notification_sink, notification_emitter).await;
                 let task = running.remove(task_id).unwrap();
                 drop(running);
-
                 task.cancellation_token.cancel();
-
-                let duration = task.started_at.elapsed();
-                let turns_taken = task.turns.load(Ordering::Relaxed);
 
                 let mut handle = task.handle;
                 let output = tokio::select! {
@@ -994,9 +1171,11 @@ impl SummonClient {
                         "Task did not stop in time (aborted)".to_string()
                     }
                 };
+                let duration = task.started_at.elapsed();
+                let turns_taken = self.refresh_task_turns(task_id, &task.turns).await;
 
                 return Ok(TaskLoadResult {
-                    content: vec![Content::text(format!(
+                    content: vec![ContentBlock::text(format!(
                         "# Background Task Result: {}\n\n\
                          **Task:** {}\n\
                          **Status:** ⊘ Cancelled\n\
@@ -1016,58 +1195,22 @@ impl SummonClient {
 
             // Wait for the running task to complete, keeping the tool call
             // alive so notifications (subagent tool calls) stream in real time.
-            let mut task = running.remove(task_id).unwrap();
+            let task = running.get(task_id).unwrap();
+            let notification_sink = Arc::clone(&task.notification_sink);
+            let completion_token = task.completion_token.clone();
             drop(running);
-
-            let buffered = {
-                let mut buf = task.notification_buffer.lock().await;
-                std::mem::take(&mut *buf)
-            };
-            if !buffered.is_empty() {
-                let subs = self.notification_subscribers.lock().await;
-                for notif in buffered {
-                    for tx in subs.iter() {
-                        let _ = tx.try_send(notif.clone());
-                    }
-                }
-            }
+            Self::attach_notification_emitter(&notification_sink, notification_emitter).await;
 
             tokio::select! {
-                result = &mut task.handle => {
-                    let (output, status_key) = match result {
-                        Ok(Ok(s)) => (s, "completed"),
-                        Ok(Err(e)) => (format!("Error: {}", e), "failed"),
-                        Err(e) => (format!("Task panicked: {}", e), "panicked"),
-                    };
-
-                    let turns_taken = task.turns.load(Ordering::Relaxed);
-                    let elapsed = task.started_at.elapsed();
-                    let status_display = match status_key {
-                        "completed" => "✓ Completed",
-                        "panicked" => "✗ Panicked",
-                        _ => "✗ Failed",
-                    };
-                    return Ok(TaskLoadResult {
-                        content: vec![Content::text(format!(
-                            "# Background Task Result: {}\n\n\
-                             **Task:** {}\n\
-                             **Status:** {}\n\
-                             **Duration:** {} ({} turns)\n\n\
-                             ## Output\n\n{}",
-                            task_id,
-                            task.description,
-                            status_display,
-                            round_duration(elapsed),
-                            turns_taken,
-                            output
-                        ))],
-                        status: status_key,
-                        turns: Some(turns_taken),
-                        duration_secs: Some(elapsed.as_secs()),
-                    });
+                _ = self.wait_for_background_task_completion(task_id, &completion_token) => {
+                    self.cleanup_completed_tasks().await;
+                    return Box::pin(
+                        self.handle_load_task_result(task_id, false, false, None)
+                    )
+                    .await;
                 }
                 _ = tokio::time::sleep(Duration::from_secs(300)) => {
-                    self.background_tasks.lock().await.insert(task_id.to_string(), task);
+                    notification_sink.lock().await.detach();
 
                     return Err(format!(
                         "Task '{task_id}' is still running after waiting 5 min. \
@@ -1085,7 +1228,7 @@ impl SummonClient {
         &self,
         session_id: &str,
         working_dir: &Path,
-    ) -> Result<Vec<Content>, String> {
+    ) -> Result<Vec<ContentBlock>, String> {
         {
             let mut cache = self.source_cache.lock().await;
             *cache = None;
@@ -1095,7 +1238,7 @@ impl SummonClient {
         let completed = self.completed_tasks.lock().await;
 
         if sources.is_empty() && completed.is_empty() {
-            return Ok(vec![Content::text(
+            return Ok(vec![ContentBlock::text(
                 "No sources available for load/delegate.\n\n\
                  Sources are discovered from:\n\
                  • Current recipe's sub_recipes\n\
@@ -1141,7 +1284,7 @@ impl SummonClient {
         output.push_str("\nUse load(source: \"name\") to load into context.\n");
         output.push_str("Use delegate(source: \"name\") to run as subagent.");
 
-        Ok(vec![Content::text(output)])
+        Ok(vec![ContentBlock::text(output)])
     }
 
     async fn handle_load_source(
@@ -1149,11 +1292,16 @@ impl SummonClient {
         session_id: &str,
         name: &str,
         working_dir: &Path,
-    ) -> Result<Vec<Content>, String> {
+    ) -> Result<Vec<ContentBlock>, String> {
         let source = self.resolve_source(session_id, name, working_dir).await?;
 
         match source {
-            Some(source) => {
+            Some(mut source) => {
+                if source.source_type == SourceType::Subrecipe && source.content.is_empty() {
+                    source.content = self
+                        .load_subrecipe_content(session_id, &source.name)
+                        .await?;
+                }
                 let content = source.to_load_text();
 
                 let output = format!(
@@ -1161,7 +1309,7 @@ impl SummonClient {
                     source.name, source.source_type, content
                 );
 
-                Ok(vec![Content::text(output)])
+                Ok(vec![ContentBlock::text(output)])
             }
             None => {
                 let sources = self.get_sources(session_id, working_dir).await;
@@ -1199,6 +1347,7 @@ impl SummonClient {
         session_id: &str,
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
+        notification_emitter: Option<ToolCallNotificationEmitter>,
     ) -> Result<CallToolResult, String> {
         self.cleanup_completed_tasks().await;
 
@@ -1223,7 +1372,7 @@ impl SummonClient {
 
         if params.r#async {
             let (content, task_id) = self.handle_async_delegate(session_id, params).await?;
-            let mut meta = Meta::new();
+            let mut meta = MetaObject::new();
             meta.0.insert(
                 "subagent_session_id".to_string(),
                 serde_json::Value::String(task_id),
@@ -1244,7 +1393,7 @@ impl SummonClient {
         // Subagents must use Auto until get_agent_messages forwards
         // ActionRequired messages to the parent. Until then, any mode
         // that requires approval will hang on the subagent's confirmation_rx.
-        let agent_config = AgentConfig::new(
+        let mut agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
             None,
@@ -1253,29 +1402,15 @@ impl SummonClient {
             crate::agents::GoosePlatform::GooseCli,
         )
         .with_use_login_shell_path(self.context.use_login_shell_path);
+        agent_config.is_subagent = true;
 
         let subagent_session = self
-            .context
-            .session_manager
-            .create_session(
-                task_config.parent_working_dir.clone(),
-                "Delegated task".to_string(),
-                SessionType::SubAgent,
-                GooseMode::Auto,
-            )
-            .await
-            .map_err(|e| format!("Failed to create subagent session: {}", e))?;
-
-        let (notif_tx, notif_rx) = tokio::sync::mpsc::unbounded_channel::<ServerNotification>();
-        Self::spawn_notification_bridge(
-            notif_rx,
-            Arc::clone(&self.notification_subscribers),
-            Arc::new(Mutex::new(Vec::new())),
-        );
+            .create_subagent_session(&task_config, "Delegated task".to_string())
+            .await?;
 
         let subagent_session_id = subagent_session.id.clone();
 
-        let result = run_subagent_task(SubagentRunParams {
+        let params = SubagentRunParams {
             config: agent_config,
             recipe,
             task_config,
@@ -1283,11 +1418,19 @@ impl SummonClient {
             session_id: subagent_session.id,
             cancellation_token: Some(cancellation_token),
             on_message: None,
-            notification_tx: Some(notif_tx),
-        })
+            notification_tx: None,
+        };
+        let result = Self::run_subagent_with_notifications(
+            Self::notification_sink(notification_emitter),
+            move |notification_tx| {
+                let mut params = params;
+                params.notification_tx = Some(notification_tx);
+                run_subagent_task(params)
+            },
+        )
         .await;
 
-        let mut meta = Meta::new();
+        let mut meta = MetaObject::new();
         meta.0.insert(
             "subagent_session_id".to_string(),
             serde_json::Value::String(subagent_session_id),
@@ -1295,9 +1438,9 @@ impl SummonClient {
 
         match result {
             Ok(text) => {
-                Ok(CallToolResult::success(vec![Content::text(text)]).with_meta(Some(meta)))
+                Ok(CallToolResult::success(vec![ContentBlock::text(text)]).with_meta(Some(meta)))
             }
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "Delegation failed: {}",
                 e
             ))])
@@ -1419,21 +1562,8 @@ impl SummonClient {
                         format!("Failed to load subrecipe '{}': {}", source.name, e)
                     })?;
 
-                    let mut merged: HashMap<String, String> = HashMap::new();
-                    if let Some(values) = &sr.values {
-                        for (k, v) in values {
-                            merged.insert(k.clone(), v.clone());
-                        }
-                    }
-                    if let Some(provided_params) = &params.parameters {
-                        for (k, v) in provided_params {
-                            let value_str = match v {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => other.to_string(),
-                            };
-                            merged.insert(k.clone(), value_str);
-                        }
-                    }
+                    let merged =
+                        merge_subrecipe_parameters(sr.values.as_ref(), params.parameters.as_ref());
                     let param_values: Vec<(String, String)> = merged.into_iter().collect();
 
                     return build_recipe_from_template(
@@ -1480,18 +1610,15 @@ impl SummonClient {
         source: &SourceEntry,
         params: &DelegateParams,
     ) -> Result<Recipe, String> {
-        let agent_content = if source.path.is_empty() {
+        if source.path.is_empty() {
             return Err("Agent source has no path".to_string());
-        } else {
-            std::fs::read_to_string(&source.path)
-                .map_err(|e| format!("Failed to read agent file: {}", e))?
-        };
+        }
 
-        let (metadata, _): (AgentMetadata, String) = parse_frontmatter(&agent_content)
-            .map_err(|e| format!("Failed to parse agent frontmatter: {}", e))?
-            .ok_or("No frontmatter found in agent file")?;
-
-        let model = metadata.model;
+        let model = source
+            .properties
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
 
         // max_turns is set later in build_task_config so it can incorporate params.max_turns
         // with the correct priority ordering; setting it here would cause it to be overridden
@@ -1528,8 +1655,6 @@ impl SummonClient {
         recipe: &Recipe,
         session: &crate::session::Session,
     ) -> Result<TaskConfig, anyhow::Error> {
-        let (provider, model_config) = self.resolve_provider(params, recipe, session).await?;
-
         let mut extensions = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
             Config::global(),
@@ -1555,6 +1680,10 @@ impl SummonClient {
                 }
             }
         }
+
+        let (provider, model_config) = self
+            .resolve_provider(params, recipe, session, &extensions)
+            .await?;
 
         let max_turns = params
             .max_turns
@@ -1592,43 +1721,81 @@ impl SummonClient {
         recipe: &Recipe,
         session: &crate::session::Session,
         provider_name: &str,
+        provider_default_model: Option<&str>,
     ) -> Result<goose_providers::model::ModelConfig, anyhow::Error> {
-        let mut model_config = session.model_config.clone().map(Ok).unwrap_or_else(|| {
-            crate::model_config::model_config_from_user_config(provider_name, "default")
-        })?;
-
-        let override_model = params
-            .model
-            .clone()
-            .or_else(|| recipe.settings.as_ref().and_then(|s| s.goose_model.clone()))
+        let env_model = std::env::var("GOOSE_SUBAGENT_MODEL").ok();
+        let recipe_settings = recipe.settings.as_ref();
+        let configured = Config::global().all_values().ok();
+        let configured_provider = configured
+            .as_ref()
+            .and_then(|values| values.get("GOOSE_SUBAGENT_PROVIDER"))
+            .and_then(serde_json::Value::as_str);
+        let configured_model = configured
+            .as_ref()
+            .and_then(|values| values.get("GOOSE_SUBAGENT_MODEL"))
+            .and_then(serde_json::Value::as_str);
+        let matches_provider =
+            |candidate: Option<&str>| candidate.is_none() || candidate == Some(provider_name);
+        let model = env_model
             .or_else(|| {
-                Config::global()
-                    .get_param::<String>("GOOSE_SUBAGENT_MODEL")
-                    .ok()
-            });
+                params
+                    .model
+                    .clone()
+                    .filter(|_| matches_provider(params.provider.as_deref()))
+            })
+            .or_else(|| {
+                recipe_settings
+                    .and_then(|settings| settings.goose_model.clone())
+                    .filter(|_| {
+                        matches_provider(
+                            recipe_settings.and_then(|settings| settings.goose_provider.as_deref()),
+                        )
+                    })
+            })
+            .or_else(|| {
+                configured_model
+                    .filter(|_| matches_provider(configured_provider))
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                session
+                    .model_config
+                    .as_ref()
+                    .filter(|_| matches_provider(session.provider_name.as_deref()))
+                    .map(|config| config.model_name.clone())
+            })
+            .or_else(|| {
+                provider_default_model
+                    .filter(|model| !model.is_empty())
+                    .map(str::to_string)
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No model configured for provider '{}'; set GOOSE_SUBAGENT_MODEL",
+                    provider_name
+                )
+            })?;
 
-        if let Some(model) = override_model {
-            if model != model_config.model_name {
-                // Build the new config from scratch so canonical fields
-                // (context_limit, max_tokens, reasoning) and env-derived
-                // overrides (GOOSE_CONTEXT_LIMIT, GOOSE_MAX_TOKENS) match the
-                // overridden model, then preserve session-level state that is
-                // not model-specific from the parent.
-                let parent = model_config;
-                let mut cfg =
-                    crate::model_config::model_config_from_user_config(provider_name, &model)?;
+        let parent = session.model_config.as_ref();
+        let mut model_config = if parent.is_some_and(|config| {
+            matches_provider(session.provider_name.as_deref()) && config.model_name == model
+        }) {
+            parent.unwrap().clone()
+        } else {
+            let mut cfg = crate::model_config::model_config_from_user_config_with_session_settings(
+                provider_name,
+                &model,
+                parent,
+                None,
+                None,
+            )?;
+            if let Some(parent) = parent {
                 cfg.toolshim = parent.toolshim;
-                cfg.toolshim_model = parent.toolshim_model;
+                cfg.toolshim_model = parent.toolshim_model.clone();
                 cfg.temperature = cfg.temperature.or(parent.temperature);
-                if let Some(parent_params) = parent.request_params {
-                    let merged = cfg.request_params.get_or_insert_with(Default::default);
-                    for (k, v) in parent_params {
-                        merged.insert(k, v);
-                    }
-                }
-                model_config = cfg;
             }
-        }
+            cfg
+        };
 
         if let Some(temp) = params.temperature {
             model_config = model_config.with_temperature(Some(temp));
@@ -1644,6 +1811,7 @@ impl SummonClient {
         params: &DelegateParams,
         recipe: &Recipe,
         session: &crate::session::Session,
+        extensions: &[crate::config::ExtensionConfig],
     ) -> Result<
         (
             Arc<dyn crate::providers::base::Provider>,
@@ -1651,9 +1819,10 @@ impl SummonClient {
         ),
         anyhow::Error,
     > {
-        let provider_name = params
-            .provider
+        let env_provider = std::env::var("GOOSE_SUBAGENT_PROVIDER").ok();
+        let provider_name = env_provider
             .clone()
+            .or_else(|| params.provider.clone())
             .or_else(|| {
                 recipe
                     .settings
@@ -1668,8 +1837,43 @@ impl SummonClient {
             .or_else(|| session.provider_name.clone())
             .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
 
-        let model_config = self.resolve_model_config(params, recipe, session, &provider_name)?;
-        let provider = providers::create(&provider_name, Vec::new()).await?;
+        let provider_entry = providers::get_from_registry(&provider_name).await;
+        let provider_default_model = provider_entry
+            .as_ref()
+            .ok()
+            .map(|entry| entry.metadata().default_model.as_str());
+        let model_config = self.resolve_model_config(
+            params,
+            recipe,
+            session,
+            &provider_name,
+            provider_default_model,
+        )?;
+        let provider = match provider_entry {
+            Ok(entry) => entry.create(extensions.to_vec()).await?,
+            Err(error) => {
+                let parent_provider = if let Some(extension_manager) = self
+                    .context
+                    .extension_manager
+                    .as_ref()
+                    .and_then(|weak| weak.upgrade())
+                {
+                    extension_manager.get_provider().lock().await.clone()
+                } else {
+                    None
+                };
+
+                match parent_provider {
+                    Some(provider)
+                        if provider.get_name() == provider_name
+                            && !provider.manages_own_context() =>
+                    {
+                        provider
+                    }
+                    _ => return Err(error),
+                }
+            }
+        };
         Ok((provider, model_config))
     }
 
@@ -1692,24 +1896,99 @@ impl SummonClient {
             .unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS)
     }
 
+    /// Count durable, user-visible assistant blocks in the active task turn,
+    /// excluding assistant-only compaction scaffolding.
+    async fn refresh_task_turns(&self, task_id: &str, cached_turns: &AtomicU32) -> u32 {
+        match self
+            .context
+            .session_manager
+            .get_session(task_id, true)
+            .await
+        {
+            Ok(session) => {
+                let turns = session
+                    .conversation
+                    .as_ref()
+                    .map(durable_assistant_turn_count)
+                    .unwrap_or_default();
+                cached_turns.store(turns, Ordering::Relaxed);
+                turns
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to refresh turn count for background task {}: {}",
+                    task_id, error
+                );
+                cached_turns.load(Ordering::Relaxed)
+            }
+        }
+    }
+
+    async fn refresh_running_task_turns(&self) -> HashMap<String, u32> {
+        let tasks: Vec<_> = self
+            .background_tasks
+            .lock()
+            .await
+            .values()
+            .map(|task| (task.id.clone(), Arc::clone(&task.turns)))
+            .collect();
+        let mut refreshed = HashMap::with_capacity(tasks.len());
+        for (id, turns) in tasks {
+            let count = self.refresh_task_turns(&id, &turns).await;
+            refreshed.insert(id, count);
+        }
+        refreshed
+    }
+
+    async fn wait_for_background_task_completion(
+        &self,
+        task_id: &str,
+        completion_token: &CancellationToken,
+    ) {
+        completion_token.cancelled().await;
+        loop {
+            let finished_or_moved = self
+                .background_tasks
+                .lock()
+                .await
+                .get(task_id)
+                .map(|task| task.handle.is_finished())
+                .unwrap_or(true);
+            if finished_or_moved {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
     async fn cleanup_completed_tasks(&self) {
-        let finished: Vec<(String, BackgroundTask)> = {
-            let mut tasks = self.background_tasks.lock().await;
-            let ids: Vec<String> = tasks
-                .iter()
-                .filter(|(_, t)| t.handle.is_finished())
-                .map(|(id, _)| id.clone())
-                .collect();
-            ids.into_iter()
-                .filter_map(|id| tasks.remove(&id).map(|t| (id, t)))
-                .collect()
-        };
+        let finished: Vec<(String, Arc<AtomicU32>)> = self
+            .background_tasks
+            .lock()
+            .await
+            .iter()
+            .filter(|(_, task)| task.handle.is_finished())
+            .map(|(id, task)| (id.clone(), Arc::clone(&task.turns)))
+            .collect();
 
+        let mut refreshed = HashMap::with_capacity(finished.len());
+        for (id, turns) in &finished {
+            let count = self.refresh_task_turns(id, turns).await;
+            refreshed.insert(id.clone(), count);
+        }
+
+        // Keep the same lock order as task lookup so the running -> completed
+        // transition is atomic from callers' perspective.
         let mut completed = self.completed_tasks.lock().await;
-
-        for (id, task) in finished {
+        let mut tasks = self.background_tasks.lock().await;
+        for (id, _) in finished {
+            let Some(task) = tasks.remove(&id) else {
+                continue;
+            };
+            let turns_taken = refreshed
+                .remove(&id)
+                .unwrap_or_else(|| task.turns.load(Ordering::Relaxed));
             let duration = task.started_at.elapsed();
-            let turns_taken = task.turns.load(Ordering::Relaxed);
 
             let result = match task.handle.await {
                 Ok(Ok(output)) => {
@@ -1735,6 +2014,7 @@ impl SummonClient {
                     turns_taken,
                     duration,
                     completed_at: Instant::now(),
+                    notification_sink: task.notification_sink,
                 },
             );
         }
@@ -1756,7 +2036,7 @@ impl SummonClient {
         &self,
         session_id: &str,
         params: DelegateParams,
-    ) -> Result<(Vec<Content>, String), String> {
+    ) -> Result<(Vec<ContentBlock>, String), String> {
         let task_count = self.background_tasks.lock().await.len();
         let max_tasks = max_background_tasks();
         if task_count >= max_tasks {
@@ -1788,7 +2068,7 @@ impl SummonClient {
         // Subagents must use Auto until get_agent_messages forwards
         // ActionRequired messages to the parent. Until then, any mode
         // that requires approval will hang on the subagent's confirmation_rx.
-        let agent_config = AgentConfig::new(
+        let mut agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
             None,
@@ -1797,46 +2077,31 @@ impl SummonClient {
             crate::agents::GoosePlatform::GooseCli,
         )
         .with_use_login_shell_path(self.context.use_login_shell_path);
+        agent_config.is_subagent = true;
 
         let subagent_session = self
-            .context
-            .session_manager
-            .create_session(
-                task_config.parent_working_dir.clone(),
-                description.clone(),
-                SessionType::SubAgent,
-                GooseMode::Auto,
-            )
-            .await
-            .map_err(|e| format!("Failed to create subagent session: {}", e))?;
+            .create_subagent_session(&task_config, description.clone())
+            .await?;
 
         let task_id = subagent_session.id.clone();
 
         let turns = Arc::new(AtomicU32::new(0));
-        let last_activity = Arc::new(AtomicU64::new(current_epoch_millis()));
+        let last_activity = Arc::new(AtomicU64::new(0));
 
-        let turns_clone = Arc::clone(&turns);
         let last_activity_clone = Arc::clone(&last_activity);
 
         let on_message: OnMessageCallback = Arc::new(move |_msg| {
-            turns_clone.fetch_add(1, Ordering::Relaxed);
             last_activity_clone.store(current_epoch_millis(), Ordering::Relaxed);
         });
 
         let task_token = CancellationToken::new();
         let task_token_clone = task_token.clone();
 
-        let notification_buffer = Arc::new(Mutex::new(Vec::new()));
+        let notification_sink = Self::notification_sink(None);
+        let task_notification_sink = Arc::clone(&notification_sink);
 
-        let (notif_tx, notif_rx) = tokio::sync::mpsc::unbounded_channel::<ServerNotification>();
-        Self::spawn_notification_bridge(
-            notif_rx,
-            Arc::clone(&self.notification_subscribers),
-            Arc::clone(&notification_buffer),
-        );
-
-        let handle = tokio::spawn(async move {
-            run_subagent_task(SubagentRunParams {
+        let (handle, completion_token) = spawn_background_task(async move {
+            let params = SubagentRunParams {
                 config: agent_config,
                 recipe,
                 task_config,
@@ -1844,7 +2109,12 @@ impl SummonClient {
                 session_id: subagent_session.id,
                 cancellation_token: Some(task_token_clone),
                 on_message: Some(on_message),
-                notification_tx: Some(notif_tx),
+                notification_tx: None,
+            };
+            Self::run_subagent_with_notifications(task_notification_sink, move |notification_tx| {
+                let mut params = params;
+                params.notification_tx = Some(notification_tx);
+                run_subagent_task(params)
             })
             .await
         });
@@ -1857,7 +2127,8 @@ impl SummonClient {
             last_activity,
             handle,
             cancellation_token: task_token,
-            notification_buffer,
+            completion_token,
+            notification_sink,
         };
 
         self.background_tasks
@@ -1865,7 +2136,7 @@ impl SummonClient {
             .await
             .insert(task_id.clone(), task);
 
-        let content = vec![Content::text(format!(
+        let content = vec![ContentBlock::text(format!(
             "Task {} started in background: \"{}\"\n\
              Continue with other work. When you need the result, use load(source: \"{}\").",
             task_id, description, task_id
@@ -1902,6 +2173,7 @@ impl McpClientTrait for SummonClient {
             tools,
             next_cursor: None,
             meta: None,
+            ..Default::default()
         })
     }
 
@@ -1914,26 +2186,34 @@ impl McpClientTrait for SummonClient {
     ) -> Result<CallToolResult, Error> {
         let session_id = &ctx.session_id;
         match name {
-            "load" => match self.handle_load(session_id, arguments).await {
+            "load" => match self
+                .handle_load(session_id, arguments, ctx.notification_emitter().cloned())
+                .await
+            {
                 Ok(result) => Ok(result),
-                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                     "Error: {}",
                     error
                 ))])),
             },
             "delegate" => {
                 match self
-                    .handle_delegate(session_id, arguments, cancellation_token)
+                    .handle_delegate(
+                        session_id,
+                        arguments,
+                        cancellation_token,
+                        ctx.notification_emitter().cloned(),
+                    )
                     .await
                 {
                     Ok(result) => Ok(result),
-                    Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                         "Error: {}",
                         error
                     ))])),
                 }
             }
-            _ => Ok(CallToolResult::error(vec![Content::text(format!(
+            _ => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "Error: Unknown tool: {}",
                 name
             ))])),
@@ -1953,17 +2233,12 @@ impl McpClientTrait for SummonClient {
         }
     }
 
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        let (tx, rx) = mpsc::channel(16);
-        self.notification_subscribers.lock().await.push(tx);
-        rx
-    }
-
     async fn get_moim(&self, _session_id: &str) -> Option<String> {
         self.cleanup_completed_tasks().await;
+        let refreshed_turns = self.refresh_running_task_turns().await;
 
-        let running = self.background_tasks.lock().await;
         let completed = self.completed_tasks.lock().await;
+        let running = self.background_tasks.lock().await;
 
         if running.is_empty() && completed.is_empty() {
             return None;
@@ -1973,24 +2248,32 @@ impl McpClientTrait for SummonClient {
         let now = current_epoch_millis();
 
         let mut sorted_running: Vec<_> = running.values().collect();
-        sorted_running.sort_by_key(|t| &t.id);
+        sorted_running.sort_by_key(|task| &task.id);
 
         for task in sorted_running {
             let elapsed = task.started_at.elapsed();
-            let idle_ms = now.saturating_sub(task.last_activity.load(Ordering::Relaxed));
+            let last_activity_at = task.last_activity.load(Ordering::Relaxed);
+            let idle_ms = if last_activity_at == 0 {
+                u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+            } else {
+                now.saturating_sub(last_activity_at)
+            };
 
             lines.push(format!(
                 "• {}: \"{}\" - running {}, {} turns, idle {}",
                 task.id,
                 task.description,
                 round_duration(elapsed),
-                task.turns.load(Ordering::Relaxed),
+                refreshed_turns
+                    .get(&task.id)
+                    .copied()
+                    .unwrap_or_else(|| task.turns.load(Ordering::Relaxed)),
                 round_duration(Duration::from_millis(idle_ms)),
             ));
         }
 
         let mut sorted_completed: Vec<_> = completed.values().collect();
-        sorted_completed.sort_by_key(|t| &t.id);
+        sorted_completed.sort_by_key(|task| &task.id);
 
         for task in sorted_completed {
             let status = if task.result.is_ok() {
@@ -2051,6 +2334,8 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::message::Message;
+    use futures::StreamExt;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -2058,12 +2343,44 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_context() -> PlatformExtensionContext {
+        create_test_context_with_session_manager(Arc::new(
+            crate::session::SessionManager::instance(),
+        ))
+    }
+
+    fn create_test_context_with_session_manager(
+        session_manager: Arc<crate::session::SessionManager>,
+    ) -> PlatformExtensionContext {
         PlatformExtensionContext {
             extension_manager: None,
-            session_manager: Arc::new(crate::session::SessionManager::instance()),
+            session_manager,
+            scheduler: None,
             session: None,
             use_login_shell_path: false,
         }
+    }
+
+    async fn create_test_subagent_session(
+        session_manager: &crate::session::SessionManager,
+        working_dir: &Path,
+        messages: &[Message],
+    ) -> String {
+        let session = session_manager
+            .create_session(
+                working_dir.to_path_buf(),
+                "Background task".to_string(),
+                SessionType::SubAgent,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        for message in messages {
+            session_manager
+                .add_message(&session.id, message)
+                .await
+                .unwrap();
+        }
+        session.id
     }
 
     #[test]
@@ -2076,6 +2393,13 @@ You review code."#;
         let source = parse_agent_content(agent, Path::new("")).unwrap();
         assert_eq!(source.name, "reviewer");
         assert!(source.description.contains("sonnet"));
+        assert_eq!(
+            source
+                .properties
+                .get("model")
+                .and_then(|value| value.as_str()),
+            Some("sonnet")
+        );
     }
 
     #[test]
@@ -2165,6 +2489,29 @@ You review code."#;
         assert_eq!(sources[0].name, "reviewer");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn agent_scan_rejects_symlinked_source_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(
+            outside.path().join("outside.md"),
+            "---\nname: outside\n---\nUntrusted agent.",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("outside.md"),
+            temp_dir.path().join("outside.md"),
+        )
+        .unwrap();
+
+        let mut sources = Vec::new();
+        let mut seen = HashSet::new();
+        scan_agents_from_dir(temp_dir.path(), &mut sources, &mut seen);
+
+        assert!(sources.is_empty());
+    }
+
     #[test]
     fn test_recipe_scan_skips_non_recipe_project_config_files() {
         let temp_dir = TempDir::new().unwrap();
@@ -2197,6 +2544,35 @@ You review code."#;
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].name, "valid");
         assert_eq!(sources[0].description, "Real recipe");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recipe_scan_rejects_symlinked_source_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(
+            outside.path().join("outside.yaml"),
+            "title: Outside\ndescription: Outside recipe\ninstructions: Untrusted",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("outside.yaml"),
+            temp_dir.path().join("outside.yaml"),
+        )
+        .unwrap();
+
+        let mut sources = Vec::new();
+        let mut seen = HashSet::new();
+        scan_recipes_from_dir(
+            temp_dir.path(),
+            SourceType::Recipe,
+            false,
+            &mut sources,
+            &mut seen,
+        );
+
+        assert!(sources.is_empty());
     }
 
     #[tokio::test]
@@ -2286,6 +2662,37 @@ You review code."#;
         assert!(text.contains("deploy"));
         assert!(text.contains("Run deploy steps"));
         assert!(text.contains("now available in your context"));
+    }
+
+    #[test]
+    fn test_invalid_external_subrecipe_content_is_not_returned() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("invalid.yaml");
+        fs::write(&path, "api_key: SUPERSECRET\n").unwrap();
+
+        let recipe_file = load_local_recipe_file(path.to_str().unwrap()).unwrap();
+        let error =
+            SummonClient::format_subrecipe_content("invalid", &recipe_file.content).unwrap_err();
+
+        assert_eq!(error, "Subrecipe 'invalid' is not a valid recipe");
+        assert!(!error.contains("SUPERSECRET"));
+    }
+
+    #[test]
+    fn test_valid_external_subrecipe_content_still_loads() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("child.yaml");
+        fs::write(
+            &path,
+            "title: Child\ndescription: External child\ninstructions: Run child steps",
+        )
+        .unwrap();
+
+        let recipe_file = load_local_recipe_file(path.to_str().unwrap()).unwrap();
+        let content =
+            SummonClient::format_subrecipe_content("child", &recipe_file.content).unwrap();
+
+        assert_eq!(content, "Run child steps");
     }
 
     #[tokio::test]
@@ -2428,6 +2835,32 @@ You review code."#;
     }
 
     #[test]
+    fn test_subrecipe_fixed_values_take_precedence_over_delegate_parameters() {
+        let fixed = HashMap::from([("fixed".to_string(), "parent-value".to_string())]);
+        let provided = HashMap::from([
+            (
+                "fixed".to_string(),
+                serde_json::Value::String("delegate-value".to_string()),
+            ),
+            (
+                "caller".to_string(),
+                serde_json::Value::String("caller-value".to_string()),
+            ),
+        ]);
+
+        let merged = merge_subrecipe_parameters(Some(&fixed), Some(&provided));
+
+        assert_eq!(
+            merged.get("fixed").map(String::as_str),
+            Some("parent-value")
+        );
+        assert_eq!(
+            merged.get("caller").map(String::as_str),
+            Some("caller-value")
+        );
+    }
+
+    #[test]
     fn test_build_instructions_with_context_wraps_existing_instructions() {
         assert_eq!(
             build_instructions_with_context("background info", "Run deploy steps"),
@@ -2561,6 +2994,79 @@ You review code."#;
         }
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_provider_reuses_unregistered_parent_provider() {
+        let temp_dir = TempDir::new().unwrap();
+        let parent_provider: Arc<dyn crate::providers::base::Provider> = Arc::new(
+            crate::providers::testprovider::TestProvider::new_replaying(
+                temp_dir.path().join("records.json").display().to_string(),
+            )
+            .unwrap(),
+        );
+        let extension_manager = Arc::new(
+            crate::agents::extension_manager::ExtensionManager::new_without_provider(
+                temp_dir.path().to_path_buf(),
+            ),
+        );
+        *extension_manager.get_provider().lock().await = Some(Arc::clone(&parent_provider));
+        let mut context = extension_manager.get_context().clone();
+        context.extension_manager = Some(Arc::downgrade(&extension_manager));
+        let client = SummonClient::new(context).unwrap();
+        let session = crate::session::Session {
+            provider_name: Some(parent_provider.get_name().to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
+            ..Default::default()
+        };
+
+        let params = DelegateParams {
+            provider: Some(parent_provider.get_name().to_string()),
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+        let (resolved_provider, _) = client
+            .resolve_provider(&params, &empty_recipe(), &session, &[])
+            .await
+            .unwrap();
+
+        assert!(Arc::ptr_eq(&parent_provider, &resolved_provider));
+    }
+
+    #[tokio::test]
+    async fn test_build_task_config_recreates_registered_parent_provider() {
+        let temp_dir = TempDir::new().unwrap();
+        let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
+        let extension_manager = Arc::new(
+            crate::agents::extension_manager::ExtensionManager::new_without_provider(
+                temp_dir.path().to_path_buf(),
+            ),
+        );
+        *extension_manager.get_provider().lock().await = Some(Arc::clone(&parent_provider));
+        let mut context = extension_manager.get_context().clone();
+        context.extension_manager = Some(Arc::downgrade(&extension_manager));
+        let client = SummonClient::new(context).unwrap();
+        let session = crate::session::Session {
+            provider_name: Some(parent_provider.get_name().to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
+            working_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let params = DelegateParams {
+            extensions: Some(Vec::new()),
+            provider: Some(parent_provider.get_name().to_string()),
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+
+        let task_config = client
+            .build_task_config(&params, &empty_recipe(), &session)
+            .await
+            .unwrap();
+
+        assert!(!Arc::ptr_eq(&parent_provider, &task_config.provider));
+        assert!(task_config.extensions.is_empty());
+    }
+
     const PARENT_MODEL: &str = "claude-3-5-sonnet-20241022";
     const OVERRIDE_MODEL: &str = "claude-opus-4-6";
     const PROVIDER: &str = "anthropic";
@@ -2583,7 +3089,13 @@ You review code."#;
             ..Default::default()
         };
         client
-            .resolve_model_config(&params, &empty_recipe(), &session_with(parent), PROVIDER)
+            .resolve_model_config(
+                &params,
+                &empty_recipe(),
+                &session_with(parent),
+                PROVIDER,
+                None,
+            )
             .expect("resolve_model_config")
     }
 
@@ -2603,26 +3115,28 @@ You review code."#;
         let parent = parent_config();
         let overridden = goose_providers::model::ModelConfig::new(OVERRIDE_MODEL)
             .with_canonical_limits(PROVIDER);
-        assert_ne!(parent.context_limit, overridden.context_limit);
         assert_ne!(parent.reasoning, overridden.reasoning);
 
         let resolved = resolve_with_override(Some(OVERRIDE_MODEL), parent);
 
         assert_eq!(resolved.model_name, OVERRIDE_MODEL);
-        assert_eq!(resolved.context_limit, overridden.context_limit);
         assert_eq!(resolved.max_tokens, overridden.max_tokens);
         assert_eq!(resolved.reasoning, overridden.reasoning);
     }
 
     #[tokio::test]
     #[serial]
-    async fn test_resolve_model_config_preserves_parent_request_params_on_override() {
+    async fn test_resolve_model_config_does_not_inherit_provider_specific_request_params() {
         let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
             ("GOOSE_SUBAGENT_MODEL", None::<&str>),
         ]);
 
+        // Parent session is a Claude model with anthropic_beta in request_params.
+        // When delegate() overrides to a different model (e.g. Gemini), provider-
+        // specific params like anthropic_beta must not bleed through — they would
+        // cause a 400 INVALID_ARGUMENT from the target API.
         let mut parent = parent_config();
         parent.request_params = Some(HashMap::from([(
             "anthropic_beta".to_string(),
@@ -2636,16 +3150,302 @@ You review code."#;
                 .request_params
                 .as_ref()
                 .and_then(|p| p.get("anthropic_beta")),
-            Some(&serde_json::json!("custom-beta-header")),
+            None,
+            "anthropic_beta must not be inherited by a child session with a different model"
         );
     }
 
-    fn extract_text(content: &Content) -> &str {
-        use rmcp::model::RawContent;
-        match &content.raw {
-            RawContent::Text(t) => t.text.as_str(),
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_inherits_thinking_effort_on_override() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+        ]);
+
+        // Reasoning controls are model-family-agnostic and should be inherited,
+        // while provider-specific params like anthropic_beta must not.
+        let mut parent = parent_config();
+        parent.request_params = Some(HashMap::from([
+            ("thinking_effort".to_string(), serde_json::json!("high")),
+            ("budget_tokens".to_string(), serde_json::json!(8192)),
+            (
+                "anthropic_beta".to_string(),
+                serde_json::json!("custom-beta-header"),
+            ),
+        ]));
+
+        let resolved = resolve_with_override(Some(OVERRIDE_MODEL), parent);
+
+        assert_eq!(
+            resolved
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("thinking_effort")),
+            Some(&serde_json::json!("high")),
+            "thinking_effort should be inherited across model families"
+        );
+        assert_eq!(
+            resolved
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("budget_tokens")),
+            Some(&serde_json::json!(8192)),
+            "budget_tokens should be inherited across model families"
+        );
+        assert_eq!(
+            resolved
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("anthropic_beta")),
+            None,
+            "anthropic_beta must not be inherited alongside reasoning controls"
+        );
+    }
+
+    fn extract_text(content: &ContentBlock) -> &str {
+        use rmcp::model::ContentBlock;
+        match content {
+            ContentBlock::Text(t) => t.text.as_str(),
             _ => panic!("Expected text content"),
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_env_var_overrides_params_model() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", Some(OVERRIDE_MODEL)),
+        ]);
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            model: Some("params-model".to_string()),
+            ..Default::default()
+        };
+        let result = client
+            .resolve_model_config(
+                &params,
+                &empty_recipe(),
+                &session_with(parent_config()),
+                PROVIDER,
+                None,
+            )
+            .expect("resolve_model_config");
+        assert_eq!(
+            result.model_name, OVERRIDE_MODEL,
+            "GOOSE_SUBAGENT_MODEL must take priority over params.model"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_env_var_overrides_recipe_model() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", Some(OVERRIDE_MODEL)),
+        ]);
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let mut recipe = empty_recipe();
+        recipe.settings = Some(crate::recipe::Settings {
+            goose_provider: None,
+            goose_model: Some("recipe-model".to_string()),
+            temperature: None,
+            max_turns: None,
+        });
+        let result = client
+            .resolve_model_config(
+                &DelegateParams::default(),
+                &recipe,
+                &session_with(parent_config()),
+                PROVIDER,
+                None,
+            )
+            .expect("resolve_model_config");
+        assert_eq!(
+            result.model_name, OVERRIDE_MODEL,
+            "GOOSE_SUBAGENT_MODEL must take priority over recipe settings"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_env_provider_uses_provider_default_model() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_PROVIDER", Some(PROVIDER)),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+            ("ANTHROPIC_API_KEY", Some("test-key")),
+        ]);
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            provider: Some("openai".to_string()),
+            model: Some("model-for-another-provider".to_string()),
+            ..Default::default()
+        };
+        let mut recipe = empty_recipe();
+        recipe.settings = Some(crate::recipe::Settings {
+            goose_provider: Some("openai".to_string()),
+            goose_model: Some("recipe-model-for-another-provider".to_string()),
+            temperature: None,
+            max_turns: None,
+        });
+        let default_model = providers::get_from_registry(PROVIDER)
+            .await
+            .unwrap()
+            .metadata()
+            .default_model
+            .clone();
+        let session = crate::session::Session {
+            provider_name: Some("openai".to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new(
+                "parent-openai-model",
+            )),
+            ..Default::default()
+        };
+        let (_, result) = client
+            .resolve_provider(&params, &recipe, &session, &[])
+            .await
+            .expect("resolve_provider");
+
+        assert_eq!(result.model_name, default_model);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_env_provider_keeps_matching_params_model() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_PROVIDER", Some(PROVIDER)),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+            ("ANTHROPIC_API_KEY", Some("test-key")),
+        ]);
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            provider: Some(PROVIDER.to_string()),
+            model: Some(OVERRIDE_MODEL.to_string()),
+            ..Default::default()
+        };
+        let (_, result) = client
+            .resolve_provider(
+                &params,
+                &empty_recipe(),
+                &session_with(parent_config()),
+                &[],
+            )
+            .await
+            .expect("resolve_provider");
+
+        assert_eq!(result.model_name, OVERRIDE_MODEL);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_resolve_model_config_dynamic_provider_requires_model() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_MAX_TOKENS", None::<&str>),
+            ("GOOSE_SUBAGENT_MODEL", None::<&str>),
+        ]);
+
+        let default_model = providers::get_from_registry("lmstudio")
+            .await
+            .unwrap()
+            .metadata()
+            .default_model
+            .clone();
+        assert!(default_model.is_empty());
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            provider: Some("openai".to_string()),
+            model: Some("openai-model".to_string()),
+            ..Default::default()
+        };
+        let session = crate::session::Session {
+            provider_name: Some("openai".to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new(
+                "parent-openai-model",
+            )),
+            ..Default::default()
+        };
+        let error = client
+            .resolve_model_config(
+                &params,
+                &empty_recipe(),
+                &session,
+                "lmstudio",
+                Some(&default_model),
+            )
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("No model configured for provider 'lmstudio'"));
+    }
+
+    fn test_tool_notification(request_id: &str, subagent_id: &str) -> ServerNotification {
+        use crate::agents::subagent_handler::create_tool_notification;
+        use crate::conversation::message::MessageContent;
+        use rmcp::model::CallToolRequestParams;
+
+        let tool_call = CallToolRequestParams::new("developer__shell").with_arguments(
+            serde_json::json!({"command": request_id})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        let content = MessageContent::tool_request(request_id, Ok(tool_call));
+        create_tool_notification(&content, subagent_id).unwrap()
+    }
+
+    fn notification_subagent_id(notification: &ServerNotification) -> Option<String> {
+        let ServerNotification::LoggingMessageNotification(log) = notification else {
+            return None;
+        };
+        serde_json::to_value(&log.params)
+            .ok()?
+            .get("data")?
+            .get("subagent_id")?
+            .as_str()
+            .map(str::to_string)
+    }
+
+    fn notification_command(notification: &ServerNotification) -> Option<String> {
+        let ServerNotification::LoggingMessageNotification(log) = notification else {
+            return None;
+        };
+        serde_json::to_value(&log.params)
+            .ok()?
+            .get("data")?
+            .get("tool_call")?
+            .get("arguments")?
+            .get("command")?
+            .as_str()
+            .map(str::to_string)
+    }
+
+    fn notification_channel() -> (
+        ToolCallNotificationEmitter,
+        tokio::sync::mpsc::Receiver<ServerNotification>,
+    ) {
+        let (sender, receiver) = tokio::sync::mpsc::channel(32);
+        (ToolCallNotificationEmitter::new(sender), receiver)
+    }
+
+    fn buffered_notification_sink(
+        notifications: Vec<ServerNotification>,
+    ) -> SharedNotificationSink {
+        Arc::new(Mutex::new(NotificationSink::Buffer(notifications)))
     }
 
     #[test]
@@ -2660,31 +3460,275 @@ You review code."#;
     }
 
     #[tokio::test]
+    async fn test_notification_sinks_isolate_concurrent_delegate_calls() {
+        let (emitter_a, mut notifications_a) = notification_channel();
+        let (emitter_b, mut notifications_b) = notification_channel();
+        let sink_a = SummonClient::notification_sink(Some(emitter_a));
+        let sink_b = SummonClient::notification_sink(Some(emitter_b));
+
+        let (result_a, result_b) = tokio::join!(
+            SummonClient::run_subagent_with_notifications(sink_a, |notification_tx| async move {
+                notification_tx
+                    .send(test_tool_notification("inner-a", "subagent-a"))
+                    .unwrap();
+                tokio::task::yield_now().await;
+                Ok("delegate-a".to_string())
+            }),
+            SummonClient::run_subagent_with_notifications(sink_b, |notification_tx| async move {
+                notification_tx
+                    .send(test_tool_notification("inner-b", "subagent-b"))
+                    .unwrap();
+                tokio::task::yield_now().await;
+                Ok("delegate-b".to_string())
+            })
+        );
+        assert_eq!(result_a.unwrap(), "delegate-a");
+        assert_eq!(result_b.unwrap(), "delegate-b");
+
+        let notification_a = notifications_a.recv().await.unwrap();
+        let notification_b = notifications_b.recv().await.unwrap();
+        assert_eq!(
+            notification_subagent_id(&notification_a).as_deref(),
+            Some("subagent-a")
+        );
+        assert_eq!(
+            notification_subagent_id(&notification_b).as_deref(),
+            Some("subagent-b")
+        );
+        assert!(notifications_a.try_recv().is_err());
+        assert!(notifications_b.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_live_notifications_precede_delegate_result() {
+        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
+        use tokio_stream::wrappers::ReceiverStream;
+
+        for _ in 0..32 {
+            let (emitter, notifications) = notification_channel();
+            let sink = SummonClient::notification_sink(Some(emitter));
+            let mut output = tool_stream(
+                ReceiverStream::new(notifications),
+                futures::stream::empty(),
+                async move {
+                    let result = SummonClient::run_subagent_with_notifications(
+                        sink,
+                        |notification_tx| async move {
+                            for command in ["inner-live-0", "inner-live-1", "inner-live-2"] {
+                                notification_tx
+                                    .send(test_tool_notification(command, "subagent-live"))
+                                    .unwrap();
+                            }
+                            Ok("delegate-result".to_string())
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    Ok::<_, rmcp::model::ErrorData>(CallToolResult::success(vec![
+                        ContentBlock::text(result),
+                    ]))
+                },
+            );
+
+            let mut commands = Vec::new();
+            let result = loop {
+                match output.next().await.unwrap() {
+                    ToolStreamItem::Message(notification) => {
+                        assert_eq!(
+                            notification_subagent_id(&notification).as_deref(),
+                            Some("subagent-live")
+                        );
+                        commands.push(notification_command(&notification).unwrap());
+                    }
+                    ToolStreamItem::Result(result) => break result,
+                    ToolStreamItem::ActionRequired(_) => {
+                        panic!("delegate must not request an action")
+                    }
+                }
+            };
+
+            assert_eq!(commands, ["inner-live-0", "inner-live-1", "inner-live-2"]);
+            assert!(result.is_ok());
+            assert!(output.next().await.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_async_completion_before_load_replays_notifications() {
+        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
+        use tokio_stream::wrappers::ReceiverStream;
+
+        let client = Arc::new(SummonClient::new(create_test_context()).unwrap());
+        let task_id = "20260204_1";
+        let buffered = vec![test_tool_notification("inner-completed", task_id)];
+        client.completed_tasks.lock().await.insert(
+            task_id.to_string(),
+            CompletedTask {
+                id: task_id.to_string(),
+                description: "Completed task".to_string(),
+                result: Ok("done".to_string()),
+                turns_taken: 1,
+                duration: Duration::from_secs(1),
+                completed_at: Instant::now(),
+                notification_sink: buffered_notification_sink(buffered),
+            },
+        );
+        let (emitter, notifications) = notification_channel();
+        let load_client = Arc::clone(&client);
+        let mut output = tool_stream(
+            ReceiverStream::new(notifications),
+            futures::stream::empty(),
+            async move {
+                let result = load_client
+                    .handle_load_task_result(task_id, false, false, Some(emitter))
+                    .await
+                    .unwrap();
+                Ok::<_, rmcp::model::ErrorData>(CallToolResult::success(result.content))
+            },
+        );
+
+        let ToolStreamItem::Message(notification) = output.next().await.unwrap() else {
+            panic!("buffered notification must be emitted before the load result");
+        };
+        assert_eq!(
+            notification_subagent_id(&notification).as_deref(),
+            Some(task_id)
+        );
+        assert_eq!(
+            notification_command(&notification).as_deref(),
+            Some("inner-completed")
+        );
+        let ToolStreamItem::Result(result) = output.next().await.unwrap() else {
+            panic!("load result must follow buffered notifications");
+        };
+        assert!(result.is_ok());
+        assert!(output.next().await.is_none());
+        assert!(!client.completed_tasks.lock().await.contains_key(task_id));
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_completed_load_remains_retrievable() {
+        let client = Arc::new(SummonClient::new(create_test_context()).unwrap());
+        let task_id = "20260204_1";
+        client.completed_tasks.lock().await.insert(
+            task_id.to_string(),
+            CompletedTask {
+                id: task_id.to_string(),
+                description: "Completed task".to_string(),
+                result: Ok("done".to_string()),
+                turns_taken: 1,
+                duration: Duration::from_secs(1),
+                completed_at: Instant::now(),
+                notification_sink: buffered_notification_sink(vec![
+                    test_tool_notification("inner-0", task_id),
+                    test_tool_notification("inner-1", task_id),
+                ]),
+            },
+        );
+        let (emitter, mut notifications) = notification_channel();
+        let load_client = Arc::clone(&client);
+        let load = tokio::spawn(async move {
+            load_client
+                .handle_load_task_result(task_id, false, false, Some(emitter))
+                .await
+        });
+
+        let first = notifications.recv().await.unwrap();
+        assert_eq!(notification_command(&first).as_deref(), Some("inner-0"));
+        load.abort();
+        assert!(load.await.unwrap_err().is_cancelled());
+        assert!(client.completed_tasks.lock().await.contains_key(task_id));
+
+        let (retry_emitter, mut retry_notifications) = notification_channel();
+        let result = client
+            .handle_load_task_result(task_id, false, false, Some(retry_emitter))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status, "completed");
+        for command in ["inner-0", "inner-1"] {
+            let notification = retry_notifications.try_recv().unwrap();
+            assert_eq!(
+                notification_command(&notification).as_deref(),
+                Some(command)
+            );
+        }
+        assert!(retry_notifications.try_recv().is_err());
+        assert!(!client.completed_tasks.lock().await.contains_key(task_id));
+    }
+
+    #[tokio::test]
+    async fn test_buffered_replay_preserves_order_and_emitter_capacity() {
+        let sink = buffered_notification_sink(
+            (0..33)
+                .map(|index| test_tool_notification(&format!("inner-{index}"), "subagent"))
+                .collect(),
+        );
+        let (emitter, mut notifications) = notification_channel();
+
+        SummonClient::attach_notification_emitter(&sink, Some(emitter)).await;
+
+        for index in 0..32 {
+            let notification = notifications.try_recv().unwrap();
+            assert_eq!(
+                notification_command(&notification),
+                Some(format!("inner-{index}"))
+            );
+        }
+        assert!(notifications.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_completes_when_caller_does_not_consume_notifications() {
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let task_id = "20260204_1";
+        client.completed_tasks.lock().await.insert(
+            task_id.to_string(),
+            CompletedTask {
+                id: task_id.to_string(),
+                description: "Completed task".to_string(),
+                result: Ok("done".to_string()),
+                turns_taken: 1,
+                duration: Duration::from_secs(1),
+                completed_at: Instant::now(),
+                notification_sink: buffered_notification_sink(
+                    (0..64)
+                        .map(|index| test_tool_notification(&format!("inner-{index}"), task_id))
+                        .collect(),
+                ),
+            },
+        );
+        let (emitter, _notifications) = notification_channel();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            client.handle_load_task_result(task_id, false, false, Some(emitter)),
+        )
+        .await
+        .expect("load must not wait for a notification consumer")
+        .unwrap();
+
+        assert_eq!(result.status, "completed");
+    }
+
+    #[tokio::test]
     async fn test_async_task_result_lifecycle() {
         let client = SummonClient::new(create_test_context()).unwrap();
         let temp_dir = TempDir::new().unwrap();
 
         let result = client
-            .handle_load_task_result("20260204_999", false, false)
+            .handle_load_task_result("20260204_999", false, false, None)
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
 
         {
-            use crate::agents::subagent_handler::create_tool_notification;
-            use crate::conversation::message::MessageContent;
-            use rmcp::model::CallToolRequestParams;
-
-            let tool_call = CallToolRequestParams::new("developer__shell").with_arguments(
-                serde_json::json!({"command": "ls"})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            );
-            let content = MessageContent::tool_request("req1", Ok(tool_call));
-            let notif = create_tool_notification(&content, "20260204_1").unwrap();
-
-            let buffer = Arc::new(Mutex::new(vec![notif]));
+            let notification_sink =
+                buffered_notification_sink(vec![test_tool_notification("req1", "20260204_1")]);
+            let (handle, completion_token) = spawn_background_task(async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                Ok("done".to_string())
+            });
 
             let mut running = client.background_tasks.lock().await;
             running.insert(
@@ -2695,31 +3739,28 @@ You review code."#;
                     started_at: Instant::now(),
                     turns: Arc::new(AtomicU32::new(2)),
                     last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
-                    handle: tokio::spawn(async {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                        Ok("done".to_string())
-                    }),
+                    handle,
                     cancellation_token: CancellationToken::new(),
-                    notification_buffer: buffer,
+                    completion_token,
+                    notification_sink,
                 },
             );
         }
 
-        let mut subscriber = client.subscribe().await;
-
-        let result = client
-            .handle_load_task_result("20260204_1", false, false)
-            .await
-            .expect("load should wait and return result");
+        let (emitter, mut notifications) = notification_channel();
+        let (result, notification) = tokio::join!(
+            client.handle_load_task_result("20260204_1", false, false, Some(emitter)),
+            notifications.recv()
+        );
+        let result = result.expect("load should wait and return result");
         let text = extract_text(&result.content[0]);
         assert!(text.contains("Completed"));
         assert!(text.contains("done"));
 
-        let notif = subscriber
-            .try_recv()
-            .expect("subscriber should receive buffered notification");
+        let notif = notification.expect("load emitter should receive buffered notification");
         if let ServerNotification::LoggingMessageNotification(log) = notif {
-            let data = log.params.data.as_object().unwrap();
+            let params = serde_json::to_value(&log.params).unwrap();
+            let data = params.get("data").and_then(|v| v.as_object()).unwrap();
             assert_eq!(
                 data.get("subagent_id").and_then(|v| v.as_str()),
                 Some("20260204_1")
@@ -2739,6 +3780,7 @@ You review code."#;
                     turns_taken: 5,
                     duration: Duration::from_secs(60),
                     completed_at: Instant::now(),
+                    notification_sink: buffered_notification_sink(Vec::new()),
                 },
             );
             completed.insert(
@@ -2750,6 +3792,7 @@ You review code."#;
                     turns_taken: 3,
                     duration: Duration::from_secs(30),
                     completed_at: Instant::now(),
+                    notification_sink: buffered_notification_sink(Vec::new()),
                 },
             );
         }
@@ -2770,7 +3813,7 @@ You review code."#;
         assert!(discovery_text.contains("20260204_3"));
 
         let result = client
-            .handle_load_task_result("20260204_2", false, false)
+            .handle_load_task_result("20260204_2", false, false, None)
             .await
             .unwrap();
         let text = extract_text(&result.content[0]);
@@ -2790,7 +3833,7 @@ You review code."#;
             .contains_key("20260204_2"));
 
         let result = client
-            .handle_load_task_result("20260204_3", false, false)
+            .handle_load_task_result("20260204_3", false, false, None)
             .await
             .unwrap();
         let text = extract_text(&result.content[0]);
@@ -2799,7 +3842,7 @@ You review code."#;
         assert_eq!(result.status, "failed");
 
         let result = client
-            .handle_load_task_result("20260204_3", false, false)
+            .handle_load_task_result("20260204_3", false, false, None)
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
@@ -2809,88 +3852,482 @@ You review code."#;
     }
 
     #[tokio::test]
+    async fn test_completed_task_uses_durable_tool_turns_in_metadata() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().join("sessions"),
+        ));
+        let task_id = create_test_subagent_session(
+            &session_manager,
+            temp_dir.path(),
+            &[
+                Message::user().with_text("Inspect the project"),
+                Message::assistant().with_tool_request(
+                    "tool-1",
+                    Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+                ),
+                Message::user().with_tool_response(
+                    "tool-1",
+                    Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
+                ),
+                Message::assistant().with_text("Inspection complete"),
+            ],
+        )
+        .await;
+        let client =
+            SummonClient::new(create_test_context_with_session_manager(session_manager)).unwrap();
+
+        let handle = tokio::spawn(async { Ok("Inspection complete".to_string()) });
+        while !handle.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        client.background_tasks.lock().await.insert(
+            task_id.clone(),
+            BackgroundTask {
+                id: task_id.clone(),
+                description: "Inspect the project".to_string(),
+                started_at: Instant::now(),
+                // Simulate hundreds of streamed message events for two durable turns.
+                turns: Arc::new(AtomicU32::new(554)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle,
+                cancellation_token: CancellationToken::new(),
+                completion_token: CancellationToken::new(),
+                notification_sink: buffered_notification_sink(Vec::new()),
+            },
+        );
+
+        let arguments = serde_json::json!({"source": task_id})
+            .as_object()
+            .unwrap()
+            .clone();
+        let result = client
+            .handle_load("parent", Some(arguments), None)
+            .await
+            .unwrap();
+        let text = extract_text(&result.content[0]);
+        let meta = result.meta.unwrap();
+
+        assert!(text.contains("(2 turns)"));
+        assert_eq!(meta.0.get("turns_taken"), Some(&serde_json::json!(2)));
+        assert_eq!(
+            meta.0.get("task_status"),
+            Some(&serde_json::json!("completed"))
+        );
+    }
+
+    #[test]
+    fn test_durable_turn_count_ignores_compaction_scaffolding() {
+        let compacted_tool_loop = crate::conversation::Conversation::new_unvalidated(vec![
+            Message::user()
+                .with_text("Previous task")
+                .with_visibility(true, false),
+            Message::assistant()
+                .with_text("Previous result")
+                .with_visibility(true, false),
+            Message::user()
+                .with_text("Inspect the project")
+                .with_visibility(true, false),
+            Message::assistant()
+                .with_tool_request(
+                    "tool-1",
+                    Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+                )
+                .with_visibility(true, false),
+            Message::user()
+                .with_tool_response(
+                    "tool-1",
+                    Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
+                )
+                .with_visibility(true, false),
+            // A later compaction archives its earlier agent-only scaffold.
+            Message::assistant()
+                .with_text("<older summary>")
+                .with_visibility(false, false),
+            Message::user()
+                .with_text("Inspect the project")
+                .with_visibility(false, false),
+            Message::assistant()
+                .with_text("<summary of earlier work>")
+                .with_text("Continue from the compacted context")
+                .agent_only(),
+            Message::user()
+                .with_text("Inspect the project")
+                .agent_only(),
+            Message::assistant().with_text("Inspection complete"),
+        ]);
+        assert_eq!(durable_assistant_turn_count(&compacted_tool_loop), 2);
+
+        // Keep the hidden projected user message as a role boundary. Dropping
+        // every agent-only message would merge the failed and retried replies.
+        let compacted_retry = crate::conversation::Conversation::new_unvalidated(vec![
+            Message::user()
+                .with_text("Inspect the project")
+                .with_visibility(true, false),
+            Message::assistant()
+                .with_text("Context window exceeded")
+                .with_visibility(true, false),
+            Message::assistant().with_text("<summary>").agent_only(),
+            Message::user()
+                .with_text("Inspect the project")
+                .agent_only(),
+            Message::assistant().with_text("Inspection complete"),
+        ]);
+        assert_eq!(durable_assistant_turn_count(&compacted_retry), 2);
+    }
+
+    #[tokio::test]
     async fn test_cancel_running_task() {
-        let client = SummonClient::new(create_test_context()).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().join("sessions"),
+        ));
+        let task_id = create_test_subagent_session(
+            &session_manager,
+            temp_dir.path(),
+            &[Message::user().with_text("Analyse the project")],
+        )
+        .await;
+        let task_session_manager = Arc::clone(&session_manager);
+        let client =
+            SummonClient::new(create_test_context_with_session_manager(session_manager)).unwrap();
         let token = CancellationToken::new();
+        let notification_sink = buffered_notification_sink(Vec::new());
+        let task_notification_sink = Arc::clone(&notification_sink);
+        let task_token = token.clone();
+        let task_notification_id = task_id.clone();
 
         {
             let mut running = client.background_tasks.lock().await;
             running.insert(
-                "20260204_1".to_string(),
+                task_id.clone(),
                 BackgroundTask {
-                    id: "20260204_1".to_string(),
+                    id: task_id.clone(),
                     description: "Cancellable task".to_string(),
                     started_at: Instant::now(),
+                    // This stale event count must be replaced after cancellation.
                     turns: Arc::new(AtomicU32::new(3)),
                     last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
-                    handle: tokio::spawn(async {
-                        tokio::time::sleep(Duration::from_secs(1000)).await;
-                        Ok("should not see this".to_string())
+                    handle: tokio::spawn(async move {
+                        task_token.cancelled().await;
+                        task_session_manager
+                            .add_message(
+                                &task_notification_id,
+                                &Message::assistant().with_text("Partial result"),
+                            )
+                            .await
+                            .unwrap();
+                        task_notification_sink
+                            .lock()
+                            .await
+                            .route(test_tool_notification("cancel", &task_notification_id));
+                        Ok("cancelled gracefully".to_string())
                     }),
                     cancellation_token: token.clone(),
-                    notification_buffer: Arc::new(Mutex::new(Vec::new())),
+                    completion_token: CancellationToken::new(),
+                    notification_sink,
                 },
             );
         }
 
-        let result = client
-            .handle_load_task_result("20260204_1", true, false)
-            .await
-            .unwrap();
+        let (emitter, mut notifications) = notification_channel();
+        let (result, notification) = tokio::join!(
+            client.handle_load_task_result(&task_id, true, false, Some(emitter)),
+            notifications.recv()
+        );
+        let result = result.unwrap();
         let text = extract_text(&result.content[0]);
         assert!(text.contains("Cancelled"));
-        assert!(text.contains("20260204_1"));
+        assert!(text.contains(&task_id));
         assert!(text.contains("Cancellable task"));
+        assert!(text.contains("cancelled gracefully"));
         assert_eq!(result.status, "cancelled");
-        assert_eq!(result.turns, Some(3));
+        assert_eq!(result.turns, Some(1));
+        assert_eq!(
+            notification_subagent_id(&notification.unwrap()).as_deref(),
+            Some(task_id.as_str())
+        );
         assert!(token.is_cancelled());
-        assert!(!client
-            .background_tasks
-            .lock()
+        assert!(!client.background_tasks.lock().await.contains_key(&task_id));
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_running_load_remains_retrievable() {
+        let client = Arc::new(SummonClient::new(create_test_context()).unwrap());
+        let token = CancellationToken::new();
+        let task_id = "20260204_1";
+        let task_token = token.clone();
+
+        client.background_tasks.lock().await.insert(
+            task_id.to_string(),
+            BackgroundTask {
+                id: task_id.to_string(),
+                description: "Cancellable task".to_string(),
+                started_at: Instant::now(),
+                turns: Arc::new(AtomicU32::new(1)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle: tokio::spawn(async move {
+                    task_token.cancelled().await;
+                    Ok("cancelled gracefully".to_string())
+                }),
+                cancellation_token: token.clone(),
+                completion_token: CancellationToken::new(),
+                notification_sink: buffered_notification_sink(vec![
+                    test_tool_notification("inner-0", task_id),
+                    test_tool_notification("inner-1", task_id),
+                ]),
+            },
+        );
+
+        let (emitter, mut notifications) = notification_channel();
+        let load_client = Arc::clone(&client);
+        let load = tokio::spawn(async move {
+            load_client
+                .handle_load_task_result(task_id, true, false, Some(emitter))
+                .await
+        });
+
+        let first = notifications.recv().await.unwrap();
+        assert_eq!(notification_command(&first).as_deref(), Some("inner-0"));
+        load.abort();
+        assert!(load.await.unwrap_err().is_cancelled());
+        assert!(client.background_tasks.lock().await.contains_key(task_id));
+        assert!(!token.is_cancelled());
+
+        let (retry_emitter, mut retry_notifications) = notification_channel();
+        let result = client
+            .handle_load_task_result(task_id, true, false, Some(retry_emitter))
             .await
-            .contains_key("20260204_1"));
+            .unwrap();
+
+        assert_eq!(result.status, "cancelled");
+        assert!(token.is_cancelled());
+        assert!(!client.background_tasks.lock().await.contains_key(task_id));
+
+        let commands: Vec<String> = std::iter::from_fn(|| retry_notifications.try_recv().ok())
+            .filter_map(|notification| notification_command(&notification))
+            .collect();
+        assert!(
+            commands == ["inner-0", "inner-1"] || commands == ["inner-1"],
+            "retry must replay the remaining notifications, with at-least-once delivery allowed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_waiting_load_remains_retrievable() {
+        let client = Arc::new(SummonClient::new(create_test_context()).unwrap());
+        let task_id = "20260204_1";
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+        let (handle, completion_token) = spawn_background_task(async move {
+            finish_rx.await.unwrap();
+            Ok("done".to_string())
+        });
+
+        client.background_tasks.lock().await.insert(
+            task_id.to_string(),
+            BackgroundTask {
+                id: task_id.to_string(),
+                description: "Running task".to_string(),
+                started_at: Instant::now(),
+                turns: Arc::new(AtomicU32::new(1)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle,
+                cancellation_token: CancellationToken::new(),
+                completion_token,
+                notification_sink: buffered_notification_sink(vec![
+                    test_tool_notification("inner-0", task_id),
+                    test_tool_notification("inner-1", task_id),
+                ]),
+            },
+        );
+
+        let (emitter, mut notifications) = notification_channel();
+        let load_client = Arc::clone(&client);
+        let load = tokio::spawn(async move {
+            load_client
+                .handle_load_task_result(task_id, false, false, Some(emitter))
+                .await
+        });
+
+        let first = notifications.recv().await.unwrap();
+        assert_eq!(notification_command(&first).as_deref(), Some("inner-0"));
+        load.abort();
+        assert!(load.await.unwrap_err().is_cancelled());
+        assert!(client.background_tasks.lock().await.contains_key(task_id));
+
+        finish_tx.send(()).unwrap();
+        let (retry_emitter, mut retry_notifications) = notification_channel();
+        let result = client
+            .handle_load_task_result(task_id, false, false, Some(retry_emitter))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status, "completed");
+        assert!(!client.background_tasks.lock().await.contains_key(task_id));
+
+        let commands: Vec<String> = std::iter::from_fn(|| retry_notifications.try_recv().ok())
+            .filter_map(|notification| notification_command(&notification))
+            .collect();
+        assert!(
+            commands == ["inner-0", "inner-1"] || commands == ["inner-1"],
+            "retry must replay the remaining notifications, with at-least-once delivery allowed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dropped_waiting_load_during_turn_refresh_remains_retrievable() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().join("sessions"),
+        ));
+        let task_id = create_test_subagent_session(
+            &session_manager,
+            temp_dir.path(),
+            &[
+                Message::user().with_text("Analyse the project"),
+                Message::assistant().with_text("done"),
+            ],
+        )
+        .await;
+        let client = SummonClient::new(create_test_context_with_session_manager(Arc::clone(
+            &session_manager,
+        )))
+        .unwrap();
+
+        let (handle, completion_token) = spawn_background_task(async { Ok("done".to_string()) });
+        while !handle.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        client.background_tasks.lock().await.insert(
+            task_id.clone(),
+            BackgroundTask {
+                id: task_id.clone(),
+                description: "Finished task".to_string(),
+                started_at: Instant::now(),
+                turns: Arc::new(AtomicU32::new(1)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle,
+                cancellation_token: CancellationToken::new(),
+                completion_token,
+                notification_sink: buffered_notification_sink(Vec::new()),
+            },
+        );
+
+        let pool = session_manager.storage().pool().await.unwrap().clone();
+        let mut held_connections = Vec::new();
+        for _ in 0..pool.options().get_max_connections() {
+            held_connections.push(pool.acquire().await.unwrap());
+        }
+        tokio::task::yield_now().await;
+
+        let mut load = Box::pin(client.handle_load_task_result(&task_id, false, false, None));
+        let first_poll = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(std::future::Future::poll(load.as_mut(), cx))
+        })
+        .await;
+        assert!(first_poll.is_pending());
+        drop(load);
+
+        assert!(
+            client.completed_tasks.lock().await.contains_key(&task_id)
+                || client.background_tasks.lock().await.contains_key(&task_id),
+            "cancelling a load must not orphan a completed task"
+        );
+
+        drop(held_connections);
+        let result = client
+            .handle_load_task_result(&task_id, false, false, None)
+            .await
+            .unwrap();
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.turns, Some(1));
+        assert!(extract_text(&result.content[0]).contains("done"));
+        assert!(!client.completed_tasks.lock().await.contains_key(&task_id));
+        assert!(!client.background_tasks.lock().await.contains_key(&task_id));
     }
 
     #[tokio::test]
     async fn test_peek_running_task() {
-        let client = SummonClient::new(create_test_context()).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().join("sessions"),
+        ));
+        let task_id = create_test_subagent_session(
+            &session_manager,
+            temp_dir.path(),
+            &[Message::user().with_text("Analyse the project")],
+        )
+        .await;
+        let client = SummonClient::new(create_test_context_with_session_manager(Arc::clone(
+            &session_manager,
+        )))
+        .unwrap();
+        let last_activity = Arc::new(AtomicU64::new(0));
 
         {
             let mut running = client.background_tasks.lock().await;
             running.insert(
-                "20260204_1".to_string(),
+                task_id.clone(),
                 BackgroundTask {
-                    id: "20260204_1".to_string(),
+                    id: task_id.clone(),
                     description: "Long running analysis".to_string(),
                     started_at: Instant::now(),
+                    // Simulate the old stream-event counter after seven fragments.
                     turns: Arc::new(AtomicU32::new(7)),
-                    last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                    last_activity: Arc::clone(&last_activity),
                     handle: tokio::spawn(async {
                         tokio::time::sleep(Duration::from_secs(1000)).await;
                         Ok("eventual result".to_string())
                     }),
                     cancellation_token: CancellationToken::new(),
-                    notification_buffer: Arc::new(Mutex::new(Vec::new())),
+                    completion_token: CancellationToken::new(),
+                    notification_sink: buffered_notification_sink(Vec::new()),
                 },
             );
         }
 
+        let result = client
+            .handle_load_task_result(&task_id, false, true, None)
+            .await
+            .unwrap();
+        assert!(extract_text(&result.content[0]).contains("Task is initialising"));
+
+        // Activity can arrive before the assistant block is durably persisted.
+        last_activity.store(current_epoch_millis(), Ordering::Relaxed);
+        let result = client
+            .handle_load_task_result(&task_id, false, true, None)
+            .await
+            .unwrap();
+        let text = extract_text(&result.content[0]);
+        assert_eq!(result.turns, Some(0));
+        assert!(!text.contains("Task is initialising"));
+
+        for index in 0..7 {
+            session_manager
+                .add_message(
+                    &task_id,
+                    &Message::assistant().with_text(format!("fragment {index}")),
+                )
+                .await
+                .unwrap();
+        }
+
         // Peek should return status without removing the task
         let result = client
-            .handle_load_task_result("20260204_1", false, true)
+            .handle_load_task_result(&task_id, false, true, None)
             .await
             .unwrap();
         let text = extract_text(&result.content[0]);
         assert!(text.contains("Running"));
         assert!(text.contains("Long running analysis"));
-        assert!(text.contains("7")); // turns taken
+        assert!(text.contains("**Turns taken:** 1"));
+        assert_eq!(result.turns, Some(1));
+
+        let moim = client.get_moim("test").await.unwrap();
+        assert!(moim.contains("1 turns"));
 
         // Task should still be in background_tasks (not consumed)
-        assert!(client
-            .background_tasks
-            .lock()
-            .await
-            .contains_key("20260204_1"));
+        assert!(client.background_tasks.lock().await.contains_key(&task_id));
     }
 
     #[tokio::test]
@@ -2898,7 +4335,7 @@ You review code."#;
         let client = SummonClient::new(create_test_context()).unwrap();
 
         let result = client
-            .handle_load_task_result("20260204_999", false, true)
+            .handle_load_task_result("20260204_999", false, true, None)
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
@@ -2919,13 +4356,14 @@ You review code."#;
                     turns_taken: 4,
                     duration: Duration::from_secs(30),
                     completed_at: Instant::now(),
+                    notification_sink: buffered_notification_sink(Vec::new()),
                 },
             );
         }
 
         // Peek on a completed task should return the full result (same as non-peek)
         let result = client
-            .handle_load_task_result("20260204_1", false, true)
+            .handle_load_task_result("20260204_1", false, true, None)
             .await
             .unwrap();
         let text = extract_text(&result.content[0]);
@@ -2939,7 +4377,7 @@ You review code."#;
             .await
             .contains_key("20260204_1"));
         let result = client
-            .handle_load_task_result("20260204_1", false, false)
+            .handle_load_task_result("20260204_1", false, false, None)
             .await
             .unwrap();
         assert!(extract_text(&result.content[0]).contains("final output"));

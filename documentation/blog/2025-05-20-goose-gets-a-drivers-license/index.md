@@ -110,7 +110,7 @@ This starts up a local web server (the command line output will tell you which p
 
 ## Goose learns how to drive!
 
-Following our [mbot MCP tutorial](/docs/mcp/mbot-mcp/) we can set up our MCP extension just like we ran our Java JAR file with the environment variables.
+Following the [mbotmcp project setup](https://github.com/deemkeen/mbotmcp), we can set up our MCP extension just like we ran our Java JAR file with the environment variables.
 
 Now we can give Goose commands like "drive in a square pattern by making left turns and moving forward, and beeping before you turn" and it will send the commands to the mbot2 rover via MQTT.
 
@@ -144,7 +144,7 @@ For the video recording, I used a voice modifier to narrate Goose's response in 
 
 We want to extend a huge thank you to [deemkeen](https://x.com/deemkeen) for their open-source work which inspired this project, and to the Makeblock team for creating such a fun rover to work with.
 
-We're always excited to see what the community is up to. If you're working on your own Goose-powered experiment, come share it with us on [Discord](https://discord.gg/goose-oss)!
+We're always excited to see what the community is up to. If you're working on your own goose-powered experiment, come share it with us on [Discord](https://discord.gg/n8R5VaWDAn)!
 
 <head>
   <meta property="og:title" content="Goose Gets a Driver's License!" />

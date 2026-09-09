@@ -6,7 +6,7 @@ use goose::agents::extension_manager::get_parameter_names;
 use goose::agents::Agent;
 use goose::agents::{extension::Envs, ExtensionConfig};
 use goose::config::declarative_providers::{
-    create_custom_provider, remove_custom_provider, CreateCustomProviderParams,
+    create_custom_provider, remove_custom_provider, AuthConfig, CreateCustomProviderParams,
 };
 use goose::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
@@ -28,11 +28,119 @@ use goose::session::SessionType;
 use goose_providers::thinking::ThinkingEffort;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 
 // useful for light themes where there is no discernible colour contrast between
 // cursor-selected and cursor-unselected items.
 const MULTISELECT_VISIBILITY_HINT: &str = "<";
+const MAX_PROVIDER_ROWS: usize = 10;
+const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
+
+type ProviderItem = (String, String, String);
+
+#[derive(Clone, PartialEq, Eq)]
+enum ProviderChoice {
+    Provider(String),
+    Search,
+    SearchAgain,
+}
+
+fn provider_choice_items(items: &[ProviderItem]) -> Vec<(ProviderChoice, String, String)> {
+    items
+        .iter()
+        .map(|(name, label, hint)| {
+            (
+                ProviderChoice::Provider(name.clone()),
+                label.clone(),
+                hint.clone(),
+            )
+        })
+        .collect()
+}
+
+fn move_selected_item_into_view<T>(
+    items: &mut Vec<T>,
+    selected_index: Option<usize>,
+    visible_rows: usize,
+) {
+    if let Some(index) = selected_index.filter(|&index| index >= visible_rows) {
+        let selected = items.remove(index);
+        items.insert(0, selected);
+    }
+}
+
+fn fuzzy_filter_provider_items(items: &[ProviderItem], query: &str) -> Vec<ProviderItem> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return items.to_vec();
+    }
+
+    let query_words: Vec<_> = query.split_whitespace().collect();
+    let mut scored_items: Vec<_> = items
+        .iter()
+        .filter_map(|item| {
+            let label = item.1.to_lowercase();
+            let similarity = strsim::jaro_winkler(&label, &query);
+            let word_match_bonus =
+                query_words.iter().all(|word| label.contains(*word)) as u8 as f64;
+            let score = similarity + word_match_bonus;
+            (score > 0.6).then_some((score, item))
+        })
+        .collect();
+
+    scored_items.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored_items
+        .into_iter()
+        .map(|(_, item)| item.clone())
+        .collect()
+}
+
+fn search_provider_dialog(provider_items: &[ProviderItem]) -> anyhow::Result<String> {
+    let mut query = String::new();
+
+    loop {
+        let input: String = cliclack::input("Search model providers")
+            .placeholder("e.g., OpenAI, Anthropic, local")
+            .default_input(&query)
+            .interact()?;
+        query = input.trim().to_string();
+
+        let filtered_items = fuzzy_filter_provider_items(provider_items, &query);
+        if filtered_items.is_empty() {
+            cliclack::log::warning("No matching providers. Try a different search term.")?;
+            continue;
+        }
+
+        let mut items = provider_choice_items(&filtered_items);
+        items.push((
+            ProviderChoice::SearchAgain,
+            "Search again...".to_string(),
+            "Enter a different search term".to_string(),
+        ));
+
+        match cliclack::select("Which model provider should we use?")
+            .items(&items)
+            .max_rows(MAX_PROVIDER_ROWS)
+            .interact()?
+        {
+            ProviderChoice::SearchAgain => continue,
+            ProviderChoice::Provider(name) => return Ok(name),
+            ProviderChoice::Search => {
+                unreachable!("Search entry is not added to the results list")
+            }
+        }
+    }
+}
+
+struct CursorRestoreGuard;
+
+impl Drop for CursorRestoreGuard {
+    fn drop(&mut self) {
+        let mut stdout = std::io::stdout().lock();
+        let _ = stdout.write_all(SHOW_CURSOR);
+        let _ = stdout.flush();
+    }
+}
 
 pub async fn handle_configure() -> anyhow::Result<()> {
     if !std::io::stdin().is_terminal() {
@@ -42,6 +150,7 @@ pub async fn handle_configure() -> anyhow::Result<()> {
         );
     }
 
+    let _cursor_restore = CursorRestoreGuard;
     let config = Config::global();
 
     if !config.exists() {
@@ -700,33 +809,95 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     // Get global config instance
     let config = Config::global();
 
-    // Get all available providers and their metadata
+    let current_provider: Option<String> = config.get_goose_provider().ok();
     let mut available_providers = providers().await;
+    available_providers.retain(|(provider, _)| {
+        provider.deprecated.is_none() || current_provider.as_deref() == Some(&provider.name)
+    });
 
     // Sort providers alphabetically by display name
     available_providers.sort_by(|a, b| a.0.display_name.cmp(&b.0.display_name));
 
+    // Get current default provider if it exists
+    let current_provider_index = current_provider.as_ref().and_then(|current_provider| {
+        available_providers
+            .iter()
+            .position(|(provider, _)| &provider.name == current_provider)
+    });
+    let visible_provider_rows = if available_providers.len() > MAX_PROVIDER_ROWS {
+        MAX_PROVIDER_ROWS - 1
+    } else {
+        MAX_PROVIDER_ROWS
+    };
+    move_selected_item_into_view(
+        &mut available_providers,
+        current_provider_index,
+        visible_provider_rows,
+    );
+
     // Create selection items from provider metadata
-    let provider_items: Vec<(&String, &str, &str)> = available_providers
+    let provider_items: Vec<ProviderItem> = available_providers
         .iter()
-        .map(|(p, _)| (&p.name, p.display_name.as_str(), p.description.as_str()))
+        .map(|(p, _)| {
+            let description = match p
+                .deprecated
+                .as_ref()
+                .and_then(|deprecated| deprecated.replacement.as_deref())
+            {
+                Some(replacement) => {
+                    format!("{} Deprecated; use {replacement} instead.", p.description)
+                }
+                None => p.description.clone(),
+            };
+            (p.name.clone(), p.display_name.clone(), description)
+        })
         .collect();
 
-    // Get current default provider if it exists
-    let current_provider: Option<String> = config.get_goose_provider().ok();
-    let default_provider = current_provider.unwrap_or_default();
+    let default_provider = current_provider
+        .filter(|current_provider| {
+            available_providers
+                .iter()
+                .any(|(provider, _)| &provider.name == current_provider)
+        })
+        .unwrap_or_default();
 
-    // Select provider
-    let provider_name = cliclack::select("Which model provider should we use?")
-        .initial_value(&default_provider)
-        .items(&provider_items)
-        .filter_mode()
-        .interact()?;
+    // cliclack 0.5.5 does not reset its private list offset when filtering a
+    // paginated select, so use a separate fuzzy-search step for long lists.
+    let provider_name = if provider_items.len() > MAX_PROVIDER_ROWS {
+        let mut paginated_items = provider_choice_items(&provider_items);
+        paginated_items.insert(
+            MAX_PROVIDER_ROWS - 1,
+            (
+                ProviderChoice::Search,
+                "Search all providers...".to_string(),
+                "Filter the complete provider list".to_string(),
+            ),
+        );
+
+        match cliclack::select("Which model provider should we use?")
+            .initial_value(ProviderChoice::Provider(default_provider.clone()))
+            .items(&paginated_items)
+            .max_rows(MAX_PROVIDER_ROWS)
+            .interact()?
+        {
+            ProviderChoice::Search => search_provider_dialog(&provider_items)?,
+            ProviderChoice::Provider(name) => name,
+            ProviderChoice::SearchAgain => {
+                unreachable!("SearchAgain entry is not added to the paginated list")
+            }
+        }
+    } else {
+        cliclack::select("Which model provider should we use?")
+            .initial_value(default_provider.clone())
+            .items(&provider_items)
+            .filter_mode()
+            .interact()?
+    };
 
     // Get the selected provider's metadata
     let (provider_meta, _) = available_providers
         .iter()
-        .find(|(p, _)| &p.name == provider_name)
+        .find(|(p, _)| p.name == provider_name.as_str())
         .expect("Selected provider must exist in metadata");
 
     for key in provider_meta
@@ -734,7 +905,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .iter()
         .filter(|k| k.primary || k.oauth_flow)
     {
-        if !configure_single_key(config, provider_name, &provider_meta.display_name, key).await? {
+        if !configure_single_key(config, &provider_name, &provider_meta.display_name, key).await? {
             return Ok(false);
         }
     }
@@ -750,7 +921,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
             .interact()?
     {
         for key in non_primary_keys {
-            if !configure_single_key(config, provider_name, &provider_meta.display_name, key)
+            if !configure_single_key(config, &provider_name, &provider_meta.display_name, key)
                 .await?
             {
                 return Ok(false);
@@ -760,7 +931,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
 
     let spin = spinner();
     spin.start("Attempting to fetch supported models...");
-    let temp_provider = create(provider_name, Vec::new()).await?;
+    let temp_provider = create(&provider_name, Vec::new()).await?;
     let models_res = retry_operation(&RetryConfig::default(), || async {
         temp_provider
             .fetch_recommended_models(goose::model_config::global_toolshim())
@@ -816,10 +987,11 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .unwrap_or(false);
     let toolshim_model = std::env::var("GOOSE_TOOLSHIM_OLLAMA_MODEL").ok();
 
-    match test_provider_configuration(provider_name, &model, toolshim_enabled, toolshim_model).await
+    match test_provider_configuration(&provider_name, &model, toolshim_enabled, toolshim_model)
+        .await
     {
         Ok(()) => {
-            goose::config::set_active_provider(config, provider_name, &model)?;
+            goose::config::set_active_provider(config, &provider_name, &model)?;
             print_config_file_saved()?;
             Ok(true)
         }
@@ -1149,6 +1321,9 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             description,
             timeout: Some(timeout),
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: Vec::new(),
         },
@@ -2023,11 +2198,68 @@ fn add_provider() -> anyhow::Result<()> {
         .initial_value(true)
         .interact()?;
 
-    let api_key: String = if requires_auth {
-        cliclack::password("API key:").mask('▪').interact()?
-    } else {
-        String::new()
-    };
+    let mut api_key = String::new();
+    let mut auth: Option<AuthConfig> = None;
+
+    if requires_auth {
+        let auth_mode = cliclack::select("How should goose obtain credentials for this provider?")
+            .item("static", "Static API key", "Enter a fixed API key now")
+            .item(
+                "command",
+                "Command (refreshable)",
+                "Run a command to fetch/refresh a short-lived credential",
+            )
+            .interact()?;
+
+        if auth_mode == "command" {
+            let command: String = cliclack::input("Command to run for the credential:")
+                .placeholder("/path/to/get-token.sh")
+                .validate(|input: &String| {
+                    if input.trim().is_empty() {
+                        Err("Please enter a command")
+                    } else {
+                        Ok(())
+                    }
+                })
+                .interact()?;
+
+            let args_input: String =
+                cliclack::input("Command arguments (comma-separated, optional):")
+                    .placeholder("--flag, value")
+                    .required(false)
+                    .interact()?;
+            let args: Vec<String> = args_input
+                .split(',')
+                .map(str::trim)
+                .filter(|arg| !arg.is_empty())
+                .map(str::to_string)
+                .collect();
+
+            let refresh_interval_input: String = cliclack::input(
+                "Refresh interval in seconds (0 to only refresh after an auth failure):",
+            )
+            .default_input("3600")
+            .validate(|input: &String| {
+                input
+                    .trim()
+                    .parse::<u64>()
+                    .map(|_| ())
+                    .map_err(|_| "Please enter a whole number of seconds")
+            })
+            .interact()?;
+            let refresh_interval: u64 = refresh_interval_input.trim().parse().unwrap_or(3600);
+
+            auth = Some(AuthConfig {
+                command,
+                args,
+                refresh_interval,
+                timeout_seconds: None,
+                cwd: None,
+            });
+        } else {
+            api_key = cliclack::password("API key:").mask('▪').interact()?;
+        }
+    }
 
     let models_input: String = cliclack::input("Available models (separate with commas):")
         .placeholder("model-a, model-b, model-c")
@@ -2040,10 +2272,11 @@ fn add_provider() -> anyhow::Result<()> {
         })
         .interact()?;
 
-    let models: Vec<String> = models_input
+    let models: Vec<goose_providers::base::ModelInfo> = models_input
         .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(goose_providers::base::ModelInfo::new)
         .collect();
 
     let supports_streaming = cliclack::confirm("Does this provider support streaming responses?")
@@ -2074,7 +2307,9 @@ fn add_provider() -> anyhow::Result<()> {
         requires_auth,
         catalog_provider_id: None,
         base_path,
+        toolshim: false,
         preserves_thinking: None,
+        auth,
     })?;
 
     if !provider_config.models.is_empty() {
@@ -2161,4 +2396,61 @@ fn print_config_file_saved() -> anyhow::Result<()> {
         config.path()
     ))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_item_inside_visible_window_keeps_order() {
+        let mut items: Vec<_> = (0..MAX_PROVIDER_ROWS + 1).collect();
+        let expected = items.clone();
+
+        move_selected_item_into_view(
+            &mut items,
+            Some(MAX_PROVIDER_ROWS - 2),
+            MAX_PROVIDER_ROWS - 1,
+        );
+
+        assert_eq!(items, expected);
+    }
+
+    #[test]
+    fn selected_item_outside_visible_window_moves_to_front() {
+        let mut items: Vec<_> = (0..MAX_PROVIDER_ROWS + 2).collect();
+
+        move_selected_item_into_view(
+            &mut items,
+            Some(MAX_PROVIDER_ROWS - 1),
+            MAX_PROVIDER_ROWS - 1,
+        );
+
+        assert_eq!(items[0], MAX_PROVIDER_ROWS - 1);
+        assert_eq!(
+            items[1..MAX_PROVIDER_ROWS],
+            (0..MAX_PROVIDER_ROWS - 1).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn fuzzy_provider_filter_keeps_relevant_matches_ranked_first() {
+        let items = vec![
+            (
+                "anthropic".to_string(),
+                "Anthropic".to_string(),
+                String::new(),
+            ),
+            (
+                "openrouter".to_string(),
+                "OpenRouter".to_string(),
+                String::new(),
+            ),
+            ("openai".to_string(), "OpenAI".to_string(), String::new()),
+        ];
+
+        let filtered = fuzzy_filter_provider_items(&items, "open ai");
+
+        assert_eq!(filtered.first().map(|item| item.0.as_str()), Some("openai"));
+    }
 }

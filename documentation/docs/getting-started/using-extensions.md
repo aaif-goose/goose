@@ -28,18 +28,20 @@ goose includes several built-in extensions you can start using out of the box:
 - [Auto Visualiser](/docs/mcp/autovisualiser-mcp): Automatically generates graphical data visualizations in conversations.
 
 :::warning Access Control
-goose operates autonomously by default. Combined with the Developer extension's tools, this means goose can execute commands and modify files without your approval. If you want more control over this behavior, you can configure the [goose permission mode](/docs/guides/managing-tools/goose-permissions), [tool permissions](/docs/guides/managing-tools/tool-permissions), and [.gooseignore files](/docs/guides/context-engineering/using-gooseignore). See [Configuring Access Controls](/docs/mcp/developer-mcp#configuring-access-controls) for a brief overview.
+goose operates autonomously by default. Combined with the Developer extension's tools, this means goose can execute commands and modify files without your approval. If you want more control over this behavior, you can configure the [goose permission mode](/docs/guides/managing-tools/goose-permissions) and [tool permissions](/docs/guides/managing-tools/tool-permissions). See [Configuring Access Controls](/docs/mcp/developer-mcp#configuring-access-controls) for a brief overview.
 :::
 
 ### Built-in Platform Extensions
 
-Platform extensions are built-in extensions that provide global features like conversation search, task tracking, and extension management. These extensions are always available and can be toggled on or off as needed.
+Platform extensions are built-in extensions that provide global features like code analysis, conversation search, task tracking, and extension management. They can be toggled on or off as needed.
 
+- [Analyze](/docs/guides/codebase-analysis): Analyze code structure, file details, and symbol call graphs (enabled by default)
 - [Apps](/docs/mcp/apps-mcp): Create, manage, and launch custom HTML apps in standalone windows
 - [Chat Recall](/docs/mcp/chatrecall-mcp): Search conversation content across all your session history
-- [Code Mode](/docs/mcp/code-mode-mcp): Execute JavaScript code for tool discovery and tool calling
+- [Code Mode](/docs/mcp/code-mode-mcp): Execute JavaScript code for tool discovery and tool calling, when included in the current build
 - [Extension Manager](/docs/mcp/extension-manager-mcp): Discover, enable, and disable extensions dynamically during sessions (enabled by default)
-- [Summon](/docs/mcp/summon-mcp): Load skills and recipes, and delegate tasks to subagents (enabled by default)
+- [Skills](/docs/guides/context-engineering/using-skills): Discover and load skill instructions from built-in and filesystem skills (enabled by default)
+- [Summon](/docs/mcp/summon-mcp): Load knowledge sources and delegate tasks to subagents (enabled by default)
 - [Todo](/docs/mcp/todo-mcp): Manage task lists and track progress across sessions (enabled by default)
 - [Top of Mind](/docs/mcp/tom-mcp): Inject persistent instructions into goose's working memory every turn
 
@@ -328,7 +330,43 @@ extensions:
     type: stdio
     timeout: 300
 ```
-    
+
+#### Remote extensions with a pre-registered OAuth client
+
+Remote (`streamable_http`) extensions that require OAuth normally obtain a
+client ID automatically, using Client ID Metadata Documents or Dynamic Client
+Registration. Some authorization servers support neither and instead require a
+client that was registered out of band. For those servers, set `client_id` —
+and, for confidential clients, `client_secret_key` — on the extension:
+
+```yaml
+extensions:
+  remote-example:
+    name: Remote Example
+    type: streamable_http
+    uri: https://example.com/mcp
+    client_id: <YOUR_REGISTERED_CLIENT_ID>
+    client_secret_key: REMOTE_EXAMPLE_OAUTH_SECRET
+    scopes:
+      - example.readonly
+    enabled: true
+    timeout: 300
+```
+
+- `client_id`: the OAuth client ID registered with the server's authorization
+  server. When set, it takes priority over Client ID Metadata Documents and
+  Dynamic Client Registration. Supports `$VAR`/`${VAR}` substitution.
+- `client_secret_key`: the name of an env/secret key holding the client
+  secret, resolved from `envs`/`env_keys` or goose's secret store (`goose
+  configure` > extension secrets). The secret value itself never goes in the
+  config file. Omit it for public clients that authenticate with PKCE alone.
+- `scopes`: the OAuth scopes to request. When omitted, scopes are selected
+  from the server's advertised metadata, which may be broader than the
+  extension needs.
+
+The OAuth callback is served on `127.0.0.1` with an ephemeral port; set
+`GOOSE_OAUTH_CALLBACK_PORT` if the authorization server only allows a
+pre-registered redirect URI with a fixed port.
 
 ## Enabling/Disabling Extensions
 

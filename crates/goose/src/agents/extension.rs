@@ -4,14 +4,12 @@ use crate::config;
 use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionLevel;
 use crate::config::Config;
-use rmcp::model::Tool;
 use rmcp::service::ClientInitializeError;
 use rmcp::ServiceError as ClientError;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
-use utoipa::ToSchema;
 
 pub use crate::agents::platform_extensions::{
     PlatformExtensionContext, PlatformExtensionDef, PLATFORM_EXTENSIONS,
@@ -58,7 +56,7 @@ pub enum ExtensionError {
 
 pub type ExtensionResult<T> = Result<T, ExtensionError>;
 
-#[derive(Debug, Clone, Serialize, Default, ToSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Envs {
     /// A map of environment variables to set, e.g. API_KEY -> some_secret, HOST -> host
     #[serde(default)]
@@ -158,22 +156,9 @@ impl Envs {
 }
 
 /// Represents the different types of MCP extensions that can be added to the manager
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum ExtensionConfig {
-    /// SSE transport is no longer supported - kept only for config file compatibility
-    #[serde(rename = "sse")]
-    Sse {
-        #[serde(default)]
-        #[schema(required)]
-        name: String,
-        #[serde(default)]
-        #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
-        description: String,
-        #[serde(default)]
-        uri: Option<String>,
-    },
     /// Standard I/O client with command and arguments
     #[serde(rename = "stdio")]
     Stdio {
@@ -181,11 +166,10 @@ pub enum ExtensionConfig {
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
         description: String,
         cmd: String,
         args: Vec<String>,
-        #[serde(default)]
+        #[serde(default, alias = "env")]
         envs: Envs,
         #[serde(default)]
         env_keys: Vec<String>,
@@ -205,7 +189,6 @@ pub enum ExtensionConfig {
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
         description: String,
         display_name: Option<String>, // needed for the UI
         timeout: Option<u64>,
@@ -222,7 +205,6 @@ pub enum ExtensionConfig {
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
         description: String,
         display_name: Option<String>,
         #[serde(default)]
@@ -238,7 +220,6 @@ pub enum ExtensionConfig {
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
         description: String,
         uri: String,
         #[serde(default)]
@@ -256,47 +237,28 @@ pub enum ExtensionConfig {
         /// Use `@name` for Linux abstract sockets.
         #[serde(default)]
         socket: Option<String>,
+        /// OAuth client ID pre-registered with the server's authorization
+        /// server. When set, it is used directly for the authorization flow
+        /// instead of Client ID Metadata Documents or Dynamic Client
+        /// Registration — required for authorization servers that support
+        /// neither. Supports `$VAR`/`${VAR}` substitution.
         #[serde(default)]
-        bundled: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        client_id: Option<String>,
+        /// Name of the env/secret key holding the OAuth client secret paired
+        /// with `client_id`. The value is resolved from `envs`/`env_keys` or
+        /// the config secret store — never stored inline. Optional: public
+        /// clients using PKCE have no secret.
         #[serde(default)]
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        available_tools: Vec<String>,
-    },
-    /// Frontend-provided tools that will be called through the frontend
-    #[serde(rename = "frontend")]
-    Frontend {
-        /// The name used to identify this extension
-        name: String,
-        #[serde(default)]
-        #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
-        description: String,
-        /// The tools provided by the frontend
-        tools: Vec<Tool>,
-        /// Instructions for how to use these tools
-        instructions: Option<String>,
-        #[serde(default)]
-        bundled: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        client_secret_key: Option<String>,
+        /// OAuth scopes to request with `client_id`. When empty, scopes are
+        /// selected from server metadata, which may be broader than needed.
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        available_tools: Vec<String>,
-    },
-    /// Inline Python code that will be executed using uvx
-    #[serde(rename = "inline_python")]
-    InlinePython {
-        /// The name used to identify this extension
-        name: String,
+        scopes: Vec<String>,
         #[serde(default)]
-        #[serde(deserialize_with = "deserialize_null_with_default")]
-        #[schema(required)]
-        description: String,
-        /// The Python code to execute
-        code: String,
-        /// Timeout in seconds
-        timeout: Option<u64>,
-        /// Python package dependencies required by this extension
-        #[serde(default)]
-        dependencies: Option<Vec<String>>,
+        bundled: Option<bool>,
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
@@ -332,6 +294,9 @@ impl ExtensionConfig {
             description: description.into(),
             timeout: Some(timeout.into()),
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -353,22 +318,6 @@ impl ExtensionConfig {
             timeout: Some(timeout.into()),
             cwd: None,
             bundled: None,
-            available_tools: Vec::new(),
-        }
-    }
-
-    pub fn inline_python<S: Into<String>, T: Into<u64>>(
-        name: S,
-        code: S,
-        description: S,
-        timeout: T,
-    ) -> Self {
-        Self::InlinePython {
-            name: name.into(),
-            code: code.into(),
-            description: description.into(),
-            timeout: Some(timeout.into()),
-            dependencies: None,
             available_tools: Vec::new(),
         }
     }
@@ -412,13 +361,10 @@ impl ExtensionConfig {
 
     pub fn name(&self) -> String {
         match self {
-            Self::Sse { name, .. } => name,
             Self::StreamableHttp { name, .. } => name,
             Self::Stdio { name, .. } => name,
             Self::Builtin { name, .. } => name,
             Self::Platform { name, .. } => name,
-            Self::Frontend { name, .. } => name,
-            Self::InlinePython { name, .. } => name,
         }
         .to_string()
     }
@@ -426,7 +372,6 @@ impl ExtensionConfig {
     /// Check if a tool should be available to the LLM
     pub fn is_tool_available(&self, tool_name: &str) -> bool {
         let available_tools = match self {
-            Self::Sse { .. } => return false, // SSE is unsupported
             Self::StreamableHttp {
                 available_tools, ..
             }
@@ -437,12 +382,6 @@ impl ExtensionConfig {
                 available_tools, ..
             }
             | Self::Platform {
-                available_tools, ..
-            }
-            | Self::InlinePython {
-                available_tools, ..
-            }
-            | Self::Frontend {
                 available_tools, ..
             } => available_tools,
         };
@@ -491,10 +430,22 @@ impl ExtensionConfig {
                 headers,
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools,
             } => {
-                let merged = merge_environments(&envs, &env_keys, &name, config).await?;
+                // Resolve the OAuth client secret alongside env_keys so that
+                // rotating it changes the resolved config, which is what
+                // add_extension compares to decide whether to restart.
+                let mut secret_keys = env_keys;
+                if let Some(key) = &client_secret_key {
+                    if !secret_keys.contains(key) {
+                        secret_keys.push(key.clone());
+                    }
+                }
+                let merged = merge_environments(&envs, &secret_keys, &name, config).await?;
                 let headers = headers
                     .into_iter()
                     .map(|(k, v)| {
@@ -503,6 +454,7 @@ impl ExtensionConfig {
                     })
                     .collect();
                 let socket = socket.map(|s| substitute_env_vars(&s, &merged));
+                let client_id = client_id.map(|c| substitute_env_vars(&c, &merged));
                 Ok(Self::StreamableHttp {
                     name,
                     description,
@@ -512,6 +464,9 @@ impl ExtensionConfig {
                     headers,
                     timeout,
                     socket,
+                    client_id,
+                    client_secret_key,
+                    scopes,
                     bundled,
                     available_tools,
                 })
@@ -524,9 +479,6 @@ impl ExtensionConfig {
 impl std::fmt::Display for ExtensionConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExtensionConfig::Sse { name, .. } => {
-                write!(f, "SSE({}: unsupported)", name)
-            }
             ExtensionConfig::StreamableHttp {
                 name, uri, socket, ..
             } => {
@@ -543,12 +495,6 @@ impl std::fmt::Display for ExtensionConfig {
             }
             ExtensionConfig::Builtin { name, .. } => write!(f, "Builtin({})", name),
             ExtensionConfig::Platform { name, .. } => write!(f, "Platform({})", name),
-            ExtensionConfig::Frontend { name, tools, .. } => {
-                write!(f, "Frontend({}: {} tools)", name, tools.len())
-            }
-            ExtensionConfig::InlinePython { name, code, .. } => {
-                write!(f, "InlinePython({}: {} chars)", name, code.len())
-            }
         }
     }
 }
@@ -581,14 +527,13 @@ where
 }
 
 /// Information about the tool used for building prompts
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ToolInfo {
     pub name: String,
     pub description: String,
     pub parameters: Vec<String>,
     pub permission: Option<PermissionLevel>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Object)]
     pub input_schema: Option<serde_json::Value>,
 }
 
@@ -682,6 +627,77 @@ available_tools: []
     }
 
     #[test]
+    fn test_deserialize_streamable_http_oauth_client_fields() {
+        let config: ExtensionConfig = serde_yaml::from_str(
+            "type: streamable_http
+name: remote
+uri: https://example.com/mcp
+client_id: registered-client.example
+client_secret_key: OAUTH_CLIENT_SECRET
+scopes:
+  - scope.read
+  - scope.write
+timeout: 300",
+        )
+        .unwrap();
+
+        let ExtensionConfig::StreamableHttp {
+            client_id,
+            client_secret_key,
+            scopes,
+            ..
+        } = config
+        else {
+            panic!("expected streamable_http config");
+        };
+
+        assert_eq!(client_id.as_deref(), Some("registered-client.example"));
+        assert_eq!(client_secret_key.as_deref(), Some("OAUTH_CLIENT_SECRET"));
+        assert_eq!(scopes, vec!["scope.read", "scope.write"]);
+    }
+
+    #[test]
+    fn test_deserialize_streamable_http_without_oauth_client_fields() {
+        let config: ExtensionConfig = serde_yaml::from_str(
+            "type: streamable_http
+name: remote
+uri: https://example.com/mcp
+timeout: 300",
+        )
+        .unwrap();
+
+        let ExtensionConfig::StreamableHttp {
+            client_id,
+            client_secret_key,
+            scopes,
+            ..
+        } = config
+        else {
+            panic!("expected streamable_http config");
+        };
+
+        assert_eq!(client_id, None);
+        assert_eq!(client_secret_key, None);
+        assert!(scopes.is_empty());
+    }
+
+    #[test]
+    fn serialization_omits_unset_oauth_client_fields() {
+        let config = ExtensionConfig::streamable_http(
+            "remote",
+            "https://example.com/mcp",
+            "remote extension",
+            300u64,
+        );
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+
+        assert!(!yaml.contains("client_id"));
+        assert!(!yaml.contains("client_secret_key"));
+        assert!(!yaml.contains("scopes"));
+    }
+
+    #[test]
     fn envs_deserialization_filters_disallowed_keys() {
         let envs: extension::Envs =
             serde_yaml::from_str("LD_PRELOAD: /tmp/injected.so\nSAFE_VAR: ok\n").unwrap();
@@ -762,6 +778,9 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         },
@@ -783,6 +802,9 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         }
@@ -861,6 +883,9 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         },
@@ -879,6 +904,9 @@ available_tools: []
                 .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         }
@@ -894,6 +922,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         },
@@ -910,6 +941,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         }
@@ -950,6 +984,80 @@ available_tools: []
         }
         ; "env_key_skipped_when_already_in_envs"
     )]
+    #[test_case(
+        ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "https://example.com/mcp".into(),
+            envs: extension::Envs::default(),
+            env_keys: vec!["MY_SECRET".into()],
+            headers: std::collections::HashMap::new(),
+            timeout: None,
+            socket: None,
+            client_id: Some("${MY_SECRET}".into()),
+            client_secret_key: Some("MY_SECRET".into()),
+            scopes: vec!["scope.read".into()],
+            bundled: None,
+            available_tools: vec![],
+        },
+        ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "https://example.com/mcp".into(),
+            envs: extension::Envs::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert("MY_SECRET".to_string(), "secret_value".to_string());
+                m
+            }),
+            env_keys: vec![],
+            headers: std::collections::HashMap::new(),
+            timeout: None,
+            socket: None,
+            client_id: Some("secret_value".into()),
+            client_secret_key: Some("MY_SECRET".into()),
+            scopes: vec!["scope.read".into()],
+            bundled: None,
+            available_tools: vec![],
+        }
+        ; "http_client_id_substitution_and_oauth_fields_preserved"
+    )]
+    #[test_case(
+        ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "https://example.com/mcp".into(),
+            envs: extension::Envs::default(),
+            env_keys: vec![],
+            headers: std::collections::HashMap::new(),
+            timeout: None,
+            socket: None,
+            client_id: Some("registered-client".into()),
+            client_secret_key: Some("MY_SECRET".into()),
+            scopes: vec![],
+            bundled: None,
+            available_tools: vec![],
+        },
+        ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "https://example.com/mcp".into(),
+            envs: extension::Envs::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert("MY_SECRET".to_string(), "secret_value".to_string());
+                m
+            }),
+            env_keys: vec![],
+            headers: std::collections::HashMap::new(),
+            timeout: None,
+            socket: None,
+            client_id: Some("registered-client".into()),
+            client_secret_key: Some("MY_SECRET".into()),
+            scopes: vec![],
+            bundled: None,
+            available_tools: vec![],
+        }
+        ; "http_client_secret_key_resolved_without_env_keys_entry"
+    )]
     #[tokio::test]
     async fn test_resolve(config: ExtensionConfig, expected: ExtensionConfig) {
         let dir = tempfile::tempdir().unwrap();
@@ -973,6 +1081,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: Some("@egress.sock".to_string()),
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         };
@@ -993,6 +1104,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         };

@@ -66,6 +66,17 @@ impl goose_providers::base::ProviderDescriptor for AzureProvider {
                 ConfigKey::new("AZURE_OPENAI_AD_TOKEN", false, true, Some(""), true),
             ],
         )
+        .with_setup(
+            crate::providers::catalog::ProviderSetupMetadata::new(
+                crate::providers::catalog::ProviderSetupCategory::Model,
+                crate::providers::catalog::ProviderSetupMethod::ConfigFields,
+                crate::providers::catalog::ProviderSetupGroup::Additional,
+            )
+            .with_field("AZURE_OPENAI_ENDPOINT", "Endpoint", Some("https://your-resource.openai.azure.com"), None)
+            .with_field("AZURE_OPENAI_DEPLOYMENT_NAME", "Deployment", Some("gpt-4o"), None)
+            .with_field("AZURE_OPENAI_API_KEY", "API Key", Some("Paste your API key"), None)
+            .with_field("AZURE_OPENAI_AD_TOKEN", "Entra ID Token", Some("Optional: short-lived Microsoft Entra access token"), None),
+        )
     }
 }
 

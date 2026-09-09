@@ -15,6 +15,8 @@ on:
       - Release
     types:
       - completed
+    branches-ignore:
+      - "release/**"
 
   # Allow manual trigger for testing
   workflow_dispatch:
@@ -76,7 +78,7 @@ jobs:
   generate-release-notes:
     name: Generate Release Notes
     runs-on: ubuntu-latest
-    # For workflow_run: only run if Release succeeded and tag is not 'stable'
+    # For workflow_run: release branch preflight builds are ignored by the trigger.
     # For workflow_dispatch: only run if tag is not 'stable'
     if: |
       (github.event_name == 'workflow_dispatch' && inputs.tag != 'stable') ||
@@ -113,7 +115,7 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           fetch-tags: true

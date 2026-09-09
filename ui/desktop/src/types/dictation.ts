@@ -1,1 +1,1 @@
-export type DictationProvider = 'openai' | 'elevenlabs' | 'groq' | 'local';
+export type DictationProvider = 'openai' | 'elevenlabs' | 'groq' | 'local' | 'model';

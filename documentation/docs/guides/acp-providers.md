@@ -43,7 +43,7 @@ Wraps [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp
 
 ### Codex ACP
 
-Wraps [codex-acp](https://github.com/zed-industries/codex-acp), an ACP adapter for OpenAI's Codex. Uses the same ChatGPT subscription as the deprecated `codex` CLI provider. Codex's sandbox blocks network by default; goose automatically enables network access when HTTP MCP servers are configured.
+Use goose with ChatGPT Plus/Pro or OpenAI API credits via the [codex-acp](https://github.com/agentclientprotocol/codex-acp) adapter.
 
 **Requirements:**
 - Node.js and npm
@@ -126,21 +126,38 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 
 ### Codex ACP
 
-1. **Install the ACP adapter**
+1. **Check the installed package**
 
    ```bash
-   npm install -g @zed-industries/codex-acp
+   codex-acp --version
    ```
 
-2. **Authenticate with OpenAI**
+   The output should start with `@agentclientprotocol/codex-acp`. If it does, continue to authentication.
 
-   Run `codex` and follow the authentication prompts. You can use your ChatGPT account or API key.
+2. **Install or replace only if needed**
 
-3. **Configure goose**
+   If `--version` is rejected, remove `@zed-industries/codex-acp`:
 
-   Set the provider environment variable:
+   ```bash
+   npm uninstall -g @zed-industries/codex-acp
+   ```
+
+   If `codex-acp` is missing or was removed, install `@agentclientprotocol/codex-acp`:
+
+   ```bash
+   npm install -g @agentclientprotocol/codex-acp
+   ```
+
+3. **Authenticate with OpenAI**
+
+   Run `codex` and follow the authentication prompts. A compatible existing Codex login can be reused.
+
+4. **Configure goose**
+
+   Set the provider and use `current` to let Codex choose its default model:
    ```bash
    export GOOSE_PROVIDER=codex-acp
+   export GOOSE_MODEL=current
    ```
 
    Or configure through the goose CLI using `goose configure`:
@@ -157,8 +174,10 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
    ◇  Model fetch complete
    │
    ◇  Enter a model from that provider:
-   │  gpt-5.2-codex
+   │  current
    ```
+
+Replacing the npm package does not change `~/.codex` or require recreating your goose configuration. goose does not replace the package automatically.
 
 ### Pi ACP
 
@@ -239,28 +258,24 @@ See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) 
 
 ### Codex ACP Configuration
 
-| Environment Variable | Description        | Default         |
-|----------------------|--------------------|-----------------|
-| `GOOSE_PROVIDER`     | Set to `codex-acp` | None            |
-| `GOOSE_MODEL`        | Model to use       | `gpt-5.2-codex` |
-| `GOOSE_MODE`         | Permission mode    | `auto`          |
+| Environment Variable | Description        | Default   |
+|----------------------|--------------------|-----------|
+| `GOOSE_PROVIDER`     | Set to `codex-acp` | None      |
+| `GOOSE_MODEL`        | Model to use       | `current` |
+| `GOOSE_MODE`         | Permission mode    | `auto`    |
 
-**Known Models:**
-- `gpt-5.2-codex`
-- `gpt-5.2`
-- `gpt-5.1-codex-max`
-- `gpt-5.1-codex-mini`
+Codex ACP reports its available models dynamically. Keep `current` to use Codex's default, or select a discovered model explicitly.
 
 **Permission Modes (`GOOSE_MODE`):**
 
-| Mode            | Approval / Sandbox          | Behavior                                                       |
-|-----------------|-----------------------------|----------------------------------------------------------------|
-| `auto`          | No approvals, full access   | Bypasses all approvals and sandbox restrictions                |
-| `smart-approve` | On-request, workspace-write | Workspace write access, prompts for operations outside sandbox |
-| `approve`       | On-request, read-only       | Read-only sandbox, prompts for all write operations            |
-| `chat`          | No approvals, read-only     | Read-only sandbox, no tool execution                           |
+| goose mode      | Codex ACP mode      |
+|-----------------|---------------------|
+| `auto`          | `agent-full-access` |
+| `smart-approve` | `agent`             |
+| `approve`       | `read-only`         |
+| `chat`          | `read-only`         |
 
-See [codex-acp](https://github.com/zed-industries/codex-acp) for approval policy and sandbox details.
+See [codex-acp](https://github.com/agentclientprotocol/codex-acp) for session mode details.
 
 ### Pi ACP Configuration
 

@@ -19,13 +19,13 @@ When working with [Large Language Models (LLMs)](/docs/getting-started/providers
 ## How goose Manages Context
 goose uses a two-tiered approach to context management:
 
-1. **Auto-Compaction**: Proactively summarizes conversation when approaching token limits
+1. **Auto-Compaction**: Proactively compacts conversation history when approaching token limits
 2. **Context Strategies**: Backup strategy used if the context limit is still exceeded after auto-compaction
 
 This layered approach lets goose handle token and context limits gracefully.
 
 ## Automatic Compaction
-goose automatically compacts (summarizes) older parts of your conversation when approaching token limits, allowing you to maintain long-running sessions without manual intervention. 
+goose automatically compacts older parts of your conversation into a summary when approaching token limits, allowing you to maintain long-running sessions without manual intervention.
 Auto-compaction is triggered by default when you reach 80% of the token limit in goose Desktop and the goose CLI.
 
 Control the auto-compaction behavior with the `GOOSE_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 
@@ -39,14 +39,14 @@ export GOOSE_AUTO_COMPACT_THRESHOLD=0.6
 When you reach the auto-compaction threshold:
   1. goose will automatically start compacting the conversation to make room.
   2. Once complete, you'll see a confirmation message that the conversation was compacted and summarized.
-  3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for goose.
+  3. Continue the session. Your previous conversation remains visible, but only the compacted conversation is included in the active context for goose.
 
 :::tip Customize Compaction
 You can customize how goose summarizes conversations during compaction by editing the `compaction.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
 
 :::tip Tool Output Summarization
-To help maintain efficient context usage, goose summarizes older tool call outputs in the background while keeping recent calls in full detail. By default, this happens when you have more than 10 tool calls in a session. For advanced tuning, see [`GOOSE_TOOL_CALL_CUTOFF`](/docs/guides/environment-variables#session-management).
+To help maintain efficient context usage, goose summarizes older tool call outputs in the background while keeping recent calls in full detail. By default, goose computes the cutoff from the model context limit and auto-compaction threshold. For advanced tuning, see [`GOOSE_TOOL_CALL_CUTOFF`](/docs/guides/environment-variables#session-management).
 :::
 
 ### Manual Compaction
@@ -58,7 +58,7 @@ You can also trigger compaction manually before reaching context or token limits
   1. Point to the token usage indicator dot next to the model name at the bottom of the app
   2. Click <ScrollText className="inline" size={16} /> `Compact now` in the context window that appears
   3. Once complete, you'll see a confirmation message that the conversation was compacted and summarized.
-  4. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for goose.
+  4. Continue the session. Your previous conversation remains visible, but only the compacted conversation is included in the active context for goose.
 
   :::info 
   You must send at least one message in the chat before the `Compact now` button is enabled. 
@@ -67,17 +67,19 @@ You can also trigger compaction manually before reaching context or token limits
 </TabItem>
 <TabItem value="cli" label="goose CLI" default>
 
-To proactively trigger summarization before reaching context limits, use the `/summarize` command:
+To proactively compact the conversation before reaching context limits, use the `/compact` command:
 
 ```sh
-( O)> /summarize
-◇  Are you sure you want to summarize this conversation? This will condense the message history.
+( O)> /compact
+◇  Are you sure you want to compact this conversation? This will condense the message history.
 │  Yes 
 │
-Summarizing conversation...
-Conversation has been summarized.
+Compacting conversation...
+Conversation has been compacted.
 Key information has been preserved while reducing context length.
 ```
+
+`/summarize` still works as a deprecated alias for `/compact`, but `/compact` is the command to use in new docs and workflows.
 
 </TabItem>
 </Tabs>
@@ -293,7 +295,6 @@ Context limits are automatically detected based on your model name, but goose pr
 | Model | Description | Best For | Setting |
 |-------|-------------|----------|---------|
 | **Main** | Set context limit for the main model (also serves as fallback for other models) | LiteLLM proxies, custom models with non-standard names | `GOOSE_CONTEXT_LIMIT` |
-| **Planner** | Set context for [planner models](/docs/guides/context-engineering/creating-plans) | Large planning tasks requiring extensive context | `GOOSE_PLANNER_CONTEXT_LIMIT` |
 
 :::info
 This setting only affects the displayed token usage and progress indicators. Actual context management is handled by your LLM, so you may experience more or less usage than the limit you set, regardless of what the display shows.
@@ -308,10 +309,10 @@ This feature is particularly useful with:
 
 goose resolves context limits with the following precedence (highest to lowest):
 
-1. Explicit context_limit in model configuration (if set programmatically)
-2. Specific environment variable (e.g., `GOOSE_PLANNER_CONTEXT_LIMIT`)
-3. Global environment variable (`GOOSE_CONTEXT_LIMIT`)
-4. Model-specific default based on name pattern matching
+1. Global environment variable (`GOOSE_CONTEXT_LIMIT`)
+2. Explicit declarative or custom provider model configuration
+3. Provider runtime discovery
+4. Canonical model metadata
 5. Global default (128,000 tokens)
 
 **Configuration**
@@ -344,22 +345,6 @@ goose resolves context limits with the following precedence (highest to lowest):
 export GOOSE_PROVIDER="openai"
 export GOOSE_MODEL="my-custom-gpt4-proxy"
 export GOOSE_CONTEXT_LIMIT=200000  # Override the 32k default
-```
-
-2. Planner setup with a different context limit
-
-```bash
-# Set a larger context window for planning
-export GOOSE_PLANNER_MODEL="claude-opus-custom"
-export GOOSE_PLANNER_CONTEXT_LIMIT=500000
-```
-
-3. Planner with large context
-
-```bash
-# Large context for complex planning
-export GOOSE_PLANNER_MODEL="gpt-4-custom"
-export GOOSE_PLANNER_CONTEXT_LIMIT=1000000
 ```
 
 ## Credit Balance Monitoring

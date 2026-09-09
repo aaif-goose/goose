@@ -2,7 +2,7 @@ use anyhow::Result;
 use rmcp::model::ElicitationAction;
 use serde_json::Value;
 
-use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
+use crate::action_required_manager::ElicitationOutcome;
 use crate::conversation::message::{Message, MessageContent};
 use crate::session::SessionManager;
 
@@ -42,7 +42,8 @@ pub(crate) async fn complete_elicitation_with_message(
     response: ElicitationOutcome,
     response_message: &Message,
 ) -> Result<()> {
-    let claim = ActionRequiredManager::global()
+    let claim = session_manager
+        .action_required()
         .claim_response(session_id, elicitation_id)
         .await?;
 

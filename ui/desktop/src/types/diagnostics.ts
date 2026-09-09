@@ -32,8 +32,8 @@ export type DiagnosticsTextFile = {
 };
 
 export type DiagnosticsLogs = {
+  cli: DiagnosticsTextFile[];
   llm: DiagnosticsTextFile[];
-  server?: DiagnosticsTextFile | null;
 };
 
 export type DiagnosticsPrompt = {

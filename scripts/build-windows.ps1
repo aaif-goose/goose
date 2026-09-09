@@ -42,7 +42,7 @@ Write-Host ""
 # Step 1: Clone or update repo
 Write-Host "[2/7] Building Rust backend (release)..." -ForegroundColor Yellow
 Write-Host "  This may take 5-15 minutes on first build..."
-cargo build --release -p goose-server
+cargo build --release -p goose-cli --bin goose
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Rust build failed!" -ForegroundColor Red
     exit 1
@@ -55,10 +55,12 @@ Write-Host "[3/7] Copying binaries to desktop app..." -ForegroundColor Yellow
 $binDir = "ui\desktop\src\bin"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir -Force | Out-Null }
 
-Copy-Item "target\release\goosed.exe" "$binDir\" -Force
-if (Test-Path "target\release\goose.exe") {
-    Copy-Item "target\release\goose.exe" "$binDir\" -Force
+$gooseBinary = "target\release\goose.exe"
+if (-not (Test-Path $gooseBinary)) {
+    Write-Host "Backend binary not found: $gooseBinary" -ForegroundColor Red
+    exit 1
 }
+Copy-Item $gooseBinary "$binDir\" -Force
 # Copy required DLLs if they exist (from cross-compilation)
 Get-ChildItem "target\release\*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
     Copy-Item $_.FullName "$binDir\" -Force
@@ -78,20 +80,26 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  Dependencies installed." -ForegroundColor Green
 Write-Host ""
 
-# Step 4: Generate API types
-Write-Host "[5/7] Generating API types..." -ForegroundColor Yellow
-pnpm run generate-api
+# Step 4: Build desktop assets
+Write-Host "[5/7] Building Goose ACP client, clearing Vite cache, and compiling i18n messages..." -ForegroundColor Yellow
+pnpm run build-goose-acp-client
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "API type generation failed!" -ForegroundColor Red
+    Write-Host "Goose ACP client build or Vite cache cleanup failed!" -ForegroundColor Red
     Pop-Location
     exit 1
 }
-Write-Host "  API types generated." -ForegroundColor Green
+pnpm run i18n:compile
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "i18n compilation failed!" -ForegroundColor Red
+    Pop-Location
+    exit 1
+}
+Write-Host "  Desktop assets built." -ForegroundColor Green
 Write-Host ""
 
 # Step 5: Package
 Write-Host "[6/7] Packaging Goose Desktop..." -ForegroundColor Yellow
-npx electron-forge package
+pnpm exec electron-forge package
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Packaging failed!" -ForegroundColor Red
     Pop-Location
@@ -102,10 +110,10 @@ Write-Host ""
 
 # Step 6: Make installer
 Write-Host "[7/7] Creating Windows installer..." -ForegroundColor Yellow
-npx electron-forge make
+pnpm exec electron-forge make
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Make failed! Trying with squirrel only..." -ForegroundColor Yellow
-    npx electron-forge make --targets=@electron-forge/maker-squirrel
+    pnpm exec electron-forge make --targets=@electron-forge/maker-squirrel
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Fallback installer build also failed!" -ForegroundColor Red
         Pop-Location

@@ -7,6 +7,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+const STABLE_SCHEMA_TYPE_NAMES: &[&str] = &["EmptyResponse"];
+
 fn main() {
     let mut generator = SchemaGenerator::default();
     let methods = GooseAcpAgent::custom_method_schemas(&mut generator);
@@ -57,11 +59,10 @@ fn main() {
     let unstable_type_names: BTreeSet<String> = type_methods
         .iter()
         .filter_map(|(name, methods_list)| {
-            if methods_list.iter().all(|method| is_unstable_method(method)) {
-                Some(name.clone())
-            } else {
-                None
-            }
+            let is_unstable = methods_list.iter().all(|method| is_unstable_method(method));
+            let has_stable_name = STABLE_SCHEMA_TYPE_NAMES.contains(&name.as_str());
+
+            (is_unstable && !has_stable_name).then(|| name.clone())
         })
         .collect();
 

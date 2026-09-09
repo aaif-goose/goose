@@ -116,7 +116,7 @@ If you encounter issues:
 
 1. Check the **[Container Use GitHub repository](https://github.com/dagger/container-use)** for documentation
 2. Verify all prerequisites are installed and working
-3. Join our [Discord community](https://discord.gg/goose-oss) for support
+3. Join our [Discord community](https://discord.gg/n8R5VaWDAn) for support
 
 ## Next Steps
 

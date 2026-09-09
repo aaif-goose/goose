@@ -1,0 +1,31 @@
+{
+  "name": "sakana",
+  "engine": "openai",
+  "display_name": "Sakana AI",
+  "description": "Sakana Fugu multi-agent system delivered as one OpenAI-compatible model API",
+  "api_key_env": "SAKANA_API_KEY",
+  "base_url": "https://api.sakana.ai/v1",
+  "models": [
+    {
+      "name": "fugu",
+      "context_limit": 1000000,
+      "input_token_cost": null,
+      "output_token_cost": null,
+      "currency": null,
+      "supports_cache_control": null
+    },
+    {
+      "name": "fugu-ultra",
+      "context_limit": 1000000,
+      "input_token_cost": null,
+      "output_token_cost": null,
+      "currency": null,
+      "supports_cache_control": null
+    }
+  ],
+  "headers": null,
+  "timeout_seconds": null,
+  "model_doc_link": "https://console.sakana.ai/models",
+  "preserves_thinking": true,
+  "supports_streaming": true
+}

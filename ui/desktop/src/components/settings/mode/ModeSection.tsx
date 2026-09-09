@@ -14,7 +14,7 @@ export const ModeSection = () => {
       setCurrentMode(newMode);
     } catch (error) {
       console.error('Error updating goose mode:', error);
-      throw new Error(`Failed to store new goose mode: ${newMode}`);
+      throw new Error(`Failed to store new goose mode: ${newMode}`, { cause: error });
     }
   };
 

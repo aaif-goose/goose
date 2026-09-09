@@ -36,9 +36,6 @@ This tutorial covers how to add the [goose Docs MCP Server](https://github.com/i
       description="GitMCP for goose documentation"
       command="npx"
       args={["mcp-remote", "https://block.gitmcp.io/goose/"]}
-      cliCommand="npx mcp-remote https://block.gitmcp.io/goose/"
-      timeout={300}
-      note="Note that you'll need Node.js installed on your system to run this command, as it uses npx."
     />
  </TabItem>
   <TabItem value="cli" label="goose CLI">

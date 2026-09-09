@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Archive,
   Brain,
   Camera,
   Code2,
@@ -9,12 +8,10 @@ import {
   FileEdit,
   FilePlus,
   FileText,
-  Globe,
   Monitor,
   Numbers,
   Save,
   Search,
-  Settings,
   Terminal,
   Tool,
 } from '../components/icons/toolcalls';
@@ -43,12 +40,8 @@ export const getToolIcon = (toolName: string): React.ComponentType<ToolIconProps
       return Brain;
 
     // Computer Controller Extension Tools
-    case 'automation_script':
-      return Settings;
     case 'computer_control':
       return Monitor;
-    case 'web_scrape':
-      return Globe;
     case 'screen_capture':
       return Camera;
     case 'pdf_tool':
@@ -57,8 +50,6 @@ export const getToolIcon = (toolName: string): React.ComponentType<ToolIconProps
       return FileText;
     case 'xlsx_tool':
       return Numbers;
-    case 'cache':
-      return Archive;
 
     // File Operations
     case 'search':

@@ -260,7 +260,7 @@ You'll see ideas go from prompt to prototype in one session.
 
 ## Looking for more examples?
 
-This blog post included just a few of the ways I use Goose. If you're curious about what else it can do, check out the [Prompt Library](/prompt-library) or just ask:
+This blog post included just a few of the ways I use goose. If you're curious about what else it can do, just ask:
 
 What are 5 useful things you can help me with today?
 

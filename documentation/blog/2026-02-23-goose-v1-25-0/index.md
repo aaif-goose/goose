@@ -18,18 +18,20 @@ Let's break down what's new.
 
 ## 🔒 macOS Sandboxing
 
-**The headline feature of v1.25.0 is security sandboxing for goose Desktop on macOS.**
+:::danger Outdated
+The macOS seatbelt sandbox described in this section was experimental and has been removed. The `goose` server process (which executes tools) runs with the same permissions as your user account and is **not** sandboxed at the OS level. For security controls, see [`GOOSE_MODE`](/docs/guides/environment-variables#tool-configuration) (`approve`, `smart_approve`) to restrict what tools can run without confirmation.
+:::
 
-When you give an AI agent access to your shell and file system, trust matters. With this release, goose Desktop now runs inside a [macOS sandbox](https://goose-docs.ai/docs/guides/sandbox) powered by [seatbelt](https://github.com/michaelneale/agent-seatbelt-sandbox), the same underlying technology Apple uses to sandbox its own apps.
+**The headline feature of v1.25.0 was optional security sandboxing for goose Desktop on macOS.**
 
-What does this mean in practice?
+goose Desktop added an opt-in macOS sandbox (enabled via `GOOSE_SANDBOX=true`) powered by [seatbelt](https://github.com/michaelneale/agent-seatbelt-sandbox), the same underlying technology Apple uses to sandbox its own apps.
 
-- **File system restrictions:** goose can be limited in what directories it can read and write, preventing it from modifying its own config or accessing sensitive areas outside your project.
-- **Network visibility:** You can track and limit what URLs goose accesses.
-- **Zero overhead:** The sandbox uses macOS's built-in `sandbox-exec` facility, so there's no performance penalty.
-- **Works with any tools:** Because sandboxing happens at the OS level, it applies regardless of which MCP extensions or tools goose is using.
+What it provided at the time:
 
-This is a great starting point for defense-in-depth security. The sandbox checks for `/usr/bin/sandbox-exec` on macOS and applies restrictions transparently. It's lightweight, proven, and something we'll continue to improve.
+- **File system restrictions:** goose could be limited in what directories it reads and writes, preventing it from modifying its own config or accessing sensitive areas outside your project.
+- **Network visibility:** You could track and limit what URLs goose accessed.
+- **Zero overhead:** The sandbox used macOS's built-in `sandbox-exec` facility, so there was no performance penalty.
+- **Works with any tools:** Because sandboxing happened at the OS level, it applied regardless of which MCP extensions or tools goose was using.
 
 ## 🧩 Unified Summon Extension
 

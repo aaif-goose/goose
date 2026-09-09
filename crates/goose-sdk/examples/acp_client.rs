@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Step 1: Initialize
                 eprintln!("🤝 Initializing...");
                 let init_response = cx
-                    .send_request(InitializeRequest::new(ProtocolVersion::LATEST))
+                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task()
                     .await?;
                 eprintln!("✓ Agent initialized: {:?}", init_response.agent_info);

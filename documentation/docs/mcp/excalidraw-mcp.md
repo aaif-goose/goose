@@ -19,7 +19,7 @@ This tutorial covers how to add the [Excalidraw MCP App](https://github.com/exca
    [Launch the installer](goose://extension?cmd=http&id=excalidraw&name=Excalidraw&url=https%3A%2F%2Fexcalidraw-mcp-app.vercel.app%2Fmcp&description=Excalidraw%20MCP%20App%20for%20AI-powered%20diagramming)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
-  Add a `Remote Extension (Streaming HTTP)` extension type with:
+  Add a `Remote Extension (Streamable HTTP)` extension type with:
 
   **Endpoint URL**
   ```
@@ -75,4 +75,3 @@ Hey Goose review my video automation recipe and create a visual of the automatio
 
 ```
 ![excalidraw image](/img/excalidrawImage.png)
-

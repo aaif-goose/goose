@@ -6,9 +6,14 @@
 import React from 'react';
 import { screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { AppInner, resolveSessionInitialMessage } from './App';
+import { AppInner, PairRouteWrapper, resolveSessionInitialMessage } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
 import { FeaturesProvider } from './contexts/FeaturesContext';
+import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
+import { createSession } from './sessions';
+import { RecipeParameterScopesUnsupportedError } from './acp/errors';
+
+const mockToastError = vi.hoisted(() => vi.fn());
 
 // Set up globals for jsdom
 Object.defineProperty(window, 'location', {
@@ -34,16 +39,13 @@ vi.mock('./utils/costDatabase', () => ({
   initializeCostDatabase: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./api', () => {
-  return {
-    initConfig: vi.fn().mockResolvedValue(undefined),
-    backupConfig: vi.fn().mockResolvedValue(undefined),
-    recoverConfig: vi.fn().mockResolvedValue(undefined),
-    validateConfig: vi.fn().mockResolvedValue(undefined),
-  };
-});
+vi.mock('./acp/sessions', () => ({
+  acpListSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
+  acpDeleteSession: vi.fn().mockResolvedValue(undefined),
+}));
 
-vi.mock('./sessions', () => ({
+vi.mock('./sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./sessions')>()),
   fetchSessionDetails: vi
     .fn()
     .mockResolvedValue({ sessionId: 'test', messages: [], metadata: { description: '' } }),
@@ -53,6 +55,11 @@ vi.mock('./sessions', () => ({
 
 vi.mock('./acp/capabilities', () => ({
   getAcpFeatureCapabilities: vi.fn().mockResolvedValue({ localInference: true }),
+}));
+
+vi.mock('./acp/acpConnection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./acp/acpConnection')>()),
+  reconnectAcpAfterSystemResume: vi.fn(),
 }));
 
 // Mock the ACP providers module used by OnboardingGuard so it doesn't try to
@@ -120,6 +127,9 @@ vi.mock('./components/ui/ConfirmationModal', () => ({
 
 vi.mock('react-toastify', () => ({
   ToastContainer: () => null,
+  toast: {
+    error: mockToastError,
+  },
 }));
 
 vi.mock('./components/GoosehintsModal', () => ({
@@ -135,8 +145,8 @@ const mockNavigate = vi.fn();
 const mockSearchParams = new URLSearchParams();
 const mockSetSearchParams = vi.fn();
 
-// Mock react-router-dom to avoid HashRouter issues in tests
-vi.mock('react-router-dom', () => ({
+// Mock react-router to avoid HashRouter issues in tests
+vi.mock('react-router', () => ({
   HashRouter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Route: ({ element }: { element: React.ReactNode }) => element,
@@ -282,6 +292,26 @@ describe('App Component - Brand New State', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it('shows the scoped-parameter incompatibility before returning home', async () => {
+    mockAppConfig.get.mockImplementation((key: string): string | null => {
+      if (key === 'GOOSE_WORKING_DIR') return '/test/dir';
+      if (key === 'recipeDeeplink') return 'goose://recipe?url=example';
+      return null;
+    });
+    vi.mocked(createSession).mockRejectedValueOnce(new RecipeParameterScopesUnsupportedError());
+
+    render(<PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} />, {
+      wrapper: AppInnerTestWrapper,
+    });
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        'The connected Goose server does not support securely scoped deeplink recipe parameters. Update the server and try again.'
+      );
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
   it('should navigate home when the main process emits new-chat', async () => {
     mockElectron.getConfig.mockReturnValue({
       GOOSE_DEFAULT_PROVIDER: 'openai',
@@ -303,6 +333,23 @@ describe('App Component - Brand New State', () => {
     newChatHandler?.({} as any);
 
     expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('should reconnect ACP when the main process emits system-resume', async () => {
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+
+    await waitFor(() => {
+      expect(mockElectron.reactReady).toHaveBeenCalled();
+    });
+
+    const systemResumeHandler = mockElectron.on.mock.calls.find(
+      ([channel]) => channel === 'system-resume'
+    )?.[1];
+    expect(systemResumeHandler).toBeDefined();
+
+    systemResumeHandler?.({} as any);
+
+    expect(reconnectAcpAfterSystemResume).toHaveBeenCalledOnce();
   });
 
   it('should seed recipe sessions with the recipe prompt when no initial message is provided', () => {

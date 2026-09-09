@@ -177,6 +177,7 @@ export const DictationSettings = () => {
 
   const getProviderLabel = (p: DictationProvider | null): string => {
     if (!p) return intl.formatMessage(i18n.disabled);
+    if (p === "model") return "Model (Native Audio)";
     return p.charAt(0).toUpperCase() + p.slice(1);
   };
 

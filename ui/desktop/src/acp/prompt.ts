@@ -1,5 +1,5 @@
-import type { ContentBlock, PromptResponse } from '@agentclientprotocol/sdk';
-import type { SteerSessionRequest_unstable, SteerSessionResponse_unstable } from '@aaif/goose-sdk';
+import { methods, type ContentBlock, type PromptResponse } from '@agentclientprotocol/sdk';
+import type { SteerSessionRequest_unstable, SteerSessionResponse_unstable } from '@aaif/goose-acp-client';
 import type { Message } from '../types/message';
 import { getAcpClient } from './acpConnection';
 
@@ -8,7 +8,7 @@ export async function acpPromptSession(
   message: Message
 ): Promise<PromptResponse> {
   const client = await getAcpClient();
-  return client.prompt({
+  return client.connection.agent.request(methods.agent.session.prompt, {
     sessionId,
     prompt: messageToAcpPromptContent(message),
   });
@@ -16,7 +16,7 @@ export async function acpPromptSession(
 
 export async function acpCancelPrompt(sessionId: string): Promise<void> {
   const client = await getAcpClient();
-  await client.cancel({ sessionId });
+  await client.connection.agent.notify(methods.agent.session.cancel, { sessionId });
 }
 
 export async function acpSteerSession(
@@ -50,6 +50,8 @@ export function messageToAcpPromptContent(message: Message): ContentBlock[] {
           type: 'image',
           data: content.data,
           mimeType: content.mimeType,
+          ...(content._meta ? { _meta: content._meta } : {}),
+          ...(content.annotations ? { annotations: content.annotations } : {}),
         });
         break;
     }

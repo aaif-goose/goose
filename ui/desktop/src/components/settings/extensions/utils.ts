@@ -1,6 +1,5 @@
 import type { FixedExtensionEntry } from '../../ConfigContext';
 import type { ExtensionConfig } from '../../../types/extensions';
-import { parse as parseShellQuote } from 'shell-quote';
 
 // Default extension timeout in seconds
 // TODO: keep in sync with rust better
@@ -22,7 +21,7 @@ export function nameToKey(name: string): string {
 export interface ExtensionFormData {
   name: string;
   description: string;
-  type: 'stdio' | 'sse' | 'streamable_http' | 'builtin';
+  type: 'stdio' | 'streamable_http' | 'builtin';
   cmd?: string;
   endpoint?: string;
   enabled: boolean;
@@ -39,6 +38,12 @@ export interface ExtensionFormData {
   }[];
   installation_notes?: string;
   available_tools?: string[];
+  // streamable_http fields with no form input yet; carried through so an
+  // unrelated edit does not strip them from the saved config.
+  socket?: string | null;
+  client_id?: string | null;
+  client_secret_key?: string | null;
+  scopes?: string[];
 }
 
 export function getDefaultFormData(): ExtensionFormData {
@@ -104,25 +109,27 @@ export function extensionToFormData(extension: FixedExtensionEntry): ExtensionFo
   return {
     name: extension.name || '',
     description: extension.description || '',
-    type:
-      extension.type === 'frontend' ||
-      extension.type === 'inline_python' ||
-      extension.type === 'platform'
-        ? 'stdio'
-        : extension.type,
-    cmd: extension.type === 'stdio' ? combineCmdAndArgs(extension.cmd, extension.args ?? []) : undefined,
-    endpoint:
-      extension.type === 'streamable_http' || extension.type === 'sse'
-        ? (extension.uri ?? undefined)
+    type: extension.type === 'platform' ? 'stdio' : extension.type,
+    cmd:
+      extension.type === 'stdio'
+        ? combineCmdAndArgs(extension.cmd, extension.args ?? [])
         : undefined,
+    endpoint: extension.type === 'streamable_http' ? (extension.uri ?? undefined) : undefined,
     enabled: extension.enabled,
     timeout: 'timeout' in extension ? (extension.timeout ?? undefined) : undefined,
     envVars,
     headers,
     installation_notes: (extension as Record<string, unknown>)['installation_notes'] as
-      | string
-      | undefined,
+      string | undefined,
     ...(availableTools ? { available_tools: availableTools } : {}),
+    ...(extension.type === 'streamable_http'
+      ? {
+          socket: extension.socket,
+          client_id: extension.client_id,
+          client_secret_key: extension.client_secret_key,
+          scopes: extension.scopes,
+        }
+      : {}),
   };
 }
 
@@ -174,23 +181,22 @@ export function createExtensionConfig(formData: ExtensionFormData): ExtensionCon
       ...(env_keys.length > 0 ? { env_keys } : {}),
       headers,
       ...availableToolsConfig(formData.available_tools),
-    };
-  } else if (formData.type === 'builtin') {
-    return {
-      type: formData.type,
-      name: formData.name,
-      description: formData.description,
-      timeout: formData.timeout,
-      ...availableToolsConfig(formData.available_tools),
-    };
-  } else {
-    return {
-      type: formData.type,
-      name: formData.name,
-      description: formData.description,
-      uri: formData.endpoint || '',
+      ...(formData.socket != null ? { socket: formData.socket } : {}),
+      ...(formData.client_id != null ? { client_id: formData.client_id } : {}),
+      ...(formData.client_secret_key != null
+        ? { client_secret_key: formData.client_secret_key }
+        : {}),
+      ...(formData.scopes?.length ? { scopes: formData.scopes } : {}),
     };
   }
+
+  return {
+    type: formData.type,
+    name: formData.name,
+    description: formData.description,
+    timeout: formData.timeout,
+    ...availableToolsConfig(formData.available_tools),
+  };
 }
 
 function isWindowsPlatform(): boolean {
@@ -203,14 +209,7 @@ export function splitCmdAndArgs(str: string): { cmd: string; args: string[] } {
     return { cmd: '', args: [] };
   }
 
-  // shell-quote treats `\` as a POSIX escape character, so a Windows path like
-  // `C:\Users\name\ext.js` would lose its backslashes and become `C:Usersnameext.js`.
-  // Doubling backslashes on Windows lets them survive parsing (shell-quote unescapes
-  // `\\` back to `\`), while still honoring quotes for paths containing spaces.
-  const toParse = isWindowsPlatform() ? trimmed.replace(/\\/g, '\\\\') : trimmed;
-
-  const parsed = parseShellQuote(toParse);
-  const words = parsed.filter((item): item is string => typeof item === 'string').map(String);
+  const words = parseCommandLine(trimmed, isWindowsPlatform());
 
   const cmd = words[0] || '';
   const args = words.slice(1);
@@ -221,14 +220,113 @@ export function splitCmdAndArgs(str: string): { cmd: string; args: string[] } {
   };
 }
 
+function parseCommandLine(value: string, windows: boolean): string[] {
+  const words: string[] = [];
+  let word = '';
+  let wordStarted = false;
+  let quote: "'" | '"' | undefined;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (windows && quote !== "'" && character === '\\') {
+      let runEnd = index;
+      while (value[runEnd] === '\\') {
+        runEnd += 1;
+      }
+
+      const backslashCount = runEnd - index;
+      if (value[runEnd] === '"') {
+        word += '\\'.repeat(Math.floor(backslashCount / 2));
+        if (backslashCount % 2 === 0) {
+          quote = quote === '"' ? undefined : '"';
+        } else {
+          word += '"';
+        }
+        index = runEnd;
+      } else {
+        word += '\\'.repeat(backslashCount);
+        index = runEnd - 1;
+      }
+      wordStarted = true;
+    } else if (quote) {
+      if (character === quote) {
+        quote = undefined;
+      } else if (quote === '"' && character === '\\' && index + 1 < value.length) {
+        const next = value[index + 1];
+        if (next === '"' || next === '\\' || next === '$') {
+          word += next;
+          index += 1;
+        } else {
+          word += character;
+        }
+      } else {
+        word += character;
+      }
+      wordStarted = true;
+    } else if (/\s/.test(character)) {
+      if (wordStarted) {
+        words.push(word);
+        word = '';
+        wordStarted = false;
+      }
+    } else if (character === '"' || (!windows && character === "'")) {
+      quote = character;
+      wordStarted = true;
+    } else if (character === '\\' && !windows && index + 1 < value.length) {
+      word += value[index + 1];
+      wordStarted = true;
+      index += 1;
+    } else {
+      word += character;
+      wordStarted = true;
+    }
+  }
+
+  if (wordStarted) {
+    words.push(word);
+  }
+
+  return words;
+}
+
 export function combineCmdAndArgs(cmd: string, args: string[]): string {
-  return [cmd, ...args]
-    .map((a) => {
-      if (!a.includes(' ')) return a;
-      if (a.includes('"')) return `'${a}'`;
-      return `"${a}"`;
-    })
-    .join(' ');
+  const windows = isWindowsPlatform();
+  return [cmd, ...args].map((value) => quoteCommandPart(value, windows)).join(' ');
+}
+
+function quoteCommandPart(value: string, windows: boolean): string {
+  if (windows) {
+    return quoteWindowsCommandPart(value);
+  }
+
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) {
+    return value;
+  }
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function quoteWindowsCommandPart(value: string): string {
+  if (value.length > 0 && !/[\s"]/u.test(value)) {
+    return value;
+  }
+
+  let quoted = '"';
+  let backslashCount = 0;
+
+  for (const character of value) {
+    if (character === '\\') {
+      backslashCount += 1;
+    } else if (character === '"') {
+      quoted += '\\'.repeat(backslashCount * 2 + 1) + character;
+      backslashCount = 0;
+    } else {
+      quoted += '\\'.repeat(backslashCount) + character;
+      backslashCount = 0;
+    }
+  }
+
+  return quoted + '\\'.repeat(backslashCount * 2) + '"';
 }
 
 export function extractCommand(link: string): string {

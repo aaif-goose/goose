@@ -1,13 +1,14 @@
 import { AppEvents } from '../constants/events';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defineMessages, useIntl } from '../i18n';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
 import ProgressiveMessageList from './ProgressiveMessageList';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
+import { Button } from './ui/button';
 import { ScrollArea, ScrollAreaHandle } from './ui/scroll-area';
 import { useFileDrop } from '../hooks/useFileDrop';
 import { ChatState } from '../types/chatState';
@@ -24,8 +25,8 @@ import { scanRecipe } from '../recipe';
 import type { Recipe } from '../recipe';
 import RecipeActivities from './recipes/RecipeActivities';
 import {
-  getThinkingMessage,
   getTextAndImageContent,
+  type ImageData,
   type Message,
   type UserInput,
 } from '../types/message';
@@ -34,6 +35,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
+import { isAcpRecovering, subscribeToAcpRecovery } from '../acp/acpConnection';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -44,7 +46,17 @@ const i18n = defineMessages({
     id: 'baseChat.goHome',
     defaultMessage: 'Go home',
   },
+  retry: {
+    id: 'baseChat.retry',
+    defaultMessage: 'Retry',
+  },
+  reconnecting: {
+    id: 'baseChat.reconnecting',
+    defaultMessage: 'Connection lost. Reconnecting…',
+  },
 });
+
+const isUserMessage = (message: Message) => message.role === 'user';
 
 interface BaseChatProps {
   setChat: (chat: ChatType) => void;
@@ -80,6 +92,7 @@ export default function BaseChat({
   const [hasStartedUsingRecipe, setHasStartedUsingRecipe] = React.useState(false);
   const [hasNotAcceptedRecipe, setHasNotAcceptedRecipe] = useState<boolean>();
   const [hasRecipeSecurityWarnings, setHasRecipeSecurityWarnings] = useState(false);
+  const [acpRecovering, setAcpRecovering] = useState(isAcpRecovering);
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
   const setView = useNavigation();
@@ -88,15 +101,19 @@ export default function BaseChat({
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
   const onStreamFinish = useCallback(() => {}, []);
 
+  useEffect(() => subscribeToAcpRecovery(setAcpRecovering), []);
+
   const {
     session,
     messages,
     chatState,
+    progressMessage,
     updateSession,
     handleSubmit,
     onSteerQueuedMessage,
     submitElicitationResponse,
     stopStreaming,
+    retrySessionLoad,
     sessionLoadError,
     tokenState,
     notifications: toolCallNotifications,
@@ -107,6 +124,10 @@ export default function BaseChat({
     sessionId,
     onStreamFinish,
   });
+  const appendToChat = useCallback(
+    (text: string) => handleSubmit({ msg: text, images: [] }),
+    [handleSubmit]
+  );
 
   const handleWorkingDirChange = useCallback(
     async (newDir: string) => {
@@ -137,6 +158,7 @@ export default function BaseChat({
   // such as forks or resumes should auto-submit normally.
   const suppressInitialAutoSubmit = noAutoSubmit && messages.length === 0;
   const canAutoSubmit =
+    !acpRecovering &&
     !suppressInitialAutoSubmit &&
     (session?.session_type === 'scheduled' || !recipe || hasNotAcceptedRecipe === false);
 
@@ -299,11 +321,12 @@ export default function BaseChat({
     const handleSessionForked = (event: Event) => {
       const customEvent = event as CustomEvent<{
         newSessionId: string;
-        shouldStartAgent?: boolean;
-        editedMessage?: string;
+        shouldStartAgent: boolean;
+        editedMessage: string;
+        editedImages: ImageData[];
       }>;
       window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
-      const { newSessionId, shouldStartAgent, editedMessage } = customEvent.detail;
+      const { newSessionId, shouldStartAgent, editedMessage, editedImages } = customEvent.detail;
 
       const params = new URLSearchParams();
       params.set('resumeSessionId', newSessionId);
@@ -314,7 +337,7 @@ export default function BaseChat({
       navigate(`/pair?${params.toString()}`, {
         state: {
           disableAnimation: true,
-          initialMessage: editedMessage ? { msg: editedMessage, images: [] } : undefined,
+          initialMessage: { msg: editedMessage, images: editedImages },
         },
       });
     };
@@ -373,14 +396,14 @@ export default function BaseChat({
                   </h3>
                   <p className="text-sm">{sessionLoadError}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setView('chat');
-                  }}
-                  className="px-4 py-2 text-center cursor-pointer text-text-primary border border-border-primary hover:bg-background-secondary rounded-lg transition-all duration-150"
-                >
-                  {intl.formatMessage(i18n.goHome)}
-                </button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => void retrySessionLoad()}>
+                    {intl.formatMessage(i18n.retry)}
+                  </Button>
+                  <Button variant="outline" onClick={() => setView('chat')}>
+                    {intl.formatMessage(i18n.goHome)}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -438,7 +461,7 @@ export default function BaseChat({
             {recipe && (
               <div className={hasStartedUsingRecipe ? 'mb-6' : ''}>
                 <RecipeActivities
-                  append={(text: string) => handleSubmit({ msg: text, images: [] })}
+                  append={appendToChat}
                   activities={Array.isArray(recipe.activities) ? recipe.activities : null}
                   title={recipe.title}
                   parameterValues={session?.user_recipe_values || {}}
@@ -451,10 +474,10 @@ export default function BaseChat({
                 <SearchView>
                   <ProgressiveMessageList
                     messages={messages}
-                    chat={{ sessionId }}
+                    sessionId={sessionId}
                     toolCallNotifications={toolCallNotifications}
-                    append={(text: string) => handleSubmit({ msg: text, images: [] })}
-                    isUserMessage={(m: Message) => m.role === 'user'}
+                    append={appendToChat}
+                    isUserMessage={isUserMessage}
                     isStreamingMessage={chatState !== ChatState.Idle}
                     onRenderingComplete={handleRenderingComplete}
                     onMessageUpdate={onMessageUpdate}
@@ -469,21 +492,20 @@ export default function BaseChat({
 
           {chatState !== ChatState.Idle && (
             <div className="absolute bottom-1 left-4 z-20 pointer-events-none">
-              <LoadingGoose
-                chatState={chatState}
-                message={
-                  messages.length > 0
-                    ? getThinkingMessage(messages[messages.length - 1])
-                    : undefined
-                }
-              />
+              <LoadingGoose chatState={chatState} message={progressMessage} />
             </div>
           )}
         </div>
 
+        {acpRecovering && (
+          <div role="status" className="mx-4 mb-2 text-sm text-text-secondary">
+            {intl.formatMessage(i18n.reconnecting)}
+          </div>
+        )}
+
         <ChatInputCard
           className={cn(
-            'relative z-10 mx-4 mb-4',
+            'relative z-30 mx-4 mb-4',
             !disableAnimation && 'animate-[fadein_400ms_ease-in_forwards]'
           )}
         >
@@ -495,11 +517,12 @@ export default function BaseChat({
             onStop={stopStreaming}
             onSteerQueuedMessage={onSteerQueuedMessage}
             pauseQueueOnStop={pauseQueueOnStop}
-            queueProcessingBlocked={queueProcessingBlocked}
+            queueProcessingBlocked={queueProcessingBlocked || acpRecovering}
             commandHistory={commandHistory}
             initialValue={initialPrompt}
             setView={setView}
             totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
+            contextLimit={tokenState?.contextLimit}
             accumulatedInputTokens={
               tokenState?.accumulatedInputTokens ??
               session?.accumulated_usage?.input_tokens ??

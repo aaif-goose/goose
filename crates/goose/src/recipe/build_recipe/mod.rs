@@ -1,6 +1,5 @@
 use crate::recipe::read_recipe_file_content::read_parameter_file_content;
-use crate::recipe::template_recipe::render_recipe_content_with_params;
-use crate::recipe::validate_recipe::validate_recipe_template_from_content;
+use crate::recipe::validate_recipe::validate_recipe_template;
 use crate::recipe::{
     Recipe, RecipeParameter, RecipeParameterInputType, RecipeParameterRequirement,
     BUILT_IN_RECIPE_DIR_PARAM,
@@ -22,26 +21,25 @@ fn render_recipe_template<F>(
     recipe_dir: &Path,
     params: Vec<(String, String)>,
     user_prompt_fn: Option<F>,
-) -> Result<(String, Vec<String>)>
+) -> Result<(Option<Recipe>, Vec<String>)>
 where
     F: Fn(&str, &str) -> Result<String, anyhow::Error>,
 {
     let recipe_dir_str = recipe_dir.display().to_string();
 
-    let recipe_parameters =
-        validate_recipe_template_from_content(&recipe_content, Some(recipe_dir_str.clone()))?
-            .parameters;
+    let validated_recipe = validate_recipe_template(&recipe_content, Some(recipe_dir_str.clone()))?;
+    let recipe_parameters = validated_recipe.recipe().parameters.clone();
 
     let (params_for_template, missing_params) =
         apply_values_to_parameters(&params, recipe_parameters, &recipe_dir_str, user_prompt_fn)?;
 
-    let rendered_content = if missing_params.is_empty() {
-        render_recipe_content_with_params(&recipe_content, &params_for_template)?
+    let rendered_recipe = if missing_params.is_empty() {
+        Some(validated_recipe.render(&params_for_template)?)
     } else {
-        String::new()
+        None
     };
 
-    Ok((rendered_content, missing_params))
+    Ok((rendered_recipe, missing_params))
 }
 
 pub fn build_recipe_from_template<F>(
@@ -53,18 +51,15 @@ pub fn build_recipe_from_template<F>(
 where
     F: Fn(&str, &str) -> Result<String, anyhow::Error>,
 {
-    let (rendered_content, missing_params) =
+    let (rendered_recipe, missing_params) =
         render_recipe_template(recipe_content, recipe_dir, params.clone(), user_prompt_fn)
             .map_err(|source| RecipeError::Invalid { source })?;
 
-    if !missing_params.is_empty() {
+    let Some(mut recipe) = rendered_recipe else {
         return Err(RecipeError::MissingParams {
             parameters: missing_params,
         });
-    }
-
-    let mut recipe = Recipe::from_content(&rendered_content)
-        .map_err(|source| RecipeError::Invalid { source })?;
+    };
 
     if let Some(ref mut sub_recipes) = recipe.sub_recipes {
         for sub_recipe in sub_recipes {
@@ -83,6 +78,44 @@ pub fn apply_values_to_parameters<F>(
 ) -> Result<(HashMap<String, String>, Vec<String>)>
 where
     F: Fn(&str, &str) -> Result<String, anyhow::Error>,
+{
+    apply_values_to_parameters_with_file_handler(
+        user_params,
+        recipe_parameters,
+        recipe_dir,
+        user_prompt_fn,
+        |path| read_parameter_file_content(path),
+    )
+}
+
+pub fn apply_values_to_parameters_without_file_expansion<F>(
+    user_params: &[(String, String)],
+    recipe_parameters: Option<Vec<RecipeParameter>>,
+    recipe_dir: &str,
+    user_prompt_fn: Option<F>,
+) -> Result<(HashMap<String, String>, Vec<String>)>
+where
+    F: Fn(&str, &str) -> Result<String, anyhow::Error>,
+{
+    apply_values_to_parameters_with_file_handler(
+        user_params,
+        recipe_parameters,
+        recipe_dir,
+        user_prompt_fn,
+        |path| Ok(path.to_string()),
+    )
+}
+
+fn apply_values_to_parameters_with_file_handler<F, H>(
+    user_params: &[(String, String)],
+    recipe_parameters: Option<Vec<RecipeParameter>>,
+    recipe_dir: &str,
+    user_prompt_fn: Option<F>,
+    file_handler: H,
+) -> Result<(HashMap<String, String>, Vec<String>)>
+where
+    F: Fn(&str, &str) -> Result<String, anyhow::Error>,
+    H: Fn(&str) -> Result<String, anyhow::Error>,
 {
     let mut param_map: HashMap<String, String> = user_params.iter().cloned().collect();
     param_map.insert(
@@ -106,7 +139,7 @@ where
         match raw_value {
             Some(value) => {
                 let final_value = if matches!(param.input_type, RecipeParameterInputType::File) {
-                    read_parameter_file_content(&value)?
+                    file_handler(&value)?
                 } else {
                     value
                 };

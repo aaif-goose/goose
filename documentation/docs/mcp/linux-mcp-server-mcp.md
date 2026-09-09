@@ -44,7 +44,6 @@ Note that you'll need [uv](https://docs.astral.sh/uv/#installation) installed on
       type="stdio"
       command="uvx"
       args={["linux-mcp-server"]}
-      timeout={300}
     />
 
  

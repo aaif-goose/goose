@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import {
+  deleteMcpApp,
   callMcpAppTool,
   exportMcpApp,
   importMcpApp,
@@ -22,6 +23,7 @@ function createClient() {
       appsList_unstable: vi.fn(),
       appsExport_unstable: vi.fn(),
       appsImport_unstable: vi.fn(),
+      appsDelete_unstable: vi.fn(),
     },
   };
 }
@@ -110,6 +112,7 @@ describe('ACP MCP app helpers', () => {
 
     expect(client.goose.toolsCall_unstable).toHaveBeenCalledWith({
       sessionId: 'session-1',
+      extensionName: 'weather',
       name: 'weather__refresh',
       arguments: { city: 'Amsterdam' },
     });
@@ -205,5 +208,32 @@ describe('ACP MCP app helpers', () => {
     expect(client.goose.appsImport_unstable).toHaveBeenCalledWith({
       html: '<html><body>Weather</body></html>',
     });
+  });
+
+  it('deletes apps through ACP', async () => {
+    client.goose.appsDelete_unstable.mockResolvedValue({
+      name: 'weather',
+      message: 'App deleted',
+    });
+
+    await deleteMcpApp('weather');
+
+    expect(client.goose.appsDelete_unstable).toHaveBeenCalledWith({ name: 'weather' });
+  });
+
+  it('normalizes ACP delete errors', async () => {
+    client.goose.appsDelete_unstable.mockRejectedValue({
+      error: { data: 'Cannot delete default app' },
+    });
+
+    await expect(deleteMcpApp('clock')).rejects.toThrow('Cannot delete default app');
+  });
+
+  it('normalizes ACP export errors', async () => {
+    client.goose.appsExport_unstable.mockRejectedValue({
+      error: { message: 'App not found' },
+    });
+
+    await expect(exportMcpApp('missing')).rejects.toThrow('App not found');
   });
 });

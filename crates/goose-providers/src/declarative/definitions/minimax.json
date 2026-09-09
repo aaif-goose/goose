@@ -1,0 +1,32 @@
+{
+  "name": "minimax",
+  "engine": "anthropic",
+  "display_name": "MiniMax",
+  "description": "MiniMax AI models with long context support via Anthropic-compatible API",
+  "api_key_env": "MINIMAX_API_KEY",
+  "base_url": "https://api.minimax.io/anthropic",
+  "dynamic_models": true,
+  "models": [
+    {
+      "name": "MiniMax-M3",
+      "context_limit": 1000000
+    },
+    {
+      "name": "MiniMax-M2.7",
+      "context_limit": 200000
+    },
+    {
+      "name": "MiniMax-M2.7-highspeed",
+      "context_limit": 200000
+    },
+    {
+      "name": "MiniMax-M2.5",
+      "context_limit": 204800
+    },
+    {
+      "name": "MiniMax-M2.5-highspeed",
+      "context_limit": 204800
+    }
+  ],
+  "supports_streaming": true
+}

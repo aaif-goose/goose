@@ -16,7 +16,7 @@ This tutorial covers how to add the [Netlify MCP Server](https://github.com/netl
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=%40netlify%2Fmcp&id=netlify&name=Netlify&description=Build%2C%20deploy%2C%20and%20manage%20sites%20with%20Netlify%27s%20official%20MCP%20server.)
+  [Launch the installer](goose://extension?cmd=npx&arg=-y&arg=%40netlify%2Fmcp&id=netlify-mcp&name=Netlify&description=Build%2C%20deploy%2C%20and%20manage%20sites%20with%20Netlify%27s%20official%20MCP%20server.)
   </TabItem>
   <TabItem value="cli" label="goose CLI">
   **Command**
@@ -44,7 +44,7 @@ Note that you'll need [Node.js](https://nodejs.org/) installed on your system to
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
   <GooseDesktopInstaller
-    extensionId="netlify"
+    extensionId="netlify-mcp"
     extensionName="Netlify"
     description="Build, deploy, and manage sites with Netlify's official MCP server."
     command="npx"
@@ -119,6 +119,7 @@ In this example, I’ll show you how to use goose with the Netlify Extension to 
         &nbsp;&nbsp;&nbsp;&nbsp;params:<br/>
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;siteId: 1731e49e-1d0a-49a3-ad95-975b550f324a
 </details>
+:::
 
 🎉 **Success! Your tic-tac-toe game has been deployed to Netlify!**
 

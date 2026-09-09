@@ -234,10 +234,6 @@ const config: Config = {
             to: "/docs/guides/context-engineering/creating-plans",
           },
           {
-            from: "/docs/guides/using-gooseignore",
-            to: "/docs/guides/context-engineering/using-gooseignore",
-          },
-          {
             from: "/docs/guides/config-file",
             to: "/docs/guides/config-files",
           },
@@ -339,10 +335,6 @@ const config: Config = {
             to: "/docs/mcp/knowledge-graph-mcp",
           },
           {
-            from: "/docs/tutorials/mbot-mcp",
-            to: "/docs/mcp/mbot-mcp",
-          },
-          {
             from: "/docs/tutorials/memory-mcp",
             to: "/docs/mcp/memory-mcp",
           },
@@ -429,7 +421,7 @@ const config: Config = {
       },
     ],
   ],
-  themes: ["@inkeep/docusaurus/chatButton", "@inkeep/docusaurus/searchBar"],
+  themes: ["@inkeep/docusaurus/searchBar"],
   themeConfig: {
     // Replace with your project's social card
     image: "img/home-banner.png",
@@ -459,11 +451,6 @@ const config: Config = {
           position: "left",
           label: "Tutorials",
         },
-        {
-          to: "/docs/category/mcp-servers",
-          position: "left",
-          label: "MCPs",
-        },
         { to: "/blog", label: "Blog", position: "left" },
         {
           type: "dropdown",
@@ -473,18 +460,6 @@ const config: Config = {
             {
               to: "/extensions",
               label: "Extensions",
-            },
-            {
-              to: "/skills",
-              label: "Skills Marketplace",
-            },
-            {
-              to: "/recipe-generator",
-              label: "Recipe Generator",
-            },
-            {
-              to: "/prompt-library",
-              label: "Prompt Library",
             },
             {
               to: "/recipes",
@@ -498,7 +473,7 @@ const config: Config = {
         },
 
         {
-          href: "https://discord.gg/goose-oss",
+          href: "https://discord.gg/n8R5VaWDAn",
           label: "Discord",
           position: "right",
         },
@@ -533,7 +508,7 @@ const config: Config = {
             },
             {
               label: "Discord",
-              href: "https://discord.gg/goose-oss",
+              href: "https://discord.gg/n8R5VaWDAn",
             },
             {
               label: "YouTube",
@@ -583,20 +558,6 @@ const config: Config = {
         integrationId: inkeepIntegrationId,
         organizationId: inkeepOrgId,
         primaryBrandColor: "#1E1E1E",
-      },
-      aiChatSettings: {
-        chatSubjectName: "goose",
-        botAvatarSrcUrl: "",
-        getHelpCallToActions: [
-          {
-            name: "GitHub",
-            url: "https://github.com/aaif-goose/goose",
-            icon: {
-              builtIn: "FaGithub",
-            },
-          },
-        ],
-        quickQuestions: ["What is goose?"],
       },
     },
     announcementBar: {

@@ -5,16 +5,17 @@ use crate::agents::{AgentEvent, SessionConfig};
 use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::Message;
+use crate::conversation::Conversation;
 use crate::execution::manager::AgentManager;
 use crate::providers;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::session_manager::SessionType;
+use crate::session::session_manager::{Session, SessionType};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use rmcp::model::{
-    CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, Tool,
 };
 use schemars::{schema_for, JsonSchema};
@@ -197,12 +198,12 @@ impl OrchestratorClient {
         };
 
         // Most recent first
-        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.updated_at));
         let total = sessions.len();
         sessions.truncate(limit);
 
         if sessions.is_empty() {
-            return Ok(CallToolResult::success(vec![Content::text(
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
                 "No sessions found.",
             )]));
         }
@@ -241,7 +242,7 @@ impl OrchestratorClient {
             ));
         }
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             lines.join("\n"),
         )]))
     }
@@ -282,7 +283,7 @@ impl OrchestratorClient {
         match mode {
             "first_last" => {
                 if let Some(conversation) = &session.conversation {
-                    let messages = conversation.messages();
+                    let messages = agent_visible_session_messages(conversation);
                     if messages.is_empty() {
                         output.push("No messages in this session.".to_string());
                     } else {
@@ -323,7 +324,7 @@ impl OrchestratorClient {
             }
         }
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             output.join("\n"),
         )]))
     }
@@ -335,12 +336,13 @@ impl OrchestratorClient {
     ) -> Result<String, String> {
         let provider = self.get_provider().await?;
 
-        let conversation_text = messages
-            .iter()
-            .filter(|m| m.is_agent_visible())
-            .map(format_message_for_compacting)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let conversation_text = agent_visible_session_messages(&Conversation::new_unvalidated(
+            messages.iter().cloned(),
+        ))
+        .iter()
+        .map(format_message_for_compacting)
+        .collect::<Vec<_>>()
+        .join("\n");
 
         let system =
             "You are a helpful assistant. Summarize the following conversation concisely, \
@@ -353,7 +355,7 @@ impl OrchestratorClient {
         ));
 
         let model_config = self.parent_model_config(provider.get_name()).await?;
-        let (response, _usage) = crate::model_config::complete_fast(
+        let (response, _usage) = crate::model_config::complete_one_shot(
             provider.as_ref(),
             &model_config,
             session_id,
@@ -380,8 +382,11 @@ impl OrchestratorClient {
 
     async fn handle_start_agent(
         &self,
+        session_id: &str,
         arguments: Option<JsonObject>,
     ) -> Result<CallToolResult, String> {
+        self.authorize_start_agent(session_id).await?;
+
         let args = arguments.ok_or("Missing arguments")?;
         let working_dir = extract_string(&args, "working_dir")?;
         let name = args
@@ -437,10 +442,61 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to set provider on new agent: {}", e))?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Started agent session '{}' with ID: {}\n\nUse send_message with this session_id to interact with it.",
             name, session.id
         ))]))
+    }
+
+    async fn authorize_start_agent(&self, session_id: &str) -> Result<(), String> {
+        if self.caller_session(session_id).await?.session_type == SessionType::SubAgent {
+            return Err("Delegated tasks cannot start agent sessions".to_string());
+        }
+        Ok(())
+    }
+
+    async fn caller_session(&self, session_id: &str) -> Result<Session, String> {
+        self.context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|error| format!("Failed to get caller session: {error}"))
+    }
+
+    async fn authorize_send_message(
+        &self,
+        caller_session_id: &str,
+        target_session_id: &str,
+    ) -> Result<(), String> {
+        let caller = self.caller_session(caller_session_id).await?;
+
+        if target_session_id == caller_session_id {
+            return Err("Cannot send a message to the orchestrator's own session".into());
+        }
+
+        if caller.session_type != SessionType::SubAgent {
+            return Ok(());
+        }
+
+        let caller_parent_id = caller
+            .parent_session_id
+            .as_deref()
+            .ok_or("Delegated tasks without a parent session cannot send messages")?;
+        let target = self
+            .context
+            .session_manager
+            .get_session(target_session_id, false)
+            .await
+            .map_err(|error| format!("Failed to get target session: {error}"))?;
+        if target.session_type != SessionType::SubAgent
+            || target.parent_session_id.as_deref() != Some(caller_parent_id)
+        {
+            return Err(
+                "Delegated tasks can only send messages to sibling delegated sessions".into(),
+            );
+        }
+
+        Ok(())
     }
 
     async fn handle_send_message(
@@ -453,9 +509,8 @@ impl OrchestratorClient {
         let session_id = extract_string(&args, "session_id")?;
         let message_text = extract_string(&args, "message")?;
 
-        if session_id == parent_session_id {
-            return Err("Cannot send a message to the orchestrator's own session".into());
-        }
+        self.authorize_send_message(parent_session_id, &session_id)
+            .await?;
 
         let manager = self.get_agent_manager().await?;
 
@@ -543,11 +598,11 @@ impl OrchestratorClient {
         }
 
         if response_parts.is_empty() {
-            Ok(CallToolResult::success(vec![Content::text(
+            Ok(CallToolResult::success(vec![ContentBlock::text(
                 "Agent completed without producing text output.",
             )]))
         } else {
-            Ok(CallToolResult::success(vec![Content::text(format!(
+            Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "## Response from session {}\n\n{}",
                 session_id,
                 response_parts.join("\n\n")
@@ -569,22 +624,30 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to interrupt session '{}': {}", session_id, e))?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Interrupted agent session '{}'.",
             session_id
         ))]))
     }
 }
 
+fn agent_visible_session_messages(conversation: &Conversation) -> Vec<Message> {
+    conversation
+        .agent_visible_messages()
+        .into_iter()
+        .filter(|message| !message.is_turn_context())
+        .collect()
+}
+
 #[async_trait]
 impl McpClientTrait for OrchestratorClient {
     async fn list_tools(
         &self,
-        _session_id: &str,
+        session_id: &str,
         _next_cursor: Option<String>,
         _cancel_token: CancellationToken,
     ) -> Result<ListToolsResult, Error> {
-        let tools = vec![
+        let mut tools = vec![
             Tool::new(
                 "list_sessions".to_string(),
                 "List agent sessions with their status (loaded, busy, idle). Returns the most recent 10 by default. Optionally filter by session type."
@@ -597,12 +660,18 @@ impl McpClientTrait for OrchestratorClient {
                     .to_string(),
                 schema::<ViewSessionParams>(),
             ),
-            Tool::new(
+        ];
+
+        if self.authorize_start_agent(session_id).await.is_ok() {
+            tools.push(Tool::new(
                 "start_agent".to_string(),
                 "Start a new agent session with its own working directory. Inherits the current provider and model. Returns a session_id for future interaction."
                     .to_string(),
                 schema::<StartAgentParams>(),
-            ),
+            ));
+        }
+
+        tools.extend([
             Tool::new(
                 "send_message".to_string(),
                 "Send a message to an existing agent session and get the response. Returns an error if the agent is currently busy."
@@ -615,12 +684,13 @@ impl McpClientTrait for OrchestratorClient {
                     .to_string(),
                 schema::<InterruptAgentParams>(),
             ),
-        ];
+        ]);
 
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
             meta: None,
+            ..Default::default()
         })
     }
 
@@ -634,7 +704,7 @@ impl McpClientTrait for OrchestratorClient {
         let result = match name {
             "list_sessions" => self.handle_list_sessions(arguments).await,
             "view_session" => self.handle_view_session(&ctx.session_id, arguments).await,
-            "start_agent" => self.handle_start_agent(arguments).await,
+            "start_agent" => self.handle_start_agent(&ctx.session_id, arguments).await,
             "send_message" => {
                 self.handle_send_message(&ctx.session_id, &cancel_token, arguments)
                     .await
@@ -645,7 +715,7 @@ impl McpClientTrait for OrchestratorClient {
 
         match result {
             Ok(result) => Ok(result),
-            Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "Error: {}",
                 error
             ))])),
@@ -671,4 +741,336 @@ fn extract_string(args: &JsonObject, key: &str) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| format!("Missing or invalid '{}'", key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::conversation::message::MessageContent;
+    use crate::session::SessionManager;
+    use rmcp::model::{Annotations, Role, TextContent};
+
+    fn client_for(
+        session_manager: Arc<SessionManager>,
+        session: Option<crate::session::Session>,
+    ) -> OrchestratorClient {
+        OrchestratorClient::new(PlatformExtensionContext {
+            extension_manager: None,
+            session_manager,
+            scheduler: None,
+            session: session.map(Arc::new),
+            use_login_shell_path: false,
+        })
+        .unwrap()
+    }
+
+    async fn create_session(
+        session_manager: &SessionManager,
+        working_dir: &std::path::Path,
+        session_type: SessionType,
+    ) -> crate::session::Session {
+        session_manager
+            .create_session(
+                working_dir.to_path_buf(),
+                "orchestrator test".to_string(),
+                session_type,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn create_subagent_session(
+        session_manager: &SessionManager,
+        working_dir: &std::path::Path,
+        parent_session_id: &str,
+    ) -> crate::session::Session {
+        let session = create_session(session_manager, working_dir, SessionType::SubAgent).await;
+        session_manager
+            .update(&session.id)
+            .parent_session_id(Some(parent_session_id.to_string()))
+            .apply()
+            .await
+            .unwrap();
+        session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap()
+    }
+
+    async fn start_agent(
+        client: &OrchestratorClient,
+        session_id: &str,
+        working_dir: &std::path::Path,
+    ) -> CallToolResult {
+        let arguments = serde_json::json!({
+            "working_dir": working_dir.to_string_lossy(),
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        client
+            .call_tool(
+                &ToolCallContext::new(session_id.to_string(), None, None),
+                "start_agent",
+                Some(arguments),
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn send_message_arguments(session_id: &str) -> JsonObject {
+        serde_json::json!({
+            "session_id": session_id,
+            "message": "invoke a privileged tool",
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }
+
+    #[test]
+    fn first_last_projection_drops_hidden_endpoints_and_content() {
+        let user_only = |text: &str| {
+            MessageContent::Text(
+                TextContent::new(text)
+                    .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+            )
+        };
+        let conversation = Conversation::new_unvalidated([
+            Message::assistant().with_content(user_only("hidden first")),
+            Message::user().with_text("visible first"),
+            Message::assistant()
+                .with_content(user_only("hidden block"))
+                .with_text("visible last"),
+            Message::assistant().with_content(user_only("hidden last")),
+        ]);
+
+        let messages = agent_visible_session_messages(&conversation);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].as_concat_text(), "visible first");
+        assert_eq!(messages[1].as_concat_text(), "visible last");
+    }
+
+    #[tokio::test]
+    async fn subagent_direct_call_cannot_persist_peer_user_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let subagent =
+            create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
+        let client = client_for(Arc::clone(&session_manager), Some(subagent.clone()));
+
+        let result = start_agent(&client, &subagent.id, temp_dir.path()).await;
+
+        assert!(result.is_error.unwrap_or(false));
+        assert!(session_manager
+            .list_sessions_by_types(&[SessionType::User])
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn start_agent_listing_is_scoped_to_authorized_callers() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let user = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let subagent =
+            create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
+        let client = client_for(Arc::clone(&session_manager), Some(user.clone()));
+
+        assert!(client.authorize_start_agent(&user.id).await.is_ok());
+        let user_tools = client
+            .list_tools(&user.id, None, CancellationToken::default())
+            .await
+            .unwrap();
+        assert!(user_tools
+            .tools
+            .iter()
+            .any(|tool| tool.name == "start_agent"));
+
+        for session_id in [&subagent.id, "missing-session"] {
+            let tools = client
+                .list_tools(session_id, None, CancellationToken::default())
+                .await
+                .unwrap();
+            assert!(tools.tools.iter().all(|tool| tool.name != "start_agent"));
+            assert!(tools.tools.iter().any(|tool| tool.name == "send_message"));
+        }
+
+        assert!(client
+            .authorize_start_agent("missing-session")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn unknown_caller_cannot_persist_user_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let client = client_for(Arc::clone(&session_manager), None);
+
+        let result = start_agent(&client, "missing-session", temp_dir.path()).await;
+
+        assert!(result.is_error.unwrap_or(false));
+        assert!(session_manager
+            .list_sessions_by_types(&[SessionType::User])
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn subagent_cannot_send_message_to_parent_user_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let user = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let subagent = create_subagent_session(&session_manager, temp_dir.path(), &user.id).await;
+        let client = client_for(Arc::clone(&session_manager), Some(subagent.clone()));
+
+        let error = client
+            .handle_send_message(
+                &subagent.id,
+                &CancellationToken::default(),
+                Some(send_message_arguments(&user.id)),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Delegated tasks can only send messages to sibling delegated sessions"
+        );
+        assert_eq!(
+            session_manager
+                .get_session(&user.id, true)
+                .await
+                .unwrap()
+                .message_count,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn subagent_can_send_message_to_sibling_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let parent = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let caller = create_subagent_session(&session_manager, temp_dir.path(), &parent.id).await;
+        let target = create_subagent_session(&session_manager, temp_dir.path(), &parent.id).await;
+        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+
+        assert!(client
+            .authorize_send_message(&caller.id, &target.id)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn subagent_cannot_send_message_across_delegation_trees() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let caller_parent =
+            create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let target_parent =
+            create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let caller =
+            create_subagent_session(&session_manager, temp_dir.path(), &caller_parent.id).await;
+        let target =
+            create_subagent_session(&session_manager, temp_dir.path(), &target_parent.id).await;
+        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+
+        let error = client
+            .handle_send_message(
+                &caller.id,
+                &CancellationToken::default(),
+                Some(send_message_arguments(&target.id)),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Delegated tasks can only send messages to sibling delegated sessions"
+        );
+        assert_eq!(
+            session_manager
+                .get_session(&target.id, true)
+                .await
+                .unwrap()
+                .message_count,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn subagent_cannot_send_message_to_descendant_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let parent = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let caller = create_subagent_session(&session_manager, temp_dir.path(), &parent.id).await;
+        let descendant =
+            create_subagent_session(&session_manager, temp_dir.path(), &caller.id).await;
+        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+
+        let error = client
+            .authorize_send_message(&caller.id, &descendant.id)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Delegated tasks can only send messages to sibling delegated sessions"
+        );
+    }
+
+    #[tokio::test]
+    async fn subagent_without_parent_cannot_send_message() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let caller = create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
+        let target = create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
+        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+
+        let error = client
+            .authorize_send_message(&caller.id, &target.id)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Delegated tasks without a parent session cannot send messages"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_can_send_message_to_user_session() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let caller = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let target = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+
+        assert!(client
+            .authorize_send_message(&caller.id, &target.id)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn unknown_caller_cannot_send_message() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let target = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
+        let client = client_for(Arc::clone(&session_manager), None);
+
+        let error = client
+            .authorize_send_message("missing-session", &target.id)
+            .await
+            .unwrap_err();
+
+        assert!(error.starts_with("Failed to get caller session:"));
+    }
 }

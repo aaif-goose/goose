@@ -31,6 +31,20 @@ export function applyContentChunk(
   const existing = findMessageForChunk(state, role, messageId, gooseMeta.created);
 
   if (existing) {
+    const isOutputLimitFallbackChunk =
+      gooseMeta.outputTokenLimitReached === true && gooseMeta.fallbackContent === true;
+    const existingMessageHasContent = existing.content.length > 0;
+    const shouldSkipFallbackChunk = isOutputLimitFallbackChunk && existingMessageHasContent;
+
+    existing.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+    existing.metadata.fallbackContent = shouldSkipFallbackChunk
+      ? undefined
+      : gooseMeta.fallbackContent;
+
+    if (shouldSkipFallbackChunk) {
+      return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
+    }
+
     const lastContent = existing.content[existing.content.length - 1];
     if (reconcileLocalSteerTextChunk(state, existing, content, gooseMeta.steer)) {
       return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
@@ -54,6 +68,8 @@ export function applyContentChunk(
       metadata: {
         ...DEFAULT_VISIBLE_MESSAGE_METADATA,
         ...(gooseMeta.steer ? { steer: true } : {}),
+        outputTokenLimitReached: gooseMeta.outputTokenLimitReached,
+        fallbackContent: gooseMeta.fallbackContent,
       },
     });
   }
@@ -71,23 +87,26 @@ export function applyThoughtChunk(
 
   const gooseMeta = getGooseMessageMeta(update);
   const messageId = update.messageId ?? gooseMeta.messageId;
-  const existing = findMessageForChunk(state, 'assistant', messageId, gooseMeta.created);
+  let message = findMessageForChunk(state, 'assistant', messageId, gooseMeta.created);
 
-  if (existing) {
-    const lastContent = existing.content[existing.content.length - 1];
-    if (lastContent?.type === 'thinking') {
-      lastContent.thinking += update.content.text;
-    } else {
-      existing.content.push({ type: 'thinking', thinking: update.content.text, signature: '' });
-    }
-  } else {
-    state.messages.push({
+  if (!message) {
+    message = {
       ...(messageId ? { id: messageId } : {}),
       role: 'assistant',
       created: gooseMeta.created ?? Math.floor(Date.now() / 1000),
-      content: [{ type: 'thinking', thinking: update.content.text, signature: '' }],
+      content: [],
       metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
-    });
+    };
+    state.messages.push(message);
+  }
+
+  message.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+
+  const lastContent = message.content[message.content.length - 1];
+  if (lastContent?.type === 'thinking') {
+    lastContent.thinking += update.content.text;
+  } else {
+    message.content.push({ type: 'thinking', thinking: update.content.text, signature: '' });
   }
 
   return messagesChange(state);

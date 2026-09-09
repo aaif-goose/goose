@@ -17,7 +17,7 @@ goose is designed to be forked and customized. You can create your own "distro" 
 | Bundle custom MCP extensions | Medium |
 | Modify system prompts | Low |
 | Customize desktop branding (icons, names, colors) | Medium |
-| Build a new UI via REST API or ACP | High |
+| Build a new UI via ACP | High |
 | Create guided workflows with recipes | Low |
 
 ## Getting started
@@ -32,7 +32,7 @@ It covers:
 - **Configuration-only customization** — environment variables, `config.yaml`, `init-config.yaml`
 - **Extension bundling** — adding MCP servers as built-in extensions or via recipes
 - **Custom branding** — replacing icons, app names, system prompts
-- **Building new interfaces** — integrating via the REST API or Agent Client Protocol (ACP)
+- **Building new interfaces** — integrating with `goose serve` or `goose acp` over Agent Client Protocol (ACP)
 - **Custom AI providers** — declarative JSON providers or implementing the Provider trait
 - **Recipes & subagents** — distributing preconfigured workflows
 - **Licensing & contribution guidance** — staying compliant with Apache 2.0

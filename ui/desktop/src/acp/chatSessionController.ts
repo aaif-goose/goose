@@ -1,13 +1,13 @@
 import { v7 as uuidv7 } from 'uuid';
-import type { GooseExtension } from '@aaif/goose-sdk';
+import type { GooseExtension } from '@aaif/goose-acp-client';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
 import type { Session } from '../types/session';
-import { errorMessage } from '../utils/conversionUtils';
 import { showExtensionLoadResults } from '../utils/extensionErrorUtils';
 import {
   createUserMessage,
   getPendingToolConfirmationIds,
+  type ImageData,
   type Message,
 } from '../types/message';
 import {
@@ -16,7 +16,11 @@ import {
   type AcpChatSessionSnapshot,
 } from './chatSessionStore';
 import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
-import { parseAcpCreditsExhaustedError, type AcpCreditsExhaustedError } from './errors';
+import {
+  formatAcpError,
+  parseAcpCreditsExhaustedError,
+  type AcpCreditsExhaustedError,
+} from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
 import {
@@ -48,6 +52,7 @@ export interface AcpChatSessionController {
     recipe?: AcpRecipeOptions
   ): Promise<Session>;
   loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<void>;
+  restoreSession(sessionId: string): Promise<void>;
   submitMessage(
     sessionId: string,
     userMessage: Message,
@@ -58,7 +63,8 @@ export interface AcpChatSessionController {
     sessionId: string,
     messageId: string,
     newContent: string,
-    editType: 'fork' | 'edit' | undefined,
+    editType: 'fork' | 'edit',
+    retainedImages: ImageData[],
     options: AcpSubmitMessageOptions
   ): Promise<void>;
 }
@@ -90,7 +96,8 @@ function assertNoPendingPromptCancellation(sessionId: string): void {
 async function forkSessionWithEditedMessage(
   sessionId: string,
   message: Message,
-  editedMessage: string
+  editedMessage: string,
+  editedImages: ImageData[]
 ): Promise<void> {
   const targetSessionId = await acpForkSession(sessionId, message.created);
 
@@ -99,6 +106,7 @@ async function forkSessionWithEditedMessage(
       newSessionId: targetSessionId,
       shouldStartAgent: true,
       editedMessage,
+      editedImages,
     },
   });
   window.dispatchEvent(event);
@@ -123,7 +131,7 @@ async function createSession(
 
 async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {}): Promise<void> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
-  if (cached?.session) {
+  if (cached?.session && !cached.sessionLoadError) {
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
@@ -131,6 +139,17 @@ async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {
     return;
   }
 
+  await loadSessionFromServer(sessionId, options);
+}
+
+async function restoreSession(sessionId: string): Promise<void> {
+  await loadSessionFromServer(sessionId);
+}
+
+async function loadSessionFromServer(
+  sessionId: string,
+  options: AcpLoadSessionOptions = {}
+): Promise<void> {
   if (!isAcpSessionLoadInFlight(sessionId)) {
     acpChatSessionActions.startSessionLoad(sessionId);
   }
@@ -146,7 +165,7 @@ async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {
     options.onSessionLoaded?.();
   } catch (error) {
     console.error('Failed to load ACP session:', error);
-    acpChatSessionActions.failSessionLoad(sessionId, errorMessage(error));
+    acpChatSessionActions.failSessionLoad(sessionId, formatAcpError(error));
   }
 }
 
@@ -195,10 +214,8 @@ async function submitMessage(
       return;
     }
 
-    const submitError = 'Submit error: ' + errorMessage(error);
-    if (
-      acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId, submitError)
-    ) {
+    const submitError = formatAcpError(error);
+    if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
       void options.onFinish(submitError);
     }
   }
@@ -225,12 +242,12 @@ async function updateMessage(
   sessionId: string,
   messageId: string,
   newContent: string,
-  editType: 'fork' | 'edit' | undefined,
+  editType: 'fork' | 'edit',
+  retainedImages: ImageData[],
   options: AcpSubmitMessageOptions
 ): Promise<void> {
   assertNoPendingPromptCancellation(sessionId);
 
-  const resolvedEditType = editType ?? 'fork';
   const currentSnapshot = options.getCurrentSnapshot();
   const storedSnapshot = acpChatSessionStore.getSnapshot(sessionId);
   const activePromptAttemptId = storedSnapshot?.activePromptAttemptId;
@@ -241,8 +258,8 @@ async function updateMessage(
     throw new Error(`Message with id ${messageId} not found in current messages`);
   }
 
-  if (resolvedEditType === 'fork') {
-    await forkSessionWithEditedMessage(sessionId, message, newContent);
+  if (editType === 'fork') {
+    await forkSessionWithEditedMessage(sessionId, message, newContent, retainedImages);
     return;
   }
 
@@ -295,13 +312,7 @@ async function updateMessage(
     await acpTruncateSessionConversation(sessionId, message.created);
 
     const truncatedMessages = currentMessages.filter((m) => m.created < message.created);
-    const updatedUserMessage = createUserMessage(newContent);
-
-    for (const content of message.content) {
-      if (content.type === 'image') {
-        updatedUserMessage.content.push(content);
-      }
-    }
+    const updatedUserMessage = createUserMessage(newContent, retainedImages);
 
     const messagesForUI = [...truncatedMessages, updatedUserMessage];
     acpChatSessionActions.setMessages(sessionId, messagesForUI);
@@ -316,6 +327,7 @@ async function updateMessage(
 export const acpChatSessionController: AcpChatSessionController = {
   createSession,
   loadSession,
+  restoreSession,
   submitMessage,
   stop,
   updateMessage,
