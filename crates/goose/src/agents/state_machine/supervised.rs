@@ -119,18 +119,20 @@ fn run_hidden<'a>(
         }
         let (tx, mut rx) = mpsc::channel(32);
         let emit = Emitter::new(tx, cancel);
-        let run = run_goose(machine, runtime, session_id, &emit);
-        tokio::pin!(run);
-        let session = loop {
-            tokio::select! {
-                event = rx.recv() => {
-                    match event {
-                        Some(AgentEvent::HistoryReplaced(_)) => {}
-                        Some(event) => yield Ok(event),
-                        None => break Err(anyhow!("hidden state-machine event stream closed")),
+        let session = {
+            let run = run_goose(machine, runtime, session_id, &emit);
+            tokio::pin!(run);
+            loop {
+                tokio::select! {
+                    event = rx.recv() => {
+                        match event {
+                            Some(AgentEvent::HistoryReplaced(_)) => {}
+                            Some(event) => yield Ok(event),
+                            None => break Err(anyhow!("hidden state-machine event stream closed")),
+                        }
                     }
+                    result = &mut run => break result,
                 }
-                result = &mut run => break result,
             }
         };
         drop(emit);
