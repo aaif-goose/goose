@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use futures::stream::BoxStream;
+use futures::{stream::BoxStream, StreamExt};
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
@@ -13,7 +13,7 @@ use crate::agents::state_machine::{
 };
 use crate::agents::{Agent, AgentEvent, SessionConfig};
 use crate::config::Config;
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, SystemNotificationType};
 use crate::model_config::model_config_from_user_config;
 use crate::providers::base::Provider;
 use crate::providers::create_with_working_dir;
@@ -87,35 +87,61 @@ fn trace_event(
     )
 }
 
-async fn run_hidden(
-    machine: &StateMachine<'_, Session, GooseEffect>,
-    runtime: &SessionManager,
-    session_id: &str,
+fn role_event(role: &str, model: &str, activity: &str) -> AgentEvent {
+    AgentEvent::Message(
+        Message::assistant()
+            .with_system_notification(
+                SystemNotificationType::InlineMessage,
+                format!("{role} ({model}): {activity}"),
+            )
+            .with_visibility(true, false),
+    )
+}
+
+fn run_hidden<'a>(
+    machine: &'a StateMachine<'_, Session, GooseEffect>,
+    runtime: &'a SessionManager,
+    session_id: &'a str,
     prompt: String,
     cancel: CancellationToken,
-) -> Result<Session> {
-    runtime
-        .add_message(session_id, &Message::user().with_text(prompt))
-        .await?;
-    let (tx, mut rx) = mpsc::channel(32);
-    let emit = Emitter::new(tx, cancel);
-    let session = {
+) -> (
+    BoxStream<'a, Result<AgentEvent>>,
+    oneshot::Receiver<Result<Session>>,
+) {
+    let (result_tx, result_rx) = oneshot::channel();
+    let events = async_stream::stream! {
+        if let Err(error) = runtime
+            .add_message(session_id, &Message::user().with_text(prompt))
+            .await
+        {
+            let _ = result_tx.send(Err(error));
+            return;
+        }
+        let (tx, mut rx) = mpsc::channel(32);
+        let emit = Emitter::new(tx, cancel);
         let run = run_goose(machine, runtime, session_id, &emit);
         tokio::pin!(run);
-        loop {
+        let session = loop {
             tokio::select! {
                 event = rx.recv() => {
-                    if event.is_none() {
-                        return Err(anyhow!("hidden state-machine event stream closed"));
+                    match event {
+                        Some(AgentEvent::HistoryReplaced(_)) => {}
+                        Some(event) => yield Ok(event),
+                        None => break Err(anyhow!("hidden state-machine event stream closed")),
                     }
                 }
-                result = &mut run => break result?,
+                result = &mut run => break result,
+            }
+        };
+        drop(emit);
+        while let Some(event) = rx.recv().await {
+            if !matches!(event, AgentEvent::HistoryReplaced(_)) {
+                yield Ok(event);
             }
         }
+        let _ = result_tx.send(session);
     };
-    drop(emit);
-    while rx.recv().await.is_some() {}
-    Ok(session)
+    (Box::pin(events), result_rx)
 }
 
 fn report_value(session: &Session, tool_name: &str) -> Result<serde_json::Value> {
@@ -297,7 +323,8 @@ impl Agent {
             );
 
             let stage_started = Instant::now();
-            let planned = run_hidden(
+            yield role_event("Planner", &models.planner, "creating initial plan");
+            let (mut events, planned) = run_hidden(
                 &planner_machine,
                 runtime.as_ref(),
                 &planner_session.id,
@@ -305,8 +332,11 @@ impl Agent {
                     "Investigate this software task and submit an implementation plan. Do not change the working tree.\n\n{problem}"
                 ),
                 cancel.child_token(),
-            )
-            .await?;
+            );
+            while let Some(event) = events.next().await {
+                yield event?;
+            }
+            let planned = planned.await.context("planner result stream closed")??;
             let plan = plan_from(&planned)?;
             yield trace_event(
                 "initial_plan",
@@ -318,7 +348,8 @@ impl Agent {
             );
 
             let stage_started = Instant::now();
-            let criticized = run_hidden(
+            yield role_event("Supervisor", &models.supervisor, "critiquing plan");
+            let (mut events, criticized) = run_hidden(
                 &supervisor_machine,
                 runtime.as_ref(),
                 &supervisor_session.id,
@@ -326,8 +357,11 @@ impl Agent {
                     "Critique the proposed plan for this task. Inspect the repository independently, identify incorrect assumptions and missing work, and recommend concrete corrections.\n\nTask:\n{problem}\n\nProposed plan:\n{plan}"
                 ),
                 cancel.child_token(),
-            )
-            .await?;
+            );
+            while let Some(event) = events.next().await {
+                yield event?;
+            }
+            let criticized = criticized.await.context("supervisor result stream closed")??;
             let critique = feedback_from(&criticized)?;
             yield trace_event(
                 "plan_critique",
@@ -342,7 +376,8 @@ impl Agent {
             );
 
             let stage_started = Instant::now();
-            let revised = run_hidden(
+            yield role_event("Planner", &models.planner, "revising plan");
+            let (mut events, revised) = run_hidden(
                 &planner_machine,
                 runtime.as_ref(),
                 &planner_session.id,
@@ -351,8 +386,11 @@ impl Agent {
                     critique.feedback
                 ),
                 cancel.child_token(),
-            )
-            .await?;
+            );
+            while let Some(event) = events.next().await {
+                yield event?;
+            }
+            let revised = revised.await.context("planner result stream closed")??;
             let revised_plan = plan_from(&revised)?;
             yield trace_event(
                 "revised_plan",
@@ -373,6 +411,7 @@ impl Agent {
                 )
                 .await?;
 
+            yield role_event("Implementer", &models.implementer, "implementing revised plan");
             let implementation_started = Instant::now();
             let supervision_at = time_limit.mul_f32(0.3);
             let finalization_at = time_limit.mul_f32(0.8);
@@ -438,6 +477,11 @@ impl Agent {
                 let elapsed = implementation_started.elapsed();
                 if !supervised && elapsed >= supervision_at {
                     let stage_started = Instant::now();
+                    yield role_event(
+                        "Supervisor",
+                        &models.supervisor,
+                        "reviewing implementation progress",
+                    );
                     let progress = runtime.get_session(&main_session_id, true).await?;
                     let recent = progress
                         .conversation
@@ -454,7 +498,7 @@ impl Agent {
                         .rev()
                         .collect::<Vec<_>>()
                         .join("\n\n");
-                    let checked = run_hidden(
+                    let (mut events, checked) = run_hidden(
                         &supervisor_machine,
                         runtime.as_ref(),
                         &supervisor_session.id,
@@ -462,8 +506,11 @@ impl Agent {
                             "Review the implementer's progress and provide a short steering message. Inspect the current working tree. About 70% of the implementation time remains.\n\nRevised plan:\n{revised_plan}\n\nRecent progress:\n{recent}"
                         ),
                         cancel.child_token(),
-                    )
-                    .await?;
+                    );
+                    while let Some(event) = events.next().await {
+                        yield event?;
+                    }
+                    let checked = checked.await.context("supervisor result stream closed")??;
                     let feedback = feedback_from(&checked)?;
                     yield trace_event(
                         "progress_review",
