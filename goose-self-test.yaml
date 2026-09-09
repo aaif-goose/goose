@@ -117,6 +117,10 @@ instructions: |
   - For Nanbeige 4.2, use its embedded checkpoint template and native tool mode.
     Verify that XML-formatted tool calls arrive as structured tool requests and that
     thinking is kept separate from visible text, including after a tool result.
+  - For Gemma 2, use its embedded template with automatic or emulated tool mode.
+    Verify that system instructions and consecutive text turns render successfully,
+    and that a shell command executes and its result reaches the next answer.
+    Its template has no native tools or reasoning controls; report those as unsupported.
   - Report the execution-plan evidence and each observed result. Never infer a native
     pass from mock tests or from the presence of a local model alone.
   For this phase, skip the unrelated delegation and remote-provider phases.

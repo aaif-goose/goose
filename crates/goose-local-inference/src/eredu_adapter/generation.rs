@@ -7,7 +7,7 @@ use crate::tool_emulation::{
 use crate::StreamSender;
 use eredu::api::{
     LoadedModel, PlannedModel, PreparedChatGenerationRequest, PreparedChatInput,
-    PreparedChatSpeculativeGenerationRequest,
+    PreparedChatSpeculativeGenerationRequest, TextModelError,
 };
 use eredu::runtime::chat::{
     ChatTemplateRequest, NativeToolSupport, ParallelToolCallPolicy, PreparedChat, SemanticSupport,
@@ -122,16 +122,52 @@ fn chat_request(request: &Request, emulated: bool) -> Result<ChatTemplateRequest
     })
 }
 
+fn alternating_text_messages(messages: &[Value]) -> Option<Vec<Value>> {
+    let mut adapted: Vec<Value> = Vec::new();
+    for (index, message) in messages.iter().enumerate() {
+        let object = message.as_object()?;
+        if object.keys().any(|key| key != "role" && key != "content") {
+            return None;
+        }
+        let role = match message["role"].as_str()? {
+            "system" if index == 0 => "user",
+            role @ ("user" | "assistant") => role,
+            _ => return None,
+        };
+        let content = message["content"].as_str()?;
+        if let Some(previous) = adapted
+            .last_mut()
+            .filter(|previous| previous["role"] == role)
+        {
+            previous["content"] = json!(format!("{}\n\n{content}", previous["content"].as_str()?));
+        } else {
+            adapted.push(json!({"role": role, "content": content}));
+        }
+    }
+    Some(adapted)
+}
+
 fn prepare_chat<B: eredu_core::TextGenerationBackend>(
     model: &mut LoadedModel<B>,
-    request: &Request,
-    emulated: bool,
-) -> Result<PreparedChat, ProviderError> {
-    let mut chat = chat_request(request, emulated)?;
-    let Some(effort) = request.model.thinking_effort() else {
-        return model.prepare_chat(chat).map_err(error);
+    mut chat: ChatTemplateRequest,
+    effort: Option<ThinkingEffort>,
+) -> Result<PreparedChat, TextModelError> {
+    let mut prepared = match model.prepare_chat(chat.clone()) {
+        Ok(prepared) => prepared,
+        Err(original @ TextModelError::Template(eredu_text::error::Error::RenderTemplate(_))) => {
+            // Some checkpoint templates accept only alternating user/assistant text.
+            // Preserve every instruction and turn without rewriting the template.
+            let Some(messages) = alternating_text_messages(&chat.messages) else {
+                return Err(original);
+            };
+            chat.messages = messages;
+            model.prepare_chat(chat.clone()).map_err(|_| original)?
+        }
+        Err(err) => return Err(err),
     };
-    let mut prepared = model.prepare_chat(chat.clone()).map_err(error)?;
+    let Some(effort) = effort else {
+        return Ok(prepared);
+    };
     if !prepared.capabilities().reasoning_parser.is_supported()
         || chat.reasoning_effort.is_some()
         || !chat.extra_template_kwargs.is_empty()
@@ -167,7 +203,23 @@ pub fn prepare<B: eredu_core::TextGenerationBackend>(
 ) -> Result<(PreparedChat, bool), ProviderError> {
     let emulated = !request.tools.is_empty()
         && request.settings.tool_calling == ToolCallingMode::ForceEmulated;
-    let prepared = prepare_chat(model, request, emulated)?;
+    let effort = request.model.thinking_effort();
+    let prepared = match prepare_chat(model, chat_request(request, emulated)?, effort) {
+        Ok(prepared) => prepared,
+        Err(original @ TextModelError::Template(eredu_text::error::Error::RenderTemplate(_)))
+            if !request.tools.is_empty()
+                && request.settings.tool_calling == ToolCallingMode::Auto =>
+        {
+            // Tool history must use the emulator's text syntax for text-only templates.
+            return match prepare_chat(model, chat_request(request, true)?, effort) {
+                Ok(prepared) if !prepared.native_tool_support().is_supported() => {
+                    Ok((prepared, true))
+                }
+                _ => Err(error(original)),
+            };
+        }
+        Err(err) => return Err(error(err)),
+    };
     if emulated || request.tools.is_empty() {
         return Ok((prepared, emulated));
     }
@@ -179,7 +231,9 @@ pub fn prepare<B: eredu_core::TextGenerationBackend>(
                     "Native tool calling is unavailable for the effective template: {reason}"
                 )));
             }
-            prepare_chat(model, request, true).map(|prepared| (prepared, true))
+            prepare_chat(model, chat_request(request, true)?, effort)
+                .map(|prepared| (prepared, true))
+                .map_err(error)
         }
     }
 }

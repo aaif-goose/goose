@@ -741,12 +741,65 @@ fn nanbeige_native_tools_preserve_reasoning_and_arguments_across_turns() {
 }
 
 #[test]
+fn text_only_template_preserves_instructions_and_consecutive_turns() {
+    let settings = ModelSettings {
+        chat_template: ChatTemplate::CustomInline {
+            template: include_str!("support/gemma2.jinja").into(),
+        },
+        ..Default::default()
+    };
+    let (_dir, worker, calls) = worker("hello<|im_end|>", settings.clone(), None);
+    let mut req = request();
+    req.settings = settings;
+    req.model = req
+        .model
+        .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
+    req.messages = vec![
+        Message::user().with_text("Remember code 7."),
+        Message::user().with_text("Use it later."),
+        Message::assistant().with_text("I remember"),
+        Message::assistant().with_text("the code."),
+        Message::user().with_text("Say hello."),
+    ];
+    let (usage, messages) = run(&worker, req.clone());
+    assert!(usage
+        .unwrap()
+        .stats
+        .unwrap()
+        .time_to_first_token_ms
+        .is_some());
+    assert_eq!(text(&messages), "hello");
+    let prompt = support::tokenizer()
+        .decode(&calls.lock().unwrap().prompts[0], false)
+        .unwrap();
+    assert!(prompt.contains(
+        "<start_of_turn>user\nYou are Goose\n\nRemember code 7.\n\nUse it later.<end_of_turn>"
+    ));
+    assert!(prompt.contains("<start_of_turn>model\nI remember\n\nthe code.<end_of_turn>"));
+    assert!(prompt.contains("<start_of_turn>user\nSay hello.<end_of_turn>"));
+    req.settings.tool_calling = ToolCallingMode::ForceNative;
+    req.tools = tools();
+    assert!(run(&worker, req)
+        .0
+        .unwrap_err()
+        .to_string()
+        .contains("Native tool calling is unavailable"));
+    assert_eq!(calls.lock().unwrap().configs.len(), 1);
+}
+
+#[test]
 fn auto_fallback_and_force_emulated_choose_once_before_generation() {
     for (mode, chat_template) in [
         (
             ToolCallingMode::Auto,
             ChatTemplate::CustomInline {
                 template: include_str!("support/plain.jinja").into(),
+            },
+        ),
+        (
+            ToolCallingMode::Auto,
+            ChatTemplate::CustomInline {
+                template: include_str!("support/gemma2.jinja").into(),
             },
         ),
         (ToolCallingMode::ForceEmulated, ChatTemplate::default()),
@@ -791,13 +844,56 @@ fn auto_fallback_and_force_emulated_choose_once_before_generation() {
                 rmcp::model::ContentBlock::text("directory-result"),
             ])),
         ));
+        req.messages
+            .push(Message::user().with_text("Report that result."));
         run(&worker, req).0.unwrap();
         let prompt = support::tokenizer()
             .decode(&calls.lock().unwrap().prompts[1], false)
             .unwrap();
         assert!(prompt.contains("$ pwd"));
         assert!(prompt.contains("Command output:\ndirectory-result"));
+        assert!(prompt.contains("Report that result."));
     }
+}
+
+#[test]
+fn native_template_errors_do_not_switch_to_emulation() {
+    let settings = ModelSettings {
+        chat_template: ChatTemplate::CustomInline {
+            template: format!(
+                "{{% for message in messages %}}{{% if message.role == 'tool' and message.content == 'rejected-result' %}}{{{{ reject_native_history() }}}}{{% endif %}}{{% endfor %}}{}",
+                support::TEMPLATE
+            ),
+        },
+        ..Default::default()
+    };
+    let (_dir, worker, calls) = worker("$ pwd\n", settings.clone(), None);
+    let mut req = request();
+    req.settings = settings;
+    req.tools = vec![rmcp::model::Tool::new(
+        "developer__shell",
+        "Run a shell command",
+        json!({"type":"object","properties":{"command":{"type":"string"}},"required":["command"]})
+            .as_object()
+            .unwrap()
+            .clone(),
+    )];
+    req.messages.push(
+        Message::assistant().with_tool_request(
+            "call-1",
+            Ok(rmcp::model::CallToolRequestParams::new("developer__shell")
+                .with_arguments(json!({"command":"pwd"}).as_object().unwrap().clone())),
+        ),
+    );
+    req.messages.push(Message::user().with_tool_response(
+        "call-1",
+        Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::ContentBlock::text("rejected-result"),
+        ])),
+    ));
+    let err = run(&worker, req).0.unwrap_err();
+    assert!(err.to_string().contains("reject_native_history"), "{err}");
+    assert!(calls.lock().unwrap().configs.is_empty());
 }
 
 #[test]
