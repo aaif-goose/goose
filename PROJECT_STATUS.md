@@ -191,6 +191,12 @@ zapisany, a image/document-only fallback zachowuje indeks początku turnu,
 aby przenieść jego turn-context. Regresje sprawdzają oba przypadki w
 `context_mgmt`, które jest współdzielone przez legacy i state machine.
 
+Kolejny P2 uszczelnił tę kotwicę dla state machine: gdy tool result został już
+zużyty przez późniejszą, zakończoną inference, jej usage ledger na ostatniej
+assistant wiadomości zatrzymuje suffix accounting. Dzięki temu nie dochodzi
+do podwójnego liczenia i zbędnej compaction na następnym user turnie; późny
+chunk tego samego streamu nadal nie ma tego ledgeru i pozostaje liczony.
+
 ## Checklista przed merge
 
 - [x] Naprawić P1 dotyczący późnego queued steer.
@@ -203,4 +209,4 @@ aby przenieść jego turn-context. Regresje sprawdzają oba przypadki w
 - [x] CI dla `cced800` jest zielone.
 - [x] CI dla `5e16ce3` jest zielone.
 - [x] CI dla `16514c7` jest zielone.
-- [ ] Wypchnąć poprawki suffix accounting i turn-context carry, a następnie sprawdzić CI.
+- [ ] Wypchnąć poprawkę zakończonej inference suffix accounting i sprawdzić CI.

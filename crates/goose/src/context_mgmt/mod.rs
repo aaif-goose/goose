@@ -2,6 +2,8 @@ pub use goose_context_management::structured;
 
 use crate::conversation::message::MessageMetadata;
 use crate::conversation::message::{Message, MessageContent};
+#[cfg(test)]
+use crate::conversation::message::MessageUsage;
 use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::providers::base::Provider;
 #[cfg(test)]
@@ -251,6 +253,12 @@ pub(crate) async fn context_tokens_since_last_inference(
     conversation: &Conversation,
 ) -> Result<Option<i32>> {
     let messages = conversation.messages();
+    let Some(latest_assistant) = messages
+        .iter()
+        .rposition(|message| message.is_agent_visible() && message.role == Role::Assistant)
+    else {
+        return Ok(None);
+    };
     let Some(tool_calling_assistant) = messages.iter().rposition(|message| {
         message.is_agent_visible()
             && message.role == Role::Assistant
@@ -261,6 +269,12 @@ pub(crate) async fn context_tokens_since_last_inference(
     }) else {
         return Ok(None);
     };
+
+    if latest_assistant > tool_calling_assistant
+        && messages[latest_assistant].metadata.usage.is_some()
+    {
+        return Ok(None);
+    }
 
     let added_messages =
         Conversation::new_unvalidated(messages[tool_calling_assistant + 1..].iter().cloned())
@@ -991,6 +1005,34 @@ mod tests {
                 .unwrap()
                 .is_some(),
             "the tool response must remain part of the post-inference suffix"
+        );
+    }
+
+    #[tokio::test]
+    async fn suffix_accounting_stops_after_a_later_completed_inference() {
+        let conversation = Conversation::new_unvalidated([
+            Message::assistant()
+                .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file"))),
+            Message::user().with_tool_response(
+                "call_0",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("tool result"),
+                ])),
+            ),
+            Message::assistant()
+                .with_text("completed answer")
+                .with_metadata(MessageMetadata {
+                    usage: Some(Box::new(MessageUsage::default())),
+                    ..Default::default()
+                }),
+        ]);
+
+        assert!(
+            context_tokens_since_last_inference(&conversation)
+                .await
+                .unwrap()
+                .is_none(),
+            "a later completed inference has already accounted for the tool result"
         );
     }
 
