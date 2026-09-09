@@ -360,6 +360,7 @@ fn meta_string(
 fn agent_capabilities_meta() -> Option<Meta> {
     let mut goose = serde_json::Map::new();
     goose.insert("recipeParameterScopes".to_string(), serde_json::json!({}));
+    goose.insert("emptyExtensionSelection".to_string(), serde_json::json!({}));
     if cfg!(feature = "local-inference") {
         goose.insert("localInference".to_string(), serde_json::json!({}));
     }
@@ -2892,6 +2893,53 @@ extensions:
     }
 
     #[test]
+    fn explicit_empty_extensions_override_builtins_and_global_defaults() {
+        let (config, _c, _s) = config_with_yaml(
+            "extensions:\n  developer:\n    enabled: true\n    type: builtin\n    name: developer\n",
+        );
+        let project_root = tempfile::tempdir().unwrap();
+        for selection in [default_builtin("developer"), explicit_builtin("developer")] {
+            let extensions = initial_session_extensions(
+                &config,
+                &selection,
+                project_root.path(),
+                vec![],
+                Some(vec![]),
+                None,
+            )
+            .unwrap();
+            assert!(extensions.is_empty());
+            let defaults = initial_session_extensions(
+                &config,
+                &selection,
+                project_root.path(),
+                vec![],
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(has_developer(&defaults));
+        }
+    }
+
+    #[test]
+    fn explicit_empty_extensions_preserve_recipe_precedence() {
+        let (config, _c, _s) = config_with_yaml("");
+        let project_root = tempfile::tempdir().unwrap();
+        let recipe = vec![builtin_to_extension_config("developer")];
+        let extensions = initial_session_extensions(
+            &config,
+            &AcpBuiltinSelection::default(),
+            project_root.path(),
+            vec![],
+            Some(vec![]),
+            Some(&recipe),
+        )
+        .unwrap();
+        assert_eq!(extensions, recipe);
+    }
+
+    #[test]
     fn new_session_mcp_does_not_enable_disabled_default_builtin() {
         let (config, _c, _s) = config_with_yaml(
             r#"
@@ -3654,6 +3702,16 @@ print(\"hello, world\")
         assert_eq!(
             response.protocol_version,
             agent_client_protocol::schema::ProtocolVersion::V1
+        );
+    }
+
+    #[test]
+    fn test_agent_capabilities_advertise_empty_extension_selection() {
+        assert_eq!(
+            agent_capabilities_meta()
+                .and_then(|meta| meta.get("goose").cloned())
+                .and_then(|goose| goose.get("emptyExtensionSelection").cloned()),
+            Some(serde_json::json!({}))
         );
     }
 
