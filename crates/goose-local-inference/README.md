@@ -3,9 +3,7 @@
 The `local` provider runs models in process. Artifact format and inference backend
 are independent: GGUF defaults to `llamacpp`, and SafeTensors defaults to `eredu`.
 Eredu can also load GGUF and any other format supported by its artifact loader.
-Nanbeige 4.2 loads with its embedded template and thinking controls. Its native
-XML tool calls currently require Eredu's exact newline format; alternate whitespace
-can leave a call displayed as text instead of executed.
+Nanbeige 4.2 uses its embedded template for native XML tool calls and thinking.
 
 On macOS, build with `cargo build -p goose-cli --features eredu` to enable Eredu
 through MLX. The `eredu` feature is opt-in; `cuda` and `vulkan` enable llama.cpp

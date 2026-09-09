@@ -673,69 +673,71 @@ fn auto_native_preserves_parallel_calls_and_multiturn_results() {
 
 #[test]
 fn nanbeige_native_tools_preserve_reasoning_and_arguments_across_turns() {
-    let output = "Look up the code.\n</think>\n\n<tool_call>\n<function=lookup>\n<parameter=x>\n7\n</parameter>\n</function>\n</tool_call><|im_end|>";
-    let settings = ModelSettings {
-        chat_template: ChatTemplate::CustomInline {
-            template: include_str!("support/nanbeige.jinja").into(),
-        },
-        tool_calling: ToolCallingMode::ForceNative,
-        ..Default::default()
-    };
-    let (_dir, worker, calls) = worker(output, settings.clone(), None);
-    let mut req = request();
-    req.settings = settings;
-    req.model = req
-        .model
-        .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
-    req.tools = tools();
-    let (result, messages) = run(&worker, req.clone());
-    assert!(result
-        .unwrap()
-        .stats
-        .unwrap()
-        .time_to_first_token_ms
-        .is_some());
-    let thinking: String = messages
-        .iter()
-        .flat_map(|m| &m.content)
-        .filter_map(|c| match c {
-            MessageContent::Thinking(thinking) => Some(thinking.thinking.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(thinking.trim(), "Look up the code.");
-    assert!(text(&messages).trim().is_empty());
-    let requests: Vec<_> = messages
-        .iter()
-        .flat_map(|m| &m.content)
-        .filter_map(|c| match c {
-            MessageContent::ToolRequest(call) => Some(call.clone()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(requests.len(), 1);
-    let call = requests[0].tool_call.as_ref().unwrap();
-    assert_eq!(call.name, "lookup");
-    assert_eq!(
-        call.arguments.as_ref().unwrap(),
-        json!({"x": 7}).as_object().unwrap()
-    );
-    req.messages.extend(messages);
-    req.messages.push(Message::user().with_tool_response(
-        requests[0].id.clone(),
-        Ok(rmcp::model::CallToolResult::success(vec![
-            rmcp::model::ContentBlock::text("The answer is BLUE."),
-        ])),
-    ));
-    run(&worker, req).0.unwrap();
-    let calls = calls.lock().unwrap();
-    let prompt = support::tokenizer()
-        .decode(&calls.prompts[1], false)
-        .unwrap();
-    assert!(prompt.contains("<parameter=x>\n7\n</parameter>"));
-    assert!(prompt.contains("The answer is BLUE."));
-    assert!(prompt.contains("Look up the code."));
-    assert_eq!(calls.loads, 1);
+    for separator in ["\n", "  "] {
+        let output = format!("Look up the code.\n</think>\n\n<tool_call>{separator}<function=lookup>{separator}<parameter=x>\n7\n</parameter>{separator}</function>{separator}</tool_call><|im_end|>");
+        let settings = ModelSettings {
+            chat_template: ChatTemplate::CustomInline {
+                template: include_str!("support/nanbeige.jinja").into(),
+            },
+            tool_calling: ToolCallingMode::ForceNative,
+            ..Default::default()
+        };
+        let (_dir, worker, calls) = worker(&output, settings.clone(), None);
+        let mut req = request();
+        req.settings = settings;
+        req.model = req
+            .model
+            .with_thinking_effort(goose_provider_types::thinking::ThinkingEffort::High);
+        req.tools = tools();
+        let (result, messages) = run(&worker, req.clone());
+        assert!(result
+            .unwrap()
+            .stats
+            .unwrap()
+            .time_to_first_token_ms
+            .is_some());
+        let thinking: String = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContent::Thinking(thinking) => Some(thinking.thinking.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thinking.trim(), "Look up the code.");
+        assert!(text(&messages).trim().is_empty());
+        let requests: Vec<_> = messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                MessageContent::ToolRequest(call) => Some(call.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(requests.len(), 1);
+        let call = requests[0].tool_call.as_ref().unwrap();
+        assert_eq!(call.name, "lookup");
+        assert_eq!(
+            call.arguments.as_ref().unwrap(),
+            json!({"x": 7}).as_object().unwrap()
+        );
+        req.messages.extend(messages);
+        req.messages.push(Message::user().with_tool_response(
+            requests[0].id.clone(),
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text("The answer is BLUE."),
+            ])),
+        ));
+        run(&worker, req).0.unwrap();
+        let calls = calls.lock().unwrap();
+        let prompt = support::tokenizer()
+            .decode(&calls.prompts[1], false)
+            .unwrap();
+        assert!(prompt.contains("<parameter=x>\n7\n</parameter>"));
+        assert!(prompt.contains("The answer is BLUE."));
+        assert!(prompt.contains("Look up the code."));
+        assert_eq!(calls.loads, 1);
+    }
 }
 
 #[test]
