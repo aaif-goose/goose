@@ -423,7 +423,14 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
         .await
         {
             Ok(result) => {
-                let compacted = result.conversation;
+                let mut compacted = result.conversation;
+                for message in compacted.messages_mut().iter_mut().filter(|message| {
+                    message.role == rmcp::model::Role::Assistant
+                        && message.is_agent_visible()
+                        && !message.is_user_visible()
+                }) {
+                    self.set_message_meta(message, "synthetic_turn", serde_json::Value::Bool(true));
+                }
                 let usage = result.usage;
                 record_chat_usage(&span, &usage);
                 emit.message(Message::assistant().with_system_notification(

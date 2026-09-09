@@ -140,6 +140,12 @@ nadal ma opisane wyżej 8 niezwiązanych, środowiskowych/bazowych błędów.
 Poprawka testu jest w `702f9d6`; odpowiedź review została dodana, a wszystkie
 wątki są rozwiązane. CI dla tego commitu rozpoczęło się po pushu.
 
+CI dla `b2d6339` zakończyło się zielono. Kolejny P1 state-machine wykazał,
+że assistant summary utworzony przez compaction był liczony jako inference
+turn. `CompactionOperation` oznacza teraz własne assistant messages jako
+synthetic, a `MaxTurnsOperation` pomija je w budżecie. Regresja używa
+`max_turns = 2` i wymaga tool requestu, compaction oraz drugiego inference.
+
 PR #11681 rozwiązuje ten sam problem #11072, lecz jest odrębną i znacznie
 szerszą implementacją (recount tokenów oraz refaktoryzacja compaction). Jej
 legacy preflight nadal wykonuje asynchroniczny check po drainie steerów, więc
@@ -153,4 +159,5 @@ nie obejmuje później znalezionego wyścigu P1.
 - [x] Uruchomić formatowanie, clippy i ukierunkowany test.
 - [x] Poczekać na zielone CI dla ostatnio wypchniętego commitu.
 - [x] Wypchnąć poprawkę testu, odpowiedzieć na P2 i zamknąć wątek.
-- [ ] Poczekać na CI dla `702f9d6`.
+- [x] CI dla `b2d6339` jest zielone.
+- [ ] Wypchnąć poprawkę budżetu state machine i poczekać na jej CI.
