@@ -443,3 +443,30 @@ Create a complete copy of any session to reuse configurations, experiment with v
 
     </TabItem>
 </Tabs>
+
+## Export Sessions as Trajectories
+
+A JSON session export is a complete, self-contained transcript: the session record plus its `conversation` message array. That makes goose sessions usable as a training, evaluation, and analysis corpus.
+
+[`trajectory`](https://github.com/letta-ai/trajectory) normalizes transcripts from different agent runtimes into one validated record format, and supports goose as a source. Pass the contents of a JSON export directly:
+
+```ts
+import { normalizeTranscript } from "@letta-ai/trajectory";
+
+const { records, diagnostics } = normalizeTranscript({
+  source: "goose",
+  transcript: exportedJson,
+});
+```
+
+To export many sessions at once, use the bulk export script in the goose repository:
+
+```bash
+# Export the 100 most recently updated sessions
+./scripts/export-trajectories.sh --limit 100
+
+# Export every session for one project
+./scripts/export-trajectories.sh --working-dir ~/Development/goose -o /tmp/corpus
+```
+
+The script writes one `<session-id>.json` file per session by calling `goose session export --format json`, skips sessions it has already exported, and never touches the session database directly.
