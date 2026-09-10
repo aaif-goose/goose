@@ -342,6 +342,12 @@ impl DatabricksV2Provider {
                 let mut info = model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, model);
                 info.name = name.to_string();
                 info.resolved_model = Some(model.to_string());
+                // The model-service MLflow path only translates thinking effort for Claude.
+                if Self::route_for_model(name) == DatabricksV2Route::MlflowChatCompletions
+                    && !model.starts_with("anthropic/")
+                {
+                    info.reasoning = false;
+                }
                 info
             }
             None => ModelInfo::new(name),
