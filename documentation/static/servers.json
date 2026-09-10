@@ -722,6 +722,25 @@
     ]
   },
   {
+    "id": "syfert",
+    "name": "Syfert Legal Research",
+    "description": "Verify legal citations, check whether a case is still good law, audit a whole brief, and search statutes for all 50 states",
+    "type": "streamable-http",
+    "url": "https://mcp.syfert.com/mcp",
+    "link": "https://github.com/Gwonk1/syfert-mcp",
+    "installation_notes": "Remote Streamable HTTP extension. Get a free token at https://syfert.com/mcp/ (one email click), then supply it as the request header Authorization: Bearer <YOUR_SYFERT_TOKEN>.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Bearer <YOUR_SYFERT_TOKEN>",
+        "required": true
+      }
+    ]
+  },
+  {
     "id": "tavily",
     "name": "Tavily Web Search",
     "description": "Web search capabilities powered by Tavily",
