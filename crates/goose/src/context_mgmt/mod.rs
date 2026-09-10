@@ -95,13 +95,19 @@ pub async fn compact_messages(
     };
 
     // Turn-context events are agent-appended, never the message to preserve.
-    let (preserved_user_message, preserved_idx, is_most_recent) = if !manual_compact {
+    let (preserved_user_message, is_most_recent, turn_start) = if !manual_compact {
         let current_turn_start = messages
             .iter()
             .rposition(|msg| {
                 msg.role == Role::User && msg.is_user_visible() && !msg.is_tool_response()
             })
             .unwrap_or(messages.len());
+        let turn_start = messages.iter().rposition(|msg| {
+            msg.role == Role::User
+                && msg.is_user_visible()
+                && !msg.is_tool_response()
+                && !msg.metadata.steer
+        });
         let found_msg = messages
             .iter()
             .enumerate()
@@ -133,16 +139,12 @@ pub async fn compact_messages(
 
         if let Some((idx, msg)) = found_msg {
             let is_last = messages[idx + 1..].iter().all(Message::is_turn_context);
-            (Some(msg), Some(idx), is_last)
+            (Some(msg), is_last, turn_start)
         } else {
-            (
-                None,
-                (current_turn_start < messages.len()).then_some(current_turn_start),
-                false,
-            )
+            (None, false, turn_start)
         }
     } else {
-        (None, None, false)
+        (None, false, None)
     };
 
     let messages_to_compact = messages.as_slice();
@@ -195,9 +197,9 @@ pub async fn compact_messages(
     }
 
     // Carry the turn's own context event (it follows the preserved prompt) so
-    // a mid-turn retry keeps it; anything earlier belongs to a previous turn.
-    if let Some(carry_from) = preserved_idx.map(|idx| idx + 1) {
-        if let Some(turn_context) = messages_to_compact[carry_from..]
+    // a mid-turn retry keeps it; anything earlier belongs to previous turns.
+    if let Some(turn_start) = turn_start {
+        if let Some(turn_context) = messages_to_compact[turn_start..]
             .iter()
             .rev()
             .find(|msg| msg.is_turn_context() && msg.is_agent_visible())
@@ -272,10 +274,7 @@ pub(crate) async fn context_tokens_since_last_inference(
 
     if latest_assistant > tool_calling_assistant
         && messages[latest_assistant + 1..].iter().any(|message| {
-            message.role == Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response()
-                && !message.metadata.steer
+            message.role == Role::User && !message.is_tool_response() && !message.metadata.steer
         })
     {
         return Ok(None);
@@ -1052,6 +1051,82 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "a later completed inference has already accounted for the tool result"
+        );
+    }
+
+    #[tokio::test]
+    async fn suffix_accounting_stops_after_an_agent_only_non_steer_follow_up() {
+        let conversation = Conversation::new_unvalidated([
+            Message::assistant()
+                .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file"))),
+            Message::user().with_tool_response(
+                "call_0",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("tool result"),
+                ])),
+            ),
+            Message::assistant()
+                .with_text("completed answer")
+                .with_metadata(MessageMetadata {
+                    usage: Some(Box::new(MessageUsage::default())),
+                    ..Default::default()
+                }),
+            Message::user()
+                .with_text("continue please")
+                .with_metadata(MessageMetadata::agent_only()),
+        ]);
+
+        assert!(
+            context_tokens_since_last_inference(&conversation)
+                .await
+                .unwrap()
+                .is_none(),
+            "an agent-only follow-up is a user boundary for suffix accounting"
+        );
+    }
+
+    #[tokio::test]
+    async fn steered_turn_context_is_carried_when_a_steer_ends_the_turn() {
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("earlier request"),
+            Message::assistant().with_text("earlier response"),
+            Message::user().with_text("the real current request"),
+            Message::user()
+                .with_text("<turn-context>steer context</turn-context>")
+                .with_metadata(MessageMetadata::agent_only().with_turn_context()),
+            Message::user()
+                .with_text("additionally check the linter")
+                .with_metadata(MessageMetadata::default().with_steer()),
+        ]);
+
+        let compacted = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await
+        .unwrap()
+        .conversation;
+
+        assert!(
+            compacted.messages().last().is_some_and(|message| {
+                message.is_turn_context()
+                    && message.is_agent_visible()
+                    && message.as_concat_text().contains("steer context")
+            }),
+            "the turn's context event must trail the carried forward turn"
+        );
+        assert!(
+            compacted.messages().iter().any(|message| {
+                message.is_user_visible()
+                    && message
+                        .as_concat_text()
+                        .contains("the real current request")
+            }),
+            "the preserved request must survive compaction"
         );
     }
 

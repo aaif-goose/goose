@@ -1,6 +1,6 @@
 # Status projektu: mid-turn auto-compaction
 
-Data aktualizacji: 2026-09-09
+Data aktualizacji: 2026-09-10
 
 ## Cel
 
@@ -198,32 +198,32 @@ usage; kończy się dopiero, gdy po późniejszej assistant odpowiedzi zaczyna s
 nowy user-visible, nie-steer turn. Dzięki temu tool result jest liczony przed
 następną inference, lecz nie po inference, która już go zużyła.
 
-## Handoff — 2026-09-09
+## Handoff — 2026-09-10
 
-Ostatnia kodowa poprawka to `b857833`; późniejsze commity zawierają wyłącznie
-dokumentację handoff i są wypchnięte do `origin`. Wszystkie wcześniejsze review
-threads są rozwiązane, ale pojawił się nowy otwarty P2 `PRRT_kwDOMneZ986gvZqm`
-(`discussion_r3970649254`): granica suffix accounting wymaga obecnie
-`is_user_visible()`, przez co agent-only continuation dodana po późniejszej
-inference (np. retry albo stop-hook) nie kończy suffixu. State machine może
-wtedy ponownie policzyć już zużyty tool result przed prepared-request hookiem.
+Dwa ostatnie otwarte review threads są naprawione w
+`crates/goose/src/context_mgmt/mod.rs` (commit w przygotowaniu, poprz. HEAD
+`9fb002b`):
 
-Następny wykonawca powinien poprawić wyłącznie tę granicę w
-`context_tokens_since_last_inference` w `crates/goose/src/context_mgmt/mod.rs`:
-agent-only, nie-tool-response i nie-steer continuation po późniejszej
-assistant inference musi być traktowana jako kolejny request boundary.
-Trzeba zachować rozróżnienie od wiadomości należących do tego samego tool
-streamu oraz dodać deterministyczną regresję state-machine dla retry lub
-stop-hook. Legacy nadal wymaga parzystego sprawdzenia, nawet gdy dokładne
-prepared-request count chroni je przed tym samym skutkiem.
+- P2 `PRRT_kwDOMneZ986gvZqm`: granica suffix accounting
+  (`context_tokens_since_last_inference`) nie wymaga już `is_user_visible()`;
+  każdy nie-tool-response, nie-steer User message po ostatnim assistant
+  boundary kończy suffix. Regresja:
+  `suffix_accounting_stops_after_an_agent_only_non_steer_follow_up`.
+- P2 `PRRT_kwDOMneZ986gvq63`: carry-forward turn-context w `compact_messages`
+  wystartowuje od `turn_start` (ostatni user-visible, nie-tool, nie-steer
+  User message), a nie od `preserved_idx + 1`, więc turn-context z początku
+  bieżącego turnu przetrwa, gdy turn kończy steer. Regresja:
+  `steered_turn_context_is_carried_when_a_steer_ends_the_turn` (steer
+  user-visible, odpowiadający produkcji z `ops_steer.rs`).
 
-W momencie handoffu macierz CI dla `b857833` nadal wykonywała trzy joby:
-`Build and Test Rust Project`, `Build and Test TLS Backend (native-tls)` i
-`Build and Test TLS Backend (rustls-tls)`; wszystkie ukończone joby są
-zielone. Dokumentacyjne pushe uruchamiają kolejną macierz, więc należy
-sprawdzić jej stan na żywo. Ukończona macierz dla `16514c7` była całkowicie
-zielona.
-Szczegółowy prompt przekazania jest w `LLM_HANDOFF.md`.
+Walidacja ostatniej zmiany:
+
+- `cargo test -p goose context_mgmt::tests` — 20/20 pass;
+- `cargo fmt` — pass;
+- `cargo clippy -p goose --all-targets -- -D warnings` — pass.
+
+Następny wykonawca: odpowietrzyć oba wątki na GitHubie, wypchnąć i
+sprawdzić CI. Szczegółowy prompt przekazania jest w `LLM_HANDOFF.md`.
 
 ## Checklista przed merge
 
@@ -237,4 +237,6 @@ Szczegółowy prompt przekazania jest w `LLM_HANDOFF.md`.
 - [x] CI dla `cced800` jest zielone.
 - [x] CI dla `5e16ce3` jest zielone.
 - [x] CI dla `16514c7` jest zielone.
-- [ ] Naprawić otwarty P2 agent-only continuation boundary, wypchnąć i sprawdzić CI.
+- [x] Naprawić otwarty P2 agent-only continuation boundary (Zqm) i turn-context
+      carry-forward przy steerach (q63).
+- [ ] Wypchnąć poprawkę, rozwiązać wątki i sprawdzić CI.
