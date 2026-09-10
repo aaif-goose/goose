@@ -355,7 +355,7 @@ pub async fn check_if_compaction_needed_for_request(
 
     let added_context_tokens = context_tokens_since_last_inference(conversation).await?;
     let (current_tokens, _token_source) = match request {
-        Some((system_prompt, tools)) if added_context_tokens.is_some() => {
+        Some((system_prompt, tools)) => {
             let token_counter = create_token_counter()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {e}"))?;
