@@ -120,6 +120,27 @@ pub fn set_theme(theme: Theme) {
     }
 }
 
+/// Ring the terminal bell so an unfocused terminal can badge or chime.
+/// Opt-in via `GOOSE_CLI_BELL=true` (environment or config); terminals
+/// decide how to surface it, typically only when the window lacks focus.
+pub fn emit_attention_bell() {
+    if !bell_enabled() {
+        return;
+    }
+    let mut stdout = std::io::stdout();
+    if !stdout.is_terminal() {
+        return;
+    }
+    let _ = stdout.write_all(b"\x07");
+    let _ = stdout.flush();
+}
+
+fn bell_enabled() -> bool {
+    Config::global()
+        .get_param::<bool>("GOOSE_CLI_BELL")
+        .unwrap_or(false)
+}
+
 pub fn get_theme() -> Theme {
     CURRENT_THEME.with(|t| *t.borrow())
 }

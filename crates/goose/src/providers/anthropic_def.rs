@@ -7,6 +7,9 @@ use crate::{
         base::ProviderDef, command_auth::CommandAuthProvider,
         custom_provider_config::ConfigKeyResolver,
     },
+    session_context::{
+        session_id_request_builder, session_id_request_builder_with_header_override,
+    },
 };
 use goose_providers::{
     anthropic::{self, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION},
@@ -62,7 +65,7 @@ async fn from_env(
         std::time::Duration::from_secs(timeout_secs),
         tls_config,
     )?
-    .with_request_builder(crate::session_context::session_id_request_builder())
+    .with_request_builder(session_id_request_builder())
     .with_header("anthropic-version", ANTHROPIC_API_VERSION)?;
 
     Ok(AnthropicProviderBuilder::new(api_client).build())
@@ -73,12 +76,14 @@ pub fn from_custom_config(
     tls_config: Option<TlsConfig>,
 ) -> Result<AnthropicProvider> {
     let auth_override = config.auth.clone();
+    let request_builder = session_id_request_builder_with_header_override(
+        config.session_id_header_override.as_deref(),
+    )?;
     anthropic::from_declarative_config(config, tls_config, ConfigKeyResolver::new(Config::global()))
         .map(|builder| {
             builder
                 .map_api_client(|api_client| {
-                    let api_client = api_client
-                        .with_request_builder(crate::session_context::session_id_request_builder());
+                    let api_client = api_client.with_request_builder(request_builder);
                     match auth_override {
                         Some(auth_config) => api_client.with_auth(AuthMethod::Custom(Box::new(
                             CommandAuthProvider::new(&auth_config, "x-api-key", ""),
@@ -133,6 +138,7 @@ mod tests {
             base_url: "http://localhost:1".to_string(),
             models,
             headers: None,
+            session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
             requires_auth: false,

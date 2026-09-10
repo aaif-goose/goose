@@ -979,6 +979,12 @@ pub fn declarative_inventory_identity(
             .public_inputs
             .insert("headers".to_string(), serialize_string_map(headers)?);
     }
+    if let Some(header_name) = &config.session_id_header_override {
+        identity.public_inputs.insert(
+            "session_id_header_override".to_string(),
+            header_name.clone(),
+        );
+    }
     if !config.api_key_env.is_empty() {
         if let Some(value) = config_secret_value(global, &config.api_key_env) {
             identity

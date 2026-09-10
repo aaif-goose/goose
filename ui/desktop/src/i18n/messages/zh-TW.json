@@ -3159,7 +3159,7 @@
     "defaultMessage": "尚無已儲存的食譜"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "從聊天儲存的食譜會顯示在這裡。"
+    "defaultMessage": "已儲存的食譜會顯示在這裡。"
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "在新視窗中開啟"
@@ -3696,7 +3696,7 @@
     "defaultMessage": "工作階段 JSON 已複製"
   },
   "sessionActionsHeader.copiedModelInteractions": {
-    "defaultMessage": "Recent model interactions copied"
+    "defaultMessage": "已複製最近的模型互動"
   },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "文字已複製"
@@ -3729,10 +3729,10 @@
     "defaultMessage": "正在載入 JSON…"
   },
   "sessionActionsHeader.modelInteractionsFailed": {
-    "defaultMessage": "Failed to load model interactions: {error}"
+    "defaultMessage": "載入模型互動失敗：{error}"
   },
   "sessionActionsHeader.modelInteractionsTitle": {
-    "defaultMessage": "Recent model interactions"
+    "defaultMessage": "最近的模型互動"
   },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "重新命名工作階段失敗：{error}"
@@ -3759,7 +3759,7 @@
     "defaultMessage": "檢視工作階段 JSON"
   },
   "sessionActionsHeader.viewModelInteractions": {
-    "defaultMessage": "View recent model interactions"
+    "defaultMessage": "檢視最近的模型互動"
   },
   "sessionIndicators.error": {
     "defaultMessage": "工作階段發生錯誤"

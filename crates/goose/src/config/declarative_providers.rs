@@ -216,6 +216,7 @@ pub fn create_custom_provider(
         base_url: params.api_url,
         models: model_infos,
         headers: params.headers,
+        session_id_header_override: None,
         timeout_seconds: None,
         supports_streaming: params.supports_streaming,
         requires_auth: params.requires_auth,
@@ -335,6 +336,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
                 Some(h) => Some(h),
                 None => existing_config.headers,
             },
+            session_id_header_override: existing_config.session_id_header_override,
             timeout_seconds: existing_config.timeout_seconds,
             supports_streaming: params.supports_streaming,
             requires_auth: params.requires_auth,
@@ -612,6 +614,7 @@ mod tests {
                 request_params: None,
             }],
             headers: None,
+            session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
             requires_auth: true,
@@ -646,6 +649,24 @@ mod tests {
             .unwrap();
 
         assert_ne!(native.inventory_key, toolshim.inventory_key);
+    }
+
+    #[test]
+    fn session_id_header_override_changes_declarative_inventory_identity() {
+        let _guard = env_lock::lock_env([("GOOSE_TOOLSHIM", None::<&str>)]);
+        let mut config = test_huggingface_config();
+
+        let default = declarative_inventory_identity(&config)
+            .unwrap()
+            .into_identity()
+            .unwrap();
+        config.session_id_header_override = Some("x-custom-session".to_string());
+        let overridden = declarative_inventory_identity(&config)
+            .unwrap()
+            .into_identity()
+            .unwrap();
+
+        assert_ne!(default.inventory_key, overridden.inventory_key);
     }
 
     #[test]

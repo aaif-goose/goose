@@ -577,6 +577,7 @@ mod tests {
             base_url: base_url.to_string(),
             models,
             headers: None,
+            session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: None,
             requires_auth: false,

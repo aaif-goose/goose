@@ -278,6 +278,7 @@ export type SetToolPermissionsResponse_unstable = {
  */
 export type GooseToolCallRequest_unstable = {
     sessionId: string;
+    extensionName: string;
     name: string;
     arguments?: unknown;
 };

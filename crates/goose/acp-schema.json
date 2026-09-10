@@ -561,6 +561,9 @@
         "sessionId": {
           "type": "string"
         },
+        "extensionName": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -570,6 +573,7 @@
       },
       "required": [
         "sessionId",
+        "extensionName",
         "name"
       ],
       "description": "Call a tool from an extension.",

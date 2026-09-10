@@ -3207,7 +3207,7 @@
     "defaultMessage": "No saved recipes"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Recipe saved from chats will show up here."
+    "defaultMessage": "Saved recipes will show up here."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Open in new window"
