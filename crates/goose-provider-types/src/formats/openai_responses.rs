@@ -2042,10 +2042,7 @@ mod tests {
 
     #[test]
     fn test_responses_request_gpt6_astra_off_uses_low_not_none() {
-        for model_name in [
-            "gpt-6-astra",
-            "data_workflow_tools.goose.goose-gpt-6-astra",
-        ] {
+        for model_name in ["gpt-6-astra", "data_workflow_tools.goose.goose-gpt-6-astra"] {
             let model_config = ModelConfig::new(model_name)
                 .with_thinking_effort(crate::thinking::ThinkingEffort::Off);
 
