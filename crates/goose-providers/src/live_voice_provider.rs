@@ -37,7 +37,14 @@ fn valid_sdp(sdp: &str) -> bool {
 
 #[async_trait]
 pub trait ProviderConnection: Send {
+    async fn next_event(&mut self) -> ProviderConnectionEvent;
     async fn stop(&mut self) -> Result<()>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProviderConnectionEvent {
+    Closed,
+    Failed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,13 +138,20 @@ pub mod fake {
     impl FakeStartRequest {
         pub fn accept(self, answer: WebRtcAnswer) -> Result<FakeConnectionDriver> {
             let (stop_request_tx, stop_request_rx) = mpsc::unbounded_channel();
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
             self.response_tx
                 .send(Ok((
                     answer,
-                    Box::new(FakeProviderConnection { stop_request_tx }),
+                    Box::new(FakeProviderConnection {
+                        stop_request_tx,
+                        event_rx,
+                    }),
                 )))
                 .map_err(|_| anyhow::anyhow!("fake provider start caller dropped"))?;
-            Ok(FakeConnectionDriver { stop_request_rx })
+            Ok(FakeConnectionDriver {
+                stop_request_rx,
+                event_tx,
+            })
         }
 
         pub fn reject(self, message: impl Into<String>) -> Result<()> {
@@ -149,20 +163,35 @@ pub mod fake {
 
     pub struct FakeConnectionDriver {
         stop_request_rx: mpsc::UnboundedReceiver<oneshot::Sender<Result<(), String>>>,
+        event_tx: mpsc::UnboundedSender<ProviderConnectionEvent>,
     }
 
     impl FakeConnectionDriver {
         pub async fn next_stop_request(&mut self) -> Option<oneshot::Sender<Result<(), String>>> {
             self.stop_request_rx.recv().await
         }
+
+        pub fn send_event(&self, event: ProviderConnectionEvent) -> Result<()> {
+            self.event_tx
+                .send(event)
+                .map_err(|_| anyhow::anyhow!("fake provider event receiver dropped"))
+        }
     }
 
     struct FakeProviderConnection {
         stop_request_tx: mpsc::UnboundedSender<oneshot::Sender<Result<(), String>>>,
+        event_rx: mpsc::UnboundedReceiver<ProviderConnectionEvent>,
     }
 
     #[async_trait]
     impl ProviderConnection for FakeProviderConnection {
+        async fn next_event(&mut self) -> ProviderConnectionEvent {
+            self.event_rx
+                .recv()
+                .await
+                .unwrap_or(ProviderConnectionEvent::Failed)
+        }
+
         async fn stop(&mut self) -> Result<()> {
             let (response_tx, response_rx) = oneshot::channel();
             self.stop_request_tx
