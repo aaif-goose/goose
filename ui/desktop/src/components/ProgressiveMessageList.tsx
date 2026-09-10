@@ -171,6 +171,7 @@ export interface ProgressiveMessageListProps {
   ) => Promise<boolean>;
   insertAfter?: { index: number; node: React.ReactNode };
   rowContexts?: MessageRowContext[];
+  toRawIndex?: (index: number) => number;
 }
 
 export default function ProgressiveMessageList({
@@ -189,11 +190,22 @@ export default function ProgressiveMessageList({
   submitElicitationResponse,
   insertAfter,
   rowContexts: rowContextsOverride,
+  toRawIndex,
 }: ProgressiveMessageListProps) {
   const intl = useIntl();
   const [renderedCount, setRenderedCount] = useState(() =>
     messages.length <= showLoadingThreshold ? messages.length : Math.min(batchSize, messages.length)
   );
+  // A raised threshold (e.g. transcript-window expansion) must take effect in
+  // the same commit: updating renderedCount in an effect would paint a frame
+  // with the already-mounted tail sliced off.
+  const [lastShowLoadingThreshold, setLastShowLoadingThreshold] = useState(showLoadingThreshold);
+  if (showLoadingThreshold !== lastShowLoadingThreshold) {
+    setLastShowLoadingThreshold(showLoadingThreshold);
+    if (messages.length <= showLoadingThreshold) {
+      setRenderedCount(messages.length);
+    }
+  }
   const completedMessageKeyRef = useRef<string | null>(null);
   const isLoading = renderedCount < messages.length;
 
@@ -253,7 +265,8 @@ export default function ProgressiveMessageList({
     if (renderMessage) return renderMessage(message, index);
 
     const isUser = isUserMessage(message);
-    const messageIdentifier = message.id ?? `msg-${index}-${message.created}`;
+    const messageIdentifier =
+      message.id ?? `msg-${toRawIndex ? toRawIndex(index) : index}-${message.created}`;
     const messageKey = getSystemNotification(message)
       ? `notification-${messageIdentifier}`
       : messageIdentifier;
@@ -276,7 +289,7 @@ export default function ProgressiveMessageList({
       <MessageRow
         key={messageKey}
         append={append}
-        index={index}
+        index={toRawIndex ? toRawIndex(index) : index}
         isStreaming={
           isStreamingMessage &&
           !isUser &&

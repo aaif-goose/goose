@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { defineMessages, useIntl } from '../i18n';
 import { deriveMessageRowContexts } from './messageRowContext';
 import ProgressiveMessageList, { type ProgressiveMessageListProps } from './ProgressiveMessageList';
@@ -33,21 +33,31 @@ export default function TranscriptWindow(props: TranscriptWindowProps) {
     setExtraTailCount(0);
   }
 
+  const expandHiddenMessages = useCallback(() => {
+    // Expand only what is currently hidden so later growth re-arms the window.
+    setExtraTailCount(
+      (current) => current + Math.max(0, messages.length - FULL_WINDOW_COUNT - current)
+    );
+  }, [messages.length]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
       const isSearchShortcut = (isMac ? event.metaKey : event.ctrlKey) && event.key === 'f';
       if (isSearchShortcut) {
-        // Expand only what is currently hidden so later growth re-arms the window.
-        setExtraTailCount(
-          (current) => current + Math.max(0, messages.length - FULL_WINDOW_COUNT - current)
-        );
+        expandHiddenMessages();
       }
     };
 
+    const handleFindCommand = () => expandHiddenMessages();
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [messages.length]);
+    window.electron.on('find-command', handleFindCommand);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.electron.off('find-command', handleFindCommand);
+    };
+  }, [expandHiddenMessages]);
 
   const hiddenCount = Math.max(0, messages.length - FULL_WINDOW_COUNT - extraTailCount);
   const isWindowed = hiddenCount > 0;
@@ -94,7 +104,10 @@ export default function TranscriptWindow(props: TranscriptWindowProps) {
       anchorViewportOffsetRef.current =
         anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
     }
-    setExtraTailCount((current) => current + EXPAND_CHUNK);
+    setExtraTailCount(
+      (current) =>
+        current + Math.min(EXPAND_CHUNK, Math.max(0, messages.length - FULL_WINDOW_COUNT - current))
+    );
   };
 
   // Progressive rendering indexes from the front of the array; when older rows
@@ -129,6 +142,11 @@ export default function TranscriptWindow(props: TranscriptWindowProps) {
       showLoadingThreshold={hasExpandedWindow ? visibleMessages.length : showLoadingThreshold}
       rowContexts={visibleRowContexts}
       insertAfter={isWindowed ? { index: HEAD_COUNT - 1, node: hiddenMessagesDivider } : undefined}
+      toRawIndex={
+        isWindowed
+          ? (index) => (index < HEAD_COUNT ? index : index - HEAD_COUNT + tailStartIndex)
+          : undefined
+      }
     />
   );
 }

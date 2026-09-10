@@ -5,13 +5,26 @@ import type { Message } from '../types/message';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import TranscriptWindow from './TranscriptWindow';
 
+const renderCounts = vi.hoisted(() => new Map<string, number>());
+
 vi.mock('./GooseMessage', () => ({
-  default: ({ message }: { message: Message }) => <div>{message.id}</div>,
+  default: ({ message }: { message: Message }) => {
+    const id = message.id ?? textKey(message);
+    renderCounts.set(id, (renderCounts.get(id) ?? 0) + 1);
+    return <div>{id}</div>;
+  },
 }));
 
 vi.mock('./UserMessage', () => ({
-  default: ({ message }: { message: Message }) => <div>{message.id}</div>,
+  default: ({ message }: { message: Message }) => {
+    return <div>{message.id}</div>;
+  },
 }));
+
+function textKey(message: Message): string {
+  const first = message.content[0];
+  return first && first.type === 'text' ? first.text : 'missing-key';
+}
 
 const visibleMetadata: Message['metadata'] = { agentVisible: true, userVisible: true };
 const append = vi.fn();
@@ -255,5 +268,61 @@ describe('TranscriptWindow', () => {
 
     expect(screen.getByTestId('hidden-messages-count')).toHaveTextContent('1 message hidden');
     expect(screen.queryByText('m-241')).not.toBeNull();
+  });
+
+  it('expands the transcript when find is opened via the renderer find command', () => {
+    renderWindow(makeMessages(241));
+    flushRendering();
+    expect(screen.queryByText('m-30')).toBeNull();
+
+    const onMock = window.electron.on as unknown as {
+      mock: { calls: [string, () => void][] };
+    };
+    const findCommandCalls = onMock.mock.calls.filter(([event]) => event === 'find-command');
+    const findCommandHandler = findCommandCalls[findCommandCalls.length - 1]?.[1];
+    expect(findCommandHandler).toBeTypeOf('function');
+    act(() => findCommandHandler());
+    flushRendering();
+
+    expect(screen.queryByTestId('hidden-messages-divider')).toBeNull();
+    expect(screen.queryByText('m-30')).not.toBeNull();
+  });
+
+  it('clamps load earlier to the currently hidden count', () => {
+    const messages = makeMessages(221);
+    const { rerender } = renderWindow(messages);
+    flushRendering();
+    expect(screen.getByTestId('hidden-messages-count')).toHaveTextContent('1 message hidden');
+
+    fireEvent.click(screen.getByTestId('load-earlier-messages'));
+    flushRendering();
+    expect(screen.queryByTestId('hidden-messages-divider')).toBeNull();
+
+    rerenderWindow(rerender, [...messages, makeMessage('m-221')]);
+    flushRendering();
+
+    expect(screen.getByTestId('hidden-messages-count')).toHaveTextContent('1 message hidden');
+    expect(screen.queryByText('m-221')).not.toBeNull();
+  });
+
+  it('keeps stable fallback keys for id-less messages when the window slides', () => {
+    renderCounts.clear();
+    const idLessMessages: Message[] = Array.from({ length: 241 }, (_, index) => ({
+      role: 'assistant' as const,
+      created: 1,
+      content: [{ type: 'text' as const, text: `body-${index}` }],
+      metadata: visibleMetadata,
+    }));
+    const { rerender } = renderWindow(idLessMessages);
+    flushRendering();
+    const body100BeforeSlide = renderCounts.get('body-100');
+    expect(body100BeforeSlide).toBeGreaterThan(0);
+
+    rerenderWindow(rerender, [...idLessMessages, makeMessage('appended')]);
+    flushRendering();
+
+    expect(renderCounts.get('body-100')).toBe(body100BeforeSlide);
+    expect(screen.queryByText('body-100')).not.toBeNull();
+    expect(screen.queryByText('appended')).not.toBeNull();
   });
 });
