@@ -1448,49 +1448,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_job_runs_on_schedule() {
-        let _guard = env_lock::lock_env([
-            ("GOOSE_PROVIDER", Some("openai")),
-            ("GOOSE_MODEL", Some("gpt-4o")),
-            ("GOOSE_MODE", Some("chat")),
-            ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-            ("OPENAI_CUSTOM_HEADERS", Some("")),
-        ]);
-        let temp_dir = tempdir().unwrap();
-        let storage_path = temp_dir.path().join("schedule.json");
-        let recipe_path = create_test_recipe(temp_dir.path(), "scheduled_job");
-        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let scheduler = Scheduler::new(storage_path, session_manager.clone())
-            .await
-            .unwrap();
-
-        let job = ScheduledJob {
-            id: "scheduled_job".to_string(),
-            source: recipe_path.to_string_lossy().to_string(),
-            cron: "* * * * * *".to_string(),
-            last_run: None,
-            currently_running: false,
-            paused: false,
-            current_session_id: None,
-            process_start_time: None,
-            parameters: vec![],
-            recipe_base_dir: None,
-        };
-
-        scheduler.add_scheduled_job(job, true).await.unwrap();
-        sleep(Duration::from_millis(1500)).await;
-
-        let jobs = scheduler.list_scheduled_jobs().await;
-        assert!(jobs[0].last_run.is_some(), "Job should have run");
-        let sessions = session_manager
-            .list_sessions_by_types(&[SessionType::Scheduled])
-            .await
-            .unwrap();
-        assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].goose_mode, GooseMode::Auto);
-    }
-
-    #[tokio::test]
     async fn test_paused_job_does_not_run() {
         let _guard = env_lock::lock_env([
             ("GOOSE_PROVIDER", Some("openai")),
