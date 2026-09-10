@@ -12,7 +12,7 @@
     bytes[i] = binary.charCodeAt(i);
   }
   const session = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-  const messages = Array.isArray(session.conversation) ? session.conversation : [];
+  const allMessages = Array.isArray(session.conversation) ? session.conversation : [];
 
   let showInternal = false;
 
@@ -38,8 +38,11 @@
     return null;
   }
 
-  function formatTimestamp(unixSeconds) {
-    if (!unixSeconds) return '';
+  const MILLISECOND_TIMESTAMP_THRESHOLD = 10000000000;
+
+  function formatTimestamp(timestamp) {
+    if (!timestamp) return '';
+    const unixSeconds = timestamp > MILLISECOND_TIMESTAMP_THRESHOLD ? timestamp / 1000 : timestamp;
     const d = new Date(unixSeconds * 1000);
     if (isNaN(d.getTime())) return '';
     return d.toLocaleString();
@@ -53,6 +56,44 @@
       return rest || p;
     }
     return p;
+  }
+
+  function isUserAudience(block) {
+    const audience = block && block.annotations && block.annotations.audience;
+    return !Array.isArray(audience) || audience.includes('user');
+  }
+
+  function userVisibleContentBlock(block) {
+    if (!block || typeof block !== 'object') return null;
+    if ((block.type === 'text' || block.type === 'image') && !isUserAudience(block)) return null;
+    if (block.type !== 'toolResponse') return block;
+
+    const result = block.toolResult;
+    const value = result && result.status === 'success' && result.value;
+    if (!value || !Array.isArray(value.content)) return block;
+    return {
+      ...block,
+      toolResult: {
+        ...result,
+        value: { ...value, content: value.content.filter(isUserAudience) },
+      },
+    };
+  }
+
+  function userVisibleMessage(msg) {
+    const content = Array.isArray(msg.content)
+      ? msg.content.map(userVisibleContentBlock).filter((block) => block)
+      : [];
+    return { ...msg, content };
+  }
+
+  function hasAssistantOnlyContent(block) {
+    if (!block || typeof block !== 'object') return false;
+    if ((block.type === 'text' || block.type === 'image') && !isUserAudience(block)) return true;
+    if (block.type !== 'toolResponse') return false;
+    const result = block.toolResult;
+    const value = result && result.status === 'success' && result.value;
+    return !!(value && Array.isArray(value.content) && value.content.some((item) => !isUserAudience(item)));
   }
 
   // ============================================================
@@ -190,7 +231,7 @@
   }
 
   // Render an rmcp content block array (tool result payload) to HTML.
-  function renderResultContent(content) {
+  function renderResultContent(content, outputClass = 'tool-output') {
     if (!Array.isArray(content)) return '';
     let html = '';
     let textParts = [];
@@ -207,7 +248,7 @@
     }
     const text = textParts.join('\n').replace(/\n+$/, '');
     if (text) {
-      html = '<div class="tool-output">' + collapsibleCode(text, null) + '</div>' + html;
+      html = '<div class="' + outputClass + '">' + collapsibleCode(text, null) + '</div>' + html;
     }
     return html;
   }
@@ -276,7 +317,12 @@
     }
     const value = result.value || {};
     const content = value.content || value;
-    return renderResultContent(content);
+    return renderResultContent(content, value.isError === true ? 'tool-error' : 'tool-output');
+  }
+
+  function toolResultIsError(result) {
+    return !!(result && (result.status === 'error' ||
+      (result.value && result.value.isError === true)));
   }
 
   // ============================================================
@@ -284,14 +330,19 @@
   // ============================================================
 
   // Collect all tool responses keyed by tool call id.
-  const responsesById = new Map();
-  for (const msg of messages) {
-    if (!Array.isArray(msg.content)) continue;
-    for (const block of msg.content) {
-      if (block && block.type === 'toolResponse' && block.id) {
-        responsesById.set(block.id, block);
+  let responsesById = new Map();
+
+  function collectToolResponses(messages) {
+    const responses = new Map();
+    for (const msg of messages) {
+      if (!Array.isArray(msg.content)) continue;
+      for (const block of msg.content) {
+        if (block && block.type === 'toolResponse' && block.id) {
+          responses.set(block.id, block);
+        }
       }
     }
+    return responses;
   }
 
   function isInternal(msg) {
@@ -335,7 +386,7 @@
           const response = responsesById.get(block.id);
           if (response) {
             const result = response.toolResult;
-            status = result && result.status === 'error' ? 'error' : 'success';
+            status = toolResultIsError(result) ? 'error' : 'success';
             // write/edit/todo_write already show their content/diff; the
             // success confirmation text is redundant, so suppress it.
             const suppress = status === 'success' &&
@@ -461,6 +512,10 @@
     const parts = [];
     const tocEntries = [];
     let index = 0;
+    const messages = showInternal
+      ? allMessages
+      : allMessages.filter((msg) => !isInternal(msg)).map(userVisibleMessage);
+    responsesById = collectToolResponses(messages);
     for (const msg of messages) {
       if (isOnlyToolResponses(msg)) continue;
       if (!showInternal && isInternal(msg)) continue;
@@ -508,7 +563,8 @@
     const dir = session.working_dir
       ? '<div class="header-dir">' + escapeHtml(session.working_dir) + '</div>'
       : '';
-    const hasInternal = messages.some(isInternal);
+    const hasInternal = allMessages.some((msg) =>
+      isInternal(msg) || (Array.isArray(msg.content) && msg.content.some(hasAssistantOnlyContent)));
     const toggle = hasInternal
       ? '<div class="header-actions"><button class="toggle-btn" id="toggle-internal">Show internal messages</button></div>'
       : '';
