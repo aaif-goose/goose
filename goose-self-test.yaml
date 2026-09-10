@@ -9,6 +9,7 @@ activities:
   - Test file operations (create, read, update, delete, undo)
   - Validate shell command execution and error handling
   - Validate Azure AI Foundry provider routing and deployment aliases
+  - Validate the configurable Databricks AI Gateway path across all inference routes
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -173,6 +174,15 @@ prompt: |
   ### Gondola Provider Validation
   When running from a goose source checkout:
   1. Run `cargo test -p goose test_gondola_provider_registry_wiring` to verify Gondola is registered with the correct name, default model (`deepseek-v4-flash`), and a secret `GONDOLA_API_KEY` config key.
+  If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
+
+  ### Databricks AI Gateway Path Validation
+  When running from a goose source checkout:
+  1. Run `cargo test -p goose-providers databricks_v2::tests::gateway_path` to verify the configurable gateway path.
+  2. Verify that omitting the path keeps the default `ai-gateway` routes byte-identical for the OpenAI Responses, Anthropic Messages, and MLflow chat completions routes.
+  3. Verify a configured path applies to all three routes, and that a full route (`ai-gateway/openai/v1/responses`) is accepted and its base reused, since Kotlin callers configure the full route.
+  4. Verify empty paths and URLs are rejected, as neither can be joined to a route.
+  5. Run `python3 documentation/automation/gdk-api/generate.py --check` to verify the generated GDK API data is current and publishes `gateway_path` as an optional argument defaulting to `None`.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md

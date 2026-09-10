@@ -198,7 +198,6 @@ impl goose::providers::base::ProviderDescriptor for MockCompactionProvider {
             model_doc_link: "".to_string(),
             config_keys: vec![],
             setup_steps: vec![],
-            fast_model: None,
             setup: None,
             deprecated: None,
         }

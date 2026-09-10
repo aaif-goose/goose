@@ -2538,7 +2538,6 @@ fn recommended_variant(
 #[cfg(feature = "local-inference")]
 async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> {
     use goose::providers::local_inference::hf_models;
-    use goose::providers::local_inference::local_model_registry::get_registry;
 
     goose::providers::local_inference::configure_huggingface_auth();
 
@@ -2698,7 +2697,7 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
             let total_size = resolved.total_size();
 
             println!(
-                "\nDownloaded {} ({}). Registering...",
+                "\nDownloaded {} ({})",
                 model_id,
                 if total_size > 0 {
                     format!("{:.1}GB", total_size as f64 / (1024.0 * 1024.0 * 1024.0))
@@ -2706,16 +2705,9 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                     "unknown size".to_string()
                 }
             );
-
-            let model_id = hf_models::register_resolved_model(resolved, &spec)?;
-
-            println!("Registered: {}", model_id);
         }
         LocalModelsCommand::List => {
-            let registry = get_registry()
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
-            let models = registry.list_models();
+            let models = hf_models::cached_local_models().await?;
 
             if models.is_empty() {
                 println!("No local models downloaded.");
@@ -2727,23 +2719,13 @@ async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> 
                 "ID", "Backend", "Variant"
             );
             println!("{}", "-".repeat(88));
-            for m in models {
-                println!(
-                    "{:<50} {:<10} {:<12} {}",
-                    m.id,
-                    m.backend_id.as_deref().unwrap_or("llamacpp"),
-                    m.quantization,
-                    if m.is_downloaded() { "✓" } else { "✗" }
-                );
+            for m in &models {
+                println!("{:<50} {:<10} {:<12} ✓", m.id, m.backend_id, m.quantization);
             }
         }
         LocalModelsCommand::Delete { id } => {
-            let mut registry = get_registry()
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
-
-            if registry.get_model(&id).is_some() {
-                registry.delete_model(&id)?;
+            if hf_models::cached_local_model(&id).await?.is_some() {
+                hf_models::delete_cached_local_model(&id).await?;
                 println!("Deleted model: {}", id);
             } else {
                 println!("Model not found: {}", id);

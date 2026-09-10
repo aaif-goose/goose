@@ -1,7 +1,7 @@
 {
   "versions": [
     {
-      "version": "0.1.0-alpha.6",
+      "version": "0.1.0-alpha.9",
       "docVersion": "0.1",
       "source": "crates/goose-sdk/src/bindings.rs",
       "functions": [
@@ -91,6 +91,12 @@
               "name": "token",
               "type": "String",
               "default": null,
+              "docs": ""
+            },
+            {
+              "name": "gateway_path",
+              "type": "Option<String>",
+              "default": "None",
               "docs": ""
             }
           ],
@@ -385,6 +391,29 @@
                 {
                   "name": "data",
                   "type": "Vec<u8>",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            },
+            {
+              "name": "Document",
+              "fields": [
+                {
+                  "name": "mime_type",
+                  "type": "String",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "data",
+                  "type": "Vec<u8>",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "name",
+                  "type": "Option<String>",
                   "default": null,
                   "docs": ""
                 }
@@ -862,6 +891,10 @@
             },
             {
               "name": "Images",
+              "fields": []
+            },
+            {
+              "name": "Documents",
               "fields": []
             },
             {

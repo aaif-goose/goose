@@ -20,6 +20,7 @@ use goose_providers::{
     databricks_auth::DatabricksAuth,
     databricks_v2::DatabricksV2Provider as GooseDatabricksV2Provider,
     declarative::{DeclarativeProviderConfig, EnvKeyResolver},
+    documents::{document_media_type_is_supported, SUPPORTED_DOCUMENT_MEDIA_TYPES},
     model::ModelConfig,
     openai::OpenAiProviderBuilder,
     utils::sanitize_unicode_tags,
@@ -202,6 +203,11 @@ pub enum MessageContent {
         mime_type: String,
         data: Vec<u8>,
     },
+    Document {
+        mime_type: String,
+        data: Vec<u8>,
+        name: Option<String>,
+    },
     ToolRequest {
         id: String,
         name: String,
@@ -249,6 +255,23 @@ impl MessageContent {
                 base64::engine::general_purpose::STANDARD.encode(data),
                 mime_type.clone(),
             )),
+            MessageContent::Document {
+                mime_type,
+                data,
+                name,
+            } => {
+                if !document_media_type_is_supported(mime_type) {
+                    return Err(GooseError::generic(format!(
+                        "unsupported document media type {mime_type}: supported types are {}",
+                        SUPPORTED_DOCUMENT_MEDIA_TYPES.join(", ")
+                    )));
+                }
+                Ok(GooseMessageContent::document(
+                    base64::engine::general_purpose::STANDARD.encode(data),
+                    mime_type.clone(),
+                    name.clone(),
+                ))
+            }
             MessageContent::ToolRequest {
                 id,
                 name,
@@ -631,6 +654,7 @@ pub enum Feature {
     Tools,
     Streaming,
     Images,
+    Documents,
     JsonSchema,
     Reasoning,
 }
@@ -866,6 +890,12 @@ impl Provider {
             "openai" | "anthropic" | "databricks" | "databricks_v2" | "groq"
         ) {
             features.push(Feature::Images);
+        }
+        if matches!(
+            name.as_str(),
+            "openai" | "anthropic" | "databricks" | "databricks_v2" | "google"
+        ) {
+            features.push(Feature::Documents);
         }
         if matches!(
             name.as_str(),
@@ -1122,8 +1152,12 @@ pub fn databricks_v2_default_model() -> String {
     goose_providers::databricks_v2::DATABRICKS_V2_DEFAULT_MODEL.to_string()
 }
 
-#[uniffi::export]
-pub fn databricks_v2_provider(host: String, token: String) -> Result<Arc<Provider>, GooseError> {
+#[uniffi::export(default(gateway_path = None))]
+pub fn databricks_v2_provider(
+    host: String,
+    token: String,
+    gateway_path: Option<String>,
+) -> Result<Arc<Provider>, GooseError> {
     let retry_config = GooseDatabricksV2Provider::load_retry_config(|key| std::env::var(key).ok());
     let provider = GooseDatabricksV2Provider::new(
         host,
@@ -1135,6 +1169,10 @@ pub fn databricks_v2_provider(host: String, token: String) -> Result<Arc<Provide
         None,
         None,
     )?;
+    let provider = match gateway_path {
+        Some(path) => provider.with_gateway_path(&path)?,
+        None => provider,
+    };
 
     Ok(Provider::new(Box::new(provider)))
 }
@@ -1360,6 +1398,71 @@ mod tests {
         .unwrap();
 
         assert_eq!(message.as_concat_text(), "what is the capital of France?");
+    }
+
+    #[test]
+    fn provider_message_converts_document_to_base64_content() {
+        let message = ProviderMessage {
+            role: MessageRole::User,
+            content: vec![MessageContent::Document {
+                mime_type: "application/pdf".to_string(),
+                data: b"pdf-bytes".to_vec(),
+                name: Some("q3-report.pdf".to_string()),
+            }],
+        }
+        .to_goose_message()
+        .unwrap()
+        .unwrap();
+
+        let GooseMessageContent::Document(document) = &message.content[0] else {
+            panic!("expected document content");
+        };
+        assert_eq!(document.mime_type, "application/pdf");
+        assert_eq!(document.name.as_deref(), Some("q3-report.pdf"));
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(&document.data)
+                .unwrap(),
+            b"pdf-bytes"
+        );
+    }
+
+    #[test]
+    fn provider_message_converts_document_serializes_for_anthropic() {
+        let message = ProviderMessage {
+            role: MessageRole::User,
+            content: vec![MessageContent::Document {
+                mime_type: "application/pdf".to_string(),
+                data: b"pdf-bytes".to_vec(),
+                name: Some("q3-report.pdf".to_string()),
+            }],
+        }
+        .to_goose_message()
+        .unwrap()
+        .unwrap();
+
+        let spec = goose_providers::formats::anthropic::format_messages(&[message]);
+        let block = &spec[0]["content"][0];
+
+        assert_eq!(block["type"], "document");
+        assert_eq!(block["title"], "q3-report.pdf");
+        assert_eq!(block["source"]["type"], "base64");
+        assert_eq!(block["source"]["media_type"], "application/pdf");
+        assert_eq!(block["source"]["data"], "cGRmLWJ5dGVz");
+    }
+
+    #[test]
+    fn provider_message_rejects_unsupported_document_media_type() {
+        let error = MessageContent::Document {
+            mime_type: "text/csv".to_string(),
+            data: b"rows".to_vec(),
+            name: Some("rows.csv".to_string()),
+        }
+        .to_goose_content()
+        .unwrap_err();
+
+        assert!(error.to_string().contains("text/csv"), "{error}");
+        assert!(error.to_string().contains("application/pdf"), "{error}");
     }
 
     #[test]

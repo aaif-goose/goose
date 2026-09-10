@@ -2,6 +2,10 @@ use crate::canonical::maybe_get_canonical_model;
 use crate::canonical::ThinkingMode;
 use crate::conversation::message::{Message, MessageContentBlock};
 use crate::conversation::token_usage::{CostSource, ProviderUsage, Usage};
+use crate::documents::{
+    convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
+    ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
+};
 use crate::errors::ProviderError;
 use crate::images::{convert_image, ImageFormat};
 use crate::mcp_utils::extract_text_from_resource;
@@ -426,6 +430,24 @@ fn format_messages_with_options(
                 }
                 MessageContentBlock::Image(image) => {
                     content.push(convert_image(image, &ImageFormat::Anthropic));
+                }
+                MessageContentBlock::Document(document) => {
+                    if message.role != Role::User {
+                        content.push(json!({
+                            TYPE_FIELD: TEXT_TYPE,
+                            TEXT_TYPE: unsupported_document_text(document, ASSISTANT_ROLE_REASON)
+                        }));
+                    } else if document_media_type_is_supported(&document.mime_type) {
+                        content.push(convert_document(document, &DocumentFormat::Anthropic));
+                    } else {
+                        content.push(json!({
+                            TYPE_FIELD: TEXT_TYPE,
+                            TEXT_TYPE: unsupported_document_text(
+                                document,
+                                UNSUPPORTED_MEDIA_TYPE_REASON,
+                            )
+                        }));
+                    }
                 }
             }
         }
@@ -1221,6 +1243,73 @@ where
             usage.additional_data = additional_data;
             yield (None, Some(usage));
         }
+    }
+}
+
+#[cfg(test)]
+mod document_tests {
+    use super::*;
+
+    #[test]
+    fn user_document_becomes_a_base64_document_block() {
+        let messages = vec![Message::user().with_document(
+            "cGRmLWJ5dGVz",
+            "application/pdf",
+            Some("q3-report.pdf".to_string()),
+        )];
+
+        let spec = format_messages(&messages);
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["role"], "user");
+        let block = &spec[0]["content"][0];
+        assert_eq!(block["type"], DOCUMENT_TYPE);
+        assert_eq!(block["title"], "q3-report.pdf");
+        assert_eq!(
+            block[SOURCE_FIELD],
+            json!({
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": "cGRmLWJ5dGVz",
+            })
+        );
+    }
+
+    #[test]
+    fn assistant_document_becomes_a_text_block() {
+        let messages = vec![Message::assistant().with_document(
+            "cGRmLWJ5dGVz",
+            "application/pdf",
+            Some("q3-report.pdf".to_string()),
+        )];
+
+        let spec = format_messages(&messages);
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["role"], "assistant");
+        assert_eq!(spec[0]["content"][0]["type"], "text");
+        let text = spec[0]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("q3-report.pdf"), "{text}");
+        assert!(text.contains("user messages"), "{text}");
+        assert!(!text.contains("cGRmLWJ5dGVz"), "{text}");
+    }
+
+    #[test]
+    fn unsupported_document_media_type_becomes_an_explicit_text_block() {
+        let messages = vec![Message::user().with_document(
+            "cm93cw==",
+            "text/csv",
+            Some("rows.csv".to_string()),
+        )];
+
+        let spec = format_messages(&messages);
+
+        assert_eq!(spec[0]["content"][0]["type"], "text");
+        let text = spec[0]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("rows.csv"), "{text}");
+        assert!(text.contains("text/csv"), "{text}");
+        assert!(text.contains("application/pdf"), "{text}");
+        assert!(!text.contains("cm93cw=="), "{text}");
     }
 }
 
