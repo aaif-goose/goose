@@ -37,6 +37,7 @@ use crate::retry::{
     RetryConfig, DEFAULT_BACKOFF_MULTIPLIER, DEFAULT_INITIAL_RETRY_INTERVAL_MS,
     DEFAULT_MAX_RETRIES, DEFAULT_MAX_RETRY_INTERVAL_MS,
 };
+use crate::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 
 const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
@@ -262,7 +263,9 @@ impl DatabricksV2Provider {
         model_config: &ModelConfig,
     ) -> Result<ModelConfig, ProviderError> {
         let model = self.model_service_model(&model_config.model_name).await?;
-        if model_config.thinking_effort().is_some()
+        if model_config
+            .thinking_effort()
+            .is_some_and(|effort| effort != ThinkingEffort::Off)
             && !Self::model_service_info(&model_config.model_name, model.as_deref()).reasoning
         {
             return Err(ProviderError::InvalidValue(format!(
@@ -525,6 +528,11 @@ impl DatabricksV2Provider {
         )?;
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
+            if resolved_config.thinking_effort() == Some(ThinkingEffort::Off) {
+                for key in ["thinking_budget", "budget_tokens", "enable_thinking"] {
+                    payload.as_object_mut().unwrap().remove(key);
+                }
+            }
         }
         if payload.get("max_tokens").is_none() {
             payload["max_tokens"] = Value::from(format_config.max_output_tokens());
