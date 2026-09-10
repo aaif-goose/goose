@@ -1,4 +1,6 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
@@ -80,6 +82,7 @@ struct SupervisorReport {
 
 #[derive(Deserialize)]
 struct ImplementationReport {
+    completed: bool,
     summary: String,
     verification: String,
 }
@@ -223,6 +226,39 @@ fn recent_progress(session: &Session) -> String {
         .collect::<Vec<_>>()
         .into_iter()
         .rev()
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn record_live_progress(progress: &Mutex<VecDeque<String>>, event: &AgentEvent) {
+    let AgentEvent::Message(message) = event else {
+        return;
+    };
+    if !message.is_agent_visible() {
+        return;
+    }
+    let text = message.agent_visible_content().as_concat_text();
+    let text = if text.trim().is_empty() {
+        serde_json::to_string(&message.content).unwrap_or_default()
+    } else {
+        text
+    };
+    if text.trim().is_empty() {
+        return;
+    }
+    let mut progress = progress.lock().expect("live progress lock poisoned");
+    progress.push_back(crate::utils::safe_truncate(&text, 2_000));
+    if progress.len() > 12 {
+        progress.pop_front();
+    }
+}
+
+fn live_progress(progress: &Mutex<VecDeque<String>>) -> String {
+    progress
+        .lock()
+        .expect("live progress lock poisoned")
+        .iter()
+        .cloned()
         .collect::<Vec<_>>()
         .join("\n\n")
 }
@@ -532,7 +568,7 @@ impl Agent {
                 }
             }
 
-            let mut rejection = None;
+            let mut blockers = None;
             if Instant::now() < planning_deadline {
                 let stage_started = Instant::now();
                 yield role_event("Supervisor", &models.supervisor, "checking revised plan");
@@ -555,7 +591,7 @@ impl Agent {
                         let feedback = feedback_from(&session)?;
                         accepted = !feedback.requires_action;
                         if feedback.requires_action {
-                            rejection = Some(feedback.feedback.clone());
+                            blockers = Some(feedback.feedback.clone());
                         }
                         yield trace_event(
                             "plan_acceptance",
@@ -583,7 +619,11 @@ impl Agent {
                 }
             }
 
-            if let Some(rejection) = rejection.filter(|_| Instant::now() < planning_deadline) {
+            let mut final_plan_submitted = false;
+            if let Some(rejection) = blockers
+                .clone()
+                .filter(|_| Instant::now() < planning_deadline)
+            {
                 let stage_started = Instant::now();
                 yield role_event("Planner", &models.planner, "resolving final blockers");
                 let (mut events, revised) = run_hidden(
@@ -602,6 +642,7 @@ impl Agent {
                 match revised.await.context("planner result stream closed")? {
                     Ok(session) => {
                         report = plan_from(&session)?;
+                        final_plan_submitted = true;
                         yield trace_event(
                             "final_plan",
                             "planner",
@@ -628,6 +669,54 @@ impl Agent {
                 }
             }
 
+            if final_plan_submitted && Instant::now() < planning_deadline {
+                let stage_started = Instant::now();
+                yield role_event("Supervisor", &models.supervisor, "checking final plan");
+                let (mut events, checked) = run_hidden(
+                    &supervisor_machine,
+                    runtime.as_ref(),
+                    &supervisor_session.id,
+                    format!(
+                        "Make the final accept/reject decision for this report. Set `requires_action` to false only when the findings support the plan, every task requirement is covered, implementation choices are resolved, and the verification would demonstrate completion. Otherwise list the blockers that the implementer must still resolve.\n\nTask:\n{problem}\n\nPlanner findings:\n{}\n\nProposed plan:\n{}",
+                        report.findings, report.plan
+                    ),
+                    cancel.child_token(),
+                    Some(planning_deadline),
+                );
+                while let Some(event) = events.next().await {
+                    yield event?;
+                }
+                match checked.await.context("supervisor result stream closed")? {
+                    Ok(session) => {
+                        let feedback = feedback_from(&session)?;
+                        accepted = !feedback.requires_action;
+                        blockers = feedback.requires_action.then(|| feedback.feedback.clone());
+                        yield trace_event(
+                            "final_plan_acceptance",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            stage_started.elapsed(),
+                            serde_json::json!({
+                                "accepted": accepted,
+                                "feedback": &feedback.feedback,
+                            }),
+                        );
+                    }
+                    Err(error) if Instant::now() >= planning_deadline => {
+                        yield trace_event(
+                            "final_plan_acceptance",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            stage_started.elapsed(),
+                            serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                        );
+                    }
+                    Err(error) => Err(error)?,
+                }
+            }
+
             yield trace_event(
                 "planning_complete",
                 "orchestrator",
@@ -636,6 +725,7 @@ impl Agent {
                 workflow_started.elapsed(),
                 serde_json::json!({
                     "accepted": accepted,
+                    "blockers": &blockers,
                     "deadline_reached": Instant::now() >= planning_deadline,
                 }),
             );
@@ -655,17 +745,21 @@ impl Agent {
                 Some(Arc::new(ImplementPlanOperation::new(
                     report.findings.clone(),
                     report.plan.clone(),
+                    blockers.clone(),
                 ))),
             );
 
             yield role_event("Implementer", &models.implementer, "implementing plan");
             let review_report = report.clone();
             let review_cancel = cancel.child_token();
+            let emitted_progress = Arc::new(Mutex::new(VecDeque::new()));
+            let review_emitted_progress = emitted_progress.clone();
             let progress_review = async {
                 tokio::time::sleep_until(supervision_at.into()).await;
                 let stage_started = Instant::now();
                 let progress = runtime.get_session(&main_session_id, true).await?;
-                let recent = recent_progress(&progress);
+                let persisted = recent_progress(&progress);
+                let live = live_progress(&review_emitted_progress);
                 let elapsed_seconds = workflow_started.elapsed().as_secs();
                 let remaining_seconds = remaining_seconds(workflow_started, time_limit);
                 let (mut events, checked) = run_hidden(
@@ -673,7 +767,7 @@ impl Agent {
                     runtime.as_ref(),
                     &supervisor_session.id,
                     format!(
-                        "Review the implementer's progress against the selected plan. {elapsed_seconds} seconds have elapsed and {remaining_seconds} seconds remain. Give only the highest-priority correction needed now; do not repeat the plan.\n\nPlanner findings:\n{}\n\nSelected plan:\n{}\n\nRecent progress:\n{recent}",
+                        "Review the implementer's progress against the selected plan. {elapsed_seconds} seconds have elapsed and {remaining_seconds} seconds remain. Live activity may describe an operation that is still running, so do not tell the implementer to repeat it. Give only the highest-priority correction needed now; do not repeat the plan.\n\nPlanner findings:\n{}\n\nSelected plan:\n{}\n\nPersisted progress:\n{persisted}\n\nLive activity, including in-flight operations:\n{live}",
                         review_report.findings, review_report.plan
                     ),
                     review_cancel,
@@ -716,6 +810,7 @@ impl Agent {
                         tokio::select! {
                             event = rx.recv() => {
                                 if let Some(event) = event {
+                                    record_live_progress(&emitted_progress, &event);
                                     yield event;
                                 } else {
                                     break Err(anyhow!("implementer event stream closed"));
@@ -795,6 +890,7 @@ impl Agent {
                         tokio::select! {
                             event = rx.recv() => {
                                 if let Some(event) = event {
+                                    record_live_progress(&emitted_progress, &event);
                                     yield event;
                                 } else {
                                     break Err(anyhow!("implementer event stream closed"));
@@ -860,6 +956,7 @@ impl Agent {
                     }?;
                 }
                 while let Ok(event) = rx.try_recv() {
+                    record_live_progress(&emitted_progress, &event);
                     yield event;
                 }
                 if result.yield_to_client {
@@ -868,6 +965,7 @@ impl Agent {
             }
             drop(emit);
             while let Some(event) = rx.recv().await {
+                record_live_progress(&emitted_progress, &event);
                 yield event;
             }
 
@@ -911,6 +1009,7 @@ impl Agent {
                 serde_json::json!({
                     "timed_out": timed_out,
                     "implementation_report": completion.map(|report| serde_json::json!({
+                        "completed": report.completed,
                         "summary": report.summary,
                         "verification": report.verification,
                     })),
@@ -923,6 +1022,8 @@ impl Agent {
 
 #[cfg(test)]
 mod tests {
+    use rmcp::model::CallToolRequestParams;
+
     use super::*;
 
     #[test]
@@ -968,6 +1069,30 @@ mod tests {
         assert_eq!(trace["model"], "openai/planner");
         assert_eq!(trace["duration_ms"], 42);
         assert_eq!(trace["details"]["plan"], "change the parser");
+    }
+
+    #[test]
+    fn live_progress_includes_in_flight_tool_calls() {
+        let progress = Mutex::new(VecDeque::new());
+        let event = AgentEvent::Message(
+            Message::assistant().with_tool_request(
+                "shell_1",
+                Ok(
+                    CallToolRequestParams::new("developer__shell".to_string()).with_arguments(
+                        serde_json::json!({ "command": "apt-get install example" })
+                            .as_object()
+                            .expect("arguments are an object")
+                            .clone(),
+                    ),
+                ),
+            ),
+        );
+
+        record_live_progress(&progress, &event);
+
+        let progress = live_progress(&progress);
+        assert!(progress.contains("developer__shell"));
+        assert!(progress.contains("apt-get install example"));
     }
 
     #[tokio::test]

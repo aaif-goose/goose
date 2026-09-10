@@ -21,7 +21,7 @@ use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::tool_execution::ToolCallNotificationEmitter;
-use crate::subprocess::SubprocessExt;
+use crate::subprocess::configure_subprocess;
 
 pub use super::shell_output_streaming::{
     parse_shell_output_notification, ShellOutputNotificationChunk, ShellOutputNotificationParams,
@@ -556,6 +556,7 @@ async fn run_command(
     let timeout_secs = Some(resolve_shell_timeout(timeout_secs));
 
     let mut command = build_shell_command(command_line, working_dir, login_path, session_id);
+    configure_subprocess(&mut command);
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -592,14 +593,12 @@ async fn run_command(
                     .code(),
                 Err(_) => {
                     timed_out = true;
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
+                    terminate_command(&mut child).await;
                     None
                 }
             },
             _ = cancellation_token.cancelled() => {
-                let _ = child.start_kill();
-                let _ = child.wait().await;
+                terminate_command(&mut child).await;
                 None
             }
         }
@@ -609,8 +608,7 @@ async fn run_command(
                 .map_err(|error| format!("Failed waiting on shell command: {}", error))?
                 .code(),
             _ = cancellation_token.cancelled() => {
-                let _ = child.start_kill();
-                let _ = child.wait().await;
+                terminate_command(&mut child).await;
                 None
             }
         }
@@ -655,6 +653,17 @@ async fn run_command(
         output_truncated,
         output_collection_error,
     })
+}
+
+async fn terminate_command(child: &mut tokio::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
+    }
+    let _ = child.start_kill();
+    let _ = child.wait().await;
 }
 
 /// Build the `Command` that executes a single command line via the configured shell.
@@ -702,7 +711,7 @@ fn build_shell_command(
     };
 
     #[cfg(not(windows))]
-    let mut command = {
+    let command = {
         let shell = unix_shell();
 
         if is_flatpak() {
@@ -734,7 +743,6 @@ fn build_shell_command(
 
     #[cfg(windows)]
     apply_session_environment(&mut command, session_id);
-    command.set_no_window();
     command
 }
 
@@ -1349,12 +1357,14 @@ mod tests {
 
     #[cfg(not(windows))]
     #[tokio::test]
-    async fn shell_kills_hanging_command_after_explicit_timeout() {
+    async fn shell_timeout_kills_descendants() {
         let tool = ShellTool::new_for_test().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("descendant-finished");
         let start = std::time::Instant::now();
         let result = tool
             .shell(ShellParams {
-                command: "sleep 30".to_string(),
+                command: format!("(sleep 2; touch {}) & wait", marker.display()),
                 timeout_secs: Some(1),
             })
             .await;
@@ -1371,5 +1381,7 @@ mod tests {
             "killed process should have no exit code"
         );
         assert!(extract_text(&result).contains("Command timed out after 1 seconds"));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(!marker.exists(), "descendant survived the shell timeout");
     }
 }
