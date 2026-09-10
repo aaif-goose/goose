@@ -261,7 +261,13 @@ pub(crate) async fn context_tokens_since_last_inference(
     else {
         return Ok(None);
     };
-    let Some(tool_calling_assistant) = messages.iter().rposition(|message| {
+    let previous_inference = messages[..latest_assistant].iter().rposition(|message| {
+        message.is_agent_visible()
+            && message.role == Role::Assistant
+            && message.metadata.usage.is_some()
+    });
+    let inference_start = previous_inference.map_or(0, |index| index + 1);
+    let Some(tool_request_offset) = messages[inference_start..].iter().position(|message| {
         message.is_agent_visible()
             && message.role == Role::Assistant
             && message
@@ -271,6 +277,7 @@ pub(crate) async fn context_tokens_since_last_inference(
     }) else {
         return Ok(None);
     };
+    let tool_calling_assistant = inference_start + tool_request_offset;
 
     if latest_assistant > tool_calling_assistant
         && messages[latest_assistant + 1..].iter().any(|message| {
@@ -1022,6 +1029,83 @@ mod tests {
                 .await
                 .unwrap(),
             "same-inference output is already covered by provider usage"
+        );
+    }
+
+    #[tokio::test]
+    async fn suffix_accounting_counts_all_streamed_results_when_the_final_result_is_hidden() {
+        let tool_request_zero = Message::assistant()
+            .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file")));
+        let tool_response_zero = Message::user().with_tool_response(
+            "call_0",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                ContentBlock::text("large tool result"),
+            ])),
+        );
+        let tool_request_one = Message::assistant()
+            .with_tool_request("call_1", Ok(CallToolRequestParams::new("read_file")));
+        let hidden_tool_response_one = Message::user()
+            .with_tool_response(
+                "call_1",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("hidden oversized tool result"),
+                ])),
+            )
+            .user_only();
+        let final_chunk = Message::assistant()
+            .with_text("a later chunk from the same inference")
+            .with_metadata(MessageMetadata {
+                usage: Some(Box::new(MessageUsage::default())),
+                ..Default::default()
+            });
+        let conversation = Conversation::new_unvalidated([
+            tool_request_zero.clone(),
+            tool_response_zero.clone(),
+            tool_request_one.clone(),
+            hidden_tool_response_one.clone(),
+            final_chunk.clone(),
+        ]);
+
+        let earlier_result_only =
+            Conversation::new_unvalidated([tool_request_zero, tool_response_zero]);
+        let all_results = Conversation::new_unvalidated([
+            Message::assistant()
+                .with_tool_request("call_0", Ok(CallToolRequestParams::new("read_file"))),
+            Message::user().with_tool_response(
+                "call_0",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("large tool result"),
+                ])),
+            ),
+            Message::assistant()
+                .with_tool_request("call_1", Ok(CallToolRequestParams::new("read_file"))),
+            Message::user().with_tool_response(
+                "call_1",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    ContentBlock::text("hidden oversized tool result"),
+                ])),
+            ),
+        ]);
+
+        let suffix = context_tokens_since_last_inference(&conversation)
+            .await
+            .unwrap()
+            .expect(
+                "every result streamed by the latest tool-calling inference stays in the suffix",
+            );
+        assert_eq!(
+            suffix,
+            context_tokens_since_last_inference(&earlier_result_only)
+                .await
+                .unwrap()
+                .unwrap()
+        );
+        assert!(
+            suffix
+                < context_tokens_since_last_inference(&all_results)
+                    .await
+                    .unwrap()
+                    .unwrap()
         );
     }
 
