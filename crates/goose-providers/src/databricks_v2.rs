@@ -58,7 +58,7 @@ const MODEL_SERVICE_METADATA_TTL: Duration = Duration::from_secs(60);
 
 struct CachedModelServiceModel {
     fetched_at: Instant,
-    model: Result<Option<String>, ProviderError>,
+    model: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -299,14 +299,14 @@ impl DatabricksV2Provider {
     async fn model_service_model(&self, name: &str) -> Result<Option<String>, ProviderError> {
         if let Some(cached) = self.model_service_models.lock().unwrap().get(name) {
             if cached.fetched_at.elapsed() < MODEL_SERVICE_METADATA_TTL {
-                return cached.model.clone();
+                return Ok(cached.model.clone());
             }
         }
         let path = format!(
             "{DATABRICKS_V2_LIST_MODEL_SERVICES_PATH}/{}",
             urlencoding::encode(name)
         );
-        let result = tokio::time::timeout(MODEL_SERVICE_METADATA_TIMEOUT, async {
+        let model = tokio::time::timeout(MODEL_SERVICE_METADATA_TIMEOUT, async {
             let response = self.api_client.response_get(&path).await?;
             let value: Value = read_json_response(handle_status(response).await?).await?;
             if value
@@ -321,19 +321,19 @@ impl DatabricksV2Provider {
             Ok(Self::model_service_model_from_value(&value))
         })
         .await
-        .unwrap_or_else(|_| {
-            Err(ProviderError::NetworkError(
+        .map_err(|_| {
+            ProviderError::NetworkError(
                 "Databricks model-service metadata request timed out".to_string(),
-            ))
-        });
+            )
+        })??;
         self.model_service_models.lock().unwrap().insert(
             name.to_string(),
             CachedModelServiceModel {
                 fetched_at: Instant::now(),
-                model: result.clone(),
+                model: model.clone(),
             },
         );
-        result
+        Ok(model)
     }
 
     fn model_service_info(name: &str, model: Option<&str>) -> ModelInfo {
@@ -687,14 +687,9 @@ impl Provider for DatabricksV2Provider {
         let cache = self.model_service_models.lock().unwrap();
         Ok(names
             .into_iter()
-            .map(|name| {
-                match cache
-                    .get(&name)
-                    .and_then(|cached| cached.model.as_ref().ok())
-                {
-                    Some(model) => Self::model_service_info(&name, model.as_deref()),
-                    None => model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, &name),
-                }
+            .map(|name| match cache.get(&name) {
+                Some(cached) => Self::model_service_info(&name, cached.model.as_deref()),
+                None => model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, &name),
             })
             .collect())
     }
@@ -771,7 +766,7 @@ impl DatabricksV2Provider {
                             name.to_string(),
                             CachedModelServiceModel {
                                 fetched_at: Instant::now(),
-                                model: Ok(Self::model_service_model_from_value(item)),
+                                model: Self::model_service_model_from_value(item),
                             },
                         );
                     }
