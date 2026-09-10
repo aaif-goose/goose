@@ -507,7 +507,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
       });
 
-      it('maps failed tool responses to error results', () => {
+      it('preserves failed tool responses as results with error status', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
         const failedToolStateChanges = adapter.apply(
@@ -527,8 +527,12 @@ describe('createAcpSessionNotificationAdapter', () => {
           type: 'toolResponse',
           id: 'tool-1',
           toolResult: {
-            status: 'error',
-            error: 'permission denied',
+            status: 'success',
+            value: {
+              content: [{ type: 'text', text: 'permission denied' }],
+              structuredContent: 'permission denied',
+              isError: true,
+            },
           },
           metadata: {
             title: 'Read file',
@@ -687,8 +691,11 @@ describe('createAcpSessionNotificationAdapter', () => {
             content,
           },
           toolResult: {
-            status: 'error',
-            error: 'file not found',
+            status: 'success',
+            value: {
+              content: [{ type: 'text', text: 'file not found' }],
+              isError: true,
+            },
           },
         });
       });
