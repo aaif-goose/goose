@@ -298,6 +298,7 @@ function ProviderCards({
     requires_auth: editingProvider.config.requiresAuth ?? true,
     headers: editingProvider.config.headers ?? undefined,
     catalog_provider_id: editingProvider.config.catalogProviderId ?? undefined,
+    toolshim: editingProvider.config.toolshim,
   };
 
   const editable = editingProvider ? editingProvider.isEditable : true;

@@ -5152,7 +5152,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-http",
@@ -5291,7 +5291,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp-macros"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "quote",
  "syn 3.0.4",
@@ -5299,7 +5299,7 @@ dependencies = [
 
 [[package]]
 name = "goose-agent"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5318,7 +5318,7 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "agent-client-protocol",
  "anstream",
@@ -5381,7 +5381,7 @@ dependencies = [
 
 [[package]]
 name = "goose-context-management"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5397,7 +5397,7 @@ dependencies = [
 
 [[package]]
 name = "goose-download-manager"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "anyhow",
  "once_cell",
@@ -5409,7 +5409,7 @@ dependencies = [
 
 [[package]]
 name = "goose-local-inference"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5443,7 +5443,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -5471,7 +5471,7 @@ dependencies = [
 
 [[package]]
 name = "goose-provider-types"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5500,7 +5500,7 @@ dependencies = [
 
 [[package]]
 name = "goose-providers"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5532,7 +5532,7 @@ dependencies = [
 
 [[package]]
 name = "goose-roaming"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -5552,7 +5552,7 @@ dependencies = [
 
 [[package]]
 name = "goose-sdk"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
@@ -5572,7 +5572,7 @@ dependencies = [
 
 [[package]]
 name = "goose-sdk-types"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
@@ -5583,7 +5583,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -5591,7 +5591,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.49.0"
+version = "1.50.0"
 dependencies = [
  "axum",
  "env-lock",

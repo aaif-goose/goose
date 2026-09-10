@@ -1,6 +1,6 @@
 {
   "name": "@aaif/goose-binary-linux-arm64",
-  "version": "1.49.0",
+  "version": "1.50.0",
   "description": "Goose binary for Linux ARM64",
   "license": "Apache-2.0",
   "repository": {
