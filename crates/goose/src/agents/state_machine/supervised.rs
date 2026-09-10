@@ -270,6 +270,8 @@ impl Agent {
             .model_config(implementer_model.clone())
             .apply()
             .await?;
+        self.update_goose_mode(GooseMode::Auto, &session_config.id)
+            .await?;
 
         let (planner_extensions, supervisor_extensions) = tokio::try_join!(
             self.extension_manager_for_session(
