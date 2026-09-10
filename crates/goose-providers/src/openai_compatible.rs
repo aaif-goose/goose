@@ -3,11 +3,13 @@ use crate::http_status::read_json_response;
 use crate::images::ImageFormat;
 use anyhow::Error;
 use async_stream::try_stream;
-use futures::TryStreamExt;
+use futures::{Stream, TryStreamExt};
 use reqwest::Response;
 #[cfg(test)]
 use reqwest::StatusCode;
 use serde_json::Value;
+use std::pin::Pin;
+use std::time::Duration;
 use tokio::pin;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
@@ -234,9 +236,158 @@ pub use super::http_status::{
 // Legacy alias kept for callers that haven't migrated their import path yet.
 pub use super::http_status::handle_response as handle_response_openai_compat;
 
+/// Idle timeout for streaming responses: how long a stream may go without a
+/// data-bearing SSE line before it is considered stalled. SSE comment
+/// keepalives (`: ping`) and blank separators do not reset the deadline, so a
+/// provider that wedges mid-stream while emitting keepalives is detected
+/// instead of hanging the turn forever.
+pub(crate) const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
+
+/// SSE payload event types that carry no model progress across the wrapped
+/// formats: lifecycle preambles that arrive at request acceptance and are
+/// recorded as metadata at most (`message_start`, `response.created`,
+/// `response.in_progress`), and payload-bearing keepalive events (`ping`,
+/// `keepalive`). Only this fixed, cross-format set is excluded — unknown
+/// event types still count as progress, so a provider adding a new output
+/// event cannot stall undetected.
+const NON_PROGRESS_EVENT_TYPES: [&str; 5] = [
+    "message_start",
+    "ping",
+    "response.created",
+    "response.in_progress",
+    "keepalive",
+];
+
+/// Whether a framed SSE line carries model progress for the downstream
+/// parsers. Three shapes never count:
+///
+/// - Structural heartbeats: comment frames, blank separators, control fields
+///   (`event:`, `id:`, `retry:`), other extension fields, and empty `data:`
+///   events — discarded by every wrapped parser.
+/// - Payloads whose `type` is one of [`NON_PROGRESS_EVENT_TYPES`]: lifecycle
+///   preambles and keepalive events, which yield no assistant output.
+/// - Chat-completions chunks whose deltas carry no output (see
+///   [`chat_chunk_carries_output`]): role priming, empty strings, empty
+///   arrays, and finish-only frames.
+///
+/// Letting any of these arm or reset the deadline would either kill a slow
+/// first token mid-generation or mask the exact keepalive-hidden stall this
+/// watchdog exists to catch. Everything else — nonempty `data:` values such
+/// as `[DONE]`, JSON payloads of any other type, and bare JSON frames, which
+/// the Responses parser accepts — counts as progress.
+fn is_progress_line(line: &str) -> bool {
+    let payload = match line.strip_prefix("data:") {
+        Some(value) => value.trim(),
+        None => {
+            if serde_json::from_str::<Value>(line).is_ok() {
+                line.trim()
+            } else {
+                return false;
+            }
+        }
+    };
+    if payload.is_empty() {
+        return false;
+    }
+    if let Ok(value) = serde_json::from_str::<Value>(payload) {
+        if let Some(event_type) = value.get("type").and_then(Value::as_str) {
+            return !NON_PROGRESS_EVENT_TYPES.contains(&event_type);
+        }
+        if value.get("choices").is_some() {
+            return chat_chunk_carries_output(&value);
+        }
+    }
+    true
+}
+
+/// Whether a chat-completions chunk carries model output in any choice's
+/// delta. Gateways prime the stream with deltas that yield nothing —
+/// OpenRouter's first frame sets `content: ""` alongside the role — and
+/// finish-only or usage-only frames likewise produce no assistant output.
+/// Mirrors what the chat parser actually reads: `content`,
+/// `reasoning`/`reasoning_content` (nonempty strings, as `reasoning_text()`
+/// filters empties), `reasoning_details`, and `tool_calls`.
+fn chat_chunk_carries_output(value: &Value) -> bool {
+    let Some(choices) = value.get("choices").and_then(Value::as_array) else {
+        return false;
+    };
+    choices.iter().any(|choice| {
+        let Some(delta) = choice.get("delta") else {
+            return false;
+        };
+        let nonempty_text = |key: &str| {
+            delta
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.is_empty())
+        };
+        nonempty_text("content")
+            || nonempty_text("reasoning")
+            || nonempty_text("reasoning_content")
+            || delta
+                .get("reasoning_details")
+                .and_then(Value::as_array)
+                .is_some_and(|details| !details.is_empty())
+            || delta
+                .get("tool_calls")
+                .and_then(Value::as_array)
+                .is_some_and(|calls| !calls.is_empty())
+    })
+}
+
+/// Wraps framed SSE lines with the idle timeout, between `LinesCodec` framing
+/// and the format parser. The deadline arms only once the first
+/// model-progress line has arrived — lifecycle preambles, keepalives, and
+/// no-op chat deltas do not start the clock — so time-to-first-token stays
+/// governed by the request timeout; afterwards only progress lines reset it.
+/// On timeout the stream errors with a retryable
+/// [`ProviderError::NetworkError`].
+pub(crate) fn with_sse_idle_timeout(
+    mut stream: impl Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    idle_timeout_secs: u64,
+) -> Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>> {
+    let idle_timeout = Duration::from_secs(idle_timeout_secs);
+    Box::pin(try_stream! {
+        let mut deadline: Option<tokio::time::Instant> = None;
+
+        loop {
+            let next = match deadline {
+                Some(deadline) => tokio::time::timeout_at(deadline, stream.next()).await,
+                None => Ok(stream.next().await),
+            };
+            match next {
+                Ok(Some(item)) => {
+                    let line = item?;
+                    if is_progress_line(&line) {
+                        deadline = Some(tokio::time::Instant::now() + idle_timeout);
+                    }
+                    yield line;
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    let err = ProviderError::NetworkError(format!(
+                        "Stream stalled: no SSE progress line received for \
+                         {idle_timeout_secs}s (keepalives and lifecycle events \
+                         do not count as progress)"
+                    ));
+                    Err::<(), anyhow::Error>(err.into())?;
+                }
+            }
+        }
+    })
+}
+
 pub fn stream_openai_compat(
     response: Response,
+    log: Option<Box<dyn RequestLogHandle>>,
+) -> Result<MessageStream, ProviderError> {
+    stream_openai_compat_with_idle_timeout(response, log, STREAM_IDLE_TIMEOUT_SECS)
+}
+
+fn stream_openai_compat_with_idle_timeout(
+    response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
+    idle_timeout_secs: u64,
 ) -> Result<MessageStream, ProviderError> {
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
@@ -245,7 +396,8 @@ pub fn stream_openai_compat(
         let framed = FramedRead::new(stream_reader, LinesCodec::new())
             .map_err(Error::from);
 
-        let message_stream = response_to_streaming_message(framed);
+        let timed_lines = with_sse_idle_timeout(framed, idle_timeout_secs);
+        let message_stream = response_to_streaming_message(timed_lines);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
             let (message, usage) = message.map_err(|e|
@@ -260,7 +412,15 @@ pub fn stream_openai_compat(
 
 pub fn stream_responses_compat(
     response: Response,
+    log: Option<Box<dyn RequestLogHandle>>,
+) -> Result<MessageStream, ProviderError> {
+    stream_responses_compat_with_idle_timeout(response, log, STREAM_IDLE_TIMEOUT_SECS)
+}
+
+fn stream_responses_compat_with_idle_timeout(
+    response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
+    idle_timeout_secs: u64,
 ) -> Result<MessageStream, ProviderError> {
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
@@ -269,7 +429,8 @@ pub fn stream_responses_compat(
         let framed = FramedRead::new(stream_reader, LinesCodec::new())
             .map_err(Error::from);
 
-        let message_stream = responses_api_to_streaming_message(framed);
+        let timed_lines = with_sse_idle_timeout(framed, idle_timeout_secs);
+        let message_stream = responses_api_to_streaming_message(timed_lines);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
             let (message, usage) = message.map_err(|e|
@@ -451,5 +612,385 @@ mod tests {
             err.to_string().contains("response body exceeds"),
             "got: {err}"
         );
+    }
+
+    fn chat_delta(content: &str) -> String {
+        let payload = json!({
+            "id": "1",
+            "model": "m",
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": content},
+                "finish_reason": null,
+            }],
+        });
+        format!("data: {payload}\n\n")
+    }
+
+    #[test]
+    fn sse_heartbeat_lines_are_not_progress() {
+        // Shapes every downstream parser discards: comments, blank
+        // separators, control fields, unknown extension fields, and empty
+        // `data:` events; payload-bearing keepalive and lifecycle preamble
+        // events, which yield no model output; and chat chunks whose deltas
+        // carry no output — role priming, empty strings and arrays
+        // (OpenRouter's first frame), finish-only frames, and the
+        // empty-choices usage chunk.
+        for line in [
+            ": ping",
+            "",
+            "   ",
+            "event: ping",
+            "id: 7",
+            "retry: 3000",
+            "x-heartbeat: ping",
+            "data:",
+            "data:   ",
+            r#"data: {"type":"ping"}"#,
+            r#"data: {"type":"keepalive"}"#,
+            r#"data: {"type":"message_start","message":{}}"#,
+            r#"data: {"type":"response.created","response":{}}"#,
+            r#"data: {"type":"response.in_progress"}"#,
+            r#"data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
+            r#"data: {"choices":[{"index":0,"delta":{"reasoning":"","reasoning_details":[]},"finish_reason":null}]}"#,
+            r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[]},"finish_reason":null}]}"#,
+            r#"data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#,
+        ] {
+            assert!(!is_progress_line(line), "{line:?} should not be progress");
+        }
+    }
+
+    #[test]
+    fn model_output_lines_are_progress() {
+        for line in [
+            "data: {\"a\":1}",
+            "data:{\"a\":1}", // space after the colon is optional
+            "data: [DONE]",
+            r#"{"a":1}"#, // bare JSON frame, accepted by the Responses parser
+            // Output-bearing events from every wrapped format
+            r#"data: {"type":"content_block_start"}"#,
+            r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}"#,
+            r#"data: {"type":"response.output_item.added"}"#,
+            r#"data: {"type":"response.output_text.delta","delta":"Hi"}"#,
+            // Chat chunks whose deltas carry output
+            r#"data: {"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            r#"data: {"choices":[{"index":0,"delta":{"reasoning_content":"thinking"},"finish_reason":null}]}"#,
+            r#"data: {"choices":[{"index":0,"delta":{"reasoning_details":[{"type":"thinking","thinking":"deep"}]}}]}"#,
+            r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"f","arguments":""}}]}}]}"#,
+            // Unknown event types stay progress: only the fixed
+            // NON_PROGRESS_EVENT_TYPES set is excluded, so a provider adding
+            // a new output event cannot stall undetected.
+            r#"data: {"type":"some_future_output_event"}"#,
+        ] {
+            assert!(is_progress_line(line), "{line:?} should be progress");
+        }
+    }
+
+    /// The #11679 failure signature: healthy data frames, then keepalive
+    /// comment frames forever. Bytes keep flowing, so byte-based read
+    /// timeouts never fire.
+    #[tokio::test]
+    async fn keepalive_masked_stall_errors_instead_of_hanging() {
+        use crate::retry::{should_retry, RetryConfig};
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        let delta = chat_delta("Hi");
+        let addr = spawn_server(
+            vec![Chunk::immediate(delta.clone()), Chunk::immediate(delta)],
+            Tail::KeepaliveForever,
+        )
+        .await;
+
+        let response = post_stream(
+            addr,
+            "/chat/completions",
+            json!({"model": "m", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_openai_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        let err = err.expect("stream ended without an error");
+        assert!(
+            items > 0,
+            "healthy frames should have been yielded before the stall"
+        );
+        assert!(err.to_string().contains("Stream stalled"), "got: {err}");
+        assert!(matches!(err, ProviderError::NetworkError(_)));
+        assert!(should_retry(&err, &RetryConfig::default()));
+    }
+
+    fn responses_delta(content: &str) -> String {
+        let payload = json!({
+            "type": "response.output_text.delta",
+            "sequence_number": 1,
+            "item_id": "m1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": content,
+        });
+        format!("data: {payload}\n\n")
+    }
+
+    /// A framed Responses payload event of the given type.
+    fn responses_event(event_type: &str) -> String {
+        format!("data: {{\"type\":\"{event_type}\"}}\n\n")
+    }
+
+    /// The Responses API route (GPT-5/GPT-6/o-series, Databricks Responses
+    /// streams) shares the #11679 failure signature; the watchdog must apply
+    /// there too, not only to Chat Completions.
+    #[tokio::test]
+    async fn keepalive_masked_stall_errors_instead_of_hanging_on_responses_streams() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        let delta = responses_delta("Hi");
+        let addr = spawn_server(
+            vec![Chunk::immediate(delta.clone()), Chunk::immediate(delta)],
+            Tail::KeepaliveForever,
+        )
+        .await;
+
+        let response = post_stream(
+            addr,
+            "/responses",
+            json!({"model": "m", "stream": true, "input": []}),
+        )
+        .await;
+        let stream = stream_responses_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        let err = err.expect("stream ended without an error");
+        assert!(
+            items > 0,
+            "healthy frames should have been yielded before the stall"
+        );
+        assert!(err.to_string().contains("Stream stalled"), "got: {err}");
+        assert!(matches!(err, ProviderError::NetworkError(_)));
+    }
+
+    /// A stall bridged by payload-bearing keepalive events — the Responses
+    /// API's own `data: {"type":"keepalive"}` frames — must be detected too,
+    /// not only comment-frame keepalives.
+    #[tokio::test]
+    async fn keepalive_payload_masked_stall_errors_instead_of_hanging() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        let delta = responses_delta("Hi");
+        let addr = spawn_server(
+            vec![Chunk::immediate(delta.clone()), Chunk::immediate(delta)],
+            Tail::KeepaliveDataForever("data: {\"type\":\"keepalive\"}\n\n"),
+        )
+        .await;
+
+        let response = post_stream(
+            addr,
+            "/responses",
+            json!({"model": "m", "stream": true, "input": []}),
+        )
+        .await;
+        let stream = stream_responses_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        let err = err.expect("stream ended without an error");
+        assert!(
+            items > 0,
+            "healthy frames should have been yielded before the stall"
+        );
+        assert!(err.to_string().contains("Stream stalled"), "got: {err}");
+        assert!(matches!(err, ProviderError::NetworkError(_)));
+    }
+
+    /// Lifecycle preambles (`response.created`) and keepalive events arrive
+    /// before the first token on the Responses route; neither carries model
+    /// output, so they must not arm the idle deadline — otherwise a first
+    /// token slower than the idle timeout would be killed mid-generation.
+    #[tokio::test]
+    async fn lifecycle_prelude_before_first_token_does_not_trip_the_idle_timeout() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        // Preamble + keepalives for ~1.8s against a 1s idle timeout, then the
+        // first data frame and a clean close.
+        let created = concat!(
+            r#"data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"in_progress","model":"m","output":[]}}"#,
+            "\n\n"
+        );
+        let mut script = vec![Chunk::immediate(created)];
+        for _ in 0..3 {
+            script.push(Chunk {
+                after: Duration::from_millis(600),
+                body: responses_event("keepalive"),
+            });
+        }
+        script.push(Chunk::immediate(responses_delta("Hi")));
+        script.push(Chunk::immediate("data: [DONE]\n\n"));
+        let addr = spawn_server(script, Tail::Close).await;
+
+        let response = post_stream(
+            addr,
+            "/responses",
+            json!({"model": "m", "stream": true, "input": []}),
+        )
+        .await;
+        let stream = stream_responses_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        assert!(
+            err.is_none(),
+            "stream with slow first token errored: {err:?}"
+        );
+        assert!(items > 0, "data frames should have been yielded");
+    }
+
+    #[tokio::test]
+    async fn slow_but_live_data_lines_do_not_trip_the_idle_timeout() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        // Data frames interleaved with keepalive comments every 300ms against
+        // a 1s idle timeout: a live-but-slow stream must not be killed.
+        let mut script = Vec::new();
+        for i in 0..5 {
+            script.push(Chunk {
+                after: Duration::from_millis(150),
+                body: ": ping\n\n".to_string(),
+            });
+            script.push(Chunk {
+                after: Duration::from_millis(150),
+                body: chat_delta(&format!("Hi {i}")),
+            });
+        }
+        script.push(Chunk::immediate("data: [DONE]\n\n"));
+        let addr = spawn_server(script, Tail::Close).await;
+
+        let response = post_stream(
+            addr,
+            "/chat/completions",
+            json!({"model": "m", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_openai_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        assert!(err.is_none(), "live stream errored: {err:?}");
+        assert!(items > 0, "data frames should have been yielded");
+    }
+
+    /// Keepalives sent while the model is still producing its first token are
+    /// a liveness signal, not a stall: the deadline must not start until the
+    /// first data-bearing line arrives, even when the keepalive prelude alone
+    /// outlasts the idle timeout.
+    #[tokio::test]
+    async fn keepalive_prelude_before_first_token_does_not_trip_the_idle_timeout() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        // Keepalives for 1.8s against a 1s idle timeout, then the first data
+        // frame and a clean close.
+        let mut script = Vec::new();
+        for _ in 0..3 {
+            script.push(Chunk {
+                after: Duration::from_millis(600),
+                body: ": ping\n\n".to_string(),
+            });
+        }
+        script.push(Chunk::immediate(chat_delta("Hi")));
+        script.push(Chunk::immediate("data: [DONE]\n\n"));
+        let addr = spawn_server(script, Tail::Close).await;
+
+        let response = post_stream(
+            addr,
+            "/chat/completions",
+            json!({"model": "m", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_openai_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        assert!(
+            err.is_none(),
+            "stream with slow first token errored: {err:?}"
+        );
+        assert!(items > 0, "data frames should have been yielded");
+    }
+
+    /// Gateways (e.g. OpenRouter) prime the stream with an initial chunk
+    /// whose only delta is `content: ""`; the chat parser yields nothing for
+    /// it, so it must not arm the idle deadline — otherwise a first token
+    /// slower than the idle timeout would be killed mid-generation.
+    #[tokio::test]
+    async fn empty_delta_prelude_before_first_token_does_not_trip_the_idle_timeout() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        // Role-priming empty delta, then keepalives for 1.8s against a 1s
+        // idle timeout, then the first real token and a clean close.
+        let mut script = vec![Chunk::immediate(chat_delta(""))];
+        for _ in 0..3 {
+            script.push(Chunk {
+                after: Duration::from_millis(600),
+                body: ": ping\n\n".to_string(),
+            });
+        }
+        script.push(Chunk::immediate(chat_delta("Hi")));
+        script.push(Chunk::immediate("data: [DONE]\n\n"));
+        let addr = spawn_server(script, Tail::Close).await;
+
+        let response = post_stream(
+            addr,
+            "/chat/completions",
+            json!({"model": "m", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_openai_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        assert!(
+            err.is_none(),
+            "stream with empty-delta prelude errored: {err:?}"
+        );
+        assert!(items > 0, "data frames should have been yielded");
+    }
+
+    /// The inverse shape: after real output, a stream wedged behind
+    /// empty-delta chunks (a gateway's payload keepalives) yields nothing
+    /// and must trip the watchdog just like comment keepalives.
+    #[tokio::test]
+    async fn empty_delta_masked_stall_errors_instead_of_hanging() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        let addr = spawn_server(
+            vec![Chunk::immediate(chat_delta("Hi")), Chunk::immediate(chat_delta("Hi"))],
+            Tail::KeepaliveDataForever(
+                concat!(
+                    r#"data: {"id":"1","model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
+                    "\n\n"
+                ),
+            ),
+        )
+        .await;
+
+        let response = post_stream(
+            addr,
+            "/chat/completions",
+            json!({"model": "m", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_openai_compat_with_idle_timeout(response, None, 1).unwrap();
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        let err = err.expect("stream ended without an error");
+        assert!(
+            items > 0,
+            "healthy frames should have been yielded before the stall"
+        );
+        assert!(err.to_string().contains("Stream stalled"), "got: {err}");
+        assert!(matches!(err, ProviderError::NetworkError(_)));
     }
 }

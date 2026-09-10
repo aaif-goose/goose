@@ -5,19 +5,16 @@ use crate::providers::base::{
     ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
     DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
-use crate::providers::openai_compatible::handle_status;
+use crate::providers::openai_compatible::{handle_status, stream_responses_compat};
 use crate::providers::private_file::write_private_file;
 use crate::providers::retry::ProviderRetry;
 use anyhow::{anyhow, Result};
-use async_stream::try_stream;
 use async_trait::async_trait;
 use axum::{extract::Query, response::Html, routing::get, Router};
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
-use futures::{StreamExt, TryStreamExt};
 use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai_responses::responses_api_to_streaming_message;
 use goose_providers::model::ModelConfig;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
@@ -29,10 +26,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
-use tokio::pin;
 use tokio::sync::{oneshot, Mutex as TokioMutex};
-use tokio_util::codec::{FramedRead, LinesCodec};
-use tokio_util::io::StreamReader;
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const ISSUER: &str = "https://auth.openai.com";
@@ -1018,22 +1012,7 @@ impl Provider for ChatGptCodexProvider {
             })
             .await?;
 
-        let stream = response.bytes_stream().map_err(io::Error::other);
-
-        Ok(Box::pin(try_stream! {
-            let stream_reader = StreamReader::new(stream);
-            let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
-
-            let message_stream = responses_api_to_streaming_message(framed);
-            pin!(message_stream);
-            while let Some(message) = message_stream.next().await {
-                let (message, usage) = message.map_err(|e| {
-                    e.downcast::<ProviderError>()
-                        .unwrap_or_else(ProviderError::stream_decode_error)
-                })?;
-                yield (message, usage);
-            }
-        }))
+        stream_responses_compat(response, None)
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {

@@ -21,4 +21,7 @@ pub mod openrouter_format;
 
 pub use declarative::declarative_providers::*;
 
+#[cfg(test)]
+mod sse_test_harness;
+
 pub mod snowflake;

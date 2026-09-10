@@ -2,12 +2,12 @@ use crate::api_client::{AuthMethod, TlsConfig};
 use crate::base::ProviderDescriptor;
 use crate::declarative::{DeclarativeProviderConfig, KeyResolver};
 use crate::errors::ProviderError;
-use crate::request_log::{start_log, LoggerHandleExt};
+use crate::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
 use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::TryStreamExt;
-use reqwest::StatusCode;
+use reqwest::{Response, StatusCode};
 use serde_json::Value;
 use std::io;
 use tokio::pin;
@@ -19,7 +19,7 @@ use super::formats::anthropic::{
     create_request_for_model, response_to_streaming_message, AnthropicFormatOptions,
     ANTHROPIC_PROVIDER_NAME,
 };
-use super::openai_compatible::handle_status;
+use super::openai_compatible::{handle_status, with_sse_idle_timeout, STREAM_IDLE_TIMEOUT_SECS};
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::model::ModelConfig;
@@ -197,18 +197,11 @@ impl AnthropicProvider {
             .inspect_err(|e| {
                 let _ = log.error(e);
             })?;
-        let stream = response.bytes_stream().map_err(io::Error::other);
-        Ok(Box::pin(try_stream! {
-            let reader = StreamReader::new(stream);
-            let framed = tokio_util::codec::FramedRead::new(reader, tokio_util::codec::LinesCodec::new()).map_err(anyhow::Error::from);
-            let messages = response_to_streaming_message(framed);
-            pin!(messages);
-            while let Some(message) = futures::StreamExt::next(&mut messages).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
-                log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
-                yield (message, usage);
-            }
-        }))
+        Ok(stream_anthropic_with_idle_timeout(
+            response,
+            log,
+            STREAM_IDLE_TIMEOUT_SECS,
+        ))
     }
 
     async fn fetch_models_from_api(&self) -> Result<Vec<String>, ProviderError> {
@@ -277,6 +270,30 @@ impl AnthropicProvider {
         models.sort();
         Ok(models)
     }
+}
+
+/// Streams an Anthropic SSE response with the idle-timeout guard so keepalive
+/// comment frames cannot mask a stalled stream. Shared by
+/// [`crate::anthropic::AnthropicProvider`] and the Databricks v2 Anthropic
+/// route, which speak the same wire format.
+pub(crate) fn stream_anthropic_with_idle_timeout(
+    response: Response,
+    mut log: Option<Box<dyn RequestLogHandle>>,
+    idle_timeout_secs: u64,
+) -> MessageStream {
+    let stream = response.bytes_stream().map_err(io::Error::other);
+    Box::pin(try_stream! {
+        let reader = StreamReader::new(stream);
+        let framed = tokio_util::codec::FramedRead::new(reader, tokio_util::codec::LinesCodec::new()).map_err(anyhow::Error::from);
+        let timed_lines = with_sse_idle_timeout(framed, idle_timeout_secs);
+        let messages = response_to_streaming_message(timed_lines);
+        pin!(messages);
+        while let Some(message) = futures::StreamExt::next(&mut messages).await {
+            let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
+            log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
+            yield (message, usage);
+        }
+    })
 }
 
 impl ProviderDescriptor for AnthropicProvider {
@@ -754,5 +771,131 @@ mod tests {
             "expected Authentication error, got: {:?}",
             err
         );
+    }
+
+    /// The #11679 failure signature on the Anthropic wire format: healthy SSE
+    /// frames, then keepalive comment frames forever. Bytes keep flowing, so
+    /// byte-level read timeouts never fire.
+    #[tokio::test]
+    async fn keepalive_masked_stall_errors_instead_of_hanging() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        let addr = spawn_server(
+            vec![
+                Chunk::immediate(concat!(
+                    "event: message_start\n",
+                    r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+                    "\n\n"
+                )),
+                Chunk::immediate(concat!(
+                    r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#,
+                    "\n\n"
+                )),
+            ],
+            Tail::KeepaliveForever,
+        )
+        .await;
+
+        let response = post_stream(
+            addr,
+            "/v1/messages",
+            json!({"model": "claude-sonnet-4-5", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_anthropic_with_idle_timeout(response, None, 1);
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        let err = err.expect("stream ended without an error");
+        assert!(
+            items > 0,
+            "healthy frames should have been yielded before the stall"
+        );
+        assert!(err.to_string().contains("Stream stalled"), "got: {err}");
+        assert!(matches!(err, ProviderError::NetworkError(_)));
+    }
+
+    /// The same failure signature with Anthropic's payload-bearing keepalive
+    /// (`data: {"type":"ping"}`) instead of comment frames: bytes keep
+    /// flowing, but no model output ever arrives.
+    #[tokio::test]
+    async fn ping_masked_stall_errors_instead_of_hanging() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        let addr = spawn_server(
+            vec![
+                Chunk::immediate(concat!(
+                    r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+                    "\n\n"
+                )),
+                Chunk::immediate(concat!(
+                    r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#,
+                    "\n\n"
+                )),
+            ],
+            Tail::KeepaliveDataForever("data: {\"type\":\"ping\"}\n\n"),
+        )
+        .await;
+
+        let response = post_stream(
+            addr,
+            "/v1/messages",
+            json!({"model": "claude-sonnet-4-5", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_anthropic_with_idle_timeout(response, None, 1);
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        let err = err.expect("stream ended without an error");
+        assert!(
+            items > 0,
+            "healthy frames should have been yielded before the stall"
+        );
+        assert!(err.to_string().contains("Stream stalled"), "got: {err}");
+        assert!(matches!(err, ProviderError::NetworkError(_)));
+    }
+
+    /// `message_start` and `ping` events precede the first content delta and
+    /// carry no model output; neither may arm the idle deadline, or a first
+    /// token slower than the idle timeout (e.g. a long pre-generation pause
+    /// bridged by pings) would be killed mid-generation.
+    #[tokio::test]
+    async fn lifecycle_prelude_before_first_token_does_not_trip_the_idle_timeout() {
+        use crate::sse_test_harness::{drain_within, post_stream, spawn_server, Chunk, Tail};
+        use std::time::Duration;
+
+        // message_start + pings for ~1.8s against a 1s idle timeout, then the
+        // first content delta and a clean close.
+        let mut script = vec![Chunk::immediate(concat!(
+            r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+            "\n\n"
+        ))];
+        for _ in 0..3 {
+            script.push(Chunk {
+                after: Duration::from_millis(600),
+                body: "data: {\"type\":\"ping\"}\n\n".to_string(),
+            });
+        }
+        script.push(Chunk::immediate(concat!(
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#,
+            "\n\n"
+        )));
+        let addr = spawn_server(script, Tail::Close).await;
+
+        let response = post_stream(
+            addr,
+            "/v1/messages",
+            json!({"model": "claude-sonnet-4-5", "stream": true, "messages": []}),
+        )
+        .await;
+        let stream = stream_anthropic_with_idle_timeout(response, None, 1);
+
+        let (items, err) = drain_within(stream, Duration::from_secs(15)).await;
+        assert!(
+            err.is_none(),
+            "stream with slow first token errored: {err:?}"
+        );
+        assert!(items > 0, "content deltas should have been yielded");
     }
 }

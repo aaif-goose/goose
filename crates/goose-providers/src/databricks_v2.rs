@@ -3,17 +3,12 @@ use crate::formats::openai::{self, extract_reasoning_effort, is_openai_responses
 use crate::http_status::{read_error_body, read_json_response};
 use crate::images::ImageFormat;
 use anyhow::{anyhow, Result};
-use async_stream::try_stream;
 use async_trait::async_trait;
-use futures::TryStreamExt;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
-use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::pin;
-use tokio_util::io::StreamReader;
 
 use crate::api_client::{ApiClient, AuthMethod, TlsConfig};
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
@@ -27,7 +22,9 @@ use crate::errors::ProviderError;
 use crate::formats::anthropic;
 use crate::formats::openai_responses;
 use crate::model::ModelConfig;
-use crate::openai_compatible::{handle_status, stream_openai_compat, stream_responses_compat};
+use crate::openai_compatible::{
+    handle_status, stream_openai_compat, stream_responses_compat, STREAM_IDLE_TIMEOUT_SECS,
+};
 use crate::request_log::{start_log, LoggerHandleExt};
 use crate::retry::ProviderRetry;
 use crate::retry::{
@@ -432,21 +429,11 @@ impl DatabricksV2Provider {
                 let _ = log.error(e);
             })?;
 
-        let stream = response.bytes_stream().map_err(io::Error::other);
-
-        Ok(Box::pin(try_stream! {
-            let stream_reader = StreamReader::new(stream);
-            let framed = tokio_util::codec::FramedRead::new(stream_reader, tokio_util::codec::LinesCodec::new())
-                .map_err(anyhow::Error::from);
-
-            let message_stream = anthropic::response_to_streaming_message(framed);
-            pin!(message_stream);
-            while let Some(message) = futures::StreamExt::next(&mut message_stream).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
-                log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
-                yield (message, usage);
-            }
-        }))
+        Ok(crate::anthropic::stream_anthropic_with_idle_timeout(
+            response,
+            log,
+            STREAM_IDLE_TIMEOUT_SECS,
+        ))
     }
 }
 
