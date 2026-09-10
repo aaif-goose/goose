@@ -27,6 +27,7 @@ const SUPERVISOR_MODEL: &str = "GOOSE_SUPERVISOR_MODEL";
 const IMPLEMENTER_MODEL: &str = "GOOSE_IMPLEMENTER_MODEL";
 const TIME_LIMIT_SECONDS: &str = "GOOSE_SUPERVISED_TIME_LIMIT_SECONDS";
 const DEFAULT_TIME_LIMIT_SECONDS: u64 = 900;
+const SHUTDOWN_GRACE_SECONDS: u64 = 30;
 const TRACE_TYPE: &str = "goose_supervised_trace";
 
 pub(crate) struct SupervisedModels {
@@ -80,7 +81,7 @@ struct SupervisorReport {
     feedback: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct ImplementationReport {
     completed: bool,
     summary: String,
@@ -210,6 +211,14 @@ fn implementation_from(session: &Session) -> Result<ImplementationReport> {
 
 fn remaining_seconds(started: Instant, time_limit: Duration) -> u64 {
     time_limit.saturating_sub(started.elapsed()).as_secs()
+}
+
+fn workflow_budget(time_limit: Duration) -> Duration {
+    if time_limit > Duration::from_secs(SHUTDOWN_GRACE_SECONDS) {
+        time_limit - Duration::from_secs(SHUTDOWN_GRACE_SECONDS)
+    } else {
+        time_limit
+    }
 }
 
 fn recent_progress(session: &Session) -> String {
@@ -411,6 +420,7 @@ impl Agent {
                 .get_param::<u64>(TIME_LIMIT_SECONDS)
                 .unwrap_or(DEFAULT_TIME_LIMIT_SECONDS),
         );
+        let workflow_budget = workflow_budget(time_limit);
         let main_session_id = session_config.id.clone();
 
         Ok(Box::pin(async_stream::try_stream! {
@@ -425,13 +435,14 @@ impl Agent {
                     "supervisor_model": &models.supervisor,
                     "implementer_model": &models.implementer,
                     "time_limit_seconds": time_limit.as_secs(),
+                    "workflow_budget_seconds": workflow_budget.as_secs(),
                 }),
             );
 
-            let planning_deadline = workflow_started + time_limit.mul_f32(0.25);
-            let supervision_at = workflow_started + time_limit.mul_f32(0.3);
-            let finalization_at = workflow_started + time_limit.mul_f32(0.8);
-            let workflow_deadline = workflow_started + time_limit;
+            let planning_deadline = workflow_started + workflow_budget.mul_f32(0.25);
+            let supervision_at = workflow_started + workflow_budget.mul_f32(0.3);
+            let finalization_at = workflow_started + workflow_budget.mul_f32(0.8);
+            let workflow_deadline = workflow_started + workflow_budget;
 
             let stage_started = Instant::now();
             yield role_event("Planner", &models.planner, "creating initial plan");
@@ -619,7 +630,6 @@ impl Agent {
                 }
             }
 
-            let mut final_plan_submitted = false;
             if let Some(rejection) = blockers
                 .clone()
                 .filter(|_| Instant::now() < planning_deadline)
@@ -642,7 +652,6 @@ impl Agent {
                 match revised.await.context("planner result stream closed")? {
                     Ok(session) => {
                         report = plan_from(&session)?;
-                        final_plan_submitted = true;
                         yield trace_event(
                             "final_plan",
                             "planner",
@@ -661,54 +670,6 @@ impl Agent {
                             "planner",
                             &provider_name,
                             Some(&models.planner),
-                            stage_started.elapsed(),
-                            serde_json::json!({ "timed_out": true, "error": error.to_string() }),
-                        );
-                    }
-                    Err(error) => Err(error)?,
-                }
-            }
-
-            if final_plan_submitted && Instant::now() < planning_deadline {
-                let stage_started = Instant::now();
-                yield role_event("Supervisor", &models.supervisor, "checking final plan");
-                let (mut events, checked) = run_hidden(
-                    &supervisor_machine,
-                    runtime.as_ref(),
-                    &supervisor_session.id,
-                    format!(
-                        "Make the final accept/reject decision for this report. Set `requires_action` to false only when the findings support the plan, every task requirement is covered, implementation choices are resolved, and the verification would demonstrate completion. Otherwise list the blockers that the implementer must still resolve.\n\nTask:\n{problem}\n\nPlanner findings:\n{}\n\nProposed plan:\n{}",
-                        report.findings, report.plan
-                    ),
-                    cancel.child_token(),
-                    Some(planning_deadline),
-                );
-                while let Some(event) = events.next().await {
-                    yield event?;
-                }
-                match checked.await.context("supervisor result stream closed")? {
-                    Ok(session) => {
-                        let feedback = feedback_from(&session)?;
-                        accepted = !feedback.requires_action;
-                        blockers = feedback.requires_action.then(|| feedback.feedback.clone());
-                        yield trace_event(
-                            "final_plan_acceptance",
-                            "supervisor",
-                            &provider_name,
-                            Some(&models.supervisor),
-                            stage_started.elapsed(),
-                            serde_json::json!({
-                                "accepted": accepted,
-                                "feedback": &feedback.feedback,
-                            }),
-                        );
-                    }
-                    Err(error) if Instant::now() >= planning_deadline => {
-                        yield trace_event(
-                            "final_plan_acceptance",
-                            "supervisor",
-                            &provider_name,
-                            Some(&models.supervisor),
                             stage_started.elapsed(),
                             serde_json::json!({ "timed_out": true, "error": error.to_string() }),
                         );
@@ -752,6 +713,7 @@ impl Agent {
             yield role_event("Implementer", &models.implementer, "implementing plan");
             let review_report = report.clone();
             let review_cancel = cancel.child_token();
+            let progress_review_cancel = review_cancel.clone();
             let emitted_progress = Arc::new(Mutex::new(VecDeque::new()));
             let review_emitted_progress = emitted_progress.clone();
             let progress_review = async {
@@ -761,7 +723,7 @@ impl Agent {
                 let persisted = recent_progress(&progress);
                 let live = live_progress(&review_emitted_progress);
                 let elapsed_seconds = workflow_started.elapsed().as_secs();
-                let remaining_seconds = remaining_seconds(workflow_started, time_limit);
+                let remaining_seconds = remaining_seconds(workflow_started, workflow_budget);
                 let (mut events, checked) = run_hidden(
                     &supervisor_machine,
                     runtime.as_ref(),
@@ -770,7 +732,7 @@ impl Agent {
                         "Review the implementer's progress against the selected plan. {elapsed_seconds} seconds have elapsed and {remaining_seconds} seconds remain. Live activity may describe an operation that is still running, so do not tell the implementer to repeat it. Give only the highest-priority correction needed now; do not repeat the plan.\n\nPlanner findings:\n{}\n\nSelected plan:\n{}\n\nPersisted progress:\n{persisted}\n\nLive activity, including in-flight operations:\n{live}",
                         review_report.findings, review_report.plan
                     ),
-                    review_cancel,
+                    progress_review_cancel,
                     Some(workflow_deadline),
                 );
                 let mut collected = vec![role_event(
@@ -798,6 +760,10 @@ impl Agent {
             let mut supervised = false;
             let mut finalization_sent = false;
             let mut timed_out = false;
+            let mut completion_review_run = false;
+            let mut completion_review_accepted = None;
+            let mut completion_correction_sent = false;
+            let mut last_completion = None;
             let (tx, mut rx) = mpsc::channel(32);
             let emit = Emitter::new(tx, implementer_cancel.clone());
 
@@ -848,7 +814,7 @@ impl Agent {
                                 supervised = true;
                             }
                             _ = &mut finalization_sleep, if !finalization_sent => {
-                                let remaining = remaining_seconds(workflow_started, time_limit);
+                                let remaining = remaining_seconds(workflow_started, workflow_budget);
                                 implementer_steer.lock().await.push_back(Message::user().with_text(format!(
                                     "Only {remaining} seconds remain. Stop broad exploration. Complete the required deliverables, run the most relevant verification, fix failures, and call `submit_implementation` with evidence."
                                 )));
@@ -928,7 +894,7 @@ impl Agent {
                                 supervised = true;
                             }
                             _ = &mut finalization_sleep, if !finalization_sent => {
-                                let remaining = remaining_seconds(workflow_started, time_limit);
+                                let remaining = remaining_seconds(workflow_started, workflow_budget);
                                 implementer_steer.lock().await.push_back(Message::user().with_text(format!(
                                     "Only {remaining} seconds remain. Stop broad exploration. Complete the required deliverables, run the most relevant verification, fix failures, and call `submit_implementation` with evidence."
                                 )));
@@ -960,7 +926,112 @@ impl Agent {
                     yield event;
                 }
                 if result.yield_to_client {
-                    break;
+                    let candidate_session = runtime.get_session(&main_session_id, true).await?;
+                    let Ok(candidate) = implementation_from(&candidate_session) else {
+                        break;
+                    };
+                    last_completion = Some(candidate.clone());
+                    if Instant::now() >= workflow_deadline {
+                        timed_out = true;
+                        break;
+                    }
+
+                    if !supervised {
+                        review_cancel.cancel();
+                        supervised = true;
+                        yield trace_event(
+                            "progress_review",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            Duration::ZERO,
+                            serde_json::json!({
+                                "workflow_elapsed_seconds": workflow_started.elapsed().as_secs(),
+                                "skipped": true,
+                                "reason": "replaced by completion review",
+                            }),
+                        );
+                    }
+
+                    let stage_started = Instant::now();
+                    let live = live_progress(&emitted_progress);
+                    let unresolved = blockers.as_deref().unwrap_or("None");
+                    completion_review_run = true;
+                    yield role_event(
+                        "Supervisor",
+                        &models.supervisor,
+                        "reviewing proposed completion",
+                    );
+                    let (mut events, checked) = run_hidden(
+                        &supervisor_machine,
+                        runtime.as_ref(),
+                        &supervisor_session.id,
+                        format!(
+                            "Decide whether the implementation is actually complete. Cross-check the original task, plan, unresolved plan blockers, implementation report, and the literal commands and results in the activity log. Do not accept a claim merely because the report says verification passed. Reject when required work is missing, prior blockers remain, verification was skipped or failed, a command did not actually run the asserted test, or the evidence does not cover the task. Set `requires_action` to true and give the single most useful correction when another implementation pass is needed.\n\nTask:\n{problem}\n\nPlanner findings:\n{}\n\nSelected plan:\n{}\n\nUnresolved plan blockers:\n{unresolved}\n\nImplementation summary:\n{}\n\nClaimed verification:\n{}\n\nRecent implementation activity:\n{live}",
+                            report.findings,
+                            report.plan,
+                            candidate.summary,
+                            candidate.verification,
+                        ),
+                        cancel.child_token(),
+                        Some(workflow_deadline),
+                    );
+                    while let Some(event) = events.next().await {
+                        yield event?;
+                    }
+                    match checked.await.context("supervisor result stream closed")? {
+                        Ok(session) => {
+                            let feedback = feedback_from(&session)?;
+                            let accepted = !feedback.requires_action;
+                            let retry = feedback.requires_action
+                                && !completion_correction_sent
+                                && Instant::now() < workflow_deadline;
+                            if retry {
+                                let remaining =
+                                    remaining_seconds(workflow_started, workflow_budget);
+                                implementer_steer.lock().await.push_back(
+                                    Message::user().with_text(format!(
+                                        "Supervisor rejected the completion proposal ({remaining} seconds remain). Fix this, rerun verification, and submit completion again:\n\n{}",
+                                        feedback.feedback
+                                    )),
+                                );
+                                completion_correction_sent = true;
+                            }
+                            completion_review_accepted = Some(accepted);
+                            yield trace_event(
+                                "implementation_review",
+                                "supervisor",
+                                &provider_name,
+                                Some(&models.supervisor),
+                                stage_started.elapsed(),
+                                serde_json::json!({
+                                    "accepted": accepted,
+                                    "feedback": &feedback.feedback,
+                                    "correction_pass": retry,
+                                }),
+                            );
+                            if accepted {
+                                break;
+                            }
+                            if retry {
+                                continue 'implementation;
+                            }
+                            break;
+                        }
+                        Err(error) if Instant::now() >= workflow_deadline => {
+                            timed_out = true;
+                            yield trace_event(
+                                "implementation_review",
+                                "supervisor",
+                                &provider_name,
+                                Some(&models.supervisor),
+                                stage_started.elapsed(),
+                                serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                            );
+                            break;
+                        }
+                        Err(error) => Err(error)?,
+                    }
                 }
             }
             drop(emit);
@@ -970,7 +1041,7 @@ impl Agent {
             }
 
             let final_session = runtime.get_session(&main_session_id, true).await?;
-            let completion = implementation_from(&final_session).ok();
+            let completion = last_completion.or_else(|| implementation_from(&final_session).ok());
             if !supervised {
                 yield trace_event(
                     "progress_review",
@@ -1013,7 +1084,8 @@ impl Agent {
                         "summary": report.summary,
                         "verification": report.verification,
                     })),
-                    "final_review_run": false,
+                    "final_review_run": completion_review_run,
+                    "final_review_accepted": completion_review_accepted,
                 }),
             );
         }))
@@ -1045,6 +1117,18 @@ mod tests {
         assert_eq!(models.planner, "planner");
         assert_eq!(models.supervisor, "supervisor");
         assert_eq!(models.implementer, "implementer");
+    }
+
+    #[test]
+    fn workflow_finishes_before_the_external_time_limit() {
+        assert_eq!(
+            workflow_budget(Duration::from_secs(900)),
+            Duration::from_secs(870)
+        );
+        assert_eq!(
+            workflow_budget(Duration::from_secs(20)),
+            Duration::from_secs(20)
+        );
     }
 
     #[test]

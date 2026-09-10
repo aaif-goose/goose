@@ -184,7 +184,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
     ) -> Result<Vec<(String, String)>> {
         Ok(vec![(
             "planner".to_string(),
-            "# Plan Submission Instructions\n\nYou are producing an implementation-ready report for a separate implementer. Inspect the repository without editing it. Your findings must identify the relevant files and behavior, tests and acceptance criteria, environment constraints, and evidence for important claims. Your plan must name exact files, commands, and behavior; give complete ordered steps; resolve implementation choices; and state exact verification with expected results. Do not defer core investigation, propose trying several approaches, or ask the user to decide. You MUST use `submit_plan` with both `findings` and `plan` rather than returning the report as prose. On a later turn, submit a complete replacement report with the same tool."
+            "# Plan Submission Instructions\n\nYou are producing an implementation-ready report for a separate implementer. Inspect the repository without editing it. The current environment is the implementation target: the implementer can install dependencies and change repository or system state. Plan to complete the requested outcome here; do not substitute instructions or setup scripts for performing the work unless the task asks for those artifacts. Your findings must identify the relevant files and behavior, tests and acceptance criteria, environment constraints, and evidence for important claims. Your plan must name exact files, commands, and behavior; give complete ordered steps; resolve implementation choices; and state exact verification with expected results. Do not defer core investigation, propose trying several approaches, or ask the user to decide. You MUST use `submit_plan` with both `findings` and `plan` rather than returning the report as prose. On a later turn, submit a complete replacement report with the same tool."
                 .to_string(),
         )])
     }
@@ -407,11 +407,24 @@ mod tests {
             .inference_tools(&Session::default())
             .await
             .expect("planner tools");
+        let prompts = PlanOperation
+            .prompt_parts(
+                &Session::default(),
+                &Conversation::new_unvalidated(Vec::new()),
+            )
+            .await
+            .expect("planner prompt");
 
         assert_eq!(
             tools[0].input_schema["required"],
             serde_json::json!(["findings", "plan"])
         );
+        assert!(prompts[0]
+            .1
+            .contains("current environment is the implementation target"));
+        assert!(prompts[0]
+            .1
+            .contains("do not substitute instructions or setup scripts"));
     }
 
     #[tokio::test]
