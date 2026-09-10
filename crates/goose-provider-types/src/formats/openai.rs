@@ -1929,7 +1929,6 @@ pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [
             || normalized.contains("gpt-5-5")
             || normalized.contains("gpt-5.6")
             || normalized.contains("gpt-5-6")
-            || normalized.contains("gpt-6")
         {
             &["none", "low", "medium", "high", "xhigh"]
         } else {
@@ -3284,6 +3283,43 @@ mod tests {
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_openai_reasoning_effort_gpt6_does_not_support_none() {
+        for model in [
+            "gpt-6-astra",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
+            "openrouter/openai/gpt-6-astra",
+        ] {
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
+                Some("low".to_string()),
+                "{model} Off should map to low, not none"
+            );
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Medium),
+                Some("medium".to_string()),
+                "{model} medium should remain medium"
+            );
+            assert!(
+                !openai_reasoning_efforts_for_model(model).contains(&"none"),
+                "{model} must not advertise none"
+            );
+        }
+
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5.6-luna", ThinkingEffort::Off),
+            Some("none".to_string())
+        );
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5.4", ThinkingEffort::Off),
+            Some("none".to_string())
+        );
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5", ThinkingEffort::Off),
+            Some("low".to_string())
+        );
     }
 
     #[test]
