@@ -8,8 +8,9 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::state_machine::{
-    run_goose, submitted_report, Emitter, GooseEffect, PlanOperation, StateMachine,
-    SupervisorOperation, SUBMIT_FEEDBACK_TOOL_NAME, SUBMIT_PLAN_TOOL_NAME,
+    run_goose, submitted_report, Emitter, GooseEffect, ImplementPlanOperation, PlanOperation,
+    StateMachine, SupervisorOperation, SUBMIT_FEEDBACK_TOOL_NAME, SUBMIT_IMPLEMENTATION_TOOL_NAME,
+    SUBMIT_PLAN_TOOL_NAME,
 };
 use crate::agents::{Agent, AgentEvent, SessionConfig, StateMachineResources};
 use crate::config::{Config, GooseMode};
@@ -54,10 +55,33 @@ pub(in crate::agents) fn configured_models() -> Option<SupervisedModels> {
     )
 }
 
+#[derive(Clone, Deserialize)]
+struct PlanReport {
+    findings: String,
+    plan: String,
+}
+
+impl PlanReport {
+    fn fallback(problem: &str) -> Self {
+        Self {
+            findings: "The planning deadline expired before a complete report was submitted. Inspect the repository and tests before changing it.".to_string(),
+            plan: format!(
+                "Complete the original task end to end, using the repository and tests to resolve implementation details. Run the most relevant verification and fix failures.\n\nOriginal task:\n{problem}"
+            ),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct SupervisorReport {
     requires_action: bool,
     feedback: String,
+}
+
+#[derive(Deserialize)]
+struct ImplementationReport {
+    summary: String,
+    verification: String,
 }
 
 fn trace_event(
@@ -104,6 +128,7 @@ fn run_hidden<'a>(
     session_id: &'a str,
     prompt: String,
     cancel: CancellationToken,
+    deadline: Option<Instant>,
 ) -> (
     BoxStream<'a, Result<AgentEvent>>,
     oneshot::Receiver<Result<Session>>,
@@ -118,10 +143,17 @@ fn run_hidden<'a>(
             return;
         }
         let (tx, mut rx) = mpsc::channel(32);
-        let emit = Emitter::new(tx, cancel);
+        let emit = Emitter::new(tx, cancel.clone());
         let session = {
             let run = run_goose(machine, runtime, session_id, &emit);
             tokio::pin!(run);
+            let deadline = async {
+                match deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::pin!(deadline);
             loop {
                 tokio::select! {
                     event = rx.recv() => {
@@ -132,6 +164,10 @@ fn run_hidden<'a>(
                         }
                     }
                     result = &mut run => break result,
+                    _ = &mut deadline => {
+                        cancel.cancel();
+                        break Err(anyhow!("state-machine stage deadline reached"));
+                    }
                 }
             }
         };
@@ -154,17 +190,41 @@ fn report_value(session: &Session, tool_name: &str) -> Result<serde_json::Value>
     submitted_report(conversation, tool_name)?.ok_or_else(|| anyhow!("{tool_name} was not called"))
 }
 
-fn plan_from(session: &Session) -> Result<String> {
-    report_value(session, SUBMIT_PLAN_TOOL_NAME)?
-        .get("plan")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| anyhow!("submit_plan returned no plan"))
+fn plan_from(session: &Session) -> Result<PlanReport> {
+    serde_json::from_value(report_value(session, SUBMIT_PLAN_TOOL_NAME)?)
+        .context("invalid planner report")
 }
 
 fn feedback_from(session: &Session) -> Result<SupervisorReport> {
     serde_json::from_value(report_value(session, SUBMIT_FEEDBACK_TOOL_NAME)?)
         .context("invalid supervisor feedback")
+}
+
+fn implementation_from(session: &Session) -> Result<ImplementationReport> {
+    serde_json::from_value(report_value(session, SUBMIT_IMPLEMENTATION_TOOL_NAME)?)
+        .context("invalid implementation report")
+}
+
+fn remaining_seconds(started: Instant, time_limit: Duration) -> u64 {
+    time_limit.saturating_sub(started.elapsed()).as_secs()
+}
+
+fn recent_progress(session: &Session) -> String {
+    session
+        .conversation
+        .as_ref()
+        .into_iter()
+        .flat_map(|conversation| conversation.messages().iter().rev())
+        .map(Message::agent_visible_content)
+        .map(|message| message.as_concat_text())
+        .filter(|text| !text.trim().is_empty())
+        .map(|text| crate::utils::safe_truncate(&text, 2_000))
+        .take(8)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 async fn create_role_session(
@@ -211,6 +271,7 @@ impl Agent {
         cancel_token: Option<CancellationToken>,
         models: SupervisedModels,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let workflow_started = Instant::now();
         let runtime = self.config.session_manager.clone();
         let cancel = cancel_token.unwrap_or_default();
         let parent = runtime.get_session(&session_config.id, false).await?;
@@ -240,12 +301,8 @@ impl Agent {
             parent.working_dir.clone(),
         )
         .await?;
-        let supervisor_provider = create_with_working_dir(
-            &provider_name,
-            extension_configs.clone(),
-            parent.working_dir.clone(),
-        )
-        .await?;
+        let supervisor_provider =
+            create_with_working_dir(&provider_name, Vec::new(), parent.working_dir.clone()).await?;
         let implementer_provider = self.provider().await?;
 
         let planner_session = create_role_session(
@@ -281,7 +338,7 @@ impl Agent {
             ),
             self.extension_manager_for_session(
                 supervisor_provider.clone(),
-                extension_configs,
+                Vec::new(),
                 &supervisor_session,
             ),
         )?;
@@ -310,20 +367,8 @@ impl Agent {
             self.steer_queue(&supervisor_session.id).await,
             Some(Arc::new(SupervisorOperation)),
         );
-        let implementer_cancel = cancel.child_token();
-        let implementer_steer = self.steer_queue(&session_config.id).await;
-        let implementer_machine = self.create_state_machine(
-            StateMachineResources {
-                provider: implementer_provider.clone(),
-                model_config: implementer_model.clone(),
-                extension_manager: self.extension_manager.clone(),
-                context_limit: context_limit(&implementer_provider, &implementer_model).await,
-            },
-            session_config.max_turns,
-            implementer_cancel.clone(),
-            implementer_steer.clone(),
-            None,
-        );
+        let implementer_context_limit =
+            context_limit(&implementer_provider, &implementer_model).await;
         let problem = user_message.agent_visible_content().as_concat_text();
         let time_limit = Duration::from_secs(
             Config::global()
@@ -333,7 +378,6 @@ impl Agent {
         let main_session_id = session_config.id.clone();
 
         Ok(Box::pin(async_stream::try_stream! {
-            let workflow_started = Instant::now();
             yield trace_event(
                 "started",
                 "orchestrator",
@@ -348,6 +392,11 @@ impl Agent {
                 }),
             );
 
+            let planning_deadline = workflow_started + time_limit.mul_f32(0.25);
+            let supervision_at = workflow_started + time_limit.mul_f32(0.3);
+            let finalization_at = workflow_started + time_limit.mul_f32(0.8);
+            let workflow_deadline = workflow_started + time_limit;
+
             let stage_started = Instant::now();
             yield role_event("Planner", &models.planner, "creating initial plan");
             let (mut events, planned) = run_hidden(
@@ -355,103 +404,310 @@ impl Agent {
                 runtime.as_ref(),
                 &planner_session.id,
                 format!(
-                    "Investigate this software task and submit an implementation plan. Do not change the working tree.\n\n{problem}"
+                    "Investigate the task thoroughly and submit an implementation-ready report. Do not change the working tree.\n\nTask:\n{problem}"
                 ),
                 cancel.child_token(),
+                Some(planning_deadline),
             );
             while let Some(event) = events.next().await {
                 yield event?;
             }
-            let planned = planned.await.context("planner result stream closed")??;
-            let plan = plan_from(&planned)?;
+            let planned = planned.await.context("planner result stream closed")?;
+            let mut report = match planned {
+                Ok(session) => plan_from(&session)?,
+                Err(error) if Instant::now() >= planning_deadline => {
+                    yield trace_event(
+                        "initial_plan",
+                        "planner",
+                        &provider_name,
+                        Some(&models.planner),
+                        stage_started.elapsed(),
+                        serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                    );
+                    PlanReport::fallback(&problem)
+                }
+                Err(error) => Err(error)?,
+            };
             yield trace_event(
                 "initial_plan",
                 "planner",
                 &provider_name,
                 Some(&models.planner),
                 stage_started.elapsed(),
-                serde_json::json!({ "plan": &plan }),
+                serde_json::json!({ "findings": &report.findings, "plan": &report.plan }),
             );
 
-            let stage_started = Instant::now();
-            yield role_event("Supervisor", &models.supervisor, "critiquing plan");
-            let (mut events, criticized) = run_hidden(
-                &supervisor_machine,
-                runtime.as_ref(),
-                &supervisor_session.id,
-                format!(
-                    "Critique the proposed plan for this task. Inspect the repository independently, identify incorrect assumptions and missing work, and recommend concrete corrections.\n\nTask:\n{problem}\n\nProposed plan:\n{plan}"
-                ),
-                cancel.child_token(),
-            );
-            while let Some(event) = events.next().await {
-                yield event?;
+            let mut accepted = false;
+            let mut critique = None;
+            if Instant::now() < planning_deadline {
+                let stage_started = Instant::now();
+                yield role_event("Supervisor", &models.supervisor, "critiquing plan");
+                let (mut events, criticized) = run_hidden(
+                    &supervisor_machine,
+                    runtime.as_ref(),
+                    &supervisor_session.id,
+                    format!(
+                        "Critique this planner report against the original task. Base the assessment only on the supplied report. Identify concrete corrections needed to make execution mechanical.\n\nTask:\n{problem}\n\nPlanner findings:\n{}\n\nProposed plan:\n{}",
+                        report.findings, report.plan
+                    ),
+                    cancel.child_token(),
+                    Some(planning_deadline),
+                );
+                while let Some(event) = events.next().await {
+                    yield event?;
+                }
+                match criticized.await.context("supervisor result stream closed")? {
+                    Ok(session) => {
+                        let feedback = feedback_from(&session)?;
+                        yield trace_event(
+                            "plan_critique",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            stage_started.elapsed(),
+                            serde_json::json!({
+                                "requires_action": feedback.requires_action,
+                                "feedback": &feedback.feedback,
+                            }),
+                        );
+                        critique = Some(feedback);
+                    }
+                    Err(error) if Instant::now() >= planning_deadline => {
+                        yield trace_event(
+                            "plan_critique",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            stage_started.elapsed(),
+                            serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                        );
+                    }
+                    Err(error) => Err(error)?,
+                }
             }
-            let criticized = criticized.await.context("supervisor result stream closed")??;
-            let critique = feedback_from(&criticized)?;
+
+            if let Some(critique) = critique.filter(|_| Instant::now() < planning_deadline) {
+                let stage_started = Instant::now();
+                yield role_event("Planner", &models.planner, "revising plan");
+                let (mut events, revised) = run_hidden(
+                    &planner_machine,
+                    runtime.as_ref(),
+                    &planner_session.id,
+                    format!(
+                        "Address every criticism below. Inspect the repository again only when evidence is missing. Submit a complete replacement report with findings and a plan, and resolve the feedback in the report rather than deferring it.\n\nCritique:\n{}",
+                        critique.feedback
+                    ),
+                    cancel.child_token(),
+                    Some(planning_deadline),
+                );
+                while let Some(event) = events.next().await {
+                    yield event?;
+                }
+                match revised.await.context("planner result stream closed")? {
+                    Ok(session) => {
+                        report = plan_from(&session)?;
+                        yield trace_event(
+                            "revised_plan",
+                            "planner",
+                            &provider_name,
+                            Some(&models.planner),
+                            stage_started.elapsed(),
+                            serde_json::json!({
+                                "findings": &report.findings,
+                                "plan": &report.plan,
+                            }),
+                        );
+                    }
+                    Err(error) if Instant::now() >= planning_deadline => {
+                        yield trace_event(
+                            "revised_plan",
+                            "planner",
+                            &provider_name,
+                            Some(&models.planner),
+                            stage_started.elapsed(),
+                            serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                        );
+                    }
+                    Err(error) => Err(error)?,
+                }
+            }
+
+            let mut rejection = None;
+            if Instant::now() < planning_deadline {
+                let stage_started = Instant::now();
+                yield role_event("Supervisor", &models.supervisor, "checking revised plan");
+                let (mut events, checked) = run_hidden(
+                    &supervisor_machine,
+                    runtime.as_ref(),
+                    &supervisor_session.id,
+                    format!(
+                        "Accept or reject this revised report. Set `requires_action` to false only when the findings support the plan, every task requirement is covered, implementation choices are resolved, and the verification would demonstrate completion. Otherwise list only the remaining blockers.\n\nTask:\n{problem}\n\nPlanner findings:\n{}\n\nProposed plan:\n{}",
+                        report.findings, report.plan
+                    ),
+                    cancel.child_token(),
+                    Some(planning_deadline),
+                );
+                while let Some(event) = events.next().await {
+                    yield event?;
+                }
+                match checked.await.context("supervisor result stream closed")? {
+                    Ok(session) => {
+                        let feedback = feedback_from(&session)?;
+                        accepted = !feedback.requires_action;
+                        if feedback.requires_action {
+                            rejection = Some(feedback.feedback.clone());
+                        }
+                        yield trace_event(
+                            "plan_acceptance",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            stage_started.elapsed(),
+                            serde_json::json!({
+                                "accepted": accepted,
+                                "feedback": &feedback.feedback,
+                            }),
+                        );
+                    }
+                    Err(error) if Instant::now() >= planning_deadline => {
+                        yield trace_event(
+                            "plan_acceptance",
+                            "supervisor",
+                            &provider_name,
+                            Some(&models.supervisor),
+                            stage_started.elapsed(),
+                            serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                        );
+                    }
+                    Err(error) => Err(error)?,
+                }
+            }
+
+            if let Some(rejection) = rejection.filter(|_| Instant::now() < planning_deadline) {
+                let stage_started = Instant::now();
+                yield role_event("Planner", &models.planner, "resolving final blockers");
+                let (mut events, revised) = run_hidden(
+                    &planner_machine,
+                    runtime.as_ref(),
+                    &planner_session.id,
+                    format!(
+                        "Resolve every remaining blocker below and submit the final complete replacement findings and plan. Do not defer a blocker to the implementer.\n\nRemaining blockers:\n{rejection}"
+                    ),
+                    cancel.child_token(),
+                    Some(planning_deadline),
+                );
+                while let Some(event) = events.next().await {
+                    yield event?;
+                }
+                match revised.await.context("planner result stream closed")? {
+                    Ok(session) => {
+                        report = plan_from(&session)?;
+                        yield trace_event(
+                            "final_plan",
+                            "planner",
+                            &provider_name,
+                            Some(&models.planner),
+                            stage_started.elapsed(),
+                            serde_json::json!({
+                                "findings": &report.findings,
+                                "plan": &report.plan,
+                            }),
+                        );
+                    }
+                    Err(error) if Instant::now() >= planning_deadline => {
+                        yield trace_event(
+                            "final_plan",
+                            "planner",
+                            &provider_name,
+                            Some(&models.planner),
+                            stage_started.elapsed(),
+                            serde_json::json!({ "timed_out": true, "error": error.to_string() }),
+                        );
+                    }
+                    Err(error) => Err(error)?,
+                }
+            }
+
             yield trace_event(
-                "plan_critique",
-                "supervisor",
+                "planning_complete",
+                "orchestrator",
                 &provider_name,
-                Some(&models.supervisor),
-                stage_started.elapsed(),
+                None,
+                workflow_started.elapsed(),
                 serde_json::json!({
-                    "requires_action": critique.requires_action,
-                    "feedback": &critique.feedback,
+                    "accepted": accepted,
+                    "deadline_reached": Instant::now() >= planning_deadline,
                 }),
             );
 
-            let stage_started = Instant::now();
-            yield role_event("Planner", &models.planner, "revising plan");
-            let (mut events, revised) = run_hidden(
-                &planner_machine,
-                runtime.as_ref(),
-                &planner_session.id,
-                format!(
-                    "Revise your plan in response to this critique. Verify the criticism against the repository and submit a complete replacement plan.\n\nCritique:\n{}",
-                    critique.feedback
-                ),
-                cancel.child_token(),
+            let implementer_cancel = cancel.child_token();
+            let implementer_steer = self.steer_queue(&main_session_id).await;
+            let implementer_machine = self.create_state_machine(
+                StateMachineResources {
+                    provider: implementer_provider.clone(),
+                    model_config: implementer_model.clone(),
+                    extension_manager: self.extension_manager.clone(),
+                    context_limit: implementer_context_limit,
+                },
+                session_config.max_turns,
+                implementer_cancel.clone(),
+                implementer_steer.clone(),
+                Some(Arc::new(ImplementPlanOperation::new(
+                    report.findings.clone(),
+                    report.plan.clone(),
+                ))),
             );
-            while let Some(event) = events.next().await {
-                yield event?;
-            }
-            let revised = revised.await.context("planner result stream closed")??;
-            let revised_plan = plan_from(&revised)?;
-            yield trace_event(
-                "revised_plan",
-                "planner",
-                &provider_name,
-                Some(&models.planner),
-                stage_started.elapsed(),
-                serde_json::json!({ "plan": &revised_plan }),
-            );
-            runtime
-                .add_message(
-                    &main_session_id,
-                    &Message::user()
-                        .with_text(format!(
-                            "Implement the task using this reviewed plan. Treat the repository and tests as authoritative and adjust the plan when necessary.\n\n{revised_plan}"
-                        ))
-                        .with_visibility(false, true),
-                )
-                .await?;
 
-            yield role_event("Implementer", &models.implementer, "implementing revised plan");
-            let implementation_started = Instant::now();
-            let supervision_at = time_limit.mul_f32(0.3);
-            let finalization_at = time_limit.mul_f32(0.8);
+            yield role_event("Implementer", &models.implementer, "implementing plan");
+            let review_report = report.clone();
+            let review_cancel = cancel.child_token();
+            let progress_review = async {
+                tokio::time::sleep_until(supervision_at.into()).await;
+                let stage_started = Instant::now();
+                let progress = runtime.get_session(&main_session_id, true).await?;
+                let recent = recent_progress(&progress);
+                let elapsed_seconds = workflow_started.elapsed().as_secs();
+                let remaining_seconds = remaining_seconds(workflow_started, time_limit);
+                let (mut events, checked) = run_hidden(
+                    &supervisor_machine,
+                    runtime.as_ref(),
+                    &supervisor_session.id,
+                    format!(
+                        "Review the implementer's progress against the selected plan. {elapsed_seconds} seconds have elapsed and {remaining_seconds} seconds remain. Give only the highest-priority correction needed now; do not repeat the plan.\n\nPlanner findings:\n{}\n\nSelected plan:\n{}\n\nRecent progress:\n{recent}",
+                        review_report.findings, review_report.plan
+                    ),
+                    review_cancel,
+                    Some(workflow_deadline),
+                );
+                let mut collected = vec![role_event(
+                    "Supervisor",
+                    &models.supervisor,
+                    "reviewing implementation progress",
+                )];
+                while let Some(event) = events.next().await {
+                    collected.push(event?);
+                }
+                let checked = checked.await.context("supervisor result stream closed")??;
+                Ok::<_, anyhow::Error>((
+                    collected,
+                    feedback_from(&checked)?,
+                    stage_started.elapsed(),
+                    elapsed_seconds,
+                    remaining_seconds,
+                ))
+            };
+            tokio::pin!(progress_review);
+            let finalization_sleep = tokio::time::sleep_until(finalization_at.into());
+            tokio::pin!(finalization_sleep);
+            let deadline_sleep = tokio::time::sleep_until(workflow_deadline.into());
+            tokio::pin!(deadline_sleep);
             let mut supervised = false;
             let mut finalization_sent = false;
+            let mut timed_out = false;
             let (tx, mut rx) = mpsc::channel(32);
             let emit = Emitter::new(tx, implementer_cancel.clone());
-            let timeout_cancel = implementer_cancel.clone();
-            let timeout = tokio::spawn(async move {
-                tokio::time::sleep(time_limit).await;
-                timeout_cancel.cancel();
-            });
 
-            loop {
+            'implementation: loop {
                 let session = runtime.get_session(&main_session_id, true).await?;
                 let result = {
                     let step = implementer_machine.step(&session, &emit);
@@ -464,6 +720,61 @@ impl Agent {
                                 } else {
                                     break Err(anyhow!("implementer event stream closed"));
                                 }
+                            }
+                            review = &mut progress_review, if !supervised => {
+                                let (events, feedback, duration, elapsed_seconds, remaining_seconds) =
+                                    match review {
+                                        Ok(review) => review,
+                                        Err(error) => break Err(error),
+                                    };
+                                for event in events {
+                                    yield event;
+                                }
+                                if feedback.requires_action {
+                                    implementer_steer.lock().await.push_back(Message::user().with_text(format!(
+                                        "Supervisor steering ({remaining_seconds} seconds remain):\n\n{}",
+                                        feedback.feedback
+                                    )));
+                                }
+                                yield trace_event(
+                                    "progress_review",
+                                    "supervisor",
+                                    &provider_name,
+                                    Some(&models.supervisor),
+                                    duration,
+                                    serde_json::json!({
+                                        "workflow_elapsed_seconds": elapsed_seconds,
+                                        "workflow_remaining_seconds": remaining_seconds,
+                                        "requires_action": feedback.requires_action,
+                                        "feedback": &feedback.feedback,
+                                        "delivered_to_implementer": feedback.requires_action,
+                                    }),
+                                );
+                                supervised = true;
+                            }
+                            _ = &mut finalization_sleep, if !finalization_sent => {
+                                let remaining = remaining_seconds(workflow_started, time_limit);
+                                implementer_steer.lock().await.push_back(Message::user().with_text(format!(
+                                    "Only {remaining} seconds remain. Stop broad exploration. Complete the required deliverables, run the most relevant verification, fix failures, and call `submit_implementation` with evidence."
+                                )));
+                                yield trace_event(
+                                    "finalization_steer",
+                                    "orchestrator",
+                                    &provider_name,
+                                    None,
+                                    Duration::ZERO,
+                                    serde_json::json!({
+                                        "workflow_elapsed_seconds": workflow_started.elapsed().as_secs(),
+                                        "workflow_remaining_seconds": remaining,
+                                        "delivered_to_implementer": true,
+                                    }),
+                                );
+                                finalization_sent = true;
+                            }
+                            _ = &mut deadline_sleep => {
+                                implementer_cancel.cancel();
+                                timed_out = true;
+                                break 'implementation;
                             }
                             result = &mut step => break result,
                         }
@@ -489,6 +800,61 @@ impl Agent {
                                     break Err(anyhow!("implementer event stream closed"));
                                 }
                             }
+                            review = &mut progress_review, if !supervised => {
+                                let (events, feedback, duration, elapsed_seconds, remaining_seconds) =
+                                    match review {
+                                        Ok(review) => review,
+                                        Err(error) => break Err(error),
+                                    };
+                                for event in events {
+                                    yield event;
+                                }
+                                if feedback.requires_action {
+                                    implementer_steer.lock().await.push_back(Message::user().with_text(format!(
+                                        "Supervisor steering ({remaining_seconds} seconds remain):\n\n{}",
+                                        feedback.feedback
+                                    )));
+                                }
+                                yield trace_event(
+                                    "progress_review",
+                                    "supervisor",
+                                    &provider_name,
+                                    Some(&models.supervisor),
+                                    duration,
+                                    serde_json::json!({
+                                        "workflow_elapsed_seconds": elapsed_seconds,
+                                        "workflow_remaining_seconds": remaining_seconds,
+                                        "requires_action": feedback.requires_action,
+                                        "feedback": &feedback.feedback,
+                                        "delivered_to_implementer": feedback.requires_action,
+                                    }),
+                                );
+                                supervised = true;
+                            }
+                            _ = &mut finalization_sleep, if !finalization_sent => {
+                                let remaining = remaining_seconds(workflow_started, time_limit);
+                                implementer_steer.lock().await.push_back(Message::user().with_text(format!(
+                                    "Only {remaining} seconds remain. Stop broad exploration. Complete the required deliverables, run the most relevant verification, fix failures, and call `submit_implementation` with evidence."
+                                )));
+                                yield trace_event(
+                                    "finalization_steer",
+                                    "orchestrator",
+                                    &provider_name,
+                                    None,
+                                    Duration::ZERO,
+                                    serde_json::json!({
+                                        "workflow_elapsed_seconds": workflow_started.elapsed().as_secs(),
+                                        "workflow_remaining_seconds": remaining,
+                                        "delivered_to_implementer": true,
+                                    }),
+                                );
+                                finalization_sent = true;
+                            }
+                            _ = &mut deadline_sleep => {
+                                implementer_cancel.cancel();
+                                timed_out = true;
+                                break 'implementation;
+                            }
                             result = &mut apply => break result,
                         }
                     }?;
@@ -499,98 +865,14 @@ impl Agent {
                 if result.yield_to_client {
                     break;
                 }
-
-                let elapsed = implementation_started.elapsed();
-                if !supervised && elapsed >= supervision_at {
-                    let stage_started = Instant::now();
-                    yield role_event(
-                        "Supervisor",
-                        &models.supervisor,
-                        "reviewing implementation progress",
-                    );
-                    let progress = runtime.get_session(&main_session_id, true).await?;
-                    let recent = progress
-                        .conversation
-                        .as_ref()
-                        .into_iter()
-                        .flat_map(|conversation| conversation.messages().iter().rev())
-                        .map(Message::agent_visible_content)
-                        .map(|message| message.as_concat_text())
-                        .filter(|text| !text.trim().is_empty())
-                        .map(|text| crate::utils::safe_truncate(&text, 2_000))
-                        .take(8)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                    let (mut events, checked) = run_hidden(
-                        &supervisor_machine,
-                        runtime.as_ref(),
-                        &supervisor_session.id,
-                        format!(
-                            "Review the implementer's progress and provide a short steering message. Inspect the current working tree. About 70% of the implementation time remains.\n\nRevised plan:\n{revised_plan}\n\nRecent progress:\n{recent}"
-                        ),
-                        cancel.child_token(),
-                    );
-                    while let Some(event) = events.next().await {
-                        yield event?;
-                    }
-                    let checked = checked.await.context("supervisor result stream closed")??;
-                    let feedback = feedback_from(&checked)?;
-                    yield trace_event(
-                        "progress_review",
-                        "supervisor",
-                        &provider_name,
-                        Some(&models.supervisor),
-                        stage_started.elapsed(),
-                        serde_json::json!({
-                            "implementation_elapsed_ms": implementation_started.elapsed().as_millis(),
-                            "requires_action": feedback.requires_action,
-                            "feedback": &feedback.feedback,
-                            "delivered_to_implementer": feedback.requires_action,
-                        }),
-                    );
-                    if feedback.requires_action {
-                        implementer_steer
-                            .lock()
-                            .await
-                            .push_back(Message::user().with_text(format!(
-                                "Supervisor steering:\n\n{}",
-                                feedback.feedback
-                            )));
-                    }
-                    supervised = true;
-                }
-                let elapsed = implementation_started.elapsed();
-                if !finalization_sent && elapsed >= finalization_at {
-                    implementer_steer.lock().await.push_back(Message::user().with_text(
-                        "The time limit is approaching. Stop broad exploration, finish the smallest correct patch, run the most relevant tests available, and report the result.",
-                    ));
-                    yield trace_event(
-                        "finalization_steer",
-                        "orchestrator",
-                        &provider_name,
-                        None,
-                        Duration::ZERO,
-                        serde_json::json!({
-                            "implementation_elapsed_ms": implementation_started.elapsed().as_millis(),
-                            "delivered_to_implementer": true,
-                        }),
-                    );
-                    finalization_sent = true;
-                }
-                if elapsed >= time_limit {
-                    implementer_cancel.cancel();
-                    break;
-                }
             }
             drop(emit);
             while let Some(event) = rx.recv().await {
                 yield event;
             }
-            timeout.abort();
 
+            let final_session = runtime.get_session(&main_session_id, true).await?;
+            let completion = implementation_from(&final_session).ok();
             if !supervised {
                 yield trace_event(
                     "progress_review",
@@ -599,9 +881,9 @@ impl Agent {
                     Some(&models.supervisor),
                     Duration::ZERO,
                     serde_json::json!({
-                        "implementation_elapsed_ms": implementation_started.elapsed().as_millis(),
+                        "workflow_elapsed_seconds": workflow_started.elapsed().as_secs(),
                         "skipped": true,
-                        "reason": "implementation ended before the review ran",
+                        "reason": "implementation ended before the review completed",
                     }),
                 );
             }
@@ -613,9 +895,9 @@ impl Agent {
                     None,
                     Duration::ZERO,
                     serde_json::json!({
-                        "implementation_elapsed_ms": implementation_started.elapsed().as_millis(),
+                        "workflow_elapsed_seconds": workflow_started.elapsed().as_secs(),
                         "skipped": true,
-                        "reason": "implementation ended before the finalization steer ran",
+                        "reason": "implementation ended before the finalization checkpoint",
                     }),
                 );
             }
@@ -626,7 +908,14 @@ impl Agent {
                 &provider_name,
                 None,
                 workflow_started.elapsed(),
-                serde_json::json!({ "final_review_run": false }),
+                serde_json::json!({
+                    "timed_out": timed_out,
+                    "implementation_report": completion.map(|report| serde_json::json!({
+                        "summary": report.summary,
+                        "verification": report.verification,
+                    })),
+                    "final_review_run": false,
+                }),
             );
         }))
     }

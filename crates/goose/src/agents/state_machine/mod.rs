@@ -54,8 +54,8 @@ pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
 pub(super) use ops_recipe::RecipeOperation;
 pub(super) use ops_report::{
-    submitted_report, PlanOperation, SupervisorOperation, SUBMIT_FEEDBACK_TOOL_NAME,
-    SUBMIT_PLAN_TOOL_NAME,
+    submitted_report, ImplementPlanOperation, PlanOperation, SupervisorOperation,
+    SUBMIT_FEEDBACK_TOOL_NAME, SUBMIT_IMPLEMENTATION_TOOL_NAME, SUBMIT_PLAN_TOOL_NAME,
 };
 pub(super) use ops_retry::RetryOperation;
 pub(super) use ops_skills::SkillOperation;

@@ -16,14 +16,25 @@ use crate::session::Session;
 
 pub const SUBMIT_PLAN_TOOL_NAME: &str = "submit_plan";
 pub const SUBMIT_FEEDBACK_TOOL_NAME: &str = "submit_feedback";
-const PLAN_CONTINUATION: &str =
-    "You MUST call the `submit_plan` tool NOW with the complete plan. Do not provide the plan directly in your response.";
-const FEEDBACK_CONTINUATION: &str =
-    "You MUST call the `submit_feedback` tool NOW with your assessment. Do not provide the assessment directly in your response.";
+pub const SUBMIT_IMPLEMENTATION_TOOL_NAME: &str = "submit_implementation";
+const PLAN_CONTINUATION: &str = "You MUST call the `submit_plan` tool NOW with your findings and complete implementation plan. Do not provide the report directly in your response.";
+const FEEDBACK_CONTINUATION: &str = "You MUST call the `submit_feedback` tool NOW with your assessment. Do not provide the assessment directly in your response.";
+const IMPLEMENTATION_CONTINUATION: &str = "The task is not complete until you call `submit_implementation` with a summary of the completed work and the verification you ran. Continue implementing or call the tool now if the work is complete.";
 
 pub struct PlanOperation;
 
 pub struct SupervisorOperation;
+
+pub struct ImplementPlanOperation {
+    findings: String,
+    plan: String,
+}
+
+impl ImplementPlanOperation {
+    pub fn new(findings: String, plan: String) -> Self {
+        Self { findings, plan }
+    }
+}
 
 fn successful_report(messages: &[Message], tool_name: &str) -> Option<Value> {
     let successful_responses: HashSet<&str> = messages
@@ -144,9 +155,10 @@ impl Operation<Session, GooseEffect> for PlanOperation {
             serde_json::json!({
                 "type": "object",
                 "properties": {
+                    "findings": { "type": "string" },
                     "plan": { "type": "string" }
                 },
-                "required": ["plan"]
+                "required": ["findings", "plan"]
             }),
         )])
     }
@@ -158,7 +170,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
     ) -> Result<Vec<(String, String)>> {
         Ok(vec![(
             "planner".to_string(),
-            "# Plan Submission Instructions\n\nInvestigate the repository and produce a concrete implementation plan. Do not edit files. You MUST use the `submit_plan` tool to submit the complete plan rather than providing the plan directly in your response. On a later turn, use the same tool to submit the revised plan."
+            "# Plan Submission Instructions\n\nYou are producing an implementation-ready report for a separate implementer. Inspect the repository without editing it. Your findings must identify the relevant files and behavior, tests and acceptance criteria, environment constraints, and evidence for important claims. Your plan must name exact files, commands, and behavior; give complete ordered steps; resolve implementation choices; and state exact verification with expected results. Do not defer core investigation, propose trying several approaches, or ask the user to decide. You MUST use `submit_plan` with both `findings` and `plan` rather than returning the report as prose. On a later turn, submit a complete replacement report with the same tool."
                 .to_string(),
         )])
     }
@@ -173,7 +185,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
             conversation,
             emit,
             SUBMIT_PLAN_TOOL_NAME,
-            &["plan"],
+            &["findings", "plan"],
             PLAN_CONTINUATION,
         )
         .await
@@ -208,7 +220,7 @@ impl Operation<Session, GooseEffect> for SupervisorOperation {
     ) -> Result<Vec<(String, String)>> {
         Ok(vec![(
             "supervisor".to_string(),
-            "# Feedback Submission Instructions\n\nIndependently inspect the repository before judging the supplied plan or implementation. Do not edit files. Be concise and actionable. You MUST use the `submit_feedback` tool to submit the assessment rather than providing it directly in your response. Set `requires_action` when the planner or implementer must respond to the feedback."
+            "# Feedback Submission Instructions\n\nReview only the task, planner report, and implementation progress supplied in the prompt. Do not inspect or modify the repository. Reject a plan when a requirement is missing, a claim lacks supporting findings, choices or investigation are deferred, the core solution is left to the implementer, verification is vague, or the report asks the user to decide. Be concise and give concrete corrections. You MUST use `submit_feedback` rather than returning the assessment as prose. Set `requires_action` when the planner or implementer must respond."
                 .to_string(),
         )])
     }
@@ -225,6 +237,58 @@ impl Operation<Session, GooseEffect> for SupervisorOperation {
             SUBMIT_FEEDBACK_TOOL_NAME,
             &["requires_action", "feedback"],
             FEEDBACK_CONTINUATION,
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for ImplementPlanOperation {
+    fn name(&self) -> &'static str {
+        "implement_plan"
+    }
+
+    async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
+        Ok(vec![report_tool(
+            SUBMIT_IMPLEMENTATION_TOOL_NAME,
+            "This tool MUST be called after the implementation and verification are complete.",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "summary": { "type": "string" },
+                    "verification": { "type": "string" }
+                },
+                "required": ["summary", "verification"]
+            }),
+        )])
+    }
+
+    async fn prompt_parts(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+    ) -> Result<Vec<(String, String)>> {
+        Ok(vec![(
+            "implementation_plan".to_string(),
+            format!(
+                "# Implementation Contract\n\nExecute the supplied plan now. The repository and tests are authoritative; adapt if they contradict the report. Make all required code and environment changes, run the verification, and fix failures. Do not stop after writing a script that still needs to be run, after merely issuing commands, to ask the user a question, or without verification. The task is complete only after you call `submit_implementation` with the completed work and verification evidence.\n\n## Planner findings\n\n{}\n\n## Selected plan\n\n{}",
+                self.findings, self.plan
+            ),
+        )])
+    }
+
+    async fn run(
+        &self,
+        _session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        handle_report(
+            conversation,
+            emit,
+            SUBMIT_IMPLEMENTATION_TOOL_NAME,
+            &["summary", "verification"],
+            IMPLEMENTATION_CONTINUATION,
         )
         .await
     }
@@ -264,12 +328,18 @@ mod tests {
     fn extracts_successful_report_from_current_turn() {
         let conversation = conversation_with_report(
             SUBMIT_PLAN_TOOL_NAME,
-            serde_json::json!({ "plan": "change the parser" }),
+            serde_json::json!({
+                "findings": "the parser is in parser.rs",
+                "plan": "change the parser"
+            }),
         );
 
         assert_eq!(
             submitted_report(&conversation, SUBMIT_PLAN_TOOL_NAME).unwrap(),
-            Some(serde_json::json!({ "plan": "change the parser" }))
+            Some(serde_json::json!({
+                "findings": "the parser is in parser.rs",
+                "plan": "change the parser"
+            }))
         );
     }
 
@@ -277,7 +347,7 @@ mod tests {
     fn does_not_reuse_report_from_previous_turn() {
         let mut conversation = conversation_with_report(
             SUBMIT_PLAN_TOOL_NAME,
-            serde_json::json!({ "plan": "old plan" }),
+            serde_json::json!({ "findings": "old findings", "plan": "old plan" }),
         );
         conversation.push(Message::user().with_text("revise the plan"));
 
@@ -285,5 +355,44 @@ mod tests {
             submitted_report(&conversation, SUBMIT_PLAN_TOOL_NAME).unwrap(),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn planner_requires_findings_and_plan() {
+        let tools = PlanOperation
+            .inference_tools(&Session::default())
+            .await
+            .expect("planner tools");
+
+        assert_eq!(
+            tools[0].input_schema["required"],
+            serde_json::json!(["findings", "plan"])
+        );
+    }
+
+    #[tokio::test]
+    async fn implementation_contract_contains_plan_and_requires_evidence() {
+        let operation = ImplementPlanOperation::new(
+            "parser lives in parser.rs".to_string(),
+            "edit parser.rs and run parser tests".to_string(),
+        );
+        let tools = operation
+            .inference_tools(&Session::default())
+            .await
+            .expect("implementation tools");
+        let prompts = operation
+            .prompt_parts(
+                &Session::default(),
+                &Conversation::new_unvalidated(Vec::new()),
+            )
+            .await
+            .expect("implementation prompt");
+
+        assert_eq!(
+            tools[0].input_schema["required"],
+            serde_json::json!(["summary", "verification"])
+        );
+        assert!(prompts[0].1.contains("parser lives in parser.rs"));
+        assert!(prompts[0].1.contains("edit parser.rs and run parser tests"));
     }
 }
