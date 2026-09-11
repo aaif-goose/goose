@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "헤더 이름에는 공백이 포함될 수 없습니다."
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "모델이 비전(이미지)을 지원합니다"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

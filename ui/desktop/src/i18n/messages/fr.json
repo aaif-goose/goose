@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Le nom de l'en-tête ne peut pas contenir d'espaces"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Le modèle prend en charge la vision (images)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

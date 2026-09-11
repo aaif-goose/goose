@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Başlık adı boşluk içeremez"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Model vision (görüntü) destekler"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

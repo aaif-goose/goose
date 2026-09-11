@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "O nome do cabeçalho não pode conter espaços"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "O modelo suporta visão (imagens)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "modelo-a, modelo-b, modelo-c"
   },

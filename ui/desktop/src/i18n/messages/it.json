@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Il nome dell'intestazione non può contenere spazi"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Il modello supporta la visione (immagini)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

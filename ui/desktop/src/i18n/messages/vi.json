@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Tên tiêu đề không được chứa khoảng trắng"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Mô hình hỗ trợ vision (hình ảnh)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },
