@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "ヘッダー名にスペースは使用できません"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "モデルがビジョン（画像）に対応しています"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

@@ -2271,6 +2271,12 @@
           },
           "default": []
         },
+        "supportsVision": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "supportsStreaming": {
           "type": [
             "boolean",
@@ -2463,6 +2469,12 @@
           },
           "default": []
         },
+        "supportsVision": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "supportsStreaming": {
           "type": [
             "boolean",
@@ -2545,6 +2557,12 @@
             "type": "string"
           },
           "default": []
+        },
+        "supportsVision": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "supportsStreaming": {
           "type": [

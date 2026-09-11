@@ -749,6 +749,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Header name cannot contain spaces"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Model supports vision (images)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

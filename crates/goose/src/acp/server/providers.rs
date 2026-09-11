@@ -381,6 +381,7 @@ fn custom_provider_models(
     names: Vec<String>,
     existing: &[ModelInfo],
     catalog_provider_id: Option<&str>,
+    supports_vision: Option<bool>,
 ) -> Vec<ModelInfo> {
     let catalog_models = catalog_provider_id
         .and_then(crate::providers::catalog::get_provider_template)
@@ -390,17 +391,30 @@ fn custom_provider_models(
     names
         .into_iter()
         .map(|name| {
-            existing
+            let catalog_model = catalog_models.iter().find(|model| model.id == name);
+            let mut model = existing
                 .iter()
                 .find(|model| model.name == name)
                 .cloned()
                 .or_else(|| {
-                    catalog_models
-                        .iter()
-                        .find(|model| model.id == name)
-                        .map(|model| ModelInfo::new(&name).with_context_limit(model.context_limit))
+                    catalog_model.map(|model| {
+                        ModelInfo::new(&name)
+                            .with_context_limit(model.context_limit)
+                            .with_vision_support(model.capabilities.attachment)
+                    })
                 })
-                .unwrap_or_else(|| ModelInfo::new(name))
+                .unwrap_or_else(|| ModelInfo::new(name));
+            // Retained entries created before vision tracking deserializes to
+            // None; backfill from the catalog so upgraded providers recover.
+            if model.supports_vision.is_none() {
+                if let Some(catalog_model) = catalog_model {
+                    model.supports_vision = Some(catalog_model.capabilities.attachment);
+                }
+            }
+            if supports_vision.is_some() {
+                model.supports_vision = supports_vision;
+            }
+            model
         })
         .collect()
 }
@@ -443,6 +457,17 @@ fn custom_provider_config_to_dto(
             .iter()
             .map(|model| model.name.clone())
             .collect(),
+        supports_vision: config
+            .models
+            .iter()
+            .map(|model| model.supports_vision)
+            .find_map(|v| v)
+            .filter(|v| {
+                config
+                    .models
+                    .iter()
+                    .all(|model| model.supports_vision == Some(*v))
+            }),
         supports_streaming: config.supports_streaming,
         headers: config.headers.clone().unwrap_or_default(),
         requires_auth: config.requires_auth,
@@ -644,6 +669,7 @@ impl GooseAcpAgent {
                     provider.models,
                     &[],
                     provider.catalog_provider_id.as_deref(),
+                    provider.supports_vision,
                 ),
                 supports_streaming: provider.supports_streaming,
                 headers: custom_provider_headers(provider.headers),
@@ -723,6 +749,7 @@ impl GooseAcpAgent {
                     provider.models,
                     &loaded.config.models,
                     provider.catalog_provider_id.as_deref(),
+                    provider.supports_vision,
                 ),
                 supports_streaming: provider.supports_streaming,
                 headers: Some(provider.headers),
@@ -1272,6 +1299,60 @@ mod tests {
         ] {
             assert_eq!(mask_secret_value(secret), expected);
         }
+    }
+
+    #[test]
+    fn catalog_derived_models_inherit_vision_from_catalog() {
+        use super::{custom_provider_models, ModelInfo};
+        use crate::providers::catalog::get_provider_template;
+
+        let Some(template) = get_provider_template("openai") else {
+            return;
+        };
+        let Some(vision) = template.models.iter().find(|m| m.capabilities.attachment) else {
+            return;
+        };
+        let Some(non_vision) = template.models.iter().find(|m| !m.capabilities.attachment) else {
+            return;
+        };
+
+        // No uniform override: each catalog model keeps its own attachment flag,
+        // so mixed templates don't lose vision for the capable models.
+        let models = custom_provider_models(
+            vec![vision.id.clone(), non_vision.id.clone()],
+            &[],
+            Some("openai"),
+            None,
+        );
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].supports_vision, Some(true));
+        assert_eq!(models[1].supports_vision, Some(false));
+
+        // An explicit uniform override still wins over the catalog value.
+        let models =
+            custom_provider_models(vec![non_vision.id.clone()], &[], Some("openai"), Some(true));
+        assert_eq!(models[0].supports_vision, Some(true));
+
+        // Retained entry created before vision tracking (supports_vision: None)
+        // is backfilled from the catalog so upgraded providers recover.
+        let retained = ModelInfo::new(&vision.id);
+        let models = custom_provider_models(
+            vec![vision.id.clone()],
+            std::slice::from_ref(&retained),
+            Some("openai"),
+            None,
+        );
+        assert_eq!(models[0].supports_vision, Some(true));
+
+        // An explicit per-model value on a retained entry wins over the catalog.
+        let retained_explicit = ModelInfo::new(&vision.id).with_vision_support(false);
+        let models = custom_provider_models(
+            vec![vision.id.clone()],
+            std::slice::from_ref(&retained_explicit),
+            Some("openai"),
+            None,
+        );
+        assert_eq!(models[0].supports_vision, Some(false));
     }
 
     #[test]

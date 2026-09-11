@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "標頭名稱不可包含空格"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "模型支援視覺（圖像）"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Der Header-Name darf keine Leerzeichen enthalten"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Modell unterstützt Vision (Bilder)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "modell-a, modell-b, modell-c"
   },

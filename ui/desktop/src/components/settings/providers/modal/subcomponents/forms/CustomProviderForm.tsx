@@ -144,6 +144,10 @@ const i18n = defineMessages({
     id: 'customProviderForm.supportsStreaming',
     defaultMessage: 'Provider supports streaming responses',
   },
+  modelSupportsVision: {
+    id: 'customProviderForm.modelSupportsVision',
+    defaultMessage: 'Model supports vision (images)',
+  },
   alwaysUseToolshim: {
     id: 'customProviderForm.alwaysUseToolshim',
     defaultMessage: 'Always use Toolshim for this provider',
@@ -276,6 +280,9 @@ export default function CustomProviderForm({
   const [models, setModels] = useState('');
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
+  // Create: unchecked = explicit false (vision off); edit: null = leave per-model values untouched
+  const [supportsVision, setSupportsVision] = useState<boolean | null>(initialData ? null : false);
+  const supportsVisionCheckboxRef = useRef<HTMLInputElement>(null);
   const [toolshim, setToolshim] = useState(false);
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([]);
   const [newHeaderKey, setNewHeaderKey] = useState('');
@@ -314,6 +321,7 @@ export default function CustomProviderForm({
       setBasePath(initialData.base_path ?? '');
       setModels(initialData.models.join(', '));
       setSupportsStreaming(initialData.supports_streaming ?? true);
+      setSupportsVision(initialData.supports_vision ?? null);
       setToolshim(initialData.toolshim);
       setRequiresAuth(initialData.requires_auth ?? true);
 
@@ -329,6 +337,12 @@ export default function CustomProviderForm({
     }
   }, [initialData]);
 
+  useEffect(() => {
+    if (supportsVisionCheckboxRef.current) {
+      supportsVisionCheckboxRef.current.indeterminate = supportsVision === null;
+    }
+  }, [supportsVision]);
+
   const handleTemplateSelect = (template: ProviderTemplateDto) => {
     clearSensitiveState();
     setSelectedTemplate(template);
@@ -342,8 +356,14 @@ export default function CustomProviderForm({
 
     setEngine(normalizeEngine(template.format));
 
-    const templateModels = template.models.filter((m) => !m.deprecated).map((m) => m.id);
-    setModels(templateModels.join(', '));
+    const templateModels = template.models.filter((m) => !m.deprecated);
+    setModels(templateModels.map((m) => m.id).join(', '));
+    const attachments = templateModels.map((m) => m.capabilities.attachment);
+    setSupportsVision(
+      attachments.length > 0 && attachments.every((a) => a === attachments[0])
+        ? attachments[0]
+        : null
+    );
 
     setStep('form');
   };
@@ -357,12 +377,14 @@ export default function CustomProviderForm({
     setModels('');
     setEngine('openai_compatible');
     setSupportsStreaming(true);
+    setSupportsVision(false);
     setRequiresAuth(false);
     setStep('choice');
   };
 
   const handleBackToChoice = () => {
     clearSensitiveState();
+    setSupportsVision(false);
     setStep('choice');
   };
 
@@ -498,6 +520,7 @@ export default function CustomProviderForm({
         api_key: apiKey,
         models: modelList,
         supports_streaming: supportsStreaming,
+        supports_vision: supportsVision,
         toolshim,
         requires_auth: requiresAuth,
         headers: headersObject,
@@ -853,6 +876,19 @@ export default function CustomProviderForm({
             />
             <label htmlFor="supports-streaming" className="text-sm text-text-secondary">
               {intl.formatMessage(i18n.supportsStreaming)}
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="supports-vision"
+              ref={supportsVisionCheckboxRef}
+              checked={supportsVision ?? false}
+              onChange={(e) => setSupportsVision(e.target.checked)}
+              className="rounded border-border-primary"
+            />
+            <label htmlFor="supports-vision" className="text-sm text-text-secondary">
+              {intl.formatMessage(i18n.modelSupportsVision)}
             </label>
           </div>
           <div className="flex items-center space-x-2">

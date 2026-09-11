@@ -295,6 +295,7 @@ function ProviderCards({
     api_key: '',
     models: editingProvider.config.models ?? [],
     supports_streaming: editingProvider.config.supportsStreaming ?? true,
+    supports_vision: editingProvider.config.supportsVision ?? undefined,
     requires_auth: editingProvider.config.requiresAuth ?? true,
     headers: editingProvider.config.headers ?? undefined,
     catalog_provider_id: editingProvider.config.catalogProviderId ?? undefined,

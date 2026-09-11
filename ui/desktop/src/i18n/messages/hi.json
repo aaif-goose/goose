@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "हेडर नाम में रिक्त स्थान नहीं हो सकते"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "मॉडल विज़न (छवियाँ) का समर्थन करता है"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "मॉडल-ए, मॉडल-बी, मॉडल-सी"
   },

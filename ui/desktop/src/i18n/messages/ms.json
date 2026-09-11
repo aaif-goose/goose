@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Nama pengepala tidak boleh mengandungi ruang"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Model menyokong vision (imaj)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

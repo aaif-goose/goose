@@ -51,7 +51,7 @@ macro_rules! string_enum {
 string_enum!(ThinkingType { Adaptive => "adaptive", Enabled => "enabled", Disabled => "disabled" });
 string_enum!(CacheTtl { FiveMinutes => "5m", OneHour => "1h" });
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicFormatOptions {
     pub preserve_unsigned_thinking: bool,
     pub preserve_thinking_context: bool,
@@ -60,6 +60,26 @@ pub struct AnthropicFormatOptions {
     pub current_model: Option<String>,
     pub prompt_cache_disabled: bool,
     pub cache_ttl: Option<CacheTtl>,
+    /// Whether the model accepts image content. Defaults to `true` (fail-open):
+    /// Anthropic models are vision-capable and existing behavior always sends
+    /// images, so only an explicit `supports_vision: false` on the model config
+    /// omits them.
+    pub supports_vision: bool,
+}
+
+impl Default for AnthropicFormatOptions {
+    fn default() -> Self {
+        Self {
+            preserve_unsigned_thinking: false,
+            preserve_thinking_context: false,
+            thinking_disabled: false,
+            emit_clear_thinking: false,
+            current_model: None,
+            prompt_cache_disabled: false,
+            cache_ttl: None,
+            supports_vision: true,
+        }
+    }
 }
 
 impl AnthropicFormatOptions {
@@ -80,6 +100,7 @@ impl AnthropicFormatOptions {
             .cache_ttl()
             .and_then(|ttl| ttl.parse::<CacheTtl>().ok())
             .or(self.cache_ttl);
+        let supports_vision = model_config.supports_vision.unwrap_or(self.supports_vision);
 
         Self {
             preserve_unsigned_thinking,
@@ -91,6 +112,7 @@ impl AnthropicFormatOptions {
                 .or_else(|| Some(model_config.model_name.clone())),
             prompt_cache_disabled: model_config.prompt_cache_disabled(),
             cache_ttl,
+            supports_vision,
         }
     }
 
@@ -230,6 +252,17 @@ fn args_to_input_value(arguments: Option<JsonObject>) -> Value {
     Value::Object(arguments.unwrap_or_default())
 }
 
+/// Emit a text marker in place of an image when the model does not support
+/// vision, so the omission is visible to the model instead of silent.
+fn push_omitted_image_marker(text_parts: &mut Vec<String>, blocks: &mut Vec<Value>) {
+    let marker = "[Image omitted: model does not support vision]".to_string();
+    text_parts.push(marker.clone());
+    blocks.push(json!({
+        TYPE_FIELD: TEXT_TYPE,
+        TEXT_TYPE: marker
+    }));
+}
+
 /// Convert internal Message format to Anthropic's API message specification
 pub fn format_messages(messages: &[Message]) -> Vec<Value> {
     format_messages_with_options(messages, &AnthropicFormatOptions::default())
@@ -314,15 +347,22 @@ fn format_messages_with_options(
                                     {
                                         let mime = mime_type.as_deref().unwrap_or("");
                                         if ANTHROPIC_IMAGE_MEDIA_TYPES.contains(&mime) {
-                                            has_media = true;
-                                            blocks.push(json!({
-                                                TYPE_FIELD: IMAGE_TYPE,
-                                                SOURCE_FIELD: {
-                                                    TYPE_FIELD: BASE64_TYPE,
-                                                    MEDIA_TYPE_FIELD: mime,
-                                                    DATA_FIELD: blob,
-                                                }
-                                            }));
+                                            if options.supports_vision {
+                                                has_media = true;
+                                                blocks.push(json!({
+                                                    TYPE_FIELD: IMAGE_TYPE,
+                                                    SOURCE_FIELD: {
+                                                        TYPE_FIELD: BASE64_TYPE,
+                                                        MEDIA_TYPE_FIELD: mime,
+                                                        DATA_FIELD: blob,
+                                                    }
+                                                }));
+                                            } else {
+                                                push_omitted_image_marker(
+                                                    &mut text_parts,
+                                                    &mut blocks,
+                                                );
+                                            }
                                             continue;
                                         }
                                         if mime == "application/pdf" {
@@ -349,7 +389,9 @@ fn format_messages_with_options(
                                     continue;
                                 }
                                 if let ContentBlock::Image(image) = c {
-                                    if ANTHROPIC_IMAGE_MEDIA_TYPES
+                                    if !options.supports_vision {
+                                        push_omitted_image_marker(&mut text_parts, &mut blocks);
+                                    } else if ANTHROPIC_IMAGE_MEDIA_TYPES
                                         .contains(&image.mime_type.as_str())
                                     {
                                         has_media = true;
@@ -429,7 +471,14 @@ fn format_messages_with_options(
                     }
                 }
                 MessageContentBlock::Image(image) => {
-                    content.push(convert_image(image, &ImageFormat::Anthropic));
+                    if options.supports_vision {
+                        content.push(convert_image(image, &ImageFormat::Anthropic));
+                    } else {
+                        content.push(json!({
+                            TYPE_FIELD: TEXT_TYPE,
+                            TEXT_TYPE: "[Image omitted: model does not support vision]"
+                        }));
+                    }
                 }
                 MessageContentBlock::Document(document) => {
                     if message.role != Role::User {
@@ -2090,6 +2139,75 @@ mod tests {
         assert_eq!(block["source"]["type"], "base64");
         assert_eq!(block["source"]["media_type"], "image/png");
         assert_eq!(block["source"]["data"], "aGVsbG8=");
+    }
+
+    #[test]
+    fn test_direct_image_omitted_when_vision_disabled() {
+        let messages = vec![Message::user().with_image("aGVsbG8=", "image/png")];
+        let spec = format_messages_with_options(
+            &messages,
+            &AnthropicFormatOptions {
+                supports_vision: false,
+                ..Default::default()
+            },
+        );
+        let content = spec[0]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(
+            content[0]["text"],
+            "[Image omitted: model does not support vision]"
+        );
+    }
+
+    #[test]
+    fn test_direct_image_sent_when_vision_enabled() {
+        let messages = vec![Message::user().with_image("aGVsbG8=", "image/png")];
+        let spec = format_messages_with_options(
+            &messages,
+            &AnthropicFormatOptions {
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+        let content = spec[0]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[0]["source"]["media_type"], "image/png");
+    }
+
+    #[test]
+    fn test_tool_response_image_omitted_when_vision_disabled() {
+        use rmcp::model::CallToolResult;
+
+        let image = ContentBlock::image("aGVsbG8=", "image/png");
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("tool_1", Ok(CallToolRequestParams::new("screenshot"))),
+            Message::user().with_tool_response("tool_1", Ok(CallToolResult::success(vec![image]))),
+        ];
+        let spec = format_messages_with_options(
+            &messages,
+            &AnthropicFormatOptions {
+                supports_vision: false,
+                ..Default::default()
+            },
+        );
+        let serialized = serde_json::to_string(&spec).unwrap();
+        assert!(!serialized.contains("\"type\":\"image\""));
+        assert!(serialized.contains("[Image omitted: model does not support vision]"));
+    }
+
+    #[test]
+    fn test_for_model_threads_supports_vision_from_model_config() {
+        let model = ModelConfig::new("claude-3-opus").with_vision_support(false);
+        let resolved = AnthropicFormatOptions::default().for_model(&model);
+        assert!(!resolved.supports_vision);
+
+        // Unset model config keeps the options default (fail-open).
+        let model = ModelConfig::new("claude-3-opus");
+        let resolved = AnthropicFormatOptions::default().for_model(&model);
+        assert!(resolved.supports_vision);
     }
 
     #[test]

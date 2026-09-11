@@ -62,5 +62,6 @@ export type UpdateCustomProviderRequest = {
   preserves_thinking?: boolean | null;
   requires_auth?: boolean;
   supports_streaming?: boolean | null;
+  supports_vision?: boolean | null;
   toolshim: boolean;
 };

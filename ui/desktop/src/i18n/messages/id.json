@@ -728,6 +728,9 @@
   "customProviderForm.headerNoSpaces": {
     "defaultMessage": "Nama header tidak boleh mengandung spasi"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Model mendukung vision (gambar)"
+  },
   "customProviderForm.modelsPlaceholder": {
     "defaultMessage": "model-a, model-b, model-c"
   },

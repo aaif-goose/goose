@@ -41,10 +41,45 @@ pub fn materialize_model_config(provider_name: &str, model: ModelConfig) -> Resu
 
 fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfig {
     if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
-        model
-    } else {
-        model.with_canonical_limits(provider_name)
+        return model;
     }
+    let model = with_declarative_model_info(provider_name, model);
+    model.with_canonical_limits(provider_name)
+}
+
+/// Apply capabilities declared on a declarative (custom/bundled) provider's
+/// model entry. Explicit values take precedence over the canonical catalog,
+/// which only fills in what is still unset.
+fn with_declarative_model_info(provider_name: &str, model: ModelConfig) -> ModelConfig {
+    let loaded = match crate::config::declarative_providers::load_provider(provider_name) {
+        Ok(loaded) => loaded,
+        Err(_) => return model,
+    };
+    let mut stripped = ModelConfig::new(&model.model_name);
+    stripped.normalize_effort_suffix();
+    let models = &loaded.config.models;
+    let model_info = models
+        .iter()
+        .find(|m| m.name == model.model_name)
+        .or_else(|| models.iter().find(|m| m.name == stripped.model_name))
+        .or_else(|| {
+            models.iter().find(|m| {
+                let mut candidate = ModelConfig::new(&m.name);
+                candidate.normalize_effort_suffix();
+                candidate.model_name == stripped.model_name
+            })
+        });
+    let Some(model_info) = model_info else {
+        return model;
+    };
+    let mut updated = model;
+    if updated.supports_vision.is_none() {
+        updated.supports_vision = model_info.supports_vision;
+    }
+    if updated.context_limit.is_none() {
+        updated.context_limit = model_info.context_limit;
+    }
+    updated
 }
 
 fn materialize_model_config_inner(
@@ -313,6 +348,137 @@ mod cache_ttl_tests {
         )
         .unwrap();
         assert_eq!(model.cache_ttl().as_deref(), Some("5m"));
+    }
+}
+
+#[cfg(test)]
+mod declarative_model_info_tests {
+    use super::*;
+
+    fn write_custom_provider(root: &std::path::Path, json: &str) {
+        let dir = root.join("config").join("custom_providers");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("testprov.json"), json).unwrap();
+    }
+
+    fn provider_json(supports_vision: &str) -> String {
+        format!(
+            r#"{{
+  "name": "testprov",
+  "engine": "openai",
+  "display_name": "TestProv",
+  "api_key_env": "",
+  "base_url": "http://localhost:1/v1/",
+  "models": [
+    {{"name": "test-model", "supports_vision": {supports_vision}}}
+  ]
+}}"#
+        )
+    }
+
+    #[test]
+    fn declarative_supports_vision_populates_model_config() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        write_custom_provider(root, &provider_json("true"));
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        let model = with_declarative_model_info("testprov", ModelConfig::new("test-model"));
+        assert_eq!(model.supports_vision, Some(true));
+    }
+
+    #[test]
+    fn explicit_supports_vision_is_not_overridden() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        write_custom_provider(root, &provider_json("true"));
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        let model = with_declarative_model_info(
+            "testprov",
+            ModelConfig::new("test-model").with_vision_support(false),
+        );
+        assert_eq!(model.supports_vision, Some(false));
+    }
+
+    #[test]
+    fn unknown_provider_and_model_are_left_untouched() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        write_custom_provider(root, &provider_json("true"));
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        let unknown_provider =
+            with_declarative_model_info("openai", ModelConfig::new("test-model"));
+        assert_eq!(unknown_provider.supports_vision, None);
+
+        let unknown_model =
+            with_declarative_model_info("testprov", ModelConfig::new("other-model"));
+        assert_eq!(unknown_model.supports_vision, None);
+    }
+
+    #[test]
+    fn declarative_entry_with_effort_suffix_matches_normalized_runtime_name() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let json = r#"{
+  "name": "testprov",
+  "engine": "openai",
+  "display_name": "TestProv",
+  "api_key_env": "",
+  "base_url": "http://localhost:1/v1/",
+  "models": [
+    {"name": "gpt-5-high", "supports_vision": true}
+  ]
+}"#;
+        write_custom_provider(root, json);
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        // The runtime name is already normalized to `gpt-5` upstream, while the
+        // declarative entry keeps its `gpt-5-high` suffix.
+        let model = with_declarative_model_info("testprov", ModelConfig::new("gpt-5"));
+        assert_eq!(model.supports_vision, Some(true));
+    }
+
+    #[test]
+    fn declarative_vision_support_preserves_image_in_request() {
+        use goose_providers::formats::openai::create_request;
+        use goose_providers::images::ImageFormat;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let json = r#"{
+  "name": "testprov",
+  "engine": "openai",
+  "display_name": "TestProv",
+  "api_key_env": "",
+  "base_url": "http://localhost:1/v1/",
+  "models": [
+    {"name": "test-model", "supports_vision": true}
+  ]
+}"#;
+        write_custom_provider(root, json);
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        let model = apply_canonical_limits("testprov", ModelConfig::new("test-model"));
+        assert_eq!(model.supports_vision, Some(true));
+
+        let message = Message::user().with_image("aW1hZ2VkYXRh", "image/png");
+        let request = create_request(
+            &model,
+            "system",
+            std::slice::from_ref(&message),
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )
+        .unwrap();
+        let serialized = serde_json::to_string(&request).unwrap();
+        assert!(
+            serialized.contains("image_url"),
+            "image content must be preserved for a vision-capable custom model"
+        );
+        assert!(!serialized.contains("[image omitted"));
     }
 }
 

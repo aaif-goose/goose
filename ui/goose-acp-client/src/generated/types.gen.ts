@@ -1077,6 +1077,7 @@ export type CustomProviderCreateRequest_unstable = {
     apiUrl: string;
     apiKey?: string | null;
     models?: Array<string>;
+    supportsVision?: boolean | null;
     supportsStreaming?: boolean | null;
     headers?: {
         [key: string]: string;
@@ -1139,6 +1140,7 @@ export type CustomProviderConfigDto = {
     displayName: string;
     apiUrl: string;
     models?: Array<string>;
+    supportsVision?: boolean | null;
     supportsStreaming?: boolean | null;
     headers?: {
         [key: string]: string;
@@ -1162,6 +1164,7 @@ export type CustomProviderUpdateRequest_unstable = {
     apiUrl: string;
     apiKey?: string | null;
     models?: Array<string>;
+    supportsVision?: boolean | null;
     supportsStreaming?: boolean | null;
     headers?: {
         [key: string]: string;
