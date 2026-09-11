@@ -1,3 +1,9 @@
+#[cfg(all(
+    feature = "live-websocket",
+    not(any(feature = "rustls-tls", feature = "native-tls"))
+))]
+compile_error!("feature `live-websocket` requires either `rustls-tls` or `native-tls`");
+
 pub mod anthropic;
 pub mod api_client;
 pub mod azure_foundry;
