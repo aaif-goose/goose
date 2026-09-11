@@ -19,7 +19,7 @@ pub const SUBMIT_FEEDBACK_TOOL_NAME: &str = "submit_feedback";
 pub const SUBMIT_IMPLEMENTATION_TOOL_NAME: &str = "submit_implementation";
 const PLAN_CONTINUATION: &str = "You MUST call the `submit_plan` tool NOW with your findings and complete implementation plan. Do not provide the report directly in your response.";
 const FEEDBACK_CONTINUATION: &str = "You MUST call the `submit_feedback` tool NOW with your assessment. Do not provide the assessment directly in your response.";
-const IMPLEMENTATION_CONTINUATION: &str = "The task is not complete until every required deliverable exists and verification passes. Continue working. Call `submit_implementation` with `completed: true` only after that is true.";
+const IMPLEMENTATION_CONTINUATION: &str = "The task is not complete until you call `submit_implementation` with a summary of the completed work and the verification you ran. Continue implementing or call the tool now if the work is complete.";
 
 pub struct PlanOperation;
 
@@ -98,7 +98,6 @@ async fn handle_report(
     emit: &Emitter,
     tool_name: &str,
     required_fields: &[&str],
-    required_true_fields: &[&str],
     continuation: &str,
 ) -> Result<OperationResult<GooseEffect>> {
     let messages = messages_since_kickoff(conversation)?;
@@ -120,21 +119,13 @@ async fn handle_report(
         let missing = required_fields
             .iter()
             .find(|field| !arguments.contains_key(**field));
-        let not_true = required_true_fields
-            .iter()
-            .find(|field| arguments.get(**field) != Some(&Value::Bool(true)));
-        let result = match (missing, not_true) {
-            (Some(field), _) => Err(ErrorData::new(
+        let result = match missing {
+            Some(field) => Err(ErrorData::new(
                 ErrorCode::INVALID_PARAMS,
                 format!("Missing required field: {field}"),
                 None,
             )),
-            (None, Some(field)) => Err(ErrorData::new(
-                ErrorCode::INVALID_PARAMS,
-                format!("{field} must be true before this report can be submitted"),
-                None,
-            )),
-            (None, None) => Ok(CallToolResult::success(vec![ContentBlock::text(
+            None => Ok(CallToolResult::success(vec![ContentBlock::text(
                 "Report submitted.",
             )])),
         };
@@ -184,7 +175,7 @@ impl Operation<Session, GooseEffect> for PlanOperation {
     ) -> Result<Vec<(String, String)>> {
         Ok(vec![(
             "planner".to_string(),
-            "# Plan Submission Instructions\n\nYou are producing an implementation-ready report for a separate implementer. Inspect the repository without editing it. The current environment is the implementation target: the implementer can install dependencies and change repository or system state. Plan to complete the requested outcome here; do not substitute instructions or setup scripts for performing the work unless the task asks for those artifacts. Your findings must identify the relevant files and behavior, tests and acceptance criteria, environment constraints, and evidence for important claims. Your plan must name exact files, commands, and behavior; give complete ordered steps; resolve implementation choices; and state exact verification with expected results. Do not defer core investigation, propose trying several approaches, or ask the user to decide. You MUST use `submit_plan` with both `findings` and `plan` rather than returning the report as prose. On a later turn, submit a complete replacement report with the same tool."
+            "# Plan Submission Instructions\n\nYou are producing an implementation-ready report for a separate implementer. Inspect the repository without editing it. Use only read-only inspection commands: do not install packages, start services or background processes, or otherwise change repository or system state. The current environment is the implementation target: the implementer can install dependencies and change repository or system state. Plan to complete the requested outcome here; do not substitute instructions or setup scripts for performing the work unless the task asks for those artifacts. Your findings must identify the relevant files and behavior, tests and acceptance criteria, environment constraints, and evidence for important claims. Your plan must name exact files, commands, and behavior; give complete ordered steps; resolve implementation choices; and state exact verification with expected results. Do not defer core investigation, propose trying several approaches, or ask the user to decide. You MUST use `submit_plan` with both `findings` and `plan` rather than returning the report as prose. On a later turn, submit a complete replacement report with the same tool."
                 .to_string(),
         )])
     }
@@ -200,7 +191,6 @@ impl Operation<Session, GooseEffect> for PlanOperation {
             emit,
             SUBMIT_PLAN_TOOL_NAME,
             &["findings", "plan"],
-            &[],
             PLAN_CONTINUATION,
         )
         .await
@@ -251,7 +241,6 @@ impl Operation<Session, GooseEffect> for SupervisorOperation {
             emit,
             SUBMIT_FEEDBACK_TOOL_NAME,
             &["requires_action", "feedback"],
-            &[],
             FEEDBACK_CONTINUATION,
         )
         .await
@@ -271,14 +260,10 @@ impl Operation<Session, GooseEffect> for ImplementPlanOperation {
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "completed": {
-                        "type": "boolean",
-                        "description": "Set to true only when every required deliverable is complete and verification passed."
-                    },
                     "summary": { "type": "string" },
                     "verification": { "type": "string" }
                 },
-                "required": ["completed", "summary", "verification"]
+                "required": ["summary", "verification"]
             }),
         )])
     }
@@ -296,7 +281,7 @@ impl Operation<Session, GooseEffect> for ImplementPlanOperation {
         Ok(vec![(
             "implementation_plan".to_string(),
             format!(
-                "# Implementation Contract\n\nExecute the supplied plan now. The repository and tests are authoritative; adapt if they contradict the report. Make all required code and environment changes, run the verification, and fix failures. Do not stop after writing a script that still needs to be run, after merely issuing commands, to ask the user a question, or without verification. Do not call `submit_implementation` when verification is blocked or failing. The task is complete only after you call it with `completed: true`, the completed work, and verification evidence.\n\n## Planner findings\n\n{}\n\n## Selected plan\n\n{}{}",
+                "# Implementation Contract\n\nExecute the supplied plan now. The repository and tests are authoritative; adapt if they contradict the report. Make all required code and environment changes, run the verification, and fix failures. Do not stop after writing a script that still needs to be run, after merely issuing commands, to ask the user a question, or without verification. The task is complete only after you call `submit_implementation` with the completed work and verification evidence.\n\n## Planner findings\n\n{}\n\n## Selected plan\n\n{}{}",
                 self.findings, self.plan, blockers
             ),
         )])
@@ -312,8 +297,7 @@ impl Operation<Session, GooseEffect> for ImplementPlanOperation {
             conversation,
             emit,
             SUBMIT_IMPLEMENTATION_TOOL_NAME,
-            &["completed", "summary", "verification"],
-            &["completed"],
+            &["summary", "verification"],
             IMPLEMENTATION_CONTINUATION,
         )
         .await
@@ -325,7 +309,6 @@ mod tests {
     use rmcp::model::CallToolRequestParams;
 
     use super::*;
-    use crate::agents::AgentEvent;
 
     fn conversation_with_report(tool_name: &str, arguments: Value) -> Conversation {
         let request_id = "report_1";
@@ -349,23 +332,6 @@ mod tests {
             None,
         );
         Conversation::new_unvalidated(vec![Message::user().with_text("start"), request, response])
-    }
-
-    fn conversation_with_pending_report(tool_name: &str, arguments: Value) -> Conversation {
-        Conversation::new_unvalidated(vec![
-            Message::user().with_text("start"),
-            Message::assistant().with_tool_request(
-                "report_1",
-                Ok(
-                    CallToolRequestParams::new(tool_name.to_string()).with_arguments(
-                        arguments
-                            .as_object()
-                            .expect("test arguments are an object")
-                            .clone(),
-                    ),
-                ),
-            ),
-        ])
     }
 
     #[test]
@@ -425,6 +391,9 @@ mod tests {
         assert!(prompts[0]
             .1
             .contains("do not substitute instructions or setup scripts"));
+        assert!(prompts[0]
+            .1
+            .contains("do not install packages, start services or background processes"));
     }
 
     #[tokio::test]
@@ -448,36 +417,9 @@ mod tests {
 
         assert_eq!(
             tools[0].input_schema["required"],
-            serde_json::json!(["completed", "summary", "verification"])
+            serde_json::json!(["summary", "verification"])
         );
         assert!(prompts[0].1.contains("parser lives in parser.rs"));
         assert!(prompts[0].1.contains("edit parser.rs and run parser tests"));
-    }
-
-    #[tokio::test]
-    async fn incomplete_implementation_report_is_rejected() {
-        let operation = ImplementPlanOperation::new("findings".into(), "plan".into(), None);
-        let conversation = conversation_with_pending_report(
-            SUBMIT_IMPLEMENTATION_TOOL_NAME,
-            serde_json::json!({
-                "completed": false,
-                "summary": "partial work",
-                "verification": "tests could not run"
-            }),
-        );
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        let emit = Emitter::new(tx, tokio_util::sync::CancellationToken::new());
-
-        operation
-            .run(&Session::default(), &conversation, &emit)
-            .await
-            .expect("operation result");
-        let AgentEvent::Message(response) = rx.recv().await.expect("tool response") else {
-            panic!("report response is not a message");
-        };
-        let MessageContent::ToolResponse(response) = &response.content[0] else {
-            panic!("message is not a tool response");
-        };
-        assert!(response.tool_result.is_err());
     }
 }
