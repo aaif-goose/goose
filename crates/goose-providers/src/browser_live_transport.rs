@@ -78,7 +78,12 @@ impl Default for BrowserLiveTransport {
 #[async_trait]
 impl LiveTransport for BrowserLiveTransport {
     async fn send(&self, message: Value) -> Result<()> {
-        self.outbound_tx.send(message).await.map_err(Into::into)
+        let mut closed = self.closed_tx.subscribe();
+        tokio::select! {
+            biased;
+            _ = closed.wait_for(|closed| *closed) => anyhow::bail!("browser live transport is closed"),
+            result = self.outbound_tx.send(message) => result.map_err(Into::into),
+        }
     }
 
     async fn receive(&self) -> Result<Option<Value>> {
