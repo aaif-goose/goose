@@ -9,6 +9,21 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch, Mutex};
 
+pub struct BrowserLiveOutbound {
+    receiver: mpsc::Receiver<Value>,
+    closed: watch::Receiver<bool>,
+}
+
+impl BrowserLiveOutbound {
+    pub async fn recv(&mut self) -> Option<Value> {
+        tokio::select! {
+            biased;
+            _ = self.closed.wait_for(|closed| *closed) => None,
+            message = self.receiver.recv() => message,
+        }
+    }
+}
+
 pub struct BrowserLiveTransport {
     outbound_tx: mpsc::Sender<Value>,
     outbound_rx: Mutex<Option<mpsc::Receiver<Value>>>,
@@ -31,12 +46,17 @@ impl BrowserLiveTransport {
         }
     }
 
-    pub async fn take_outbound(&self) -> Result<mpsc::Receiver<Value>> {
-        self.outbound_rx
+    pub async fn take_outbound(&self) -> Result<BrowserLiveOutbound> {
+        let receiver = self
+            .outbound_rx
             .lock()
             .await
             .take()
-            .ok_or_else(|| anyhow::anyhow!("browser live receiver was already taken"))
+            .ok_or_else(|| anyhow::anyhow!("browser live receiver was already taken"))?;
+        Ok(BrowserLiveOutbound {
+            receiver,
+            closed: self.closed_tx.subscribe(),
+        })
     }
 
     pub async fn push_incoming(&self, message: Value) -> Result<()> {
