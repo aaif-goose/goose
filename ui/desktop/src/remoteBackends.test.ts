@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { checkBackendStatus } from './backendStatus';
-import type { HopRequest, HopResponse } from './backendRedirects';
+import { connectRemoteBackend, type RemoteBackendParams } from './remoteBackends';
 
-const respond = (status: number, location?: string): HopResponse => ({
+type HopRequest = NonNullable<RemoteBackendParams['request']>;
+
+const respond = (status: number, location?: string) => ({
   status,
   statusText: '',
-  headers: { get: () => null },
+  header: () => null,
   location: location ?? null,
 });
 
-describe('checkBackendStatus', () => {
+describe('connectRemoteBackend', () => {
   it('checks /status and validates the secret against /acp', async () => {
     const request = vi.fn(async (url: string) => {
       if (url === 'https://example.com/goose/status') {
@@ -22,7 +23,7 @@ describe('checkBackendStatus', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://example.com/goose',
       serverSecret: 'test-secret',
       request,
@@ -31,7 +32,7 @@ describe('checkBackendStatus', () => {
     expect(result).toMatchObject({
       ok: true,
       failure: null,
-      resolvedAcpUrl: 'wss://example.com/goose/acp?token=test-secret',
+      acpUrl: 'wss://example.com/goose/acp?token=test-secret',
     });
   });
 
@@ -53,16 +54,14 @@ describe('checkBackendStatus', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://example.com',
       serverSecret: 'test-secret',
       request,
     });
 
     expect(result.ok).toBe(true);
-    expect(result.resolvedAcpUrl).toBe(
-      'wss://backend.example.com/socket?tenant=x&token=test-secret'
-    );
+    expect(result.acpUrl).toBe('wss://backend.example.com/socket?tenant=x&token=test-secret');
   });
 
   it('sends the secret only to the resolved ACP endpoint', async () => {
@@ -80,7 +79,7 @@ describe('checkBackendStatus', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    await checkBackendStatus({
+    await connectRemoteBackend({
       baseUrl: 'https://example.com',
       serverSecret: 'test-secret',
       request,
@@ -95,7 +94,7 @@ describe('checkBackendStatus', () => {
   it('rejects an HTTPS to HTTP redirect', async () => {
     const request = vi.fn(async () => respond(302, 'http://backend.example.com/status'));
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://example.com',
       serverSecret: 'test-secret',
       request,
@@ -109,7 +108,7 @@ describe('checkBackendStatus', () => {
   it('rejects a cross-host redirect when a certificate fingerprint is pinned', async () => {
     const request = vi.fn(async () => respond(302, 'https://backend.example.com/status'));
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://example.com',
       serverSecret: 'test-secret',
       request,
@@ -132,7 +131,7 @@ describe('checkBackendStatus', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://example.com',
       serverSecret: 'wrong-secret',
       request,
@@ -146,7 +145,7 @@ describe('checkBackendStatus', () => {
   it('reports an unusable URL without any request', async () => {
     const request = vi.fn();
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://example.com/acp',
       serverSecret: 'test-secret',
       request,
@@ -162,7 +161,7 @@ describe('checkBackendStatus', () => {
       throw new Error('net::ERR_NAME_NOT_RESOLVED');
     });
 
-    const result = await checkBackendStatus({
+    const result = await connectRemoteBackend({
       baseUrl: 'https://nope.example.com',
       serverSecret: 'test-secret',
       request,

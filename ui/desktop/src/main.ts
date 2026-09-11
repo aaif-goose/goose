@@ -26,8 +26,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync, spawn, execFile } from 'child_process';
 import 'dotenv/config';
-import { checkBackendStatus } from './backendStatus';
-import { netHopRequest } from './backendHopRequest';
+import { connectRemoteBackend } from './remoteBackends';
 import { installBackendCertificateVerifiers } from './backendCertificateVerifier';
 import { configureProxy } from './proxy';
 import { startGooseServe } from './gooseServe';
@@ -1117,10 +1116,9 @@ const createChat = async (
         );
       }
 
-      const externalBackendCheck = await checkBackendStatus({
+      const externalBackendCheck = await connectRemoteBackend({
         baseUrl: externalBaseUrl,
         serverSecret,
-        request: netHopRequest,
         pinnedHostname: externalBackend.certFingerprint ? externalBase.hostname : null,
       });
       if (!externalBackendCheck.ok) {
@@ -1152,7 +1150,7 @@ const createChat = async (
         return;
       }
 
-      const resolvedAcpUrl = externalBackendCheck.resolvedAcpUrl;
+      const resolvedAcpUrl = externalBackendCheck.acpUrl;
       if (!resolvedAcpUrl) {
         throw new Error('External backend check did not resolve an ACP endpoint');
       }
