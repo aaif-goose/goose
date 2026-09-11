@@ -5,7 +5,9 @@
 
 use crate::{
     http_status::handle_response,
-    live::{LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport},
+    live::{
+        LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport, LIVE_EVENT_CHANNEL_CAPACITY,
+    },
 };
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -509,6 +511,9 @@ impl StartingOpenAiLiveSession {
                         bail!("OpenAI Live session ended before startup");
                     }
                     Ok(event @ LiveSessionEvent::Message(_)) => {
+                        if self.pending_events.len() >= LIVE_EVENT_CHANNEL_CAPACITY {
+                            bail!("too many events received before OpenAI Live session startup");
+                        }
                         self.pending_events.push_back(event);
                     }
                     Err(RecvError::Lagged(count)) => {

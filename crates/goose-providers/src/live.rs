@@ -12,6 +12,7 @@ use tokio::{
     time::{timeout, Duration},
 };
 
+pub(crate) const LIVE_EVENT_CHANNEL_CAPACITY: usize = 256;
 const TRANSPORT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 const TRANSPORT_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const CLOSE_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(12);
@@ -109,7 +110,7 @@ impl<P: LiveProtocol> LiveSession<P> {
         transport: Arc<dyn LiveTransport>,
     ) -> (Self, broadcast::Receiver<LiveSessionEvent<P::Event>>) {
         let (commands, command_rx) = mpsc::channel(256);
-        let (events, initial_events) = broadcast::channel(256);
+        let (events, initial_events) = broadcast::channel(LIVE_EVENT_CHANNEL_CAPACITY);
         let (ended_tx, ended) = watch::channel(None);
         tokio::spawn(run_actor(
             protocol,
