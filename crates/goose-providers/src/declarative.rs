@@ -41,6 +41,7 @@ pub(crate) mod declarative_providers {
         omlx,
         opencode_go,
         opencode_zen,
+        openzoo,
         opper,
         orcarouter,
         ovhcloud,

@@ -1,0 +1,32 @@
+{
+  "name": "openzoo",
+  "engine": "openai",
+  "display_name": "OpenZoo",
+  "description": "Pay-per-call inference through the local `npx openzoo` proxy: OpenAI-compatible, pays each call over x402 from a local burner wallet, no account. The proxy ignores the API key. The hosted api.openzoo.fun answers 402 unless the caller pays x402 or presents an OpenZoo subscription key (ozk_live_...).",
+  "api_key_env": "OPENZOO_API_KEY",
+  "base_url": "${OPENZOO_HOST}/v1",
+  "env_vars": [
+    {
+      "name": "OPENZOO_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:8402",
+      "description": "Base URL of the OpenZoo proxy started with `npx openzoo` (default: http://localhost:8402). Point it at https://api.openzoo.fun only with an ozk_live_ subscription key in OPENZOO_API_KEY."
+    }
+  ],
+  "dynamic_models": true,
+  "models": [
+    { "name": "z-ai/glm-5.3-flash", "context_limit": 1310720 },
+    { "name": "qwen/qwen3.7-flash", "context_limit": 1000000 },
+    { "name": "nvidia/nemotron-3.5-lightning", "context_limit": 262144 }
+  ],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true,
+  "model_doc_link": "https://openzoo.fun",
+  "setup_steps": [
+    "Run `npx openzoo` (npm package `openzoo`); it listens on http://localhost:8402 and pays each call over x402 from a local burner wallet. No account needed.",
+    "OPENZOO_API_KEY is optional: the proxy ignores it, so any value (e.g. sk-openzoo) works. Leave OPENZOO_HOST at the default unless the proxy runs elsewhere (Docker: http://host.docker.internal:8402)."
+  ]
+}
