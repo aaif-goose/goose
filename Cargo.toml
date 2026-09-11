@@ -111,7 +111,7 @@ llama-cpp-sys-2 = { version = "=0.1.146", default-features = false }
 # These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
 # A fix is available in temporal_rs 0.2 but PCTX has not updated
 # They are just here to pin the version, and can be removed if PCTX updates temporal_rs
-icu_calendar = { version = "=2.1.1", default-features = false }
+icu_calendar = { version = "=2.3.0", default-features = false }
 icu_locale = { version = "=2.1.1", default-features = false }
 
 [patch.crates-io]

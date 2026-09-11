@@ -229,7 +229,7 @@ pctx_code_mode = { version = "0.5.0", default-features = false, optional = true 
 # These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
 # A fix is available in temporal_rs 0.2 but PCTX has not updated
 # They are just here to pin the version, and can be removed if PCTX updates temporal_rs
-icu_calendar = { version = "=2.1.1", default-features = false }
+icu_calendar = { version = "=2.3.0", default-features = false }
 icu_locale = { version = "=2.1.1", default-features = false }
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 subtle = { version = "2.5", default-features = false, features = ["std"] }
