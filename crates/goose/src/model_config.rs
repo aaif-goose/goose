@@ -439,6 +439,47 @@ mod declarative_model_info_tests {
         let model = with_declarative_model_info("testprov", ModelConfig::new("gpt-5"));
         assert_eq!(model.supports_vision, Some(true));
     }
+
+    #[test]
+    fn declarative_vision_support_preserves_image_in_request() {
+        use goose_providers::formats::openai::create_request;
+        use goose_providers::images::ImageFormat;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let json = r#"{
+  "name": "testprov",
+  "engine": "openai",
+  "display_name": "TestProv",
+  "api_key_env": "",
+  "base_url": "http://localhost:1/v1/",
+  "models": [
+    {"name": "test-model", "supports_vision": true}
+  ]
+}"#;
+        write_custom_provider(root, json);
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        let model = apply_canonical_limits("testprov", ModelConfig::new("test-model"));
+        assert_eq!(model.supports_vision, Some(true));
+
+        let message = Message::user().with_image("aW1hZ2VkYXRh", "image/png");
+        let request = create_request(
+            &model,
+            "system",
+            std::slice::from_ref(&message),
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )
+        .unwrap();
+        let serialized = serde_json::to_string(&request).unwrap();
+        assert!(
+            serialized.contains("image_url"),
+            "image content must be preserved for a vision-capable custom model"
+        );
+        assert!(!serialized.contains("[image omitted"));
+    }
 }
 
 #[cfg(test)]

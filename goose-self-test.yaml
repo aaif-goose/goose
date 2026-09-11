@@ -185,6 +185,12 @@ prompt: |
   5. Run `python3 documentation/automation/gdk-api/generate.py --check` to verify the generated GDK API data is current and publishes `gateway_path` as an optional argument defaulting to `None`.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
+  ### Declarative Provider Vision Validation
+  When running from a goose source checkout:
+  1. Run `cargo test -p goose model_config::declarative_model_info_tests` to verify that a custom (declarative) provider declaring `supports_vision` on one of its models populates the resolved model config, that an effort-suffixed declaration (e.g. `gpt-5-high`) still matches the normalized runtime name, and that an image message is preserved as an `image_url` block end-to-end for a vision-capable custom model.
+  2. Run `cargo test -p goose-provider-types test_format_messages_with_image_block_passthrough_when_not_vision` to verify the vision flag threads through message formatting: a vision-capable model retains image content as an `image_url` block, while a non-vision model replaces it with an omitted-image placeholder instead.
+  If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
+
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md
   {% endif %}
 
