@@ -986,19 +986,17 @@ fn output_token_limit_marker(id: Option<String>) -> Message {
 /// - `field` (no colon, empty value) -> `Some(field)`
 /// - `: comment` -> `Some("")`
 ///
-/// Returns `None` when the line does not look like an SSE field (e.g. a
-/// bare JSON payload such as `{"type": ...}`), so callers can fall back
-/// to parsing it as JSON.
+/// The grammar puts no restriction on field-name characters — everything
+/// before the first colon is the name, so `x.heartbeat` is as valid as
+/// `event`, and leading whitespace belongs to the name (` data` is an
+/// unknown field, not `data`). Compliant consumers ignore every field
+/// other than `data`. `None` therefore marks lines that are not fields at
+/// all: payload lines that carry their own framing — text before the
+/// first colon starts a JSON value, leading whitespace aside, i.e. bare
+/// JSON frames — so they can be parsed instead of skipped.
 fn sse_field_name(line: &str) -> Option<&str> {
     let field = line.split_once(':').map_or(line, |(name, _)| name);
-    if field.is_empty() {
-        return Some("");
-    }
-    let field_like = !field.contains(char::is_whitespace)
-        && field
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
-    field_like.then_some(field)
+    (!field.trim_start().starts_with(['{', '['])).then_some(field)
 }
 
 pub fn responses_api_to_streaming_message<S>(
@@ -1019,31 +1017,27 @@ where
         let mut output_token_limit_reached = false;
 
         'outer: while let Some(response) = stream.next().await {
-            let response_str = response?;
-
-            // Skip empty lines
-            if response_str.trim().is_empty() {
+            let response = response?;
+            if response.trim().is_empty() {
                 continue;
             }
-            if response_str.starts_with(':') {
+            if response.starts_with(':') {
                 continue;
             }
 
-            // Parse SSE format: "event: <type>\ndata: <json>"
-            // For now, we only care about the data line
-            // SSE spec allows both "data: value" and "data:value" (space after colon is optional)
-            let data_line = if response_str.starts_with("data: ") {
-                response_str.strip_prefix("data: ").unwrap()
-            } else if response_str.starts_with("data:") {
-                response_str.strip_prefix("data:").unwrap()
-            } else if sse_field_name(&response_str).is_some_and(|f| f != "data") {
-                // Skip payload-free SSE fields: event, id, retry, comments,
-                // colon-less fields with empty values, and unknown extension
-                // fields — the SSE spec requires all of these to be ignored.
+            // "data: value" and "data:value" are both valid SSE.
+            let data_line = if let Some(value) = response.strip_prefix("data: ") {
+                value
+            } else if let Some(value) = response.strip_prefix("data:") {
+                value
+            } else if sse_field_name(&response).is_some_and(|f| f != "data") {
+                // Payload-free or unknown SSE fields — event, id, retry,
+                // comments, whitespace-prefixed fields — must be ignored
+                // per the spec.
                 continue;
             } else {
-                // Try to parse as-is when there's no prefix (bare JSON frames)
-                &response_str
+                // Not field-shaped: a bare JSON frame.
+                &response
             };
 
             if data_line == "[DONE]" {
@@ -1319,19 +1313,49 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn sse_field_name_classifies_fields_vs_payloads() {
+        // Per the grammar a field name is everything before the first
+        // colon, whitespace included; only lines that carry their own
+        // JSON framing are not fields.
+        for (line, field) in [
+            ("data: {\"a\":1}", "data"),
+            ("data:", "data"),
+            ("event: ping", "event"),
+            ("id: 7", "id"),
+            ("retry: 3000", "retry"),
+            (": comment", ""),
+            ("ping", "ping"),
+            ("x-heartbeat: ping", "x-heartbeat"),
+            ("x.heartbeat: ping", "x.heartbeat"),
+            (" data: ping", " data"),
+            ("\tdata: ping", "\tdata"),
+            ("  x.trace: 1", "  x.trace"),
+        ] {
+            assert_eq!(sse_field_name(line), Some(field), "line: {line}");
+        }
+        for payload in ["{\"a\":1}", "{}", "[1,2]", "  {\"a\":1}", "  [1,2]"] {
+            assert_eq!(sse_field_name(payload), None, "payload: {payload}");
+        }
+    }
+
     #[tokio::test]
     async fn test_responses_stream_ignores_sse_field_lines() -> anyhow::Result<()> {
         let lines = vec![
             "id:1".to_string(),
             "id".to_string(),
             "x-trace: abc123".to_string(),
+            "x.heartbeat: 1".to_string(),
+            "  x.trace: 1".to_string(),
+            " data: ping".to_string(),
             "retry: 100".to_string(),
             ": keepalive comment".to_string(),
             r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"in_progress","model":"qwen3.8-max","output":[]}}"#.to_string(),
             "event: response.output_text.delta".to_string(),
             r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#.to_string(),
-            r#"data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#.to_string(),
-            r#"data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"qwen3.8-max","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#.to_string(),
+            r#"   {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"!"}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":4,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#.to_string(),
+            r#"data: {"type":"response.completed","sequence_number":5,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"qwen3.8-max","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#.to_string(),
             "data: [DONE]".to_string(),
         ];
 
@@ -1351,7 +1375,7 @@ mod tests {
             }
         }
 
-        assert_eq!(text_parts.concat(), "Hello world");
+        assert_eq!(text_parts.concat(), "Hello! world");
         Ok(())
     }
 
