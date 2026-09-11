@@ -439,8 +439,12 @@ impl OpenAiLiveWebRtcConnector {
         for (name, value) in request.headers {
             http_request = http_request.header(name, value);
         }
-        let response = http_request.send().await?;
-        let result: Value = handle_response(response).await?;
+        let result: Value = timeout(SESSION_START_TIMEOUT, async {
+            let response = http_request.send().await?;
+            handle_response(response).await
+        })
+        .await
+        .context("OpenAI Live signaling timed out")??;
         let session_id = OpenAiLiveSessionId(required_nonempty_string(
             result.pointer("/session/id"),
             "session.id",
