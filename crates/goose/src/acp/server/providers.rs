@@ -391,21 +391,26 @@ fn custom_provider_models(
     names
         .into_iter()
         .map(|name| {
+            let catalog_model = catalog_models.iter().find(|model| model.id == name);
             let mut model = existing
                 .iter()
                 .find(|model| model.name == name)
                 .cloned()
                 .or_else(|| {
-                    catalog_models
-                        .iter()
-                        .find(|model| model.id == name)
-                        .map(|model| {
-                            ModelInfo::new(&name)
-                                .with_context_limit(model.context_limit)
-                                .with_vision_support(model.capabilities.attachment)
-                        })
+                    catalog_model.map(|model| {
+                        ModelInfo::new(&name)
+                            .with_context_limit(model.context_limit)
+                            .with_vision_support(model.capabilities.attachment)
+                    })
                 })
                 .unwrap_or_else(|| ModelInfo::new(name));
+            // Retained entries created before vision tracking deserializes to
+            // None; backfill from the catalog so upgraded providers recover.
+            if model.supports_vision.is_none() {
+                if let Some(catalog_model) = catalog_model {
+                    model.supports_vision = Some(catalog_model.capabilities.attachment);
+                }
+            }
             if supports_vision.is_some() {
                 model.supports_vision = supports_vision;
             }
@@ -1298,7 +1303,7 @@ mod tests {
 
     #[test]
     fn catalog_derived_models_inherit_vision_from_catalog() {
-        use super::custom_provider_models;
+        use super::{custom_provider_models, ModelInfo};
         use crate::providers::catalog::get_provider_template;
 
         let Some(template) = get_provider_template("openai") else {
@@ -1327,6 +1332,27 @@ mod tests {
         let models =
             custom_provider_models(vec![non_vision.id.clone()], &[], Some("openai"), Some(true));
         assert_eq!(models[0].supports_vision, Some(true));
+
+        // Retained entry created before vision tracking (supports_vision: None)
+        // is backfilled from the catalog so upgraded providers recover.
+        let retained = ModelInfo::new(&vision.id);
+        let models = custom_provider_models(
+            vec![vision.id.clone()],
+            std::slice::from_ref(&retained),
+            Some("openai"),
+            None,
+        );
+        assert_eq!(models[0].supports_vision, Some(true));
+
+        // An explicit per-model value on a retained entry wins over the catalog.
+        let retained_explicit = ModelInfo::new(&vision.id).with_vision_support(false);
+        let models = custom_provider_models(
+            vec![vision.id.clone()],
+            std::slice::from_ref(&retained_explicit),
+            Some("openai"),
+            None,
+        );
+        assert_eq!(models[0].supports_vision, Some(false));
     }
 
     #[test]
