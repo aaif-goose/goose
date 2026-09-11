@@ -101,3 +101,8 @@
 .table td {
   vertical-align: top;
 }
+
+/* Keeps a row's hash link on the same line as the name it anchors. */
+.nameCell {
+  white-space: nowrap;
+}
