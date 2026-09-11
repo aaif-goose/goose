@@ -3,7 +3,10 @@
 //! The client owns OpenAI configuration and protocol semantics. WebSocket and
 //! WebRTC connectors own their distinct connection establishment flows.
 
-use crate::live::{LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport};
+use crate::{
+    http_status::handle_response,
+    live::{LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport},
+};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rmcp::model::Role;
@@ -437,12 +440,7 @@ impl OpenAiLiveWebRtcConnector {
             http_request = http_request.header(name, value);
         }
         let response = http_request.send().await?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await?;
-            bail!("OpenAI Live signaling failed ({status}): {body}");
-        }
-        let result: Value = response.json().await?;
+        let result: Value = handle_response(response).await?;
         let session_id = OpenAiLiveSessionId(required_nonempty_string(
             result.pointer("/session/id"),
             "session.id",

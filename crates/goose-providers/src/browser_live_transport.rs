@@ -7,29 +7,27 @@ use crate::live::LiveTransport;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{mpsc, watch, Mutex};
 
 pub struct BrowserLiveTransport {
     outbound_tx: mpsc::Sender<Value>,
     outbound_rx: Mutex<Option<mpsc::Receiver<Value>>>,
     incoming_tx: mpsc::Sender<Value>,
     incoming_rx: Mutex<mpsc::Receiver<Value>>,
-    closed: AtomicBool,
-    closed_notify: Notify,
+    closed_tx: watch::Sender<bool>,
 }
 
 impl BrowserLiveTransport {
     pub fn new() -> Self {
         let (outbound_tx, outbound_rx) = mpsc::channel(256);
         let (incoming_tx, incoming_rx) = mpsc::channel(256);
+        let (closed_tx, _) = watch::channel(false);
         Self {
             outbound_tx,
             outbound_rx: Mutex::new(Some(outbound_rx)),
             incoming_tx,
             incoming_rx: Mutex::new(incoming_rx),
-            closed: AtomicBool::new(false),
-            closed_notify: Notify::new(),
+            closed_tx,
         }
     }
 
@@ -42,10 +40,11 @@ impl BrowserLiveTransport {
     }
 
     pub async fn push_incoming(&self, message: Value) -> Result<()> {
-        if self.closed.load(Ordering::Acquire) {
-            anyhow::bail!("browser live transport is closed");
+        let mut closed = self.closed_tx.subscribe();
+        tokio::select! {
+            result = self.incoming_tx.send(message) => result.map_err(Into::into),
+            _ = closed.wait_for(|closed| *closed) => anyhow::bail!("browser live transport is closed"),
         }
-        self.incoming_tx.send(message).await.map_err(Into::into)
     }
 }
 
@@ -62,20 +61,16 @@ impl LiveTransport for BrowserLiveTransport {
     }
 
     async fn receive(&self) -> Result<Option<Value>> {
-        if self.closed.load(Ordering::Acquire) {
-            return Ok(None);
-        }
+        let mut closed = self.closed_tx.subscribe();
         let mut incoming = self.incoming_rx.lock().await;
         tokio::select! {
             message = incoming.recv() => Ok(message),
-            () = self.closed_notify.notified() => Ok(None),
+            _ = closed.wait_for(|closed| *closed) => Ok(None),
         }
     }
 
     async fn close(&self) -> Result<()> {
-        if !self.closed.swap(true, Ordering::AcqRel) {
-            self.closed_notify.notify_waiters();
-        }
+        self.closed_tx.send_replace(true);
         Ok(())
     }
 }
