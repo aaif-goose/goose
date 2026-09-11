@@ -275,6 +275,7 @@ jobs:
         run: cargo check --workspace --locked --all-targets
         env:
           CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-D warnings"
 
   rust-lint:
     name: Lint Rust Code
