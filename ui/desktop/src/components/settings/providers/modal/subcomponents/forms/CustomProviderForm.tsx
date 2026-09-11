@@ -282,6 +282,7 @@ export default function CustomProviderForm({
   const [supportsStreaming, setSupportsStreaming] = useState(true);
   // Create: unchecked = explicit false (vision off); edit: null = leave per-model values untouched
   const [supportsVision, setSupportsVision] = useState<boolean | null>(initialData ? null : false);
+  const supportsVisionCheckboxRef = useRef<HTMLInputElement>(null);
   const [toolshim, setToolshim] = useState(false);
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([]);
   const [newHeaderKey, setNewHeaderKey] = useState('');
@@ -335,6 +336,12 @@ export default function CustomProviderForm({
       setStep('form');
     }
   }, [initialData]);
+
+  useEffect(() => {
+    if (supportsVisionCheckboxRef.current) {
+      supportsVisionCheckboxRef.current.indeterminate = supportsVision === null;
+    }
+  }, [supportsVision]);
 
   const handleTemplateSelect = (template: ProviderTemplateDto) => {
     clearSensitiveState();
@@ -875,6 +882,7 @@ export default function CustomProviderForm({
             <input
               type="checkbox"
               id="supports-vision"
+              ref={supportsVisionCheckboxRef}
               checked={supportsVision ?? false}
               onChange={(e) => setSupportsVision(e.target.checked)}
               className="rounded border-border-primary"
