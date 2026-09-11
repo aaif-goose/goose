@@ -827,6 +827,18 @@
       "required": false
     }
   ]
+},
+{
+  "id": "pixelesq",
+  "name": "Pixelesq",
+  "description": "Build and manage your Pixelesq website: pages, sections, content, SEO and analytics, with every edit saved as a draft until you publish",
+  "url": "https://mcp.pixelesq.app/mcp",
+  "link": "https://www.pixelesq.com/docs/integrations/claude",
+  "installation_notes": "Remote server with OAuth sign-in. Add it as a Streamable HTTP extension with the URL above and sign in with your Pixelesq account when prompted.",
+  "is_builtin": false,
+  "endorsed": false,
+  "environmentVariables": [],
+  "type": "streamable-http"
 }
 
 ]
