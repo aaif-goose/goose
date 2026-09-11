@@ -61,7 +61,14 @@ fn with_declarative_model_info(provider_name: &str, model: ModelConfig) -> Model
     let model_info = models
         .iter()
         .find(|m| m.name == model.model_name)
-        .or_else(|| models.iter().find(|m| m.name == stripped.model_name));
+        .or_else(|| models.iter().find(|m| m.name == stripped.model_name))
+        .or_else(|| {
+            models.iter().find(|m| {
+                let mut candidate = ModelConfig::new(&m.name);
+                candidate.normalize_effort_suffix();
+                candidate.model_name == stripped.model_name
+            })
+        });
     let Some(model_info) = model_info else {
         return model;
     };
@@ -408,6 +415,29 @@ mod declarative_model_info_tests {
         let unknown_model =
             with_declarative_model_info("testprov", ModelConfig::new("other-model"));
         assert_eq!(unknown_model.supports_vision, None);
+    }
+
+    #[test]
+    fn declarative_entry_with_effort_suffix_matches_normalized_runtime_name() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let json = r#"{
+  "name": "testprov",
+  "engine": "openai",
+  "display_name": "TestProv",
+  "api_key_env": "",
+  "base_url": "http://localhost:1/v1/",
+  "models": [
+    {"name": "gpt-5-high", "supports_vision": true}
+  ]
+}"#;
+        write_custom_provider(root, json);
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.to_str().unwrap()))]);
+
+        // The runtime name is already normalized to `gpt-5` upstream, while the
+        // declarative entry keeps its `gpt-5-high` suffix.
+        let model = with_declarative_model_info("testprov", ModelConfig::new("gpt-5"));
+        assert_eq!(model.supports_vision, Some(true));
     }
 }
 
