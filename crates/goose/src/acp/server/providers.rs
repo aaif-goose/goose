@@ -399,7 +399,11 @@ fn custom_provider_models(
                     catalog_models
                         .iter()
                         .find(|model| model.id == name)
-                        .map(|model| ModelInfo::new(&name).with_context_limit(model.context_limit))
+                        .map(|model| {
+                            ModelInfo::new(&name)
+                                .with_context_limit(model.context_limit)
+                                .with_vision_support(model.capabilities.attachment)
+                        })
                 })
                 .unwrap_or_else(|| ModelInfo::new(name));
             if supports_vision.is_some() {
@@ -1290,6 +1294,39 @@ mod tests {
         ] {
             assert_eq!(mask_secret_value(secret), expected);
         }
+    }
+
+    #[test]
+    fn catalog_derived_models_inherit_vision_from_catalog() {
+        use super::custom_provider_models;
+        use crate::providers::catalog::get_provider_template;
+
+        let Some(template) = get_provider_template("openai") else {
+            return;
+        };
+        let Some(vision) = template.models.iter().find(|m| m.capabilities.attachment) else {
+            return;
+        };
+        let Some(non_vision) = template.models.iter().find(|m| !m.capabilities.attachment) else {
+            return;
+        };
+
+        // No uniform override: each catalog model keeps its own attachment flag,
+        // so mixed templates don't lose vision for the capable models.
+        let models = custom_provider_models(
+            vec![vision.id.clone(), non_vision.id.clone()],
+            &[],
+            Some("openai"),
+            None,
+        );
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].supports_vision, Some(true));
+        assert_eq!(models[1].supports_vision, Some(false));
+
+        // An explicit uniform override still wins over the catalog value.
+        let models =
+            custom_provider_models(vec![non_vision.id.clone()], &[], Some("openai"), Some(true));
+        assert_eq!(models[0].supports_vision, Some(true));
     }
 
     #[test]
