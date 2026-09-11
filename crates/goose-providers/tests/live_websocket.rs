@@ -16,7 +16,6 @@ async fn websocket_connect_performs_handshake_and_waits_until_ready() -> Result<
         let (stream, _) = listener.accept().await.unwrap();
         let mut socket = accept_hdr_async(stream, |request: &http::Request<()>, response| {
             assert_eq!(request.headers()["authorization"], "Bearer test-key");
-            assert_eq!(request.headers()["openai-alpha"], "test-alpha");
             Ok(response)
         })
         .await
@@ -25,32 +24,35 @@ async fn websocket_connect_performs_handshake_and_waits_until_ready() -> Result<
         let Message::Text(text) = message else {
             panic!("expected initial text message");
         };
-        let session_update: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(session_update["type"], "session.update");
+        let session_start: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(session_start["type"], "session.start");
         socket
             .send(Message::Text(
-                json!({ "type": "session.started", "session": { "id": "session_1" } })
-                    .to_string()
-                    .into(),
+                json!({
+                    "type": "session.started",
+                    "event_id": "event_started_1",
+                    "session": { "id": "session_1" }
+                })
+                .to_string()
+                .into(),
             ))
             .await
             .unwrap();
     });
 
     let connected = OpenAiLiveClient::new("test-key")
-        .with_alpha_selector("test-alpha")
-        .with_websocket_endpoint(format!("ws://{address}/v1/live"))
+        .with_websocket_endpoint(format!("ws://{address}/v1/live/sessions"))
         .websocket(OpenAiLiveSessionConfig {
             model: "gpt-live-test".into(),
             instructions: "test".into(),
             voice: None,
-            initial_items: vec![],
-            experimental: Default::default(),
+            input_messages: vec![],
+            extra_session_fields: Default::default(),
         })
         .connect()
         .await?;
 
-    let _session = connected.session;
+    let _connected = connected;
     server.await?;
     Ok(())
 }

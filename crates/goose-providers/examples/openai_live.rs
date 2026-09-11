@@ -1,4 +1,4 @@
-//! OpenAI Live WebSocket and browser-owned WebRTC API examples.
+//! OpenAI Live low-level API examples.
 
 use anyhow::Result;
 use goose_providers::{
@@ -9,20 +9,20 @@ use std::sync::Arc;
 
 fn config() -> OpenAiLiveSessionConfig {
     OpenAiLiveSessionConfig {
-        model: "gpt-live-1-marble-alpha".into(),
+        model: "gpt-live-1".into(),
         instructions: "Be concise.".into(),
         voice: Some("marin".into()),
-        initial_items: vec![],
-        experimental: Default::default(),
+        input_messages: vec![],
+        extra_session_fields: Default::default(),
     }
 }
 
 #[cfg(feature = "live-websocket")]
-async fn websocket(client: &OpenAiLiveClient) -> Result<()> {
+async fn primary_websocket(client: &OpenAiLiveClient) -> Result<()> {
     let mut connected = client.websocket(config()).connect().await?;
     let event = connected.recv().await?;
     println!("{event:?}");
-    connected.session.close().await
+    connected.close().await
 }
 
 async fn browser_webrtc(client: &OpenAiLiveClient, offer_sdp: String) -> Result<()> {
@@ -31,15 +31,15 @@ async fn browser_webrtc(client: &OpenAiLiveClient, offer_sdp: String) -> Result<
 
     // Forward `transport.take_outbound()` to RTCDataChannel.send in the browser,
     // and pass data-channel messages to `transport.push_incoming()`.
-    let mut connected = negotiation.bind(transport).ready().await?;
+    let mut connected = negotiation.bind(transport).await?;
     let event = connected.recv().await?;
     println!("{event:?}");
-    connected.session.close().await
+    connected.close().await
 }
 
 fn main() {
     let _ = OpenAiLiveClient::from_env;
     let _ = browser_webrtc;
     #[cfg(feature = "live-websocket")]
-    let _ = websocket;
+    let _ = primary_websocket;
 }

@@ -23,12 +23,11 @@ pub const OPENAI_LIVE_VOICE_GATE_ENV: &str = "GOOSE_LIVE_VOICE_ENABLED";
 pub const OPENAI_LIVE_MODEL_ENV: &str = "GOOSE_LIVE_VOICE_MODEL";
 pub const OPENAI_LIVE_VOICE_ENV: &str = "GOOSE_LIVE_VOICE";
 pub const OPENAI_LIVE_API_KEY_ENV: &str = "OPENAI_API_KEY";
-pub const DEFAULT_OPENAI_LIVE_MODEL: &str = "gpt-live-1-marble-alpha";
+pub const DEFAULT_OPENAI_LIVE_MODEL: &str = "gpt-live-1";
 pub const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
 
 const HTTP_SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 const SIDEBAND_ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
-const SESSION_START_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenAiLiveVoiceConfig {
@@ -105,8 +104,8 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
             model: self.config.model.clone(),
             instructions: String::new(),
             voice: Some(self.config.voice.clone()),
-            initial_items: Vec::new(),
-            experimental: Default::default(),
+            input_messages: Vec::new(),
+            extra_session_fields: Default::default(),
         };
         let negotiation = timeout(
             HTTP_SETUP_TIMEOUT,
@@ -114,11 +113,10 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
         )
         .await
         .map_err(|_| anyhow::anyhow!("OpenAI Live HTTP setup timed out"))??;
-        let session_id = creation_session_id(negotiation.session_id)?;
+        let session_id = negotiation.session_id;
         let answer = WebRtcAnswer::new(negotiation.answer_sdp)
             .ok_or_else(|| anyhow::anyhow!("OpenAI Live returned an invalid WebRTC answer"))?;
-        let mut sideband = connect_sideband(&client, session_id.clone()).await?;
-        confirm_session_started(&mut sideband, &session_id).await?;
+        let sideband = connect_sideband(&client, session_id).await?;
         Ok((answer, Box::new(OpenAiProviderConnection { sideband })))
     }
 }
@@ -138,7 +136,7 @@ impl ProviderConnection for OpenAiProviderConnection {
     }
 
     async fn stop(&mut self) -> Result<()> {
-        self.sideband.session.close().await
+        self.sideband.close().await
     }
 }
 
@@ -148,7 +146,6 @@ fn provider_connection_event(
     match event {
         Ok(LiveSessionEvent::Message(event)) => match event.kind {
             OpenAiLiveEventKind::SessionClosed { .. } => Some(ProviderConnectionEvent::Closed),
-            OpenAiLiveEventKind::Error { .. } => Some(ProviderConnectionEvent::Failed),
             _ => None,
         },
         Ok(LiveSessionEvent::Ended {
@@ -186,56 +183,12 @@ async fn connect_sideband(
     }
 }
 
-async fn confirm_session_started(
-    sideband: &mut ConnectedOpenAiLiveSession,
-    expected_session_id: &OpenAiLiveSessionId,
-) -> Result<()> {
-    timeout(SESSION_START_TIMEOUT, async {
-        loop {
-            match sideband.recv().await {
-                Ok(LiveSessionEvent::Message(event)) => match event.kind {
-                    OpenAiLiveEventKind::SessionStarted { session_id }
-                        if session_id.as_ref() == Some(expected_session_id) =>
-                    {
-                        return Ok(());
-                    }
-                    OpenAiLiveEventKind::SessionStarted { .. } => {
-                        bail!("OpenAI Live sideband identity does not match creation identity")
-                    }
-                    OpenAiLiveEventKind::Error { message, .. } => {
-                        bail!("OpenAI Live startup failed: {message}")
-                    }
-                    _ => {}
-                },
-                Ok(LiveSessionEvent::Ended { error, .. }) => {
-                    if let Some(error) = error {
-                        return Err(anyhow::anyhow!(error.to_string()));
-                    }
-                    bail!("OpenAI Live session ended before startup");
-                }
-                Err(RecvError::Lagged(count)) => {
-                    bail!("OpenAI Live startup event receiver lagged by {count} events")
-                }
-                Err(RecvError::Closed) => bail!("OpenAI Live startup event stream closed"),
-            }
-        }
-    })
-    .await
-    .map_err(|_| anyhow::anyhow!("OpenAI Live session startup timed out"))?
-}
-
-fn creation_session_id(session_id: Option<OpenAiLiveSessionId>) -> Result<OpenAiLiveSessionId> {
-    session_id
-        .filter(|id| !id.0.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("OpenAI Live creation response has no session identity"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn configuration_is_gated_and_creation_identity_is_required() {
+    fn configuration_is_gated() {
         let provider = OpenAiLiveVoiceProvider::new(
             "key",
             OpenAiLiveVoiceConfig {
@@ -248,14 +201,6 @@ mod tests {
         assert_eq!(
             provider.availability(),
             LiveVoiceProviderAvailability::Disabled
-        );
-        assert!(creation_session_id(None).is_err());
-        assert!(creation_session_id(Some(OpenAiLiveSessionId("  ".into()))).is_err());
-        assert_eq!(
-            creation_session_id(Some(OpenAiLiveSessionId("session-1".into())))
-                .unwrap()
-                .0,
-            "session-1"
         );
     }
 
@@ -270,20 +215,24 @@ mod tests {
         let cases = [
             (
                 message(OpenAiLiveEventKind::SessionClosed {
-                    reason: None,
-                    usage: None,
+                    event_id: "event_closed_1".into(),
+                    client_event_id: Some("client_close_1".into()),
+                    reason: "close_requested".into(),
+                    session: serde_json::json!({ "id": "session_1" }),
+                    usage: serde_json::json!({ "seconds": 1 }),
                 }),
                 Some(ProviderConnectionEvent::Closed),
             ),
             (
                 message(OpenAiLiveEventKind::Error {
-                    error_type: None,
-                    code: None,
+                    event_id: "event_error_1".into(),
+                    error_type: "server_error".into(),
+                    code: "provider_failed".into(),
                     message: "provider failed".into(),
                     parameter: None,
                     client_event_id: None,
                 }),
-                Some(ProviderConnectionEvent::Failed),
+                None,
             ),
             (
                 Ok(LiveSessionEvent::Ended {
@@ -307,7 +256,13 @@ mod tests {
                 Err(RecvError::Closed),
                 Some(ProviderConnectionEvent::Failed),
             ),
-            (message(OpenAiLiveEventKind::InputPaused), None),
+            (
+                message(OpenAiLiveEventKind::InputMuted {
+                    event_id: "event_muted_1".into(),
+                    client_event_id: None,
+                }),
+                None,
+            ),
         ];
 
         for (event, expected) in cases {
