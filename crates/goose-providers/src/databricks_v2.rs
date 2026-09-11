@@ -541,10 +541,7 @@ impl DatabricksV2Provider {
         if payload.get("max_tokens").is_none() {
             payload["max_tokens"] = Value::from(format_config.max_output_tokens());
         }
-        if is_model_service
-            && resolved_config.model_name.starts_with("anthropic/")
-            && resolved_config.reasoning != Some(false)
-        {
+        if is_model_service && resolved_config.model_name.starts_with("anthropic/") {
             payload.as_object_mut().unwrap().remove("budget_tokens");
             if !anthropic::model_supports_temperature(DATABRICKS_V2_PROVIDER_NAME, resolved_config)
             {
