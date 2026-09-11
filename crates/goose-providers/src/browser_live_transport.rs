@@ -90,8 +90,9 @@ impl LiveTransport for BrowserLiveTransport {
         let mut closed = self.closed_tx.subscribe();
         let mut incoming = self.incoming_rx.lock().await;
         tokio::select! {
-            message = incoming.recv() => Ok(message),
+            biased;
             _ = closed.wait_for(|closed| *closed) => Ok(None),
+            message = incoming.recv() => Ok(message),
         }
     }
 
