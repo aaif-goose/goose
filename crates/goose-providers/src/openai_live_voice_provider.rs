@@ -145,6 +145,16 @@ fn provider_connection_event(
 ) -> Option<ProviderConnectionEvent> {
     match event {
         Ok(LiveSessionEvent::Message(event)) => match event.kind {
+            OpenAiLiveEventKind::TranscriptDelta {
+                event_id,
+                role,
+                delta,
+                ..
+            } => Some(ProviderConnectionEvent::TranscriptDelta {
+                event_id,
+                role,
+                text: delta,
+            }),
             OpenAiLiveEventKind::SessionClosed { .. } => Some(ProviderConnectionEvent::Closed),
             _ => None,
         },
@@ -152,7 +162,8 @@ fn provider_connection_event(
             reason: LiveSessionEndReason::Closed,
             error: None,
         }) => Some(ProviderConnectionEvent::Closed),
-        Ok(LiveSessionEvent::Ended { .. }) | Err(RecvError::Lagged(_)) | Err(RecvError::Closed) => {
+        Err(RecvError::Lagged(_)) => Some(ProviderConnectionEvent::ReceiverLagged),
+        Ok(LiveSessionEvent::Ended { .. }) | Err(RecvError::Closed) => {
             Some(ProviderConnectionEvent::Failed)
         }
     }
@@ -205,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn maps_only_provider_terminal_facts() {
+    fn maps_live_voice_observations() {
         let message = |kind| {
             Ok(LiveSessionEvent::Message(OpenAiLiveEvent {
                 kind,
@@ -213,6 +224,21 @@ mod tests {
             }))
         };
         let cases = [
+            (
+                message(OpenAiLiveEventKind::TranscriptDelta {
+                    event_id: "event_transcript_1".into(),
+                    client_event_id: None,
+                    role: rmcp::model::Role::Assistant,
+                    delta: "hello".into(),
+                    start_ms: 10,
+                    end_ms: 20,
+                }),
+                Some(ProviderConnectionEvent::TranscriptDelta {
+                    event_id: "event_transcript_1".into(),
+                    role: rmcp::model::Role::Assistant,
+                    text: "hello".into(),
+                }),
+            ),
             (
                 message(OpenAiLiveEventKind::SessionClosed {
                     event_id: "event_closed_1".into(),
@@ -250,7 +276,7 @@ mod tests {
             ),
             (
                 Err(RecvError::Lagged(1)),
-                Some(ProviderConnectionEvent::Failed),
+                Some(ProviderConnectionEvent::ReceiverLagged),
             ),
             (
                 Err(RecvError::Closed),

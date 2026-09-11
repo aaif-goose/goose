@@ -41,8 +41,14 @@ pub trait ProviderConnection: Send {
     async fn stop(&mut self) -> Result<()>;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum ProviderConnectionEvent {
+    TranscriptDelta {
+        event_id: String,
+        role: rmcp::model::Role,
+        text: String,
+    },
+    ReceiverLagged,
     Closed,
     Failed,
 }
