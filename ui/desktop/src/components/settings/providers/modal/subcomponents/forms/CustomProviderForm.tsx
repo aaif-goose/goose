@@ -280,7 +280,7 @@ export default function CustomProviderForm({
   const [models, setModels] = useState('');
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
-  const [supportsVision, setSupportsVision] = useState(false);
+  const [supportsVision, setSupportsVision] = useState<boolean | null>(null);
   const [toolshim, setToolshim] = useState(false);
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([]);
   const [newHeaderKey, setNewHeaderKey] = useState('');
@@ -319,7 +319,7 @@ export default function CustomProviderForm({
       setBasePath(initialData.base_path ?? '');
       setModels(initialData.models.join(', '));
       setSupportsStreaming(initialData.supports_streaming ?? true);
-      setSupportsVision(initialData.supports_vision ?? false);
+      setSupportsVision(initialData.supports_vision ?? null);
       setToolshim(initialData.toolshim);
       setRequiresAuth(initialData.requires_auth ?? true);
 
@@ -866,7 +866,7 @@ export default function CustomProviderForm({
             <input
               type="checkbox"
               id="supports-vision"
-              checked={supportsVision}
+              checked={supportsVision ?? false}
               onChange={(e) => setSupportsVision(e.target.checked)}
               className="rounded border-border-primary"
             />
