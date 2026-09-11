@@ -734,6 +734,9 @@
   "customProviderForm.modelsRequired": {
     "defaultMessage": "Требуется хотя бы одна модель"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Модель поддерживает vision (изображения)"
+  },
   "customProviderForm.ollamaCompatible": {
     "defaultMessage": "Совместимо с Ollama"
   },

@@ -87,6 +87,7 @@ function updateRequestToCreate(
     apiKey: request.api_key || null,
     models: request.models,
     supportsStreaming: request.supports_streaming ?? null,
+    supportsVision: request.supports_vision ?? null,
     headers: request.headers ?? undefined,
     requiresAuth: request.requires_auth ?? true,
     catalogProviderId: request.catalog_provider_id ?? null,

@@ -755,6 +755,9 @@
   "customProviderForm.modelsRequired": {
     "defaultMessage": "At least one model is required"
   },
+  "customProviderForm.modelSupportsVision": {
+    "defaultMessage": "Model supports vision (images)"
+  },
   "customProviderForm.ollamaCompatible": {
     "defaultMessage": "Ollama Compatible"
   },

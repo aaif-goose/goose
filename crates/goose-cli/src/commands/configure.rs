@@ -2283,6 +2283,15 @@ fn add_provider() -> anyhow::Result<()> {
         .initial_value(true)
         .interact()?;
 
+    let supports_vision = cliclack::confirm("Do these models support vision (images)?")
+        .initial_value(false)
+        .interact()?;
+
+    let models = models
+        .into_iter()
+        .map(|model| model.with_vision_support(supports_vision))
+        .collect();
+
     let base_path_input: String = cliclack::input("API base path (optional, press Enter to skip):")
         .placeholder("e.g., v1/chat/completions or project_id/v1")
         .required(false)

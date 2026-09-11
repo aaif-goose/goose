@@ -144,6 +144,10 @@ const i18n = defineMessages({
     id: 'customProviderForm.supportsStreaming',
     defaultMessage: 'Provider supports streaming responses',
   },
+  modelSupportsVision: {
+    id: 'customProviderForm.modelSupportsVision',
+    defaultMessage: 'Model supports vision (images)',
+  },
   alwaysUseToolshim: {
     id: 'customProviderForm.alwaysUseToolshim',
     defaultMessage: 'Always use Toolshim for this provider',
@@ -276,6 +280,7 @@ export default function CustomProviderForm({
   const [models, setModels] = useState('');
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
+  const [supportsVision, setSupportsVision] = useState(false);
   const [toolshim, setToolshim] = useState(false);
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([]);
   const [newHeaderKey, setNewHeaderKey] = useState('');
@@ -314,6 +319,7 @@ export default function CustomProviderForm({
       setBasePath(initialData.base_path ?? '');
       setModels(initialData.models.join(', '));
       setSupportsStreaming(initialData.supports_streaming ?? true);
+      setSupportsVision(initialData.supports_vision ?? false);
       setToolshim(initialData.toolshim);
       setRequiresAuth(initialData.requires_auth ?? true);
 
@@ -498,6 +504,7 @@ export default function CustomProviderForm({
         api_key: apiKey,
         models: modelList,
         supports_streaming: supportsStreaming,
+        supports_vision: supportsVision,
         toolshim,
         requires_auth: requiresAuth,
         headers: headersObject,
@@ -853,6 +860,18 @@ export default function CustomProviderForm({
             />
             <label htmlFor="supports-streaming" className="text-sm text-text-secondary">
               {intl.formatMessage(i18n.supportsStreaming)}
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="supports-vision"
+              checked={supportsVision}
+              onChange={(e) => setSupportsVision(e.target.checked)}
+              className="rounded border-border-primary"
+            />
+            <label htmlFor="supports-vision" className="text-sm text-text-secondary">
+              {intl.formatMessage(i18n.modelSupportsVision)}
             </label>
           </div>
           <div className="flex items-center space-x-2">
