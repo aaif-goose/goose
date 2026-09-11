@@ -275,7 +275,9 @@ impl DatabricksV2Provider {
         }
         let mut config = model_config.clone();
         config.model_name = model.unwrap_or_else(|| "model-service".to_string());
-        config.reasoning = None;
+        if config.reasoning != Some(false) {
+            config.reasoning = None;
+        }
         config.supports_vision = None;
         Ok(config.with_canonical_limits(DATABRICKS_V2_PROVIDER_NAME))
     }
@@ -528,7 +530,9 @@ impl DatabricksV2Provider {
         )?;
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
-            if resolved_config.thinking_effort() == Some(ThinkingEffort::Off) {
+            if resolved_config.reasoning == Some(false)
+                || resolved_config.thinking_effort() == Some(ThinkingEffort::Off)
+            {
                 for key in ["thinking_budget", "budget_tokens", "enable_thinking"] {
                     payload.as_object_mut().unwrap().remove(key);
                 }
@@ -764,6 +768,16 @@ impl Provider for DatabricksV2Provider {
             DATABRICKS_V2_PROVIDER_NAME,
             name,
         ))
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        goose_provider_types::context_limit::ContextLimitResolver::new(self.get_name())
+            .resolve(model, override_limit, || async {
+                self.fetch_model_info(model)
+                    .await
+                    .map(|info| info.context_limit)
+            })
+            .await
     }
 }
 
