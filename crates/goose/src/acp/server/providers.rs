@@ -453,7 +453,12 @@ fn custom_provider_config_to_dto(
             .iter()
             .map(|model| model.supports_vision)
             .find_map(|v| v)
-            .filter(|v| config.models.iter().all(|model| model.supports_vision == Some(*v))),
+            .filter(|v| {
+                config
+                    .models
+                    .iter()
+                    .all(|model| model.supports_vision == Some(*v))
+            }),
         supports_streaming: config.supports_streaming,
         headers: config.headers.clone().unwrap_or_default(),
         requires_auth: config.requires_auth,
