@@ -5,12 +5,17 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::{
+    sync::Mutex,
+    time::{timeout, Duration},
+};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{client::IntoClientRequest, Message},
     MaybeTlsStream, WebSocketStream,
 };
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 type SocketSink = SplitSink<Socket, Message>;
@@ -30,13 +35,19 @@ impl WebSocketLiveTransport {
                 http::header::HeaderValue::try_from(value)?,
             );
         }
-        let (socket, _) = connect_async(websocket_request)
+        let (socket, _) = timeout(CONNECT_TIMEOUT, connect_async(websocket_request))
             .await
+            .context("live WebSocket connection timed out")?
             .context("live WebSocket connection failed")?;
         let (mut sink, stream) = socket.split();
-        for message in request.initial_messages {
-            sink.send(Message::Text(message.to_string().into())).await?;
-        }
+        timeout(CONNECT_TIMEOUT, async {
+            for message in request.initial_messages {
+                sink.send(Message::Text(message.to_string().into())).await?;
+            }
+            Result::<()>::Ok(())
+        })
+        .await
+        .context("live WebSocket initialization timed out")??;
         Ok(Self {
             sink: Mutex::new(sink),
             stream: Mutex::new(stream),

@@ -42,8 +42,9 @@ impl BrowserLiveTransport {
     pub async fn push_incoming(&self, message: Value) -> Result<()> {
         let mut closed = self.closed_tx.subscribe();
         tokio::select! {
-            result = self.incoming_tx.send(message) => result.map_err(Into::into),
+            biased;
             _ = closed.wait_for(|closed| *closed) => anyhow::bail!("browser live transport is closed"),
+            result = self.incoming_tx.send(message) => result.map_err(Into::into),
         }
     }
 }
