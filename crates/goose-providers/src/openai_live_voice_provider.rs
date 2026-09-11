@@ -3,12 +3,12 @@
 use crate::{
     live::{LiveSessionEndReason, LiveSessionEvent},
     live_voice_provider::{
-        LiveVoiceProvider, LiveVoiceProviderAvailability, ProviderConnection,
-        ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
+        LiveVoiceInputMessage, LiveVoiceProvider, LiveVoiceProviderAvailability,
+        ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
     },
     openai_live::{
         ConnectedOpenAiLiveSession, OpenAiLiveClient, OpenAiLiveEvent, OpenAiLiveEventKind,
-        OpenAiLiveSessionConfig, OpenAiLiveSessionId,
+        OpenAiLiveMessage, OpenAiLiveMessageRole, OpenAiLiveSessionConfig, OpenAiLiveSessionId,
     },
 };
 use anyhow::{bail, Result};
@@ -91,6 +91,7 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
     async fn start(
         &self,
         offer: WebRtcOffer,
+        input_messages: Vec<LiveVoiceInputMessage>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
         if !self.config.enabled {
             bail!("OpenAI Live voice is disabled");
@@ -104,7 +105,16 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
             model: self.config.model.clone(),
             instructions: String::new(),
             voice: Some(self.config.voice.clone()),
-            input_messages: Vec::new(),
+            input_messages: input_messages
+                .into_iter()
+                .map(|message| OpenAiLiveMessage {
+                    role: match message.role {
+                        rmcp::model::Role::User => OpenAiLiveMessageRole::User,
+                        rmcp::model::Role::Assistant => OpenAiLiveMessageRole::Assistant,
+                    },
+                    text: message.text,
+                })
+                .collect(),
             extra_session_fields: Default::default(),
         };
         let negotiation = timeout(

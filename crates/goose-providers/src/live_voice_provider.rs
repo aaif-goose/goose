@@ -53,6 +53,12 @@ pub enum ProviderConnectionEvent {
     Failed,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveVoiceInputMessage {
+    pub role: rmcp::model::Role,
+    pub text: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LiveVoiceProviderAvailability {
     Ready,
@@ -67,6 +73,7 @@ pub trait LiveVoiceProvider: Send + Sync {
     async fn start(
         &self,
         offer: WebRtcOffer,
+        input_messages: Vec<LiveVoiceInputMessage>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>;
 }
 
@@ -125,10 +132,15 @@ pub mod fake {
         async fn start(
             &self,
             offer: WebRtcOffer,
+            input_messages: Vec<LiveVoiceInputMessage>,
         ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
             let (response_tx, response_rx) = oneshot::channel();
             self.start_tx
-                .send(FakeStartRequest { offer, response_tx })
+                .send(FakeStartRequest {
+                    offer,
+                    input_messages,
+                    response_tx,
+                })
                 .map_err(|_| anyhow::anyhow!("fake provider driver dropped"))?;
             response_rx
                 .await
@@ -138,6 +150,7 @@ pub mod fake {
 
     pub struct FakeStartRequest {
         pub offer: WebRtcOffer,
+        pub input_messages: Vec<LiveVoiceInputMessage>,
         response_tx: oneshot::Sender<Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>>,
     }
 
