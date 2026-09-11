@@ -5,24 +5,33 @@ import { importNostrSessionFromDeepLink } from './sessionLinks';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import RecipeParamsModalContainer from './components/RecipeParamsModalContainer';
-import { isRecipeParamsCancelled, isRecipeParameterScopesUnsupported } from './acp/errors';
+import {
+  formatAcpError,
+  isRecipeParamsCancelled,
+  isRecipeParameterScopesUnsupported,
+} from './acp/errors';
 import { toast, ToastContainer } from 'react-toastify';
 import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
-import { createSession } from './sessions';
+import { createSession, type CreateSessionOptions } from './sessions';
 import { acpListSessions, acpDeleteSession } from './acp/sessions';
 
 import { ChatType } from './types/chat';
 import Hub from './components/Hub';
+import PendingChatView from './components/PendingChatView';
 import { UserInput } from './types/message';
+import { toastError } from './toasts';
+import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 
 interface PairRouteState {
   resumeSessionId?: string;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  workingDir?: string;
+  extensionConfigs?: CreateSessionOptions['extensionConfigs'];
+  allExtensions?: CreateSessionOptions['allExtensions'];
 }
-import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 import SessionsView from './components/sessions/SessionsView';
 import SchedulesView from './components/schedule/SchedulesView';
 import ProviderSettings from './components/settings/providers/ProviderSettingsPage';
@@ -46,7 +55,7 @@ import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
-import { getInitialWorkingDir } from './utils/workingDir';
+import { getEffectiveWorkingDir, getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
@@ -76,6 +85,7 @@ export function resolveSessionInitialMessage(
 
 export const PairRouteWrapper = ({
   activeSessions,
+  draftRef,
 }: {
   activeSessions: Array<{
     sessionId: string;
@@ -85,6 +95,7 @@ export const PairRouteWrapper = ({
   setActiveSessions: (
     sessions: Array<{ sessionId: string; initialMessage?: UserInput; noAutoSubmit?: boolean }>
   ) => void;
+  draftRef?: RefObject<string>;
 }) => {
   const { extensionsList } = useConfig();
   const location = useLocation();
@@ -92,75 +103,117 @@ export const PairRouteWrapper = ({
     (location.state as PairRouteState) || (window.history.state as PairRouteState) || {};
   const [searchParams, setSearchParams] = useSearchParams();
   const isCreatingSessionRef = useRef(false);
+  const unmountedRef = useRef(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
+
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
-  const recipeDeeplinkFromConfig = window.appConfig?.get('recipeDeeplink') as string | undefined;
-  const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | undefined;
+  const recipeDeeplinkFromConfig = window.appConfig?.get('recipeDeeplink') as
+    string | null | undefined;
+  const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | null | undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
+  const requestedWorkingDir = routeState.workingDir;
+  const isPendingSession =
+    !resumeSessionId && Boolean(initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig);
 
   // Create session if we have an initialMessage, recipeDeeplink, or recipeId but no sessionId
   useEffect(() => {
-    if (
-      (initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig) &&
-      !resumeSessionId &&
-      !isCreatingSessionRef.current
-    ) {
-      isCreatingSessionRef.current = true;
+    if (!isPendingSession || isCreatingSessionRef.current) {
+      return;
+    }
 
-      (async () => {
-        try {
-          const newSession = await createSession(getInitialWorkingDir(), {
-            recipeDeeplink: recipeDeeplinkFromConfig,
-            recipeId: recipeIdFromConfig,
-            allExtensions: extensionsList,
-          });
-          const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
+    isCreatingSessionRef.current = true;
 
-          window.dispatchEvent(
-            new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-              detail: {
-                sessionId: newSession.id,
-                initialMessage: sessionInitialMessage,
-                noAutoSubmit,
-              },
-            })
-          );
+    (async () => {
+      try {
+        const sessionWorkingDir = requestedWorkingDir ?? (await getEffectiveWorkingDir());
+        if (unmountedRef.current) {
+          return;
+        }
 
-          setSearchParams((prev) => {
+        const sessionOptions = routeState.extensionConfigs?.length
+          ? { extensionConfigs: routeState.extensionConfigs }
+          : { allExtensions: routeState.allExtensions ?? extensionsList };
+
+        const newSession = await createSession(sessionWorkingDir, {
+          recipeDeeplink: recipeDeeplinkFromConfig ?? undefined,
+          recipeId: recipeIdFromConfig ?? undefined,
+          ...sessionOptions,
+        });
+        if (unmountedRef.current) {
+          return;
+        }
+        if (draftRef) {
+          draftRef.current = '';
+        }
+        const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
+
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.SESSION_CREATED, { detail: { session: newSession } })
+        );
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+            detail: {
+              sessionId: newSession.id,
+              initialMessage: sessionInitialMessage,
+              noAutoSubmit,
+            },
+          })
+        );
+
+        setSearchParams(
+          (prev) => {
             prev.set('resumeSessionId', newSession.id);
             return prev;
-          });
-        } catch (error) {
-          if (isRecipeParamsCancelled(error)) {
-            navigate('/');
-            return;
-          }
-          if (isRecipeParameterScopesUnsupported(error)) {
-            toast.error(error.message);
-            navigate('/');
-            return;
-          }
-          console.error('Failed to create session:', error);
-          trackErrorWithContext(error, {
-            component: 'PairRouteWrapper',
-            action: 'create_session',
-            recoverable: true,
-          });
-        } finally {
-          isCreatingSessionRef.current = false;
+          },
+          { replace: true, state: location.state }
+        );
+      } catch (error) {
+        if (unmountedRef.current) {
+          return;
         }
-      })();
-    }
+        if (draftRef && initialMessage?.msg) {
+          draftRef.current = initialMessage.msg;
+        }
+        if (isRecipeParamsCancelled(error)) {
+          navigate('/');
+          return;
+        }
+        if (isRecipeParameterScopesUnsupported(error)) {
+          toast.error(error.message);
+          navigate('/');
+          return;
+        }
+        console.error('Failed to create session:', error);
+        trackErrorWithContext(error, {
+          component: 'PairRouteWrapper',
+          action: 'create_session',
+          recoverable: true,
+        });
+        toastError({ title: "Couldn't start chat", msg: formatAcpError(error) });
+        navigate('/');
+      } finally {
+        isCreatingSessionRef.current = false;
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    isPendingSession,
     initialMessage,
     recipeDeeplinkFromConfig,
     recipeIdFromConfig,
     resumeSessionId,
     setSearchParams,
     extensionsList,
+    requestedWorkingDir,
+    draftRef,
   ]);
 
   // Add resumed session to active sessions if not already there
@@ -177,6 +230,10 @@ export const PairRouteWrapper = ({
       );
     }
   }, [resumeSessionId, activeSessions, initialMessage, noAutoSubmit]);
+
+  if (isPendingSession) {
+    return <PendingChatView initialMessage={initialMessage} />;
+  }
 
   return null;
 };
@@ -654,6 +711,7 @@ export function AppInner() {
                   <PairRouteWrapper
                     activeSessions={activeSessions}
                     setActiveSessions={setActiveSessions}
+                    draftRef={hubDraftRef}
                   />
                 }
               />
