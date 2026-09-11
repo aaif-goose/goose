@@ -21,6 +21,7 @@ export interface BackendCheckResult {
   ok: boolean;
   steps: BackendCheckStep[];
   failure: string | null;
+  resolvedBaseUrl: string | null;
 }
 
 export interface BackendCheckParams {
@@ -34,6 +35,7 @@ interface Probe {
   ok: boolean;
   detail: string;
   retryable: boolean;
+  resolvedBaseUrl?: string;
 }
 
 const delay = (timeoutMs: number): Promise<void> =>
@@ -41,6 +43,20 @@ const delay = (timeoutMs: number): Promise<void> =>
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const baseUrlFromEndpointUrl = (
+  endpointUrl: string,
+  endpoint: '/status' | '/acp'
+): string | undefined => {
+  try {
+    const url = new URL(endpointUrl);
+    return url.pathname.endsWith(endpoint)
+      ? `${url.origin}${url.pathname.slice(0, -endpoint.length)}`
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const proxyNote = (response: Response): string => {
   const doormanError = response.headers.get('x-sq-cf-doorman-error');
@@ -78,7 +94,12 @@ const probeStatus = (
     { headers: { 'X-Secret-Key': secret } },
     (response) =>
       response.ok
-        ? { ok: true, detail: `GET /status returned ${response.status}.`, retryable: false }
+        ? {
+            ok: true,
+            detail: `GET /status returned ${response.status}.`,
+            retryable: false,
+            resolvedBaseUrl: baseUrlFromEndpointUrl(response.url, '/status'),
+          }
         : {
             ok: false,
             detail: `GET /status returned ${response.status} ${response.statusText}.${proxyNote(response)}`,
@@ -93,7 +114,12 @@ const probeSecret = (
 ): Promise<Probe> =>
   request(fetch, acpHttpUrlFromHttpBase(baseUrl, secret), {}, (response) => {
     if (response.status === 406) {
-      return { ok: true, detail: 'The backend accepted the secret key.', retryable: false };
+      return {
+        ok: true,
+        detail: 'The backend accepted the secret key.',
+        retryable: false,
+        resolvedBaseUrl: baseUrlFromEndpointUrl(response.url, '/acp'),
+      };
     }
     if (response.status === 401 || response.status === 403) {
       return {
@@ -119,7 +145,7 @@ export const checkBackendStatus = async ({
 }: BackendCheckParams): Promise<BackendCheckResult> => {
   const steps: BackendCheckStep[] = [];
 
-  const run = async (name: string, probe: () => Promise<Probe>): Promise<boolean> => {
+  const run = async (name: string, probe: () => Promise<Probe>): Promise<Probe> => {
     const deadline = Date.now() + RETRY_BUDGET_MS;
     let result = await probe();
     while (
@@ -132,7 +158,7 @@ export const checkBackendStatus = async ({
       result = await probe();
     }
     steps.push({ name, ok: result.ok, detail: result.detail });
-    return result.ok;
+    return result;
   };
 
   let normalizedBaseUrl = '';
@@ -143,12 +169,20 @@ export const checkBackendStatus = async ({
     steps.push({ name: 'URL', ok: false, detail: errorText(error) });
   }
 
+  let resolvedBaseUrl = normalizedBaseUrl || null;
   if (normalizedBaseUrl) {
     const reachable = await run('Reachable', () =>
       probeStatus(fetch, normalizedBaseUrl, serverSecret)
     );
-    if (reachable) {
-      await run('Secret key', () => probeSecret(fetch, normalizedBaseUrl, serverSecret));
+    if (reachable.ok) {
+      const statusBaseUrl = reachable.resolvedBaseUrl ?? normalizedBaseUrl;
+      const accepted = await run('Secret key', () =>
+        probeSecret(fetch, statusBaseUrl, serverSecret)
+      );
+      resolvedBaseUrl = accepted.resolvedBaseUrl ?? statusBaseUrl;
+      if (accepted.ok && resolvedBaseUrl !== normalizedBaseUrl) {
+        steps.push({ name: 'Redirect', ok: true, detail: `Followed to ${resolvedBaseUrl}.` });
+      }
     }
   }
 
@@ -157,5 +191,6 @@ export const checkBackendStatus = async ({
     ok: !failed,
     steps,
     failure: failed ? `${failed.name}: ${failed.detail}`.trim() : null,
+    resolvedBaseUrl: failed ? null : resolvedBaseUrl,
   };
 };

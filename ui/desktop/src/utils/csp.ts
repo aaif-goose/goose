@@ -15,8 +15,23 @@ const DEFAULT_CONNECT_SOURCES = [
   'https://objects.githubusercontent.com',
 ];
 
+const extraBackendOrigins = new Set<string>();
+
+// A backend that redirects serves ACP from the final origin, which the renderer
+// must be allowed to open a WebSocket to.
+export function allowBackendOrigin(url: string): void {
+  try {
+    const parsed = new URL(url);
+    extraBackendOrigins.add(parsed.origin);
+    parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+    extraBackendOrigins.add(parsed.origin);
+  } catch {
+    console.warn('Invalid backend URL, skipping CSP entry');
+  }
+}
+
 export function buildConnectSrc(externalBackend?: ExternalBackendConfig): string {
-  const sources = [...DEFAULT_CONNECT_SOURCES];
+  const sources = [...DEFAULT_CONNECT_SOURCES, ...extraBackendOrigins];
 
   if (externalBackend?.enabled && externalBackend.url) {
     try {
