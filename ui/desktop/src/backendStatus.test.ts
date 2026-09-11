@@ -1,60 +1,53 @@
 import { describe, expect, it, vi } from 'vitest';
 import { checkBackendStatus } from './backendStatus';
+import type { HopRequest, HopResponse } from './backendRedirects';
 
-type FetchInput = Parameters<typeof globalThis.fetch>[0];
-
-const fetchInputUrl = (input: FetchInput): string => {
-  if (typeof input === 'string') {
-    return input;
-  }
-  if (input instanceof URL) {
-    return input.toString();
-  }
-  return input.url;
-};
+const respond = (status: number, location?: string): HopResponse => ({
+  status,
+  statusText: '',
+  headers: { get: () => null },
+  location: location ?? null,
+});
 
 describe('checkBackendStatus', () => {
   it('checks /status and validates the secret against /acp', async () => {
-    const fetch = vi.fn(async (input: FetchInput) => {
-      const url = fetchInputUrl(input);
+    const request = vi.fn(async (url: string) => {
       if (url === 'https://example.com/goose/status') {
-        return new Response(null, { status: 200 });
+        return respond(200);
       }
-      if (url === 'https://example.com/goose/acp?token=test-secret') {
-        return new Response(null, { status: 406 });
+      if (url === 'https://example.com/goose/acp') {
+        return respond(406);
       }
 
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    await expect(
-      checkBackendStatus({
-        baseUrl: 'https://example.com/goose',
-        serverSecret: 'test-secret',
-        fetch,
-      })
-    ).resolves.toMatchObject({ ok: true, failure: null });
+    const result = await checkBackendStatus({
+      baseUrl: 'https://example.com/goose',
+      serverSecret: 'test-secret',
+      request,
+    });
 
-    expect(fetch.mock.calls.map(([input]) => fetchInputUrl(input))).toEqual([
-      'https://example.com/goose/status',
-      'https://example.com/goose/acp?token=test-secret',
-    ]);
+    expect(result).toMatchObject({
+      ok: true,
+      failure: null,
+      resolvedAcpUrl: 'wss://example.com/goose/acp?token=test-secret',
+    });
   });
 
-  it('derives the resolved base URL from the redirected /acp probe', async () => {
-    const fetch = vi.fn(async (input: FetchInput) => {
-      const url = fetchInputUrl(input);
+  it('follows redirects and keeps the resolved ACP endpoint', async () => {
+    const request = vi.fn(async (url: string) => {
       if (url === 'https://example.com/status') {
-        const response = new Response(null, { status: 200 });
-        Object.defineProperty(response, 'url', { value: 'https://backend.example.com/status' });
-        return response;
+        return respond(302, 'https://backend.example.com/goose/status');
       }
-      if (url === 'https://backend.example.com/acp?token=test-secret') {
-        const response = new Response(null, { status: 406 });
-        Object.defineProperty(response, 'url', {
-          value: 'https://backend.example.com/goose/acp?token=test-secret',
-        });
-        return response;
+      if (url === 'https://backend.example.com/goose/status') {
+        return respond(200);
+      }
+      if (url === 'https://backend.example.com/goose/acp') {
+        return respond(302, 'https://backend.example.com/socket?tenant=x');
+      }
+      if (url === 'https://backend.example.com/socket?tenant=x') {
+        return respond(406);
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -63,21 +56,77 @@ describe('checkBackendStatus', () => {
     const result = await checkBackendStatus({
       baseUrl: 'https://example.com',
       serverSecret: 'test-secret',
-      fetch,
+      request,
     });
 
     expect(result.ok).toBe(true);
-    expect(result.resolvedBaseUrl).toBe('https://backend.example.com/goose');
+    expect(result.resolvedAcpUrl).toBe(
+      'wss://backend.example.com/socket?tenant=x&token=test-secret'
+    );
+  });
+
+  it('sends the secret only to the resolved ACP endpoint', async () => {
+    const request = vi.fn<HopRequest>(async (url) => {
+      if (url === 'https://example.com/status') {
+        return respond(200);
+      }
+      if (url === 'https://example.com/acp') {
+        return respond(302, 'https://backend.example.com/acp');
+      }
+      if (url === 'https://backend.example.com/acp') {
+        return respond(406);
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await checkBackendStatus({
+      baseUrl: 'https://example.com',
+      serverSecret: 'test-secret',
+      request,
+    });
+
+    const secretRecipients = request.mock.calls
+      .filter(([, init]) => init.headers?.['X-Secret-Key'])
+      .map(([url]) => url);
+    expect(secretRecipients).toEqual(['https://backend.example.com/acp']);
+  });
+
+  it('rejects an HTTPS to HTTP redirect', async () => {
+    const request = vi.fn(async () => respond(302, 'http://backend.example.com/status'));
+
+    const result = await checkBackendStatus({
+      baseUrl: 'https://example.com',
+      serverSecret: 'test-secret',
+      request,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failure).toContain('Redirect from HTTPS to HTTP is not allowed');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a cross-host redirect when a certificate fingerprint is pinned', async () => {
+    const request = vi.fn(async () => respond(302, 'https://backend.example.com/status'));
+
+    const result = await checkBackendStatus({
+      baseUrl: 'https://example.com',
+      serverSecret: 'test-secret',
+      request,
+      pinnedHostname: 'example.com',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failure).toContain('certificate fingerprint is configured');
   });
 
   it('reports the rejected secret without retrying', async () => {
-    const fetch = vi.fn(async (input: FetchInput) => {
-      const url = fetchInputUrl(input);
+    const request = vi.fn(async (url: string) => {
       if (url === 'https://example.com/status') {
-        return new Response(null, { status: 200 });
+        return respond(200);
       }
-      if (url === 'https://example.com/acp?token=wrong-secret') {
-        return new Response(null, { status: 401 });
+      if (url === 'https://example.com/acp') {
+        return respond(401);
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -86,41 +135,41 @@ describe('checkBackendStatus', () => {
     const result = await checkBackendStatus({
       baseUrl: 'https://example.com',
       serverSecret: 'wrong-secret',
-      fetch,
+      request,
     });
 
     expect(result.ok).toBe(false);
     expect(result.failure).toContain('Secret key: The backend rejected the secret key (HTTP 401)');
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(3);
   });
 
   it('reports an unusable URL without any request', async () => {
-    const fetch = vi.fn();
+    const request = vi.fn();
 
     const result = await checkBackendStatus({
       baseUrl: 'https://example.com/acp',
       serverSecret: 'test-secret',
-      fetch,
+      request,
     });
 
     expect(result.ok).toBe(false);
     expect(result.failure).toContain('URL:');
-    expect(fetch).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('stops retrying a fatal network failure', async () => {
-    const fetch = vi.fn(async () => {
+    const request = vi.fn(async () => {
       throw new Error('net::ERR_NAME_NOT_RESOLVED');
     });
 
     const result = await checkBackendStatus({
       baseUrl: 'https://nope.example.com',
       serverSecret: 'test-secret',
-      fetch,
+      request,
     });
 
     expect(result.ok).toBe(false);
     expect(result.failure).toContain('ERR_NAME_NOT_RESOLVED');
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });
