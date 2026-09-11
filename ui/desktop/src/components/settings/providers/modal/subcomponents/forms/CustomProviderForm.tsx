@@ -280,7 +280,8 @@ export default function CustomProviderForm({
   const [models, setModels] = useState('');
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
-  const [supportsVision, setSupportsVision] = useState<boolean | null>(null);
+  // Create: unchecked = explicit false (vision off); edit: null = leave per-model values untouched
+  const [supportsVision, setSupportsVision] = useState<boolean | null>(initialData ? null : false);
   const [toolshim, setToolshim] = useState(false);
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([]);
   const [newHeaderKey, setNewHeaderKey] = useState('');
@@ -354,7 +355,7 @@ export default function CustomProviderForm({
     setSupportsVision(
       attachments.length > 0 && attachments.every((a) => a === attachments[0])
         ? attachments[0]
-        : null,
+        : null
     );
 
     setStep('form');
@@ -369,14 +370,14 @@ export default function CustomProviderForm({
     setModels('');
     setEngine('openai_compatible');
     setSupportsStreaming(true);
-    setSupportsVision(null);
+    setSupportsVision(false);
     setRequiresAuth(false);
     setStep('choice');
   };
 
   const handleBackToChoice = () => {
     clearSensitiveState();
-    setSupportsVision(null);
+    setSupportsVision(false);
     setStep('choice');
   };
 
