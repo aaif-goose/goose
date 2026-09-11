@@ -611,7 +611,14 @@ mod tests {
                 retry_config: None,
             };
 
-            let reply_stream = agent.reply(user_message, session_config, None).await?;
+            let reply_stream = agent
+                .reply(
+                    user_message,
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
+                .await?;
             tokio::pin!(reply_stream);
 
             let mut responses = Vec::new();
@@ -804,7 +811,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hello"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -1020,7 +1032,14 @@ mod tests {
                 retry_config: None,
             };
 
-            let reply_stream = agent.reply(user_message, session_config, None).await?;
+            let reply_stream = agent
+                .reply(
+                    user_message,
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
+                .await?;
             tokio::pin!(reply_stream);
 
             // Drain the stream
@@ -1384,6 +1403,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Do something then say hello"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1438,6 +1458,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Tell me more"),
                     session_config2,
+                    goose::agents::state_machine::enabled(),
                     Some(cancel_token),
                 )
                 .await?;
@@ -1630,6 +1651,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1831,6 +1853,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1992,6 +2015,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use both tools"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2144,6 +2168,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use both tools"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2331,7 +2356,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hello"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2410,7 +2440,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hello"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2509,6 +2544,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("/goal make all tests pass"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2570,7 +2606,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("/goal"), session_config, None)
+                .reply(
+                    Message::user().with_text("/goal"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2693,7 +2734,12 @@ mod tests {
                 retry_config: None,
             };
             let stream = agent
-                .reply(Message::user().with_text(text), session_config, None)
+                .reply(
+                    Message::user().with_text(text),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(stream);
             while let Some(event) = stream.next().await {
@@ -3103,6 +3149,7 @@ mod tests {
                         max_turns: Some(3),
                         retry_config: None,
                     },
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -3386,7 +3433,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3570,7 +3622,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
             let mut emitted_steer_id = None;
@@ -3656,6 +3713,7 @@ mod tests {
                         max_turns: Some(3),
                         retry_config: None,
                     },
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -3722,7 +3780,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3840,7 +3903,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3929,7 +3997,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3991,7 +4064,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
