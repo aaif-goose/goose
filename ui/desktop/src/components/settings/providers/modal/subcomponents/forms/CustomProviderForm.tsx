@@ -348,8 +348,14 @@ export default function CustomProviderForm({
 
     setEngine(normalizeEngine(template.format));
 
-    const templateModels = template.models.filter((m) => !m.deprecated).map((m) => m.id);
-    setModels(templateModels.join(', '));
+    const templateModels = template.models.filter((m) => !m.deprecated);
+    setModels(templateModels.map((m) => m.id).join(', '));
+    const attachments = templateModels.map((m) => m.capabilities.attachment);
+    setSupportsVision(
+      attachments.length > 0 && attachments.every((a) => a === attachments[0])
+        ? attachments[0]
+        : null,
+    );
 
     setStep('form');
   };
@@ -363,12 +369,14 @@ export default function CustomProviderForm({
     setModels('');
     setEngine('openai_compatible');
     setSupportsStreaming(true);
+    setSupportsVision(null);
     setRequiresAuth(false);
     setStep('choice');
   };
 
   const handleBackToChoice = () => {
     clearSensitiveState();
+    setSupportsVision(null);
     setStep('choice');
   };
 
