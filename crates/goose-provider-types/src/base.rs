@@ -259,6 +259,9 @@ pub struct ModelInfo {
     pub currency: Option<String>,
     /// Whether this model supports cache control
     pub supports_cache_control: Option<bool>,
+    /// Whether this model accepts image input (vision).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
     /// Whether this model supports reasoning/thinking controls
     #[serde(default)]
     pub reasoning: bool,
@@ -279,6 +282,7 @@ impl ModelInfo {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            supports_vision: None,
             reasoning: false,
             thinking_preservation_format: None,
             request_params: None,
@@ -292,6 +296,11 @@ impl ModelInfo {
 
     pub fn with_optional_context_limit(mut self, context_limit: Option<usize>) -> Self {
         self.context_limit = context_limit;
+        self
+    }
+
+    pub fn with_vision_support(mut self, supports_vision: bool) -> Self {
+        self.supports_vision = Some(supports_vision);
         self
     }
 
@@ -310,6 +319,7 @@ impl ModelInfo {
             output_token_cost: Some(output_cost),
             currency: Some("$".to_string()),
             supports_cache_control: None,
+            supports_vision: None,
             reasoning: false,
             thinking_preservation_format: None,
             request_params: None,
@@ -355,6 +365,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         output_token_cost: None,
         currency: None,
         supports_cache_control: None,
+        supports_vision: None,
         reasoning,
         thinking_preservation_format: None,
         request_params: None,
@@ -1038,6 +1049,7 @@ mod tests {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            supports_vision: None,
             reasoning: false,
             thinking_preservation_format: None,
             request_params: None,
@@ -1053,6 +1065,7 @@ mod tests {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            supports_vision: None,
             reasoning: false,
             thinking_preservation_format: None,
             request_params: None,
@@ -1068,6 +1081,7 @@ mod tests {
             output_token_cost: None,
             currency: None,
             supports_cache_control: None,
+            supports_vision: None,
             reasoning: false,
             thinking_preservation_format: None,
             request_params: None,
