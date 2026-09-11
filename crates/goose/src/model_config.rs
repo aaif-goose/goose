@@ -40,11 +40,19 @@ pub fn materialize_model_config(provider_name: &str, model: ModelConfig) -> Resu
 }
 
 fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfig {
-    if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    if uses_model_metadata(provider_name, &model.model_name) {
         model
     } else {
         model.with_canonical_limits(provider_name)
     }
+}
+
+fn uses_model_metadata(provider_name: &str, model_name: &str) -> bool {
+    provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME
+        || (provider_name == "databricks_v2"
+            && goose_providers::databricks_v2::DatabricksV2Provider::is_model_service_fqn(
+                model_name,
+            ))
 }
 
 fn materialize_model_config_inner(
@@ -135,7 +143,7 @@ fn base_model_config_from_user_config(
         supports_vision: None,
         request_headers: None,
     };
-    if provider_name != goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    if !uses_model_metadata(provider_name, model_name) {
         model.normalize_effort_suffix();
     }
     Ok(model)

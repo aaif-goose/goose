@@ -751,7 +751,7 @@ pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
 // Shared with the Bedrock formatter, which applies the same clamp.
 pub const MIN_ANSWER_TOKENS: i32 = 1024;
 
-fn apply_thinking_config(
+pub fn apply_thinking_config(
     payload: &mut Value,
     provider_name: &str,
     model_config: &ModelConfig,
