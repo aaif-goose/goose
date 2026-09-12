@@ -1150,7 +1150,7 @@ async fn execute_job(
     use futures::StreamExt;
     let mut stream = std::pin::pin!(stream);
 
-    let mut stream_error = false;
+    let mut stream_error: Option<anyhow::Error> = None;
     while let Some(message_result) = stream.next().await {
         tokio::task::yield_now().await;
 
@@ -1164,7 +1164,7 @@ async fn execute_job(
             Ok(_) => {}
             Err(e) => {
                 tracing::error!("Error in agent stream: {}", e);
-                stream_error = true;
+                stream_error = Some(anyhow::anyhow!("{}", e));
                 break;
             }
         }
@@ -1172,7 +1172,11 @@ async fn execute_job(
 
     {
         let session_duration = start_time.elapsed();
-        let exit_type = if stream_error { "error" } else { "normal" };
+        let exit_type = if stream_error.is_some() {
+            "error"
+        } else {
+            "normal"
+        };
         let (total_tokens, message_count) = agent
             .config
             .session_manager
@@ -1212,6 +1216,11 @@ async fn execute_job(
     #[cfg(feature = "telemetry")]
     {
         let duration_secs = start_time.elapsed().as_secs();
+        let status = if stream_error.is_some() {
+            "failed"
+        } else {
+            "completed"
+        };
         tokio::spawn(async move {
             let mut props = HashMap::new();
             props.insert(
@@ -1220,7 +1229,7 @@ async fn execute_job(
             );
             props.insert(
                 "status".to_string(),
-                serde_json::Value::String("completed".to_string()),
+                serde_json::Value::String(status.to_string()),
             );
             props.insert(
                 "duration_seconds".to_string(),
@@ -1232,7 +1241,11 @@ async fn execute_job(
         });
     }
 
-    Ok(session.id)
+    if let Some(e) = stream_error {
+        Err(anyhow::anyhow!("Scheduled job '{}' failed: {}", job.id, e))
+    } else {
+        Ok(session.id)
+    }
 }
 
 #[async_trait]

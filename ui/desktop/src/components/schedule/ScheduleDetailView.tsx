@@ -166,8 +166,6 @@ const ScheduleDetailView: React.FC<ScheduleDetailViewProps> = ({ scheduleId, onN
       if (result.status === 'completed' && result.sessionId) {
         toastSuccess({ title: intl.formatMessage(i18n.scheduleCompleted), msg: intl.formatMessage(i18n.completedSession, { sessionId: result.sessionId }) });
       }
-      await fetchSessions(scheduleId);
-      await fetchSchedule(scheduleId);
     } catch (err) {
       const errorMsg = errorMessage(err, 'Failed to trigger schedule');
       trackScheduleRunNow(false, getErrorType(err));
@@ -176,6 +174,8 @@ const ScheduleDetailView: React.FC<ScheduleDetailViewProps> = ({ scheduleId, onN
         msg: errorMsg,
       });
     } finally {
+      await fetchSessions(scheduleId);
+      await fetchSchedule(scheduleId);
       setIsActionLoading(false);
     }
   };
