@@ -16,12 +16,11 @@ use rmcp::transport::auth::{
 use rmcp::transport::AuthorizationManager;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 use std::fs::{File, OpenOptions};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
-use std::thread::ThreadId;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{oneshot, Mutex};
 use tracing::warn;
@@ -313,77 +312,11 @@ fn lock_oauth_flow(name: &str) -> Result<File, anyhow::Error> {
     Ok(file)
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum OAuthLockOwner {
-    Task(tokio::task::Id),
-    Thread(ThreadId),
-}
-
-fn current_oauth_lock_owner() -> OAuthLockOwner {
-    match tokio::task::try_id() {
-        Some(task_id) => OAuthLockOwner::Task(task_id),
-        None => OAuthLockOwner::Thread(std::thread::current().id()),
-    }
-}
-
-static HELD_OAUTH_FLOW_LOCKS: OnceLock<StdMutex<HashMap<OAuthLockOwner, HashSet<String>>>> =
-    OnceLock::new();
-
-fn held_oauth_flow_locks() -> &'static StdMutex<HashMap<OAuthLockOwner, HashSet<String>>> {
-    HELD_OAUTH_FLOW_LOCKS.get_or_init(|| StdMutex::new(HashMap::new()))
-}
-
-pub(crate) enum OAuthFlowLock {
-    Held {
-        name: String,
-        owner: OAuthLockOwner,
-        _file: File,
-    },
-    Nested,
-}
-
-impl Drop for OAuthFlowLock {
-    fn drop(&mut self) {
-        let OAuthFlowLock::Held { name, owner, .. } = self else {
-            return;
-        };
-        if let Ok(mut held) = held_oauth_flow_locks().lock() {
-            if let Some(names) = held.get_mut(owner) {
-                names.remove(name);
-                if names.is_empty() {
-                    held.remove(owner);
-                }
-            }
-        }
-    }
-}
-
-pub(crate) async fn acquire_oauth_flow_lock(name: &str) -> Result<OAuthFlowLock, anyhow::Error> {
-    let owner = current_oauth_lock_owner();
-    {
-        let held = held_oauth_flow_locks().lock().unwrap();
-        if held.get(&owner).is_some_and(|names| names.contains(name)) {
-            return Ok(OAuthFlowLock::Nested);
-        }
-    }
-
+pub(crate) async fn acquire_oauth_flow_lock(name: &str) -> Result<File, anyhow::Error> {
     let lock_name = name.to_string();
-    let file = tokio::task::spawn_blocking(move || lock_oauth_flow(&lock_name))
+    tokio::task::spawn_blocking(move || lock_oauth_flow(&lock_name))
         .await
-        .map_err(|e| anyhow::anyhow!("OAuth flow lock task failed: {e}"))??;
-
-    held_oauth_flow_locks()
-        .lock()
-        .unwrap()
-        .entry(owner)
-        .or_default()
-        .insert(name.to_string());
-
-    Ok(OAuthFlowLock::Held {
-        name: name.to_string(),
-        owner,
-        _file: file,
-    })
+        .map_err(|e| anyhow::anyhow!("OAuth flow lock task failed: {e}"))?
 }
 
 fn access_token_needs_refresh(stored_credentials: &StoredCredentials) -> bool {
@@ -503,7 +436,9 @@ pub async fn oauth_flow_with_challenge(
     // rotating refresh token cannot be spent twice and then wipe the winner.
     let _oauth_lock = acquire_oauth_flow_lock(name).await?;
     credential_store.invalidate_cache();
-    auth_manager.set_credential_store(credential_store.clone());
+    // The flow lock already serializes this path. Nested rmcp refreshes must
+    // not try to reacquire the same exclusive file lock.
+    auth_manager.set_credential_store(credential_store.clone().without_refresh_guard());
 
     let stored_credentials = credential_store.load().await?;
     let previous_requested_scopes = credential_store.load_requested_scopes()?;
@@ -580,7 +515,8 @@ pub async fn oauth_flow_with_challenge(
                             static_client,
                             mcp_server_url,
                         )?;
-                        restored_manager.set_credential_store(credential_store);
+                        restored_manager
+                            .set_credential_store(credential_store.without_refresh_guard());
                         return Ok(restored_manager);
                     }
                     return Ok(auth_manager);
@@ -1252,24 +1188,6 @@ mod tests {
         );
         drop(held);
         assert!(contender.try_lock_exclusive().is_ok());
-    }
-
-    #[tokio::test]
-    async fn oauth_flow_lock_is_reentrant_for_the_same_task() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().to_str().unwrap();
-        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
-
-        let outer = acquire_oauth_flow_lock("Pi Swisssync").await.unwrap();
-        let inner = tokio::time::timeout(
-            Duration::from_secs(2),
-            acquire_oauth_flow_lock("Pi Swisssync"),
-        )
-        .await
-        .expect("nested OAuth lock acquire deadlocked")
-        .unwrap();
-        drop(inner);
-        drop(outer);
     }
 
     #[tokio::test]
