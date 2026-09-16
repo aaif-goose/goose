@@ -10,7 +10,7 @@ use rmcp::ServiceError as ClientError;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{error, warn};
+use tracing::warn;
 
 pub use crate::agents::platform_extensions::{
     PlatformExtensionContext, PlatformExtensionDef, PLATFORM_EXTENSIONS,
@@ -391,7 +391,7 @@ impl ExtensionConfig {
                 bundled,
                 available_tools,
             } => {
-                let merged = merge_environments(&envs, &env_keys, &name, config).await?;
+                let merged = merge_environments(&envs, env_keys.iter(), config).await?;
                 Ok(Self::Stdio {
                     name,
                     description,
@@ -423,13 +423,9 @@ impl ExtensionConfig {
                 // Resolve the OAuth client secret alongside env_keys so that
                 // rotating it changes the resolved config, which is what
                 // add_extension compares to decide whether to restart.
-                let mut secret_keys = env_keys;
-                if let Some(key) = &client_secret_key {
-                    if !secret_keys.contains(key) {
-                        secret_keys.push(key.clone());
-                    }
-                }
-                let merged = merge_environments(&envs, &secret_keys, &name, config).await?;
+                let merged =
+                    merge_environments(&envs, env_keys.iter().chain(&client_secret_key), config)
+                        .await?;
                 let headers = headers
                     .into_iter()
                     .map(|(k, v)| {
@@ -468,54 +464,23 @@ static RE_ENV_SIMPLE: Lazy<regex::Regex> =
 
 async fn merge_environments(
     envs: &Envs,
-    env_keys: &[String],
-    ext_name: &str,
+    env_keys: impl Iterator<Item = &String>,
     config: &Config,
-) -> Result<HashMap<String, String>, ExtensionError> {
+) -> ExtensionResult<HashMap<String, String>> {
     let mut all_envs = envs.get_env();
-
     for key in env_keys {
+        // inline values shadow the secret store
         if all_envs.contains_key(key) {
             continue;
         }
-
-        match config.get(key, true) {
-            Ok(value) => {
-                if value.is_null() {
-                    warn!(
-                        key = %key,
-                        ext_name = %ext_name,
-                        "Secret key not found in config (returned null)."
-                    );
-                    continue;
-                }
-
-                if let Some(str_val) = value.as_str() {
-                    all_envs.insert(key.clone(), str_val.to_string());
-                } else {
-                    warn!(
-                        key = %key,
-                        ext_name = %ext_name,
-                        value_type = %value.get("type").and_then(|t| t.as_str()).unwrap_or("unknown"),
-                        "Secret value is not a string; skipping."
-                    );
-                }
-            }
-            Err(e) => {
-                error!(
-                    key = %key,
-                    ext_name = %ext_name,
-                    error = %e,
-                    "Failed to fetch secret from config."
-                );
-                return Err(ExtensionError::ConfigError(format!(
-                    "Failed to fetch secret '{}' from config: {}",
-                    key, e
-                )));
-            }
-        }
+        let value: String = config.get_secret(key).map_err(|e| {
+            ExtensionError::ConfigError(format!(
+                "Failed to fetch secret '{}' from config: {}",
+                key, e
+            ))
+        })?;
+        all_envs.insert(key.clone(), value);
     }
-
     Ok(Envs::new(all_envs).get_env())
 }
 
