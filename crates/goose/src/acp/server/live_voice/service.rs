@@ -201,6 +201,19 @@ impl LiveVoiceService {
             LiveVoiceCallCompletion::Failed => Err(LiveVoiceError::StopFailed),
         }
     }
+
+    pub(in crate::acp::server) async fn stop_session_call(&self, session_id: &str) {
+        let call_id = self
+            .calls_by_session
+            .lock()
+            .expect("live voice lock poisoned")
+            .get(session_id)
+            .map(|control| control.call_id.clone());
+
+        if let Some(call_id) = call_id {
+            let _ = self.stop_call(session_id, &call_id).await;
+        }
+    }
 }
 
 fn configured_live_voice_enabled() -> bool {

@@ -2600,6 +2600,8 @@ impl GooseAcpAgent {
             token.cancel();
         }
 
+        self.live_voice.stop_session_call(session_id).await;
+
         let mut sessions = self.sessions.lock().await;
         sessions.remove(session_id);
         drop(sessions);
