@@ -111,6 +111,8 @@ mod list_sessions;
 mod live_voice;
 mod load_session;
 mod local_inference;
+#[cfg(test)]
+mod prompt_tests;
 pub use crate::live_voice::LiveVoiceService;
 mod manage_sessions;
 mod message_meta;
@@ -811,18 +813,19 @@ impl AcpConnection {
         run_id: String,
     ) -> Result<(), agent_client_protocol::Error> {
         self.services
-            .start_prompt_run(
+            .reserve_prompt_run(session_id, run_id, CancellationToken::new())
+            .map_err(|_| agent_client_protocol::Error::invalid_params())?;
+        self.services
+            .attach_session(
                 session_id,
                 self.connection_id,
                 Attachment {
                     client: ClientContext::new(&self.services.goose_platform, None),
                     session_names: None,
                 },
-                run_id,
-                CancellationToken::new(),
             )
-            .await
-            .map_err(|_| agent_client_protocol::Error::invalid_params())
+            .await;
+        Ok(())
     }
 
     #[cfg(all(test, feature = "scheduler"))]
@@ -1797,32 +1800,24 @@ impl AcpConnection {
         Ok(())
     }
 
-    async fn start_active_run(
+    async fn reserve_prompt_run(
         &self,
         session_id: &str,
-        run_id: String,
-        cancel_token: CancellationToken,
-    ) -> Result<(), agent_client_protocol::Error> {
+    ) -> Result<ActiveRunDropGuard, agent_client_protocol::Error> {
+        let run = ActiveRunDropGuard {
+            services: Arc::clone(&self.services),
+            session_id: session_id.to_string(),
+            run_id: format!("run_{}", Uuid::new_v4()),
+            cancel_token: CancellationToken::new(),
+        };
         if self.closed_session_ids.lock().await.contains(session_id) {
             return Err(agent_client_protocol::Error::resource_not_found(Some(
                 session_id.to_string(),
             ))
             .data(format!("Session not found: {}", session_id)));
         }
-
-        let cx = self.client_cx.get().ok_or_else(|| {
-            agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
-                .data(format!("Session not found: {}", session_id))
-        })?;
         self.services
-            .start_prompt_run(
-                session_id,
-                self.connection_id,
-                self.session_attachment(cx),
-                run_id,
-                cancel_token,
-            )
-            .await
+            .reserve_prompt_run(session_id, run.run_id.clone(), run.cancel_token.clone())
             .map_err(|error| match error {
                 StartRunError::AgentRunExists { run_id } => {
                     let message = format!(
@@ -1834,7 +1829,7 @@ impl AcpConnection {
                     .data("session already has an active Live run"),
                 StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
             })?;
-        Ok(())
+        Ok(run)
     }
 
     async fn clear_active_run(&self, session_id: &str, run_id: &str) {
@@ -2191,26 +2186,22 @@ impl AcpConnection {
         &self,
         cx: &ConnectionTo<Client>,
         args: PromptRequest,
+        run: ActiveRunDropGuard,
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
-        // The ACP session_id IS the thread ID.
         let session_id = args.session_id.0.to_string();
+        let run_id = run.run_id.clone();
+        let cancel_token = run.cancel_token.clone();
 
-        let run_id = format!("run_{}", Uuid::new_v4());
-        let cancel_token = CancellationToken::new();
+        if cancel_token.is_cancelled() {
+            self.clear_active_run(&session_id, &run_id).await;
+            Self::send_active_run_update(cx, &args.session_id, None)?;
+            return Ok(PromptResponse::new(StopReason::Cancelled));
+        }
 
-        self.open_session(&session_id).await?;
-        self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
-            .await?;
-
-        // Frees the run if this future is dropped mid-prompt (e.g. the roaming
-        // connection carrying it is revoked or lost); a normal completion's
-        // explicit clear wins and makes the guard's cleanup a no-op.
-        let _run_guard = ActiveRunDropGuard {
-            services: Arc::clone(&self.services),
-            session_id: session_id.clone(),
-            run_id: run_id.clone(),
-            cancel_token: cancel_token.clone(),
-        };
+        if let Err(error) = self.open_session(&session_id).await {
+            self.clear_active_run(&session_id, &run_id).await;
+            return Err(error);
+        }
 
         if cancel_token.is_cancelled() {
             self.clear_active_run(&session_id, &run_id).await;
