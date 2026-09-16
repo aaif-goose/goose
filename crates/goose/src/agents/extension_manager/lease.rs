@@ -18,16 +18,48 @@ use super::{
     GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::extension::{ExtensionConfig, ExtensionInfo};
+use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
 
 /// What a scope wants: which extensions, rooted where.
+#[derive(Debug)]
 pub struct ExtensionSet {
-    pub id: String,
-    pub working_dir: PathBuf,
-    pub extensions: Vec<ExtensionConfig>,
+    id: String,
+    working_dir: Option<PathBuf>,
+    extensions: Vec<ExtensionConfig>,
+}
+
+impl ExtensionSet {
+    pub fn new(
+        id: impl Into<String>,
+        working_dir: Option<PathBuf>,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<Self, ExtensionError> {
+        let mut seen = std::collections::HashSet::new();
+        for config in &extensions {
+            if !seen.insert(config.key()) {
+                return Err(ExtensionError::ConfigError(format!(
+                    "extension '{}' appears twice in the set",
+                    config.name()
+                )));
+            }
+        }
+        Ok(Self {
+            id: id.into(),
+            working_dir,
+            extensions,
+        })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn extensions(&self) -> &[ExtensionConfig] {
+        &self.extensions
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,7 +131,7 @@ impl ToolCatalog {
 pub struct ExtensionLease {
     id: LeaseId,
     scope_id: String,
-    working_dir: PathBuf,
+    working_dir: Option<PathBuf>,
     members: Vec<Arc<Extension>>,
     catalog: ToolCatalog,
     action_required: Arc<ActionRequiredManager>,
@@ -181,7 +213,11 @@ impl ExtensionLease {
     }
 
     pub fn instructions(&self) -> Vec<ExtensionInfo> {
-        let working_dir = self.working_dir.to_string_lossy();
+        let working_dir = self
+            .working_dir
+            .as_deref()
+            .unwrap_or(std::path::Path::new("."))
+            .to_string_lossy();
         self.members
             .iter()
             .map(|m| {
@@ -267,10 +303,11 @@ impl ExtensionLease {
         })
     }
 
-    pub async fn call(
+    pub(crate) async fn call(
         &self,
-        ctx: &ToolCallContext,
         tool_call: CallToolRequestParams,
+        request_id: Option<String>,
+        notification_emitter: Option<ToolCallNotificationEmitter>,
         expected_extension: Option<&str>,
         require_app_visibility: bool,
         cancellation_token: CancellationToken,
@@ -283,9 +320,9 @@ impl ExtensionLease {
         let resource_uri = get_tool_resource_uri(resolved.tool);
 
         let client_notifications = client.subscribe().await;
-        let session_id = ctx.session_id.clone();
+        let session_id = self.scope_id.clone();
         let action_required = self.action_required.clone();
-        let action_required_receiver = match ctx.tool_call_request_id.clone() {
+        let action_required_receiver = match request_id.clone() {
             Some(request_id)
                 if !action_required
                     .has_action_required_stream(&session_id, &request_id)
@@ -299,23 +336,19 @@ impl ExtensionLease {
             _ => None,
         };
 
-        let owned_ctx = ToolCallContext::new(
-            ctx.session_id.clone(),
-            ctx.working_dir.clone(),
-            ctx.tool_call_request_id.clone(),
-        );
-        let (owned_ctx, tool_call_notifications) =
-            if let Some(emitter) = ctx.notification_emitter().cloned() {
-                (owned_ctx.with_notification_emitter(emitter), None)
-            } else if owned_ctx.tool_call_request_id.is_some() {
-                let (sender, receiver) = mpsc::channel(TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY);
-                (
-                    owned_ctx.with_notification_emitter(ToolCallNotificationEmitter::new(sender)),
-                    Some(receiver),
-                )
-            } else {
-                (owned_ctx, None)
-            };
+        let owned_ctx =
+            ToolCallContext::new(session_id.clone(), self.working_dir.clone(), request_id);
+        let (owned_ctx, tool_call_notifications) = if let Some(emitter) = notification_emitter {
+            (owned_ctx.with_notification_emitter(emitter), None)
+        } else if owned_ctx.tool_call_request_id.is_some() {
+            let (sender, receiver) = mpsc::channel(TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY);
+            (
+                owned_ctx.with_notification_emitter(ToolCallNotificationEmitter::new(sender)),
+                Some(receiver),
+            )
+        } else {
+            (owned_ctx, None)
+        };
         let notification_stream: Box<dyn Stream<Item = ServerNotification> + Send + Unpin> =
             match tool_call_notifications {
                 Some(receiver) => Box::new(stream::select(
@@ -378,7 +411,7 @@ impl ExtensionLease {
                 Box::new(ActionRequiredStream::new(
                     rx,
                     self.action_required.clone(),
-                    ctx.session_id.clone(),
+                    self.scope_id.clone(),
                     request_id,
                 )) as _
             }),

@@ -387,15 +387,17 @@ impl<'a> ToolExecutionOperation<'a> {
             )
             .await;
 
-            let context = crate::agents::tool_execution::ToolCallContext::new(
-                session.id.clone(),
-                Some(session.working_dir.clone()),
-                Some(request_id.clone()),
-            );
             let result = self
                 .lease(session)
                 .await
-                .call(&context, tool_call.clone(), None, false, cancellation_token)
+                .call(
+                    tool_call.clone(),
+                    Some(request_id.clone()),
+                    None,
+                    None,
+                    false,
+                    cancellation_token,
+                )
                 .await;
             let result = result.unwrap_or_else(|error| {
                 #[cfg(feature = "telemetry")]

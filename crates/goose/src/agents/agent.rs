@@ -1164,19 +1164,14 @@ impl Agent {
             };
         }
 
-        let ctx = super::tool_execution::ToolCallContext::new(
-            session.id.clone(),
-            Some(session.working_dir.clone()),
-            Some(request_id.clone()),
-        );
-
         debug!("WAITING_TOOL_START: {}", tool_call.name);
         let result = self
             .lease(&session.id, &session.working_dir)
             .await
             .call(
-                &ctx,
                 tool_call.clone(),
+                Some(request_id.clone()),
+                None,
                 None,
                 false,
                 cancellation_token.unwrap_or_default(),
@@ -2453,7 +2448,8 @@ impl Agent {
             model_config,
         } = context;
 
-        if let Some(project_addendum) = self.load_project_instructions(&session).await {
+        let project_addendum = self.load_project_instructions(&session).await;
+        if let Some(project_addendum) = &project_addendum {
             system_prompt = format!("{system_prompt}\n\n{project_addendum}");
         }
 
@@ -2602,9 +2598,23 @@ impl Agent {
             // Snapshot after the turn-context append so a retry keeps the sent prefix.
             let initial_messages = conversation.messages().clone();
 
+            let mut first_inference = true;
             loop {
                 if is_token_cancelled(&cancel_token) {
                     break;
+                }
+
+                // Rebuilt before every provider call, same as the state
+                // machine, so the lease dispatch resolves against is the
+                // one this inference was shown.
+                if first_inference {
+                    first_inference = false;
+                } else {
+                    (tools, toolshim_tools, system_prompt, _) =
+                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
+                    if let Some(project_addendum) = &project_addendum {
+                        system_prompt = format!("{system_prompt}\n\n{project_addendum}");
+                    }
                 }
 
                 if can_drain_pending_steers {
@@ -2727,7 +2737,6 @@ impl Agent {
 
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
-                let mut tools_updated = false;
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
                 let mut provider_errored = false;
@@ -3010,7 +3019,6 @@ impl Agent {
                                         if let Err(e) = self.save_extension_state(&session_config).await {
                                             warn!("Failed to save extension state after runtime changes: {}", e);
                                         }
-                                        tools_updated = true;
                                     }
                                 }
 
@@ -3284,22 +3292,10 @@ impl Agent {
                 }
                 can_drain_pending_steers = true;
 
-                if tools_updated {
-                    (tools, toolshim_tools, system_prompt, _) =
-                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                }
-
-                {
-                    let has_new_hints = self
-                        .prompt_manager
-                        .lock()
-                        .await
-                        .load_subdirectory_hints(&working_dir);
-                    if has_new_hints && !tools_updated {
-                        (tools, toolshim_tools, system_prompt, _) =
-                            self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                    }
-                }
+                self.prompt_manager
+                    .lock()
+                    .await
+                    .load_subdirectory_hints(&working_dir);
 
                 // An empty provider response — no tool calls, no text, and no error
                 // or recovery compaction that legitimately produces no assistant

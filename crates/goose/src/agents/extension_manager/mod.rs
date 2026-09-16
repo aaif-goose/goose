@@ -534,14 +534,24 @@ impl ExtensionManager {
         }
     }
 
-    /// Resolve a set against what is running. Extensions in the set that are
-    /// not running are skipped.
+    /// Resolve a set against what is running. A selected extension that is
+    /// not running, or is running under a different config, is left out.
     pub async fn resolve(&self, set: &ExtensionSet) -> ExtensionLease {
         let members = {
             let extensions = self.extensions.lock().await;
-            set.extensions
+            set.extensions()
                 .iter()
-                .filter_map(|config| extensions.get(&config.key()).cloned())
+                .filter_map(|config| {
+                    let running = extensions.get(&config.key())?;
+                    if running.config != *config {
+                        warn!(
+                            extension = %config.key(),
+                            "selected config differs from the running one; leaving it out"
+                        );
+                        return None;
+                    }
+                    Some(Arc::clone(running))
+                })
                 .collect()
         };
         ExtensionLease::new(
@@ -565,13 +575,8 @@ impl ExtensionManager {
             .map(|ext| ext.config.clone())
             .collect();
         extensions.sort_by_key(|config| config.key());
-        ExtensionSet {
-            id: session_id.to_string(),
-            working_dir: working_dir
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
-            extensions,
-        }
+        ExtensionSet::new(session_id, working_dir.map(Path::to_path_buf), extensions)
+            .expect("registry keys are unique")
     }
 
     /// Add an extension with an optional working directory.
@@ -1046,7 +1051,14 @@ impl ExtensionManager {
             .await;
         self.resolve(&set)
             .await
-            .call(ctx, tool_call, None, false, cancellation_token)
+            .call(
+                tool_call,
+                ctx.tool_call_request_id.clone(),
+                ctx.notification_emitter().cloned(),
+                None,
+                false,
+                cancellation_token,
+            )
             .await
     }
 
@@ -1063,8 +1075,9 @@ impl ExtensionManager {
         self.resolve(&set)
             .await
             .call(
-                ctx,
                 tool_call,
+                ctx.tool_call_request_id.clone(),
+                ctx.notification_emitter().cloned(),
                 Some(extension_name),
                 true,
                 cancellation_token,
@@ -2036,6 +2049,54 @@ mod tests {
         fn get_info(&self) -> Option<&InitializeResult> {
             None
         }
+    }
+
+    fn builtin_config(name: &str, available_tools: Vec<String>) -> ExtensionConfig {
+        ExtensionConfig::Builtin {
+            name: name.to_string(),
+            display_name: Some(name.to_string()),
+            description: "built-in".to_string(),
+            timeout: None,
+            bundled: None,
+            available_tools,
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_leaves_out_an_extension_running_under_a_different_config() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        extension_manager
+            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
+            .await;
+
+        let same = ExtensionSet::new("s", None, vec![builtin_config("ext_a", vec![])]).unwrap();
+        assert!(extension_manager.resolve(&same).await.is_enabled("ext_a"));
+
+        let narrower = ExtensionSet::new(
+            "s",
+            None,
+            vec![builtin_config("ext_a", vec!["tool".to_string()])],
+        )
+        .unwrap();
+        let lease = extension_manager.resolve(&narrower).await;
+        assert!(!lease.is_enabled("ext_a"));
+        assert!(lease.tools().is_empty());
+    }
+
+    #[test]
+    fn set_rejects_the_same_extension_twice() {
+        let error = ExtensionSet::new(
+            "s",
+            None,
+            vec![
+                builtin_config("Ext-A", vec![]),
+                builtin_config("ext-a", vec![]),
+            ],
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("appears twice"));
     }
 
     #[tokio::test]
