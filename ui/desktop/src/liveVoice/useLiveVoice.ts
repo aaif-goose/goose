@@ -36,7 +36,7 @@ function requestRemoteStop(call: LiveVoiceCall): void {
   void acpStopLiveVoice(call.sessionId, call.callId).catch(() => undefined);
 }
 
-export function useLiveVoice(sessionId: string): LiveVoiceController {
+export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveVoiceController {
   const [phase, setPhase] = useState<LiveVoicePhase>('idle');
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
@@ -66,6 +66,8 @@ export function useLiveVoice(sessionId: string): LiveVoiceController {
     setPhase('idle');
     mutedRef.current = false;
     setMuted(false);
+    if (!isSessionActive) return;
+
     return () => {
       const call = callRef.current;
       if (!call || call.sessionId !== sessionId) return;
@@ -74,7 +76,7 @@ export function useLiveVoice(sessionId: string): LiveVoiceController {
       invalidateCallAndReleaseMedia(call);
       requestRemoteStop(call);
     };
-  }, [invalidateCallAndReleaseMedia, sessionId]);
+  }, [invalidateCallAndReleaseMedia, isSessionActive, sessionId]);
 
   useEffect(() => {
     return subscribeToLiveVoiceCallEnded((notification) => {
@@ -105,7 +107,7 @@ export function useLiveVoice(sessionId: string): LiveVoiceController {
 
   const start = useCallback(
     async (initialCommentary?: string) => {
-      if (callRef.current || isAcpRecovering()) return;
+      if (!isSessionActive || callRef.current || isAcpRecovering()) return;
 
       mutedRef.current = false;
       setMuted(false);
@@ -162,7 +164,7 @@ export function useLiveVoice(sessionId: string): LiveVoiceController {
         requestRemoteStop(call);
       }
     },
-    [finishCurrentCall, invalidateCallAndReleaseMedia, sessionId]
+    [finishCurrentCall, invalidateCallAndReleaseMedia, isSessionActive, sessionId]
   );
 
   const toggleMute = useCallback(() => {

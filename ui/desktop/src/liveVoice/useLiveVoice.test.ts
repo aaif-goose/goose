@@ -60,7 +60,7 @@ describe('useLiveVoice', () => {
   });
 
   it('starts media from the start response and stops the same connection', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
 
     await act(async () => result.current.start());
     expect(media.applyAnswer).toHaveBeenCalledWith('answer');
@@ -75,7 +75,7 @@ describe('useLiveVoice', () => {
 
   it('stops the server call when media setup fails after start', async () => {
     media.applyAnswer.mockRejectedValueOnce(new Error('media failed'));
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
 
     await act(async () => result.current.start());
 
@@ -85,7 +85,7 @@ describe('useLiveVoice', () => {
   });
 
   it('tears down and stops an active call when unmounted', async () => {
-    const { result, unmount } = renderHook(() => useLiveVoice('main-session'));
+    const { result, unmount } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
 
     unmount();
@@ -94,12 +94,31 @@ describe('useLiveVoice', () => {
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
   });
 
+  it('stops the call and prevents new calls when the session becomes inactive', async () => {
+    const { result, rerender } = renderHook(
+      ({ isSessionActive }) => useLiveVoice('main-session', isSessionActive),
+      { initialProps: { isSessionActive: true } }
+    );
+    await act(async () => result.current.start());
+
+    rerender({ isSessionActive: false });
+
+    expect(media.teardown).toHaveBeenCalledOnce();
+    expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
+    expect(result.current.phase).toBe('idle');
+
+    await act(async () => result.current.start());
+
+    expect(LiveVoiceMediaSession).toHaveBeenCalledOnce();
+    expect(acpStartLiveVoice).toHaveBeenCalledOnce();
+  });
+
   it.each(['unmount', 'stop'] as const)(
     'closes a call that finishes after %s while connecting',
     async (action) => {
       const pending = deferred<{ callId: string; answerSdp: string }>();
       vi.mocked(acpStartLiveVoice).mockReturnValueOnce(pending.promise);
-      const { result, unmount } = renderHook(() => useLiveVoice('main-session'));
+      const { result, unmount } = renderHook(() => useLiveVoice('main-session', true));
       act(() => {
         void result.current.start();
       });
@@ -125,7 +144,7 @@ describe('useLiveVoice', () => {
   it('does not become live after stopping during answer setup', async () => {
     const pending = deferred<void>();
     media.applyAnswer.mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     act(() => {
       void result.current.start();
     });
@@ -139,7 +158,7 @@ describe('useLiveVoice', () => {
   });
 
   it('applies rapid mute changes to the current media session', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
 
     act(() => {
@@ -153,7 +172,7 @@ describe('useLiveVoice', () => {
   });
 
   it('cleans up when the backend reports that the current call failed', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
 
     act(() => {
@@ -181,7 +200,7 @@ describe('useLiveVoice', () => {
   });
 
   it('ignores stale session and call endings', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
 
     act(() => {
@@ -210,7 +229,7 @@ describe('useLiveVoice', () => {
   it('reconciles a terminal update that arrives before the start response', async () => {
     const pending = deferred<{ callId: string; answerSdp: string }>();
     vi.mocked(acpStartLiveVoice).mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     act(() => {
       void result.current.start();
     });
@@ -234,7 +253,7 @@ describe('useLiveVoice', () => {
   });
 
   it('cleans up locally without stopping through a recovering ACP connection', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
 
     act(() => recoveryChanged(true));
@@ -247,7 +266,7 @@ describe('useLiveVoice', () => {
   it('does not stop a late call response through a recovered ACP connection', async () => {
     const pending = deferred<{ callId: string; answerSdp: string }>();
     vi.mocked(acpStartLiveVoice).mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     act(() => {
       void result.current.start();
     });
@@ -262,7 +281,7 @@ describe('useLiveVoice', () => {
   });
 
   it('ends the matching call when active media fails', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session'));
+    const { result } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
 
     act(() => mediaFailure());

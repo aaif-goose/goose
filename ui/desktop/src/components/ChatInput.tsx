@@ -269,8 +269,8 @@ export default function ChatInput({
 
   // Derived state - chatState != Idle means we're in some form of loading state
   const isLoading = chatState !== ChatState.Idle;
-  const isSubmissionBusy = isLoading || hasActiveRun;
-  const liveVoiceActive = liveVoice ? isLiveVoiceActive(liveVoice.phase) : false;
+  const liveVoiceBlocksSubmission = liveVoice ? isLiveVoiceActive(liveVoice.phase) : false;
+  const isSubmissionBusy = isLoading || hasActiveRun || liveVoiceBlocksSubmission;
   const isSubmissionBusyRef = useRef(isSubmissionBusy);
   const composerDir = useMemo(() => getTextDirection(displayValue) ?? undefined, [displayValue]);
   const queueProcessingBlockedRef = useRef(queueProcessingBlocked);
@@ -1568,7 +1568,7 @@ export default function ChatInput({
             onBlur={() => setIsFocused(false)}
             ref={textAreaRef}
             rows={1}
-            readOnly={isRecording || liveVoiceActive}
+            readOnly={isRecording || liveVoiceBlocksSubmission}
             style={{
               minHeight: `${minTextareaHeight}px`,
               maxHeight: `${maxHeight}px`,
@@ -1709,7 +1709,7 @@ export default function ChatInput({
       <div ref={bottomBarRef} className="flex flex-row items-center gap-2 px-3 py-2 relative">
         {/* Left: model selector */}
         <Tooltip>
-          <div className={cn(liveVoiceActive && 'pointer-events-none opacity-60')}>
+          <div className={cn(liveVoiceBlocksSubmission && 'pointer-events-none opacity-60')}>
             <ModelsBottomBar
               sessionId={sessionId}
               dropdownRef={dropdownRef}

@@ -101,7 +101,7 @@ export default function BaseChat({
   const [acpRecovering, setAcpRecovering] = useState(isAcpRecovering);
   const [liveVoiceAvailability, setLiveVoiceAvailability] =
     useState<LiveVoiceAvailabilityResponse_unstable | null>(null);
-  const liveVoice = useLiveVoice(sessionId);
+  const liveVoice = useLiveVoice(sessionId, isActiveSession);
   const startLiveVoice = liveVoice.start;
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
@@ -586,13 +586,7 @@ export default function BaseChat({
             onStop={stopStreaming}
             onSteerQueuedMessage={onSteerQueuedMessage}
             pauseQueueOnStop={pauseQueueOnStop}
-            queueProcessingBlocked={
-              queueProcessingBlocked ||
-              acpRecovering ||
-              liveVoice.phase === 'connecting' ||
-              liveVoice.phase === 'live' ||
-              liveVoice.phase === 'stopping'
-            }
+            queueProcessingBlocked={queueProcessingBlocked || acpRecovering}
             commandHistory={commandHistory}
             initialValue={initialPrompt}
             setView={setView}
