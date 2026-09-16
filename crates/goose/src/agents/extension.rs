@@ -36,7 +36,6 @@ impl ProcessExit {
     }
 }
 
-/// Errors from Extension operation
 #[derive(Error, Debug)]
 pub enum ExtensionError {
     #[error("failed a client call to an MCP server: {0}")]
@@ -59,7 +58,6 @@ pub type ExtensionResult<T> = Result<T, ExtensionError>;
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
 pub struct Envs {
-    /// A map of environment variables to set, e.g. API_KEY -> some_secret, HOST -> host
     #[serde(default)]
     #[serde(flatten)]
     map: HashMap<String, String>,
@@ -76,7 +74,6 @@ impl<'de> Deserialize<'de> for Envs {
 }
 
 impl Envs {
-    /// List of sensitive env vars that should not be overridden
     const DISALLOWED_KEYS: [&'static str; 31] = [
         // 🔧 Binary path manipulation
         "PATH",       // Controls executable lookup paths — critical for command hijacking
@@ -131,12 +128,10 @@ impl Envs {
         Self { map: validated }
     }
 
-    /// Returns a copy of the validated env vars
     pub fn get_env(&self) -> HashMap<String, String> {
         self.map.clone()
     }
 
-    /// Returns an error if any disallowed env var is present
     pub fn validate(&self) -> Result<(), Box<ExtensionError>> {
         for key in self.map.keys() {
             if Self::is_disallowed(key) {
@@ -156,14 +151,11 @@ impl Envs {
     }
 }
 
-/// Represents the different types of MCP extensions that can be added to the manager
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum ExtensionConfig {
-    /// Standard I/O client with command and arguments
     #[serde(rename = "stdio")]
     Stdio {
-        /// The name used to identify this extension
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
@@ -186,7 +178,6 @@ pub enum ExtensionConfig {
     /// Built-in extension that is part of the bundled goose MCP server
     #[serde(rename = "builtin")]
     Builtin {
-        /// The name used to identify this extension
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
@@ -202,7 +193,6 @@ pub enum ExtensionConfig {
     /// Platform extensions that have direct access to the agent etc and run in the agent process
     #[serde(rename = "platform")]
     Platform {
-        /// The name used to identify this extension
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
@@ -214,10 +204,8 @@ pub enum ExtensionConfig {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
     },
-    /// Streamable HTTP client with a URI endpoint using MCP Streamable HTTP specification
     #[serde(rename = "streamable_http")]
     StreamableHttp {
-        /// The name used to identify this extension
         name: String,
         #[serde(default)]
         #[serde(deserialize_with = "deserialize_null_with_default")]
@@ -370,7 +358,6 @@ impl ExtensionConfig {
         .to_string()
     }
 
-    /// Check if a tool should be available to the LLM
     pub fn is_tool_available(&self, tool_name: &str) -> bool {
         let available_tools = match self {
             Self::StreamableHttp {
@@ -387,8 +374,6 @@ impl ExtensionConfig {
             } => available_tools,
         };
 
-        // If no tools are specified, all tools are available
-        // If tools are specified, only those tools are available
         available_tools.is_empty() || available_tools.contains(&tool_name.to_string())
     }
 
@@ -481,7 +466,6 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
-/// Merge environment variables from direct envs and keychain-stored env_keys
 async fn merge_environments(
     envs: &Envs,
     env_keys: &[String],
@@ -535,7 +519,6 @@ async fn merge_environments(
     Ok(Envs::new(all_envs).get_env())
 }
 
-/// Substitute environment variables in a string. Supports both ${VAR} and $VAR syntax.
 fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
     let mut result = value.to_string();
 
@@ -585,7 +568,6 @@ impl std::fmt::Display for ExtensionConfig {
     }
 }
 
-/// Information about the extension used for building prompts
 #[derive(Clone, Debug, Serialize)]
 pub struct ExtensionInfo {
     pub name: String,
@@ -612,7 +594,6 @@ where
     Ok(opt.unwrap_or_default())
 }
 
-/// Information about the tool used for building prompts
 #[derive(Clone, Debug, Serialize)]
 pub struct ToolInfo {
     pub name: String,
@@ -1203,51 +1184,23 @@ timeout: 300",
         );
     }
 
-    #[tokio::test]
-    async fn test_streamable_http_header_env_substitution() {
-        let mut env_map = HashMap::new();
-        env_map.insert("AUTH_TOKEN".to_string(), "secret123".to_string());
-        env_map.insert("API_KEY".to_string(), "key456".to_string());
-
-        // Test ${VAR} syntax
-        let result = substitute_env_vars("Bearer ${ AUTH_TOKEN }", &env_map);
-        assert_eq!(result, "Bearer secret123");
-
-        // Test ${VAR} syntax without spaces
-        let result = substitute_env_vars("Bearer ${AUTH_TOKEN}", &env_map);
-        assert_eq!(result, "Bearer secret123");
-
-        // Test $VAR syntax
-        let result = substitute_env_vars("Bearer $AUTH_TOKEN", &env_map);
-        assert_eq!(result, "Bearer secret123");
-
-        // Test multiple substitutions
-        let result = substitute_env_vars("Key: $API_KEY, Token: ${AUTH_TOKEN}", &env_map);
-        assert_eq!(result, "Key: key456, Token: secret123");
-
-        // Test no substitution when variable doesn't exist
-        let result = substitute_env_vars("Bearer ${UNKNOWN_VAR}", &env_map);
-        assert_eq!(result, "Bearer ${UNKNOWN_VAR}");
-
-        // Test mixed content
-        let result = substitute_env_vars(
-            "Authorization: Bearer ${AUTH_TOKEN} and API ${API_KEY}",
-            &env_map,
+    #[test_case("Bearer ${ AUTH_TOKEN }", "Bearer secret123"; "braces_with_spaces")]
+    #[test_case("Bearer ${AUTH_TOKEN}", "Bearer secret123"; "braces")]
+    #[test_case("Bearer $AUTH_TOKEN", "Bearer secret123"; "bare")]
+    #[test_case("Key: $API_KEY, Token: ${AUTH_TOKEN}", "Key: key456, Token: secret123"; "multiple")]
+    #[test_case("Bearer ${UNKNOWN_VAR}", "Bearer ${UNKNOWN_VAR}"; "unknown_left_alone")]
+    #[test_case("${TOKEN}", "abc$KEY"; "substituted_value_not_expanded_again_braces")]
+    #[test_case("$TOKEN", "abc$KEY"; "substituted_value_not_expanded_again_bare")]
+    fn test_substitute_env_vars(input: &str, expected: &str) {
+        let env_map = HashMap::from(
+            [
+                ("AUTH_TOKEN", "secret123"),
+                ("API_KEY", "key456"),
+                ("TOKEN", "abc$KEY"),
+                ("KEY", "xyz"),
+            ]
+            .map(|(k, v)| (k.to_string(), v.to_string())),
         );
-        assert_eq!(result, "Authorization: Bearer secret123 and API key456");
-    }
-
-    #[tokio::test]
-    async fn test_substitute_env_vars_no_recursive_expansion() {
-        let mut env_map = HashMap::new();
-        env_map.insert("TOKEN".to_string(), "abc$KEY".to_string());
-        env_map.insert("KEY".to_string(), "xyz".to_string());
-
-        // A substituted value containing $KEY should NOT be re-expanded
-        let result = substitute_env_vars("${TOKEN}", &env_map);
-        assert_eq!(result, "abc$KEY");
-
-        let result = substitute_env_vars("$TOKEN", &env_map);
-        assert_eq!(result, "abc$KEY");
+        assert_eq!(substitute_env_vars(input, &env_map), expected);
     }
 }
