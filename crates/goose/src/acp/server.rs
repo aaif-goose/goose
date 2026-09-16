@@ -1612,6 +1612,13 @@ impl GooseAcpAgent {
 
         cx.send_request(permission_request)
             .on_receiving_result(move |result| async move {
+                if target
+                    .cancel_token
+                    .as_ref()
+                    .is_some_and(CancellationToken::is_cancelled)
+                {
+                    return Ok(());
+                }
                 let permission = match result {
                     Ok(response) => outcome_to_confirmation(&response.outcome).permission,
                     Err(e) => {

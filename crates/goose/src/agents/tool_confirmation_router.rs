@@ -1,18 +1,56 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 use tracing::warn;
 
 use crate::permission::PermissionConfirmation;
 
+type PendingConfirmations =
+    Arc<Mutex<HashMap<(String, String), oneshot::Sender<PermissionConfirmation>>>>;
+
 pub(super) struct ToolConfirmationRouter {
-    pending: Mutex<HashMap<(String, String), oneshot::Sender<PermissionConfirmation>>>,
+    pending: PendingConfirmations,
+}
+
+pub(super) struct ToolConfirmationRegistration {
+    pending: PendingConfirmations,
+    key: (String, String),
+    receiver: oneshot::Receiver<PermissionConfirmation>,
+}
+
+impl Future for ToolConfirmationRegistration {
+    type Output = Result<PermissionConfirmation, oneshot::error::RecvError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.receiver).poll(cx)
+    }
+}
+
+impl Drop for ToolConfirmationRegistration {
+    fn drop(&mut self) {
+        self.receiver.close();
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("tool confirmation router unavailable");
+        // Do not remove a newer registration that reused the same request ID.
+        if pending
+            .get(&self.key)
+            .is_some_and(oneshot::Sender::is_closed)
+        {
+            pending.remove(&self.key);
+        }
+    }
 }
 
 impl ToolConfirmationRouter {
     pub(super) fn new() -> Self {
         Self {
-            pending: Mutex::new(HashMap::new()),
+            pending: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -20,12 +58,18 @@ impl ToolConfirmationRouter {
         &self,
         session_id: String,
         request_id: String,
-    ) -> oneshot::Receiver<PermissionConfirmation> {
+    ) -> ToolConfirmationRegistration {
         let (tx, rx) = oneshot::channel();
-        let mut pending = self.pending.lock().await;
-        pending.retain(|_, sender| !sender.is_closed());
-        pending.insert((session_id, request_id), tx);
-        rx
+        let key = (session_id, request_id);
+        self.pending
+            .lock()
+            .expect("tool confirmation router unavailable")
+            .insert(key.clone(), tx);
+        ToolConfirmationRegistration {
+            pending: self.pending.clone(),
+            key,
+            receiver: rx,
+        }
     }
 
     pub(super) async fn deliver(
@@ -35,7 +79,12 @@ impl ToolConfirmationRouter {
         confirmation: PermissionConfirmation,
     ) -> bool {
         let key = (session_id.to_string(), request_id.to_string());
-        if let Some(tx) = self.pending.lock().await.remove(&key) {
+        if let Some(tx) = self
+            .pending
+            .lock()
+            .expect("tool confirmation router unavailable")
+            .remove(&key)
+        {
             if tx.send(confirmation).is_err() {
                 warn!(
                     request_id = %request_id,
@@ -101,7 +150,7 @@ mod tests {
                 .deliver("session_2", "req_1", test_confirmation())
                 .await
         );
-        assert_eq!(router.pending.lock().await.len(), 1);
+        assert_eq!(router.pending.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -119,23 +168,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stale_entries_pruned_on_register() {
+    async fn test_dropped_registration_is_removed_immediately() {
         let router = ToolConfirmationRouter::new();
         let rx = router
             .register("session_1".to_string(), "req_1".to_string())
             .await;
-        drop(rx); // simulate task cancellation — entry is now stale
+        drop(rx);
 
-        assert_eq!(router.pending.lock().await.len(), 1);
+        assert!(router.pending.lock().unwrap().is_empty());
 
         let _rx2 = router
             .register("session_1".to_string(), "req_2".to_string())
             .await;
-        assert_eq!(router.pending.lock().await.len(), 1); // only req_2 remains
+        assert_eq!(router.pending.lock().unwrap().len(), 1);
         assert!(router
             .pending
             .lock()
-            .await
+            .unwrap()
             .contains_key(&("session_1".to_string(), "req_2".to_string())));
     }
 
@@ -166,17 +215,31 @@ mod tests {
                 )
                 .await
         );
-        assert_eq!(router.pending.lock().await.len(), 1);
+        assert_eq!(router.pending.lock().unwrap().len(), 1);
         assert!(
             router
                 .deliver("session_1", "req_1", test_confirmation())
                 .await
         );
-        assert_eq!(router.pending.lock().await.len(), 0);
+        assert_eq!(router.pending.lock().unwrap().len(), 0);
 
         let c1 = rx1.await.unwrap();
         assert_eq!(c1.permission, Permission::AllowOnce);
         let c2 = rx2.await.unwrap();
         assert_eq!(c2.permission, Permission::DenyOnce);
+    }
+
+    #[tokio::test]
+    async fn dropping_replaced_registration_keeps_the_current_receiver() {
+        let router = ToolConfirmationRouter::new();
+        let old = router.register("session".into(), "request".into()).await;
+        let current = router.register("session".into(), "request".into()).await;
+        drop(old);
+        assert!(
+            router
+                .deliver("session", "request", test_confirmation())
+                .await
+        );
+        assert_eq!(current.await.unwrap().permission, Permission::AllowOnce);
     }
 }

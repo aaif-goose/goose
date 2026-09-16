@@ -1527,6 +1527,7 @@ impl Agent {
 
         let state = self.tool_confirmation_coordinator.session(session_id);
         let _confirmation_submission_guard = state.confirmation_submission_lock.lock().await;
+        state.check_not_cancelled()?;
         let state_machine_permission = if permission == Permission::Cancel {
             Permission::DenyOnce
         } else {
@@ -1575,6 +1576,7 @@ impl Agent {
         }
 
         if state.contains_request(request_id) {
+            state.check_not_cancelled()?;
             persist_tool_confirmation_decision(
                 self.config.session_manager.as_ref(),
                 session_id,
@@ -1775,10 +1777,11 @@ impl Agent {
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
+        let cancel = cancel_token.unwrap_or_default();
         let turn_guard = self
             .tool_confirmation_coordinator
             .session(&session_id)
-            .try_start_turn()?;
+            .try_start_turn(cancel.clone())?;
 
         if let Some(schedule_id) = session_config.schedule_id.clone() {
             session_manager
@@ -1817,7 +1820,6 @@ impl Agent {
             });
         }
 
-        let cancel = cancel_token.unwrap_or_default();
         let initial_stream = self
             .stream_state_machine_session(session_config.clone(), cancel.clone())
             .await?;
@@ -1859,7 +1861,7 @@ impl Agent {
         let turn_guard = self
             .tool_confirmation_coordinator
             .session(&session_config.id)
-            .try_start_turn()?;
+            .try_start_turn(cancel.clone())?;
         for request in pending_confirmations {
             turn_guard.state().register_request(request.id);
         }

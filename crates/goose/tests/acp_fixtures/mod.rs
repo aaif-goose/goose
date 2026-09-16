@@ -321,7 +321,7 @@ impl DuplexTransport {
         agent_client_protocol::ByteStreams::new(self.outgoing, self.incoming)
     }
 
-    fn into_parts(self) -> (CompatDuplexStream, CompatDuplexStream) {
+    pub fn into_parts(self) -> (CompatDuplexStream, CompatDuplexStream) {
         (self.outgoing, self.incoming)
     }
 }

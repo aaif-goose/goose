@@ -156,7 +156,11 @@ impl Agent {
         inspection_results: &'a [crate::tool_inspection::InspectionResult],
     ) -> BoxStream<'a, anyhow::Result<Message>> {
         try_stream! {
+        let cancel = cancellation_token.clone().unwrap_or_default();
         for request in tool_requests.iter() {
+            if cancel.is_cancelled() {
+                break;
+            }
             if let Ok(tool_call) = request.tool_call.clone() {
                 let security_message = inspection_results.iter()
                     .find(|result| result.tool_request_id == request.id)
@@ -183,8 +187,14 @@ impl Agent {
                     .user_only();
                 yield action_required_msg;
 
-                let confirmation = confirmation_rx.await
-                    .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?;
+                let confirmation = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => break,
+                    confirmation = confirmation_rx => confirmation,
+                }.map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?;
+                if cancel.is_cancelled() {
+                    break;
+                }
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {
                     let action = match confirmation.permission {
@@ -203,7 +213,14 @@ impl Agent {
                 }
 
                 if confirmation.permission == Permission::AllowOnce || confirmation.permission == Permission::AlwaysAllow {
-                    let (req_id, tool_result) = self.dispatch_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
+                    let (req_id, tool_result) = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => break,
+                        result = self.dispatch_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session) => result,
+                    };
+                    if cancel.is_cancelled() {
+                        break;
+                    }
 
                     tool_futures.push((req_id, match tool_result {
                         Ok(result) => tool_stream(

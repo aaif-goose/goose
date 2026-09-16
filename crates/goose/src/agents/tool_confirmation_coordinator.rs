@@ -16,6 +16,7 @@ pub(super) enum ConfirmationAnswer {
 pub(super) struct SessionToolConfirmationState {
     // Held for the lifetime of one Agent::reply stream, including confirmation waits and resumes.
     turn_lock: Arc<Mutex<()>>,
+    cancel: StdMutex<Option<CancellationToken>>,
     // Serializes submit_tool_confirmation so concurrent answers cannot both be accepted.
     pub(super) confirmation_submission_lock: Mutex<()>,
     // Tracks requests from the current confirmation pause; None means still unanswered.
@@ -28,22 +29,43 @@ impl SessionToolConfirmationState {
     fn new() -> Self {
         Self {
             turn_lock: Arc::new(Mutex::new(())),
+            cancel: StdMutex::new(None),
             confirmation_submission_lock: Mutex::new(()),
             confirmations: StdMutex::new(HashMap::new()),
             confirmation_answered: Notify::new(),
         }
     }
 
-    pub(super) fn try_start_turn(self: &Arc<Self>) -> Result<ActiveTurnGuard> {
+    pub(super) fn try_start_turn(
+        self: &Arc<Self>,
+        cancel: CancellationToken,
+    ) -> Result<ActiveTurnGuard> {
         let turn_lock_guard = self
             .turn_lock
             .clone()
             .try_lock_owned()
             .map_err(|_| anyhow!("session already has an active turn"))?;
+        *self
+            .cancel
+            .lock()
+            .expect("tool confirmation state unavailable") = Some(cancel);
         Ok(ActiveTurnGuard {
             state: self.clone(),
             _turn_lock_guard: turn_lock_guard,
         })
+    }
+
+    pub(super) fn check_not_cancelled(&self) -> Result<()> {
+        if self
+            .cancel
+            .lock()
+            .expect("tool confirmation state unavailable")
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
+        {
+            return Err(anyhow!("state-machine turn cancelled"));
+        }
+        Ok(())
     }
 
     pub(super) fn register_request(&self, request_id: String) {
@@ -89,6 +111,9 @@ impl SessionToolConfirmationState {
         cancel: &CancellationToken,
     ) -> Result<bool> {
         loop {
+            if cancel.is_cancelled() {
+                return Err(anyhow!("state-machine turn cancelled"));
+            }
             let answer_received = self.confirmation_answered.notified();
             tokio::pin!(answer_received);
             answer_received.as_mut().enable();
@@ -111,8 +136,9 @@ impl SessionToolConfirmationState {
             }
 
             tokio::select! {
-                _ = answer_received => {}
+                biased;
                 _ = cancel.cancelled() => return Err(anyhow!("state-machine turn cancelled")),
+                _ = answer_received => {}
             }
         }
     }
@@ -139,6 +165,11 @@ impl ActiveTurnGuard {
 impl Drop for ActiveTurnGuard {
     fn drop(&mut self) {
         self.state.clear_confirmations();
+        *self
+            .state
+            .cancel
+            .lock()
+            .expect("tool confirmation state unavailable") = None;
     }
 }
 
@@ -171,19 +202,19 @@ mod tests {
     fn rejects_a_second_active_turn_and_releases_on_drop() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
-        let guard = session.try_start_turn().unwrap();
+        let guard = session.try_start_turn(CancellationToken::new()).unwrap();
 
-        assert!(session.try_start_turn().is_err());
+        assert!(session.try_start_turn(CancellationToken::new()).is_err());
 
         drop(guard);
-        assert!(session.try_start_turn().is_ok());
+        assert!(session.try_start_turn(CancellationToken::new()).is_ok());
     }
 
     #[tokio::test]
     async fn waits_for_every_confirmation_in_the_batch() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
-        let _guard = session.try_start_turn().unwrap();
+        let _guard = session.try_start_turn(CancellationToken::new()).unwrap();
         session.register_request("request-1".to_string());
         session.register_request("request-2".to_string());
         session
@@ -208,7 +239,7 @@ mod tests {
     fn active_turn_drop_clears_pending_requests() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
-        let guard = session.try_start_turn().unwrap();
+        let guard = session.try_start_turn(CancellationToken::new()).unwrap();
         session.register_request("request".to_string());
         assert!(session.contains_request("request"));
 
@@ -222,7 +253,7 @@ mod tests {
     fn first_answer_is_immutable() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
-        let _guard = session.try_start_turn().unwrap();
+        let _guard = session.try_start_turn(CancellationToken::new()).unwrap();
         session.register_request("request".to_string());
         session
             .record_answer(
@@ -241,5 +272,30 @@ mod tests {
             session.answer("request"),
             Some(ConfirmationAnswer::StateMachine(Permission::AllowOnce))
         );
+    }
+
+    #[tokio::test]
+    async fn cancellation_wins_over_completed_answers_and_is_scoped_to_the_turn() {
+        let coordinator = ToolConfirmationCoordinator::new();
+        let session = coordinator.session("session");
+        let cancel = CancellationToken::new();
+        let guard = session.try_start_turn(cancel.clone()).unwrap();
+        session.register_request("request".into());
+        session
+            .record_answer(
+                "request",
+                ConfirmationAnswer::StateMachine(Permission::AlwaysAllow),
+            )
+            .unwrap();
+        cancel.cancel();
+        assert!(session.check_not_cancelled().is_err());
+        assert!(session
+            .wait_for_all_confirmation_answers(&cancel)
+            .await
+            .is_err());
+        drop(guard);
+        let _next = session.try_start_turn(CancellationToken::new()).unwrap();
+        assert!(session.check_not_cancelled().is_ok());
+        assert!(!session.contains_request("request"));
     }
 }

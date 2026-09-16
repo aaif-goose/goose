@@ -128,6 +128,174 @@ async fn stream_messages(
     Ok(messages)
 }
 
+async fn next_confirmation(
+    stream: &mut futures::stream::BoxStream<'_, Result<AgentEvent>>,
+) -> Result<String> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(event) = stream.next().await {
+            if let AgentEvent::Message(message) = event? {
+                if let Some(id) = confirmation_ids(&[message]).pop() {
+                    return Ok(id);
+                }
+            }
+        }
+        anyhow::bail!("turn ended without requesting confirmation")
+    })
+    .await?
+}
+
+async fn check_cancelled_approval(state_machine: bool, late_answer: bool) -> Result<()> {
+    let _guard = env_lock::lock_env([(
+        "GOOSE_STATE_MACHINE",
+        Some(if state_machine { "1" } else { "0" }),
+    )]);
+    let (mut agent, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
+    let plugin_root = temp_dir.path().join("approval-hook");
+    std::fs::create_dir_all(plugin_root.join("hooks"))?;
+    std::fs::write(
+        plugin_root.join("hooks/hooks.json"),
+        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"echo ran >> \"${PLUGIN_ROOT}/ran\""}]}]}}"#,
+    )?;
+    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+        crate::plugins::discovery::DiscoveredPlugin {
+            name: "approval-hook".into(),
+            root: plugin_root.clone(),
+            scope: crate::plugins::discovery::PluginScope::Project,
+        },
+    ]));
+    api.on("add one").call(ADD, value(1));
+    let cancel = CancellationToken::new();
+    let config = SessionConfig {
+        id: session_id.clone(),
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("add one"),
+            config,
+            state_machine,
+            Some(cancel.clone()),
+        )
+        .await?;
+    let id = next_confirmation(&mut stream).await?;
+    cancel.cancel();
+    if late_answer {
+        // Race a queued answer against the next poll of the cancelled turn.
+        let _ = agent
+            .submit_tool_confirmation(&session_id, &id, Permission::AlwaysAllow)
+            .await;
+    }
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while stream.next().await.is_some() {}
+    })
+    .await
+    .expect("Stop must finish an approval wait without a client answer");
+    drop(stream);
+    assert_eq!(calculator.total(), 0);
+    assert!(
+        !plugin_root.join("ran").exists(),
+        "late approval ran a hook"
+    );
+    assert_eq!(
+        agent.config.permission_manager.get_user_permission(ADD),
+        None
+    );
+    let reloaded = PermissionManager::new(temp_dir.path().join("permissions"));
+    assert_eq!(reloaded.get_user_permission(ADD), None);
+    assert!(agent
+        .submit_tool_confirmation(&session_id, &id, Permission::AlwaysAllow)
+        .await
+        .is_err());
+    let saved = agent
+        .config
+        .session_manager
+        .get_session(&session_id, true)
+        .await?;
+    assert!(!saved.conversation.unwrap().messages().iter().any(|message| {
+        message.content.iter().any(|content| matches!(content,
+            MessageContent::ActionRequired(action) if matches!(
+                &action.data,
+                ActionRequiredData::ToolConfirmationResponse { id: saved_id, permission: Permission::AlwaysAllow }
+                    if saved_id == &id
+            )
+        ))
+    }));
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_approval_finishes_without_an_answer() -> Result<()> {
+    for state_machine in [false, true] {
+        check_cancelled_approval(state_machine, false).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_approval_ignores_queued_always_allow() -> Result<()> {
+    for state_machine in [false, true] {
+        check_cancelled_approval(state_machine, true).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_approval_answers_continue_both_agent_loops() -> Result<()> {
+    use crate::config::permission::PermissionLevel;
+
+    for state_machine in [false, true] {
+        let _guard = env_lock::lock_env([(
+            "GOOSE_STATE_MACHINE",
+            Some(if state_machine { "1" } else { "0" }),
+        )]);
+        for (permission, total, saved_permission) in [
+            (Permission::AllowOnce, 1, None),
+            (
+                Permission::AlwaysAllow,
+                1,
+                Some(PermissionLevel::AlwaysAllow),
+            ),
+            (Permission::DenyOnce, 0, None),
+            (Permission::AlwaysDeny, 0, Some(PermissionLevel::NeverAllow)),
+        ] {
+            let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+            api.on("add one").call(ADD, value(1));
+            api.on("result: 1").reply("the result is one");
+            api.on("user has declined").reply("the tool was declined");
+            let mut stream = agent
+                .reply(
+                    Message::user().with_text("add one"),
+                    SessionConfig {
+                        id: session_id.clone(),
+                        schedule_id: None,
+                        max_turns: Some(2),
+                        retry_config: None,
+                    },
+                    state_machine,
+                    Some(CancellationToken::new()),
+                )
+                .await?;
+            let id = next_confirmation(&mut stream).await?;
+            agent
+                .submit_tool_confirmation(&session_id, &id, permission)
+                .await?;
+            let messages =
+                tokio::time::timeout(Duration::from_secs(5), stream_messages(stream)).await??;
+            assert!(messages
+                .iter()
+                .any(|message| message.get_tool_response_ids().contains(&id.as_str())));
+            assert_eq!(calculator.total(), total);
+            assert_eq!(
+                agent.config.permission_manager.get_user_permission(ADD),
+                saved_permission
+            );
+        }
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<()> {
     let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);

@@ -1182,6 +1182,130 @@ fn test_permission_persistence() {
 }
 
 #[test]
+fn test_cancel_pending_permission_without_client_response() {
+    use futures::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
+    use serde_json::{json, Value};
+    use std::time::Duration;
+
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        let mcp = McpFixture::new().await;
+        let prompt = "Use the get_code tool and output only its result.";
+        let openai = OpenAiFixture::new(
+            vec![(
+                prompt.to_string(),
+                include_str!("acp_test_data/openai_tool_call.txt"),
+            )],
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let (transport, _handle, permissions) = spawn_acp_server_in_process(
+            openai.uri(),
+            &[],
+            data_root.path(),
+            GooseMode::Approve,
+            None,
+            goose_test_support::TEST_MODEL,
+            true,
+        )
+        .await;
+        let (mut outgoing, incoming) = transport.into_parts();
+        let mut incoming = futures::io::BufReader::new(incoming).lines();
+        for request in [
+            json!({"jsonrpc":"2.0", "id":1, "method":"initialize", "params":{"protocolVersion":1,"clientCapabilities":{}}}),
+            json!({"jsonrpc":"2.0", "id":2, "method":"session/new", "params":{"cwd":work_dir.path(),"mcpServers":[{"type":"http","name":"mcp-fixture","url":mcp.url,"headers":[]}]}}),
+        ] {
+            outgoing
+                .write_all(format!("{request}\n").as_bytes())
+                .await
+                .unwrap();
+            outgoing.flush().await.unwrap();
+            if request["id"] == 1 {
+                let response: Value =
+                    serde_json::from_str(&incoming.next().await.unwrap().unwrap()).unwrap();
+                assert_eq!(response["id"], 1);
+            }
+        }
+        let session_response: Value =
+            serde_json::from_str(&incoming.next().await.unwrap().unwrap()).unwrap();
+        assert_eq!(session_response["id"], 2);
+        let session_id = session_response["result"]["sessionId"].clone();
+        let request = json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session_id,"prompt":[{"type":"text","text":prompt}]}});
+        outgoing
+            .write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        outgoing.flush().await.unwrap();
+        let permission_request = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let message: Value =
+                    serde_json::from_str(&incoming.next().await.unwrap().unwrap()).unwrap();
+                if message["method"] == "session/request_permission" {
+                    break message;
+                }
+                assert_ne!(
+                    message["id"], 3,
+                    "prompt ended before requesting permission: {message}"
+                );
+            }
+        })
+        .await
+        .unwrap();
+        let cancel =
+            json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":session_id}});
+        outgoing
+            .write_all(format!("{cancel}\n").as_bytes())
+            .await
+            .unwrap();
+        outgoing.flush().await.unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let message: Value =
+                    serde_json::from_str(&incoming.next().await.unwrap().unwrap()).unwrap();
+                if message["id"] == 3 {
+                    break message;
+                }
+            }
+        })
+        .await
+        .expect("cancel must complete the real ACP prompt without a permission response");
+        assert_eq!(response["result"]["stopReason"], "cancelled");
+        let option = permission_request["params"]["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|option| option["kind"] == "allow_always")
+            .unwrap()["optionId"]
+            .clone();
+        let late = json!({"jsonrpc":"2.0","id":permission_request["id"],"result":{"outcome":{"outcome":"selected","optionId":option}}});
+        outgoing
+            .write_all(format!("{late}\n").as_bytes())
+            .await
+            .unwrap();
+        // A subsequent request round-trip ensures the late response has entered the server.
+        let list = json!({"jsonrpc":"2.0","id":4,"method":"session/list","params":{}});
+        outgoing
+            .write_all(format!("{list}\n").as_bytes())
+            .await
+            .unwrap();
+        outgoing.flush().await.unwrap();
+        loop {
+            let message: Value =
+                serde_json::from_str(&incoming.next().await.unwrap().unwrap()).unwrap();
+            if message["id"] == 4 {
+                break;
+            }
+        }
+        assert_eq!(
+            permissions.get_user_permission("mcp-fixture__get_code"),
+            None
+        );
+        assert!(!data_root.path().join("permission.yaml").exists());
+    });
+}
+
+#[test]
 fn test_prompt_basic() {
     run_test(async { run_prompt_basic::<AcpServerConnection>().await });
 }
