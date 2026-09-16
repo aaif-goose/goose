@@ -1270,11 +1270,19 @@ pub fn convert_tool_messages_to_text(messages: &[Message]) -> Conversation {
 
 /// Modifies the system prompt to include tool usage instructions when tool interpretation is enabled
 pub fn modify_system_prompt_for_tool_json(system_prompt: &str, tools: &[Tool]) -> String {
+    format!(
+        "{}\n\n{}",
+        system_prompt,
+        toolshim_system_prompt_appendix(tools)
+    )
+}
+
+pub fn toolshim_system_prompt_appendix(tools: &[Tool]) -> String {
     let tool_info = format_tool_info(tools);
 
     format!(
-        "{}\n\n{}\n\nBreak down your task into smaller steps and do one step and tool call at a time. Do not try to use multiple tools at once. If you want to use a tool, tell the user what tool to use by specifying the tool in this JSON format\n{{\n  \"name\": \"tool_name\",\n  \"arguments\": {{\n    \"parameter1\": \"value1\",\n    \"parameter2\": \"value2\"\n }}\n}}. After you get the tool result back, consider the result and then proceed to do the next step and tool call if required.",
-        system_prompt, tool_info
+        "{}\n\nBreak down your task into smaller steps and do one step and tool call at a time. Do not try to use multiple tools at once. If you want to use a tool, tell the user what tool to use by specifying the tool in this JSON format\n{{\n  \"name\": \"tool_name\",\n  \"arguments\": {{\n    \"parameter1\": \"value1\",\n    \"parameter2\": \"value2\"\n }}\n}}. After you get the tool result back, consider the result and then proceed to do the next step and tool call if required.",
+        tool_info
     )
 }
 

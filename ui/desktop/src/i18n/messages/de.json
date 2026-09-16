@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Automatisch verdichten bei"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Jetzt verdichten"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Schwellenwert konnte nicht gespeichert werden: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Verstanden!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose hat die Aufgabe abgeschlossen."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Kontextfenster"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Diktierfehler"
@@ -4700,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Besuchen Sie"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} von {limit} Tokens belegt. Anzeigen, was im Kontextfenster ist"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Jetzt verdichten"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Frei"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Der Kontextbericht konnte nicht geladen werden."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · Kontextfenster mit {limit} Tokens"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Aktualisieren"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Erneut versuchen"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Kontextfenster"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Token-Zahlen werden mit dem o200k-Tokenizer geschätzt."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "von {limit} Tokens · {percent} des Kontextfensters"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Anweisungen & Hinweise"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Verdichtungszusammenfassung"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Erweiterungsanweisungen"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Unterhaltung"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "System-Prompt"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Tool-Definitionen"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Zugkontext"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "Verwende die operationsbasierte Agentenschleife. Deaktiviere sie, um die Legacy-Schleife zu verwenden."
   },
@@ -4768,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Agentenschleife"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} führt einen eigenen Gesprächsverlauf und erhält von goose nur den neuesten Prompt, daher gibt es keine Anfrage aufzuschlüsseln."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Auto-Verdichtungsschwelle überschritten: Das Gespräch wird verdichtet, bevor die nächste Anfrage gesendet wird."
   }
 }

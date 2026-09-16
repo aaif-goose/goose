@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Tự động nén tại"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Nén ngay"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Không thể lưu ngưỡng: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Đã hiểu!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose đã hoàn thành tác vụ."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Cửa sổ ngữ cảnh"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Lỗi đọc chính tả"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Không thể cập nhật thư mục làm việc"
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Truy cập"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "Đã dùng {used} trong {limit} token. Xem nội dung cửa sổ ngữ cảnh"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Nén ngay"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Còn trống"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Không thể tải báo cáo ngữ cảnh."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · cửa sổ ngữ cảnh {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Làm mới"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Thử lại"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Cửa sổ ngữ cảnh"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Số token được ước tính bằng tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "trong {limit} token · {percent} cửa sổ ngữ cảnh"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Hướng dẫn & gợi ý"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Tóm tắt nén"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Hướng dẫn của tiện ích mở rộng"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Cuộc trò chuyện"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt hệ thống"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Định nghĩa công cụ"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Ngữ cảnh lượt"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "Sử dụng vòng lặp tác nhân dựa trên thao tác. Tắt tùy chọn này để dùng vòng lặp cũ."
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Vòng lặp tác nhân"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} giữ lịch sử hội thoại riêng và chỉ nhận lời nhắc mới nhất từ goose, nên không có yêu cầu nào để phân tích."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Đã vượt ngưỡng nén tự động: hội thoại sẽ được nén trước khi gửi yêu cầu tiếp theo."
   }
 }

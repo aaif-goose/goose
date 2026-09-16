@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "자동 압축 기준"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "지금 압축"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "임계값 저장 실패: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "알았어요!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "goose가 작업을 완료했습니다."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "컨텍스트 창"
   },
   "chatInput.dictationError": {
     "defaultMessage": "받아쓰기 오류"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "방문하여"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} 중 {used} 토큰 사용 중. 컨텍스트 창의 내용 보기"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "지금 압축"
+  },
+  "contextXray.free": {
+    "defaultMessage": "여유"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "컨텍스트 보고서를 불러올 수 없습니다."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} 토큰 컨텍스트 창"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "새로 고침"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "다시 시도"
+  },
+  "contextXray.title": {
+    "defaultMessage": "컨텍스트 창"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "토큰 수는 o200k 토크나이저로 추정됩니다."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} 토큰 · 컨텍스트 창의 {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "지침 및 힌트"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "압축 요약"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "확장 프로그램 지침"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "대화"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "시스템 프롬프트"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "도구 정의"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "턴 컨텍스트"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "작업 기반 에이전트 루프를 사용합니다. 기존 루프를 사용하려면 끄세요."
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "에이전트 루프"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider}는 자체 대화 기록을 유지하고 goose에서 최신 프롬프트만 받으므로 분석할 요청이 없습니다."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "자동 압축 임계값을 초과했습니다. 다음 요청을 보내기 전에 대화가 압축됩니다."
   }
 }

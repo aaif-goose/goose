@@ -1,6 +1,5 @@
-import { AppEvents } from '../constants/events';
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { ArrowUp, Bug, ScrollText } from 'lucide-react';
+import { ArrowUp, Bug } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
 import { Button } from './ui/button';
 import type { View } from '../utils/navigationUtils';
@@ -14,7 +13,6 @@ import { GitBranchIndicator } from './GitBranchIndicator';
 import ModelsBottomBar from './settings/models/bottom_bar/ModelsBottomBar';
 import { BottomMenuExtensionSelection } from './bottom_menu/BottomMenuExtensionSelection';
 import { cn } from '../utils';
-import { AlertType, useAlerts } from './alerts';
 import { useModelAndProvider } from './ModelAndProviderContext';
 import { acpGetProviderDetails } from '../acp/providers';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
@@ -24,6 +22,7 @@ import MentionPopover, { DisplayItemWithMatch } from './MentionPopover';
 import { COST_TRACKING_ENABLED } from '../updates';
 import { CostTracker } from './bottom_menu/CostTracker';
 import { ContextWindowIndicator } from './bottom_menu/ContextWindowIndicator';
+import { ContextXrayDialog } from './context_xray/ContextXrayDialog';
 import { DroppedFile, useFileDrop } from '../hooks/useFileDrop';
 import { Recipe } from '../recipe';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
@@ -97,14 +96,6 @@ const MAX_IMAGES_PER_MESSAGE = 10;
 
 const TOKEN_LIMIT_DEFAULT = 128000; // used before a session has a backend-resolved limit
 
-const getContextAlertType = (totalTokens: number, tokenLimit: number): AlertType => {
-  const percentage = tokenLimit ? (totalTokens / tokenLimit) * 100 : 0;
-
-  if (percentage > 90) return AlertType.Error;
-  if (percentage > 75) return AlertType.Warning;
-  return AlertType.Info;
-};
-
 // Manual compact trigger message - must match backend constant
 const MANUAL_COMPACT_TRIGGER = '/compact';
 
@@ -124,10 +115,6 @@ const i18n = defineMessages({
   unknownType: {
     id: 'chatInput.unknownType',
     defaultMessage: 'Unknown type',
-  },
-  contextWindow: {
-    id: 'chatInput.contextWindow',
-    defaultMessage: 'Context window',
   },
   waitingForImages: {
     id: 'chatInput.waitingForImages',
@@ -320,7 +307,6 @@ export default function ChatInput({
     setLastInterruption(null);
   }, []);
 
-  const { alerts, addAlert, clearAlerts } = useAlerts();
   const dropdownRef: React.RefObject<HTMLDivElement> = useRef<HTMLDivElement>(
     null
   ) as React.RefObject<HTMLDivElement>;
@@ -354,8 +340,8 @@ export default function ChatInput({
     }
   }, [sessionModel, sessionProvider, configModel, configProvider, sessionId, modelOverride]);
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
-  const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [contextXrayOpen, setContextXrayOpen] = useState(false);
   const [workingDirOverride, setWorkingDirOverride] = useState<string | null>(null);
   const currentWorkingDir = workingDirOverride ?? workingDir ?? getInitialWorkingDir();
 
@@ -625,10 +611,8 @@ export default function ChatInput({
     try {
       if (sessionId) {
         setTokenLimit(0);
-        setIsTokenLimitLoaded(false);
         return;
       }
-      setIsTokenLimitLoaded(false);
 
       // Use effective model/provider (includes overrides from in-session model changes),
       // fall back to config defaults
@@ -640,7 +624,6 @@ export default function ChatInput({
         provider = configModelAndProvider.provider;
       }
       if (!model || !provider) {
-        setIsTokenLimitLoaded(true);
         return;
       }
 
@@ -649,7 +632,6 @@ export default function ChatInput({
       const predefinedModel = predefinedModels.find((m) => m.name === model);
       if (predefinedModel?.context_limit) {
         setTokenLimit(predefinedModel.context_limit);
-        setIsTokenLimitLoaded(true);
         return;
       }
 
@@ -657,7 +639,6 @@ export default function ChatInput({
       const canonicalInfo = await fetchCanonicalModelInfo(provider, model);
       if (canonicalInfo?.contextLimit) {
         setTokenLimit(canonicalInfo.contextLimit);
-        setIsTokenLimitLoaded(true);
         return;
       }
 
@@ -667,19 +648,16 @@ export default function ChatInput({
         const modelConfig = currentProvider.metadata.known_models.find((m) => m.name === model);
         if (modelConfig?.context_limit) {
           setTokenLimit(modelConfig.context_limit);
-          setIsTokenLimitLoaded(true);
           return;
         }
       }
 
       // Priority 4: Use default if nothing else found
       setTokenLimit(TOKEN_LIMIT_DEFAULT);
-      setIsTokenLimitLoaded(true);
     } catch (err) {
       console.error('Error loading providers or token limit:', err);
       // Set default limit on error
       setTokenLimit(TOKEN_LIMIT_DEFAULT);
-      setIsTokenLimitLoaded(true);
     }
   };
 
@@ -694,40 +672,12 @@ export default function ChatInput({
     if (contextLimit === undefined) {
       if (sessionId) {
         setTokenLimit(0);
-        setIsTokenLimitLoaded(false);
       }
       return;
     }
 
     setTokenLimit(contextLimit);
-    setIsTokenLimitLoaded(true);
   }, [contextLimit, sessionId]);
-
-  // Handle token usage alerts
-  useEffect(() => {
-    clearAlerts();
-
-    // Show alert when either there is registered token usage, or we know the limit
-    if ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit)) {
-      addAlert({
-        type: getContextAlertType(totalTokens || 0, tokenLimit),
-        message: intl.formatMessage(i18n.contextWindow),
-        progress: {
-          current: totalTokens || 0,
-          total: tokenLimit,
-        },
-        showCompactButton: true,
-        compactButtonDisabled: !totalTokens || isLoading,
-        onCompact: () => {
-          window.dispatchEvent(new CustomEvent(AppEvents.HIDE_ALERT_POPOVER));
-          handleSubmit({ msg: MANUAL_COMPACT_TRIGGER, images: [] });
-        },
-        compactIcon: <ScrollText size={12} />,
-      });
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalTokens, tokenLimit, isTokenLimitLoaded, isLoading, addAlert, clearAlerts]);
 
   // Cleanup effect for component unmount - prevent memory leaks
   useEffect(() => {
@@ -739,11 +689,8 @@ export default function ChatInput({
         window.clearTimeout(timeoutId);
       });
       timeouts.clear();
-
-      // Clear alerts to prevent memory leaks
-      clearAlerts();
     };
-  }, [clearAlerts]);
+  }, []);
 
   const maxHeight = 10 * 24;
 
@@ -1761,7 +1708,7 @@ export default function ChatInput({
             <ContextWindowIndicator
               totalTokens={totalTokens || 0}
               tokenLimit={tokenLimit}
-              alerts={alerts}
+              onOpen={sessionId ? () => setContextXrayOpen(true) : undefined}
             />
 
             {/* Right: extension selector */}
@@ -1925,6 +1872,16 @@ export default function ChatInput({
             isOpen={diagnosticsOpen}
             onClose={() => setDiagnosticsOpen(false)}
             sessionId={sessionId}
+          />
+        )}
+        {sessionId && (
+          <ContextXrayDialog
+            open={contextXrayOpen}
+            onOpenChange={setContextXrayOpen}
+            sessionId={sessionId}
+            totalTokens={totalTokens || 0}
+            onCompact={() => handleSubmit({ msg: MANUAL_COMPACT_TRIGGER, images: [] })}
+            compactDisabled={!totalTokens || isLoading}
           />
         )}
         <MentionPopover
