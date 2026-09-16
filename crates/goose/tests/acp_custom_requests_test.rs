@@ -4,7 +4,8 @@
 mod common_tests;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, McpServer, McpServerHttp, PromptRequest, SessionUpdate, StopReason, TextContent,
+    CancelNotification, ContentBlock, McpServer, McpServerHttp, PromptRequest, SessionUpdate,
+    StopReason, TextContent,
 };
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
@@ -655,6 +656,82 @@ fn test_session_info_response_carries_active_run_key() {
                 .get("activeRunId")
                 .is_some_and(|value| value.is_null()),
             "an idle session must report a null activeRunId, got: {goose}"
+        );
+    });
+}
+
+#[test]
+#[serial]
+fn test_cancel_clears_the_active_run_from_session_info() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new_with_response_delay(
+            vec![(
+                "start work".to_string(),
+                include_str!("acp_test_data/openai_steer_first.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+            Duration::from_secs(1),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().clone();
+
+        let cx = conn.cx();
+        let session_info = |session_id: String| {
+            let params = serde_json::json!({ "sessionId": session_id });
+            async move {
+                send_custom(cx, "_goose/unstable/session/info", params)
+                    .await
+                    .unwrap()
+            }
+        };
+
+        let mut prompt = Box::pin(
+            cx.send_request(PromptRequest::new(
+                session_id.clone(),
+                vec![ContentBlock::Text(TextContent::new("start work"))],
+            ))
+            .block_task(),
+        );
+
+        // The run is announced before the delayed provider reply, so the turn is
+        // guaranteed to be in flight when the cancel is sent.
+        let run_id = loop {
+            tokio::select! {
+                response = &mut prompt => {
+                    panic!("turn completed before it could be cancelled: {response:?}");
+                }
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                    if let Some(run_id) =
+                        session.session_updates().iter().find_map(active_run_id_from_update)
+                    {
+                        break run_id;
+                    }
+                }
+            }
+        };
+
+        let running = session_info(session_id.0.to_string()).await;
+        assert_eq!(
+            running["session"]["_meta"]["goose"]["activeRunId"],
+            serde_json::json!(run_id),
+            "session info must report the run before it is cancelled"
+        );
+
+        cx.send_notification(CancelNotification::new(session_id.clone()))
+            .unwrap();
+
+        let response = prompt.await.unwrap();
+        assert_eq!(response.stop_reason, StopReason::Cancelled);
+
+        let cancelled = session_info(session_id.0.to_string()).await;
+        assert!(
+            cancelled["session"]["_meta"]["goose"]["activeRunId"].is_null(),
+            "a cancelled run must clear from session info, got: {}",
+            cancelled["session"]["_meta"]["goose"]
         );
     });
 }
