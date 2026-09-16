@@ -199,24 +199,21 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
-        let tools = self.list_tools(session_id, None).await;
+        let lease = self.resolve_lease(session_id, working_dir).await;
+        let mut tools = lease.tools();
+        if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
+            tools.push(final_output_tool.tool());
+        }
         ensure_unique_tool_names(&tools)?;
 
         #[cfg(feature = "code-mode")]
-        let code_execution_active = self
-            .extension_manager
-            .is_extension_enabled(code_execution::EXTENSION_NAME)
-            .await;
+        let code_execution_active = lease.is_enabled(code_execution::EXTENSION_NAME);
         #[cfg(not(feature = "code-mode"))]
         let code_execution_active = false;
 
         let tools = prepare_inference_tools(tools, code_execution_active);
 
-        // Prepare system prompt
-        let extensions_info = self
-            .extension_manager
-            .get_extensions_info(working_dir)
-            .await;
+        let extensions_info = lease.instructions();
         let model_config = self.effective_model_config_for_session(session_id).await?;
 
         let goose_mode = *self.current_goose_mode.lock().await;

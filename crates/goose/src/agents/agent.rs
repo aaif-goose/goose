@@ -22,7 +22,9 @@ use super::tool_execution::{
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
-use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
+use crate::agents::extension_manager::{
+    ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
+};
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
     FINAL_OUTPUT_TOOL_NAME,
@@ -283,6 +285,9 @@ pub struct Agent {
     pub(super) current_goose_mode: Mutex<GooseMode>,
 
     pub extension_manager: Arc<ExtensionManager>,
+    /// Resolved when an inference is prepared and held for that inference's
+    /// tool calls; same rule as the state machine's ToolExecutionOperation.
+    lease: Mutex<Option<Arc<ExtensionLease>>>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
     pub(super) tool_confirmation_router: ToolConfirmationRouter,
@@ -433,6 +438,7 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_goose_mode: Mutex::new(initial_mode),
+            lease: Mutex::new(None),
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
@@ -1166,10 +1172,13 @@ impl Agent {
 
         debug!("WAITING_TOOL_START: {}", tool_call.name);
         let result = self
-            .extension_manager
-            .dispatch_tool_call(
+            .lease(&session.id, &session.working_dir)
+            .await
+            .call(
                 &ctx,
                 tool_call.clone(),
+                None,
+                false,
                 cancellation_token.unwrap_or_default(),
             )
             .await;
@@ -1451,6 +1460,29 @@ impl Agent {
             .await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn resolve_lease(
+        &self,
+        session_id: &str,
+        working_dir: &std::path::Path,
+    ) -> Arc<ExtensionLease> {
+        let set = self
+            .extension_manager
+            .current_set(session_id, Some(working_dir))
+            .await;
+        let lease = Arc::new(self.extension_manager.resolve(&set).await);
+        *self.lease.lock().await = Some(Arc::clone(&lease));
+        lease
+    }
+
+    async fn lease(&self, session_id: &str, working_dir: &std::path::Path) -> Arc<ExtensionLease> {
+        if let Some(lease) = self.lease.lock().await.as_ref() {
+            if lease.scope_id() == session_id {
+                return Arc::clone(lease);
+            }
+        }
+        self.resolve_lease(session_id, working_dir).await
     }
 
     pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
