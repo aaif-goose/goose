@@ -5254,6 +5254,7 @@ dependencies = [
  "shellexpand",
  "smithy-transport-reqwest",
  "sqlx",
+ "sse-stream",
  "strum 0.28.0",
  "subtle",
  "symphonia",

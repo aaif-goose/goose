@@ -4,11 +4,13 @@ use chrono::{DateTime, Utc};
 use futures::stream::{self, FuturesUnordered, StreamExt};
 use futures::Stream;
 use futures::{future, FutureExt};
+use oauth2::TokenResponse;
 use once_cell::sync::Lazy;
 use rmcp::model::ProtocolVersion;
 use rmcp::service::{ClientInitializeError, ServiceError};
 use rmcp::transport::streamable_http_client::{
-    StreamableHttpClientTransportConfig, StreamableHttpError,
+    AuthRequiredError, InsufficientScopeError, StreamableHttpClient,
+    StreamableHttpClientTransportConfig, StreamableHttpError, StreamableHttpPostResponse,
 };
 use rmcp::transport::{ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport};
 use std::collections::HashMap;
@@ -50,9 +52,9 @@ use crate::oauth::{
 };
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ResourceContents,
-    ServerInfo, ServerNotification, Tool,
+    CallToolRequestParams, CallToolResult, ClientJsonRpcMessage, ContentBlock, ErrorCode,
+    ErrorData, GetPromptResult, ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource,
+    ResourceContents, ServerInfo, ServerNotification, Tool,
 };
 use rmcp::transport::auth::{AuthClient, CredentialStore};
 use schemars::_private::NoSerialize;
@@ -553,7 +555,9 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
     };
 
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err
+            .auth_challenge()
+            .map(|challenge| split_presented_id(challenge).0);
     }
 
     #[cfg(unix)]
@@ -561,7 +565,9 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
         .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
         )
     {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err
+            .auth_challenge()
+            .map(|challenge| split_presented_id(challenge).0);
     }
 
     None
@@ -575,12 +581,18 @@ fn auth_challenge_from_result(res: &Result<McpClient, ClientInitializeError>) ->
 /// failure (401 auth required or 403 insufficient scope), so a step-up
 /// authorization can be started reactively.
 fn auth_challenge_from_service_error(err: &ServiceError) -> Option<String> {
+    challenge_and_presented_token_from_service_error(err).map(|(challenge, _)| challenge)
+}
+
+fn challenge_and_presented_token_from_service_error(
+    err: &ServiceError,
+) -> Option<(String, Option<String>)> {
     let ServiceError::TransportSend(DynamicTransportError { error, .. }) = err else {
         return None;
     };
 
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err.auth_challenge().map(split_presented_token);
     }
 
     #[cfg(unix)]
@@ -588,7 +600,7 @@ fn auth_challenge_from_service_error(err: &ServiceError) -> Option<String> {
         .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
         )
     {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err.auth_challenge().map(split_presented_token);
     }
 
     None
@@ -613,6 +625,31 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         return false;
     }
 
+    let rejected_access_token =
+        challenge_and_presented_token_from_init_error(err).and_then(|(_, token)| token);
+
+    let _lock = match crate::oauth::acquire_oauth_flow_lock(name).await {
+        Ok(lock) => lock,
+        Err(e) => {
+            warn!("[OAuth:{name}] error locking credentials before clear: {e}");
+            return false;
+        }
+    };
+    Config::global().invalidate_secrets_cache();
+
+    let stored_token = credential_store
+        .load()
+        .await
+        .ok()
+        .flatten()
+        .and_then(|stored| stored.token_response)
+        .map(|token| token.access_token().secret().to_string());
+    if let Some(rejected_access_token) = rejected_access_token {
+        if stored_token.as_deref() != Some(rejected_access_token.as_str()) {
+            return false;
+        }
+    }
+
     if let Err(e) = credential_store.clear().await {
         warn!(
             "[OAuth:{}] error clearing rejected credentials: {}",
@@ -620,6 +657,32 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         );
     }
     true
+}
+
+fn challenge_and_presented_token_from_init_error(
+    err: &ClientInitializeError,
+) -> Option<(String, Option<String>)> {
+    let ClientInitializeError::TransportError {
+        error: DynamicTransportError { error, .. },
+        ..
+    } = err
+    else {
+        return None;
+    };
+
+    if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
+        return http_err.auth_challenge().map(split_presented_token);
+    }
+
+    #[cfg(unix)]
+    if let Some(http_err) = error
+        .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
+        )
+    {
+        return http_err.auth_challenge().map(split_presented_token);
+    }
+
+    None
 }
 
 /// Merge environment variables from direct envs and keychain-stored env_keys
@@ -767,6 +830,199 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
 const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
 
+const PRESENTED_TOKEN_MARKER: &str = " goose-presented-id=\"";
+const PRESENTED_TOKEN_MAP_LIMIT: usize = 64;
+
+fn presented_token_map() -> &'static std::sync::Mutex<HashMap<String, String>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<String, String>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn remember_presented_token(token: Option<String>) -> Option<String> {
+    let token = token?;
+    let id = uuid::Uuid::now_v7().to_string();
+    let mut tokens = presented_token_map().lock().unwrap();
+    if tokens.len() >= PRESENTED_TOKEN_MAP_LIMIT {
+        tokens.clear();
+    }
+    tokens.insert(id.clone(), token);
+    Some(id)
+}
+
+fn take_presented_token(id: &str) -> Option<String> {
+    presented_token_map().lock().unwrap().remove(id)
+}
+
+fn encode_presented_token(challenge: &str, token: Option<&str>) -> String {
+    let Some(id) = remember_presented_token(token.map(str::to_string)) else {
+        return challenge.to_string();
+    };
+    format!("{challenge}{PRESENTED_TOKEN_MARKER}{id}\"")
+}
+
+fn split_presented_id(challenge: &str) -> (String, Option<String>) {
+    let Some((original, encoded)) = challenge.rsplit_once(PRESENTED_TOKEN_MARKER) else {
+        return (challenge.to_string(), None);
+    };
+    let id = encoded.strip_suffix('"').unwrap_or(encoded);
+    (original.to_string(), Some(id.to_string()))
+}
+
+fn split_presented_token(challenge: &str) -> (String, Option<String>) {
+    let (original, id) = split_presented_id(challenge);
+    (original, id.as_deref().and_then(take_presented_token))
+}
+
+/// Forwards streamable HTTP calls while attaching the Bearer token rmcp
+/// actually sent to any auth challenge. Step-up auth compares against that
+/// request's token, not a shared slot that overlapping requests can overwrite.
+#[derive(Clone)]
+struct RecordingHttpClient {
+    inner: reqwest::Client,
+}
+
+impl RecordingHttpClient {
+    fn attach_presented_token(
+        error: StreamableHttpError<reqwest::Error>,
+        auth_token: Option<String>,
+    ) -> StreamableHttpError<reqwest::Error> {
+        match error {
+            StreamableHttpError::AuthRequired(error) => {
+                StreamableHttpError::AuthRequired(AuthRequiredError::new(encode_presented_token(
+                    &error.www_authenticate_header,
+                    auth_token.as_deref(),
+                )))
+            }
+            StreamableHttpError::InsufficientScope(error) => {
+                StreamableHttpError::InsufficientScope(InsufficientScopeError::new(
+                    encode_presented_token(&error.www_authenticate_header, auth_token.as_deref()),
+                    error.required_scope,
+                ))
+            }
+            other => other,
+        }
+    }
+
+    fn map_recorded<T>(
+        result: Result<T, StreamableHttpError<reqwest::Error>>,
+        auth_token: Option<String>,
+    ) -> Result<T, StreamableHttpError<reqwest::Error>> {
+        result.map_err(|error| Self::attach_presented_token(error, auth_token))
+    }
+}
+
+impl StreamableHttpClient for RecordingHttpClient {
+    type Error = reqwest::Error;
+
+    async fn delete_session(
+        &self,
+        uri: Arc<str>,
+        session_id: Arc<str>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<(), StreamableHttpError<Self::Error>> {
+        Self::map_recorded(
+            self.inner
+                .delete_session(uri, session_id, auth_token.clone(), custom_headers)
+                .await,
+            auth_token,
+        )
+    }
+
+    async fn get_stream(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<sse_stream::Sse, sse_stream::Error>>,
+        StreamableHttpError<Self::Error>,
+    > {
+        Self::map_recorded(
+            self.inner
+                .get_stream(
+                    uri,
+                    session_id,
+                    last_event_id,
+                    auth_token.clone(),
+                    custom_headers,
+                )
+                .await,
+            auth_token,
+        )
+    }
+
+    async fn get_stream_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<sse_stream::Sse, sse_stream::Error>>,
+        StreamableHttpError<Self::Error>,
+    > {
+        Self::map_recorded(
+            self.inner
+                .get_stream_with_max_sse_event_size(
+                    uri,
+                    session_id,
+                    last_event_id,
+                    auth_token.clone(),
+                    custom_headers,
+                    max_sse_event_size,
+                )
+                .await,
+            auth_token,
+        )
+    }
+
+    async fn post_message(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        Self::map_recorded(
+            self.inner
+                .post_message(uri, message, session_id, auth_token.clone(), custom_headers)
+                .await,
+            auth_token,
+        )
+    }
+
+    async fn post_message_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        Self::map_recorded(
+            self.inner
+                .post_message_with_max_sse_event_size(
+                    uri,
+                    message,
+                    session_id,
+                    auth_token.clone(),
+                    custom_headers,
+                    max_sse_event_size,
+                )
+                .await,
+            auth_token,
+        )
+    }
+}
+
 fn should_retry_legacy_after_empty_discover(
     result: &Result<McpClient, ClientInitializeError>,
     capabilities: &GooseMcpClientCapabilities,
@@ -815,7 +1071,12 @@ async fn connect_with_auth(
     let auth_http_client = auth_client_builder
         .build()
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
-    let auth_client = AuthClient::new(auth_http_client, auth_manager);
+    let auth_client = AuthClient::new(
+        RecordingHttpClient {
+            inner: auth_http_client,
+        },
+        auth_manager,
+    );
     let transport = StreamableHttpClientTransport::with_client(
         auth_client.clone(),
         StreamableHttpClientTransportConfig::with_uri(uri),
@@ -914,6 +1175,7 @@ impl OAuthStepUpClient {
     async fn step_up_reconnect(
         &self,
         challenge: String,
+        rejected_access_token: Option<String>,
     ) -> Result<(), crate::agents::mcp_client::Error> {
         let params = self.params.read().await;
         let auth_manager = oauth_flow_with_challenge(
@@ -921,6 +1183,7 @@ impl OAuthStepUpClient {
             &params.name,
             params.static_oauth_client.as_ref(),
             Some(challenge),
+            rejected_access_token.as_deref(),
         )
         .await
         .map_err(|e| {
@@ -975,7 +1238,7 @@ impl OAuthStepUpClient {
         };
         match first {
             Err(err) => {
-                if let Some(challenge) = auth_challenge_from_service_error(&err) {
+                if auth_challenge_from_service_error(&err).is_some() {
                     let _step_up_guard = self.step_up_lock.lock().await;
                     let retry = {
                         let client = self.inner.read().await;
@@ -983,14 +1246,17 @@ impl OAuthStepUpClient {
                     };
                     match retry {
                         Ok(value) => Ok(value),
-                        Err(retry_err)
-                            if auth_challenge_from_service_error(&retry_err).is_some() =>
-                        {
-                            self.step_up_reconnect(challenge).await?;
-                            let client = self.inner.read().await;
-                            op(&client).await
+                        Err(retry_err) => {
+                            if let Some((challenge, presented)) =
+                                challenge_and_presented_token_from_service_error(&retry_err)
+                            {
+                                self.step_up_reconnect(challenge, presented).await?;
+                                let client = self.inner.read().await;
+                                op(&client).await
+                            } else {
+                                Err(retry_err)
+                            }
                         }
-                        Err(retry_err) => Err(retry_err),
                     }
                 } else {
                     Err(err)
@@ -1328,6 +1594,7 @@ async fn create_streamable_http_client(
             &name.to_string(),
             static_oauth_client.as_ref(),
             challenge,
+            None,
         )
         .await
         {
@@ -4272,11 +4539,94 @@ mod tests {
             .await
             .unwrap();
 
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
         let err = streamable_err(
             rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
                 rmcp::transport::streamable_http_client::AuthRequiredError::new(
-                    "Bearer error=\"invalid_token\"".to_string(),
+                    encode_presented_token(
+                        "Bearer error=\"invalid_token\"",
+                        Some("rejected-token"),
+                    ),
                 ),
+            ),
+        );
+        let error = ExtensionError::InitializeError(err);
+
+        assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
+        assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_post_refresh_auth_failure_does_not_clear_a_successor_grant() {
+        use rmcp::transport::auth::{
+            InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+        };
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "successor-token",
+            "token_type": "bearer",
+        }))
+        .expect("valid fake token JSON");
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(StoredCredentials::new(
+                "test-client".to_string(),
+                Some(token_response),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
+        let err = streamable_err(
+            rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
+                rmcp::transport::streamable_http_client::AuthRequiredError::new(
+                    encode_presented_token(
+                        "Bearer error=\"invalid_token\"",
+                        Some("rejected-token"),
+                    ),
+                ),
+            ),
+        );
+        let error = ExtensionError::InitializeError(err);
+
+        assert!(!clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
+        assert!(store.load().await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_post_refresh_auth_failure_clears_on_challenge_less_401() {
+        use rmcp::transport::auth::{
+            InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+        };
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "rejected-token",
+            "token_type": "bearer",
+        }))
+        .expect("valid fake token JSON");
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(StoredCredentials::new(
+                "test-client".to_string(),
+                Some(token_response),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
+        let err = streamable_err(
+            rmcp::transport::streamable_http_client::StreamableHttpError::UnexpectedServerResponse(
+                std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
             ),
         );
         let error = ExtensionError::InitializeError(err);
@@ -4506,6 +4856,31 @@ mod tests {
         assert!(
             header_found,
             "custom header x-api-key was not forwarded through the OAuth connection path"
+        );
+    }
+
+    #[test]
+    fn overlapping_challenges_keep_the_token_from_the_failing_request() {
+        let first = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t1"));
+        let second = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t2"));
+
+        assert!(
+            !first.contains("t1") && !second.contains("t2"),
+            "the live bearer token must not appear in the transport error"
+        );
+        assert_eq!(
+            split_presented_token(&first),
+            (
+                r#"Bearer error="invalid_token""#.to_string(),
+                Some("t1".to_string())
+            )
+        );
+        assert_eq!(
+            split_presented_token(&second),
+            (
+                r#"Bearer error="invalid_token""#.to_string(),
+                Some("t2".to_string())
+            )
         );
     }
 }
