@@ -2,11 +2,11 @@ mod fake_live_voice_provider;
 
 use super::super::call::{LiveMainAgent, DELEGATION_INSTRUCTION, PROVIDER_CLEANUP_TIMEOUT};
 use super::*;
+use crate::agents::Agent;
 use fake_live_voice_provider::{provider_channel, FakeConnectionDriver};
 use goose_providers::{live_voice_provider::ProviderConnectionEvent, model::ModelConfig};
 use rmcp::model::Role;
 use std::time::Duration;
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 type StartResult = Result<StartLiveVoiceCallResult, LiveVoiceError>;
@@ -169,8 +169,8 @@ fn completion_receiver(
         .unwrap()
         .get(session_id)
         .unwrap()
-        .completion_rx
-        .clone()
+        .completion_tx
+        .subscribe()
 }
 
 #[test]
@@ -182,13 +182,13 @@ fn reports_each_eligibility_gate() {
     unavailable.live_voice_resolver = Arc::new(|| Err("Live voice provider is not configured"));
     assert_availability(&unavailable, Err("Live voice provider is not configured"));
     let ready = service();
-    let call_guard = LiveCallGuard::start(ready.active_runs.clone(), "main-session").unwrap();
+    assert!(ready.active_runs.start_live("main-session"));
     assert_eq!(
         ready.availability(Some("main-session"), GooseMode::Auto),
         Err("Live voice is unavailable while this session is busy")
     );
     assert_eq!(ready.availability(None, GooseMode::Auto), Ok(()));
-    drop(call_guard);
+    ready.active_runs.finish_live("main-session");
     assert_eq!(
         ready.availability(Some("main-session"), GooseMode::Approve),
         Err("Live voice requires Autonomous mode")
@@ -356,6 +356,109 @@ async fn a_cancelled_start_releases_the_session() {
         Ok(())
     );
     drop(pending);
+}
+
+#[tokio::test]
+async fn session_stop_tracks_provider_start_until_the_call_stops() {
+    let (provider, mut starts) = provider_channel();
+    let service = Arc::new(LiveVoiceService::for_test(
+        provider,
+        Arc::new(ActiveRunRegistry::default()),
+    ));
+    let (manager, session_id) = live_session([]).await;
+    let start_task = spawn_start(service.clone(), session_id.clone(), "offer", manager);
+    let pending = starts.recv().await.unwrap();
+
+    let stop = service.stop_session_call(&session_id);
+    let provider = async move {
+        let mut connection = pending
+            .accept(WebRtcAnswer::new("answer".into()).unwrap())
+            .unwrap();
+        start_task.await.unwrap().unwrap();
+        connection
+            .next_stop_request()
+            .await
+            .unwrap()
+            .send(Ok(()))
+            .unwrap();
+        connection
+            .send_event(ProviderConnectionEvent::Closed)
+            .unwrap();
+    };
+    let ((), ()) = tokio::join!(stop, provider);
+
+    assert!(!service
+        .calls_by_session
+        .lock()
+        .unwrap()
+        .contains_key(&session_id));
+    assert_eq!(
+        service.availability(Some(&session_id), GooseMode::Auto),
+        Ok(())
+    );
+}
+
+#[tokio::test]
+async fn session_stop_waits_for_cleanup_after_call_completion() {
+    let (main_agent, mut starts, _, finish_run) = controlled_main_agent();
+    let (service, mut connection, call_id, session_id, _) =
+        establish_call_with(main_agent, ignore_transcript_publisher()).await;
+    let active_runs = service.active_runs.clone();
+    let cancel_token = CancellationToken::new();
+    assert!(active_runs
+        .start_live_delegation(
+            &session_id,
+            "delegated".into(),
+            cancel_token.clone(),
+            Arc::new(Agent::new()),
+        )
+        .is_ok());
+    connection
+        .send_event(ProviderConnectionEvent::TranscriptDelta {
+            event_id: "transcript".into(),
+            role: Role::User,
+            text: "do work".into(),
+            start_ms: 0,
+            end_ms: 1,
+        })
+        .unwrap();
+    connection
+        .send_event(ProviderConnectionEvent::DelegationRequested {
+            event_id: "delegation-event".into(),
+            delegation_id: "delegation".into(),
+            offset_ms: 1,
+        })
+        .unwrap();
+    starts.recv().await.unwrap();
+
+    let stop_service = service.clone();
+    let stop_session_id = session_id.clone();
+    let stop =
+        tokio::spawn(async move { stop_service.stop_call(&stop_session_id, &call_id).await });
+    connection
+        .next_stop_request()
+        .await
+        .unwrap()
+        .send(Ok(()))
+        .unwrap();
+    connection
+        .send_event(ProviderConnectionEvent::Closed)
+        .unwrap();
+    assert!(matches!(stop.await.unwrap(), Ok(())));
+
+    active_runs.cancel_agent_run(&session_id);
+    cancel_token.cancelled().await;
+    let cleanup_service = service.clone();
+    let cleanup_session_id = session_id.clone();
+    let cleanup = tokio::spawn(async move {
+        cleanup_service.stop_session_call(&cleanup_session_id).await;
+    });
+    tokio::task::yield_now().await;
+    assert!(!cleanup.is_finished());
+    finish_run.send("cancelled".into()).unwrap();
+    cleanup.await.unwrap();
+    active_runs.remove_agent_run(&session_id, "delegated");
+    assert!(!active_runs.is_active(&session_id));
 }
 
 #[tokio::test]
@@ -998,17 +1101,18 @@ async fn queued_stop_wins_a_provider_close_race() {
 #[test]
 fn stale_cleanup_cannot_remove_a_later_call() {
     let active_runs = Arc::new(ActiveRunRegistry::default());
-    let _call_guard = LiveCallGuard::start(active_runs.clone(), "main-session").unwrap();
+    assert!(active_runs.start_live("main-session"));
     let calls = Arc::new(Mutex::new(HashMap::new()));
     let current_id = LiveVoiceCallId("current".into());
-    let (_, completion_rx) = watch::channel(None);
+    let (completion_tx, _) = watch::channel(None);
     calls.lock().unwrap().insert(
         "main-session".into(),
-        LiveCallControl {
+        Arc::new(LiveCallControl {
             call_id: current_id.clone(),
             stop_requested: CancellationToken::new(),
-            completion_rx,
-        },
+            cleanup_finished: CancellationToken::new(),
+            completion_tx,
+        }),
     );
 
     remove_call_if_current(&calls, "main-session", &LiveVoiceCallId("stale".into()));

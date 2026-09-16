@@ -100,13 +100,19 @@ impl ActiveRunRegistry {
             .map(|run| (run.run_id.clone(), run.agent.clone()))
     }
 
-    pub(super) fn agent_cancel_token(&self, session_id: &str) -> Option<CancellationToken> {
+    fn agent_cancel_token(&self, session_id: &str) -> Option<CancellationToken> {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")
             .get(session_id)
             .and_then(|state| state.agent_run.as_ref())
             .map(|run| run.cancel_token.clone())
+    }
+
+    pub(super) fn cancel_agent_run(&self, session_id: &str) {
+        if let Some(cancel_token) = self.agent_cancel_token(session_id) {
+            cancel_token.cancel();
+        }
     }
 
     pub(super) fn remove_agent_run(&self, session_id: &str, run_id: &str) -> Option<Arc<Agent>> {

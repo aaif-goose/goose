@@ -1,9 +1,6 @@
 mod transcript;
 
-use super::service::{
-    remove_call_if_current, LiveCallControls, LiveCallGuard, LiveVoiceCallCompletion,
-    LiveVoiceTranscriptPublisher,
-};
+use super::service::{LiveCallGuard, LiveVoiceCallCompletion, LiveVoiceTranscriptPublisher};
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
 use futures::future::BoxFuture;
 use goose_providers::live_voice_provider::{
@@ -11,7 +8,7 @@ use goose_providers::live_voice_provider::{
 };
 use rmcp::model::Role;
 use std::{collections::HashSet, sync::Arc, time::Duration};
-use tokio::{sync::watch, time::timeout};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use transcript::{DelegationContext, LiveTranscript};
 use uuid::Uuid;
@@ -81,7 +78,10 @@ impl LiveVoiceCall {
     pub(super) async fn run(mut self, runtime: LiveCallRuntime) {
         let mut stopping = false;
         let completion = loop {
-            match self.next_event(&runtime.stop_requested, stopping).await {
+            match self
+                .next_event(runtime.call_guard.stop_requested(), stopping)
+                .await
+            {
                 LiveCallEvent::StopRequested => {
                     match timeout(PROVIDER_CLEANUP_TIMEOUT, self.cleanup_provider()).await {
                         Ok(Ok(())) => stopping = true,
@@ -329,7 +329,7 @@ impl LiveVoiceCall {
 
     async fn finish_call(
         mut self,
-        runtime: LiveCallRuntime,
+        mut runtime: LiveCallRuntime,
         mut completion: LiveVoiceCallCompletion,
     ) {
         match self.delegated_main_agent_run.take() {
@@ -344,13 +344,12 @@ impl LiveVoiceCall {
                 {
                     completion = LiveVoiceCallCompletion::Failed;
                 }
-                remove_call_if_current(&runtime.calls_by_session, &self.session_id, &self.id);
-                drop(runtime.call_guard);
-                runtime.completion_tx.send_replace(Some(completion));
+                runtime
+                    .call_guard
+                    .publish_completion_after_cleanup(completion);
             }
             Some(run) => {
-                remove_call_if_current(&runtime.calls_by_session, &self.session_id, &self.id);
-                runtime.completion_tx.send_replace(Some(completion));
+                runtime.call_guard.publish_completion(completion);
                 let _ = run.result_future.await;
                 let _ = save_transcript_and_context_waiting_for_main_agent(
                     &runtime.session_manager,
@@ -358,7 +357,6 @@ impl LiveVoiceCall {
                     &mut self.transcript,
                 )
                 .await;
-                drop(runtime.call_guard);
             }
         }
     }
@@ -401,9 +399,6 @@ impl LiveVoiceCall {
 
 // Server-owned handles used for the lifetime of one call loop.
 pub(super) struct LiveCallRuntime {
-    calls_by_session: LiveCallControls,
-    stop_requested: CancellationToken,
-    completion_tx: watch::Sender<Option<LiveVoiceCallCompletion>>,
     session_manager: Arc<SessionManager>,
     transcript_publisher: LiveVoiceTranscriptPublisher,
     main_agent: LiveMainAgent,
@@ -412,18 +407,12 @@ pub(super) struct LiveCallRuntime {
 
 impl LiveCallRuntime {
     pub(super) fn new(
-        calls_by_session: LiveCallControls,
-        stop_requested: CancellationToken,
-        completion_tx: watch::Sender<Option<LiveVoiceCallCompletion>>,
         session_manager: Arc<SessionManager>,
         transcript_publisher: LiveVoiceTranscriptPublisher,
         main_agent: LiveMainAgent,
         call_guard: LiveCallGuard,
     ) -> Self {
         Self {
-            calls_by_session,
-            stop_requested,
-            completion_tx,
             session_manager,
             transcript_publisher,
             main_agent,

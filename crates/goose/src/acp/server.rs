@@ -2594,12 +2594,7 @@ impl GooseAcpAgent {
             .await
             .insert(session_id.to_string());
 
-        let active_run_token = self.active_runs.agent_cancel_token(session_id);
-
-        if let Some(token) = active_run_token {
-            token.cancel();
-        }
-
+        self.active_runs.cancel_agent_run(session_id);
         self.live_voice.stop_session_call(session_id).await;
 
         let mut sessions = self.sessions.lock().await;
