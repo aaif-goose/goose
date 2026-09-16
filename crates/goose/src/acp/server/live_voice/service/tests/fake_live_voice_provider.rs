@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use async_trait::async_trait;
 use goose_providers::live_voice_provider::{
     DelegationUpdate, LiveVoiceInputMessage, LiveVoiceProvider, ProviderConnection,
@@ -23,13 +23,12 @@ pub(super) struct FakeLiveVoiceProvider {
 impl LiveVoiceProvider for FakeLiveVoiceProvider {
     async fn start(
         &self,
-        offer: WebRtcOffer,
+        _offer: WebRtcOffer,
         input_messages: Vec<LiveVoiceInputMessage>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
         let (response_tx, response_rx) = oneshot::channel();
         self.start_tx
             .send(FakeStartRequest {
-                offer,
                 input_messages,
                 response_tx,
             })
@@ -41,7 +40,6 @@ impl LiveVoiceProvider for FakeLiveVoiceProvider {
 }
 
 pub(super) struct FakeStartRequest {
-    pub(super) offer: WebRtcOffer,
     pub(super) input_messages: Vec<LiveVoiceInputMessage>,
     response_tx: oneshot::Sender<Result<(WebRtcAnswer, Box<dyn ProviderConnection>)>>,
 }
