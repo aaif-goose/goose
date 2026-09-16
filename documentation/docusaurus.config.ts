@@ -375,6 +375,10 @@ const config: Config = {
             to: "/docs/mcp/repomix-mcp",
           },
           {
+            from: "/docs/mcp/rube-mcp",
+            to: "/docs/getting-started/using-extensions",
+          },
+          {
             from: "/docs/tutorials/selenium-mcp",
             to: "/docs/mcp/selenium-mcp",
           },
