@@ -13,7 +13,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-use super::calculator_extension::{value, CalculatorExtension, ADD};
+use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
@@ -174,7 +174,7 @@ async fn check_cancelled_approval(state_machine: bool, late_answer: bool) -> Res
     let mut stream = agent
         .reply(
             Message::user().with_text("add one"),
-            config,
+            config.clone(),
             state_machine,
             Some(cancel.clone()),
         )
@@ -213,7 +213,29 @@ async fn check_cancelled_approval(state_machine: bool, late_answer: bool) -> Res
         .session_manager
         .get_session(&session_id, true)
         .await?;
-    assert!(!saved.conversation.unwrap().messages().iter().any(|message| {
+    let conversation = saved.conversation.unwrap();
+    assert!(
+        conversation
+            .messages()
+            .iter()
+            .all(|message| !message.content.is_empty()),
+        "cancelled approval persisted an empty message"
+    );
+    if !state_machine {
+        let requests: Vec<_> = conversation
+            .messages()
+            .iter()
+            .flat_map(Message::get_tool_request_ids)
+            .collect();
+        let responses: Vec<_> = conversation
+            .messages()
+            .iter()
+            .flat_map(Message::get_tool_response_ids)
+            .collect();
+        assert_eq!(requests, responses);
+        assert_eq!(requests, vec![id.as_str()]);
+    }
+    assert!(!conversation.messages().iter().any(|message| {
         message.content.iter().any(|content| matches!(content,
             MessageContent::ActionRequired(action) if matches!(
                 &action.data,
@@ -222,6 +244,33 @@ async fn check_cancelled_approval(state_machine: bool, late_answer: bool) -> Res
             )
         ))
     }));
+    api.on("continue without tools").reply("continued safely");
+    let messages = tokio::time::timeout(
+        Duration::from_secs(5),
+        stream_messages(
+            agent
+                .reply(
+                    Message::user().with_text("continue without tools"),
+                    config,
+                    state_machine,
+                    Some(CancellationToken::new()),
+                )
+                .await?,
+        ),
+    )
+    .await??;
+    assert!(messages
+        .iter()
+        .any(|message| message.as_concat_text().contains("continued safely")));
+    assert_eq!(calculator.total(), 0);
+    assert!(!plugin_root.join("ran").exists());
+    if !state_machine {
+        assert!(api
+            .calls()
+            .last()
+            .unwrap()
+            .input_contains("Tool call was interrupted before completing"));
+    }
     Ok(())
 }
 
@@ -237,6 +286,82 @@ async fn cancelled_approval_finishes_without_an_answer() -> Result<()> {
 async fn cancelled_approval_ignores_queued_always_allow() -> Result<()> {
     for state_machine in [false, true] {
         check_cancelled_approval(state_machine, true).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_tool_batch_preserves_completed_results() -> Result<()> {
+    for state_machine in [false, true] {
+        let _guard = env_lock::lock_env([(
+            "GOOSE_STATE_MACHINE",
+            Some(if state_machine { "1" } else { "0" }),
+        )]);
+        let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+        agent
+            .update_goose_mode(GooseMode::Auto, &session_id)
+            .await?;
+        api.on("cancel unfinished calls").calls([
+            ("completed", ADD, value(1)),
+            ("unfinished", ADD, delayed_value(10, 500)),
+        ]);
+        let cancel = CancellationToken::new();
+        let stream = agent
+            .reply(
+                Message::user().with_text("cancel unfinished calls"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(2),
+                    retry_config: None,
+                },
+                state_machine,
+                Some(cancel.clone()),
+            )
+            .await?;
+        let cancel_after_result = async {
+            calculator.wait_for_result().await;
+            cancel.cancel();
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(stream_messages(stream), cancel_after_result)
+        })
+        .await?;
+        result?;
+        assert_eq!(calculator.total(), 1);
+        let conversation = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?
+            .conversation
+            .unwrap();
+        assert!(conversation
+            .messages()
+            .iter()
+            .all(|message| !message.content.is_empty()));
+        let responses: Vec<_> = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(MessageContent::as_tool_response)
+            .collect();
+        assert_eq!(responses.len(), 2);
+        let completed = responses
+            .iter()
+            .find(|response| response.id == "completed")
+            .unwrap();
+        let result = completed.tool_result.as_ref().unwrap();
+        assert_ne!(result.is_error, Some(true));
+        assert_eq!(result.content[0].as_text().unwrap().text, "result: 1");
+        let unfinished = responses
+            .iter()
+            .find(|response| response.id == "unfinished")
+            .unwrap();
+        assert!(unfinished
+            .tool_result
+            .as_ref()
+            .map_or(true, |result| result.is_error == Some(true)));
     }
     Ok(())
 }

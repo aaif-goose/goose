@@ -3070,9 +3070,23 @@ impl Agent {
                                         );
 
                                     let final_response = match &request.tool_call {
-                                        Ok(_) => request_to_response_map
-                                            .remove(&request.id)
-                                            .unwrap_or_else(|| Message::user().with_generated_id()),
+                                        Ok(_) => {
+                                            let mut response = request_to_response_map
+                                                .remove(&request.id)
+                                                .unwrap_or_else(|| Message::user().with_generated_id());
+                                            if is_token_cancelled(&cancel_token)
+                                                && !response.get_tool_response_ids().contains(&request.id.as_str())
+                                            {
+                                                response.add_tool_response_with_metadata(
+                                                    request.id.clone(),
+                                                    Ok(CallToolResult::error(vec![ContentBlock::text(
+                                                        "Tool call was interrupted before completing",
+                                                    )])),
+                                                    request.metadata.as_ref(),
+                                                );
+                                            }
+                                            response
+                                        }
                                         Err(error) => {
                                             error!("Tool call could not be parsed: {error}");
                                             let mut response = request_to_response_map
