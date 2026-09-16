@@ -473,12 +473,18 @@ async fn merge_environments(
         if all_envs.contains_key(key) {
             continue;
         }
-        let value: String = config.get_secret(key).map_err(|e| {
-            ExtensionError::ConfigError(format!(
-                "Failed to fetch secret '{}' from config: {}",
-                key, e
-            ))
-        })?;
+        // Config::get_secret parses env values as JSON, so PORT=3000 would come
+        // back as a number. An env override is a string by definition; only
+        // the secret store gets the type check.
+        let value = match std::env::var(key.to_uppercase()) {
+            Ok(value) => value,
+            Err(_) => config.get_secret::<String>(key).map_err(|e| {
+                ExtensionError::ConfigError(format!(
+                    "Failed to fetch secret '{}' from config: {}",
+                    key, e
+                ))
+            })?,
+        };
         all_envs.insert(key.clone(), value);
     }
     Ok(Envs::new(all_envs).get_env())
@@ -1101,6 +1107,38 @@ timeout: 300",
         .unwrap();
         cfg.set("MY_SECRET", &"secret_value", true).unwrap();
         assert_eq!(config.resolve(&cfg).await.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_takes_env_overrides_as_raw_strings() {
+        let _guard = env_lock::lock_env([("PORT", Some("3000")), ("HEADLESS", Some("true"))]);
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = config::Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let config = ExtensionConfig::Stdio {
+            name: "test".to_string(),
+            description: String::new(),
+            cmd: "cmd".to_string(),
+            args: vec![],
+            envs: Envs::default(),
+            env_keys: vec!["PORT".to_string(), "HEADLESS".to_string()],
+            timeout: None,
+            cwd: None,
+            bundled: None,
+            available_tools: vec![],
+        };
+
+        let resolved = config.resolve(&cfg).await.unwrap();
+
+        let ExtensionConfig::Stdio { envs, .. } = resolved else {
+            panic!("expected stdio config");
+        };
+        let envs = envs.get_env();
+        assert_eq!(envs["PORT"], "3000");
+        assert_eq!(envs["HEADLESS"], "true");
     }
 
     #[test]
