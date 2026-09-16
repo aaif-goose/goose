@@ -128,15 +128,10 @@ impl OrchestratorClient {
     }
 
     async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-        provider_guard
+        self.context
+            .provider
+            .lock()
+            .await
             .as_ref()
             .cloned()
             .ok_or_else(|| "Provider not available".to_string())
@@ -761,6 +756,7 @@ mod tests {
     ) -> OrchestratorClient {
         OrchestratorClient::new(PlatformExtensionContext {
             extension_manager: None,
+            provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: None,
             session: session.map(Arc::new),

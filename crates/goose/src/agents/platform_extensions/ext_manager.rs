@@ -551,6 +551,7 @@ mod tests {
     fn client_for(manager: &Arc<ExtensionManager>) -> ExtensionManagerClient {
         ExtensionManagerClient::new(PlatformExtensionContext {
             extension_manager: Some(Arc::downgrade(manager)),
+            provider: manager.get_provider().clone(),
             session_manager: manager.get_context().session_manager.clone(),
             scheduler: None,
             session: None,

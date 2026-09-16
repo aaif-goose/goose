@@ -263,16 +263,11 @@ impl AppsManagerClient {
     }
 
     async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
+        let provider = self
             .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-
-        let provider = provider_guard
+            .provider
+            .lock()
+            .await
             .as_ref()
             .ok_or("Provider not available")?
             .clone();
@@ -833,6 +828,7 @@ mod tests {
             info: AppsManagerClient::create_info(),
             context: PlatformExtensionContext {
                 extension_manager: None,
+                provider: Arc::new(tokio::sync::Mutex::new(None)),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,
                 session: None,

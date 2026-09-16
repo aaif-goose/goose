@@ -1037,6 +1037,7 @@ mod tests {
         let client = CodeExecutionClient::new(
             PlatformExtensionContext {
                 extension_manager: None,
+                provider: Arc::new(tokio::sync::Mutex::new(None)),
                 session_manager: Arc::new(crate::session::SessionManager::new(
                     temp.path().join("sessions"),
                 )),

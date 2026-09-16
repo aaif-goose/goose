@@ -228,8 +228,12 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
 
 #[derive(Clone)]
 pub struct PlatformExtensionContext {
+    /// Sibling access for the two extensions that operate on the running set
+    /// (extension management, code mode). Everything else uses the fields
+    /// below.
     pub extension_manager:
         Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
+    pub provider: crate::agents::types::SharedProvider,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
     pub session: Option<std::sync::Arc<Session>>,

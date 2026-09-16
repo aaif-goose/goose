@@ -516,6 +516,7 @@ impl ExtensionManager {
             extensions: Mutex::new(IndexMap::new()),
             context: PlatformExtensionContext {
                 extension_manager: None,
+                provider: provider.clone(),
                 session_manager,
                 scheduler,
                 session: None,
