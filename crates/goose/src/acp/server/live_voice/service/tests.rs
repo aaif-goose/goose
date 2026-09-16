@@ -32,21 +32,19 @@ fn controlled_main_agent() -> (
     LiveMainAgent,
     tokio::sync::mpsc::UnboundedReceiver<String>,
     tokio::sync::mpsc::UnboundedReceiver<String>,
-    oneshot::Sender<String>,
+    tokio::sync::mpsc::UnboundedSender<String>,
 ) {
     let (start_tx, start_rx) = tokio::sync::mpsc::unbounded_channel();
     let (steer_tx, steer_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (finish_tx, finish_rx) = oneshot::channel();
-    let finish_rx = Arc::new(Mutex::new(Some(finish_rx)));
+    let (finish_tx, finish_rx) = tokio::sync::mpsc::unbounded_channel();
+    let finish_rx = Arc::new(tokio::sync::Mutex::new(finish_rx));
     let main_agent = LiveMainAgent::new(
         move |_, input| {
             start_tx.send(input).unwrap();
-            let finish_rx = finish_rx
-                .lock()
-                .unwrap()
-                .take()
-                .expect("one delegation run");
-            Ok(Box::pin(async move { finish_rx.await.unwrap() }))
+            let finish_rx = finish_rx.clone();
+            Ok(Box::pin(async move {
+                finish_rx.lock().await.recv().await.unwrap()
+            }))
         },
         move |_, input| {
             steer_tx.send(input).unwrap();
@@ -511,6 +509,82 @@ async fn rejected_delegation_keeps_context_for_live_completion() {
             && !message.is_user_visible()
             && message.as_concat_text().contains("User: keep this context")
     }));
+}
+
+#[tokio::test]
+async fn completed_run_keeps_context_for_a_queued_delegation() {
+    let (main_agent, mut starts, _, finish_run) = controlled_main_agent();
+    let (transcript_tx, mut transcript_rx) = tokio::sync::mpsc::unbounded_channel();
+    let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
+        transcript_tx.send(message).unwrap();
+    });
+    let (service, mut connection, call_id, session_id, _) =
+        establish_call_with(main_agent, transcript_publisher).await;
+    let delta = |event_id: &str, text: &str, end_ms| ProviderConnectionEvent::TranscriptDelta {
+        event_id: event_id.into(),
+        role: Role::User,
+        text: text.into(),
+        start_ms: 0,
+        end_ms,
+    };
+
+    connection
+        .send_event(delta("initial-transcript", "start work", 10))
+        .unwrap();
+    transcript_rx.recv().await.unwrap();
+    connection
+        .send_event(ProviderConnectionEvent::DelegationRequested {
+            event_id: "initial-delegation-event".into(),
+            delegation_id: "initial-delegation".into(),
+            offset_ms: 10,
+        })
+        .unwrap();
+    assert!(starts.recv().await.unwrap().contains("User: start work"));
+
+    connection
+        .send_event(delta("correction-transcript", "change the request", 20))
+        .unwrap();
+    transcript_rx.recv().await.unwrap();
+    connection
+        .send_event(ProviderConnectionEvent::DelegationRequested {
+            event_id: "correction-delegation-event".into(),
+            delegation_id: "correction-delegation".into(),
+            offset_ms: 20,
+        })
+        .unwrap();
+    finish_run.send("first result".into()).unwrap();
+
+    assert_eq!(
+        connection.next_delegation_update().await.unwrap().text,
+        "first result"
+    );
+    let correction = tokio::select! {
+        Some(correction) = starts.recv() => correction,
+        Some(update) = connection.next_delegation_update() =>
+            panic!("queued delegation was rejected: {}", update.text),
+    };
+    assert!(correction.contains("User: change the request"));
+    assert!(!correction.contains("start work"));
+    finish_run.send("corrected result".into()).unwrap();
+    assert_eq!(
+        connection.next_delegation_update().await.unwrap().text,
+        "corrected result"
+    );
+
+    let stop = service.stop_call(&session_id, &call_id);
+    let provider = async move {
+        connection
+            .next_stop_request()
+            .await
+            .unwrap()
+            .send(Ok(()))
+            .unwrap();
+        connection
+            .send_event(ProviderConnectionEvent::Closed)
+            .unwrap();
+    };
+    let (stop, ()) = tokio::join!(stop, provider);
+    assert!(stop.is_ok());
 }
 
 #[tokio::test]

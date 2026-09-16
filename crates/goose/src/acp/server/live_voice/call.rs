@@ -302,7 +302,8 @@ impl LiveVoiceCall {
             .delegated_main_agent_run
             .take()
             .expect("main agent is running");
-        save_transcript_and_context_waiting_for_main_agent(
+        self.transcript.finish_transcript_entry_being_built();
+        save_raw_transcript_entries(
             &runtime.session_manager,
             &self.session_id,
             &mut self.transcript,
