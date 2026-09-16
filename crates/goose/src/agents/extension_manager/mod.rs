@@ -40,6 +40,7 @@ mod lease;
 mod stdio;
 mod streamable_http;
 
+pub(crate) use lease::CallRequest;
 pub use lease::{ExtensionLease, ExtensionSet, LeaseId};
 
 /// A change to the set an agent wants, produced by the `manage_extensions`
@@ -1101,14 +1102,7 @@ impl ExtensionManager {
             .await;
         self.resolve(&set)
             .await
-            .call(
-                tool_call,
-                ctx.tool_call_request_id.clone(),
-                ctx.notification_emitter().cloned(),
-                None,
-                false,
-                cancellation_token,
-            )
+            .call(tool_call, CallRequest::from(ctx), cancellation_token)
             .await
     }
 
@@ -1124,12 +1118,10 @@ impl ExtensionManager {
             .await;
         self.resolve(&set)
             .await
-            .call(
+            .call_for_app(
                 tool_call,
-                ctx.tool_call_request_id.clone(),
-                ctx.notification_emitter().cloned(),
-                Some(extension_name),
-                true,
+                extension_name,
+                CallRequest::from(ctx),
                 cancellation_token,
             )
             .await
@@ -1280,7 +1272,7 @@ mod tests {
             let lease = self
                 .resolve(&self.current_set(session_id, None).await)
                 .await;
-            let resolved = lease.resolve(tool_name, None, false)?;
+            let resolved = lease.resolve(tool_name, None)?;
             Ok(ResolvedTool {
                 extension_name: resolved.extension.key.clone(),
                 actual_tool_name: resolved.actual_name.to_string(),
@@ -2026,7 +2018,7 @@ mod tests {
             "colliding names collapse to one entry"
         );
         let owner = lease
-            .resolve("ext_a__ext_b__secret", None, false)
+            .resolve("ext_a__ext_b__secret", None)
             .unwrap()
             .extension
             .key

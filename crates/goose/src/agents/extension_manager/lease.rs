@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use futures::stream;
 use futures::{FutureExt, Stream};
-use rmcp::model::{CallToolRequestParams, ErrorCode, ErrorData, ServerNotification, Tool};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, ServerNotification, Tool,
+};
 use rmcp::service::ServiceError;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -19,9 +21,11 @@ use super::{
 };
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
+use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
+use crate::conversation::message::Message;
 
 /// What a scope wants: which extensions, rooted where.
 #[derive(Debug)]
@@ -241,11 +245,12 @@ impl ExtensionLease {
         parts
     }
 
+    /// `app_extension` is set for calls made by an MCP app: the tool must belong
+    /// to that extension and be visible to apps.
     pub(super) fn resolve(
         &self,
         tool_name: &str,
-        expected_extension: Option<&str>,
-        require_app_visibility: bool,
+        app_extension: Option<&str>,
     ) -> Result<ResolvedTool<'_>, ErrorData> {
         let entry = self.catalog.get(tool_name).or_else(|| {
             let owners = self
@@ -281,19 +286,21 @@ impl ExtensionLease {
             ));
         };
 
-        if expected_extension.is_some_and(|expected| name_to_key(expected) != entry.extension.key) {
-            return Err(ErrorData::new(
-                ErrorCode::RESOURCE_NOT_FOUND,
-                format!("Tool '{}' not found for extension", tool_name),
-                None,
-            ));
-        }
-        if require_app_visibility && !is_tool_visible_to_app(&entry.tool) {
-            return Err(ErrorData::new(
-                ErrorCode::INVALID_PARAMS,
-                "Tool is not visible to app clients",
-                None,
-            ));
+        if let Some(app_extension) = app_extension {
+            if name_to_key(app_extension) != entry.extension.key {
+                return Err(ErrorData::new(
+                    ErrorCode::RESOURCE_NOT_FOUND,
+                    format!("Tool '{}' not found for extension", tool_name),
+                    None,
+                ));
+            }
+            if !is_tool_visible_to_app(&entry.tool) {
+                return Err(ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    "Tool is not visible to app clients",
+                    None,
+                ));
+            }
         }
 
         Ok(ResolvedTool {
@@ -306,119 +313,206 @@ impl ExtensionLease {
     pub(crate) async fn call(
         &self,
         tool_call: CallToolRequestParams,
-        request_id: Option<String>,
-        notification_emitter: Option<ToolCallNotificationEmitter>,
-        expected_extension: Option<&str>,
-        require_app_visibility: bool,
+        request: CallRequest,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        let resolved = self.resolve(&tool_call.name, expected_extension, require_app_visibility)?;
+        let resolved = self.resolve(&tool_call.name, None)?;
+        Ok(self
+            .call_resolved(resolved, tool_call.arguments, request, cancellation_token)
+            .await)
+    }
+
+    pub(crate) async fn call_for_app(
+        &self,
+        tool_call: CallToolRequestParams,
+        app_extension: &str,
+        request: CallRequest,
+        cancellation_token: CancellationToken,
+    ) -> Result<ToolCallResult, ErrorData> {
+        let resolved = self.resolve(&tool_call.name, Some(app_extension))?;
+        Ok(self
+            .call_resolved(resolved, tool_call.arguments, request, cancellation_token)
+            .await)
+    }
+
+    async fn call_resolved(
+        &self,
+        resolved: ResolvedTool<'_>,
+        arguments: Option<rmcp::model::JsonObject>,
+        request: CallRequest,
+        cancellation_token: CancellationToken,
+    ) -> ToolCallResult {
         let client = resolved.extension.client.clone();
+        let action_required_stream = self.action_required_stream(request.id.as_deref()).await;
+        let (emitter, notification_stream) = self.notification_stream(
+            client.subscribe().await,
+            request.notification_emitter,
+            request.id.is_some(),
+        );
+        let mut ctx =
+            ToolCallContext::new(self.scope_id.clone(), self.working_dir.clone(), request.id);
+        if let Some(emitter) = emitter {
+            ctx = ctx.with_notification_emitter(emitter);
+        }
+
+        let app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
         let actual_name = resolved.actual_name.to_string();
-        let extension_key = resolved.extension.key.clone();
-        let trusted = resolved.extension.is_platform();
-        let tool_meta = get_tool_meta_value(resolved.tool);
-        let resource_uri = get_tool_resource_uri(resolved.tool);
-
-        let client_notifications = client.subscribe().await;
+        let strip_mutation = !resolved.extension.is_platform();
         let session_id = self.scope_id.clone();
-        let action_required = self.action_required.clone();
-        let action_required_receiver = match request_id.clone() {
-            Some(request_id)
-                if !action_required
-                    .has_action_required_stream(&session_id, &request_id)
-                    .await =>
-            {
-                let receiver = action_required
-                    .register_action_required_stream(session_id.clone(), request_id.clone())
-                    .await;
-                Some((receiver, request_id))
-            }
-            _ => None,
-        };
-
-        let owned_ctx =
-            ToolCallContext::new(session_id.clone(), self.working_dir.clone(), request_id);
-        let (owned_ctx, tool_call_notifications) = if let Some(emitter) = notification_emitter {
-            (owned_ctx.with_notification_emitter(emitter), None)
-        } else if owned_ctx.tool_call_request_id.is_some() {
-            let (sender, receiver) = mpsc::channel(TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY);
-            (
-                owned_ctx.with_notification_emitter(ToolCallNotificationEmitter::new(sender)),
-                Some(receiver),
-            )
-        } else {
-            (owned_ctx, None)
-        };
-        let notification_stream: Box<dyn Stream<Item = ServerNotification> + Send + Unpin> =
-            match tool_call_notifications {
-                Some(receiver) => Box::new(stream::select(
-                    ReceiverStream::new(client_notifications),
-                    ReceiverStream::new(receiver),
-                )),
-                None => Box::new(ReceiverStream::new(client_notifications)),
-            };
-
-        let hydrate = self.hydrate_mcp_apps;
-        let read_cancellation_token = cancellation_token.clone();
         let fut = async move {
             let mut result = client
-                .call_tool(
-                    &owned_ctx,
-                    &actual_name,
-                    tool_call.arguments,
-                    cancellation_token,
-                )
+                .call_tool(&ctx, &actual_name, arguments, cancellation_token.clone())
                 .await
                 .map_err(|e| match e {
                     ServiceError::McpError(error_data) => error_data,
                     _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
                 })?;
-
             remove_untrusted_mcp_app_meta(&mut result);
-            if !trusted {
+            if strip_mutation {
                 ExtensionMutation::take(&mut result);
             }
-
-            if hydrate && result.is_error != Some(true) {
-                if let Some(resource_uri) = resource_uri {
-                    let mut attachment = GooseMcpAppToolAttachment {
-                        tool_name: actual_name,
-                        tool_name_is_actual: true,
-                        extension_name: extension_key,
-                        resource_uri: resource_uri.clone(),
-                        tool_meta,
-                        resource_result: None,
-                        read_error: None,
-                    };
-                    match client
-                        .read_resource(&session_id, &resource_uri, read_cancellation_token)
-                        .await
-                    {
-                        Ok(resource_result) => {
-                            attachment.resource_result =
-                                serde_json::to_value(&resource_result).ok();
-                        }
-                        Err(error) => attachment.read_error = Some(error.to_string()),
-                    }
-                    insert_trusted_tool_update_meta(&mut result, &attachment);
-                }
+            if let Some(app_call) = app_call {
+                app_call
+                    .hydrate(&*client, &session_id, &mut result, cancellation_token)
+                    .await;
             }
-
             Ok(result)
         };
 
-        Ok(ToolCallResult {
+        ToolCallResult {
             result: Box::new(fut.boxed()),
             notification_stream: Some(notification_stream),
-            action_required_stream: action_required_receiver.map(|(rx, request_id)| {
-                Box::new(ActionRequiredStream::new(
-                    rx,
-                    self.action_required.clone(),
-                    self.scope_id.clone(),
-                    request_id,
-                )) as _
-            }),
+            action_required_stream,
+        }
+    }
+
+    async fn action_required_stream(
+        &self,
+        request_id: Option<&str>,
+    ) -> Option<Box<dyn Stream<Item = Message> + Send + Unpin>> {
+        let request_id = request_id?;
+        if self
+            .action_required
+            .has_action_required_stream(&self.scope_id, request_id)
+            .await
+        {
+            return None;
+        }
+        let receiver = self
+            .action_required
+            .register_action_required_stream(self.scope_id.clone(), request_id.to_string())
+            .await;
+        Some(Box::new(ActionRequiredStream::new(
+            receiver,
+            self.action_required.clone(),
+            self.scope_id.clone(),
+            request_id.to_string(),
+        )))
+    }
+
+    /// A caller that already has an emitter (a nested call) keeps it, so its
+    /// notifications reach the outer stream. Otherwise a call with a request
+    /// id gets a channel of its own merged with the client's server
+    /// notifications; without one there is nothing to attribute them to.
+    fn notification_stream(
+        &self,
+        client_notifications: mpsc::Receiver<ServerNotification>,
+        emitter: Option<ToolCallNotificationEmitter>,
+        has_request_id: bool,
+    ) -> (
+        Option<ToolCallNotificationEmitter>,
+        Box<dyn Stream<Item = ServerNotification> + Send + Unpin>,
+    ) {
+        if emitter.is_some() || !has_request_id {
+            return (emitter, Box::new(ReceiverStream::new(client_notifications)));
+        }
+        let (sender, receiver) = mpsc::channel(TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY);
+        (
+            Some(ToolCallNotificationEmitter::new(sender)),
+            Box::new(stream::select(
+                ReceiverStream::new(client_notifications),
+                ReceiverStream::new(receiver),
+            )),
+        )
+    }
+}
+
+/// What a caller supplies per call. Session and working directory are the
+/// lease's, not the caller's.
+#[derive(Default)]
+pub(crate) struct CallRequest {
+    pub(crate) id: Option<String>,
+    pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
+}
+
+impl CallRequest {
+    pub(crate) fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: Some(id.into()),
+            notification_emitter: None,
+        }
+    }
+}
+
+impl From<&ToolCallContext> for CallRequest {
+    fn from(ctx: &ToolCallContext) -> Self {
+        Self {
+            id: ctx.tool_call_request_id.clone(),
+            notification_emitter: ctx.notification_emitter().cloned(),
+        }
+    }
+}
+
+/// An MCP-app tool's result gets its UI resource attached so the host can
+/// render it without a second round trip.
+struct McpAppCall {
+    tool_name: String,
+    extension_name: String,
+    resource_uri: String,
+    tool_meta: Option<serde_json::Value>,
+}
+
+impl McpAppCall {
+    fn from_resolved(resolved: &ResolvedTool<'_>, host_supports_apps: bool) -> Option<Self> {
+        if !host_supports_apps {
+            return None;
+        }
+        Some(Self {
+            tool_name: resolved.actual_name.to_string(),
+            extension_name: resolved.extension.key.clone(),
+            resource_uri: get_tool_resource_uri(resolved.tool)?,
+            tool_meta: get_tool_meta_value(resolved.tool),
         })
+    }
+
+    async fn hydrate(
+        self,
+        client: &dyn McpClientTrait,
+        session_id: &str,
+        result: &mut CallToolResult,
+        cancellation_token: CancellationToken,
+    ) {
+        if result.is_error == Some(true) {
+            return;
+        }
+        let mut attachment = GooseMcpAppToolAttachment {
+            tool_name: self.tool_name,
+            tool_name_is_actual: true,
+            extension_name: self.extension_name,
+            resource_uri: self.resource_uri.clone(),
+            tool_meta: self.tool_meta,
+            resource_result: None,
+            read_error: None,
+        };
+        match client
+            .read_resource(session_id, &self.resource_uri, cancellation_token)
+            .await
+        {
+            Ok(resource_result) => {
+                attachment.resource_result = serde_json::to_value(&resource_result).ok();
+            }
+            Err(error) => attachment.read_error = Some(error.to_string()),
+        }
+        insert_trusted_tool_update_meta(result, &attachment);
     }
 }

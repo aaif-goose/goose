@@ -8,7 +8,9 @@ use futures::{FutureExt, StreamExt};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
 use crate::agents::container::Container;
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager, ExtensionMutation};
+use crate::agents::extension_manager::{
+    CallRequest, ExtensionLease, ExtensionManager, ExtensionMutation,
+};
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_tool_approval::request_executable;
@@ -424,10 +426,7 @@ impl<'a> ToolExecutionOperation<'a> {
                 .await
                 .call(
                     tool_call.clone(),
-                    Some(request_id.clone()),
-                    None,
-                    None,
-                    false,
+                    CallRequest::new(request_id.clone()),
                     cancellation_token,
                 )
                 .await;

@@ -23,7 +23,7 @@ use super::tool_execution::{
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{
-    ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionMutation,
+    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionMutation,
 };
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
@@ -1170,10 +1170,7 @@ impl Agent {
             .await
             .call(
                 tool_call.clone(),
-                Some(request_id.clone()),
-                None,
-                None,
-                false,
+                CallRequest::new(request_id.clone()),
                 cancellation_token.unwrap_or_default(),
             )
             .await;
