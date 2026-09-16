@@ -33,7 +33,7 @@ impl GooseAcpAgent {
         if !use_state_machine_from_meta(req.meta.as_ref()) {
             return Ok(LiveVoiceAvailabilityResponse {
                 status: LiveVoiceStatus::Unavailable,
-                message: "Live voice requires the state-machine agent loop".into(),
+                message: "Live voice is unavailable while Use Legacy Agent Loop is enabled".into(),
             });
         }
         let mode = match req.session_id.as_deref() {

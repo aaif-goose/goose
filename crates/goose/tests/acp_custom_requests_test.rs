@@ -250,7 +250,7 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
         assert_eq!(legacy_loop["status"], "unavailable");
         assert_eq!(
             legacy_loop["message"],
-            "Live voice requires the state-machine agent loop"
+            "Live voice is unavailable while Use Legacy Agent Loop is enabled"
         );
 
         let response = send_custom(

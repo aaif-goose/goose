@@ -55,7 +55,7 @@ describe('ACP Live voice', () => {
     vi.mocked(window.electron.getSetting).mockResolvedValue(true);
     const sessionLiveVoiceAvailability = vi.fn().mockResolvedValue({
       status: 'unavailable',
-      message: 'Live voice requires the state-machine agent loop',
+      message: 'Live voice is unavailable while Use Legacy Agent Loop is enabled',
     });
     vi.mocked(getAcpClient).mockResolvedValue({
       goose: {
