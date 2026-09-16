@@ -1,6 +1,7 @@
 use super::base::Config;
 use crate::agents::extension::PLATFORM_EXTENSIONS;
 use crate::agents::ExtensionConfig;
+use anyhow::Result;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
@@ -105,12 +106,12 @@ enum ExtensionMutation {
     Noop,
 }
 
-fn with_raw_extensions_mapping<F>(config: &Config, mutate: F)
+fn with_raw_extensions_mapping<F>(config: &Config, mutate: F) -> Result<()>
 where
     F: FnOnce(&mut IndexMap<String, ExtensionEntry>) -> ExtensionMutation,
 {
     let mut serialize_error = None;
-    let result = config.update_param::<Mapping, Mapping, _>(EXTENSIONS_CONFIG_KEY, |mut raw| {
+    config.update_param::<Mapping, Mapping, _>(EXTENSIONS_CONFIG_KEY, |mut raw| {
         let mut extensions = parse_extensions_map(&raw);
 
         match mutate(&mut extensions) {
@@ -129,13 +130,12 @@ where
         }
 
         raw
-    });
+    })?;
 
-    if let Some(e) = serialize_error {
-        warn!("Failed to serialize extensions config entry: {}", e);
-    } else if let Err(e) = result {
-        warn!("Failed to save extensions config: {}", e);
+    if let Some(error) = serialize_error {
+        return Err(error.into());
     }
+    Ok(())
 }
 
 pub fn get_extension_by_name(name: &str) -> Option<ExtensionConfig> {
@@ -160,12 +160,24 @@ fn get_extension_by_name_with_config(config: &Config, name: &str) -> Option<Exte
 }
 
 pub fn set_extension(entry: ExtensionEntry) {
-    set_extension_with_config(Config::global(), entry);
+    if let Err(error) = try_set_extension(entry) {
+        warn!("Failed to save extensions config: {error}");
+    }
+}
+
+pub fn try_set_extension(entry: ExtensionEntry) -> Result<()> {
+    try_set_extension_with_config(Config::global(), entry)
 }
 
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
+    if let Err(error) = try_set_extension_with_config(config, entry) {
+        warn!("Failed to save extensions config: {error}");
+    }
+}
+
+fn try_set_extension_with_config(config: &Config, entry: ExtensionEntry) -> Result<()> {
     let key = entry.config.key();
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)));
+    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)))
 }
 
 pub fn remove_extension(key: &str) {
@@ -173,7 +185,11 @@ pub fn remove_extension(key: &str) {
 }
 
 fn remove_extension_with_config(config: &Config, key: &str) {
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Remove(key.to_string()));
+    if let Err(error) =
+        with_raw_extensions_mapping(config, |_| ExtensionMutation::Remove(key.to_string()))
+    {
+        warn!("Failed to save extensions config: {error}");
+    }
 }
 
 /// Returns true when an existing extension was updated, false when the key was missing.
@@ -183,7 +199,7 @@ pub fn set_extension_enabled(key: &str, enabled: bool) -> bool {
 
 fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) -> bool {
     let mut updated = false;
-    with_raw_extensions_mapping(config, |extensions| {
+    if let Err(error) = with_raw_extensions_mapping(config, |extensions| {
         let Some(entry) = extensions.get_mut(key) else {
             return ExtensionMutation::Noop;
         };
@@ -191,7 +207,10 @@ fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) 
         entry.enabled = enabled;
         updated = true;
         ExtensionMutation::Upsert(key.to_string(), Box::new(entry.clone()))
-    });
+    }) {
+        warn!("Failed to save extensions config: {error}");
+        return false;
+    }
 
     updated
 }

@@ -2440,7 +2440,7 @@ fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
             }
             for entry in entries {
                 let name = entry.config.name();
-                goose::config::set_extension(entry);
+                goose::config::try_set_extension(entry)?;
                 println!("Imported and enabled MCP server '{name}'");
             }
             Ok(())

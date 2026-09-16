@@ -241,7 +241,11 @@ fn package_config(
                     .context("environment variable is missing name")?;
                 args.extend(["-e".into(), name.into()]);
             }
-            args.push(package.identifier.clone());
+            args.push(versioned(
+                &package.identifier,
+                package.version.as_deref(),
+                ":",
+            ));
         }
         "nuget" => args.push(versioned(
             &package.identifier,
@@ -280,7 +284,12 @@ fn package_config(
 
 fn runtime(package: &Package) -> Result<(String, Vec<String>)> {
     if let Some(runtime) = &package.runtime_hint {
-        return Ok((runtime.clone(), vec![]));
+        let args = if package.registry_type == "oci" {
+            vec!["run".into()]
+        } else {
+            vec![]
+        };
+        return Ok((runtime.clone(), args));
     }
     Ok(match package.registry_type.as_str() {
         "npm" => ("npx".into(), vec![]),
@@ -436,4 +445,49 @@ fn substitute(template: &str, values: &HashMap<String, String>) -> String {
 }
 fn versioned(id: &str, version: Option<&str>, separator: &str) -> String {
     version.map_or_else(|| id.into(), |v| format!("{id}{separator}{v}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn import_oci(runtime_hint: Option<&str>) -> ExtensionConfig {
+        let runtime_hint = runtime_hint
+            .map(|hint| format!(r#", "runtimeHint": "{hint}""#))
+            .unwrap_or_default();
+        let json = format!(
+            r#"{{
+                "name": "io.example/test-server",
+                "description": "test",
+                "packages": [{{
+                    "registryType": "oci",
+                    "identifier": "ghcr.io/example/test-server",
+                    "version": "1.2.3"{runtime_hint},
+                    "transport": {{ "type": "stdio" }}
+                }}]
+            }}"#
+        );
+        let (entries, _) =
+            import_server_json(&json, &[ServerSelection::Package(0)], &HashMap::new()).unwrap();
+        entries.into_iter().next().unwrap().config
+    }
+
+    #[test]
+    fn oci_uses_declared_version() {
+        let ExtensionConfig::Stdio { args, .. } = import_oci(None) else {
+            panic!("expected stdio extension");
+        };
+
+        assert_eq!(args.last().unwrap(), "ghcr.io/example/test-server:1.2.3");
+    }
+
+    #[test]
+    fn oci_runtime_hint_keeps_run_subcommand() {
+        let ExtensionConfig::Stdio { cmd, args, .. } = import_oci(Some("podman")) else {
+            panic!("expected stdio extension");
+        };
+
+        assert_eq!(cmd, "podman");
+        assert_eq!(args.first().unwrap(), "run");
+    }
 }
