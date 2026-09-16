@@ -146,10 +146,16 @@ pub fn import_server_json(
         .iter()
         .filter_map(|name| values.get(name).map(|value| (name.clone(), value.clone())))
         .collect();
-    let public_values = values
+    let config_values = values
         .iter()
-        .filter(|(name, _)| !secret_names.contains(name))
-        .map(|(name, value)| (name.clone(), value.clone()))
+        .map(|(name, value)| {
+            let value = if secret_names.contains(name) {
+                format!("${{{name}}}")
+            } else {
+                value.clone()
+            };
+            (name.clone(), value)
+        })
         .collect();
     let entries = selections
         .iter()
@@ -169,7 +175,7 @@ pub fn import_server_json(
                         name.clone(),
                         document.description.clone(),
                         package,
-                        &public_values,
+                        &config_values,
                     )?;
                     (name, config)
                 }
@@ -187,7 +193,7 @@ pub fn import_server_json(
                         name.clone(),
                         document.description.clone(),
                         remote,
-                        &public_values,
+                        &config_values,
                     )?;
                     (name, config)
                 }
@@ -243,6 +249,11 @@ fn package_config(
     if package.transport.kind != "stdio" {
         return remote_config(name, description, &package.transport, values);
     }
+    if package.registry_type == "cargo" {
+        bail!(
+            "Cargo packages are not supported; install the package and configure it as a stdio extension"
+        );
+    }
     let (cmd, mut args) = runtime(package)?;
     args.extend(resolve_arguments(&package.runtime_arguments, values)?);
     let (envs, env_keys) = resolve_inputs(&package.environment_variables, values)?;
@@ -280,12 +291,9 @@ fn package_config(
             package.version.as_deref(),
             "@",
         )),
-        "cargo" => {
-            anyhow::ensure!(
-                package.runtime_hint.is_none(),
-                "cargo packages do not support runtimeHint"
-            );
-        }
+        "cargo" => bail!(
+            "Cargo packages are not supported; install the package and configure it as a stdio extension"
+        ),
         "mcpb" => bail!(
             "MCPB packages require bundle download, SHA-256 verification, extraction, and manifest processing; Goose does not yet support importing them"
         ),
@@ -416,7 +424,9 @@ fn resolve_inputs(
             .as_deref()
             .context("environment variable is missing name")?;
         if input.is_secret {
-            keys.push(name.into());
+            if input.is_required || values.contains_key(name) {
+                keys.push(name.into());
+            }
             continue;
         }
         if let Some(value) = input
@@ -441,8 +451,10 @@ fn resolve_named_inputs(
     for input in items {
         let name = input.name.as_deref().context("header is missing name")?;
         if input.is_secret {
-            keys.push(name.into());
-            fixed.insert(name.into(), format!("${{{name}}}"));
+            if input.is_required || values.contains_key(name) {
+                keys.push(name.into());
+                fixed.insert(name.into(), format!("${{{name}}}"));
+            }
             continue;
         }
         if let Some(v) = input
@@ -467,8 +479,12 @@ fn resolve_transport_variables(
     let mut env_keys = vec![];
     for (name, input) in inputs {
         if input.is_secret {
-            resolved.insert(name.clone(), format!("${{{name}}}"));
-            env_keys.push(name.clone());
+            if input.is_required || values.contains_key(name) {
+                resolved.insert(name.clone(), format!("${{{name}}}"));
+                env_keys.push(name.clone());
+            } else {
+                resolved.insert(name.clone(), String::new());
+            }
             continue;
         }
         let value = input
@@ -589,6 +605,80 @@ mod tests {
         assert_eq!(headers["Authorization"], "${Authorization}");
         assert_eq!(env_keys, &["Authorization", "token"]);
         assert_eq!(secrets, values);
+    }
+
+    #[test]
+    fn optional_transport_secrets_are_omitted_without_values() {
+        let json = r#"{
+            "name": "io.example/test-server",
+            "description": "test",
+            "remotes": [{
+                "type": "streamable-http",
+                "url": "https://example.com/{token}",
+                "headers": [{ "name": "Authorization", "isSecret": true }],
+                "variables": { "token": { "isSecret": true } }
+            }]
+        }"#;
+
+        let (entries, secrets) =
+            import_server_json(json, &[ServerSelection::Remote(0)], &HashMap::new()).unwrap();
+        let ExtensionConfig::StreamableHttp {
+            uri,
+            headers,
+            env_keys,
+            ..
+        } = &entries[0].config
+        else {
+            panic!("expected streamable HTTP extension");
+        };
+
+        assert_eq!(uri, "https://example.com/");
+        assert!(headers.is_empty());
+        assert!(env_keys.is_empty());
+        assert!(secrets.is_empty());
+    }
+
+    #[test]
+    fn optional_environment_secret_is_omitted_without_a_value() {
+        let json = r#"{
+            "name": "io.example/test-server",
+            "description": "test",
+            "packages": [{
+                "registryType": "npm",
+                "identifier": "test-server",
+                "transport": { "type": "stdio" },
+                "environmentVariables": [{ "name": "OPTIONAL_TOKEN", "isSecret": true }]
+            }]
+        }"#;
+
+        let (entries, _) =
+            import_server_json(json, &[ServerSelection::Package(0)], &HashMap::new()).unwrap();
+        let ExtensionConfig::Stdio { env_keys, .. } = &entries[0].config else {
+            panic!("expected stdio extension");
+        };
+
+        assert!(env_keys.is_empty());
+    }
+
+    #[test]
+    fn cargo_packages_are_rejected() {
+        let json = r#"{
+            "name": "io.example/test-server",
+            "description": "test",
+            "packages": [{
+                "registryType": "cargo",
+                "identifier": "test-server",
+                "version": "1.2.3",
+                "transport": { "type": "stdio" }
+            }]
+        }"#;
+
+        let error =
+            import_server_json(json, &[ServerSelection::Package(0)], &HashMap::new()).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Cargo packages are not supported"));
     }
 
     #[test]

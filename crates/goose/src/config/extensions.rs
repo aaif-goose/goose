@@ -160,9 +160,7 @@ fn get_extension_by_name_with_config(config: &Config, name: &str) -> Option<Exte
 }
 
 pub fn set_extension(entry: ExtensionEntry) {
-    if let Err(error) = try_set_extension(entry) {
-        warn!("Failed to save extensions config: {error}");
-    }
+    set_extension_with_config(Config::global(), entry);
 }
 
 pub fn try_set_extension(entry: ExtensionEntry) -> Result<()> {
