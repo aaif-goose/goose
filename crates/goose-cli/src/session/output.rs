@@ -7,7 +7,6 @@ use goose::conversation::message::{
     ActionRequiredData, Message, MessageContent, SystemNotificationContent, SystemNotificationType,
     ToolNameParts, ToolRequest, ToolResponse,
 };
-use goose::providers::canonical_cost::estimate_model_cost;
 #[cfg(target_os = "windows")]
 use goose::subprocess::SubprocessExt;
 use goose::utils::safe_truncate;
@@ -1610,14 +1609,8 @@ pub fn display_context_usage(total_tokens: usize, context_limit: usize) {
     );
 }
 
-fn estimate_cost_usd(provider: &str, model: &str, usage: &Usage) -> Option<f64> {
-    estimate_model_cost(provider, model, usage)
-}
-
-/// Display cost information, if price data is available.
-pub fn display_cost_usage(provider: &str, model: &str, usage: &Usage) {
-    if let Some(cost) = estimate_cost_usd(provider, model, usage) {
-        use console::style;
+pub fn display_cost_usage(cost: Option<f64>, usage: &Usage) {
+    if let Some(cost) = cost {
         let input_tokens = usage.input_tokens.unwrap_or(0);
         let output_tokens = usage.output_tokens.unwrap_or(0);
         let cache_read = usage.cache_read_input_tokens.unwrap_or(0);
@@ -1631,7 +1624,7 @@ pub fn display_cost_usage(provider: &str, model: &str, usage: &Usage) {
         };
 
         eprintln!(
-            "Cost: {} USD ({} tokens: in {}{}, out {})",
+            "Session cost: {} USD ({} tokens: in {}{}, out {})",
             style(format!("${:.4}", cost)).cyan(),
             input_tokens + output_tokens,
             input_tokens,
