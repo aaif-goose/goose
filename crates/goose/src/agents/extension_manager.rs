@@ -627,9 +627,6 @@ async fn clear_credentials_on_post_refresh_auth_failure(
 
     let rejected_access_token =
         challenge_and_presented_token_from_init_error(err).and_then(|(_, token)| token);
-    let Some(rejected_access_token) = rejected_access_token else {
-        return false;
-    };
 
     let _lock = match crate::oauth::acquire_oauth_flow_lock(name).await {
         Ok(lock) => lock,
@@ -638,6 +635,7 @@ async fn clear_credentials_on_post_refresh_auth_failure(
             return false;
         }
     };
+    Config::global().invalidate_secrets_cache();
 
     let stored_token = credential_store
         .load()
@@ -646,8 +644,10 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         .flatten()
         .and_then(|stored| stored.token_response)
         .map(|token| token.access_token().secret().to_string());
-    if stored_token.as_deref() != Some(rejected_access_token.as_str()) {
-        return false;
+    if let Some(rejected_access_token) = rejected_access_token {
+        if stored_token.as_deref() != Some(rejected_access_token.as_str()) {
+            return false;
+        }
     }
 
     if let Err(e) = credential_store.clear().await {
@@ -4597,6 +4597,42 @@ mod tests {
 
         assert!(!clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
         assert!(store.load().await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_post_refresh_auth_failure_clears_on_challenge_less_401() {
+        use rmcp::transport::auth::{
+            InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+        };
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "rejected-token",
+            "token_type": "bearer",
+        }))
+        .expect("valid fake token JSON");
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(StoredCredentials::new(
+                "test-client".to_string(),
+                Some(token_response),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
+        let err = streamable_err(
+            rmcp::transport::streamable_http_client::StreamableHttpError::UnexpectedServerResponse(
+                std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
+            ),
+        );
+        let error = ExtensionError::InitializeError(err);
+
+        assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
+        assert!(store.load().await.unwrap().is_none());
     }
 
     #[tokio::test]
