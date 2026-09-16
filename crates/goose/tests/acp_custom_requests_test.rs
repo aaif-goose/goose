@@ -629,6 +629,38 @@ fn test_steer_session_adds_input_to_active_prompt() {
 
 #[test]
 #[serial]
+fn test_session_info_response_carries_active_run_key() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/session/info",
+            serde_json::json!({ "sessionId": session.session_id().0.to_string() }),
+        )
+        .await
+        .expect("session info should succeed");
+
+        let goose = response["session"]["_meta"]
+            .get("goose")
+            .unwrap_or_else(|| {
+                panic!("session info response must carry goose meta, got: {response}")
+            });
+        assert!(
+            goose
+                .get("activeRunId")
+                .is_some_and(|value| value.is_null()),
+            "an idle session must report a null activeRunId, got: {goose}"
+        );
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_list_builtin_skill_sources() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {

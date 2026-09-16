@@ -209,14 +209,8 @@ impl GooseAcpAgent {
             .get(session_id)
             .map(|run| run.run_id.clone());
 
-        let mut session_info = build_session_info(session);
-        session_info
-            .meta
-            .get_or_insert_default()
-            .extend(Self::active_run_meta(active_run_id.as_deref()));
-
         Ok(GetSessionInfoResponse {
-            session: session_info,
+            session: build_session_info_with_active_run(session, active_run_id.as_deref()),
         })
     }
 
