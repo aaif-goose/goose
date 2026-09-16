@@ -787,7 +787,7 @@ async fn connect_with_auth(
     }
     #[allow(unused_mut)]
     let mut auth_client_builder = reqwest::Client::builder()
-        .redirect(mcp_http_redirect_policy())
+        .redirect(reqwest::redirect::Policy::none())
         .default_headers(auth_headers);
     #[cfg(target_os = "linux")]
     {
@@ -812,51 +812,6 @@ async fn connect_with_auth(
         extension_manager,
     )
     .await?)
-}
-
-/// Redirect policy for MCP streamable-HTTP clients (SSRF guard, LEAD-6).
-///
-/// The MCP spec permits servers to redirect (301/302/303/307/308) and legitimate
-/// public deployments do (CDNs, moved endpoints), so redirects are followed — but
-/// only within the same network class. A REMOTE server redirecting into the
-/// client's OWN private surface (loopback, link-local, cloud metadata
-/// `169.254.169.254`, IPv6 `::1`) means a client-local service, not the next hop
-/// of the server: following it would (a) read that internal host / metadata
-/// (SSRF, LEAD-6) and (b) replay the extension's configured headers onto it.
-/// Stopping at the boundary turns the 3xx back into the transport, which reports
-/// it instead of secretly hitting internal hosts. Bounded to 10 hops (matching
-/// reqwest's default cap) to avoid A->B->A loops.
-fn mcp_http_redirect_policy() -> reqwest::redirect::Policy {
-    reqwest::redirect::Policy::custom(|attempt| {
-        // previous() = chain of URLs already visited; stop before an 11th hop
-        // (mirrors reqwest's default 10-redirect cap) so A->B->A loops can't spin.
-        if attempt.previous().len() >= 10 {
-            return attempt.stop();
-        }
-        let source_host = attempt.previous().first().and_then(|u| u.host_str());
-        let target_host = attempt.url().host_str();
-        let source_is_internal = source_host.is_some_and(is_internal_host);
-        let target_is_internal = target_host.is_some_and(is_internal_host);
-        if target_is_internal && !source_is_internal {
-            attempt.stop()
-        } else {
-            attempt.follow()
-        }
-    })
-}
-
-/// Loopback, link-local and cloud-metadata hosts — i.e. the client-local surface
-/// a remote server must not be allowed to make the client reach.
-fn is_internal_host(host: &str) -> bool {
-    let lower = host.trim_end_matches('.').to_ascii_lowercase();
-    if lower == "localhost" || lower.ends_with(".localhost") {
-        return true;
-    }
-    match lower.parse::<std::net::IpAddr>() {
-        Ok(std::net::IpAddr::V4(v4)) => v4.is_loopback() || v4.is_link_local(),
-        Ok(std::net::IpAddr::V6(v6)) => v6.is_loopback() || v6.is_unicast_link_local(),
-        Err(_) => false,
-    }
 }
 
 /// Connection parameters needed to re-establish an authorized streamable HTTP
@@ -1207,7 +1162,7 @@ async fn create_streamable_http_client(
 
     #[allow(unused_mut)]
     let mut http_client_builder = reqwest::Client::builder()
-        .redirect(mcp_http_redirect_policy())
+        .redirect(reqwest::redirect::Policy::none())
         .default_headers(default_headers);
     #[cfg(target_os = "linux")]
     {
@@ -4376,5 +4331,147 @@ mod tests {
             header_found,
             "custom header x-api-key was not forwarded through the OAuth connection path"
         );
+    }
+
+    /// Option-B verification (unauthenticated client): a server 3xx must be
+    /// surfaced to the transport and the redirect target must never be contacted.
+    #[tokio::test]
+    async fn test_redirect_not_followed_unauthenticated() {
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let target = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&target)
+            .await;
+
+        let redirector = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(307).insert_header("location", target.uri()))
+            .mount(&redirector)
+            .await;
+
+        let temp_dir = tempdir().unwrap();
+        let provider: SharedProvider = Arc::new(Mutex::new(None));
+        let capabilities = GooseMcpClientCapabilities {
+            mcpui: false,
+            host_info: None,
+            elicitation_handler: None,
+            protocol_version: None,
+        };
+
+        let result = create_streamable_http_client(
+            &redirector.uri(),
+            None,
+            &HashMap::new(),
+            "test-ext",
+            None,
+            None,
+            Box::new(rmcp::transport::auth::InMemoryCredentialStore::new()),
+            provider,
+            "goose-test".to_string(),
+            capabilities,
+            temp_dir.path(),
+            Arc::new(ActionRequiredManager::new()),
+            Weak::new(),
+        )
+        .await;
+
+        // The 3xx is surfaced (connection fails); it is not silently followed.
+        assert!(result.is_err(), "expected 3xx to be surfaced as an error");
+        // The redirect target must never have been contacted.
+        let target_requests = target.received_requests().await.unwrap();
+        assert!(
+            target_requests.is_empty(),
+            "redirect target was contacted: {target_requests:?}"
+        );
+        // The redirector itself did receive the request.
+        assert!(!redirector.received_requests().await.unwrap().is_empty());
+    }
+
+    /// Option-B verification (authenticated client): same guarantee on the
+    /// `connect_with_auth` path, and the custom auth header is sent to the
+    /// redirector — never forwarded to the redirect target.
+    #[tokio::test]
+    async fn test_redirect_not_followed_with_auth_headers() {
+        use rmcp::transport::auth::{
+            InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+        };
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let target = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&target)
+            .await;
+
+        let redirector = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(307).insert_header("location", target.uri()))
+            .mount(&redirector)
+            .await;
+
+        let mut headers = HashMap::new();
+        headers.insert("x-api-key".to_string(), "test-secret-redirect".to_string());
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "fake-test-token",
+            "token_type": "bearer",
+        }))
+        .expect("valid fake token JSON");
+        let creds = StoredCredentials::new(
+            "test-client".to_string(),
+            Some(token_response),
+            vec![],
+            None,
+        );
+        let store = InMemoryCredentialStore::new();
+        store.save(creds).await.unwrap();
+
+        let mut auth_manager = rmcp::transport::AuthorizationManager::new(redirector.uri())
+            .await
+            .expect("AuthorizationManager::new should not make network calls");
+        auth_manager.set_credential_store(store);
+
+        let temp_dir = tempdir().unwrap();
+        let provider: SharedProvider = Arc::new(Mutex::new(None));
+        let capabilities = GooseMcpClientCapabilities {
+            mcpui: false,
+            host_info: None,
+            elicitation_handler: None,
+            protocol_version: None,
+        };
+
+        let result = connect_with_auth(
+            auth_manager,
+            Arc::new(ActionRequiredManager::new()),
+            &redirector.uri(),
+            Duration::from_secs(5),
+            &headers,
+            provider,
+            "goose-test".to_string(),
+            capabilities,
+            temp_dir.path(),
+            Weak::new(),
+        )
+        .await;
+
+        assert!(result.is_err(), "expected 3xx to be surfaced as an error");
+        let target_requests = target.received_requests().await.unwrap();
+        assert!(
+            target_requests.is_empty(),
+            "redirect target was contacted: {target_requests:?}"
+        );
+        // The auth header reached the redirector only.
+        let redirect_requests = redirector.received_requests().await.unwrap();
+        assert!(!redirect_requests.is_empty());
+        assert!(redirect_requests.iter().any(|req| {
+            req.headers
+                .get("x-api-key")
+                .map(|v| v == "test-secret-redirect")
+                .unwrap_or(false)
+        }));
     }
 }
