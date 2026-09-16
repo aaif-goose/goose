@@ -368,6 +368,7 @@ impl LiveVoiceCall {
                 text,
             })
             .await
+            .map(|_| ())
     }
 
     async fn cleanup_provider(&mut self) -> anyhow::Result<()> {

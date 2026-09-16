@@ -38,8 +38,16 @@ fn valid_sdp(sdp: &str) -> bool {
 #[async_trait]
 pub trait ProviderConnection: Send {
     async fn next_event(&mut self) -> ProviderConnectionEvent;
-    async fn send_delegation_update(&mut self, update: DelegationUpdate) -> Result<()>;
+    async fn send_delegation_update(
+        &mut self,
+        update: DelegationUpdate,
+    ) -> Result<DelegationUpdateDelivery>;
     async fn stop(&mut self) -> Result<()>;
+}
+
+pub enum DelegationUpdateDelivery {
+    Delivered,
+    Undelivered,
 }
 
 #[derive(Debug, PartialEq)]

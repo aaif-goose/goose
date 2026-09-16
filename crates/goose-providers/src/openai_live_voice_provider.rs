@@ -3,8 +3,8 @@
 use crate::{
     live::{LiveSessionEndReason, LiveSessionEvent},
     live_voice_provider::{
-        DelegationUpdate, LiveVoiceInputMessage, LiveVoiceProvider, ProviderConnection,
-        ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
+        DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
+        ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
     },
     openai_live::{
         ConnectedOpenAiLiveSession, OpenAiLiveClient, OpenAiLiveContext, OpenAiLiveContextChannel,
@@ -14,7 +14,7 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 use tokio::{
     sync::broadcast::error::RecvError,
     time::{sleep_until, timeout, timeout_at, Instant},
@@ -25,6 +25,12 @@ const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
 
 const HTTP_SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 const SIDEBAND_ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
+const DELEGATION_UPDATE_ACK_TIMEOUT: Duration = Duration::from_secs(10);
+const DELEGATION_DELIVERY_FAILURE_NOTICE: &str = concat!(
+    "The latest update for the delegated request could not be delivered. Tell the user you ",
+    "couldn't bring the update into this voice conversation and ask them to try again. Do not ",
+    "say whether the delegated work succeeded or failed."
+);
 const LIVE_SESSION_INSTRUCTIONS: &str = concat!(
     "You are Goose's live voice interface. Keep the conversation natural and concise.\n",
     "Interruption policy: Stop speaking when the user interrupts and listen to what they say.\n",
@@ -110,17 +116,34 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
         let answer = WebRtcAnswer::new(negotiation.answer_sdp)
             .ok_or_else(|| anyhow::anyhow!("OpenAI Live returned an invalid WebRTC answer"))?;
         let sideband = connect_sideband(&self.client, session_id).await?;
-        Ok((answer, Box::new(OpenAiProviderConnection { sideband })))
+        Ok((
+            answer,
+            Box::new(OpenAiProviderConnection {
+                sideband,
+                pending_events: VecDeque::new(),
+            }),
+        ))
     }
 }
 
 struct OpenAiProviderConnection {
     sideband: ConnectedOpenAiLiveSession,
+    pending_events: VecDeque<ProviderConnectionEvent>,
+}
+
+#[derive(Debug, PartialEq)]
+enum AppendContextOutcome {
+    Accepted,
+    Rejected,
+    TimedOut,
 }
 
 #[async_trait]
 impl ProviderConnection for OpenAiProviderConnection {
     async fn next_event(&mut self) -> ProviderConnectionEvent {
+        if let Some(event) = self.pending_events.pop_front() {
+            return event;
+        }
         loop {
             if let Some(event) = provider_connection_event(self.sideband.recv().await) {
                 return event;
@@ -128,21 +151,100 @@ impl ProviderConnection for OpenAiProviderConnection {
         }
     }
 
-    async fn send_delegation_update(&mut self, update: DelegationUpdate) -> Result<()> {
-        self.sideband
-            .send(crate::openai_live::OpenAiLiveCommand::AppendContext {
-                event_id: format!("event_{}", uuid::Uuid::new_v4()),
-                delegation_id: Some(OpenAiLiveDelegationId(update.provider_delegation_id)),
-                context: OpenAiLiveContext {
-                    text: update.text,
-                    channel: OpenAiLiveContextChannel::Commentary,
-                },
-            })
-            .await
+    async fn send_delegation_update(
+        &mut self,
+        update: DelegationUpdate,
+    ) -> Result<DelegationUpdateDelivery> {
+        match self
+            .append_context(
+                Some(OpenAiLiveDelegationId(update.provider_delegation_id)),
+                update.text,
+            )
+            .await?
+        {
+            AppendContextOutcome::Accepted => Ok(DelegationUpdateDelivery::Delivered),
+            AppendContextOutcome::Rejected => {
+                let _ = self
+                    .append_context(None, DELEGATION_DELIVERY_FAILURE_NOTICE.into())
+                    .await?;
+                Ok(DelegationUpdateDelivery::Undelivered)
+            }
+            AppendContextOutcome::TimedOut => Ok(DelegationUpdateDelivery::Undelivered),
+        }
     }
 
     async fn stop(&mut self) -> Result<()> {
         self.sideband.close().await
+    }
+}
+
+impl OpenAiProviderConnection {
+    async fn append_context(
+        &mut self,
+        delegation_id: Option<OpenAiLiveDelegationId>,
+        text: String,
+    ) -> Result<AppendContextOutcome> {
+        let event_id = format!("event_{}", uuid::Uuid::new_v4());
+        self.sideband
+            .send(crate::openai_live::OpenAiLiveCommand::AppendContext {
+                event_id: event_id.clone(),
+                delegation_id,
+                context: OpenAiLiveContext {
+                    text,
+                    channel: OpenAiLiveContextChannel::Commentary,
+                },
+            })
+            .await?;
+
+        match timeout(DELEGATION_UPDATE_ACK_TIMEOUT, async {
+            loop {
+                let event = self.sideband.recv().await;
+                match append_context_response(&event, &event_id) {
+                    Some(outcome) => return Ok(outcome),
+                    None => match provider_connection_event(event) {
+                        Some(
+                            ProviderConnectionEvent::Closed
+                            | ProviderConnectionEvent::Failed
+                            | ProviderConnectionEvent::ReceiverLagged,
+                        ) => {
+                            bail!("OpenAI Live session ended while delivering a delegation update")
+                        }
+                        Some(event) => self.pending_events.push_back(event),
+                        None => {}
+                    },
+                }
+            }
+        })
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(_) => Ok(AppendContextOutcome::TimedOut),
+        }
+    }
+}
+
+fn append_context_response(
+    event: &std::result::Result<LiveSessionEvent<OpenAiLiveEvent>, RecvError>,
+    event_id: &str,
+) -> Option<AppendContextOutcome> {
+    match event {
+        Ok(LiveSessionEvent::Message(OpenAiLiveEvent {
+            kind:
+                OpenAiLiveEventKind::ContextAppended {
+                    client_event_id: Some(client_event_id),
+                    ..
+                },
+            ..
+        })) if client_event_id == event_id => Some(AppendContextOutcome::Accepted),
+        Ok(LiveSessionEvent::Message(OpenAiLiveEvent {
+            kind:
+                OpenAiLiveEventKind::Error {
+                    client_event_id: Some(client_event_id),
+                    ..
+                },
+            ..
+        })) if client_event_id == event_id => Some(AppendContextOutcome::Rejected),
+        _ => None,
     }
 }
 
@@ -316,5 +418,40 @@ mod tests {
         for (event, expected) in cases {
             assert_eq!(provider_connection_event(event), expected);
         }
+    }
+
+    #[test]
+    fn correlates_delegation_update_responses() {
+        let message = |kind| {
+            Ok(LiveSessionEvent::Message(OpenAiLiveEvent {
+                kind,
+                raw: None,
+            }))
+        };
+        let accepted = message(OpenAiLiveEventKind::ContextAppended {
+            event_id: "event_accepted".into(),
+            channel: OpenAiLiveContextChannel::Commentary,
+            client_event_id: Some("client_event".into()),
+            start_ms: 10,
+            end_ms: 20,
+        });
+        let rejected = message(OpenAiLiveEventKind::Error {
+            event_id: "event_rejected".into(),
+            error_type: "invalid_request_error".into(),
+            code: "invalid_delegation".into(),
+            message: "delegation is stale".into(),
+            parameter: Some("delegation_id".into()),
+            client_event_id: Some("client_event".into()),
+        });
+
+        assert_eq!(
+            append_context_response(&accepted, "client_event"),
+            Some(AppendContextOutcome::Accepted)
+        );
+        assert_eq!(
+            append_context_response(&rejected, "client_event"),
+            Some(AppendContextOutcome::Rejected)
+        );
+        assert_eq!(append_context_response(&accepted, "other_event"), None);
     }
 }

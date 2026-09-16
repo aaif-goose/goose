@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use goose_providers::live_voice_provider::{
-    DelegationUpdate, LiveVoiceInputMessage, LiveVoiceProvider, ProviderConnection,
-    ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
+    DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
+    ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -112,10 +112,14 @@ impl ProviderConnection for FakeProviderConnection {
             .unwrap_or(ProviderConnectionEvent::Failed)
     }
 
-    async fn send_delegation_update(&mut self, update: DelegationUpdate) -> Result<()> {
+    async fn send_delegation_update(
+        &mut self,
+        update: DelegationUpdate,
+    ) -> Result<DelegationUpdateDelivery> {
         self.delegation_update_tx
             .send(update)
-            .map_err(|_| anyhow!("fake provider driver dropped"))
+            .map_err(|_| anyhow!("fake provider driver dropped"))?;
+        Ok(DelegationUpdateDelivery::Delivered)
     }
 
     async fn stop(&mut self) -> Result<()> {

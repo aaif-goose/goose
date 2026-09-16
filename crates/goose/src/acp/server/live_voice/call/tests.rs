@@ -15,8 +15,8 @@ impl ProviderConnection for TestConnection {
     async fn send_delegation_update(
         &mut self,
         _update: goose_providers::live_voice_provider::DelegationUpdate,
-    ) -> anyhow::Result<()> {
-        Ok(())
+    ) -> anyhow::Result<goose_providers::live_voice_provider::DelegationUpdateDelivery> {
+        Ok(goose_providers::live_voice_provider::DelegationUpdateDelivery::Delivered)
     }
 
     async fn stop(&mut self) -> anyhow::Result<()> {
