@@ -556,7 +556,7 @@ impl ExtensionManager {
     /// Everything running, in key order. Callers that do not yet hold a set of
     /// their own go through this; it disappears once the set comes from
     /// session state.
-    async fn current_set(&self, session_id: &str, working_dir: Option<&Path>) -> ExtensionSet {
+    pub async fn current_set(&self, session_id: &str, working_dir: Option<&Path>) -> ExtensionSet {
         let mut extensions: Vec<ExtensionConfig> = self
             .extensions
             .lock()
