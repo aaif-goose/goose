@@ -20,7 +20,7 @@ This tutorial will cover enabling and using the Todo extension.
 
 ## Configuration
 
-<PlatformExtensionNote/>
+<PlatformExtensionNote defaultEnabled={false}/>
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
