@@ -394,13 +394,15 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
 
     # Appends an export line to a file only if that file does not already
     # put $GOOSE_BIN_DIR on the PATH, so re-running the installer is idempotent.
-    # Only active (non-comment) lines that set PATH count; a commented-out old
-    # export must not suppress the append.
+    # Only active (non-comment) lines that set PATH and contain the directory
+    # as a complete path entry count; a commented-out old export or a longer
+    # sibling path (e.g. ".local/bin-old") must not suppress the append.
+    GOOSE_BIN_DIR_RE=$(printf '%s' "$GOOSE_BIN_DIR" | sed 's/[.[\*^$()+?{|]/\\&/g')
     add_path_line() {
       file="$1"
       line="$2"
       mkdir -p "$(dirname "$file")"
-      if [ -f "$file" ] && grep -F "$GOOSE_BIN_DIR" "$file" | grep -v '^[[:space:]]*#' | grep -iq "path"; then
+      if [ -f "$file" ] && grep -v '^[[:space:]]*#' "$file" | grep -i "path" | grep -Eq "(^|[=:\"' ])$GOOSE_BIN_DIR_RE([:\"' ]|\$)"; then
         echo "$file already references $GOOSE_BIN_DIR, skipping."
       else
         echo "$line" >> "$file"
@@ -431,7 +433,8 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
       ;;
     fish)
       POSIX_LOGIN_FILE=""
-      RC_FILE="$HOME/.config/fish/config.fish"
+      # fish reads config from $XDG_CONFIG_HOME/fish when that is set.
+      RC_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
       EXPORT_LINE="fish_add_path \"$GOOSE_BIN_DIR\""
       ;;
     *)
