@@ -155,6 +155,7 @@ impl TestPipeline {
                 &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
+                None,
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(

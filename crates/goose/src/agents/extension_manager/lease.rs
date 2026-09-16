@@ -15,7 +15,7 @@ use tracing::warn;
 use super::{
     get_tool_meta_value, get_tool_owner, get_tool_resource_uri, insert_trusted_tool_update_meta,
     recover_mangled_tool_name, remove_untrusted_mcp_app_meta, ActionRequiredStream, Extension,
-    GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    ExtensionMutation, GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
@@ -316,6 +316,7 @@ impl ExtensionLease {
         let client = resolved.extension.client.clone();
         let actual_name = resolved.actual_name.to_string();
         let extension_key = resolved.extension.key.clone();
+        let trusted = resolved.extension.is_platform();
         let tool_meta = get_tool_meta_value(resolved.tool);
         let resource_uri = get_tool_resource_uri(resolved.tool);
 
@@ -375,6 +376,9 @@ impl ExtensionLease {
                 })?;
 
             remove_untrusted_mcp_app_meta(&mut result);
+            if !trusted {
+                ExtensionMutation::take(&mut result);
+            }
 
             if hydrate && result.is_error != Some(true) {
                 if let Some(resource_uri) = resource_uri {

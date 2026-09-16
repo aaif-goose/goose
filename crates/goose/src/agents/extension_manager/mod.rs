@@ -42,6 +42,39 @@ mod streamable_http;
 
 pub use lease::{ExtensionLease, ExtensionSet, LeaseId};
 
+/// A change to the set an agent wants, produced by the `manage_extensions`
+/// tool and applied by the loop that dispatched it — which, unlike the tool,
+/// knows the session's working directory and container.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "lowercase")]
+pub enum ExtensionMutation {
+    Enable { config: Box<ExtensionConfig> },
+    Disable { name: String },
+}
+
+const EXTENSION_MUTATION_META_KEY: &str = "goose_extension_mutation";
+
+impl ExtensionMutation {
+    pub fn attach(self, result: &mut CallToolResult) {
+        let mut meta = result.meta.take().map(|m| m.0).unwrap_or_default();
+        meta.insert(
+            EXTENSION_MUTATION_META_KEY.to_string(),
+            serde_json::to_value(self).expect("mutation serializes"),
+        );
+        result.meta = Some(MetaObject(meta));
+    }
+
+    /// Remove the mutation from a result, if one is attached.
+    pub fn take(result: &mut CallToolResult) -> Option<Self> {
+        let meta = result.meta.as_mut()?;
+        let value = meta.0.remove(EXTENSION_MUTATION_META_KEY)?;
+        if meta.0.is_empty() {
+            result.meta = None;
+        }
+        serde_json::from_value(value).ok()
+    }
+}
+
 type McpClientBox = Arc<dyn McpClientTrait>;
 
 const TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY: usize = 32;
@@ -711,6 +744,22 @@ impl ExtensionManager {
             )),
         );
         Ok(())
+    }
+
+    pub async fn apply(
+        self: &Arc<Self>,
+        mutation: ExtensionMutation,
+        working_dir: Option<PathBuf>,
+        container: Option<&Container>,
+        session_id: &str,
+    ) -> ExtensionResult<()> {
+        match mutation {
+            ExtensionMutation::Enable { config } => {
+                self.add_extension(*config, working_dir, container, Some(session_id))
+                    .await
+            }
+            ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
+        }
     }
 
     pub async fn add_client(

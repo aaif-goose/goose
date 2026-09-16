@@ -23,7 +23,7 @@ use super::tool_execution::{
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{
-    ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
+    ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionMutation,
 };
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
@@ -1192,6 +1192,35 @@ impl Agent {
         (request_id, Ok(result))
     }
 
+    /// A `manage_extensions` result carries the change it wants; apply it
+    /// with this session's context and turn a failure into the tool's error.
+    async fn apply_extension_mutation(
+        &self,
+        output: Result<CallToolResult, ErrorData>,
+        session: &Session,
+    ) -> Result<CallToolResult, ErrorData> {
+        let mut result = output?;
+        let Some(mutation) = ExtensionMutation::take(&mut result) else {
+            return Ok(result);
+        };
+        let container = self.container.lock().await.clone();
+        match self
+            .extension_manager
+            .apply(
+                mutation,
+                Some(session.working_dir.clone()),
+                container.as_ref(),
+                &session.id,
+            )
+            .await
+        {
+            Ok(()) => Ok(result),
+            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(
+                error.to_string(),
+            )])),
+        }
+    }
+
     /// Save current extension state to session metadata
     /// Should be called after any extension add/remove operation
     pub async fn save_extension_state(&self, session: &SessionConfig) -> Result<()> {
@@ -1667,7 +1696,7 @@ impl Agent {
         false
     }
 
-    pub(super) fn create_state_machine(
+    pub(super) async fn create_state_machine(
         &self,
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
@@ -1676,6 +1705,7 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
+        let container = self.container.lock().await.clone();
         let max_turns = max_turns.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_MAX_TURNS")
@@ -1744,6 +1774,7 @@ impl Agent {
                 &self.current_goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
+                container,
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
@@ -2001,14 +2032,16 @@ impl Agent {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
-        let machine = self.create_state_machine(
-            provider,
-            model_config,
-            context_limit,
-            session_config.max_turns,
-            cancel.clone(),
-            steer_queue,
-        );
+        let machine = self
+            .create_state_machine(
+                provider,
+                model_config,
+                context_limit,
+                session_config.max_turns,
+                cancel.clone(),
+                steer_queue,
+            )
+            .await;
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(
@@ -2974,7 +3007,10 @@ impl Agent {
                                                                 }
                                                                 yield AgentEvent::Message(msg);
                                                             }
-                                                            ToolStreamItem::Result(output) => {
+                                                            ToolStreamItem::Result(mut output) => {
+                                                                if enable_extension_request_ids.contains(&request_id) {
+                                                                    output = self.apply_extension_mutation(output, &session).await;
+                                                                }
                                                                 if let Ok(ref call_result) = output {
                                                                     if let Some(ref meta) = call_result.meta {
                                                                         if let Some(notification_data) = meta.0.get("platform_notification") {

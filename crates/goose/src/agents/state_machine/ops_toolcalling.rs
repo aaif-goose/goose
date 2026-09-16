@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::container::Container;
+use crate::agents::extension_manager::{ExtensionLease, ExtensionManager, ExtensionMutation};
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_tool_approval::request_executable;
@@ -316,6 +317,7 @@ pub struct ToolExecutionOperation<'a> {
     goose_mode: &'a Mutex<GooseMode>,
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
+    container: Option<Container>,
     /// Resolved in `inference_tools` and held for the rest of that inference,
     /// so dispatch sees the catalog the model was shown.
     lease: Mutex<Option<Arc<ExtensionLease>>>,
@@ -326,12 +328,42 @@ impl<'a> ToolExecutionOperation<'a> {
         goose_mode: &'a Mutex<GooseMode>,
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
+        container: Option<Container>,
     ) -> Self {
         Self {
             goose_mode,
             extension_manager,
             hook_manager,
+            container,
             lease: Mutex::new(None),
+        }
+    }
+
+    /// A `manage_extensions` result carries the change it wants; apply it
+    /// with this session's context and turn a failure into the tool's error.
+    async fn apply_extension_mutation(
+        &self,
+        output: Result<CallToolResult, ErrorData>,
+        session: &Session,
+    ) -> Result<CallToolResult, ErrorData> {
+        let mut result = output?;
+        let Some(mutation) = ExtensionMutation::take(&mut result) else {
+            return Ok(result);
+        };
+        match self
+            .extension_manager
+            .apply(
+                mutation,
+                Some(session.working_dir.clone()),
+                self.container.as_ref(),
+                &session.id,
+            )
+            .await
+        {
+            Ok(()) => Ok(result),
+            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(
+                error.to_string(),
+            )])),
         }
     }
 
@@ -974,11 +1006,12 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                 item = combined.next() => {
                     let Some((request_id, item)) = item else { break };
                     match item {
-                        ToolStreamItem::Result(output) => {
-                            if manage_extensions_ids.contains(request_id.as_str())
-                                && output.is_err()
-                            {
-                                extension_change_failed = true;
+                        ToolStreamItem::Result(mut output) => {
+                            if manage_extensions_ids.contains(request_id.as_str()) {
+                                output = self.apply_extension_mutation(output, session).await;
+                                if output.is_err() {
+                                    extension_change_failed = true;
+                                }
                             }
                             if let Ok(result) = &output {
                                 if let Some(notification) = platform_notification(result) {
