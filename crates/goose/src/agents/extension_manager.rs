@@ -1,9 +1,9 @@
 use anyhow::Result;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use chrono::{DateTime, Utc};
-use futures::Stream;
 use futures::stream::{self, FuturesUnordered, StreamExt};
-use futures::{FutureExt, future};
+use futures::Stream;
+use futures::{future, FutureExt};
 use once_cell::sync::Lazy;
 use rmcp::model::ProtocolVersion;
 use rmcp::service::{ClientInitializeError, ServiceError};
@@ -23,15 +23,15 @@ use std::time::Duration;
 use tempfile::tempdir;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
 use super::container::Container;
 use super::extension::{
-    ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PLATFORM_EXTENSIONS,
-    PlatformExtensionContext,
+    ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
+    PLATFORM_EXTENSIONS,
 };
 use super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use super::types::SharedProvider;
@@ -45,9 +45,9 @@ use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, get_all_extensions};
+use crate::config::{get_all_extensions, Config};
 use crate::oauth::{
-    GooseCredentialStore, StaticOAuthClientConfig, oauth_flow, oauth_flow_with_challenge,
+    oauth_flow, oauth_flow_with_challenge, GooseCredentialStore, StaticOAuthClientConfig,
 };
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 use rmcp::model::{
@@ -3085,7 +3085,7 @@ mod tests {
         }
     }
     use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
-    use rmcp::{ServiceError as Error, object};
+    use rmcp::{object, ServiceError as Error};
 
     use rmcp::model::ListPromptsResult;
     use rmcp::model::ListResourcesResult;
@@ -3501,16 +3501,12 @@ mod tests {
 
         let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(!tool_names.iter().any(|name| name == "test_extension__tool")); // Default unavailable
-        assert!(
-            tool_names
-                .iter()
-                .any(|name| name == "test_extension__available_tool")
-        );
-        assert!(
-            !tool_names
-                .iter()
-                .any(|name| name == "test_extension__hidden_tool")
-        );
+        assert!(tool_names
+            .iter()
+            .any(|name| name == "test_extension__available_tool"));
+        assert!(!tool_names
+            .iter()
+            .any(|name| name == "test_extension__hidden_tool"));
         assert!(tool_names.len() == 1);
     }
 
@@ -3535,21 +3531,15 @@ mod tests {
 
         let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(tool_names.iter().any(|name| name == "test_extension__tool"));
-        assert!(
-            tool_names
-                .iter()
-                .any(|name| name == "test_extension__available_tool")
-        );
-        assert!(
-            tool_names
-                .iter()
-                .any(|name| name == "test_extension__hidden_tool")
-        );
-        assert!(
-            tool_names
-                .iter()
-                .any(|name| name == "test_extension__render_chart")
-        );
+        assert!(tool_names
+            .iter()
+            .any(|name| name == "test_extension__available_tool"));
+        assert!(tool_names
+            .iter()
+            .any(|name| name == "test_extension__hidden_tool"));
+        assert!(tool_names
+            .iter()
+            .any(|name| name == "test_extension__render_chart"));
         assert!(tool_names.len() == 4);
     }
 
