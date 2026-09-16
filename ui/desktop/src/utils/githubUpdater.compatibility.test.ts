@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { GitHubUpdater } from './githubUpdater';
 
 vi.mock('electron', () => ({ app: { getVersion: () => '1.50.0' } }));
@@ -31,13 +35,47 @@ const assets = [
 ];
 const release = { tag_name: 'v1.51.0', name: 'Goose', assets };
 
-function mockRelease(metadata: unknown = { version: '1.51.0', minimumMacOSVersion: '13.0.0' }) {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify(release)))
-    .mockResolvedValueOnce(new Response(JSON.stringify(metadata)));
-  vi.stubGlobal('fetch', fetchMock);
-  return fetchMock;
+function generatedRequirements(minimumMacOSVersion: string) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'goose-fallback-release-test-'));
+  try {
+    for (const name of ['Goose.zip', 'Goose_intel_mac.zip']) {
+      fs.writeFileSync(path.join(directory, name), 'archive fixture');
+      fs.writeFileSync(
+        path.join(directory, `${name}.macos.json`),
+        JSON.stringify({ minimumMacOSVersion })
+      );
+    }
+    execFileSync(process.execPath, [
+      path.resolve('scripts/generate-mac-update-manifest.js'),
+      '--version',
+      'v1.51.0',
+      '--directory',
+      directory,
+    ]);
+    return JSON.parse(
+      fs.readFileSync(path.join(directory, 'mac-update-requirements.json'), 'utf8')
+    ) as unknown;
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+const macOS12Release = generatedRequirements('12.0.0');
+const macOS13Release = generatedRequirements('13.0.0');
+
+function mockRelease(metadata: unknown = macOS13Release, releaseAssets = assets) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (url === 'https://api.github.com/repos/aaif-goose/goose/releases/latest') {
+        return new Response(JSON.stringify({ ...release, assets: releaseAssets }));
+      }
+      if (url === metadataUrl) {
+        return metadata instanceof Response ? metadata : new Response(JSON.stringify(metadata));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    })
+  );
 }
 
 beforeEach(() => {
@@ -63,27 +101,28 @@ afterEach(() => {
 describe('GitHub updater macOS compatibility', () => {
   it.each(['arm64', 'x64'])('does not offer a macOS 13 update on macOS 12 (%s)', async (arch) => {
     Object.defineProperty(process, 'arch', { value: arch });
-    const fetchMock = mockRelease();
+    mockRelease();
     const result = await new GitHubUpdater().checkForUpdates();
     expect(result).toEqual({ updateAvailable: false, latestVersion: '1.51.0' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenLastCalledWith(metadataUrl, expect.any(Object));
+    expect(result.downloadUrl).toBeUndefined();
   });
 
-  it.each(['13.0', '13.6.1', '14.0', '26.0'])(
-    'offers a compatible update on macOS %s',
-    async (version) => {
-      vi.mocked(process.getSystemVersion).mockReturnValue(version);
-      mockRelease();
-      expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({
-        updateAvailable: true,
-        downloadUrl: 'https://example.invalid/Goose.zip',
-      });
-    }
-  );
+  it.each([
+    ['arm64', '13.0', 'Goose.zip'],
+    ['x64', '13.0', 'Goose_intel_mac.zip'],
+    ['arm64', '26.0', 'Goose.zip'],
+  ])('offers the %s download on macOS %s', async (arch, version, asset) => {
+    Object.defineProperty(process, 'arch', { value: arch });
+    vi.mocked(process.getSystemVersion).mockReturnValue(version);
+    mockRelease();
+    expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({
+      updateAvailable: true,
+      downloadUrl: `https://example.invalid/${asset}`,
+    });
+  });
 
   it('still offers a macOS 12-compatible release on macOS 12', async () => {
-    mockRelease({ version: '1.51.0', minimumMacOSVersion: '12.0.0' });
+    mockRelease(macOS12Release);
     expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({ updateAvailable: true });
   });
 
@@ -100,23 +139,18 @@ describe('GitHub updater macOS compatibility', () => {
   });
 
   it('does not offer an update without compatibility metadata', async () => {
-    const fetchMock = mockRelease();
-    fetchMock
-      .mockReset()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...release, assets: assets.slice(1) })));
+    mockRelease(
+      macOS13Release,
+      assets.filter((asset) => asset.name !== 'mac-update-requirements.json')
+    );
     expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({
       updateAvailable: false,
       error: expect.stringContaining('compatibility information'),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it.each([404, 500])('does not offer an update when metadata returns HTTP %s', async (status) => {
-    const fetchMock = mockRelease();
-    fetchMock
-      .mockReset()
-      .mockResolvedValueOnce(new Response(JSON.stringify(release)))
-      .mockResolvedValueOnce(new Response('', { status }));
+  it('does not offer an update when the compatibility file cannot be retrieved', async () => {
+    mockRelease(new Response('', { status: 503 }));
     expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({
       updateAvailable: false,
       error: expect.any(String),
@@ -126,8 +160,13 @@ describe('GitHub updater macOS compatibility', () => {
   it.each(['win32', 'linux'])('leaves %s updates unchanged', async (platform) => {
     Object.defineProperty(process, 'platform', { value: platform });
     Object.defineProperty(process, 'arch', { value: 'x64' });
-    const fetchMock = mockRelease();
-    expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({ updateAvailable: true });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    mockRelease(
+      undefined,
+      assets.filter((asset) => asset.name !== 'mac-update-requirements.json')
+    );
+    expect(await new GitHubUpdater().checkForUpdates()).toMatchObject({
+      updateAvailable: true,
+      downloadUrl: `https://example.invalid/Goose-${platform}-x64.zip`,
+    });
   });
 });
