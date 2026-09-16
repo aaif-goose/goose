@@ -665,6 +665,70 @@ fn test_custom_list_builtin_skill_sources() {
 
 #[test]
 #[serial]
+fn test_custom_agent_source_mutations_reject_project_scopes() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let project_dir = tempfile::tempdir().unwrap();
+        let project = goose::sources::create_source(
+            goose_sdk_types::custom_requests::SourceType::Project,
+            "agent-scope-regression",
+            "Project scope regression",
+            "",
+            true,
+            None,
+            std::collections::HashMap::from([(
+                "workingDirs".to_owned(),
+                serde_json::json!([project_dir.path()]),
+            )]),
+        )
+        .unwrap();
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        for target in [
+            serde_json::json!({ "scope": "projectDir", "projectDir": project_dir.path() }),
+            serde_json::json!({ "scope": "projectId", "projectId": project.name }),
+        ] {
+            for (method, request) in [
+                (
+                    "_goose/unstable/sources/create",
+                    serde_json::json!({
+                        "type": "agent",
+                        "name": "Project Agent",
+                        "description": "An agent",
+                        "content": "Instructions",
+                        "target": target
+                    }),
+                ),
+                (
+                    "_goose/unstable/sources/import",
+                    serde_json::json!({
+                        "data": serde_json::json!({
+                            "version": 1,
+                            "type": "agent",
+                            "name": "Imported Agent",
+                            "content": "Instructions"
+                        }).to_string(),
+                        "target": target
+                    }),
+                ),
+            ] {
+                let error = send_custom(conn.cx(), method, request).await.unwrap_err();
+                assert_eq!(error.code, agent_client_protocol::ErrorCode::InvalidParams);
+                assert!(error.to_string().contains("Project-scoped Agent"));
+            }
+        }
+        assert_eq!(std::fs::read_dir(project_dir.path()).unwrap().count(), 0);
+        goose::sources::delete_source(
+            goose_sdk_types::custom_requests::SourceType::Project,
+            &project.path,
+        )
+        .unwrap();
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_provider_inventory_includes_metadata() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async {
