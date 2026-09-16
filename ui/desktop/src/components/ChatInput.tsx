@@ -1709,7 +1709,7 @@ export default function ChatInput({
       <div ref={bottomBarRef} className="flex flex-row items-center gap-2 px-3 py-2 relative">
         {/* Left: model selector */}
         <Tooltip>
-          <div className={cn(liveVoiceBlocksSubmission && 'pointer-events-none opacity-60')}>
+          <div>
             <ModelsBottomBar
               sessionId={sessionId}
               dropdownRef={dropdownRef}
