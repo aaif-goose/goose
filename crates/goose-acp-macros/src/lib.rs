@@ -37,7 +37,7 @@ use syn::{
 /// #[custom_method(GetSessionRequest)]
 /// async fn on_get_session(&self, req: GetSessionRequest) -> Result<GetSessionResponse, agent_client_protocol::Error> { .. }
 ///
-/// // Connection and typed params
+/// // Connection and typed request
 /// #[custom_method(StartCallRequest)]
 /// async fn on_start_call(
 ///     &self,

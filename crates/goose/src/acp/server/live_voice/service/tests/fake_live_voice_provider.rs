@@ -1,4 +1,4 @@
-use anyhow::{Error, Result, anyhow};
+use anyhow::{anyhow, Error, Result};
 use async_trait::async_trait;
 use goose_providers::live_voice_provider::{
     DelegationUpdate, LiveVoiceInputMessage, LiveVoiceProvider, ProviderConnection,
