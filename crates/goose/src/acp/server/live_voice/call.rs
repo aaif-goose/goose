@@ -6,7 +6,9 @@ use super::service::{
 };
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
 use futures::future::BoxFuture;
-use goose_providers::live_voice_provider::{ProviderConnection, ProviderConnectionEvent};
+use goose_providers::live_voice_provider::{
+    DelegationUpdate, DelegationUpdateDelivery, ProviderConnection, ProviderConnectionEvent,
+};
 use rmcp::model::Role;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{sync::watch, time::timeout};
@@ -18,6 +20,8 @@ pub(super) const PROVIDER_CLEANUP_TIMEOUT: Duration = Duration::from_secs(20);
 pub(super) const DELEGATION_INSTRUCTION: &str =
     "Based on this conversation, identify and complete the user's request.";
 const DELEGATION_UPDATE_TOKEN_LIMIT: usize = 500;
+const UNDELIVERED_DELEGATION_UPDATE_NOTICE: &str =
+    "I couldn't confirm that the latest delegated update reached this voice conversation. Please ask me to share it again.";
 const SAVED_RESULT_NOTICE: &str = "\n\nThe full result is saved in Goose.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -216,8 +220,12 @@ impl LiveVoiceCall {
         match self.handle_delegation_request(event_id, delegation_id.clone(), offset_ms) {
             DelegationDecision::Ignore => {}
             DelegationDecision::Reject(text) => {
-                self.send_delegation_update(delegation_id, bound_delegation_update(text).await)
-                    .await?;
+                self.send_delegation_update(
+                    &runtime.transcript_publisher,
+                    delegation_id,
+                    bound_delegation_update(text).await,
+                )
+                .await?;
             }
             DelegationDecision::Accept(context) => {
                 if self.delegated_main_agent_run.is_some() {
@@ -235,6 +243,7 @@ impl LiveVoiceCall {
                         Err(response) => response,
                     };
                     self.send_delegation_update(
+                        &runtime.transcript_publisher,
                         delegation_id,
                         bound_delegation_update(response).await,
                     )
@@ -259,6 +268,7 @@ impl LiveVoiceCall {
                         }
                         Err(response) => {
                             self.send_delegation_update(
+                                &runtime.transcript_publisher,
                                 delegation_id,
                                 bound_delegation_update(response).await,
                             )
@@ -310,6 +320,7 @@ impl LiveVoiceCall {
         )
         .await?;
         self.send_delegation_update(
+            &runtime.transcript_publisher,
             run.provider_delegation_id,
             bound_delegation_update(result).await,
         )
@@ -360,16 +371,27 @@ impl LiveVoiceCall {
 
     async fn send_delegation_update(
         &mut self,
+        transcript_publisher: &LiveVoiceTranscriptPublisher,
         provider_delegation_id: String,
         text: String,
     ) -> anyhow::Result<()> {
-        self.provider_connection
-            .send_delegation_update(goose_providers::live_voice_provider::DelegationUpdate {
+        let delivery = self
+            .provider_connection
+            .send_delegation_update(DelegationUpdate {
                 provider_delegation_id,
                 text,
             })
-            .await
-            .map(|_| ())
+            .await?;
+        match delivery {
+            DelegationUpdateDelivery::Delivered => {}
+            DelegationUpdateDelivery::Undelivered => transcript_publisher(
+                Message::assistant()
+                    .with_id(format!("msg_live_{}", Uuid::now_v7()))
+                    .with_text(UNDELIVERED_DELEGATION_UPDATE_NOTICE)
+                    .user_only(),
+            ),
+        }
+        Ok(())
     }
 
     async fn cleanup_provider(&mut self) -> anyhow::Result<()> {

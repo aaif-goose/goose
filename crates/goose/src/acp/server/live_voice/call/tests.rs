@@ -6,6 +6,8 @@ struct TestConnection {
     stopped: Option<oneshot::Sender<()>>,
 }
 
+struct UndeliveredConnection;
+
 #[async_trait]
 impl ProviderConnection for TestConnection {
     async fn next_event(&mut self) -> ProviderConnectionEvent {
@@ -14,15 +16,33 @@ impl ProviderConnection for TestConnection {
 
     async fn send_delegation_update(
         &mut self,
-        _update: goose_providers::live_voice_provider::DelegationUpdate,
-    ) -> anyhow::Result<goose_providers::live_voice_provider::DelegationUpdateDelivery> {
-        Ok(goose_providers::live_voice_provider::DelegationUpdateDelivery::Delivered)
+        _update: DelegationUpdate,
+    ) -> anyhow::Result<DelegationUpdateDelivery> {
+        Ok(DelegationUpdateDelivery::Delivered)
     }
 
     async fn stop(&mut self) -> anyhow::Result<()> {
         if let Some(stopped) = self.stopped.take() {
             let _ = stopped.send(());
         }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ProviderConnection for UndeliveredConnection {
+    async fn next_event(&mut self) -> ProviderConnectionEvent {
+        std::future::pending().await
+    }
+
+    async fn send_delegation_update(
+        &mut self,
+        _update: DelegationUpdate,
+    ) -> anyhow::Result<DelegationUpdateDelivery> {
+        Ok(DelegationUpdateDelivery::Undelivered)
+    }
+
+    async fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -40,6 +60,34 @@ async fn a_call_owns_and_stops_its_provider_connection() {
 
     call.cleanup_provider().await.unwrap();
     did_stop.await.unwrap();
+}
+
+#[tokio::test]
+async fn an_undelivered_delegation_update_notifies_the_user() {
+    let mut call = LiveVoiceCall::new(
+        "test-session".into(),
+        LiveVoiceCallId("live-test".into()),
+        Box::new(UndeliveredConnection),
+    );
+    let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
+    let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
+        notice_tx.send(message).unwrap();
+    });
+
+    call.send_delegation_update(
+        &transcript_publisher,
+        "delegation-1".into(),
+        "result".into(),
+    )
+    .await
+    .unwrap();
+
+    let notice = notice_rx.recv().await.unwrap();
+    assert_eq!(notice.role, Role::Assistant);
+    assert_eq!(
+        notice.as_concat_text(),
+        UNDELIVERED_DELEGATION_UPDATE_NOTICE
+    );
 }
 
 #[test]
