@@ -29,15 +29,10 @@ fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
     }
 }
 
-// Plain String rather than `ExtensionError`: the only variant this function
-// ever constructs is `ConfigError(String)`, but clippy's `result_large_err`
-// sizes an error type by its largest variant, and `ExtensionError` carries a
-// `ClientError`/`ClientInitializeError` far past the 128-byte default
-// threshold. Callers wrap this back into `ExtensionError::ConfigError`.
 fn disambiguate_stdio_extension_names(
     extensions: &mut [(String, ExtensionConfig)],
     renameable: &HashSet<usize>,
-) -> Result<(), String> {
+) -> Result<(), ExtensionError> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     // Only entries the caller marked fixed (explicitly named, or not a CLI
     // stdio extension at all) can make this an error — a fixed name colliding
@@ -56,10 +51,10 @@ fn disambiguate_stdio_extension_names(
         !renameable.contains(index) && fixed_counts.get(&config.key()).copied().unwrap_or(0) > 1
     });
     if let Some((_, (_, config))) = duplicate_fixed_names {
-        return Err(format!(
+        return Err(ExtensionError::ConfigError(format!(
             "extension name '{}' is already in use",
             config.name()
-        ));
+        )));
     }
 
     let mut taken: HashSet<String> = counts.keys().cloned().collect();
@@ -617,8 +612,7 @@ async fn collect_extension_configs(
             .into_iter()
             .map(|(label, config, _)| (label, config)),
     );
-    disambiguate_stdio_extension_names(&mut all, &renameable)
-        .map_err(ExtensionError::ConfigError)?;
+    disambiguate_stdio_extension_names(&mut all, &renameable)?;
 
     Ok(all.into_iter().map(|(_, config)| config).collect())
 }

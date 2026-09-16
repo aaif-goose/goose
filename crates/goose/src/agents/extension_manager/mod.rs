@@ -524,8 +524,7 @@ impl ExtensionManager {
                     client_secret_key.as_deref(),
                     scopes,
                     &envs.get_env(),
-                )
-                .map_err(|error| *error)?;
+                )?;
                 let params = streamable_http::ConnectParams {
                     uri: uri.clone(),
                     name: name.clone(),

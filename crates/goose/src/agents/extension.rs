@@ -49,9 +49,21 @@ pub enum ExtensionError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("failed to initialize MCP client: {0}")]
-    InitializeError(#[from] ClientInitializeError),
+    InitializeError(#[source] Box<ClientInitializeError>),
     #[error("{0}")]
-    ProcessExit(#[from] ProcessExit),
+    ProcessExit(#[source] Box<ProcessExit>),
+}
+
+impl From<ClientInitializeError> for ExtensionError {
+    fn from(error: ClientInitializeError) -> Self {
+        Self::InitializeError(Box::new(error))
+    }
+}
+
+impl From<ProcessExit> for ExtensionError {
+    fn from(error: ProcessExit) -> Self {
+        Self::ProcessExit(Box::new(error))
+    }
 }
 
 pub type ExtensionResult<T> = Result<T, ExtensionError>;
@@ -130,18 +142,6 @@ impl Envs {
 
     pub fn get_env(&self) -> HashMap<String, String> {
         self.map.clone()
-    }
-
-    pub fn validate(&self) -> Result<(), Box<ExtensionError>> {
-        for key in self.map.keys() {
-            if Self::is_disallowed(key) {
-                return Err(Box::new(ExtensionError::ConfigError(format!(
-                    "environment variable {} not allowed to be overwritten",
-                    key
-                ))));
-            }
-        }
-        Ok(())
     }
 
     fn is_disallowed(key: &str) -> bool {

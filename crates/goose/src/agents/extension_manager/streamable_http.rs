@@ -162,30 +162,28 @@ pub(super) fn resolve_static_oauth_client(
     client_secret_key: Option<&str>,
     scopes: &[String],
     envs: &HashMap<String, String>,
-) -> Result<Option<StaticOAuthClientConfig>, Box<ExtensionError>> {
+) -> ExtensionResult<Option<StaticOAuthClientConfig>> {
     let Some(client_id) = client_id else {
         if client_secret_key.is_some() {
-            return Err(Box::new(ExtensionError::ConfigError(
+            return Err(ExtensionError::ConfigError(
                 "client_secret_key requires client_id".to_string(),
-            )));
+            ));
         }
         if !scopes.is_empty() {
-            return Err(Box::new(ExtensionError::ConfigError(
+            return Err(ExtensionError::ConfigError(
                 "scopes requires client_id".to_string(),
-            )));
+            ));
         }
         return Ok(None);
     };
 
-    let client_secret = match client_secret_key {
-        Some(key) => Some(envs.get(key).cloned().ok_or_else(|| {
-            Box::new(ExtensionError::ConfigError(format!(
-                "Secret '{}' not found",
-                key
-            )))
-        })?),
-        None => None,
-    };
+    let client_secret =
+        match client_secret_key {
+            Some(key) => Some(envs.get(key).cloned().ok_or_else(|| {
+                ExtensionError::ConfigError(format!("Secret '{}' not found", key))
+            })?),
+            None => None,
+        };
 
     Ok(Some(StaticOAuthClientConfig {
         client_id: client_id.to_string(),
@@ -197,18 +195,16 @@ pub(super) fn resolve_static_oauth_client(
 const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
 
-// These return String rather than ExtensionError because clippy's
-// result_large_err sizes the error by its largest variant; callers wrap the
-// String back into ExtensionError::ConfigError.
-fn header_map(headers: &HashMap<String, String>) -> Result<HeaderMap, String> {
+fn header_map(headers: &HashMap<String, String>) -> ExtensionResult<HeaderMap> {
     let mut map = HeaderMap::new();
     map.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
     for (key, value) in headers {
         map.insert(
-            HeaderName::try_from(key).map_err(|_| format!("invalid header: {}", key))?,
-            value
-                .parse()
-                .map_err(|_| format!("invalid header value: {}", key))?,
+            HeaderName::try_from(key)
+                .map_err(|_| ExtensionError::ConfigError(format!("invalid header: {}", key)))?,
+            value.parse().map_err(|_| {
+                ExtensionError::ConfigError(format!("invalid header value: {}", key))
+            })?,
         );
     }
     Ok(map)
@@ -218,7 +214,7 @@ fn header_map(headers: &HashMap<String, String>) -> Result<HeaderMap, String> {
 fn http_client(
     headers: &HashMap<String, String>,
     timeout: Duration,
-) -> Result<reqwest::Client, String> {
+) -> ExtensionResult<reqwest::Client> {
     #[allow(unused_mut)]
     let mut builder = reqwest::Client::builder().default_headers(header_map(headers)?);
     #[cfg(target_os = "linux")]
@@ -227,7 +223,7 @@ fn http_client(
     }
     builder
         .build()
-        .map_err(|_| "could not construct http client".to_string())
+        .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))
 }
 
 fn should_retry_legacy_after_empty_discover(
@@ -270,10 +266,7 @@ async fn connect_with_auth(
     headers: &HashMap<String, String>,
     ctx: ConnectContext,
 ) -> ExtensionResult<McpClient> {
-    let auth_client = AuthClient::new(
-        http_client(headers, ctx.timeout).map_err(ExtensionError::ConfigError)?,
-        auth_manager,
-    );
+    let auth_client = AuthClient::new(http_client(headers, ctx.timeout)?, auth_manager);
     Ok(connect_with_legacy_retry(
         || {
             StreamableHttpClientTransport::with_client(
@@ -587,7 +580,7 @@ pub(super) async fn connect(
         static_oauth_client,
         ctx,
     } = &params;
-    let http_client = http_client(headers, ctx.timeout).map_err(ExtensionError::ConfigError)?;
+    let http_client = http_client(headers, ctx.timeout)?;
 
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
@@ -663,8 +656,7 @@ async fn connect_over_unix_socket(
     use rmcp::transport::UnixSocketHttpClient;
 
     let unix_client = UnixSocketHttpClient::new(socket_path, &params.uri);
-    let custom_headers: HashMap<HeaderName, axum::http::HeaderValue> = header_map(&params.headers)
-        .map_err(ExtensionError::ConfigError)?
+    let custom_headers: HashMap<HeaderName, axum::http::HeaderValue> = header_map(&params.headers)?
         .into_iter()
         .filter_map(|(name, value)| name.map(|name| (name, value)))
         .collect();
@@ -798,7 +790,7 @@ mod tests {
                 ),
             ),
         );
-        let error = ExtensionError::InitializeError(err);
+        let error = ExtensionError::from(err);
 
         assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
         assert!(store.load().await.unwrap().is_none());
