@@ -1141,7 +1141,7 @@ mod tests {
         use goose::config::GooseMode;
         use goose::session::SessionManager;
 
-        async fn setup_agent_with_extension_manager() -> (Agent, String) {
+        async fn setup_agent_with_extension_manager() -> (Agent, String, tempfile::TempDir) {
             use goose::session::session_manager::SessionType;
 
             // Add the TODO extension to the config so it can be discovered by search_available_extensions
@@ -1198,12 +1198,12 @@ mod tests {
                 .add_extension(ext_config, &session_id)
                 .await
                 .expect("Failed to add extension manager");
-            (agent, session_id)
+            (agent, session_id, temp_dir)
         }
 
         #[tokio::test]
         async fn test_extension_manager_tools_available() {
-            let (agent, session_id) = setup_agent_with_extension_manager().await;
+            let (agent, session_id, _temp_dir) = setup_agent_with_extension_manager().await;
             let tools = agent.list_tools(&session_id, None).await;
 
             // Note: Tool names are prefixed with the normalized extension name "extensionmanager"
