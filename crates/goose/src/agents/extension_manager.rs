@@ -48,7 +48,8 @@ use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
 use crate::config::{get_all_extensions, Config};
 use crate::oauth::{
-    oauth_flow, oauth_flow_with_challenge, GooseCredentialStore, StaticOAuthClientConfig,
+    oauth_flow, oauth_flow_with_challenge, GooseCredentialStore, RejectedAccessToken,
+    StaticOAuthClientConfig,
 };
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 use rmcp::model::{
@@ -586,7 +587,7 @@ fn auth_challenge_from_service_error(err: &ServiceError) -> Option<String> {
 
 fn challenge_and_presented_token_from_service_error(
     err: &ServiceError,
-) -> Option<(String, Option<String>)> {
+) -> Option<(String, RejectedAccessToken)> {
     let ServiceError::TransportSend(DynamicTransportError { error, .. }) = err else {
         return None;
     };
@@ -625,8 +626,9 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         return false;
     }
 
-    let rejected_access_token =
-        challenge_and_presented_token_from_init_error(err).and_then(|(_, token)| token);
+    let rejected_access_token = challenge_and_presented_token_from_init_error(err)
+        .map(|(_, token)| token)
+        .unwrap_or(RejectedAccessToken::NotPresented);
 
     let _lock = match crate::oauth::acquire_oauth_flow_lock(name).await {
         Ok(lock) => lock,
@@ -644,10 +646,14 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         .flatten()
         .and_then(|stored| stored.token_response)
         .map(|token| token.access_token().secret().to_string());
-    if let Some(rejected_access_token) = rejected_access_token {
-        if stored_token.as_deref() != Some(rejected_access_token.as_str()) {
+    match &rejected_access_token {
+        RejectedAccessToken::Presented(rejected)
+            if stored_token.as_deref() != Some(rejected.as_str()) =>
+        {
             return false;
         }
+        RejectedAccessToken::AssociationLost => return false,
+        _ => {}
     }
 
     if let Err(e) = credential_store.clear().await {
@@ -661,7 +667,7 @@ async fn clear_credentials_on_post_refresh_auth_failure(
 
 fn challenge_and_presented_token_from_init_error(
     err: &ClientInitializeError,
-) -> Option<(String, Option<String>)> {
+) -> Option<(String, RejectedAccessToken)> {
     let ClientInitializeError::TransportError {
         error: DynamicTransportError { error, .. },
         ..
@@ -874,9 +880,16 @@ fn split_presented_id(challenge: &str) -> (String, Option<String>) {
     (original.to_string(), Some(id.to_string()))
 }
 
-fn split_presented_token(challenge: &str) -> (String, Option<String>) {
+fn split_presented_token(challenge: &str) -> (String, RejectedAccessToken) {
     let (original, id) = split_presented_id(challenge);
-    (original, id.as_deref().and_then(take_presented_token))
+    let rejected = match id.as_deref() {
+        Some(id) => match take_presented_token(id) {
+            Some(token) => RejectedAccessToken::Presented(token),
+            None => RejectedAccessToken::AssociationLost,
+        },
+        None => RejectedAccessToken::NotPresented,
+    };
+    (original, rejected)
 }
 
 /// Forwards streamable HTTP calls while attaching the Bearer token rmcp
@@ -1188,7 +1201,7 @@ impl OAuthStepUpClient {
     async fn step_up_reconnect(
         &self,
         challenge: String,
-        rejected_access_token: Option<String>,
+        rejected_access_token: RejectedAccessToken,
     ) -> Result<(), crate::agents::mcp_client::Error> {
         let params = self.params.read().await;
         let auth_manager = oauth_flow_with_challenge(
@@ -1196,7 +1209,7 @@ impl OAuthStepUpClient {
             &params.name,
             params.static_oauth_client.as_ref(),
             Some(challenge),
-            rejected_access_token.as_deref(),
+            rejected_access_token,
         )
         .await
         .map_err(|e| {
@@ -1512,57 +1525,75 @@ async fn create_streamable_http_client(
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
     if credential_store.load().await.is_ok_and(|c| c.is_some()) {
-        match oauth_flow(
-            &uri.to_string(),
-            &name.to_string(),
-            static_oauth_client.as_ref(),
-        )
-        .await
-        {
-            Ok(auth_manager) => {
-                let auth_result = connect_with_auth(
-                    auth_manager,
-                    action_required.clone(),
-                    uri,
-                    timeout_duration,
-                    headers,
-                    provider.clone(),
-                    client_name.clone(),
-                    capabilities.clone(),
-                    roots_dir,
-                    extension_manager.clone(),
-                )
-                .await;
-
-                if let Err(error) = &auth_result {
-                    if clear_credentials_on_post_refresh_auth_failure(
-                        credential_store.as_ref(),
-                        name,
-                        error,
+        let mut successor_retry = false;
+        let mut remaining_successor_retries = 1;
+        loop {
+            match oauth_flow(
+                &uri.to_string(),
+                &name.to_string(),
+                static_oauth_client.as_ref(),
+            )
+            .await
+            {
+                Ok(auth_manager) => {
+                    let auth_result = connect_with_auth(
+                        auth_manager,
+                        action_required.clone(),
+                        uri,
+                        timeout_duration,
+                        headers,
+                        provider.clone(),
+                        client_name.clone(),
+                        capabilities.clone(),
+                        roots_dir,
+                        extension_manager.clone(),
                     )
-                    .await
-                    {
-                        warn!(
+                    .await;
+
+                    if let Err(error) = &auth_result {
+                        if clear_credentials_on_post_refresh_auth_failure(
+                            credential_store.as_ref(),
+                            name,
+                            error,
+                        )
+                        .await
+                        {
+                            warn!(
                             "[OAuth:{}] Refreshed token was rejected, falling back to browser auth",
                             name
                         );
+                        } else if remaining_successor_retries > 0
+                            && matches!(credential_store.load().await, Ok(Some(_)))
+                        {
+                            warn!(
+                            "[OAuth:{}] Rejected token was replaced; retrying with the successor grant",
+                            name
+                        );
+                            remaining_successor_retries -= 1;
+                            successor_retry = true;
+                        } else {
+                            return Ok(Box::new(
+                                OAuthStepUpClient::new(auth_result?, connect_params).await,
+                            ));
+                        }
                     } else {
                         return Ok(Box::new(
                             OAuthStepUpClient::new(auth_result?, connect_params).await,
                         ));
                     }
-                } else {
-                    return Ok(Box::new(
-                        OAuthStepUpClient::new(auth_result?, connect_params).await,
-                    ));
                 }
-            }
-            Err(e) => {
-                warn!(
+                Err(e) => {
+                    warn!(
                     "[OAuth:{}] Proactive refresh failed: {}, falling back to unauthenticated attempt",
                     name, e
                 );
+                    break;
+                }
             }
+            if !successor_retry {
+                break;
+            }
+            successor_retry = false;
         }
     }
 
@@ -1607,7 +1638,7 @@ async fn create_streamable_http_client(
             &name.to_string(),
             static_oauth_client.as_ref(),
             challenge,
-            None,
+            RejectedAccessToken::NotPresented,
         )
         .await
         {
@@ -4924,14 +4955,14 @@ mod tests {
             split_presented_token(&first),
             (
                 r#"Bearer error="invalid_token""#.to_string(),
-                Some("t1".to_string())
+                RejectedAccessToken::Presented("t1".to_string())
             )
         );
         assert_eq!(
             split_presented_token(&second),
             (
                 r#"Bearer error="invalid_token""#.to_string(),
-                Some("t2".to_string())
+                RejectedAccessToken::Presented("t2".to_string())
             )
         );
     }
@@ -4949,11 +4980,20 @@ mod tests {
 
         let first = split_presented_token(&challenges[0]);
         let last = split_presented_token(challenges.last().unwrap());
-        assert_eq!(first.1, None, "oldest in-flight mapping may be evicted");
-        let expected = format!("t{PRESENTED_TOKEN_MAP_LIMIT}");
-        assert_eq!(last.1.as_deref(), Some(expected.as_str()));
+        assert_eq!(
+            first.1,
+            RejectedAccessToken::AssociationLost,
+            "oldest in-flight mapping may be evicted"
+        );
+        assert_eq!(
+            last.1,
+            RejectedAccessToken::Presented(format!("t{PRESENTED_TOKEN_MAP_LIMIT}"))
+        );
         assert!(
-            split_presented_token(&challenges[1]).1.is_some(),
+            matches!(
+                split_presented_token(&challenges[1]).1,
+                RejectedAccessToken::Presented(_)
+            ),
             "newer in-flight mappings must survive the cap"
         );
     }

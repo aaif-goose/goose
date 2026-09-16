@@ -275,8 +275,15 @@ fn stored_grant_satisfies_challenge(
     needed.iter().all(|scope| granted.contains(scope.as_str()))
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RejectedAccessToken {
+    NotPresented,
+    AssociationLost,
+    Presented(String),
+}
+
 fn challenge_can_reuse_stored_grant(
-    rejected_access_token: Option<&str>,
+    rejected_access_token: &RejectedAccessToken,
     stored: Option<&StoredCredentials>,
     challenge: Option<&str>,
     mcp_server_url: &str,
@@ -284,10 +291,16 @@ fn challenge_can_reuse_stored_grant(
     let Some(challenge) = challenge else {
         return true;
     };
-    stored.is_some_and(|stored| {
-        stored_access_token(stored) != rejected_access_token
-            && stored_grant_satisfies_challenge(stored, challenge, mcp_server_url)
-    })
+    match rejected_access_token {
+        RejectedAccessToken::AssociationLost => false,
+        RejectedAccessToken::NotPresented => stored.is_some_and(|stored| {
+            stored_grant_satisfies_challenge(stored, challenge, mcp_server_url)
+        }),
+        RejectedAccessToken::Presented(rejected) => stored.is_some_and(|stored| {
+            stored_access_token(stored) != Some(rejected.as_str())
+                && stored_grant_satisfies_challenge(stored, challenge, mcp_server_url)
+        }),
+    }
 }
 
 fn oauth_flow_lock_path(name: &str) -> PathBuf {
@@ -418,7 +431,14 @@ pub async fn oauth_flow(
     name: &String,
     static_client: Option<&StaticOAuthClientConfig>,
 ) -> Result<AuthorizationManager, anyhow::Error> {
-    oauth_flow_with_challenge(mcp_server_url, name, static_client, None, None).await
+    oauth_flow_with_challenge(
+        mcp_server_url,
+        name,
+        static_client,
+        None,
+        RejectedAccessToken::NotPresented,
+    )
+    .await
 }
 
 pub async fn oauth_flow_with_challenge(
@@ -426,7 +446,7 @@ pub async fn oauth_flow_with_challenge(
     name: &String,
     static_client: Option<&StaticOAuthClientConfig>,
     challenge: Option<String>,
-    rejected_access_token: Option<&str>,
+    rejected_access_token: RejectedAccessToken,
 ) -> Result<AuthorizationManager, anyhow::Error> {
     let env_client = env_static_oauth_client();
     let static_client = static_client.or(env_client.as_ref());
@@ -452,7 +472,7 @@ pub async fn oauth_flow_with_challenge(
     // the caller actually presented, not whatever the shared store currently
     // holds (another in-process client may have already saved a successor).
     let challenge_already_satisfied = challenge_can_reuse_stored_grant(
-        rejected_access_token,
+        &rejected_access_token,
         stored_credentials.as_ref(),
         challenge.as_deref(),
         mcp_server_url,
@@ -1103,7 +1123,7 @@ mod tests {
 
         assert!(
             !challenge_can_reuse_stored_grant(
-                Some("old-token"),
+                &RejectedAccessToken::Presented("old-token".to_string()),
                 Some(&rejected),
                 Some(invalid_token),
                 "https://mcp.example",
@@ -1112,7 +1132,7 @@ mod tests {
         );
         assert!(
             challenge_can_reuse_stored_grant(
-                Some("old-token"),
+                &RejectedAccessToken::Presented("old-token".to_string()),
                 Some(&refreshed),
                 Some(invalid_token),
                 "https://mcp.example",
@@ -1121,7 +1141,7 @@ mod tests {
         );
         assert!(
             !challenge_can_reuse_stored_grant(
-                Some("new-token"),
+                &RejectedAccessToken::Presented("new-token".to_string()),
                 Some(&refreshed),
                 Some(invalid_token),
                 "https://mcp.example",
@@ -1130,7 +1150,7 @@ mod tests {
         );
         assert!(
             !challenge_can_reuse_stored_grant(
-                Some("old-token"),
+                &RejectedAccessToken::Presented("old-token".to_string()),
                 Some(&refreshed),
                 Some(extra_scope),
                 "https://mcp.example",
@@ -1138,11 +1158,20 @@ mod tests {
             "a new token still missing the challenged scope must not skip browser auth"
         );
         assert!(challenge_can_reuse_stored_grant(
-            None,
+            &RejectedAccessToken::NotPresented,
             Some(&refreshed),
             None,
             "https://mcp.example",
         ));
+        assert!(
+            !challenge_can_reuse_stored_grant(
+                &RejectedAccessToken::AssociationLost,
+                Some(&refreshed),
+                Some(invalid_token),
+                "https://mcp.example",
+            ),
+            "an evicted request-token association must not reuse the stored grant"
+        );
     }
 
     #[test]
