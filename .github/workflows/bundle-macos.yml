@@ -68,7 +68,7 @@ jobs:
     name: Build Goose (macOS)
     runs-on: ${{ inputs.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
     env:
-      MACOSX_DEPLOYMENT_TARGET: "12.0"
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     permissions:
       contents: read
     steps:
@@ -131,7 +131,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
         with:
-          key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-macos-deployment-target-12' || 'macos-deployment-target-12' }}
+          key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-macos-deployment-target-13' || 'macos-deployment-target-13' }}
 
       - name: Build goose
         env:
@@ -197,7 +197,7 @@ jobs:
     runs-on: ${{ inputs.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
     environment: ${{ inputs.environment || '' }}
     env:
-      MACOSX_DEPLOYMENT_TARGET: "12.0"
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     permissions:
       contents: read
     outputs:
