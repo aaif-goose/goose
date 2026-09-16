@@ -97,10 +97,9 @@ use self::tool_calls::enrichment::{spawn_chain_summary_enrichment, spawn_tool_ti
 
 mod agent_requests;
 pub use agent_requests::agent_request_schemas;
-mod active_run;
 mod agent_mentions;
-pub use active_run::ActiveRunRegistry;
-use active_run::StartRunError;
+pub use crate::execution::ActiveRunRegistry;
+use crate::execution::StartRunError;
 mod apps;
 mod config;
 mod custom_dispatch;
@@ -114,7 +113,7 @@ mod list_sessions;
 mod live_voice;
 mod load_session;
 mod local_inference;
-pub use live_voice::LiveVoiceService;
+pub use crate::live_voice::LiveVoiceService;
 mod manage_sessions;
 mod message_meta;
 mod new_session;

@@ -1,12 +1,12 @@
 use super::call::{LiveCallRuntime, LiveMainAgent, LiveVoiceCall, LiveVoiceCallId};
-use crate::acp::server::ActiveRunRegistry;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
+use crate::execution::ActiveRunRegistry;
 use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
-pub(super) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
+pub(crate) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
 use goose_providers::openai_live_voice_provider::{OpenAiLiveVoiceConfig, OpenAiLiveVoiceProvider};
 use std::{
     collections::HashMap,
@@ -21,24 +21,24 @@ const LIVE_VOICE_ENABLED_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENABLED";
 const LIVE_VOICE_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE";
 
 type LiveCallControls = Arc<Mutex<HashMap<String, Arc<LiveCallControl>>>>;
-pub(super) type LiveVoiceTranscriptPublisher = Arc<dyn Fn(Message) + Send + Sync>;
+pub(crate) type LiveVoiceTranscriptPublisher = Arc<dyn Fn(Message) + Send + Sync>;
 type LiveVoiceResolver =
     Arc<dyn Fn() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> + Send + Sync>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum LiveVoiceCallCompletion {
+pub(crate) enum LiveVoiceCallCompletion {
     Stopped,
     Failed,
 }
 
-pub(super) struct StartLiveVoiceCallResult {
-    pub(super) call_id: LiveVoiceCallId,
-    pub(super) answer: WebRtcAnswer,
-    pub(super) completion_rx: watch::Receiver<Option<LiveVoiceCallCompletion>>,
+pub(crate) struct StartLiveVoiceCallResult {
+    pub(crate) call_id: LiveVoiceCallId,
+    pub(crate) answer: WebRtcAnswer,
+    pub(crate) completion_rx: watch::Receiver<Option<LiveVoiceCallCompletion>>,
 }
 
 #[derive(Debug)]
-pub(super) enum LiveVoiceError {
+pub(crate) enum LiveVoiceError {
     Unavailable,
     StartFailed,
     StopFailed,
@@ -142,7 +142,7 @@ impl LiveVoiceService {
         }
     }
 
-    pub(super) fn availability(
+    pub(crate) fn availability(
         &self,
         session_id: Option<&str>,
         mode: GooseMode,
@@ -166,7 +166,7 @@ impl LiveVoiceService {
         }
     }
 
-    pub(super) async fn start_call(
+    pub(crate) async fn start_call(
         &self,
         session_id: &str,
         offer: WebRtcOffer,
@@ -227,7 +227,7 @@ impl LiveVoiceService {
         })
     }
 
-    pub(super) async fn stop_call(
+    pub(crate) async fn stop_call(
         &self,
         session_id: &str,
         call_id: &LiveVoiceCallId,
@@ -250,7 +250,7 @@ impl LiveVoiceService {
         }
     }
 
-    pub(in crate::acp::server) async fn stop_session_call(&self, session_id: &str) {
+    pub(crate) async fn stop_session_call(&self, session_id: &str) {
         let cleanup_finished = {
             let calls = self
                 .calls_by_session
@@ -343,7 +343,7 @@ async fn live_voice_input_messages(
     Ok(messages.into_iter().skip(start).collect())
 }
 
-pub(super) async fn wait_for_completion(
+pub(crate) async fn wait_for_completion(
     mut completion_rx: watch::Receiver<Option<LiveVoiceCallCompletion>>,
 ) -> Result<LiveVoiceCallCompletion, LiveVoiceError> {
     loop {

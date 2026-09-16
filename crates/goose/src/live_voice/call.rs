@@ -1,6 +1,5 @@
-mod transcript;
-
 use super::service::{LiveCallGuard, LiveVoiceCallCompletion, LiveVoiceTranscriptPublisher};
+use super::transcript::{DelegationContext, LiveTranscript};
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
 use futures::future::BoxFuture;
 use goose_providers::live_voice_provider::{
@@ -10,7 +9,6 @@ use rmcp::model::Role;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
-use transcript::{DelegationContext, LiveTranscript};
 use uuid::Uuid;
 
 pub(super) const PROVIDER_CLEANUP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -22,7 +20,7 @@ const UNDELIVERED_DELEGATION_UPDATE_NOTICE: &str =
 const SAVED_RESULT_NOTICE: &str = "\n\nThe full result is saved in Goose.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct LiveVoiceCallId(pub(super) String);
+pub(crate) struct LiveVoiceCallId(pub(crate) String);
 
 impl LiveVoiceCallId {
     pub(super) fn new() -> Self {
@@ -421,7 +419,7 @@ impl LiveCallRuntime {
     }
 }
 
-pub(super) struct LiveMainAgent {
+pub(crate) struct LiveMainAgent {
     start: Box<dyn Fn(String, String) -> Result<MainAgentRun, String> + Send + Sync>,
     steer: Box<dyn Fn(String, String) -> MainAgentSteerResponse + Send + Sync>,
 }
@@ -430,7 +428,7 @@ type MainAgentRun = BoxFuture<'static, String>;
 type MainAgentSteerResponse = BoxFuture<'static, Result<String, String>>;
 
 impl LiveMainAgent {
-    pub(super) fn new(
+    pub(crate) fn new(
         start: impl Fn(String, String) -> Result<MainAgentRun, String> + Send + Sync + 'static,
         steer: impl Fn(String, String) -> MainAgentSteerResponse + Send + Sync + 'static,
     ) -> Self {

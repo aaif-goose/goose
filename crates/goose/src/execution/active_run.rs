@@ -17,7 +17,7 @@ struct SessionRunState {
     live_active: bool,
 }
 
-pub(super) enum StartRunError {
+pub(crate) enum StartRunError {
     AgentRunExists { run_id: String },
     LiveCallExists,
     LiveCallMissing,
@@ -29,7 +29,7 @@ pub struct ActiveRunRegistry {
 }
 
 impl ActiveRunRegistry {
-    pub(super) fn start_prompt_run(
+    pub(crate) fn start_prompt_run(
         &self,
         session_id: &str,
         run_id: String,
@@ -64,7 +64,7 @@ impl ActiveRunRegistry {
         Ok(())
     }
 
-    pub(super) fn start_live_delegation(
+    pub(crate) fn start_live_delegation(
         &self,
         session_id: &str,
         run_id: String,
@@ -91,7 +91,7 @@ impl ActiveRunRegistry {
         Ok(())
     }
 
-    pub(super) fn agent_run(&self, session_id: &str) -> Option<(String, Arc<Agent>)> {
+    pub(crate) fn agent_run(&self, session_id: &str) -> Option<(String, Arc<Agent>)> {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")
@@ -100,7 +100,7 @@ impl ActiveRunRegistry {
             .map(|run| (run.run_id.clone(), run.agent.clone()))
     }
 
-    fn agent_cancel_token(&self, session_id: &str) -> Option<CancellationToken> {
+    pub(crate) fn agent_cancel_token(&self, session_id: &str) -> Option<CancellationToken> {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")
@@ -109,13 +109,13 @@ impl ActiveRunRegistry {
             .map(|run| run.cancel_token.clone())
     }
 
-    pub(super) fn cancel_agent_run(&self, session_id: &str) {
+    pub(crate) fn cancel_agent_run(&self, session_id: &str) {
         if let Some(cancel_token) = self.agent_cancel_token(session_id) {
             cancel_token.cancel();
         }
     }
 
-    pub(super) fn remove_agent_run(&self, session_id: &str, run_id: &str) -> Option<Arc<Agent>> {
+    pub(crate) fn remove_agent_run(&self, session_id: &str, run_id: &str) -> Option<Arc<Agent>> {
         let mut runs = self
             .runs_by_session
             .lock()
@@ -131,7 +131,7 @@ impl ActiveRunRegistry {
         Some(agent)
     }
 
-    pub(super) fn start_live(&self, session_id: &str) -> bool {
+    pub(crate) fn start_live(&self, session_id: &str) -> bool {
         let mut runs = self
             .runs_by_session
             .lock()
@@ -149,7 +149,7 @@ impl ActiveRunRegistry {
         true
     }
 
-    pub(super) fn finish_live(&self, session_id: &str) {
+    pub(crate) fn finish_live(&self, session_id: &str) {
         let mut runs = self
             .runs_by_session
             .lock()
@@ -162,7 +162,7 @@ impl ActiveRunRegistry {
         }
     }
 
-    pub(super) fn is_active(&self, session_id: &str) -> bool {
+    pub(crate) fn is_active(&self, session_id: &str) -> bool {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")

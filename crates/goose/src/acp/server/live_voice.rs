@@ -1,15 +1,9 @@
-mod call;
-mod service;
-
 use super::*;
-use call::{LiveMainAgent, LiveVoiceCallId};
-use futures::FutureExt;
-use service::{
-    wait_for_completion, LiveVoiceCallCompletion, LiveVoiceError, LiveVoiceTranscriptPublisher,
-    StartLiveVoiceCallResult, WebRtcOffer,
+use crate::live_voice::{
+    wait_for_completion, LiveMainAgent, LiveVoiceCallCompletion, LiveVoiceCallId, LiveVoiceError,
+    LiveVoiceTranscriptPublisher, StartLiveVoiceCallResult, WebRtcOffer,
 };
-
-pub use service::LiveVoiceService;
+use futures::FutureExt;
 
 const LIVE_DELEGATION_INSTRUCTION: &str = concat!(
     "You support a live conversation. Treat the latest delegated input as an update to this session's earlier context. ",
