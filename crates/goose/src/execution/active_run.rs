@@ -9,7 +9,7 @@ struct ActiveRun {
     run_id: String,
     cancel_token: CancellationToken,
     /// Routes steering from another roaming connection to the run owner.
-    agent: Arc<Agent>,
+    agent: Option<Arc<Agent>>,
 }
 
 struct SessionRunState {
@@ -35,6 +35,25 @@ impl ActiveRunRegistry {
         run_id: String,
         cancel_token: CancellationToken,
         agent: Arc<Agent>,
+    ) -> Result<(), StartRunError> {
+        self.start_prompt_run_inner(session_id, run_id, cancel_token, Some(agent))
+    }
+
+    pub(crate) fn reserve_prompt_run(
+        &self,
+        session_id: &str,
+        run_id: String,
+        cancel_token: CancellationToken,
+    ) -> Result<(), StartRunError> {
+        self.start_prompt_run_inner(session_id, run_id, cancel_token, None)
+    }
+
+    fn start_prompt_run_inner(
+        &self,
+        session_id: &str,
+        run_id: String,
+        cancel_token: CancellationToken,
+        agent: Option<Arc<Agent>>,
     ) -> Result<(), StartRunError> {
         let mut runs = self
             .runs_by_session
@@ -86,18 +105,44 @@ impl ActiveRunRegistry {
         state.agent_run = Some(ActiveRun {
             run_id,
             cancel_token,
-            agent,
+            agent: Some(agent),
         });
         Ok(())
     }
 
     pub(crate) fn agent_run(&self, session_id: &str) -> Option<(String, Arc<Agent>)> {
+        self.prompt_run(session_id)
+            .and_then(|(run_id, agent)| agent.map(|agent| (run_id, agent)))
+    }
+
+    pub(crate) fn prompt_run(&self, session_id: &str) -> Option<(String, Option<Arc<Agent>>)> {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")
             .get(session_id)
             .and_then(|state| state.agent_run.as_ref())
             .map(|run| (run.run_id.clone(), run.agent.clone()))
+    }
+
+    pub(crate) fn attach_prompt_agent(
+        &self,
+        session_id: &str,
+        run_id: &str,
+        agent: Arc<Agent>,
+    ) -> bool {
+        let mut runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        let Some(run) = runs
+            .get_mut(session_id)
+            .and_then(|state| state.agent_run.as_mut())
+            .filter(|run| run.run_id == run_id && run.agent.is_none())
+        else {
+            return false;
+        };
+        run.agent = Some(agent);
+        true
     }
 
     pub(crate) fn agent_cancel_token(&self, session_id: &str) -> Option<CancellationToken> {
@@ -128,7 +173,7 @@ impl ActiveRunRegistry {
         if !state.live_active {
             runs.remove(session_id);
         }
-        Some(agent)
+        agent
     }
 
     pub(crate) fn start_live(&self, session_id: &str) -> bool {
