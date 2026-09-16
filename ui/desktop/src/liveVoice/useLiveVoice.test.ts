@@ -128,7 +128,7 @@ describe('useLiveVoice', () => {
         unmount();
       } else {
         await act(async () => result.current.stop());
-        expect(result.current.phase).toBe('idle');
+        expect(result.current.phase).toBe('stopping');
       }
       await act(async () => {
         pending.resolve({ callId: 'late-call', answerSdp: 'late-answer' });
@@ -138,6 +138,7 @@ describe('useLiveVoice', () => {
       expect(media.applyAnswer).not.toHaveBeenCalled();
       expect(media.setMuted).not.toHaveBeenCalled();
       expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'late-call');
+      if (action === 'stop') expect(result.current.phase).toBe('idle');
     }
   );
 

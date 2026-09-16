@@ -28,12 +28,13 @@ describe('LiveVoiceButton', () => {
     expect(button).toHaveAccessibleName('Start Live voice');
   });
 
-  it('shows the unavailable reason', () => {
+  it.each(['idle', 'error'] as const)('shows the unavailable reason while %s', (phase) => {
     renderButton({
       availability: {
         status: 'unavailable',
         message: 'Live voice requires Autonomous mode',
       },
+      phase,
     });
 
     const button = screen.getByTestId('live-voice-button');
@@ -42,8 +43,8 @@ describe('LiveVoiceButton', () => {
     expect(button).toHaveAccessibleName('Live voice requires Autonomous mode');
   });
 
-  it('applies the Desktop empty-composer gate', () => {
-    renderButton({ composerEmpty: false });
+  it.each(['idle', 'error'] as const)('applies empty-composer gate while %s', (phase) => {
+    renderButton({ composerEmpty: false, phase });
 
     const button = screen.getByTestId('live-voice-button');
     expect(button).toBeDisabled();

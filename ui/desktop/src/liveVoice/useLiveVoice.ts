@@ -24,6 +24,7 @@ export interface LiveVoiceController {
 interface LiveVoiceCall {
   sessionId: string;
   callId?: string;
+  remoteStartPending: boolean;
   media: LiveVoiceMediaSession;
   mediaReady: boolean;
   invalidated: boolean;
@@ -31,9 +32,14 @@ interface LiveVoiceCall {
   pendingOutcomesByCallId: Map<string, LiveVoiceCallEndedNotification['update']['outcome']>;
 }
 
-function requestRemoteStop(call: LiveVoiceCall): void {
-  if (!call.callId || call.acpConnectionLost) return;
-  void acpStopLiveVoice(call.sessionId, call.callId).catch(() => undefined);
+async function stopRemoteCall(call: LiveVoiceCall): Promise<'stopped' | 'failed'> {
+  if (!call.callId || call.acpConnectionLost) return 'stopped';
+  try {
+    await acpStopLiveVoice(call.sessionId, call.callId);
+    return 'stopped';
+  } catch {
+    return 'failed';
+  }
 }
 
 export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveVoiceController {
@@ -74,20 +80,20 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
 
       callRef.current = null;
       invalidateCallAndReleaseMedia(call);
-      requestRemoteStop(call);
+      void stopRemoteCall(call);
     };
   }, [invalidateCallAndReleaseMedia, isSessionActive, sessionId]);
 
   useEffect(() => {
     return subscribeToLiveVoiceCallEnded((notification) => {
       const call = callRef.current;
-      if (!call || call.sessionId !== notification.sessionId || call.invalidated) return;
+      if (!call || call.sessionId !== notification.sessionId) return;
 
       if (!call.callId) {
         call.pendingOutcomesByCallId.set(notification.update.callId, notification.update.outcome);
         return;
       }
-      if (call.callId === notification.update.callId) {
+      if (!call.invalidated && call.callId === notification.update.callId) {
         finishCurrentCall(call, notification.update.outcome);
       }
     });
@@ -115,10 +121,11 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
       let call: LiveVoiceCall;
       const media = new LiveVoiceMediaSession(() => {
         if (!finishCurrentCall(call, 'failed')) return;
-        requestRemoteStop(call);
+        void stopRemoteCall(call);
       });
       call = {
         sessionId,
+        remoteStartPending: false,
         media,
         mediaReady: false,
         invalidated: false,
@@ -132,7 +139,9 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
         const offerSdp = await call.media.createOffer();
         if (!isCurrent()) return;
 
+        call.remoteStartPending = true;
         const response = await acpStartLiveVoice(sessionId, offerSdp);
+        call.remoteStartPending = false;
         call.callId = response.callId;
         const pendingOutcome = call.pendingOutcomesByCallId.get(call.callId);
         call.pendingOutcomesByCallId.clear();
@@ -141,7 +150,7 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
           return;
         }
         if (!isCurrent()) {
-          requestRemoteStop(call);
+          finishCurrentCall(call, await stopRemoteCall(call));
           return;
         }
 
@@ -155,16 +164,14 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
           call.media.sendCommentary(initialCommentary);
         }
       } catch {
-        if (!isCurrent()) {
-          invalidateCallAndReleaseMedia(call);
-          return;
+        call.remoteStartPending = false;
+        const outcome = call.invalidated ? 'stopped' : 'failed';
+        if (finishCurrentCall(call, outcome) && outcome === 'failed') {
+          void stopRemoteCall(call);
         }
-
-        finishCurrentCall(call, 'failed');
-        requestRemoteStop(call);
       }
     },
-    [finishCurrentCall, invalidateCallAndReleaseMedia, isSessionActive, sessionId]
+    [finishCurrentCall, isSessionActive, sessionId]
   );
 
   const toggleMute = useCallback(() => {
@@ -183,18 +190,17 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
     invalidateCallAndReleaseMedia(call);
     setMuted(false);
     if (!call.callId) {
+      if (call.remoteStartPending) {
+        setPhase('stopping');
+        return;
+      }
       callRef.current = null;
       setPhase('idle');
       return;
     }
 
     setPhase('stopping');
-    try {
-      await acpStopLiveVoice(call.sessionId, call.callId);
-      finishCurrentCall(call, 'stopped');
-    } catch {
-      finishCurrentCall(call, 'failed');
-    }
+    finishCurrentCall(call, await stopRemoteCall(call));
   }, [finishCurrentCall, invalidateCallAndReleaseMedia]);
 
   return { phase, muted, start, stop, toggleMute };

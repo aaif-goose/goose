@@ -61,6 +61,8 @@ export function LiveVoiceButton({
 
   const eligible = availability.status === 'ready' && composerEmpty;
   const stopping = phase === 'stopping';
+  const canStart = phase === 'idle' || phase === 'error';
+  const canStop = phase === 'connecting' || phase === 'live';
   const label =
     phase === 'connecting'
       ? intl.formatMessage(i18n.connecting)
@@ -73,8 +75,7 @@ export function LiveVoiceButton({
             : composerEmpty
               ? availability.message
               : intl.formatMessage(i18n.emptyComposerRequired);
-  const disabled = phase === 'idle' ? !eligible : stopping;
-  const canStop = phase === 'connecting' || phase === 'live';
+  const disabled = canStart ? !eligible : stopping;
 
   return (
     <>
