@@ -146,17 +146,6 @@ pub fn import_server_json(
         .iter()
         .filter_map(|name| values.get(name).map(|value| (name.clone(), value.clone())))
         .collect();
-    let config_values = values
-        .iter()
-        .map(|(name, value)| {
-            let value = if secret_names.contains(name) {
-                format!("${{{name}}}")
-            } else {
-                value.clone()
-            };
-            (name.clone(), value)
-        })
-        .collect();
     let entries = selections
         .iter()
         .map(|selection| {
@@ -171,6 +160,8 @@ pub fn import_server_json(
                     } else {
                         base_name.to_string()
                     };
+                    let secret_names = package_secret_input_names(package);
+                    let config_values = values_with_secret_references(values, &secret_names);
                     let config = package_config(
                         name.clone(),
                         document.description.clone(),
@@ -189,6 +180,8 @@ pub fn import_server_json(
                     } else {
                         base_name.to_string()
                     };
+                    let secret_names = secret_transport_input_names(remote);
+                    let config_values = values_with_secret_references(values, &secret_names);
                     let config = remote_config(
                         name.clone(),
                         document.description.clone(),
@@ -224,6 +217,31 @@ fn secret_transport_input_names(transport: &Transport) -> Vec<String> {
                 .filter(|(_, input)| input.is_secret)
                 .map(|(name, _)| name.clone()),
         )
+        .collect()
+}
+
+fn package_secret_input_names(package: &Package) -> Vec<String> {
+    if package.transport.kind == "stdio" {
+        secret_input_names(&package.environment_variables).collect()
+    } else {
+        secret_transport_input_names(&package.transport)
+    }
+}
+
+fn values_with_secret_references(
+    values: &HashMap<String, String>,
+    secret_names: &[String],
+) -> HashMap<String, String> {
+    values
+        .iter()
+        .map(|(name, value)| {
+            let value = if secret_names.contains(name) {
+                format!("${{{name}}}")
+            } else {
+                value.clone()
+            };
+            (name.clone(), value)
+        })
         .collect()
 }
 
@@ -604,6 +622,56 @@ mod tests {
         assert_eq!(uri, "https://example.com/${token}");
         assert_eq!(headers["Authorization"], "${Authorization}");
         assert_eq!(env_keys, &["Authorization", "token"]);
+        assert_eq!(secrets, values);
+    }
+
+    #[test]
+    fn secret_references_are_scoped_to_each_selection() {
+        let json = r#"{
+            "name": "io.example/test-server",
+            "description": "test",
+            "remotes": [
+                {
+                    "type": "streamable-http",
+                    "url": "https://secret.example.com/{token}",
+                    "variables": { "token": { "isSecret": true } }
+                },
+                {
+                    "type": "streamable-http",
+                    "url": "https://public.example.com/{token}",
+                    "variables": { "token": {} }
+                }
+            ]
+        }"#;
+        let values = HashMap::from([("token".into(), "shared-value".into())]);
+
+        let (entries, secrets) = import_server_json(
+            json,
+            &[ServerSelection::Remote(0), ServerSelection::Remote(1)],
+            &values,
+        )
+        .unwrap();
+        let ExtensionConfig::StreamableHttp {
+            uri: secret_uri,
+            env_keys: secret_env_keys,
+            ..
+        } = &entries[0].config
+        else {
+            panic!("expected streamable HTTP extension");
+        };
+        let ExtensionConfig::StreamableHttp {
+            uri: public_uri,
+            env_keys: public_env_keys,
+            ..
+        } = &entries[1].config
+        else {
+            panic!("expected streamable HTTP extension");
+        };
+
+        assert_eq!(secret_uri, "https://secret.example.com/${token}");
+        assert_eq!(secret_env_keys, &["token"]);
+        assert_eq!(public_uri, "https://public.example.com/shared-value");
+        assert!(public_env_keys.is_empty());
         assert_eq!(secrets, values);
     }
 
