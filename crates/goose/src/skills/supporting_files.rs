@@ -25,12 +25,66 @@ struct WalkPolicy {
     inside_linked_skill_root: bool,
 }
 
-pub(super) struct OpenedSkillDirectory(fs::File);
+pub(super) struct OpenedSkillDirectory(fs::File, PathBuf);
 
 impl OpenedSkillDirectory {
-    pub(super) fn from_opened(directory: &fs::File) -> io::Result<Self> {
-        directory.try_clone().map(Self)
+    pub(super) fn from_opened(directory: &fs::File, logical_path: &Path) -> io::Result<Self> {
+        let resolved_path = logical_path.canonicalize()?;
+        let resolved_directory =
+            open_skill_root(&resolved_path, RootLinkPolicy::Reject, &mut |_| {})?;
+        if !same_directory(directory, &resolved_directory)? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "linked skill path no longer identifies the discovered directory",
+            ));
+        }
+        Ok(Self(directory.try_clone()?, resolved_path))
     }
+
+    pub(super) fn resolved_path(&self) -> &Path {
+        &self.1
+    }
+}
+
+#[cfg(unix)]
+fn same_directory(left: &fs::File, right: &fs::File) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    let left = left.metadata()?;
+    let right = right.metadata()?;
+    Ok(left.dev() == right.dev() && left.ino() == right.ino())
+}
+
+#[cfg(windows)]
+fn same_directory(left: &fs::File, right: &fs::File) -> io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use winapi::um::fileapi::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION};
+
+    let identity = |file: &fs::File| -> io::Result<_> {
+        let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+        // SAFETY: the file owns a valid handle and information is writable output storage.
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()) }
+            == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: a successful GetFileInformationByHandle initialized the output.
+        let information = unsafe { information.assume_init() };
+        Ok((
+            information.dwVolumeSerialNumber,
+            information.nFileIndexHigh,
+            information.nFileIndexLow,
+        ))
+    };
+    Ok(identity(left)? == identity(right)?)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn same_directory(_left: &fs::File, _right: &fs::File) -> io::Result<bool> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure skill discovery is not supported on this platform",
+    ))
 }
 
 pub(crate) fn load_supporting_file(
@@ -1397,6 +1451,29 @@ fn write_confined_file_with_hook(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn opened_directory_path_rejects_replacement_before_identity_capture() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let original = root.join("skill");
+        let moved = root.join("moved");
+        fs::create_dir(&original).unwrap();
+        let directory = open_skill_root(&original, RootLinkPolicy::Reject, &mut |_| {}).unwrap();
+        let captured = OpenedSkillDirectory::from_opened(&directory, &original).unwrap();
+        assert_eq!(captured.resolved_path(), original);
+
+        fs::rename(&original, &moved).unwrap();
+        fs::create_dir(&original).unwrap();
+        assert!(OpenedSkillDirectory::from_opened(&directory, &original).is_err());
+        assert_eq!(
+            OpenedSkillDirectory::from_opened(&directory, &moved)
+                .unwrap()
+                .resolved_path(),
+            moved
+        );
+    }
 
     #[cfg(any(unix, windows))]
     #[test]

@@ -1,5 +1,4 @@
 use super::discover_skills_with_config;
-use super::loaded_skill_context_with_args;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
@@ -154,7 +153,7 @@ impl McpClientTrait for SkillsClient {
         let skills = self.discover_skills_with_details();
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
-            return match loaded_skill_context_with_args(skill, args) {
+            return match skill.loaded_context_with_args(args) {
                 Ok(rendered) => Ok(CallToolResult::success(vec![ContentBlock::text(rendered)])),
                 Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                     "Failed to parse skill arguments: {}",
@@ -472,6 +471,23 @@ mod tests {
 
         assert!(!result.is_error.unwrap_or(false));
         assert!(result_text(&result).contains("Symlinked supporting guidance."));
+        let loaded = load_skill(&client, "symlinked-skill").await;
+        let resolved = supporting_file.canonicalize().unwrap();
+        assert!(result_text(&loaded).contains(&format!(
+            "Skill directory: {}",
+            resolved.parent().unwrap().display()
+        )));
+        assert!(result_text(&loaded).contains(&format!("guide.md → {}", resolved.display())));
+        assert!(!result_text(&loaded).contains(&plugin_link.to_string_lossy().to_string()));
+        let listed = client.discover_skills();
+        assert_eq!(
+            listed
+                .iter()
+                .find(|skill| skill.name == "symlinked-skill")
+                .unwrap()
+                .path,
+            plugin_link.join("skills/symlinked-skill").to_string_lossy()
+        );
     }
 
     fn write_skill(workspace: &Path, name: &str, marker: &str) {
@@ -695,6 +711,15 @@ mod tests {
             .unwrap();
         assert!(!guide.is_error.unwrap_or(false));
         assert!(result_text(&guide).contains("Nested guidance."));
+        let loaded = load_skill(&client, "nested-skill").await;
+        assert!(result_text(&loaded).contains(&format!(
+            "Skill directory: {}",
+            external_skill.join("nested").display()
+        )));
+        assert!(result_text(&loaded).contains(&format!(
+            "guide.md → {}",
+            external_skill.join("nested/guide.md").display()
+        )));
 
         let escaped_args = serde_json::from_value(serde_json::json!({
             "name": "nested-skill/escaped/secret.md"

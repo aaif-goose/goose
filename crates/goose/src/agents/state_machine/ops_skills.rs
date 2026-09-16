@@ -98,7 +98,7 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
     let skills = crate::skills::discover_skills_with_details(Some(working_dir));
 
     if let Some(skill) = skills.iter().find(|skill| skill.name == skill_name) {
-        return match crate::skills::loaded_skill_context_with_args(skill, args) {
+        return match skill.loaded_context_with_args(args) {
             Ok(rendered) => CallToolResult::success(vec![ContentBlock::text(rendered)]),
             Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
                 "Failed to parse skill arguments: {error}"
@@ -524,6 +524,20 @@ mod tests {
         assert!(!guide.is_error.unwrap_or(false));
         let text = guide.content[0].as_text().expect("expected text");
         assert!(text.text.contains("Nested guidance."));
+
+        let loaded = execute_skill(
+            &working_dir,
+            serde_json::from_value(serde_json::json!({"name": "nested-skill"})).unwrap(),
+        );
+        let rendered = &loaded.content[0].as_text().unwrap().text;
+        assert!(rendered.contains(&format!(
+            "Skill directory: {}",
+            external_skill.join("nested").display()
+        )));
+        assert!(rendered.contains(&format!(
+            "guide.md → {}",
+            external_skill.join("nested/guide.md").display()
+        )));
 
         let escaped = execute_skill(
             &working_dir,
