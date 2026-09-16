@@ -119,40 +119,36 @@ pub fn import_server_json(
     }
     let base_name = document.name.rsplit('/').next().unwrap_or(&document.name);
     let multiple = selections.len() > 1;
-    let secret_names = selections
-        .iter()
-        .flat_map(|selection| -> Box<dyn Iterator<Item = &Input>> {
-            match *selection {
-                ServerSelection::Package(index) => Box::new(
-                    document
-                        .packages
-                        .get(index)
-                        .into_iter()
-                        .flat_map(|package| package.environment_variables.iter()),
-                ),
-                ServerSelection::Remote(index) => Box::new(
-                    document
-                        .remotes
-                        .get(index)
-                        .into_iter()
-                        .flat_map(|remote| remote.headers.iter()),
-                ),
+    let mut secret_names = vec![];
+    for selection in selections {
+        match *selection {
+            ServerSelection::Package(index) => {
+                if let Some(package) = document.packages.get(index) {
+                    if package.transport.kind == "stdio" {
+                        secret_names.extend(secret_input_names(&package.environment_variables));
+                        ensure_no_secret_argument_variables(&package.runtime_arguments)?;
+                        ensure_no_secret_argument_variables(&package.package_arguments)?;
+                    } else {
+                        secret_names.extend(secret_transport_input_names(&package.transport));
+                    }
+                }
             }
-        })
-        .filter(|input| input.is_secret)
-        .filter_map(|input| input.name.as_deref())
-        .collect::<Vec<_>>();
+            ServerSelection::Remote(index) => {
+                if let Some(remote) = document.remotes.get(index) {
+                    secret_names.extend(secret_transport_input_names(remote));
+                }
+            }
+        }
+    }
+    secret_names.sort_unstable();
+    secret_names.dedup();
     let secrets = secret_names
         .iter()
-        .filter_map(|name| {
-            values
-                .get(*name)
-                .map(|value| ((*name).to_string(), value.clone()))
-        })
+        .filter_map(|name| values.get(name).map(|value| (name.clone(), value.clone())))
         .collect();
     let public_values = values
         .iter()
-        .filter(|(name, _)| !secret_names.contains(&name.as_str()))
+        .filter(|(name, _)| !secret_names.contains(name))
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
     let entries = selections
@@ -204,6 +200,38 @@ pub fn import_server_json(
         })
         .collect::<Result<Vec<_>>>()?;
     Ok((entries, secrets))
+}
+
+fn secret_input_names(inputs: &[Input]) -> impl Iterator<Item = String> + '_ {
+    inputs
+        .iter()
+        .filter(|input| input.is_secret)
+        .filter_map(|input| input.name.clone())
+}
+
+fn secret_transport_input_names(transport: &Transport) -> Vec<String> {
+    secret_input_names(&transport.headers)
+        .chain(
+            transport
+                .variables
+                .iter()
+                .filter(|(_, input)| input.is_secret)
+                .map(|(name, _)| name.clone()),
+        )
+        .collect()
+}
+
+fn ensure_no_secret_argument_variables(arguments: &[Argument]) -> Result<()> {
+    if let Some(name) = arguments.iter().find_map(|argument| {
+        argument
+            .variables
+            .iter()
+            .find(|(_, input)| input.is_secret)
+            .map(|(name, _)| name)
+    }) {
+        bail!("secret argument variable '{name}' is not supported; use an environment variable")
+    }
+    Ok(())
 }
 
 fn package_config(
@@ -316,7 +344,7 @@ fn remote_config(
             transport.kind
         );
     }
-    let vars = resolve_variable_map(&transport.variables, values)?;
+    let (vars, variable_env_keys) = resolve_transport_variables(&transport.variables, values)?;
     let uri = substitute(
         transport
             .url
@@ -324,7 +352,10 @@ fn remote_config(
             .context("streamable-http transport is missing url")?,
         &vars,
     );
-    let (headers, env_keys) = resolve_named_inputs(&transport.headers, values)?;
+    let (headers, mut env_keys) = resolve_named_inputs(&transport.headers, values)?;
+    env_keys.extend(variable_env_keys);
+    env_keys.sort_unstable();
+    env_keys.dedup();
     Ok(ExtensionConfig::StreamableHttp {
         name,
         description,
@@ -384,6 +415,10 @@ fn resolve_inputs(
             .name
             .as_deref()
             .context("environment variable is missing name")?;
+        if input.is_secret {
+            keys.push(name.into());
+            continue;
+        }
         if let Some(value) = input
             .value
             .clone()
@@ -391,7 +426,7 @@ fn resolve_inputs(
             .or_else(|| input.default.clone())
         {
             fixed.insert(name.into(), value);
-        } else if input.is_required || input.is_secret {
+        } else if input.is_required {
             keys.push(name.into());
         }
     }
@@ -405,6 +440,11 @@ fn resolve_named_inputs(
     let mut keys = vec![];
     for input in items {
         let name = input.name.as_deref().context("header is missing name")?;
+        if input.is_secret {
+            keys.push(name.into());
+            fixed.insert(name.into(), format!("${{{name}}}"));
+            continue;
+        }
         if let Some(v) = input
             .value
             .clone()
@@ -412,13 +452,38 @@ fn resolve_named_inputs(
             .or_else(|| input.default.clone())
         {
             fixed.insert(name.into(), v);
-        } else if input.is_required || input.is_secret {
+        } else if input.is_required {
             keys.push(name.into());
             fixed.insert(name.into(), format!("${{{name}}}"));
         }
     }
     Ok((fixed, keys))
 }
+fn resolve_transport_variables(
+    inputs: &HashMap<String, Input>,
+    values: &HashMap<String, String>,
+) -> Result<(HashMap<String, String>, Vec<String>)> {
+    let mut resolved = HashMap::new();
+    let mut env_keys = vec![];
+    for (name, input) in inputs {
+        if input.is_secret {
+            resolved.insert(name.clone(), format!("${{{name}}}"));
+            env_keys.push(name.clone());
+            continue;
+        }
+        let value = input
+            .value
+            .clone()
+            .or_else(|| values.get(name).cloned())
+            .or_else(|| input.default.clone());
+        if input.is_required && value.is_none() {
+            bail!("missing required value '{name}'; pass --value {name}=VALUE");
+        }
+        resolved.insert(name.clone(), value.unwrap_or_default());
+    }
+    Ok((resolved, env_keys))
+}
+
 fn resolve_variable_map(
     inputs: &HashMap<String, Input>,
     values: &HashMap<String, String>,
@@ -489,5 +554,69 @@ mod tests {
 
         assert_eq!(cmd, "podman");
         assert_eq!(args.first().unwrap(), "run");
+    }
+
+    #[test]
+    fn remote_transport_secrets_remain_references() {
+        let json = r#"{
+            "name": "io.example/test-server",
+            "description": "test",
+            "remotes": [{
+                "type": "streamable-http",
+                "url": "https://example.com/{token}",
+                "headers": [{ "name": "Authorization", "isSecret": true }],
+                "variables": { "token": { "isSecret": true } }
+            }]
+        }"#;
+        let values = HashMap::from([
+            ("Authorization".into(), "Bearer secret".into()),
+            ("token".into(), "path-secret".into()),
+        ]);
+
+        let (entries, secrets) =
+            import_server_json(json, &[ServerSelection::Remote(0)], &values).unwrap();
+        let ExtensionConfig::StreamableHttp {
+            uri,
+            headers,
+            env_keys,
+            ..
+        } = &entries[0].config
+        else {
+            panic!("expected streamable HTTP extension");
+        };
+
+        assert_eq!(uri, "https://example.com/${token}");
+        assert_eq!(headers["Authorization"], "${Authorization}");
+        assert_eq!(env_keys, &["Authorization", "token"]);
+        assert_eq!(secrets, values);
+    }
+
+    #[test]
+    fn secret_argument_variables_are_rejected() {
+        let json = r#"{
+            "name": "io.example/test-server",
+            "description": "test",
+            "packages": [{
+                "registryType": "npm",
+                "identifier": "test-server",
+                "transport": { "type": "stdio" },
+                "packageArguments": [{
+                    "type": "positional",
+                    "value": "{token}",
+                    "variables": { "token": { "isSecret": true } }
+                }]
+            }]
+        }"#;
+
+        let error = import_server_json(
+            json,
+            &[ServerSelection::Package(0)],
+            &HashMap::from([("token".into(), "secret".into())]),
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("secret argument variable 'token'"));
     }
 }
