@@ -477,6 +477,7 @@ pub async fn oauth_flow_with_challenge(
             // at the token endpoint for the refresh to succeed.
             configure_static_client(&mut auth_manager, static_client, mcp_server_url)?;
             if !access_token_needs_refresh(stored_credentials) {
+                auth_manager.set_credential_store(credential_store);
                 return Ok(auth_manager);
             }
             match auth_manager.refresh_token().await {
@@ -515,10 +516,10 @@ pub async fn oauth_flow_with_challenge(
                             static_client,
                             mcp_server_url,
                         )?;
-                        restored_manager
-                            .set_credential_store(credential_store.without_refresh_guard());
+                        restored_manager.set_credential_store(credential_store);
                         return Ok(restored_manager);
                     }
+                    auth_manager.set_credential_store(credential_store);
                     return Ok(auth_manager);
                 }
                 Err(e) => {

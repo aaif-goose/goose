@@ -8,8 +8,8 @@ use once_cell::sync::Lazy;
 use rmcp::model::ProtocolVersion;
 use rmcp::service::{ClientInitializeError, ServiceError};
 use rmcp::transport::streamable_http_client::{
-    StreamableHttpClient, StreamableHttpClientTransportConfig, StreamableHttpError,
-    StreamableHttpPostResponse,
+    AuthRequiredError, InsufficientScopeError, StreamableHttpClient,
+    StreamableHttpClientTransportConfig, StreamableHttpError, StreamableHttpPostResponse,
 };
 use rmcp::transport::{ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport};
 use std::collections::HashMap;
@@ -554,7 +554,9 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
     };
 
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err
+            .auth_challenge()
+            .map(|challenge| split_presented_token(challenge).0);
     }
 
     #[cfg(unix)]
@@ -562,7 +564,9 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
         .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
         )
     {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err
+            .auth_challenge()
+            .map(|challenge| split_presented_token(challenge).0);
     }
 
     None
@@ -576,12 +580,18 @@ fn auth_challenge_from_result(res: &Result<McpClient, ClientInitializeError>) ->
 /// failure (401 auth required or 403 insufficient scope), so a step-up
 /// authorization can be started reactively.
 fn auth_challenge_from_service_error(err: &ServiceError) -> Option<String> {
+    challenge_and_presented_token_from_service_error(err).map(|(challenge, _)| challenge)
+}
+
+fn challenge_and_presented_token_from_service_error(
+    err: &ServiceError,
+) -> Option<(String, Option<String>)> {
     let ServiceError::TransportSend(DynamicTransportError { error, .. }) = err else {
         return None;
     };
 
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err.auth_challenge().map(split_presented_token);
     }
 
     #[cfg(unix)]
@@ -589,7 +599,7 @@ fn auth_challenge_from_service_error(err: &ServiceError) -> Option<String> {
         .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
         )
     {
-        return http_err.auth_challenge().map(str::to_string);
+        return http_err.auth_challenge().map(split_presented_token);
     }
 
     None
@@ -768,24 +778,64 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
 const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
 
-type PresentedAccessToken = Arc<tokio::sync::RwLock<Option<String>>>;
+const PRESENTED_TOKEN_MARKER: &str = " goose-presented-token=\"";
 
-fn new_presented_access_token() -> PresentedAccessToken {
-    Arc::new(tokio::sync::RwLock::new(None))
+fn encode_presented_token(challenge: &str, token: Option<&str>) -> String {
+    let Some(token) = token else {
+        return challenge.to_string();
+    };
+    format!(
+        "{challenge}{PRESENTED_TOKEN_MARKER}{}\"",
+        urlencoding::encode(token)
+    )
 }
 
-/// Forwards streamable HTTP calls while remembering the Bearer token rmcp
-/// actually attached to the request. Step-up auth compares against that token,
-/// not whatever the shared store currently holds.
+fn split_presented_token(challenge: &str) -> (String, Option<String>) {
+    let Some((original, encoded)) = challenge.rsplit_once(PRESENTED_TOKEN_MARKER) else {
+        return (challenge.to_string(), None);
+    };
+    let encoded = encoded.strip_suffix('"').unwrap_or(encoded);
+    let token = urlencoding::decode(encoded)
+        .ok()
+        .map(|decoded| decoded.into_owned());
+    (original.to_string(), token)
+}
+
+/// Forwards streamable HTTP calls while attaching the Bearer token rmcp
+/// actually sent to any auth challenge. Step-up auth compares against that
+/// request's token, not a shared slot that overlapping requests can overwrite.
 #[derive(Clone)]
 struct RecordingHttpClient {
     inner: reqwest::Client,
-    presented_access_token: PresentedAccessToken,
 }
 
 impl RecordingHttpClient {
-    async fn record_presented_token(&self, auth_token: Option<&str>) {
-        *self.presented_access_token.write().await = auth_token.map(str::to_string);
+    fn attach_presented_token(
+        error: StreamableHttpError<reqwest::Error>,
+        auth_token: Option<String>,
+    ) -> StreamableHttpError<reqwest::Error> {
+        match error {
+            StreamableHttpError::AuthRequired(error) => {
+                StreamableHttpError::AuthRequired(AuthRequiredError::new(encode_presented_token(
+                    &error.www_authenticate_header,
+                    auth_token.as_deref(),
+                )))
+            }
+            StreamableHttpError::InsufficientScope(error) => {
+                StreamableHttpError::InsufficientScope(InsufficientScopeError::new(
+                    encode_presented_token(&error.www_authenticate_header, auth_token.as_deref()),
+                    error.required_scope,
+                ))
+            }
+            other => other,
+        }
+    }
+
+    fn map_recorded<T>(
+        result: Result<T, StreamableHttpError<reqwest::Error>>,
+        auth_token: Option<String>,
+    ) -> Result<T, StreamableHttpError<reqwest::Error>> {
+        result.map_err(|error| Self::attach_presented_token(error, auth_token))
     }
 }
 
@@ -799,10 +849,12 @@ impl StreamableHttpClient for RecordingHttpClient {
         auth_token: Option<String>,
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<(), StreamableHttpError<Self::Error>> {
-        self.record_presented_token(auth_token.as_deref()).await;
-        self.inner
-            .delete_session(uri, session_id, auth_token, custom_headers)
-            .await
+        Self::map_recorded(
+            self.inner
+                .delete_session(uri, session_id, auth_token.clone(), custom_headers)
+                .await,
+            auth_token,
+        )
     }
 
     async fn get_stream(
@@ -816,10 +868,18 @@ impl StreamableHttpClient for RecordingHttpClient {
         futures::stream::BoxStream<'static, Result<sse_stream::Sse, sse_stream::Error>>,
         StreamableHttpError<Self::Error>,
     > {
-        self.record_presented_token(auth_token.as_deref()).await;
-        self.inner
-            .get_stream(uri, session_id, last_event_id, auth_token, custom_headers)
-            .await
+        Self::map_recorded(
+            self.inner
+                .get_stream(
+                    uri,
+                    session_id,
+                    last_event_id,
+                    auth_token.clone(),
+                    custom_headers,
+                )
+                .await,
+            auth_token,
+        )
     }
 
     async fn get_stream_with_max_sse_event_size(
@@ -834,17 +894,19 @@ impl StreamableHttpClient for RecordingHttpClient {
         futures::stream::BoxStream<'static, Result<sse_stream::Sse, sse_stream::Error>>,
         StreamableHttpError<Self::Error>,
     > {
-        self.record_presented_token(auth_token.as_deref()).await;
-        self.inner
-            .get_stream_with_max_sse_event_size(
-                uri,
-                session_id,
-                last_event_id,
-                auth_token,
-                custom_headers,
-                max_sse_event_size,
-            )
-            .await
+        Self::map_recorded(
+            self.inner
+                .get_stream_with_max_sse_event_size(
+                    uri,
+                    session_id,
+                    last_event_id,
+                    auth_token.clone(),
+                    custom_headers,
+                    max_sse_event_size,
+                )
+                .await,
+            auth_token,
+        )
     }
 
     async fn post_message(
@@ -855,10 +917,12 @@ impl StreamableHttpClient for RecordingHttpClient {
         auth_token: Option<String>,
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
-        self.record_presented_token(auth_token.as_deref()).await;
-        self.inner
-            .post_message(uri, message, session_id, auth_token, custom_headers)
-            .await
+        Self::map_recorded(
+            self.inner
+                .post_message(uri, message, session_id, auth_token.clone(), custom_headers)
+                .await,
+            auth_token,
+        )
     }
 
     async fn post_message_with_max_sse_event_size(
@@ -870,17 +934,19 @@ impl StreamableHttpClient for RecordingHttpClient {
         custom_headers: HashMap<HeaderName, HeaderValue>,
         max_sse_event_size: usize,
     ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
-        self.record_presented_token(auth_token.as_deref()).await;
-        self.inner
-            .post_message_with_max_sse_event_size(
-                uri,
-                message,
-                session_id,
-                auth_token,
-                custom_headers,
-                max_sse_event_size,
-            )
-            .await
+        Self::map_recorded(
+            self.inner
+                .post_message_with_max_sse_event_size(
+                    uri,
+                    message,
+                    session_id,
+                    auth_token.clone(),
+                    custom_headers,
+                    max_sse_event_size,
+                )
+                .await,
+            auth_token,
+        )
     }
 }
 
@@ -911,7 +977,6 @@ async fn connect_with_auth(
     capabilities: GooseMcpClientCapabilities,
     roots_dir: &std::path::Path,
     extension_manager: Weak<ExtensionManager>,
-    presented_access_token: PresentedAccessToken,
 ) -> ExtensionResult<McpClient> {
     let mut auth_headers = HeaderMap::new();
     auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
@@ -936,7 +1001,6 @@ async fn connect_with_auth(
     let auth_client = AuthClient::new(
         RecordingHttpClient {
             inner: auth_http_client,
-            presented_access_token,
         },
         auth_manager,
     );
@@ -1006,15 +1070,10 @@ struct OAuthStepUpClient {
     params: tokio::sync::RwLock<StreamableHttpConnectParams>,
     step_up_lock: tokio::sync::Mutex<()>,
     notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
-    presented_access_token: PresentedAccessToken,
 }
 
 impl OAuthStepUpClient {
-    async fn new(
-        inner: McpClient,
-        params: StreamableHttpConnectParams,
-        presented_access_token: PresentedAccessToken,
-    ) -> Self {
+    async fn new(inner: McpClient, params: StreamableHttpConnectParams) -> Self {
         let server_info = inner.get_info().cloned();
         let notification_subscribers = Arc::new(Mutex::new(Vec::new()));
         Self::forward_notifications(&inner, notification_subscribers.clone()).await;
@@ -1024,7 +1083,6 @@ impl OAuthStepUpClient {
             params: tokio::sync::RwLock::new(params),
             step_up_lock: tokio::sync::Mutex::new(()),
             notification_subscribers,
-            presented_access_token,
         }
     }
 
@@ -1044,9 +1102,9 @@ impl OAuthStepUpClient {
     async fn step_up_reconnect(
         &self,
         challenge: String,
+        rejected_access_token: Option<String>,
     ) -> Result<(), crate::agents::mcp_client::Error> {
         let params = self.params.read().await;
-        let rejected_access_token = self.presented_access_token.read().await.clone();
         let auth_manager = oauth_flow_with_challenge(
             &params.uri,
             &params.name,
@@ -1073,7 +1131,6 @@ impl OAuthStepUpClient {
             params.capabilities.clone(),
             &params.roots_dir,
             params.extension_manager.clone(),
-            self.presented_access_token.clone(),
         )
         .await
         .map_err(|e| {
@@ -1108,7 +1165,9 @@ impl OAuthStepUpClient {
         };
         match first {
             Err(err) => {
-                if let Some(challenge) = auth_challenge_from_service_error(&err) {
+                if let Some((challenge, presented)) =
+                    challenge_and_presented_token_from_service_error(&err)
+                {
                     let _step_up_guard = self.step_up_lock.lock().await;
                     let retry = {
                         let client = self.inner.read().await;
@@ -1119,7 +1178,7 @@ impl OAuthStepUpClient {
                         Err(retry_err)
                             if auth_challenge_from_service_error(&retry_err).is_some() =>
                         {
-                            self.step_up_reconnect(challenge).await?;
+                            self.step_up_reconnect(challenge, presented).await?;
                             let client = self.inner.read().await;
                             op(&client).await
                         }
@@ -1374,7 +1433,6 @@ async fn create_streamable_http_client(
         .await
         {
             Ok(auth_manager) => {
-                let presented = new_presented_access_token();
                 let auth_result = connect_with_auth(
                     auth_manager,
                     action_required.clone(),
@@ -1386,7 +1444,6 @@ async fn create_streamable_http_client(
                     capabilities.clone(),
                     roots_dir,
                     extension_manager.clone(),
-                    presented.clone(),
                 )
                 .await;
 
@@ -1404,12 +1461,12 @@ async fn create_streamable_http_client(
                         );
                     } else {
                         return Ok(Box::new(
-                            OAuthStepUpClient::new(auth_result?, connect_params, presented).await,
+                            OAuthStepUpClient::new(auth_result?, connect_params).await,
                         ));
                     }
                 } else {
                     return Ok(Box::new(
-                        OAuthStepUpClient::new(auth_result?, connect_params, presented).await,
+                        OAuthStepUpClient::new(auth_result?, connect_params).await,
                     ));
                 }
             }
@@ -1468,7 +1525,6 @@ async fn create_streamable_http_client(
         .await
         {
             Ok(auth_manager) => {
-                let presented = new_presented_access_token();
                 let client = connect_with_auth(
                     auth_manager,
                     action_required,
@@ -1480,11 +1536,10 @@ async fn create_streamable_http_client(
                     capabilities,
                     roots_dir,
                     extension_manager,
-                    presented.clone(),
                 )
                 .await?;
                 Ok(Box::new(
-                    OAuthStepUpClient::new(client, connect_params, presented).await,
+                    OAuthStepUpClient::new(client, connect_params).await,
                 ))
             }
             Err(e) => {
@@ -1497,7 +1552,7 @@ async fn create_streamable_http_client(
         }
     } else {
         Ok(Box::new(
-            OAuthStepUpClient::new(client_res?, connect_params, new_presented_access_token()).await,
+            OAuthStepUpClient::new(client_res?, connect_params).await,
         ))
     }
 }
@@ -4627,7 +4682,6 @@ mod tests {
             capabilities,
             temp_dir.path(),
             Weak::new(),
-            new_presented_access_token(),
         )
         .await;
 
@@ -4648,18 +4702,28 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn recording_http_client_tracks_the_token_attached_to_the_request() {
-        let presented = new_presented_access_token();
-        let client = RecordingHttpClient {
-            inner: reqwest::Client::new(),
-            presented_access_token: presented.clone(),
-        };
+    #[test]
+    fn overlapping_challenges_keep_the_token_from_the_failing_request() {
+        let first = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t1"));
+        let second = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t2"));
 
-        client.record_presented_token(Some("t1")).await;
-        assert_eq!(presented.read().await.as_deref(), Some("t1"));
-
-        client.record_presented_token(Some("t2")).await;
-        assert_eq!(presented.read().await.as_deref(), Some("t2"));
+        assert_eq!(
+            split_presented_token(&first),
+            (
+                r#"Bearer error="invalid_token""#.to_string(),
+                Some("t1".to_string())
+            )
+        );
+        assert_eq!(
+            split_presented_token(&second),
+            (
+                r#"Bearer error="invalid_token""#.to_string(),
+                Some("t2".to_string())
+            )
+        );
+        assert_ne!(
+            split_presented_token(&first).1,
+            split_presented_token(&second).1
+        );
     }
 }
