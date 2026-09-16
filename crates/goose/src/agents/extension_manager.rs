@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use futures::stream::{self, FuturesUnordered, StreamExt};
 use futures::Stream;
 use futures::{future, FutureExt};
+use oauth2::TokenResponse;
 use once_cell::sync::Lazy;
 use rmcp::model::ProtocolVersion;
 use rmcp::service::{ClientInitializeError, ServiceError};
@@ -624,6 +625,31 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         return false;
     }
 
+    let rejected_access_token =
+        challenge_and_presented_token_from_init_error(err).and_then(|(_, token)| token);
+    let Some(rejected_access_token) = rejected_access_token else {
+        return false;
+    };
+
+    let _lock = match crate::oauth::acquire_oauth_flow_lock(name).await {
+        Ok(lock) => lock,
+        Err(e) => {
+            warn!("[OAuth:{name}] error locking credentials before clear: {e}");
+            return false;
+        }
+    };
+
+    let stored_token = credential_store
+        .load()
+        .await
+        .ok()
+        .flatten()
+        .and_then(|stored| stored.token_response)
+        .map(|token| token.access_token().secret().to_string());
+    if stored_token.as_deref() != Some(rejected_access_token.as_str()) {
+        return false;
+    }
+
     if let Err(e) = credential_store.clear().await {
         warn!(
             "[OAuth:{}] error clearing rejected credentials: {}",
@@ -631,6 +657,32 @@ async fn clear_credentials_on_post_refresh_auth_failure(
         );
     }
     true
+}
+
+fn challenge_and_presented_token_from_init_error(
+    err: &ClientInitializeError,
+) -> Option<(String, Option<String>)> {
+    let ClientInitializeError::TransportError {
+        error: DynamicTransportError { error, .. },
+        ..
+    } = err
+    else {
+        return None;
+    };
+
+    if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
+        return http_err.auth_challenge().map(split_presented_token);
+    }
+
+    #[cfg(unix)]
+    if let Some(http_err) = error
+        .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
+        )
+    {
+        return http_err.auth_challenge().map(split_presented_token);
+    }
+
+    None
 }
 
 /// Merge environment variables from direct envs and keychain-stored env_keys
@@ -4487,10 +4539,16 @@ mod tests {
             .await
             .unwrap();
 
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
         let err = streamable_err(
             rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
                 rmcp::transport::streamable_http_client::AuthRequiredError::new(
-                    "Bearer error=\"invalid_token\"".to_string(),
+                    encode_presented_token(
+                        "Bearer error=\"invalid_token\"",
+                        Some("rejected-token"),
+                    ),
                 ),
             ),
         );
@@ -4498,6 +4556,47 @@ mod tests {
 
         assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
         assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_post_refresh_auth_failure_does_not_clear_a_successor_grant() {
+        use rmcp::transport::auth::{
+            InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+        };
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "successor-token",
+            "token_type": "bearer",
+        }))
+        .expect("valid fake token JSON");
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(StoredCredentials::new(
+                "test-client".to_string(),
+                Some(token_response),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
+        let err = streamable_err(
+            rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(
+                rmcp::transport::streamable_http_client::AuthRequiredError::new(
+                    encode_presented_token(
+                        "Bearer error=\"invalid_token\"",
+                        Some("rejected-token"),
+                    ),
+                ),
+            ),
+        );
+        let error = ExtensionError::InitializeError(err);
+
+        assert!(!clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
+        assert!(store.load().await.unwrap().is_some());
     }
 
     #[tokio::test]
