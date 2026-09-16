@@ -1,4 +1,6 @@
-use rmcp::transport::auth::{AuthError, CredentialStore, StoredCredentials};
+use rmcp::transport::auth::{
+    AuthError, CredentialRefreshGuard, CredentialStore, StoredCredentials,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
@@ -91,6 +93,14 @@ impl CredentialStore for GooseCredentialStore {
         config
             .delete_secret(&key)
             .map_err(|e| AuthError::InternalError(format!("Failed to clear credentials: {}", e)))
+    }
+
+    async fn acquire_refresh_guard(&self) -> Result<Option<CredentialRefreshGuard>, AuthError> {
+        let lock = super::acquire_oauth_flow_lock(&self.name)
+            .await
+            .map_err(|e| AuthError::CredentialStoreError(e.to_string()))?;
+        self.invalidate_cache();
+        Ok(Some(CredentialRefreshGuard::new(lock)))
     }
 }
 

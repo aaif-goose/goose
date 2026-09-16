@@ -1,15 +1,15 @@
 use anyhow::Result;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use chrono::{DateTime, Utc};
-use futures::stream::{self, FuturesUnordered, StreamExt};
 use futures::Stream;
-use futures::{future, FutureExt};
-use oauth2::TokenResponse;
+use futures::stream::{self, FuturesUnordered, StreamExt};
+use futures::{FutureExt, future};
 use once_cell::sync::Lazy;
 use rmcp::model::ProtocolVersion;
 use rmcp::service::{ClientInitializeError, ServiceError};
 use rmcp::transport::streamable_http_client::{
-    StreamableHttpClientTransportConfig, StreamableHttpError,
+    StreamableHttpClient, StreamableHttpClientTransportConfig, StreamableHttpError,
+    StreamableHttpPostResponse,
 };
 use rmcp::transport::{ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport};
 use std::collections::HashMap;
@@ -23,15 +23,15 @@ use std::time::Duration;
 use tempfile::tempdir;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
 use super::container::Container;
 use super::extension::{
-    ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
-    PLATFORM_EXTENSIONS,
+    ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PLATFORM_EXTENSIONS,
+    PlatformExtensionContext,
 };
 use super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use super::types::SharedProvider;
@@ -45,15 +45,15 @@ use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
-use crate::config::{get_all_extensions, Config};
+use crate::config::{Config, get_all_extensions};
 use crate::oauth::{
-    oauth_flow, oauth_flow_with_challenge, GooseCredentialStore, StaticOAuthClientConfig,
+    GooseCredentialStore, StaticOAuthClientConfig, oauth_flow, oauth_flow_with_challenge,
 };
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ResourceContents,
-    ServerInfo, ServerNotification, Tool,
+    CallToolRequestParams, CallToolResult, ClientJsonRpcMessage, ContentBlock, ErrorCode,
+    ErrorData, GetPromptResult, ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource,
+    ResourceContents, ServerInfo, ServerNotification, Tool,
 };
 use rmcp::transport::auth::{AuthClient, CredentialStore};
 use schemars::_private::NoSerialize;
@@ -768,14 +768,120 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
 const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
 
-async fn presented_access_token(name: &str) -> Option<String> {
-    GooseCredentialStore::new(name.to_string())
-        .load()
-        .await
-        .ok()
-        .flatten()
-        .and_then(|stored| stored.token_response)
-        .map(|token| token.access_token().secret().to_string())
+type PresentedAccessToken = Arc<tokio::sync::RwLock<Option<String>>>;
+
+fn new_presented_access_token() -> PresentedAccessToken {
+    Arc::new(tokio::sync::RwLock::new(None))
+}
+
+/// Forwards streamable HTTP calls while remembering the Bearer token rmcp
+/// actually attached to the request. Step-up auth compares against that token,
+/// not whatever the shared store currently holds.
+#[derive(Clone)]
+struct RecordingHttpClient {
+    inner: reqwest::Client,
+    presented_access_token: PresentedAccessToken,
+}
+
+impl RecordingHttpClient {
+    async fn record_presented_token(&self, auth_token: Option<&str>) {
+        *self.presented_access_token.write().await = auth_token.map(str::to_string);
+    }
+}
+
+impl StreamableHttpClient for RecordingHttpClient {
+    type Error = reqwest::Error;
+
+    async fn delete_session(
+        &self,
+        uri: Arc<str>,
+        session_id: Arc<str>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<(), StreamableHttpError<Self::Error>> {
+        self.record_presented_token(auth_token.as_deref()).await;
+        self.inner
+            .delete_session(uri, session_id, auth_token, custom_headers)
+            .await
+    }
+
+    async fn get_stream(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<sse_stream::Sse, sse_stream::Error>>,
+        StreamableHttpError<Self::Error>,
+    > {
+        self.record_presented_token(auth_token.as_deref()).await;
+        self.inner
+            .get_stream(uri, session_id, last_event_id, auth_token, custom_headers)
+            .await
+    }
+
+    async fn get_stream_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<sse_stream::Sse, sse_stream::Error>>,
+        StreamableHttpError<Self::Error>,
+    > {
+        self.record_presented_token(auth_token.as_deref()).await;
+        self.inner
+            .get_stream_with_max_sse_event_size(
+                uri,
+                session_id,
+                last_event_id,
+                auth_token,
+                custom_headers,
+                max_sse_event_size,
+            )
+            .await
+    }
+
+    async fn post_message(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        self.record_presented_token(auth_token.as_deref()).await;
+        self.inner
+            .post_message(uri, message, session_id, auth_token, custom_headers)
+            .await
+    }
+
+    async fn post_message_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        self.record_presented_token(auth_token.as_deref()).await;
+        self.inner
+            .post_message_with_max_sse_event_size(
+                uri,
+                message,
+                session_id,
+                auth_token,
+                custom_headers,
+                max_sse_event_size,
+            )
+            .await
+    }
 }
 
 fn should_retry_legacy_after_empty_discover(
@@ -805,6 +911,7 @@ async fn connect_with_auth(
     capabilities: GooseMcpClientCapabilities,
     roots_dir: &std::path::Path,
     extension_manager: Weak<ExtensionManager>,
+    presented_access_token: PresentedAccessToken,
 ) -> ExtensionResult<McpClient> {
     let mut auth_headers = HeaderMap::new();
     auth_headers.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
@@ -826,7 +933,13 @@ async fn connect_with_auth(
     let auth_http_client = auth_client_builder
         .build()
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
-    let auth_client = AuthClient::new(auth_http_client, auth_manager);
+    let auth_client = AuthClient::new(
+        RecordingHttpClient {
+            inner: auth_http_client,
+            presented_access_token,
+        },
+        auth_manager,
+    );
     let transport = StreamableHttpClientTransport::with_client(
         auth_client.clone(),
         StreamableHttpClientTransportConfig::with_uri(uri),
@@ -893,14 +1006,14 @@ struct OAuthStepUpClient {
     params: tokio::sync::RwLock<StreamableHttpConnectParams>,
     step_up_lock: tokio::sync::Mutex<()>,
     notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
-    presented_access_token: tokio::sync::RwLock<Option<String>>,
+    presented_access_token: PresentedAccessToken,
 }
 
 impl OAuthStepUpClient {
     async fn new(
         inner: McpClient,
         params: StreamableHttpConnectParams,
-        presented_access_token: Option<String>,
+        presented_access_token: PresentedAccessToken,
     ) -> Self {
         let server_info = inner.get_info().cloned();
         let notification_subscribers = Arc::new(Mutex::new(Vec::new()));
@@ -911,7 +1024,7 @@ impl OAuthStepUpClient {
             params: tokio::sync::RwLock::new(params),
             step_up_lock: tokio::sync::Mutex::new(()),
             notification_subscribers,
-            presented_access_token: tokio::sync::RwLock::new(presented_access_token),
+            presented_access_token,
         }
     }
 
@@ -960,6 +1073,7 @@ impl OAuthStepUpClient {
             params.capabilities.clone(),
             &params.roots_dir,
             params.extension_manager.clone(),
+            self.presented_access_token.clone(),
         )
         .await
         .map_err(|e| {
@@ -971,7 +1085,6 @@ impl OAuthStepUpClient {
         })?;
         Self::forward_notifications(&client, self.notification_subscribers.clone()).await;
         *self.inner.write().await = client;
-        *self.presented_access_token.write().await = presented_access_token(&params.name).await;
         Ok(())
     }
 
@@ -1261,7 +1374,7 @@ async fn create_streamable_http_client(
         .await
         {
             Ok(auth_manager) => {
-                let presented = presented_access_token(name).await;
+                let presented = new_presented_access_token();
                 let auth_result = connect_with_auth(
                     auth_manager,
                     action_required.clone(),
@@ -1273,6 +1386,7 @@ async fn create_streamable_http_client(
                     capabilities.clone(),
                     roots_dir,
                     extension_manager.clone(),
+                    presented.clone(),
                 )
                 .await;
 
@@ -1354,7 +1468,7 @@ async fn create_streamable_http_client(
         .await
         {
             Ok(auth_manager) => {
-                let presented = presented_access_token(name).await;
+                let presented = new_presented_access_token();
                 let client = connect_with_auth(
                     auth_manager,
                     action_required,
@@ -1366,6 +1480,7 @@ async fn create_streamable_http_client(
                     capabilities,
                     roots_dir,
                     extension_manager,
+                    presented.clone(),
                 )
                 .await?;
                 Ok(Box::new(
@@ -1382,7 +1497,7 @@ async fn create_streamable_http_client(
         }
     } else {
         Ok(Box::new(
-            OAuthStepUpClient::new(client_res?, connect_params, None).await,
+            OAuthStepUpClient::new(client_res?, connect_params, new_presented_access_token()).await,
         ))
     }
 }
@@ -2970,7 +3085,7 @@ mod tests {
         }
     }
     use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
-    use rmcp::{object, ServiceError as Error};
+    use rmcp::{ServiceError as Error, object};
 
     use rmcp::model::ListPromptsResult;
     use rmcp::model::ListResourcesResult;
@@ -3386,12 +3501,16 @@ mod tests {
 
         let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(!tool_names.iter().any(|name| name == "test_extension__tool")); // Default unavailable
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__available_tool"));
-        assert!(!tool_names
-            .iter()
-            .any(|name| name == "test_extension__hidden_tool"));
+        assert!(
+            tool_names
+                .iter()
+                .any(|name| name == "test_extension__available_tool")
+        );
+        assert!(
+            !tool_names
+                .iter()
+                .any(|name| name == "test_extension__hidden_tool")
+        );
         assert!(tool_names.len() == 1);
     }
 
@@ -3416,15 +3535,21 @@ mod tests {
 
         let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(tool_names.iter().any(|name| name == "test_extension__tool"));
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__available_tool"));
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__hidden_tool"));
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__render_chart"));
+        assert!(
+            tool_names
+                .iter()
+                .any(|name| name == "test_extension__available_tool")
+        );
+        assert!(
+            tool_names
+                .iter()
+                .any(|name| name == "test_extension__hidden_tool")
+        );
+        assert!(
+            tool_names
+                .iter()
+                .any(|name| name == "test_extension__render_chart")
+        );
         assert!(tool_names.len() == 4);
     }
 
@@ -4512,6 +4637,7 @@ mod tests {
             capabilities,
             temp_dir.path(),
             Weak::new(),
+            new_presented_access_token(),
         )
         .await;
 
@@ -4530,5 +4656,20 @@ mod tests {
             header_found,
             "custom header x-api-key was not forwarded through the OAuth connection path"
         );
+    }
+
+    #[tokio::test]
+    async fn recording_http_client_tracks_the_token_attached_to_the_request() {
+        let presented = new_presented_access_token();
+        let client = RecordingHttpClient {
+            inner: reqwest::Client::new(),
+            presented_access_token: presented.clone(),
+        };
+
+        client.record_presented_token(Some("t1")).await;
+        assert_eq!(presented.read().await.as_deref(), Some("t1"));
+
+        client.record_presented_token(Some("t2")).await;
+        assert_eq!(presented.read().await.as_deref(), Some("t2"));
     }
 }

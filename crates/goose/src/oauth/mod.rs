@@ -16,11 +16,12 @@ use rmcp::transport::auth::{
 use rmcp::transport::AuthorizationManager;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::thread::ThreadId;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{oneshot, Mutex};
 use tracing::warn;
@@ -312,11 +313,77 @@ fn lock_oauth_flow(name: &str) -> Result<File, anyhow::Error> {
     Ok(file)
 }
 
-async fn acquire_oauth_flow_lock(name: &str) -> Result<File, anyhow::Error> {
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub(crate) enum OAuthLockOwner {
+    Task(tokio::task::Id),
+    Thread(ThreadId),
+}
+
+fn current_oauth_lock_owner() -> OAuthLockOwner {
+    match tokio::task::try_id() {
+        Some(task_id) => OAuthLockOwner::Task(task_id),
+        None => OAuthLockOwner::Thread(std::thread::current().id()),
+    }
+}
+
+static HELD_OAUTH_FLOW_LOCKS: OnceLock<StdMutex<HashMap<OAuthLockOwner, HashSet<String>>>> =
+    OnceLock::new();
+
+fn held_oauth_flow_locks() -> &'static StdMutex<HashMap<OAuthLockOwner, HashSet<String>>> {
+    HELD_OAUTH_FLOW_LOCKS.get_or_init(|| StdMutex::new(HashMap::new()))
+}
+
+pub(crate) enum OAuthFlowLock {
+    Held {
+        name: String,
+        owner: OAuthLockOwner,
+        _file: File,
+    },
+    Nested,
+}
+
+impl Drop for OAuthFlowLock {
+    fn drop(&mut self) {
+        let OAuthFlowLock::Held { name, owner, .. } = self else {
+            return;
+        };
+        if let Ok(mut held) = held_oauth_flow_locks().lock() {
+            if let Some(names) = held.get_mut(owner) {
+                names.remove(name);
+                if names.is_empty() {
+                    held.remove(owner);
+                }
+            }
+        }
+    }
+}
+
+pub(crate) async fn acquire_oauth_flow_lock(name: &str) -> Result<OAuthFlowLock, anyhow::Error> {
+    let owner = current_oauth_lock_owner();
+    {
+        let held = held_oauth_flow_locks().lock().unwrap();
+        if held.get(&owner).is_some_and(|names| names.contains(name)) {
+            return Ok(OAuthFlowLock::Nested);
+        }
+    }
+
     let lock_name = name.to_string();
-    tokio::task::spawn_blocking(move || lock_oauth_flow(&lock_name))
+    let file = tokio::task::spawn_blocking(move || lock_oauth_flow(&lock_name))
         .await
-        .map_err(|e| anyhow::anyhow!("OAuth flow lock task failed: {e}"))?
+        .map_err(|e| anyhow::anyhow!("OAuth flow lock task failed: {e}"))??;
+
+    held_oauth_flow_locks()
+        .lock()
+        .unwrap()
+        .entry(owner)
+        .or_default()
+        .insert(name.to_string());
+
+    Ok(OAuthFlowLock::Held {
+        name: name.to_string(),
+        owner,
+        _file: file,
+    })
 }
 
 fn access_token_needs_refresh(stored_credentials: &StoredCredentials) -> bool {
@@ -1117,6 +1184,15 @@ mod tests {
         );
         assert!(
             !challenge_can_reuse_stored_grant(
+                Some("new-token"),
+                Some(&refreshed),
+                Some(invalid_token),
+                "https://mcp.example",
+            ),
+            "the token actually sent on the failing request must not be treated as a successor"
+        );
+        assert!(
+            !challenge_can_reuse_stored_grant(
                 Some("old-token"),
                 Some(&refreshed),
                 Some(extra_scope),
@@ -1176,6 +1252,24 @@ mod tests {
         );
         drop(held);
         assert!(contender.try_lock_exclusive().is_ok());
+    }
+
+    #[tokio::test]
+    async fn oauth_flow_lock_is_reentrant_for_the_same_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
+
+        let outer = acquire_oauth_flow_lock("Pi Swisssync").await.unwrap();
+        let inner = tokio::time::timeout(
+            Duration::from_secs(2),
+            acquire_oauth_flow_lock("Pi Swisssync"),
+        )
+        .await
+        .expect("nested OAuth lock acquire deadlocked")
+        .unwrap();
+        drop(inner);
+        drop(outer);
     }
 
     #[tokio::test]
