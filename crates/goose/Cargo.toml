@@ -256,7 +256,7 @@ libc = { version = "0.2.182", default-features = false, features = ["std"] }
 serial_test = { workspace = true }
 mockall = { version = "0.15", default-features = false }
 wiremock = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-util = { workspace = true, features = ["compat"] }
 dotenvy = { workspace = true }
 ctor = { version = "1.0", default-features = false, features = ["proc_macro"] }
