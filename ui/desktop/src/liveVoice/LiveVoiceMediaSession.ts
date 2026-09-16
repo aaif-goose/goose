@@ -108,7 +108,7 @@ export class LiveVoiceMediaSession {
         })
       );
     } catch {
-      // Greeting failure must not end an otherwise healthy Live call.
+      // Greeting failure must not end an otherwise healthy Live voice interaction.
     }
   }
 

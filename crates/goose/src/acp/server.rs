@@ -1913,9 +1913,9 @@ impl GooseAcpAgent {
                     );
                     agent_client_protocol::Error::invalid_params().data(message)
                 }
-                StartRunError::LiveCallExists => agent_client_protocol::Error::invalid_params()
+                StartRunError::LiveVoiceInteractionExists => agent_client_protocol::Error::invalid_params()
                     .data("session already has an active Live run"),
-                StartRunError::LiveCallMissing => unreachable!("prompt runs do not require Live"),
+                StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
             })?;
         Ok(())
     }
@@ -2629,7 +2629,7 @@ impl GooseAcpAgent {
             .insert(session_id.to_string());
 
         self.active_runs.cancel_agent_run(session_id);
-        self.live_voice.stop_session_call(session_id).await;
+        self.live_voice.stop_session_interaction(session_id).await;
 
         let mut sessions = self.sessions.lock().await;
         sessions.remove(session_id);

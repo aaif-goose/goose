@@ -48,34 +48,36 @@ impl ProviderConnection for UndeliveredConnection {
 }
 
 #[tokio::test]
-async fn a_call_owns_and_stops_its_provider_connection() {
+async fn a_live_voice_interaction_owns_and_stops_its_provider_connection() {
     let (stopped, did_stop) = oneshot::channel();
-    let mut call = LiveVoiceCall::new(
+    let mut interaction = LiveVoiceInteraction::new(
         "test-session".into(),
         Box::new(TestConnection {
             stopped: Some(stopped),
         }),
     );
 
-    call.cleanup_provider().await.unwrap();
+    interaction.cleanup_provider().await.unwrap();
     did_stop.await.unwrap();
 }
 
 #[tokio::test]
 async fn an_undelivered_delegation_update_notifies_the_user() {
-    let mut call = LiveVoiceCall::new("test-session".into(), Box::new(UndeliveredConnection));
+    let mut interaction =
+        LiveVoiceInteraction::new("test-session".into(), Box::new(UndeliveredConnection));
     let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
     let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
         notice_tx.send(message).unwrap();
     });
 
-    call.send_delegation_update(
-        &transcript_publisher,
-        "delegation-1".into(),
-        "result".into(),
-    )
-    .await
-    .unwrap();
+    interaction
+        .send_delegation_update(
+            &transcript_publisher,
+            "delegation-1".into(),
+            "result".into(),
+        )
+        .await
+        .unwrap();
 
     let notice = notice_rx.recv().await.unwrap();
     assert_eq!(notice.role, Role::Assistant);
@@ -87,18 +89,18 @@ async fn an_undelivered_delegation_update_notifies_the_user() {
 
 #[test]
 fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
-    let mut call = LiveVoiceCall::new(
+    let mut interaction = LiveVoiceInteraction::new(
         "test-session".into(),
         Box::new(TestConnection { stopped: None }),
     );
-    call.record_transcript("1".into(), Role::Assistant, "ready", 5);
-    call.record_transcript("2".into(), Role::User, "do ", 10);
-    call.record_transcript("3".into(), Role::User, "this", 20);
-    call.record_transcript("4".into(), Role::Assistant, "crossing", 25);
-    call.record_transcript("5".into(), Role::Assistant, "later", 40);
+    interaction.record_transcript("1".into(), Role::Assistant, "ready", 5);
+    interaction.record_transcript("2".into(), Role::User, "do ", 10);
+    interaction.record_transcript("3".into(), Role::User, "this", 20);
+    interaction.record_transcript("4".into(), Role::Assistant, "crossing", 25);
+    interaction.record_transcript("5".into(), Role::Assistant, "later", 40);
 
     let DelegationDecision::Accept(input) =
-        call.handle_delegation_request("event-1".into(), "delegation-1".into(), 20)
+        interaction.handle_delegation_request("event-1".into(), "delegation-1".into(), 20)
     else {
         panic!("delegation should be accepted");
     };
@@ -106,16 +108,20 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
         input,
         "Live conversation context:\nGPT-Live: ready\nUser: do this"
     );
-    call.transcript.mark_context_sent_to_main_agent_through(20);
+    interaction
+        .transcript
+        .mark_context_sent_to_main_agent_through(20);
     assert!(matches!(
-        call.handle_delegation_request("event-1".into(), "delegation-1".into(), 20),
+        interaction.handle_delegation_request("event-1".into(), "delegation-1".into(), 20),
         DelegationDecision::Ignore
     ));
 
-    call.record_transcript("6".into(), Role::User, " late detail", 20)
+    interaction
+        .record_transcript("6".into(), Role::User, " late detail", 20)
         .unwrap();
     assert_eq!(
-        call.transcript
+        interaction
+            .transcript
             .raw_transcript_entries_waiting_to_save()
             .last()
             .unwrap()
@@ -123,7 +129,7 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
         "crossinglater"
     );
     let DelegationDecision::Accept(continuation) =
-        call.handle_delegation_request("event-2".into(), "delegation-2".into(), 20)
+        interaction.handle_delegation_request("event-2".into(), "delegation-2".into(), 20)
     else {
         panic!("continuation should be accepted");
     };
@@ -131,16 +137,18 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
         continuation,
         "Live conversation context:\nUser: late detail"
     );
-    call.transcript.mark_context_sent_to_main_agent_through(20);
+    interaction
+        .transcript
+        .mark_context_sent_to_main_agent_through(20);
 
     assert!(matches!(
-        call.handle_delegation_request("event-3".into(), "delegation-3".into(), 19),
+        interaction.handle_delegation_request("event-3".into(), "delegation-3".into(), 19),
         DelegationDecision::Reject(_)
     ));
 
-    call.record_transcript("7".into(), Role::User, "again", 50);
+    interaction.record_transcript("7".into(), Role::User, "again", 50);
     let DelegationDecision::Accept(next) =
-        call.handle_delegation_request("event-4".into(), "delegation-4".into(), 50)
+        interaction.handle_delegation_request("event-4".into(), "delegation-4".into(), 50)
     else {
         panic!("later continuation should be accepted");
     };
@@ -148,9 +156,11 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
         next,
         "Live conversation context:\nGPT-Live: crossinglater\nUser: again"
     );
-    call.transcript.mark_context_sent_to_main_agent_through(50);
+    interaction
+        .transcript
+        .mark_context_sent_to_main_agent_through(50);
 
-    let mut missing_user = LiveVoiceCall::new(
+    let mut missing_user = LiveVoiceInteraction::new(
         "test-session".into(),
         Box::new(TestConnection { stopped: None }),
     );
@@ -163,55 +173,67 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
 
 #[test]
 fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff() {
-    let mut call = LiveVoiceCall::new(
+    let mut interaction = LiveVoiceInteraction::new(
         "test-session".into(),
         Box::new(TestConnection { stopped: None }),
     );
-    call.record_transcript("1".into(), Role::Assistant, "Anything else?", 10);
-    call.record_transcript("2".into(), Role::User, "No thanks", 20);
+    interaction.record_transcript("1".into(), Role::Assistant, "Anything else?", 10);
+    interaction.record_transcript("2".into(), Role::User, "No thanks", 20);
 
-    let context = call.transcript.context_waiting_for_main_agent().unwrap();
+    let context = interaction
+        .transcript
+        .context_waiting_for_main_agent()
+        .unwrap();
     assert_eq!(
         context,
         "Live conversation context:\nGPT-Live: Anything else?\nUser: No thanks"
     );
     assert_eq!(
-        call.transcript.context_waiting_for_main_agent().unwrap(),
+        interaction
+            .transcript
+            .context_waiting_for_main_agent()
+            .unwrap(),
         context
     );
 
-    call.record_transcript("3".into(), Role::User, "Already shared", 30);
-    call.transcript.mark_context_sent_to_main_agent_through(30);
-    assert!(call.transcript.context_waiting_for_main_agent().is_none());
+    interaction.record_transcript("3".into(), Role::User, "Already shared", 30);
+    interaction
+        .transcript
+        .mark_context_sent_to_main_agent_through(30);
+    assert!(interaction
+        .transcript
+        .context_waiting_for_main_agent()
+        .is_none());
 }
 
 #[test]
 fn transcript_grouping_projects_deltas_and_finalizes_messages() {
-    let mut call = LiveVoiceCall::new(
+    let mut interaction = LiveVoiceInteraction::new(
         "test-session".into(),
         Box::new(TestConnection { stopped: None }),
     );
-    let first = call
+    let first = interaction
         .record_transcript("1".into(), Role::User, "hello", 10)
         .unwrap();
     assert!(first.is_user_visible());
     assert!(!first.is_agent_visible());
     let message_id = first.id.clone();
-    let second = call
+    let second = interaction
         .record_transcript("2".into(), Role::User, " world", 20)
         .unwrap();
     assert_eq!(second.id, message_id);
     assert_eq!(second.as_concat_text(), " world");
 
-    assert!(call
+    assert!(interaction
         .record_transcript("2".into(), Role::User, " world", 20)
         .is_none());
 
-    let role_change = call
+    let role_change = interaction
         .record_transcript("3".into(), Role::Assistant, "hello", 30)
         .unwrap();
     assert_eq!(
-        call.transcript
+        interaction
+            .transcript
             .raw_transcript_entries_waiting_to_save()
             .last()
             .unwrap()

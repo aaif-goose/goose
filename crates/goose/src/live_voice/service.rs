@@ -1,4 +1,6 @@
-use super::call::{LiveCallRuntime, LiveMainAgent, LiveVoiceCall, LiveVoiceCallId};
+use super::interaction::{
+    LiveMainAgent, LiveVoiceInteraction, LiveVoiceInteractionId, LiveVoiceInteractionRuntime,
+};
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
@@ -23,21 +25,21 @@ const LIVE_VOICE_ENABLED_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENABLED";
 #[cfg(feature = "live-voice")]
 const LIVE_VOICE_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE";
 
-type LiveCallControls = Arc<Mutex<HashMap<String, Arc<LiveCallControl>>>>;
+type LiveVoiceInteractionControls = Arc<Mutex<HashMap<String, Arc<LiveVoiceInteractionControl>>>>;
 pub(crate) type LiveVoiceTranscriptPublisher = Arc<dyn Fn(Message) + Send + Sync>;
 type LiveVoiceResolver =
     Arc<dyn Fn() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> + Send + Sync>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LiveVoiceCallCompletion {
+pub(crate) enum LiveVoiceInteractionCompletion {
     Stopped,
     Failed,
 }
 
-pub(crate) struct StartLiveVoiceCallResult {
-    pub(crate) call_id: LiveVoiceCallId,
+pub(crate) struct StartLiveVoiceInteractionResult {
+    pub(crate) interaction_id: LiveVoiceInteractionId,
     pub(crate) answer: WebRtcAnswer,
-    pub(crate) completion_rx: watch::Receiver<Option<LiveVoiceCallCompletion>>,
+    pub(crate) completion_rx: watch::Receiver<Option<LiveVoiceInteractionCompletion>>,
 }
 
 #[derive(Debug)]
@@ -47,15 +49,15 @@ pub(crate) enum LiveVoiceError {
     StopFailed,
 }
 
-struct LiveCallControl {
-    call_id: LiveVoiceCallId,
+struct LiveVoiceInteractionControl {
+    interaction_id: LiveVoiceInteractionId,
     stop_requested: CancellationToken,
     cleanup_finished: CancellationToken,
-    completion_tx: watch::Sender<Option<LiveVoiceCallCompletion>>,
+    completion_tx: watch::Sender<Option<LiveVoiceInteractionCompletion>>,
 }
 
-impl LiveCallControl {
-    fn request_stop(&self) -> watch::Receiver<Option<LiveVoiceCallCompletion>> {
+impl LiveVoiceInteractionControl {
+    fn request_stop(&self) -> watch::Receiver<Option<LiveVoiceInteractionCompletion>> {
         self.stop_requested.cancel();
         self.completion_tx.subscribe()
     }
@@ -65,43 +67,46 @@ impl LiveCallControl {
         self.cleanup_finished.clone()
     }
 
-    fn publish_completion(&self, completion: LiveVoiceCallCompletion) {
+    fn publish_completion(&self, completion: LiveVoiceInteractionCompletion) {
         if self.completion_tx.borrow().is_none() {
             self.completion_tx.send_replace(Some(completion));
         }
     }
 }
 
-/// Owns the call reservation from before agent preparation until cleanup finishes.
-pub(crate) struct LiveCallGuard {
+/// Owns the interaction reservation from before agent preparation until cleanup finishes.
+pub(crate) struct LiveVoiceInteractionGuard {
     active_runs: Arc<ActiveRunRegistry>,
-    calls_by_session: LiveCallControls,
+    interactions_by_session: LiveVoiceInteractionControls,
     session_id: String,
-    control: Arc<LiveCallControl>,
-    completion_on_drop: Option<LiveVoiceCallCompletion>,
+    control: Arc<LiveVoiceInteractionControl>,
+    completion_on_drop: Option<LiveVoiceInteractionCompletion>,
 }
 
-impl LiveCallGuard {
+impl LiveVoiceInteractionGuard {
     fn new(
         active_runs: Arc<ActiveRunRegistry>,
-        calls_by_session: LiveCallControls,
+        interactions_by_session: LiveVoiceInteractionControls,
         session_id: &str,
-        control: Arc<LiveCallControl>,
+        control: Arc<LiveVoiceInteractionControl>,
     ) -> Self {
         Self {
             active_runs,
-            calls_by_session,
+            interactions_by_session,
             session_id: session_id.to_string(),
             control,
             completion_on_drop: None,
         }
     }
 
-    pub(super) fn publish_completion(&self, completion: LiveVoiceCallCompletion) {
+    pub(super) fn publish_completion(&self, completion: LiveVoiceInteractionCompletion) {
         self.control.publish_completion(completion);
     }
 
-    pub(super) fn publish_completion_after_cleanup(&mut self, completion: LiveVoiceCallCompletion) {
+    pub(super) fn publish_completion_after_cleanup(
+        &mut self,
+        completion: LiveVoiceInteractionCompletion,
+    ) {
         self.completion_on_drop = Some(completion);
     }
 
@@ -110,17 +115,17 @@ impl LiveCallGuard {
     }
 }
 
-impl Drop for LiveCallGuard {
+impl Drop for LiveVoiceInteractionGuard {
     fn drop(&mut self) {
-        remove_call_if_current(
-            &self.calls_by_session,
+        remove_interaction_if_current(
+            &self.interactions_by_session,
             &self.session_id,
-            &self.control.call_id,
+            &self.control.interaction_id,
         );
         self.active_runs.finish_live(&self.session_id);
         self.publish_completion(
             self.completion_on_drop
-                .unwrap_or(LiveVoiceCallCompletion::Failed),
+                .unwrap_or(LiveVoiceInteractionCompletion::Failed),
         );
         self.control.cleanup_finished.cancel();
     }
@@ -128,7 +133,7 @@ impl Drop for LiveCallGuard {
 
 pub struct LiveVoiceService {
     live_voice_resolver: LiveVoiceResolver,
-    calls_by_session: LiveCallControls,
+    interactions_by_session: LiveVoiceInteractionControls,
     active_runs: Arc<ActiveRunRegistry>,
 }
 
@@ -140,7 +145,7 @@ impl LiveVoiceService {
     fn new(live_voice_resolver: LiveVoiceResolver, active_runs: Arc<ActiveRunRegistry>) -> Self {
         Self {
             live_voice_resolver,
-            calls_by_session: Arc::new(Mutex::new(HashMap::new())),
+            interactions_by_session: Arc::new(Mutex::new(HashMap::new())),
             active_runs,
         }
     }
@@ -178,48 +183,48 @@ impl LiveVoiceService {
         }
     }
 
-    pub(crate) fn reserve_call(
+    pub(crate) fn reserve_interaction(
         &self,
         session_id: &str,
         mode: GooseMode,
-    ) -> Result<LiveCallGuard, LiveVoiceError> {
+    ) -> Result<LiveVoiceInteractionGuard, LiveVoiceError> {
         self.eligible_provider(Some(session_id), mode)
             .map_err(|_| LiveVoiceError::Unavailable)?;
         let (completion_tx, _) = watch::channel(None);
-        let control = Arc::new(LiveCallControl {
-            call_id: LiveVoiceCallId::new(),
+        let control = Arc::new(LiveVoiceInteractionControl {
+            interaction_id: LiveVoiceInteractionId::new(),
             stop_requested: CancellationToken::new(),
             cleanup_finished: CancellationToken::new(),
             completion_tx,
         });
         {
-            let mut calls = self
-                .calls_by_session
+            let mut interactions = self
+                .interactions_by_session
                 .lock()
                 .expect("live voice lock poisoned");
             if !self.active_runs.start_live(session_id) {
                 return Err(LiveVoiceError::Unavailable);
             }
-            calls.insert(session_id.to_string(), control.clone());
+            interactions.insert(session_id.to_string(), control.clone());
         }
-        Ok(LiveCallGuard::new(
+        Ok(LiveVoiceInteractionGuard::new(
             self.active_runs.clone(),
-            self.calls_by_session.clone(),
+            self.interactions_by_session.clone(),
             session_id,
             control,
         ))
     }
 
-    pub(crate) async fn start_call(
+    pub(crate) async fn start_interaction(
         &self,
-        call_guard: LiveCallGuard,
+        interaction_guard: LiveVoiceInteractionGuard,
         offer: WebRtcOffer,
         session_manager: Arc<SessionManager>,
         transcript_publisher: LiveVoiceTranscriptPublisher,
         main_agent: LiveMainAgent,
-    ) -> Result<StartLiveVoiceCallResult, LiveVoiceError> {
+    ) -> Result<StartLiveVoiceInteractionResult, LiveVoiceError> {
         let session = session_manager
-            .get_session(&call_guard.session_id, true)
+            .get_session(&interaction_guard.session_id, true)
             .await
             .map_err(|_| LiveVoiceError::Unavailable)?;
         let provider = self
@@ -227,7 +232,7 @@ impl LiveVoiceService {
             .map_err(|_| LiveVoiceError::Unavailable)?;
         let input_messages =
             live_voice_input_messages(&session.conversation.unwrap_or_default()).await?;
-        if call_guard.stop_requested().is_cancelled() {
+        if interaction_guard.stop_requested().is_cancelled() {
             return Err(LiveVoiceError::Unavailable);
         }
         let (answer, provider_connection) = provider
@@ -235,54 +240,56 @@ impl LiveVoiceService {
             .await
             .map_err(|_| LiveVoiceError::StartFailed)?;
 
-        let session_id = call_guard.session_id.clone();
-        let call_id = call_guard.control.call_id.clone();
-        let completion_rx = call_guard.control.completion_tx.subscribe();
-        let call = LiveVoiceCall::new(session_id, provider_connection);
-        let runtime = LiveCallRuntime::new(
+        let session_id = interaction_guard.session_id.clone();
+        let interaction_id = interaction_guard.control.interaction_id.clone();
+        let completion_rx = interaction_guard.control.completion_tx.subscribe();
+        let interaction = LiveVoiceInteraction::new(session_id, provider_connection);
+        let runtime = LiveVoiceInteractionRuntime::new(
             session_manager,
             transcript_publisher,
             main_agent,
-            call_guard,
+            interaction_guard,
         );
-        tokio::spawn(call.run(runtime));
-        Ok(StartLiveVoiceCallResult {
-            call_id,
+        tokio::spawn(interaction.run(runtime));
+        Ok(StartLiveVoiceInteractionResult {
+            interaction_id,
             answer,
             completion_rx,
         })
     }
 
-    pub(crate) async fn stop_call(
+    pub(crate) async fn stop_interaction(
         &self,
         session_id: &str,
-        call_id: &LiveVoiceCallId,
+        interaction_id: &LiveVoiceInteractionId,
     ) -> Result<(), LiveVoiceError> {
         let completion_rx = {
-            let calls = self
-                .calls_by_session
+            let interactions = self
+                .interactions_by_session
                 .lock()
                 .expect("live voice lock poisoned");
-            let control = calls.get(session_id).ok_or(LiveVoiceError::Unavailable)?;
-            if &control.call_id != call_id {
+            let control = interactions
+                .get(session_id)
+                .ok_or(LiveVoiceError::Unavailable)?;
+            if &control.interaction_id != interaction_id {
                 return Err(LiveVoiceError::Unavailable);
             }
             control.request_stop()
         };
         let completion = wait_for_completion(completion_rx).await?;
         match completion {
-            LiveVoiceCallCompletion::Stopped => Ok(()),
-            LiveVoiceCallCompletion::Failed => Err(LiveVoiceError::StopFailed),
+            LiveVoiceInteractionCompletion::Stopped => Ok(()),
+            LiveVoiceInteractionCompletion::Failed => Err(LiveVoiceError::StopFailed),
         }
     }
 
-    pub(crate) async fn stop_session_call(&self, session_id: &str) {
+    pub(crate) async fn stop_session_interaction(&self, session_id: &str) {
         let cleanup_finished = {
-            let calls = self
-                .calls_by_session
+            let interactions = self
+                .interactions_by_session
                 .lock()
                 .expect("live voice lock poisoned");
-            calls
+            interactions
                 .get(session_id)
                 .map(|control| control.request_cleanup())
         };
@@ -377,8 +384,8 @@ async fn live_voice_input_messages(
 }
 
 pub(crate) async fn wait_for_completion(
-    mut completion_rx: watch::Receiver<Option<LiveVoiceCallCompletion>>,
-) -> Result<LiveVoiceCallCompletion, LiveVoiceError> {
+    mut completion_rx: watch::Receiver<Option<LiveVoiceInteractionCompletion>>,
+) -> Result<LiveVoiceInteractionCompletion, LiveVoiceError> {
     loop {
         if let Some(completion) = *completion_rx.borrow() {
             return Ok(completion);
@@ -390,17 +397,19 @@ pub(crate) async fn wait_for_completion(
     }
 }
 
-fn remove_call_if_current(
-    calls_by_session: &LiveCallControls,
+fn remove_interaction_if_current(
+    interactions_by_session: &LiveVoiceInteractionControls,
     session_id: &str,
-    call_id: &LiveVoiceCallId,
+    interaction_id: &LiveVoiceInteractionId,
 ) {
-    let mut calls = calls_by_session.lock().expect("live voice lock poisoned");
+    let mut interactions = interactions_by_session
+        .lock()
+        .expect("live voice lock poisoned");
     if matches!(
-        calls.get(session_id),
-        Some(control) if &control.call_id == call_id
+        interactions.get(session_id),
+        Some(control) if &control.interaction_id == interaction_id
     ) {
-        calls.remove(session_id);
+        interactions.remove(session_id);
     }
 }
 

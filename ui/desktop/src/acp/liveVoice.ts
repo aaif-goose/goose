@@ -28,7 +28,7 @@ export async function acpStartLiveVoice(
   });
 }
 
-export async function acpStopLiveVoice(sessionId: string, callId: string): Promise<void> {
+export async function acpStopLiveVoice(sessionId: string, interactionId: string): Promise<void> {
   const { goose } = await getAcpClient();
-  await goose.sessionLiveVoiceStop_unstable({ sessionId, callId });
+  await goose.sessionLiveVoiceStop_unstable({ sessionId, interactionId });
 }

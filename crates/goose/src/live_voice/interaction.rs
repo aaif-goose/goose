@@ -1,4 +1,6 @@
-use super::service::{LiveCallGuard, LiveVoiceCallCompletion, LiveVoiceTranscriptPublisher};
+use super::service::{
+    LiveVoiceInteractionCompletion, LiveVoiceInteractionGuard, LiveVoiceTranscriptPublisher,
+};
 use super::transcript::{DelegationContext, LiveTranscript};
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
 use futures::future::BoxFuture;
@@ -20,15 +22,15 @@ const UNDELIVERED_DELEGATION_UPDATE_NOTICE: &str =
 const SAVED_RESULT_NOTICE: &str = "\n\nThe full result is saved in Goose.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LiveVoiceCallId(pub(crate) String);
+pub(crate) struct LiveVoiceInteractionId(pub(crate) String);
 
-impl LiveVoiceCallId {
+impl LiveVoiceInteractionId {
     pub(super) fn new() -> Self {
         Self(format!("live_{}", Uuid::now_v7()))
     }
 }
 
-pub(super) struct LiveVoiceCall {
+pub(super) struct LiveVoiceInteraction {
     session_id: String,
     provider_connection: Box<dyn ProviderConnection>,
     provider_event_ids: HashSet<String>,
@@ -43,7 +45,7 @@ struct DelegatedMainAgentRun {
     result_future: BoxFuture<'static, String>,
 }
 
-enum LiveCallEvent {
+enum LiveVoiceInteractionEvent {
     StopRequested,
     MainAgentFinished(String),
     Provider(ProviderConnectionEvent),
@@ -55,7 +57,7 @@ enum DelegationDecision {
     Accept(String),
 }
 
-impl LiveVoiceCall {
+impl LiveVoiceInteraction {
     pub(super) fn new(
         session_id: String,
         provider_connection: Box<dyn ProviderConnection>,
@@ -70,30 +72,30 @@ impl LiveVoiceCall {
         }
     }
 
-    pub(super) async fn run(mut self, runtime: LiveCallRuntime) {
+    pub(super) async fn run(mut self, runtime: LiveVoiceInteractionRuntime) {
         let mut stopping = false;
         let completion = loop {
             match self
-                .next_event(runtime.call_guard.stop_requested(), stopping)
+                .next_event(runtime.interaction_guard.stop_requested(), stopping)
                 .await
             {
-                LiveCallEvent::StopRequested => {
+                LiveVoiceInteractionEvent::StopRequested => {
                     match timeout(PROVIDER_CLEANUP_TIMEOUT, self.cleanup_provider()).await {
                         Ok(Ok(())) => stopping = true,
-                        _ => break LiveVoiceCallCompletion::Failed,
+                        _ => break LiveVoiceInteractionCompletion::Failed,
                     }
                 }
-                LiveCallEvent::MainAgentFinished(result) => {
+                LiveVoiceInteractionEvent::MainAgentFinished(result) => {
                     if self
                         .handle_main_agent_finished(&runtime, result)
                         .await
                         .is_err()
                     {
                         self.stop_provider_after_error(stopping).await;
-                        break LiveVoiceCallCompletion::Failed;
+                        break LiveVoiceInteractionCompletion::Failed;
                     }
                 }
-                LiveCallEvent::Provider(ProviderConnectionEvent::TranscriptDelta {
+                LiveVoiceInteractionEvent::Provider(ProviderConnectionEvent::TranscriptDelta {
                     event_id,
                     role,
                     text,
@@ -106,56 +108,60 @@ impl LiveVoiceCall {
                         .is_err()
                     {
                         self.stop_provider_after_error(stopping).await;
-                        break LiveVoiceCallCompletion::Failed;
+                        break LiveVoiceInteractionCompletion::Failed;
                     }
                 }
-                LiveCallEvent::Provider(ProviderConnectionEvent::DelegationRequested {
-                    event_id,
-                    delegation_id,
-                    offset_ms,
-                }) => {
+                LiveVoiceInteractionEvent::Provider(
+                    ProviderConnectionEvent::DelegationRequested {
+                        event_id,
+                        delegation_id,
+                        offset_ms,
+                    },
+                ) => {
                     if self
                         .receive_delegation(&runtime, event_id, delegation_id, offset_ms)
                         .await
                         .is_err()
                     {
                         self.stop_provider_after_error(stopping).await;
-                        break LiveVoiceCallCompletion::Failed;
+                        break LiveVoiceInteractionCompletion::Failed;
                     }
                 }
-                LiveCallEvent::Provider(ProviderConnectionEvent::Closed) => {
+                LiveVoiceInteractionEvent::Provider(ProviderConnectionEvent::Closed) => {
                     break if stopping {
-                        LiveVoiceCallCompletion::Stopped
+                        LiveVoiceInteractionCompletion::Stopped
                     } else {
-                        LiveVoiceCallCompletion::Failed
+                        LiveVoiceInteractionCompletion::Failed
                     };
                 }
-                LiveCallEvent::Provider(
+                LiveVoiceInteractionEvent::Provider(
                     ProviderConnectionEvent::ReceiverLagged | ProviderConnectionEvent::Failed,
                 ) => {
                     self.stop_provider_after_error(stopping).await;
-                    break LiveVoiceCallCompletion::Failed;
+                    break LiveVoiceInteractionCompletion::Failed;
                 }
             }
         };
 
-        self.finish_call(runtime, completion).await;
+        self.finish_interaction(runtime, completion).await;
     }
 
     async fn next_event(
         &mut self,
         stop_requested: &CancellationToken,
         stopping: bool,
-    ) -> LiveCallEvent {
+    ) -> LiveVoiceInteractionEvent {
         if stopping {
-            return LiveCallEvent::Provider(self.provider_connection.next_event().await);
+            return LiveVoiceInteractionEvent::Provider(
+                self.provider_connection.next_event().await,
+            );
         }
 
         let delegated_run = &mut self.delegated_main_agent_run;
         let provider_connection = &mut self.provider_connection;
         tokio::select! {
             biased;
-            _ = stop_requested.cancelled() => LiveCallEvent::StopRequested,
+            _ = stop_requested.cancelled() => LiveVoiceInteractionEvent::StopRequested,
             result = async {
                 delegated_run
                     .as_mut()
@@ -163,14 +169,14 @@ impl LiveVoiceCall {
                     .result_future
                     .as_mut()
                     .await
-            }, if delegated_run.is_some() => LiveCallEvent::MainAgentFinished(result),
-            event = provider_connection.next_event() => LiveCallEvent::Provider(event),
+            }, if delegated_run.is_some() => LiveVoiceInteractionEvent::MainAgentFinished(result),
+            event = provider_connection.next_event() => LiveVoiceInteractionEvent::Provider(event),
         }
     }
 
     async fn receive_transcript(
         &mut self,
-        runtime: &LiveCallRuntime,
+        runtime: &LiveVoiceInteractionRuntime,
         event_id: String,
         role: Role,
         text: String,
@@ -207,7 +213,7 @@ impl LiveVoiceCall {
 
     async fn receive_delegation(
         &mut self,
-        runtime: &LiveCallRuntime,
+        runtime: &LiveVoiceInteractionRuntime,
         event_id: String,
         delegation_id: String,
         offset_ms: u64,
@@ -300,7 +306,7 @@ impl LiveVoiceCall {
 
     async fn handle_main_agent_finished(
         &mut self,
-        runtime: &LiveCallRuntime,
+        runtime: &LiveVoiceInteractionRuntime,
         result: String,
     ) -> anyhow::Result<()> {
         let run = self
@@ -322,10 +328,10 @@ impl LiveVoiceCall {
         .await
     }
 
-    async fn finish_call(
+    async fn finish_interaction(
         mut self,
-        mut runtime: LiveCallRuntime,
-        mut completion: LiveVoiceCallCompletion,
+        mut runtime: LiveVoiceInteractionRuntime,
+        mut completion: LiveVoiceInteractionCompletion,
     ) {
         match self.delegated_main_agent_run.take() {
             None => {
@@ -337,14 +343,14 @@ impl LiveVoiceCall {
                 .await
                 .is_err()
                 {
-                    completion = LiveVoiceCallCompletion::Failed;
+                    completion = LiveVoiceInteractionCompletion::Failed;
                 }
                 runtime
-                    .call_guard
+                    .interaction_guard
                     .publish_completion_after_cleanup(completion);
             }
             Some(run) => {
-                runtime.call_guard.publish_completion(completion);
+                runtime.interaction_guard.publish_completion(completion);
                 let _ = run.result_future.await;
                 let _ = save_transcript_and_context_waiting_for_main_agent(
                     &runtime.session_manager,
@@ -392,26 +398,26 @@ impl LiveVoiceCall {
     }
 }
 
-// Server-owned handles used for the lifetime of one call loop.
-pub(super) struct LiveCallRuntime {
+// Server-owned handles used for the lifetime of one interaction loop.
+pub(super) struct LiveVoiceInteractionRuntime {
     session_manager: Arc<SessionManager>,
     transcript_publisher: LiveVoiceTranscriptPublisher,
     main_agent: LiveMainAgent,
-    call_guard: LiveCallGuard,
+    interaction_guard: LiveVoiceInteractionGuard,
 }
 
-impl LiveCallRuntime {
+impl LiveVoiceInteractionRuntime {
     pub(super) fn new(
         session_manager: Arc<SessionManager>,
         transcript_publisher: LiveVoiceTranscriptPublisher,
         main_agent: LiveMainAgent,
-        call_guard: LiveCallGuard,
+        interaction_guard: LiveVoiceInteractionGuard,
     ) -> Self {
         Self {
             session_manager,
             transcript_publisher,
             main_agent,
-            call_guard,
+            interaction_guard,
         }
     }
 }

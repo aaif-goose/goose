@@ -285,7 +285,7 @@ pub struct LiveVoiceStartRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveVoiceStartResponse {
-    pub call_id: String,
+    pub interaction_id: String,
     pub answer_sdp: String,
 }
 
@@ -297,7 +297,7 @@ pub struct LiveVoiceStartResponse {
 #[serde(rename_all = "camelCase")]
 pub struct LiveVoiceStopRequest {
     pub session_id: String,
-    pub call_id: String,
+    pub interaction_id: String,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]

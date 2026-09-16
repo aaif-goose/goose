@@ -448,13 +448,13 @@ export const zLiveVoiceStartRequest_unstable = z.object({
 });
 
 export const zLiveVoiceStartResponse_unstable = z.object({
-    callId: z.string(),
+    interactionId: z.string(),
     answerSdp: z.string()
 });
 
 export const zLiveVoiceStopRequest_unstable = z.object({
     sessionId: z.string(),
-    callId: z.string()
+    interactionId: z.string()
 });
 
 export const zDiagnosticsReportLevel = z.enum(['summary', 'full']);
@@ -2265,11 +2265,11 @@ export const zMessageUsageUpdate = z.object({
     usage: zMessageUsageData
 });
 
-export const zLiveVoiceCallOutcome = z.enum(['stopped', 'failed']);
+export const zLiveVoiceInteractionOutcome = z.enum(['stopped', 'failed']);
 
-export const zLiveVoiceCallEndedUpdate = z.object({
-    callId: z.string(),
-    outcome: zLiveVoiceCallOutcome
+export const zLiveVoiceInteractionEndedUpdate = z.object({
+    interactionId: z.string(),
+    outcome: zLiveVoiceInteractionOutcome
 });
 
 /**
@@ -2284,7 +2284,7 @@ export const zGooseSessionUpdate = z.discriminatedUnion('sessionUpdate', [
     zSessionUsageUpdate.extend({ sessionUpdate: z.literal('usage_update') }),
     zStatusMessageUpdate.extend({ sessionUpdate: z.literal('status_message') }),
     zMessageUsageUpdate.extend({ sessionUpdate: z.literal('message_usage') }),
-    zLiveVoiceCallEndedUpdate.extend({ sessionUpdate: z.literal('live_voice_call_ended') })
+    zLiveVoiceInteractionEndedUpdate.extend({ sessionUpdate: z.literal('live_voice_interaction_ended') })
 ]);
 
 /**

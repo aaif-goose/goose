@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isAcpRecovering, subscribeToAcpRecovery } from '../acp/acpConnection';
 import { acpStartLiveVoice, acpStopLiveVoice } from '../acp/liveVoice';
 import {
-  subscribeToLiveVoiceCallEnded,
-  type LiveVoiceCallEndedNotification,
+  subscribeToLiveVoiceInteractionEnded,
+  type LiveVoiceInteractionEndedNotification,
 } from '../acp/liveVoiceNotifications';
 import { LiveVoiceMediaSession } from './LiveVoiceMediaSession';
 
@@ -21,21 +21,26 @@ export interface LiveVoiceController {
   toggleMute: () => void;
 }
 
-interface LiveVoiceCall {
+interface LiveVoiceInteraction {
   sessionId: string;
-  callId?: string;
+  interactionId?: string;
   remoteStartPending: boolean;
   media: LiveVoiceMediaSession;
   mediaReady: boolean;
   invalidated: boolean;
   acpConnectionLost: boolean;
-  pendingOutcomesByCallId: Map<string, LiveVoiceCallEndedNotification['update']['outcome']>;
+  pendingOutcomesByInteractionId: Map<
+    string,
+    LiveVoiceInteractionEndedNotification['update']['outcome']
+  >;
 }
 
-async function stopRemoteCall(call: LiveVoiceCall): Promise<'stopped' | 'failed'> {
-  if (!call.callId || call.acpConnectionLost) return 'stopped';
+async function stopRemoteInteraction(
+  interaction: LiveVoiceInteraction
+): Promise<'stopped' | 'failed'> {
+  if (!interaction.interactionId || interaction.acpConnectionLost) return 'stopped';
   try {
-    await acpStopLiveVoice(call.sessionId, call.callId);
+    await acpStopLiveVoice(interaction.sessionId, interaction.interactionId);
     return 'stopped';
   } catch {
     return 'failed';
@@ -46,41 +51,44 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
   const [phase, setPhase] = useState<LiveVoicePhase>('idle');
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
-  const callRef = useRef<LiveVoiceCall | null>(null);
+  const interactionRef = useRef<LiveVoiceInteraction | null>(null);
 
-  const invalidateCallAndReleaseMedia = useCallback((call: LiveVoiceCall) => {
-    if (call.invalidated) return;
-    call.invalidated = true;
-    call.media.teardown();
+  const invalidateInteractionAndReleaseMedia = useCallback((interaction: LiveVoiceInteraction) => {
+    if (interaction.invalidated) return;
+    interaction.invalidated = true;
+    interaction.media.teardown();
     mutedRef.current = false;
   }, []);
 
-  const finishCurrentCall = useCallback(
-    (call: LiveVoiceCall, outcome: LiveVoiceCallEndedNotification['update']['outcome']) => {
-      if (callRef.current !== call) return false;
+  const finishCurrentInteraction = useCallback(
+    (
+      interaction: LiveVoiceInteraction,
+      outcome: LiveVoiceInteractionEndedNotification['update']['outcome']
+    ) => {
+      if (interactionRef.current !== interaction) return false;
 
-      callRef.current = null;
-      invalidateCallAndReleaseMedia(call);
+      interactionRef.current = null;
+      invalidateInteractionAndReleaseMedia(interaction);
       setMuted(false);
       setPhase(outcome === 'failed' ? 'error' : 'idle');
       return true;
     },
-    [invalidateCallAndReleaseMedia]
+    [invalidateInteractionAndReleaseMedia]
   );
 
-  const failCurrentCall = useCallback(
-    async (call: LiveVoiceCall) => {
-      if (callRef.current !== call || call.invalidated) return;
+  const failCurrentInteraction = useCallback(
+    async (interaction: LiveVoiceInteraction) => {
+      if (interactionRef.current !== interaction || interaction.invalidated) return;
 
-      invalidateCallAndReleaseMedia(call);
+      invalidateInteractionAndReleaseMedia(interaction);
       setMuted(false);
-      if (call.callId) {
+      if (interaction.interactionId) {
         setPhase('stopping');
-        await stopRemoteCall(call);
+        await stopRemoteInteraction(interaction);
       }
-      finishCurrentCall(call, 'failed');
+      finishCurrentInteraction(interaction, 'failed');
     },
-    [finishCurrentCall, invalidateCallAndReleaseMedia]
+    [finishCurrentInteraction, invalidateInteractionAndReleaseMedia]
   );
 
   useEffect(() => {
@@ -90,133 +98,141 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
     if (!isSessionActive) return;
 
     return () => {
-      const call = callRef.current;
-      if (!call || call.sessionId !== sessionId) return;
+      const interaction = interactionRef.current;
+      if (!interaction || interaction.sessionId !== sessionId) return;
 
-      callRef.current = null;
-      invalidateCallAndReleaseMedia(call);
-      void stopRemoteCall(call);
+      interactionRef.current = null;
+      invalidateInteractionAndReleaseMedia(interaction);
+      void stopRemoteInteraction(interaction);
     };
-  }, [invalidateCallAndReleaseMedia, isSessionActive, sessionId]);
+  }, [invalidateInteractionAndReleaseMedia, isSessionActive, sessionId]);
 
   useEffect(() => {
-    return subscribeToLiveVoiceCallEnded((notification) => {
-      const call = callRef.current;
-      if (!call || call.sessionId !== notification.sessionId) return;
+    return subscribeToLiveVoiceInteractionEnded((notification) => {
+      const interaction = interactionRef.current;
+      if (!interaction || interaction.sessionId !== notification.sessionId) return;
 
-      if (!call.callId) {
-        call.pendingOutcomesByCallId.set(notification.update.callId, notification.update.outcome);
+      if (!interaction.interactionId) {
+        interaction.pendingOutcomesByInteractionId.set(
+          notification.update.interactionId,
+          notification.update.outcome
+        );
         return;
       }
-      if (!call.invalidated && call.callId === notification.update.callId) {
-        finishCurrentCall(call, notification.update.outcome);
+      if (
+        !interaction.invalidated &&
+        interaction.interactionId === notification.update.interactionId
+      ) {
+        finishCurrentInteraction(interaction, notification.update.outcome);
       }
     });
-  }, [finishCurrentCall]);
+  }, [finishCurrentInteraction]);
 
   useEffect(() => {
     return subscribeToAcpRecovery((recovering) => {
       if (!recovering) return;
 
-      const call = callRef.current;
-      if (call?.sessionId === sessionId) {
-        call.acpConnectionLost = true;
-        finishCurrentCall(call, 'stopped');
+      const interaction = interactionRef.current;
+      if (interaction?.sessionId === sessionId) {
+        interaction.acpConnectionLost = true;
+        finishCurrentInteraction(interaction, 'stopped');
       }
     });
-  }, [finishCurrentCall, sessionId]);
+  }, [finishCurrentInteraction, sessionId]);
 
   const start = useCallback(
     async (initialCommentary?: string) => {
-      if (!isSessionActive || callRef.current || isAcpRecovering()) return;
+      if (!isSessionActive || interactionRef.current || isAcpRecovering()) return;
 
       mutedRef.current = false;
       setMuted(false);
       setPhase('connecting');
-      let call: LiveVoiceCall;
+      let interaction: LiveVoiceInteraction;
       const media = new LiveVoiceMediaSession(() => {
-        void failCurrentCall(call);
+        void failCurrentInteraction(interaction);
       });
-      call = {
+      interaction = {
         sessionId,
         remoteStartPending: false,
         media,
         mediaReady: false,
         invalidated: false,
         acpConnectionLost: false,
-        pendingOutcomesByCallId: new Map(),
+        pendingOutcomesByInteractionId: new Map(),
       };
-      callRef.current = call;
-      const isCurrent = () => callRef.current === call && !call.invalidated;
+      interactionRef.current = interaction;
+      const isCurrent = () => interactionRef.current === interaction && !interaction.invalidated;
 
       try {
-        const offerSdp = await call.media.createOffer();
+        const offerSdp = await interaction.media.createOffer();
         if (!isCurrent()) return;
 
-        call.remoteStartPending = true;
+        interaction.remoteStartPending = true;
         const response = await acpStartLiveVoice(sessionId, offerSdp);
-        call.remoteStartPending = false;
-        call.callId = response.callId;
-        const pendingOutcome = call.pendingOutcomesByCallId.get(call.callId);
-        call.pendingOutcomesByCallId.clear();
+        interaction.remoteStartPending = false;
+        interaction.interactionId = response.interactionId;
+        const pendingOutcome = interaction.pendingOutcomesByInteractionId.get(
+          interaction.interactionId
+        );
+        interaction.pendingOutcomesByInteractionId.clear();
         if (pendingOutcome) {
-          finishCurrentCall(call, pendingOutcome);
+          finishCurrentInteraction(interaction, pendingOutcome);
           return;
         }
         if (!isCurrent()) {
-          finishCurrentCall(call, await stopRemoteCall(call));
+          finishCurrentInteraction(interaction, await stopRemoteInteraction(interaction));
           return;
         }
 
-        await call.media.applyAnswer(response.answerSdp);
+        await interaction.media.applyAnswer(response.answerSdp);
         if (!isCurrent()) return;
 
-        call.mediaReady = true;
-        call.media.setMuted(mutedRef.current);
+        interaction.mediaReady = true;
+        interaction.media.setMuted(mutedRef.current);
         setPhase('live');
         if (initialCommentary) {
-          call.media.sendCommentary(initialCommentary);
+          interaction.media.sendCommentary(initialCommentary);
         }
       } catch {
-        call.remoteStartPending = false;
-        if (call.invalidated) {
-          if (!call.callId) finishCurrentCall(call, 'stopped');
+        interaction.remoteStartPending = false;
+        if (interaction.invalidated) {
+          if (!interaction.interactionId) finishCurrentInteraction(interaction, 'stopped');
           return;
         }
-        await failCurrentCall(call);
+        await failCurrentInteraction(interaction);
       }
     },
-    [failCurrentCall, finishCurrentCall, isSessionActive, sessionId]
+    [failCurrentInteraction, finishCurrentInteraction, isSessionActive, sessionId]
   );
 
   const toggleMute = useCallback(() => {
-    const call = callRef.current;
-    if (!call || call.invalidated || !call.mediaReady) return;
+    const interaction = interactionRef.current;
+    if (!interaction || interaction.invalidated || !interaction.mediaReady) return;
 
     mutedRef.current = !mutedRef.current;
-    call.media.setMuted(mutedRef.current);
+    interaction.media.setMuted(mutedRef.current);
     setMuted(mutedRef.current);
   }, []);
 
   const stop = useCallback(async () => {
-    const call = callRef.current;
-    if (!call || call.invalidated) return;
+    const interaction = interactionRef.current;
+    if (!interaction || interaction.invalidated) return;
 
-    invalidateCallAndReleaseMedia(call);
+    invalidateInteractionAndReleaseMedia(interaction);
     setMuted(false);
-    if (!call.callId) {
-      if (call.remoteStartPending) {
+    if (!interaction.interactionId) {
+      if (interaction.remoteStartPending) {
         setPhase('stopping');
         return;
       }
-      callRef.current = null;
+      interactionRef.current = null;
       setPhase('idle');
       return;
     }
 
     setPhase('stopping');
-    finishCurrentCall(call, await stopRemoteCall(call));
-  }, [finishCurrentCall, invalidateCallAndReleaseMedia]);
+    finishCurrentInteraction(interaction, await stopRemoteInteraction(interaction));
+  }, [finishCurrentInteraction, invalidateInteractionAndReleaseMedia]);
 
   return { phase, muted, start, stop, toggleMute };
 }

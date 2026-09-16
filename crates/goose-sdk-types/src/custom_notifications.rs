@@ -27,26 +27,26 @@ pub struct GooseSessionNotification {
         "usage_update": "#/$defs/SessionUsageUpdate",
         "status_message": "#/$defs/StatusMessageUpdate",
         "message_usage": "#/$defs/MessageUsageUpdate",
-        "live_voice_call_ended": "#/$defs/LiveVoiceCallEndedUpdate"
+        "live_voice_interaction_ended": "#/$defs/LiveVoiceInteractionEndedUpdate"
     }
 }))]
 pub enum GooseSessionUpdate {
     UsageUpdate(SessionUsageUpdate),
     StatusMessage(StatusMessageUpdate),
     MessageUsage(MessageUsageUpdate),
-    LiveVoiceCallEnded(LiveVoiceCallEndedUpdate),
+    LiveVoiceInteractionEnded(LiveVoiceInteractionEndedUpdate),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct LiveVoiceCallEndedUpdate {
-    pub call_id: String,
-    pub outcome: LiveVoiceCallOutcome,
+pub struct LiveVoiceInteractionEndedUpdate {
+    pub interaction_id: String,
+    pub outcome: LiveVoiceInteractionOutcome,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum LiveVoiceCallOutcome {
+pub enum LiveVoiceInteractionOutcome {
     Stopped,
     Failed,
 }
@@ -211,13 +211,15 @@ mod tests {
     }
 
     #[test]
-    fn live_voice_call_ended_serializes_to_expected_wire_shape() {
+    fn live_voice_interaction_ended_serializes_to_expected_wire_shape() {
         let notification = GooseSessionNotification {
             session_id: "s1".to_string(),
-            update: GooseSessionUpdate::LiveVoiceCallEnded(LiveVoiceCallEndedUpdate {
-                call_id: "live_opaque".to_string(),
-                outcome: LiveVoiceCallOutcome::Failed,
-            }),
+            update: GooseSessionUpdate::LiveVoiceInteractionEnded(
+                LiveVoiceInteractionEndedUpdate {
+                    interaction_id: "live_opaque".to_string(),
+                    outcome: LiveVoiceInteractionOutcome::Failed,
+                },
+            ),
         };
 
         let value = serde_json::to_value(notification).unwrap();
@@ -227,8 +229,8 @@ mod tests {
             json!({
                 "sessionId": "s1",
                 "update": {
-                    "sessionUpdate": "live_voice_call_ended",
-                    "callId": "live_opaque",
+                    "sessionUpdate": "live_voice_interaction_ended",
+                    "interactionId": "live_opaque",
                     "outcome": "failed"
                 }
             })

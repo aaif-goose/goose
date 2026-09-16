@@ -1,7 +1,8 @@
 use super::*;
 use crate::live_voice::{
-    wait_for_completion, LiveMainAgent, LiveVoiceCallCompletion, LiveVoiceCallId, LiveVoiceError,
-    LiveVoiceTranscriptPublisher, StartLiveVoiceCallResult, WebRtcOffer,
+    wait_for_completion, LiveMainAgent, LiveVoiceError, LiveVoiceInteractionCompletion,
+    LiveVoiceInteractionId, LiveVoiceTranscriptPublisher, StartLiveVoiceInteractionResult,
+    WebRtcOffer,
 };
 use futures::FutureExt;
 
@@ -73,7 +74,7 @@ impl GooseAcpAgent {
         let session = self.load_live_voice_session(&session_id).await?;
         let reservation = self
             .live_voice
-            .reserve_call(&session_id, session.goose_mode)
+            .reserve_interaction(&session_id, session.goose_mode)
             .map_err(map_live_voice_error)?;
         let transcript_publisher = Self::live_transcript_publisher(cx, &req.session_id);
         let agent = self
@@ -81,7 +82,7 @@ impl GooseAcpAgent {
             .await
             .map_err(|error| agent_client_protocol::Error::internal_error().data(error))?;
         let main_agent = self.live_main_agent(cx, agent);
-        let start = self.live_voice.start_call(
+        let start = self.live_voice.start_interaction(
             reservation,
             offer,
             self.session_manager.clone(),
@@ -89,7 +90,7 @@ impl GooseAcpAgent {
             main_agent,
         );
         tokio::pin!(start);
-        let call = tokio::select! {
+        let interaction = tokio::select! {
             result = &mut start => result.map_err(map_live_voice_error)?,
             _ = cx.incoming_closed() => {
                 return Err(agent_client_protocol::Error::internal_error()
@@ -97,11 +98,11 @@ impl GooseAcpAgent {
             }
         };
 
-        self.watch_live_call(cx, session_id, &call);
+        self.watch_live_interaction(cx, session_id, &interaction);
 
         Ok(LiveVoiceStartResponse {
-            call_id: call.call_id.0,
-            answer_sdp: call.answer.into_sdp(),
+            interaction_id: interaction.interaction_id.0,
+            answer_sdp: interaction.answer.into_sdp(),
         })
     }
 
@@ -154,34 +155,34 @@ impl GooseAcpAgent {
         )
     }
 
-    fn watch_live_call(
+    fn watch_live_interaction(
         &self,
         cx: &ConnectionTo<Client>,
         session_id: String,
-        call: &StartLiveVoiceCallResult,
+        interaction: &StartLiveVoiceInteractionResult,
     ) {
-        let call_id = call.call_id.clone();
-        let completion_rx = call.completion_rx.clone();
+        let interaction_id = interaction.interaction_id.clone();
+        let completion_rx = interaction.completion_rx.clone();
         let live_voice = self.live_voice.clone();
         let connection = cx.clone();
-        let notify_call_ended = self.supports_goose_custom_notifications();
+        let notify_interaction_ended = self.supports_goose_custom_notifications();
         tokio::spawn(async move {
             tokio::select! {
                 biased;
                 _ = connection.incoming_closed() => {
-                    let _ = live_voice.stop_call(&session_id, &call_id).await;
+                    let _ = live_voice.stop_interaction(&session_id, &interaction_id).await;
                 }
                 completion = wait_for_completion(completion_rx) => {
-                    if notify_call_ended {
+                    if notify_interaction_ended {
                         if let Ok(completion) = completion {
                             let outcome = match completion {
-                                LiveVoiceCallCompletion::Stopped => LiveVoiceCallOutcome::Stopped,
-                                LiveVoiceCallCompletion::Failed => LiveVoiceCallOutcome::Failed,
+                                LiveVoiceInteractionCompletion::Stopped => LiveVoiceInteractionOutcome::Stopped,
+                                LiveVoiceInteractionCompletion::Failed => LiveVoiceInteractionOutcome::Failed,
                             };
                             let _ = connection.send_notification(GooseSessionNotification {
                                 session_id,
-                                update: GooseSessionUpdate::LiveVoiceCallEnded(LiveVoiceCallEndedUpdate {
-                                    call_id: call_id.0,
+                                update: GooseSessionUpdate::LiveVoiceInteractionEnded(LiveVoiceInteractionEndedUpdate {
+                                    interaction_id: interaction_id.0,
                                     outcome,
                                 }),
                             });
@@ -197,9 +198,9 @@ impl GooseAcpAgent {
         req: LiveVoiceStopRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         self.load_live_voice_session(&req.session_id).await?;
-        let call_id = LiveVoiceCallId(req.call_id);
+        let interaction_id = LiveVoiceInteractionId(req.interaction_id);
         self.live_voice
-            .stop_call(&req.session_id, &call_id)
+            .stop_interaction(&req.session_id, &interaction_id)
             .await
             .map_err(map_live_voice_error)?;
         Ok(EmptyResponse {})

@@ -1,6 +1,6 @@
 mod fake_live_voice_provider;
 
-use super::super::call::{LiveMainAgent, DELEGATION_INSTRUCTION, PROVIDER_CLEANUP_TIMEOUT};
+use super::super::interaction::{LiveMainAgent, DELEGATION_INSTRUCTION, PROVIDER_CLEANUP_TIMEOUT};
 use super::*;
 use crate::agents::Agent;
 use fake_live_voice_provider::{provider_channel, FakeConnectionDriver};
@@ -9,7 +9,7 @@ use rmcp::model::Role;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
-type StartResult = Result<StartLiveVoiceCallResult, LiveVoiceError>;
+type StartResult = Result<StartLiveVoiceInteractionResult, LiveVoiceError>;
 
 impl LiveVoiceService {
     fn for_test(provider: Arc<dyn LiveVoiceProvider>, active_runs: Arc<ActiveRunRegistry>) -> Self {
@@ -89,9 +89,11 @@ fn spawn_start(
     session_manager: Arc<SessionManager>,
 ) -> JoinHandle<StartResult> {
     tokio::spawn(async move {
-        let reservation = service.reserve_call(&session_id, GooseMode::Auto).unwrap();
+        let reservation = service
+            .reserve_interaction(&session_id, GooseMode::Auto)
+            .unwrap();
         service
-            .start_call(
+            .start_interaction(
                 reservation,
                 WebRtcOffer::new(offer.into()).unwrap(),
                 session_manager,
@@ -109,24 +111,24 @@ fn assert_availability(service: &LiveVoiceService, expected: Result<(), &'static
     );
 }
 
-async fn establish_call() -> (
+async fn establish_interaction() -> (
     Arc<LiveVoiceService>,
     FakeConnectionDriver,
-    LiveVoiceCallId,
+    LiveVoiceInteractionId,
     String,
 ) {
-    let (service, connection, call_id, session_id, _) =
-        establish_call_with(ignore_main_agent(), ignore_transcript_publisher()).await;
-    (service, connection, call_id, session_id)
+    let (service, connection, interaction_id, session_id, _) =
+        establish_interaction_with(ignore_main_agent(), ignore_transcript_publisher()).await;
+    (service, connection, interaction_id, session_id)
 }
 
-async fn establish_call_with(
+async fn establish_interaction_with(
     main_agent: LiveMainAgent,
     transcript_publisher: LiveVoiceTranscriptPublisher,
 ) -> (
     Arc<LiveVoiceService>,
     FakeConnectionDriver,
-    LiveVoiceCallId,
+    LiveVoiceInteractionId,
     String,
     Arc<SessionManager>,
 ) {
@@ -141,10 +143,10 @@ async fn establish_call_with(
     let start_manager = manager.clone();
     let start_task = tokio::spawn(async move {
         let reservation = start_service
-            .reserve_call(&start_session_id, GooseMode::Auto)
+            .reserve_interaction(&start_session_id, GooseMode::Auto)
             .unwrap();
         start_service
-            .start_call(
+            .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
                 start_manager,
@@ -159,16 +161,16 @@ async fn establish_call_with(
         .unwrap()
         .accept(WebRtcAnswer::new("answer".into()).unwrap())
         .unwrap();
-    let call_id = start_task.await.unwrap().unwrap().call_id;
-    (service, connection, call_id, session_id, manager)
+    let interaction_id = start_task.await.unwrap().unwrap().interaction_id;
+    (service, connection, interaction_id, session_id, manager)
 }
 
 fn completion_receiver(
     service: &LiveVoiceService,
     session_id: &str,
-) -> watch::Receiver<Option<LiveVoiceCallCompletion>> {
+) -> watch::Receiver<Option<LiveVoiceInteractionCompletion>> {
     service
-        .calls_by_session
+        .interactions_by_session
         .lock()
         .unwrap()
         .get(session_id)
@@ -216,7 +218,7 @@ async fn start_rechecks_requirements_before_contacting_the_provider() {
     service.live_voice_resolver = Arc::new(|| Err("Live voice is disabled"));
     let (_manager, session_id) = live_session([]).await;
 
-    let result = service.reserve_call(&session_id, GooseMode::Auto);
+    let result = service.reserve_interaction(&session_id, GooseMode::Auto);
 
     assert!(matches!(result, Err(LiveVoiceError::Unavailable)));
     assert!(starts.try_recv().is_err());
@@ -308,7 +310,7 @@ async fn a_start_reserves_the_session_until_it_finishes() {
         Err("Live voice is unavailable while this session is busy")
     );
 
-    let second = service.reserve_call(&session_id, GooseMode::Auto);
+    let second = service.reserve_interaction(&session_id, GooseMode::Auto);
     assert!(matches!(second, Err(LiveVoiceError::Unavailable)));
 
     pending.reject("failed").unwrap();
@@ -327,11 +329,13 @@ async fn a_cancelled_reservation_does_not_contact_the_provider() {
     let (provider, mut starts) = provider_channel();
     let service = LiveVoiceService::for_test(provider, Arc::new(ActiveRunRegistry::default()));
     let (manager, session_id) = live_session([]).await;
-    let reservation = service.reserve_call(&session_id, GooseMode::Auto).unwrap();
+    let reservation = service
+        .reserve_interaction(&session_id, GooseMode::Auto)
+        .unwrap();
     reservation.stop_requested().cancel();
 
     let result = service
-        .start_call(
+        .start_interaction(
             reservation,
             WebRtcOffer::new("offer".into()).unwrap(),
             manager,
@@ -369,7 +373,7 @@ async fn a_cancelled_start_releases_the_session() {
 }
 
 #[tokio::test]
-async fn session_stop_tracks_provider_start_until_the_call_stops() {
+async fn session_stop_tracks_provider_start_until_the_interaction_stops() {
     let (provider, mut starts) = provider_channel();
     let service = Arc::new(LiveVoiceService::for_test(
         provider,
@@ -379,7 +383,7 @@ async fn session_stop_tracks_provider_start_until_the_call_stops() {
     let start_task = spawn_start(service.clone(), session_id.clone(), "offer", manager);
     let pending = starts.recv().await.unwrap();
 
-    let stop = service.stop_session_call(&session_id);
+    let stop = service.stop_session_interaction(&session_id);
     let provider = async move {
         let mut connection = pending
             .accept(WebRtcAnswer::new("answer".into()).unwrap())
@@ -398,7 +402,7 @@ async fn session_stop_tracks_provider_start_until_the_call_stops() {
     let ((), ()) = tokio::join!(stop, provider);
 
     assert!(!service
-        .calls_by_session
+        .interactions_by_session
         .lock()
         .unwrap()
         .contains_key(&session_id));
@@ -409,10 +413,10 @@ async fn session_stop_tracks_provider_start_until_the_call_stops() {
 }
 
 #[tokio::test]
-async fn session_stop_waits_for_cleanup_after_call_completion() {
+async fn session_stop_waits_for_cleanup_after_interaction_completion() {
     let (main_agent, mut starts, _, finish_run) = controlled_main_agent();
-    let (service, mut connection, call_id, session_id, _) =
-        establish_call_with(main_agent, ignore_transcript_publisher()).await;
+    let (service, mut connection, interaction_id, session_id, _) =
+        establish_interaction_with(main_agent, ignore_transcript_publisher()).await;
     let active_runs = service.active_runs.clone();
     let cancel_token = CancellationToken::new();
     assert!(active_runs
@@ -443,8 +447,11 @@ async fn session_stop_waits_for_cleanup_after_call_completion() {
 
     let stop_service = service.clone();
     let stop_session_id = session_id.clone();
-    let stop =
-        tokio::spawn(async move { stop_service.stop_call(&stop_session_id, &call_id).await });
+    let stop = tokio::spawn(async move {
+        stop_service
+            .stop_interaction(&stop_session_id, &interaction_id)
+            .await
+    });
     connection
         .next_stop_request()
         .await
@@ -461,7 +468,9 @@ async fn session_stop_waits_for_cleanup_after_call_completion() {
     let cleanup_service = service.clone();
     let cleanup_session_id = session_id.clone();
     let cleanup = tokio::spawn(async move {
-        cleanup_service.stop_session_call(&cleanup_session_id).await;
+        cleanup_service
+            .stop_session_interaction(&cleanup_session_id)
+            .await;
     });
     tokio::task::yield_now().await;
     assert!(!cleanup.is_finished());
@@ -473,11 +482,14 @@ async fn session_stop_waits_for_cleanup_after_call_completion() {
 
 #[tokio::test]
 async fn stop_failure_releases_the_session() {
-    let (service, mut connection, call_id, session_id) = establish_call().await;
+    let (service, mut connection, interaction_id, session_id) = establish_interaction().await;
     let stop_service = service.clone();
     let stop_session_id = session_id.clone();
-    let stop =
-        tokio::spawn(async move { stop_service.stop_call(&stop_session_id, &call_id).await });
+    let stop = tokio::spawn(async move {
+        stop_service
+            .stop_interaction(&stop_session_id, &interaction_id)
+            .await
+    });
     connection
         .next_stop_request()
         .await
@@ -497,9 +509,9 @@ async fn stop_failure_releases_the_session() {
 
 #[tokio::test]
 async fn repeated_stop_uses_one_provider_shutdown() {
-    let (service, mut connection, call_id, session_id) = establish_call().await;
-    let first = service.stop_call(&session_id, &call_id);
-    let second = service.stop_call(&session_id, &call_id);
+    let (service, mut connection, interaction_id, session_id) = establish_interaction().await;
+    let first = service.stop_interaction(&session_id, &interaction_id);
+    let second = service.stop_interaction(&session_id, &interaction_id);
     let provider = async move {
         connection
             .next_stop_request()
@@ -525,8 +537,8 @@ async fn repeated_stop_uses_one_provider_shutdown() {
 
 #[tokio::test]
 async fn transcript_without_delegation_saves_raw_and_main_agent_context_after_stop() {
-    let (service, mut connection, call_id, session_id, manager) =
-        establish_call_with(ignore_main_agent(), ignore_transcript_publisher()).await;
+    let (service, mut connection, interaction_id, session_id, manager) =
+        establish_interaction_with(ignore_main_agent(), ignore_transcript_publisher()).await;
     connection
         .send_event(ProviderConnectionEvent::TranscriptDelta {
             event_id: "transcript".into(),
@@ -537,7 +549,7 @@ async fn transcript_without_delegation_saves_raw_and_main_agent_context_after_st
         })
         .unwrap();
 
-    let stop = service.stop_call(&session_id, &call_id);
+    let stop = service.stop_interaction(&session_id, &interaction_id);
     let provider = async move {
         connection
             .next_stop_request()
@@ -577,8 +589,8 @@ async fn rejected_delegation_keeps_context_for_live_completion() {
         |_, _| Err("main agent unavailable".into()),
         |_, _| Box::pin(async { Ok("unused".into()) }),
     );
-    let (service, mut connection, call_id, session_id, manager) =
-        establish_call_with(main_agent, ignore_transcript_publisher()).await;
+    let (service, mut connection, interaction_id, session_id, manager) =
+        establish_interaction_with(main_agent, ignore_transcript_publisher()).await;
     connection
         .send_event(ProviderConnectionEvent::TranscriptDelta {
             event_id: "transcript".into(),
@@ -600,7 +612,7 @@ async fn rejected_delegation_keeps_context_for_live_completion() {
         "main agent unavailable"
     );
 
-    let stop = service.stop_call(&session_id, &call_id);
+    let stop = service.stop_interaction(&session_id, &interaction_id);
     let provider = async move {
         connection
             .next_stop_request()
@@ -631,8 +643,8 @@ async fn completed_run_keeps_context_for_a_queued_delegation() {
     let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
         transcript_tx.send(message).unwrap();
     });
-    let (service, mut connection, call_id, session_id, _) =
-        establish_call_with(main_agent, transcript_publisher).await;
+    let (service, mut connection, interaction_id, session_id, _) =
+        establish_interaction_with(main_agent, transcript_publisher).await;
     let delta = |event_id: &str, text: &str, end_ms| ProviderConnectionEvent::TranscriptDelta {
         event_id: event_id.into(),
         role: Role::User,
@@ -684,7 +696,7 @@ async fn completed_run_keeps_context_for_a_queued_delegation() {
         "corrected result"
     );
 
-    let stop = service.stop_call(&session_id, &call_id);
+    let stop = service.stop_interaction(&session_id, &interaction_id);
     let provider = async move {
         connection
             .next_stop_request()
@@ -742,10 +754,10 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
     let start_manager = session_manager.clone();
     let start = tokio::spawn(async move {
         let reservation = start_service
-            .reserve_call(&start_session_id, GooseMode::Auto)
+            .reserve_interaction(&start_session_id, GooseMode::Auto)
             .unwrap();
         start_service
-            .start_call(
+            .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
                 start_manager,
@@ -760,7 +772,7 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
         .unwrap()
         .accept(WebRtcAnswer::new("answer".into()).unwrap())
         .unwrap();
-    let call_id = start.await.unwrap().unwrap().call_id;
+    let interaction_id = start.await.unwrap().unwrap().interaction_id;
     let delta = |event_id: &str, text: &str| ProviderConnectionEvent::TranscriptDelta {
         event_id: event_id.into(),
         role: Role::User,
@@ -802,8 +814,11 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
 
     let stop_service = service.clone();
     let stop_session_id = session.id.clone();
-    let stop =
-        tokio::spawn(async move { stop_service.stop_call(&stop_session_id, &call_id).await });
+    let stop = tokio::spawn(async move {
+        stop_service
+            .stop_interaction(&stop_session_id, &interaction_id)
+            .await
+    });
     let stop_response = connection.next_stop_request().await.unwrap();
     connection.send_event(delta("2", " world")).unwrap();
     stop_response.send(Ok(())).unwrap();
@@ -840,8 +855,8 @@ async fn running_transcript_is_saved_user_only_and_steered_to_the_main_agent() {
     let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
         transcript_tx.send(message).unwrap();
     });
-    let (service, mut connection, call_id, session_id, manager) =
-        establish_call_with(main_agent, transcript_publisher).await;
+    let (service, mut connection, interaction_id, session_id, manager) =
+        establish_interaction_with(main_agent, transcript_publisher).await;
     let delta =
         |event_id: &str, role: Role, text: &str, end_ms| ProviderConnectionEvent::TranscriptDelta {
             event_id: event_id.into(),
@@ -917,7 +932,7 @@ async fn running_transcript_is_saved_user_only_and_steered_to_the_main_agent() {
             expected
         );
     }
-    let stop = service.stop_call(&session_id, &call_id);
+    let stop = service.stop_interaction(&session_id, &interaction_id);
     let provider = async move {
         connection
             .next_stop_request()
@@ -995,7 +1010,7 @@ async fn provider_terminal_events_fail_and_release_the_session() {
         ProviderConnectionEvent::Closed,
         ProviderConnectionEvent::Failed,
     ] {
-        let (service, mut connection, call_id, session_id) = establish_call().await;
+        let (service, mut connection, interaction_id, session_id) = establish_interaction().await;
         let completion_rx = completion_receiver(&service, &session_id);
         let requires_cleanup = event == ProviderConnectionEvent::Failed;
         connection.send_event(event).unwrap();
@@ -1010,10 +1025,10 @@ async fn provider_terminal_events_fail_and_release_the_session() {
 
         assert_eq!(
             wait_for_completion(completion_rx).await.unwrap(),
-            LiveVoiceCallCompletion::Failed
+            LiveVoiceInteractionCompletion::Failed
         );
         assert!(matches!(
-            service.stop_call(&session_id, &call_id).await,
+            service.stop_interaction(&session_id, &interaction_id).await,
             Err(LiveVoiceError::Unavailable)
         ));
         assert_eq!(
@@ -1035,10 +1050,10 @@ async fn provider_terminal_publishes_completion_after_release() {
     let start_session_id = session_id.clone();
     let start_task = tokio::spawn(async move {
         let reservation = start_service
-            .reserve_call(&start_session_id, GooseMode::Auto)
+            .reserve_interaction(&start_session_id, GooseMode::Auto)
             .unwrap();
         start_service
-            .start_call(
+            .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
                 manager,
@@ -1060,7 +1075,7 @@ async fn provider_terminal_publishes_completion_after_release() {
         .unwrap();
     let completion = wait_for_completion(started.completion_rx).await.unwrap();
 
-    assert_eq!(completion, LiveVoiceCallCompletion::Failed);
+    assert_eq!(completion, LiveVoiceInteractionCompletion::Failed);
     assert_eq!(
         service.availability(Some(&session_id), GooseMode::Auto),
         Ok(())
@@ -1069,12 +1084,15 @@ async fn provider_terminal_publishes_completion_after_release() {
 
 #[tokio::test]
 async fn cleanup_timeout_fails_and_releases_the_session() {
-    let (service, mut connection, call_id, session_id) = establish_call().await;
+    let (service, mut connection, interaction_id, session_id) = establish_interaction().await;
     tokio::time::pause();
     let stop_service = service.clone();
     let stop_session_id = session_id.clone();
-    let stop =
-        tokio::spawn(async move { stop_service.stop_call(&stop_session_id, &call_id).await });
+    let stop = tokio::spawn(async move {
+        stop_service
+            .stop_interaction(&stop_session_id, &interaction_id)
+            .await
+    });
     let pending_response = connection.next_stop_request().await.unwrap();
     tokio::time::advance(PROVIDER_CLEANUP_TIMEOUT).await;
 
@@ -1091,12 +1109,12 @@ async fn cleanup_timeout_fails_and_releases_the_session() {
 
 #[tokio::test]
 async fn queued_stop_wins_a_provider_close_race() {
-    let (service, mut connection, call_id, session_id) = establish_call().await;
+    let (service, mut connection, interaction_id, session_id) = establish_interaction().await;
     connection
         .send_event(ProviderConnectionEvent::Closed)
         .unwrap();
 
-    let stop = service.stop_call(&session_id, &call_id);
+    let stop = service.stop_interaction(&session_id, &interaction_id);
     let provider = async move {
         connection
             .next_stop_request()
@@ -1118,24 +1136,28 @@ async fn queued_stop_wins_a_provider_close_race() {
 fn stale_cleanup_cannot_remove_a_later_call() {
     let active_runs = Arc::new(ActiveRunRegistry::default());
     assert!(active_runs.start_live("main-session"));
-    let calls = Arc::new(Mutex::new(HashMap::new()));
-    let current_id = LiveVoiceCallId("current".into());
+    let interactions = Arc::new(Mutex::new(HashMap::new()));
+    let current_id = LiveVoiceInteractionId("current".into());
     let (completion_tx, _) = watch::channel(None);
-    calls.lock().unwrap().insert(
+    interactions.lock().unwrap().insert(
         "main-session".into(),
-        Arc::new(LiveCallControl {
-            call_id: current_id.clone(),
+        Arc::new(LiveVoiceInteractionControl {
+            interaction_id: current_id.clone(),
             stop_requested: CancellationToken::new(),
             cleanup_finished: CancellationToken::new(),
             completion_tx,
         }),
     );
 
-    remove_call_if_current(&calls, "main-session", &LiveVoiceCallId("stale".into()));
+    remove_interaction_if_current(
+        &interactions,
+        "main-session",
+        &LiveVoiceInteractionId("stale".into()),
+    );
 
     assert!(matches!(
-        calls.lock().unwrap().get("main-session"),
-        Some(control) if control.call_id == current_id
+        interactions.lock().unwrap().get("main-session"),
+        Some(control) if control.interaction_id == current_id
     ));
     assert!(active_runs.is_active("main-session"));
 }

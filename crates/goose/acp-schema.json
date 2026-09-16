@@ -1372,7 +1372,7 @@
     "LiveVoiceStartResponse_unstable": {
       "type": "object",
       "properties": {
-        "callId": {
+        "interactionId": {
           "type": "string"
         },
         "answerSdp": {
@@ -1380,7 +1380,7 @@
         }
       },
       "required": [
-        "callId",
+        "interactionId",
         "answerSdp"
       ],
       "x-side": "agent",
@@ -1392,13 +1392,13 @@
         "sessionId": {
           "type": "string"
         },
-        "callId": {
+        "interactionId": {
           "type": "string"
         }
       },
       "required": [
         "sessionId",
-        "callId"
+        "interactionId"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/session/live-voice/stop"
@@ -6794,12 +6794,12 @@
           ]
         },
         {
-          "$ref": "#/$defs/LiveVoiceCallEndedUpdate",
+          "$ref": "#/$defs/LiveVoiceInteractionEndedUpdate",
           "type": "object",
           "properties": {
             "sessionUpdate": {
               "type": "string",
-              "const": "live_voice_call_ended"
+              "const": "live_voice_interaction_ended"
             }
           },
           "required": [
@@ -6814,7 +6814,7 @@
           "usage_update": "#/$defs/SessionUsageUpdate",
           "status_message": "#/$defs/StatusMessageUpdate",
           "message_usage": "#/$defs/MessageUsageUpdate",
-          "live_voice_call_ended": "#/$defs/LiveVoiceCallEndedUpdate"
+          "live_voice_interaction_ended": "#/$defs/LiveVoiceInteractionEndedUpdate"
         }
       }
     },
@@ -7007,25 +7007,25 @@
       ],
       "description": "Per-message token usage/cost/timing, keyed by the message id used for\nchunk matching. Sent live after a turn's messages and on replay."
     },
-    "LiveVoiceCallOutcome": {
+    "LiveVoiceInteractionOutcome": {
       "type": "string",
       "enum": [
         "stopped",
         "failed"
       ]
     },
-    "LiveVoiceCallEndedUpdate": {
+    "LiveVoiceInteractionEndedUpdate": {
       "type": "object",
       "properties": {
-        "callId": {
+        "interactionId": {
           "type": "string"
         },
         "outcome": {
-          "$ref": "#/$defs/LiveVoiceCallOutcome"
+          "$ref": "#/$defs/LiveVoiceInteractionOutcome"
         }
       },
       "required": [
-        "callId",
+        "interactionId",
         "outcome"
       ]
     },

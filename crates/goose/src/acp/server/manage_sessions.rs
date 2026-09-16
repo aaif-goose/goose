@@ -101,7 +101,7 @@ impl GooseAcpAgent {
     ) -> Result<DeleteSessionResponse, agent_client_protocol::Error> {
         let session_id = req.session_id.0.to_string();
         self.active_runs.cancel_agent_run(&session_id);
-        self.live_voice.stop_session_call(&session_id).await;
+        self.live_voice.stop_session_interaction(&session_id).await;
         self.session_manager
             .delete_session(&session_id)
             .await

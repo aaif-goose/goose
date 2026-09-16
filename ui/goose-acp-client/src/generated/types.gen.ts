@@ -707,13 +707,13 @@ export type LiveVoiceStartRequest_unstable = {
 };
 
 export type LiveVoiceStartResponse_unstable = {
-    callId: string;
+    interactionId: string;
     answerSdp: string;
 };
 
 export type LiveVoiceStopRequest_unstable = {
     sessionId: string;
-    callId: string;
+    interactionId: string;
 };
 
 export type DiagnosticsGetRequest_unstable = {
@@ -2682,8 +2682,8 @@ export type GooseSessionUpdate = ({
 } & StatusMessageUpdate) | ({
     sessionUpdate: 'message_usage';
 } & MessageUsageUpdate) | ({
-    sessionUpdate: 'live_voice_call_ended';
-} & LiveVoiceCallEndedUpdate);
+    sessionUpdate: 'live_voice_interaction_ended';
+} & LiveVoiceInteractionEndedUpdate);
 
 /**
  * Streaming context-window usage update for a session.
@@ -2749,11 +2749,11 @@ export type MessageUsageUpdate = {
     usage: MessageUsageData;
 };
 
-export type LiveVoiceCallOutcome = 'stopped' | 'failed';
+export type LiveVoiceInteractionOutcome = 'stopped' | 'failed';
 
-export type LiveVoiceCallEndedUpdate = {
-    callId: string;
-    outcome: LiveVoiceCallOutcome;
+export type LiveVoiceInteractionEndedUpdate = {
+    interactionId: string;
+    outcome: LiveVoiceInteractionOutcome;
 };
 
 /**

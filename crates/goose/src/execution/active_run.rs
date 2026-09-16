@@ -19,8 +19,8 @@ struct SessionRunState {
 
 pub(crate) enum StartRunError {
     AgentRunExists { run_id: String },
-    LiveCallExists,
-    LiveCallMissing,
+    LiveVoiceInteractionExists,
+    LiveVoiceInteractionMissing,
 }
 
 #[derive(Default)]
@@ -47,7 +47,7 @@ impl ActiveRunRegistry {
                 });
             }
             if state.live_active {
-                return Err(StartRunError::LiveCallExists);
+                return Err(StartRunError::LiveVoiceInteractionExists);
             }
         }
         runs.insert(
@@ -76,7 +76,7 @@ impl ActiveRunRegistry {
             .lock()
             .expect("active run lock poisoned");
         let Some(state) = runs.get_mut(session_id) else {
-            return Err(StartRunError::LiveCallMissing);
+            return Err(StartRunError::LiveVoiceInteractionMissing);
         };
         if let Some(agent_run) = &state.agent_run {
             return Err(StartRunError::AgentRunExists {
@@ -209,7 +209,7 @@ mod tests {
                 CancellationToken::new(),
                 Arc::new(Agent::new()),
             ),
-            Err(StartRunError::LiveCallExists)
+            Err(StartRunError::LiveVoiceInteractionExists)
         ));
     }
 

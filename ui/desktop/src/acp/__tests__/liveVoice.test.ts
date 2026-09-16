@@ -71,9 +71,9 @@ describe('ACP Live voice', () => {
     });
   });
 
-  it('uses generated start and stop clients with the call ID', async () => {
+  it('uses generated start and stop clients with the interaction ID', async () => {
     const start = vi.fn().mockResolvedValue({
-      callId: 'live-opaque',
+      interactionId: 'live-opaque',
       answerSdp: 'answer',
     });
     const stop = vi.fn().mockResolvedValue({});
@@ -85,7 +85,7 @@ describe('ACP Live voice', () => {
     } as unknown as Awaited<ReturnType<typeof getAcpClient>>);
 
     await expect(acpStartLiveVoice('main-session', 'offer')).resolves.toMatchObject({
-      callId: 'live-opaque',
+      interactionId: 'live-opaque',
     });
     await acpStopLiveVoice('main-session', 'live-opaque');
 
@@ -96,7 +96,7 @@ describe('ACP Live voice', () => {
     });
     expect(stop).toHaveBeenCalledWith({
       sessionId: 'main-session',
-      callId: 'live-opaque',
+      interactionId: 'live-opaque',
     });
   });
 });
