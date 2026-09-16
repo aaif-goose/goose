@@ -8,6 +8,28 @@ struct TestConnection {
 
 struct UndeliveredConnection;
 
+fn test_interaction(
+    provider_connection: impl ProviderConnection + 'static,
+) -> LiveVoiceInteraction {
+    test_interaction_with_publisher(provider_connection, Arc::new(|_| {}))
+}
+
+fn test_interaction_with_publisher(
+    provider_connection: impl ProviderConnection + 'static,
+    transcript_publisher: LiveVoiceTranscriptPublisher,
+) -> LiveVoiceInteraction {
+    LiveVoiceInteraction::new(
+        Box::new(provider_connection),
+        Arc::new(SessionManager::new(tempfile::tempdir().unwrap().keep())),
+        transcript_publisher,
+        LiveMainAgent::new(
+            |_, _| Err("unused".into()),
+            |_, _| Box::pin(async { Err("unused".into()) }),
+        ),
+        LiveVoiceInteractionGuard::for_test("test-session"),
+    )
+}
+
 #[async_trait]
 impl ProviderConnection for TestConnection {
     async fn next_event(&mut self) -> ProviderConnectionEvent {
@@ -50,12 +72,9 @@ impl ProviderConnection for UndeliveredConnection {
 #[tokio::test]
 async fn a_live_voice_interaction_owns_and_stops_its_provider_connection() {
     let (stopped, did_stop) = oneshot::channel();
-    let mut interaction = LiveVoiceInteraction::new(
-        "test-session".into(),
-        Box::new(TestConnection {
-            stopped: Some(stopped),
-        }),
-    );
+    let mut interaction = test_interaction(TestConnection {
+        stopped: Some(stopped),
+    });
 
     interaction.cleanup_provider().await.unwrap();
     did_stop.await.unwrap();
@@ -63,19 +82,15 @@ async fn a_live_voice_interaction_owns_and_stops_its_provider_connection() {
 
 #[tokio::test]
 async fn an_undelivered_delegation_update_notifies_the_user() {
-    let mut interaction =
-        LiveVoiceInteraction::new("test-session".into(), Box::new(UndeliveredConnection));
     let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
     let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
         notice_tx.send(message).unwrap();
     });
+    let mut interaction =
+        test_interaction_with_publisher(UndeliveredConnection, transcript_publisher);
 
     interaction
-        .send_delegation_update(
-            &transcript_publisher,
-            "delegation-1".into(),
-            "result".into(),
-        )
+        .send_delegation_update("delegation-1".into(), "result".into())
         .await
         .unwrap();
 
@@ -89,10 +104,7 @@ async fn an_undelivered_delegation_update_notifies_the_user() {
 
 #[test]
 fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
-    let mut interaction = LiveVoiceInteraction::new(
-        "test-session".into(),
-        Box::new(TestConnection { stopped: None }),
-    );
+    let mut interaction = test_interaction(TestConnection { stopped: None });
     interaction.record_transcript("1".into(), Role::Assistant, "ready", 5);
     interaction.record_transcript("2".into(), Role::User, "do ", 10);
     interaction.record_transcript("3".into(), Role::User, "this", 20);
@@ -160,10 +172,7 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
         .transcript
         .mark_context_sent_to_main_agent_through(50);
 
-    let mut missing_user = LiveVoiceInteraction::new(
-        "test-session".into(),
-        Box::new(TestConnection { stopped: None }),
-    );
+    let mut missing_user = test_interaction(TestConnection { stopped: None });
     missing_user.record_transcript("1".into(), Role::Assistant, "hello", 10);
     assert!(matches!(
         missing_user.handle_delegation_request("event-1".into(), "delegation-1".into(), 10),
@@ -173,10 +182,7 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
 
 #[test]
 fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff() {
-    let mut interaction = LiveVoiceInteraction::new(
-        "test-session".into(),
-        Box::new(TestConnection { stopped: None }),
-    );
+    let mut interaction = test_interaction(TestConnection { stopped: None });
     interaction.record_transcript("1".into(), Role::Assistant, "Anything else?", 10);
     interaction.record_transcript("2".into(), Role::User, "No thanks", 20);
 
@@ -208,10 +214,7 @@ fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff(
 
 #[test]
 fn transcript_grouping_projects_deltas_and_finalizes_messages() {
-    let mut interaction = LiveVoiceInteraction::new(
-        "test-session".into(),
-        Box::new(TestConnection { stopped: None }),
-    );
+    let mut interaction = test_interaction(TestConnection { stopped: None });
     let first = interaction
         .record_transcript("1".into(), Role::User, "hello", 10)
         .unwrap();

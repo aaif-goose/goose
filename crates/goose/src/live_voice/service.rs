@@ -1,6 +1,4 @@
-use super::interaction::{
-    LiveMainAgent, LiveVoiceInteraction, LiveVoiceInteractionId, LiveVoiceInteractionRuntime,
-};
+use super::interaction::{LiveMainAgent, LiveVoiceInteraction, LiveVoiceInteractionId};
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
@@ -10,7 +8,7 @@ use crate::token_counter::TokenCounter;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
 pub(crate) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
 #[cfg(feature = "live-voice")]
-use goose_providers::openai_live_voice_provider::{OpenAiLiveVoiceConfig, OpenAiLiveVoiceProvider};
+use goose_providers::openai_live_voice_provider::OpenAiLiveVoiceProvider;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -24,6 +22,26 @@ const LIVE_VOICE_INPUT_TOKEN_LIMIT: usize = 8_192;
 const LIVE_VOICE_ENABLED_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENABLED";
 #[cfg(feature = "live-voice")]
 const LIVE_VOICE_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE";
+#[cfg(feature = "live-voice")]
+const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
+#[cfg(feature = "live-voice")]
+const LIVE_SESSION_INSTRUCTIONS: &str = concat!(
+    "You are Goose's live voice interface. Keep the conversation natural and concise.\n",
+    "Interruption policy: Stop speaking when the user interrupts and listen to what they say.\n",
+    "Delegation policy:\n",
+    "Backend tools:\n",
+    "- Goose can use backend reasoning and tools for longer tasks.\n",
+    "Delegate to Goose when:\n",
+    "- The user has finished stating a complete request that needs backend tools or reasoning.\n",
+    "- The user corrects or changes backend work already in progress.\n",
+    "Do not delegate to Goose when:\n",
+    "- The request is unfinished or is missing a required detail such as a location, object, ",
+    "command, or desired outcome. Ask one brief clarification and wait for the answer.\n",
+    "- The user is greeting you or making conversation that you can answer directly.\n",
+    "After delegating, briefly say the work is underway. Keep listening and accept corrections ",
+    "while Goose works. Do not guess the result. Present delegated results directly. Only say ",
+    "the task stopped or finished after Goose confirms it."
+);
 
 type LiveVoiceInteractionControls = Arc<Mutex<HashMap<String, Arc<LiveVoiceInteractionControl>>>>;
 pub(crate) type LiveVoiceTranscriptPublisher = Arc<dyn Fn(Message) + Send + Sync>;
@@ -112,6 +130,26 @@ impl LiveVoiceInteractionGuard {
 
     pub(super) fn stop_requested(&self) -> &CancellationToken {
         &self.control.stop_requested
+    }
+
+    pub(super) fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(session_id: &str) -> Self {
+        let (completion_tx, _) = watch::channel(None);
+        Self::new(
+            Arc::new(ActiveRunRegistry::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            session_id,
+            Arc::new(LiveVoiceInteractionControl {
+                interaction_id: LiveVoiceInteractionId::new(),
+                stop_requested: CancellationToken::new(),
+                cleanup_finished: CancellationToken::new(),
+                completion_tx,
+            }),
+        )
     }
 }
 
@@ -240,17 +278,16 @@ impl LiveVoiceService {
             .await
             .map_err(|_| LiveVoiceError::StartFailed)?;
 
-        let session_id = interaction_guard.session_id.clone();
         let interaction_id = interaction_guard.control.interaction_id.clone();
         let completion_rx = interaction_guard.control.completion_tx.subscribe();
-        let interaction = LiveVoiceInteraction::new(session_id, provider_connection);
-        let runtime = LiveVoiceInteractionRuntime::new(
+        let interaction = LiveVoiceInteraction::new(
+            provider_connection,
             session_manager,
             transcript_publisher,
             main_agent,
             interaction_guard,
         );
-        tokio::spawn(interaction.run(runtime));
+        tokio::spawn(interaction.run());
         Ok(StartLiveVoiceInteractionResult {
             interaction_id,
             answer,
@@ -324,11 +361,10 @@ fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     let api_key = config
         .get_secret::<String>("OPENAI_API_KEY")
         .map_err(|_| "Live voice provider is not configured")?;
-    let provider_config = config
+    let voice = config
         .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
-        .map(|voice| OpenAiLiveVoiceConfig { voice })
-        .unwrap_or_default();
-    OpenAiLiveVoiceProvider::new(api_key, provider_config)
+        .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
+    OpenAiLiveVoiceProvider::new(api_key, voice, LIVE_SESSION_INSTRUCTIONS.into())
         .map(|provider| Arc::new(provider) as Arc<dyn LiveVoiceProvider>)
         .map_err(|_| "Live voice provider is not configured")
 }

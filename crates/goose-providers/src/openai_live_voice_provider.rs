@@ -21,7 +21,6 @@ use tokio::{
 };
 
 const OPENAI_LIVE_MODEL: &str = "gpt-live-1";
-const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
 
 const HTTP_SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 const SIDEBAND_ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -31,54 +30,25 @@ const DELEGATION_DELIVERY_FAILURE_NOTICE: &str = concat!(
     "couldn't bring the update into this voice conversation and ask them to try again. Do not ",
     "say whether the delegated work succeeded or failed."
 );
-const LIVE_SESSION_INSTRUCTIONS: &str = concat!(
-    "You are Goose's live voice interface. Keep the conversation natural and concise.\n",
-    "Interruption policy: Stop speaking when the user interrupts and listen to what they say.\n",
-    "Delegation policy:\n",
-    "Backend tools:\n",
-    "- Goose can use backend reasoning and tools for longer tasks.\n",
-    "Delegate to Goose when:\n",
-    "- The user has finished stating a complete request that needs backend tools or reasoning.\n",
-    "- The user corrects or changes backend work already in progress.\n",
-    "Do not delegate to Goose when:\n",
-    "- The request is unfinished or is missing a required detail such as a location, object, ",
-    "command, or desired outcome. Ask one brief clarification and wait for the answer.\n",
-    "- The user is greeting you or making conversation that you can answer directly.\n",
-    "After delegating, briefly say the work is underway. Keep listening and accept corrections ",
-    "while Goose works. Do not guess the result. Present delegated results directly. Only say ",
-    "the task stopped or finished after Goose confirms it."
-);
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OpenAiLiveVoiceConfig {
-    pub voice: String,
-}
-
-impl Default for OpenAiLiveVoiceConfig {
-    fn default() -> Self {
-        Self {
-            voice: DEFAULT_OPENAI_LIVE_VOICE.into(),
-        }
-    }
-}
-
 pub struct OpenAiLiveVoiceProvider {
     client: OpenAiLiveClient,
-    config: OpenAiLiveVoiceConfig,
+    voice: String,
+    instructions: String,
 }
 
 impl OpenAiLiveVoiceProvider {
-    pub fn new(api_key: impl Into<String>, config: OpenAiLiveVoiceConfig) -> Result<Self> {
+    pub fn new(api_key: impl Into<String>, voice: String, instructions: String) -> Result<Self> {
         let api_key = api_key.into();
         if api_key.trim().is_empty() {
             bail!("OpenAI API key is empty");
         }
-        if config.voice.trim().is_empty() {
+        if voice.trim().is_empty() {
             bail!("OpenAI Live voice is empty");
         }
         Ok(Self {
             client: OpenAiLiveClient::new(api_key),
-            config,
+            voice,
+            instructions,
         })
     }
 }
@@ -92,8 +62,8 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
         let config = OpenAiLiveSessionConfig {
             model: OPENAI_LIVE_MODEL.into(),
-            instructions: LIVE_SESSION_INSTRUCTIONS.into(),
-            voice: Some(self.config.voice.clone()),
+            instructions: self.instructions.clone(),
+            voice: Some(self.voice.clone()),
             input_messages: input_messages
                 .into_iter()
                 .map(|message| OpenAiLiveMessage {
@@ -327,14 +297,8 @@ mod tests {
 
     #[test]
     fn configuration_must_be_valid() {
-        assert!(OpenAiLiveVoiceProvider::new("", OpenAiLiveVoiceConfig::default()).is_err());
-        assert!(OpenAiLiveVoiceProvider::new(
-            "key",
-            OpenAiLiveVoiceConfig {
-                voice: String::new(),
-            },
-        )
-        .is_err());
+        assert!(OpenAiLiveVoiceProvider::new("", "marin".into(), "instructions".into()).is_err());
+        assert!(OpenAiLiveVoiceProvider::new("key", String::new(), "instructions".into()).is_err());
     }
 
     #[test]

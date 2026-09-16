@@ -31,12 +31,15 @@ impl LiveVoiceInteractionId {
 }
 
 pub(super) struct LiveVoiceInteraction {
-    session_id: String,
     provider_connection: Box<dyn ProviderConnection>,
     provider_event_ids: HashSet<String>,
     provider_delegation_ids: HashSet<String>,
     transcript: LiveTranscript,
     delegated_main_agent_run: Option<DelegatedMainAgentRun>,
+    session_manager: Arc<SessionManager>,
+    transcript_publisher: LiveVoiceTranscriptPublisher,
+    main_agent: LiveMainAgent,
+    interaction_guard: LiveVoiceInteractionGuard,
 }
 
 struct DelegatedMainAgentRun {
@@ -59,26 +62,30 @@ enum DelegationDecision {
 
 impl LiveVoiceInteraction {
     pub(super) fn new(
-        session_id: String,
         provider_connection: Box<dyn ProviderConnection>,
+        session_manager: Arc<SessionManager>,
+        transcript_publisher: LiveVoiceTranscriptPublisher,
+        main_agent: LiveMainAgent,
+        interaction_guard: LiveVoiceInteractionGuard,
     ) -> Self {
         Self {
-            session_id,
             provider_connection,
             provider_event_ids: HashSet::new(),
             provider_delegation_ids: HashSet::new(),
             transcript: LiveTranscript::default(),
             delegated_main_agent_run: None,
+            session_manager,
+            transcript_publisher,
+            main_agent,
+            interaction_guard,
         }
     }
 
-    pub(super) async fn run(mut self, runtime: LiveVoiceInteractionRuntime) {
+    pub(super) async fn run(mut self) {
+        let stop_requested = self.interaction_guard.stop_requested().clone();
         let mut stopping = false;
         let completion = loop {
-            match self
-                .next_event(runtime.interaction_guard.stop_requested(), stopping)
-                .await
-            {
+            match self.next_event(&stop_requested, stopping).await {
                 LiveVoiceInteractionEvent::StopRequested => {
                     match timeout(PROVIDER_CLEANUP_TIMEOUT, self.cleanup_provider()).await {
                         Ok(Ok(())) => stopping = true,
@@ -86,11 +93,7 @@ impl LiveVoiceInteraction {
                     }
                 }
                 LiveVoiceInteractionEvent::MainAgentFinished(result) => {
-                    if self
-                        .handle_main_agent_finished(&runtime, result)
-                        .await
-                        .is_err()
-                    {
+                    if self.handle_main_agent_finished(result).await.is_err() {
                         self.stop_provider_after_error(stopping).await;
                         break LiveVoiceInteractionCompletion::Failed;
                     }
@@ -103,7 +106,7 @@ impl LiveVoiceInteraction {
                     ..
                 }) => {
                     if self
-                        .receive_transcript(&runtime, event_id, role, text, end_ms)
+                        .receive_transcript(event_id, role, text, end_ms)
                         .await
                         .is_err()
                     {
@@ -119,7 +122,7 @@ impl LiveVoiceInteraction {
                     },
                 ) => {
                     if self
-                        .receive_delegation(&runtime, event_id, delegation_id, offset_ms)
+                        .receive_delegation(event_id, delegation_id, offset_ms)
                         .await
                         .is_err()
                     {
@@ -143,7 +146,7 @@ impl LiveVoiceInteraction {
             }
         };
 
-        self.finish_interaction(runtime, completion).await;
+        self.finish_interaction(completion).await;
     }
 
     async fn next_event(
@@ -176,7 +179,6 @@ impl LiveVoiceInteraction {
 
     async fn receive_transcript(
         &mut self,
-        runtime: &LiveVoiceInteractionRuntime,
         event_id: String,
         role: Role,
         text: String,
@@ -188,10 +190,10 @@ impl LiveVoiceInteraction {
             return Ok(());
         };
 
-        (runtime.transcript_publisher)(transcript_delta_to_display);
+        (self.transcript_publisher)(transcript_delta_to_display);
         save_raw_transcript_entries(
-            &runtime.session_manager,
-            &self.session_id,
+            &self.session_manager,
+            self.interaction_guard.session_id(),
             &mut self.transcript,
         )
         .await?;
@@ -213,7 +215,6 @@ impl LiveVoiceInteraction {
 
     async fn receive_delegation(
         &mut self,
-        runtime: &LiveVoiceInteractionRuntime,
         event_id: String,
         delegation_id: String,
         offset_ms: u64,
@@ -221,21 +222,14 @@ impl LiveVoiceInteraction {
         match self.handle_delegation_request(event_id, delegation_id.clone(), offset_ms) {
             DelegationDecision::Ignore => {}
             DelegationDecision::Reject(text) => {
-                self.send_delegation_update(
-                    &runtime.transcript_publisher,
-                    delegation_id,
-                    bound_delegation_update(text).await,
-                )
-                .await?;
+                self.send_delegation_update(delegation_id, bound_delegation_update(text).await)
+                    .await?;
             }
             DelegationDecision::Accept(context) => {
+                let session_id = self.interaction_guard.session_id().to_string();
                 if self.delegated_main_agent_run.is_some() {
                     let input = format!("{context}\n{DELEGATION_INSTRUCTION}");
-                    let response = match runtime
-                        .main_agent
-                        .steer(self.session_id.clone(), input)
-                        .await
-                    {
+                    let response = match self.main_agent.steer(session_id, input).await {
                         Ok(response) => {
                             self.transcript
                                 .mark_context_sent_to_main_agent_through(offset_ms);
@@ -244,7 +238,6 @@ impl LiveVoiceInteraction {
                         Err(response) => response,
                     };
                     self.send_delegation_update(
-                        &runtime.transcript_publisher,
                         delegation_id,
                         bound_delegation_update(response).await,
                     )
@@ -252,13 +245,13 @@ impl LiveVoiceInteraction {
                 } else {
                     self.transcript.finish_transcript_entry_being_built();
                     save_raw_transcript_entries(
-                        &runtime.session_manager,
-                        &self.session_id,
+                        &self.session_manager,
+                        &session_id,
                         &mut self.transcript,
                     )
                     .await?;
                     let input = format!("{context}\n{DELEGATION_INSTRUCTION}");
-                    match runtime.main_agent.start(self.session_id.clone(), input) {
+                    match self.main_agent.start(session_id, input) {
                         Ok(completion) => {
                             self.delegated_main_agent_run = Some(DelegatedMainAgentRun {
                                 provider_delegation_id: delegation_id,
@@ -269,7 +262,6 @@ impl LiveVoiceInteraction {
                         }
                         Err(response) => {
                             self.send_delegation_update(
-                                &runtime.transcript_publisher,
                                 delegation_id,
                                 bound_delegation_update(response).await,
                             )
@@ -304,40 +296,31 @@ impl LiveVoiceInteraction {
         }
     }
 
-    async fn handle_main_agent_finished(
-        &mut self,
-        runtime: &LiveVoiceInteractionRuntime,
-        result: String,
-    ) -> anyhow::Result<()> {
+    async fn handle_main_agent_finished(&mut self, result: String) -> anyhow::Result<()> {
         let run = self
             .delegated_main_agent_run
             .take()
             .expect("main agent is running");
         self.transcript.finish_transcript_entry_being_built();
         save_raw_transcript_entries(
-            &runtime.session_manager,
-            &self.session_id,
+            &self.session_manager,
+            self.interaction_guard.session_id(),
             &mut self.transcript,
         )
         .await?;
         self.send_delegation_update(
-            &runtime.transcript_publisher,
             run.provider_delegation_id,
             bound_delegation_update(result).await,
         )
         .await
     }
 
-    async fn finish_interaction(
-        mut self,
-        mut runtime: LiveVoiceInteractionRuntime,
-        mut completion: LiveVoiceInteractionCompletion,
-    ) {
+    async fn finish_interaction(mut self, mut completion: LiveVoiceInteractionCompletion) {
         match self.delegated_main_agent_run.take() {
             None => {
                 if save_transcript_and_context_waiting_for_main_agent(
-                    &runtime.session_manager,
-                    &self.session_id,
+                    &self.session_manager,
+                    self.interaction_guard.session_id(),
                     &mut self.transcript,
                 )
                 .await
@@ -345,16 +328,15 @@ impl LiveVoiceInteraction {
                 {
                     completion = LiveVoiceInteractionCompletion::Failed;
                 }
-                runtime
-                    .interaction_guard
+                self.interaction_guard
                     .publish_completion_after_cleanup(completion);
             }
             Some(run) => {
-                runtime.interaction_guard.publish_completion(completion);
+                self.interaction_guard.publish_completion(completion);
                 let _ = run.result_future.await;
                 let _ = save_transcript_and_context_waiting_for_main_agent(
-                    &runtime.session_manager,
-                    &self.session_id,
+                    &self.session_manager,
+                    self.interaction_guard.session_id(),
                     &mut self.transcript,
                 )
                 .await;
@@ -370,7 +352,6 @@ impl LiveVoiceInteraction {
 
     async fn send_delegation_update(
         &mut self,
-        transcript_publisher: &LiveVoiceTranscriptPublisher,
         provider_delegation_id: String,
         text: String,
     ) -> anyhow::Result<()> {
@@ -383,7 +364,7 @@ impl LiveVoiceInteraction {
             .await?;
         match delivery {
             DelegationUpdateDelivery::Delivered => {}
-            DelegationUpdateDelivery::Undelivered => transcript_publisher(
+            DelegationUpdateDelivery::Undelivered => (self.transcript_publisher)(
                 Message::assistant()
                     .with_id(format!("msg_live_{}", Uuid::now_v7()))
                     .with_text(UNDELIVERED_DELEGATION_UPDATE_NOTICE)
@@ -395,30 +376,6 @@ impl LiveVoiceInteraction {
 
     async fn cleanup_provider(&mut self) -> anyhow::Result<()> {
         self.provider_connection.stop().await
-    }
-}
-
-// Server-owned handles used for the lifetime of one interaction loop.
-pub(super) struct LiveVoiceInteractionRuntime {
-    session_manager: Arc<SessionManager>,
-    transcript_publisher: LiveVoiceTranscriptPublisher,
-    main_agent: LiveMainAgent,
-    interaction_guard: LiveVoiceInteractionGuard,
-}
-
-impl LiveVoiceInteractionRuntime {
-    pub(super) fn new(
-        session_manager: Arc<SessionManager>,
-        transcript_publisher: LiveVoiceTranscriptPublisher,
-        main_agent: LiveMainAgent,
-        interaction_guard: LiveVoiceInteractionGuard,
-    ) -> Self {
-        Self {
-            session_manager,
-            transcript_publisher,
-            main_agent,
-            interaction_guard,
-        }
     }
 }
 
