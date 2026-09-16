@@ -1938,11 +1938,11 @@ impl Agent {
                     }
                 }
 
-                let has_state_machine_answer = turn_guard
+                let should_resume = turn_guard
                     .state()
                     .wait_for_all_confirmation_answers(&cancel)
-                    .await?;
-                if !has_state_machine_answer {
+                    .await;
+                if !should_resume {
                     return;
                 }
                 turn_guard.state().clear_confirmations();

@@ -188,7 +188,9 @@ async fn check_cancelled_approval(state_machine: bool, late_answer: bool) -> Res
             .await;
     }
     tokio::time::timeout(Duration::from_secs(2), async {
-        while stream.next().await.is_some() {}
+        while let Some(event) = stream.next().await {
+            event.expect("cancelling an approval wait must end the stream without an error");
+        }
     })
     .await
     .expect("Stop must finish an approval wait without a client answer");

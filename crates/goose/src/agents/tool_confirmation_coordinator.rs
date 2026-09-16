@@ -109,10 +109,10 @@ impl SessionToolConfirmationState {
     pub(super) async fn wait_for_all_confirmation_answers(
         &self,
         cancel: &CancellationToken,
-    ) -> Result<bool> {
+    ) -> bool {
         loop {
             if cancel.is_cancelled() {
-                return Err(anyhow!("state-machine turn cancelled"));
+                return false;
             }
             let answer_received = self.confirmation_answered.notified();
             tokio::pin!(answer_received);
@@ -132,12 +132,12 @@ impl SessionToolConfirmationState {
                 )
             };
             if let Some(has_state_machine_answer) = completed {
-                return Ok(has_state_machine_answer);
+                return has_state_machine_answer;
             }
 
             tokio::select! {
                 biased;
-                _ = cancel.cancelled() => return Err(anyhow!("state-machine turn cancelled")),
+                _ = cancel.cancelled() => return false,
                 _ = answer_received => {}
             }
         }
@@ -229,8 +229,7 @@ mod tests {
 
         let has_state_machine_answer = session
             .wait_for_all_confirmation_answers(&CancellationToken::new())
-            .await
-            .unwrap();
+            .await;
 
         assert!(has_state_machine_answer);
     }
@@ -289,13 +288,27 @@ mod tests {
             .unwrap();
         cancel.cancel();
         assert!(session.check_not_cancelled().is_err());
-        assert!(session
-            .wait_for_all_confirmation_answers(&cancel)
-            .await
-            .is_err());
+        assert!(!session.wait_for_all_confirmation_answers(&cancel).await);
         drop(guard);
         let _next = session.try_start_turn(CancellationToken::new()).unwrap();
         assert!(session.check_not_cancelled().is_ok());
         assert!(!session.contains_request("request"));
+    }
+
+    #[tokio::test]
+    async fn cancellation_wakes_pending_confirmation_wait_without_resuming() {
+        let coordinator = ToolConfirmationCoordinator::new();
+        let session = coordinator.session("session");
+        let cancel = CancellationToken::new();
+        let _guard = session.try_start_turn(cancel.clone()).unwrap();
+        session.register_request("request".into());
+        let wait = session.wait_for_all_confirmation_answers(&cancel);
+        tokio::pin!(wait);
+        assert!(futures::poll!(&mut wait).is_pending());
+
+        cancel.cancel();
+
+        assert!(!wait.await);
+        assert!(session.check_not_cancelled().is_err());
     }
 }
