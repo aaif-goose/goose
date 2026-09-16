@@ -25,19 +25,20 @@ const OPENAI_LIVE_MODEL: &str = "gpt-live-1";
 const HTTP_SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 const SIDEBAND_ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
 const DELEGATION_UPDATE_ACK_TIMEOUT: Duration = Duration::from_secs(10);
-const DELEGATION_DELIVERY_FAILURE_NOTICE: &str = concat!(
-    "The latest update for the delegated request could not be delivered. Tell the user you ",
-    "couldn't bring the update into this voice conversation and ask them to try again. Do not ",
-    "say whether the delegated work succeeded or failed."
-);
 pub struct OpenAiLiveVoiceProvider {
     client: OpenAiLiveClient,
     voice: String,
     instructions: String,
+    delivery_failure_instructions: String,
 }
 
 impl OpenAiLiveVoiceProvider {
-    pub fn new(api_key: impl Into<String>, voice: String, instructions: String) -> Result<Self> {
+    pub fn new(
+        api_key: impl Into<String>,
+        voice: String,
+        instructions: String,
+        delivery_failure_instructions: String,
+    ) -> Result<Self> {
         let api_key = api_key.into();
         if api_key.trim().is_empty() {
             bail!("OpenAI API key is empty");
@@ -49,6 +50,7 @@ impl OpenAiLiveVoiceProvider {
             client: OpenAiLiveClient::new(api_key),
             voice,
             instructions,
+            delivery_failure_instructions,
         })
     }
 }
@@ -91,6 +93,7 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
             Box::new(OpenAiProviderConnection {
                 sideband,
                 pending_events: VecDeque::new(),
+                delivery_failure_instructions: self.delivery_failure_instructions.clone(),
             }),
         ))
     }
@@ -99,6 +102,7 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
 struct OpenAiProviderConnection {
     sideband: ConnectedOpenAiLiveSession,
     pending_events: VecDeque<ProviderConnectionEvent>,
+    delivery_failure_instructions: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -135,7 +139,7 @@ impl ProviderConnection for OpenAiProviderConnection {
             AppendContextOutcome::Accepted => Ok(DelegationUpdateDelivery::Delivered),
             AppendContextOutcome::Rejected => {
                 let _ = self
-                    .append_context(None, DELEGATION_DELIVERY_FAILURE_NOTICE.into())
+                    .append_context(None, self.delivery_failure_instructions.clone())
                     .await?;
                 Ok(DelegationUpdateDelivery::Undelivered)
             }
@@ -297,8 +301,8 @@ mod tests {
 
     #[test]
     fn configuration_must_be_valid() {
-        assert!(OpenAiLiveVoiceProvider::new("", "marin".into(), "instructions".into()).is_err());
-        assert!(OpenAiLiveVoiceProvider::new("key", String::new(), "instructions".into()).is_err());
+        assert!(OpenAiLiveVoiceProvider::new("", "voice".into(), "".into(), "".into()).is_err());
+        assert!(OpenAiLiveVoiceProvider::new("key", String::new(), "".into(), "".into()).is_err());
     }
 
     #[test]

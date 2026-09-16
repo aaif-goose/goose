@@ -149,7 +149,7 @@ fn format_context<'a>(deltas: impl IntoIterator<Item = &'a ContextDelta>) -> Opt
 fn speaker(role: &Role) -> &'static str {
     match role {
         Role::User => "User",
-        Role::Assistant => "GPT-Live",
+        Role::Assistant => "Voice assistant",
     }
 }
 

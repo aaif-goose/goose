@@ -42,6 +42,12 @@ const LIVE_SESSION_INSTRUCTIONS: &str = concat!(
     "while Goose works. Do not guess the result. Present delegated results directly. Only say ",
     "the task stopped or finished after Goose confirms it."
 );
+#[cfg(feature = "live-voice")]
+const DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS: &str = concat!(
+    "The latest update for the delegated request could not be delivered. Tell the user you ",
+    "couldn't bring the update into this voice conversation and ask them to try again. Do not ",
+    "say whether the delegated work succeeded or failed."
+);
 
 type LiveVoiceInteractionControls = Arc<Mutex<HashMap<String, Arc<LiveVoiceInteractionControl>>>>;
 pub(crate) type LiveVoiceTranscriptPublisher = Arc<dyn Fn(Message) + Send + Sync>;
@@ -364,9 +370,14 @@ fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     let voice = config
         .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
         .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
-    OpenAiLiveVoiceProvider::new(api_key, voice, LIVE_SESSION_INSTRUCTIONS.into())
-        .map(|provider| Arc::new(provider) as Arc<dyn LiveVoiceProvider>)
-        .map_err(|_| "Live voice provider is not configured")
+    OpenAiLiveVoiceProvider::new(
+        api_key,
+        voice,
+        LIVE_SESSION_INSTRUCTIONS.into(),
+        DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS.into(),
+    )
+    .map(|provider| Arc::new(provider) as Arc<dyn LiveVoiceProvider>)
+    .map_err(|_| "Live voice provider is not configured")
 }
 
 #[cfg(not(feature = "live-voice"))]

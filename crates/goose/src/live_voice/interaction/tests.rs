@@ -118,7 +118,7 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
     };
     assert_eq!(
         input,
-        "Live conversation context:\nGPT-Live: ready\nUser: do this"
+        "Live conversation context:\nVoice assistant: ready\nUser: do this"
     );
     interaction
         .transcript
@@ -166,7 +166,7 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
     };
     assert_eq!(
         next,
-        "Live conversation context:\nGPT-Live: crossinglater\nUser: again"
+        "Live conversation context:\nVoice assistant: crossinglater\nUser: again"
     );
     interaction
         .transcript
@@ -192,7 +192,7 @@ fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff(
         .unwrap();
     assert_eq!(
         context,
-        "Live conversation context:\nGPT-Live: Anything else?\nUser: No thanks"
+        "Live conversation context:\nVoice assistant: Anything else?\nUser: No thanks"
     );
     assert_eq!(
         interaction

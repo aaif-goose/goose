@@ -906,7 +906,7 @@ async fn running_transcript_is_saved_user_only_and_steered_to_the_main_agent() {
         })
         .unwrap();
     let input = steers.recv().await.unwrap();
-    assert!(input.contains("GPT-Live: working\nUser: also run tests\n"));
+    assert!(input.contains("Voice assistant: working\nUser: also run tests\n"));
     assert!(!input.contains("start work"));
     assert_eq!(
         connection.next_delegation_update().await.unwrap().text,
@@ -997,7 +997,7 @@ async fn running_transcript_is_saved_user_only_and_steered_to_the_main_agent() {
     assert!(messages[6].is_agent_visible());
     assert!(messages[6]
         .as_concat_text()
-        .contains("GPT-Live: Anything else?\nUser: Document it"));
+        .contains("Voice assistant: Anything else?\nUser: Document it"));
     assert!(!messages[6].as_concat_text().contains("also run tests"));
     assert!(!messages[6]
         .as_concat_text()
