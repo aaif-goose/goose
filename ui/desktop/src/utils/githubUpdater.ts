@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { compareVersions } from 'compare-versions';
+import { z } from 'zod';
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -523,6 +524,34 @@ export class GitHubUpdater {
       // Find the appropriate download URL based on platform
       const platform = process.platform;
       const arch = process.arch;
+      if (platform === 'darwin') {
+        const requirementsAsset = release.assets.find(
+          (asset) => asset.name === 'mac-update-requirements.json'
+        );
+        if (!requirementsAsset) {
+          throw new Error('This release does not include macOS compatibility information.');
+        }
+        const requirementsResponse = await fetch(requirementsAsset.browser_download_url, {
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!requirementsResponse.ok) {
+          throw new Error('Unable to check macOS update compatibility. Please try again later.');
+        }
+        const requirements = z
+          .object({
+            version: z.literal(latestVersion),
+            minimumMacOSVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+          })
+          .safeParse(await requirementsResponse.json());
+        if (!requirements.success) {
+          throw new Error('This release has invalid macOS compatibility information.');
+        }
+        if (
+          compareVersions(process.getSystemVersion(), requirements.data.minimumMacOSVersion) < 0
+        ) {
+          return { updateAvailable: false, latestVersion };
+        }
+      }
       let downloadUrl: string | undefined;
       let assetName: string;
 
