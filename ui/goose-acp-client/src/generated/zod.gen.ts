@@ -427,7 +427,8 @@ export const zSteerSessionResponse_unstable = z.object({
  * Ask whether a new or existing chat can enter direct Live voice.
  */
 export const zLiveVoiceAvailabilityRequest_unstable = z.object({
-    sessionId: z.string().nullish()
+    sessionId: z.string().nullish(),
+    _meta: z.record(z.string(), z.unknown()).nullish()
 });
 
 export const zLiveVoiceStatus = z.enum(['ready', 'unavailable']);
@@ -442,7 +443,8 @@ export const zLiveVoiceAvailabilityResponse_unstable = z.object({
  */
 export const zLiveVoiceStartRequest_unstable = z.object({
     sessionId: z.string(),
-    offerSdp: z.string()
+    offerSdp: z.string(),
+    _meta: z.record(z.string(), z.unknown()).nullish()
 });
 
 export const zLiveVoiceStartResponse_unstable = z.object({

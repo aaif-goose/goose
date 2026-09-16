@@ -2019,9 +2019,6 @@ impl Agent {
         session_config: SessionConfig,
         cancel_token: CancellationToken,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        if !super::state_machine::enabled() {
-            return Err(anyhow!("Live delegation requires the state machine"));
-        }
         let user_message = user_message.agent_only();
         let events = self
             .reply_with_state_machine(user_message, session_config, Some(cancel_token))

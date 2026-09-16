@@ -194,7 +194,6 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
     let _guard = env_lock::lock_env([
         ("GOOSE_LIVE_VOICE_ENABLED", None::<&str>),
         ("OPENAI_API_KEY", None::<&str>),
-        ("GOOSE_STATE_MACHINE", Some("1")),
     ]);
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
 
@@ -205,7 +204,10 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
         let disabled = send_custom(
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
-            serde_json::json!({ "sessionId": session.session_id().0 }),
+            serde_json::json!({
+                "sessionId": session.session_id().0,
+                "_meta": { "goose": { "unrolledAgentLoop": true } }
+            }),
         )
         .await
         .unwrap();
@@ -235,10 +237,29 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
         .await
         .unwrap();
 
+        let legacy_loop = send_custom(
+            conn.cx(),
+            "_goose/unstable/session/live-voice/availability",
+            serde_json::json!({
+                "sessionId": session.session_id().0,
+                "_meta": { "goose": { "unrolledAgentLoop": false } }
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(legacy_loop["status"], "unavailable");
+        assert_eq!(
+            legacy_loop["message"],
+            "Live voice requires the state-machine agent loop"
+        );
+
         let response = send_custom(
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
-            serde_json::json!({ "sessionId": session.session_id().0 }),
+            serde_json::json!({
+                "sessionId": session.session_id().0,
+                "_meta": { "goose": { "unrolledAgentLoop": true } }
+            }),
         )
         .await
         .unwrap();
@@ -248,7 +269,10 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
         let inaccessible = send_custom(
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
-            serde_json::json!({ "sessionId": "not-loaded-on-this-connection" }),
+            serde_json::json!({
+                "sessionId": "not-loaded-on-this-connection",
+                "_meta": { "goose": { "unrolledAgentLoop": true } }
+            }),
         )
         .await;
         assert!(inaccessible.is_err());

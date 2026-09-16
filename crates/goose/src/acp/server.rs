@@ -418,6 +418,13 @@ fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
         .and_then(|v| v.as_u64())
 }
 
+fn use_state_machine_from_meta(meta: Option<&Meta>) -> bool {
+    meta.and_then(|meta| meta.get("goose"))
+        .and_then(|goose| goose.get("unrolledAgentLoop"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or_else(crate::agents::state_machine::enabled)
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ClientCapabilitiesMeta {
     #[serde(default)]
@@ -2307,13 +2314,7 @@ impl GooseAcpAgent {
         }
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
-        let use_state_machine = args
-            .meta
-            .as_ref()
-            .and_then(|meta| meta.get("goose"))
-            .and_then(|goose| goose.get("unrolledAgentLoop"))
-            .and_then(|value| value.as_bool())
-            .unwrap_or_else(crate::agents::state_machine::enabled);
+        let use_state_machine = use_state_machine_from_meta(args.meta.as_ref());
         let session_config = SessionConfig {
             id: session_id.clone(),
             schedule_id: None,

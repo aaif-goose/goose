@@ -8,7 +8,11 @@ export async function acpGetLiveVoiceAvailability(
   sessionId?: string
 ): Promise<LiveVoiceAvailabilityResponse_unstable> {
   const { goose } = await getAcpClient();
-  return goose.sessionLiveVoiceAvailability_unstable(sessionId ? { sessionId } : {});
+  const useLegacyAgentLoop = await window.electron.getSetting('useLegacyAgentLoop');
+  return goose.sessionLiveVoiceAvailability_unstable({
+    ...(sessionId ? { sessionId } : {}),
+    _meta: { goose: { unrolledAgentLoop: !useLegacyAgentLoop } },
+  });
 }
 
 export async function acpStartLiveVoice(
@@ -16,7 +20,12 @@ export async function acpStartLiveVoice(
   offerSdp: string
 ): Promise<LiveVoiceStartResponse_unstable> {
   const { goose } = await getAcpClient();
-  return goose.sessionLiveVoiceStart_unstable({ sessionId, offerSdp });
+  const useLegacyAgentLoop = await window.electron.getSetting('useLegacyAgentLoop');
+  return goose.sessionLiveVoiceStart_unstable({
+    sessionId,
+    offerSdp,
+    _meta: { goose: { unrolledAgentLoop: !useLegacyAgentLoop } },
+  });
 }
 
 export async function acpStopLiveVoice(sessionId: string, callId: string): Promise<void> {

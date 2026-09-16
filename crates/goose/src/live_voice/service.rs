@@ -309,7 +309,7 @@ fn configured_live_voice_enabled() -> bool {
 
 #[cfg(feature = "live-voice")]
 fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
-    if !configured_live_voice_enabled() || !crate::agents::state_machine::enabled() {
+    if !configured_live_voice_enabled() {
         return Err("Live voice is disabled");
     }
 

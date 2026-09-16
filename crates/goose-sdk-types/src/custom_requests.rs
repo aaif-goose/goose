@@ -1,4 +1,6 @@
-use agent_client_protocol::schema::v1::{AvailableCommand, ContentBlock, McpServer, SessionInfo};
+use agent_client_protocol::schema::v1::{
+    AvailableCommand, ContentBlock, McpServer, Meta, SessionInfo,
+};
 use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -248,6 +250,8 @@ pub struct SteerSessionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct LiveVoiceAvailabilityRequest {
     pub session_id: Option<String>,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Meta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -274,6 +278,8 @@ pub struct LiveVoiceAvailabilityResponse {
 pub struct LiveVoiceStartRequest {
     pub session_id: String,
     pub offer_sdp: String,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Meta>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]

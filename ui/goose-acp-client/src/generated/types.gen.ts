@@ -683,6 +683,9 @@ export type SteerSessionResponse_unstable = {
  */
 export type LiveVoiceAvailabilityRequest_unstable = {
     sessionId?: string | null;
+    _meta?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 export type LiveVoiceAvailabilityResponse_unstable = {
@@ -698,6 +701,9 @@ export type LiveVoiceStatus = 'ready' | 'unavailable';
 export type LiveVoiceStartRequest_unstable = {
     sessionId: string;
     offerSdp: string;
+    _meta?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 export type LiveVoiceStartResponse_unstable = {

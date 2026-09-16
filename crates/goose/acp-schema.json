@@ -1307,6 +1307,13 @@
             "string",
             "null"
           ]
+        },
+        "_meta": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {}
         }
       },
       "description": "Ask whether a new or existing chat can enter direct Live voice.",
@@ -1345,6 +1352,13 @@
         },
         "offerSdp": {
           "type": "string"
+        },
+        "_meta": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {}
         }
       },
       "required": [

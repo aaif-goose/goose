@@ -5,7 +5,10 @@ import { acpGetLiveVoiceAvailability, acpStartLiveVoice, acpStopLiveVoice } from
 vi.mock('../acpConnection', () => ({ getAcpClient: vi.fn() }));
 
 describe('ACP Live voice', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(window.electron.getSetting).mockResolvedValue(false);
+  });
 
   it('uses the generated availability client for the displayed session', async () => {
     const sessionLiveVoiceAvailability = vi.fn().mockResolvedValue({
@@ -22,7 +25,10 @@ describe('ACP Live voice', () => {
       status: 'ready',
       message: 'Start Live voice',
     });
-    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({ sessionId: 'main-session' });
+    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({
+      sessionId: 'main-session',
+      _meta: { goose: { unrolledAgentLoop: true } },
+    });
   });
 
   it('checks availability without a session for a new chat', async () => {
@@ -40,7 +46,29 @@ describe('ACP Live voice', () => {
       status: 'unavailable',
       message: 'Live voice is disabled',
     });
-    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({});
+    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({
+      _meta: { goose: { unrolledAgentLoop: true } },
+    });
+  });
+
+  it('passes the legacy loop selection to availability', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValue(true);
+    const sessionLiveVoiceAvailability = vi.fn().mockResolvedValue({
+      status: 'unavailable',
+      message: 'Live voice requires the state-machine agent loop',
+    });
+    vi.mocked(getAcpClient).mockResolvedValue({
+      goose: {
+        sessionLiveVoiceAvailability_unstable: sessionLiveVoiceAvailability,
+      },
+    } as unknown as Awaited<ReturnType<typeof getAcpClient>>);
+
+    await acpGetLiveVoiceAvailability('main-session');
+
+    expect(sessionLiveVoiceAvailability).toHaveBeenCalledWith({
+      sessionId: 'main-session',
+      _meta: { goose: { unrolledAgentLoop: false } },
+    });
   });
 
   it('uses generated start and stop clients with the call ID', async () => {
@@ -64,6 +92,7 @@ describe('ACP Live voice', () => {
     expect(start).toHaveBeenCalledWith({
       sessionId: 'main-session',
       offerSdp: 'offer',
+      _meta: { goose: { unrolledAgentLoop: true } },
     });
     expect(stop).toHaveBeenCalledWith({
       sessionId: 'main-session',
