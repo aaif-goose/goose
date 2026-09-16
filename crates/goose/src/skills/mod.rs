@@ -417,6 +417,7 @@ fn all_skill_dirs_with_config(working_dir: Option<&Path>, config: &Config) -> Ve
     let plugin_dirs = enabled_plugin_skill_dirs_with_config(working_dir, config);
 
     if let Some(wd) = working_dir {
+        let wd = canonicalize_or_original(wd);
         for path in [
             wd.join(".agents").join("skills"),
             wd.join(".goose").join("skills"),

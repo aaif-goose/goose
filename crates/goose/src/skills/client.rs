@@ -67,7 +67,8 @@ impl SkillsClient {
     }
 
     fn discover_skills_with_details(&self) -> Vec<super::DiscoveredSkill> {
-        super::discover_skills_with_details_and_config(Some(&self.working_dir), self.config)
+        let working_dir = self.working_dir.read().unwrap().clone();
+        super::discover_skills_with_details_and_config(Some(&working_dir), self.config)
             .into_iter()
             .filter(|skill| {
                 !self.exclude_builtin_skills || skill.source_type != SourceType::BuiltinSkill
@@ -602,6 +603,40 @@ mod tests {
         };
 
         tokio::join!(updater, reader);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn selected_working_directory_alias_preserves_skill_root_boundary() {
+        let root = TempDir::new().unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let workspace = root_path.join("workspace");
+        write_skill(&workspace, "alias-workspace-skill", "Selected workspace");
+        let outside = root_path.join("outside");
+        let outside_skill = outside.join("skills/escaped-alias-skill");
+        fs::create_dir_all(&outside_skill).unwrap();
+        fs::write(
+            outside_skill.join("SKILL.md"),
+            "---\nname: escaped-alias-skill\ndescription: Outside\n---\nOutside content",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join(".agents")).unwrap();
+        let alias = root_path.join("selected-alias");
+        std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+
+        let client = client_for(&alias);
+        let instructions = client.get_instructions().unwrap();
+        assert!(instructions.contains("alias-workspace-skill"));
+        assert!(!instructions.contains("escaped-alias-skill"));
+        let skill = load_skill(&client, "alias-workspace-skill").await;
+        assert!(!skill.is_error.unwrap_or(false));
+        assert!(result_text(&skill).contains("Selected workspace body"));
+        let guide = load_skill(&client, "alias-workspace-skill/guide.md").await;
+        assert!(!guide.is_error.unwrap_or(false));
+        assert!(result_text(&guide).contains("Selected workspace guide"));
+        let escaped = load_skill(&client, "escaped-alias-skill").await;
+        assert!(escaped.is_error.unwrap_or(false));
+        assert!(!result_text(&escaped).contains("Outside content"));
     }
 
     #[cfg(unix)]

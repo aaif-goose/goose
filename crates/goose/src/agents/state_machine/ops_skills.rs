@@ -435,6 +435,59 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn selected_working_directory_alias_preserves_skill_root_boundary() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let workspace = root_path.join("workspace");
+        let skill_dir = workspace.join(".goose/skills/alias-workspace-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: alias-workspace-skill\ndescription: Selected workspace\n---\nSelected workspace body",
+        )
+        .unwrap();
+        std::fs::write(skill_dir.join("guide.md"), "Selected workspace guide").unwrap();
+        let outside = root_path.join("outside");
+        let outside_skill = outside.join("skills/escaped-alias-skill");
+        std::fs::create_dir_all(&outside_skill).unwrap();
+        std::fs::write(
+            outside_skill.join("SKILL.md"),
+            "---\nname: escaped-alias-skill\ndescription: Outside\n---\nOutside content",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join(".agents")).unwrap();
+        let alias = root_path.join("selected-alias");
+        std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+
+        let instructions = skill_instructions(&alias).unwrap();
+        assert!(instructions.contains("alias-workspace-skill"));
+        assert!(!instructions.contains("escaped-alias-skill"));
+        for name in ["alias-workspace-skill", "alias-workspace-skill/guide.md"] {
+            let loaded = execute_skill(
+                &alias,
+                serde_json::from_value(serde_json::json!({"name": name})).unwrap(),
+            );
+            assert!(!loaded.is_error.unwrap_or(false));
+            assert!(loaded.content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("Selected workspace"));
+        }
+        let escaped = execute_skill(
+            &alias,
+            serde_json::from_value(serde_json::json!({"name": "escaped-alias-skill"})).unwrap(),
+        );
+        assert!(escaped.is_error.unwrap_or(false));
+        assert!(!escaped.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("Outside content"));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn nested_skill_under_linked_root_loads_only_regular_supporting_files() {
         use std::os::unix::fs::symlink;
 
