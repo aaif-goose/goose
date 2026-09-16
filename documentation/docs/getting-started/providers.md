@@ -72,6 +72,10 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 goose automatically enables Anthropic's [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) when using Claude models via Anthropic, Amazon Bedrock, Databricks, OpenRouter, and LiteLLM providers. This adds `cache_control` markers to requests, which can reduce costs for longer conversations by caching frequently-used context. See the [provider implementations](https://github.com/aaif-goose/goose/tree/main/crates/goose/src/providers) for technical details.
 :::
 
+### GCP Vertex AI credential refresh
+
+goose keeps using the Application Default Credentials source selected when the provider starts. File-backed credentials are reloaded from the same path after authentication failures, including 401 and 403 responses. Replacing that file after `gcloud` reauthentication is supported, including an intentional account change. If the file disappears or becomes invalid, authentication fails instead of falling back to a VM service account. Providers that start with metadata credentials continue refreshing from metadata. Restart or reconfigure the provider to select a different credential source.
+
 ### CLI Providers
 
 | Provider                                                                    | Description                                                                                                                                                                                                               | Requirements                                                                                                                                                                          |
