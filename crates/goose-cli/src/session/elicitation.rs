@@ -263,20 +263,33 @@ fn read_line() -> io::Result<Option<String>> {
 }
 
 fn read_line_from(reader: &mut impl BufRead) -> io::Result<Option<String>> {
-    read_line_with(|line| reader.read_line(line))
-}
-
-fn read_line_with(
-    read: impl FnOnce(&mut String) -> io::Result<usize>,
-) -> io::Result<Option<String>> {
-    let mut line = String::new();
-    match read(&mut line) {
-        Ok(0) => Ok(None),
-        Ok(_) if line.ends_with('\n') => Ok(Some(line.trim().to_string())),
-        Ok(_) => Ok(None),
-        Err(e) if e.kind() == io::ErrorKind::Interrupted => Ok(None),
-        Err(e) => Err(e),
+    let mut line = Vec::new();
+    loop {
+        // BufRead::read_line retries Interrupted instead of allowing cancellation.
+        let available = match reader.fill_buf() {
+            Ok(available) => available,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if available.is_empty() {
+            break;
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        line.extend_from_slice(&available[..consumed]);
+        reader.consume(consumed);
+        if newline.is_some() {
+            break;
+        }
     }
+
+    let line = String::from_utf8(line).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })?;
+    Ok(line.ends_with('\n').then(|| line.trim().to_string()))
 }
 
 fn format_default(value: &Value) -> String {
@@ -324,8 +337,44 @@ fn parse_value(input: &str, field_type: &str, enum_values: Option<&Vec<Value>>) 
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::io::Cursor;
+    use std::io::{BufReader, Cursor, Read};
     use test_case::test_case;
+
+    struct ScriptedReader {
+        prefix: Cursor<&'static [u8]>,
+        error: Option<io::ErrorKind>,
+        suffix: Cursor<&'static [u8]>,
+    }
+
+    impl Read for ScriptedReader {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            let input = self.fill_buf()?;
+            let count = input.len().min(output.len());
+            output[..count].copy_from_slice(&input[..count]);
+            self.consume(count);
+            Ok(count)
+        }
+    }
+
+    impl BufRead for ScriptedReader {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            if self.prefix.position() < self.prefix.get_ref().len() as u64 {
+                return self.prefix.fill_buf();
+            }
+            if let Some(error) = self.error.take() {
+                return Err(error.into());
+            }
+            self.suffix.fill_buf()
+        }
+
+        fn consume(&mut self, amount: usize) {
+            if self.prefix.position() < self.prefix.get_ref().len() as u64 {
+                self.prefix.consume(amount);
+            } else {
+                self.suffix.consume(amount);
+            }
+        }
+    }
 
     #[test]
     fn nonterminal_eof_cancels_elicitation_input() {
@@ -345,11 +394,56 @@ mod tests {
         assert_eq!(read_line_from(&mut Cursor::new(b"partial")).unwrap(), None);
     }
 
-    #[test]
-    fn interrupted_read_cancels_elicitation_input() {
+    #[test_case(""; "before any input")]
+    #[test_case("partial"; "after partial input")]
+    fn interrupted_read_cancels_elicitation_input(prefix: &'static str) {
+        let mut reader = ScriptedReader {
+            prefix: Cursor::new(prefix.as_bytes()),
+            error: Some(io::ErrorKind::Interrupted),
+            suffix: Cursor::new(b"later input\n"),
+        };
+
+        assert_eq!(read_line_from(&mut reader).unwrap(), None);
         assert_eq!(
-            read_line_with(|_| Err(io::Error::from(io::ErrorKind::Interrupted))).unwrap(),
-            None
+            read_line_from(&mut reader).unwrap(),
+            Some("later input".to_string())
+        );
+    }
+
+    #[test_case(1; "split unicode")]
+    #[test_case(64; "multiple lines in one buffer")]
+    fn buffered_read_preserves_unicode_and_the_next_line(capacity: usize) {
+        let mut reader = BufReader::with_capacity(capacity, Cursor::new(" café \r\nnext\n"));
+
+        assert_eq!(read_line_from(&mut reader).unwrap(), Some("café".into()));
+        assert_eq!(read_line_from(&mut reader).unwrap(), Some("next".into()));
+        assert_eq!(read_line_from(&mut reader).unwrap(), None);
+    }
+
+    #[test_case(b"\xff\n"; "complete line")]
+    #[test_case(b"\xff"; "partial line at eof")]
+    fn invalid_utf8_returns_an_error(input: &[u8]) {
+        assert_eq!(
+            read_line_from(&mut Cursor::new(input)).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn non_interruption_errors_are_propagated_without_reading_more() {
+        let mut reader = ScriptedReader {
+            prefix: Cursor::new(b"partial"),
+            error: Some(io::ErrorKind::PermissionDenied),
+            suffix: Cursor::new(b"later input\n"),
+        };
+
+        assert_eq!(
+            read_line_from(&mut reader).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            read_line_from(&mut reader).unwrap(),
+            Some("later input".to_string())
         );
     }
 
