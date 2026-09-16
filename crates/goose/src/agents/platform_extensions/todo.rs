@@ -116,8 +116,8 @@ impl TodoClient {
                     Overwrite the entire TODO content.
 
                     The content persists across conversation turns and compaction. Use this for:
-                    - Task tracking and progress updates
-                    - Important notes and reminders
+                    - A short plan for a multi-step task, rewritten only when the plan changes
+                    - Durable notes and reminders you want to keep in view
 
                     WARNING: This operation completely replaces the existing content. Always include
                     all content you want to keep, not just the changes.
