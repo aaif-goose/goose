@@ -68,6 +68,21 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
     [invalidateCallAndReleaseMedia]
   );
 
+  const failCurrentCall = useCallback(
+    async (call: LiveVoiceCall) => {
+      if (callRef.current !== call || call.invalidated) return;
+
+      invalidateCallAndReleaseMedia(call);
+      setMuted(false);
+      if (call.callId) {
+        setPhase('stopping');
+        await stopRemoteCall(call);
+      }
+      finishCurrentCall(call, 'failed');
+    },
+    [finishCurrentCall, invalidateCallAndReleaseMedia]
+  );
+
   useEffect(() => {
     setPhase('idle');
     mutedRef.current = false;
@@ -120,8 +135,7 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
       setPhase('connecting');
       let call: LiveVoiceCall;
       const media = new LiveVoiceMediaSession(() => {
-        if (!finishCurrentCall(call, 'failed')) return;
-        void stopRemoteCall(call);
+        void failCurrentCall(call);
       });
       call = {
         sessionId,
@@ -165,13 +179,14 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
         }
       } catch {
         call.remoteStartPending = false;
-        const outcome = call.invalidated ? 'stopped' : 'failed';
-        if (finishCurrentCall(call, outcome) && outcome === 'failed') {
-          void stopRemoteCall(call);
+        if (call.invalidated) {
+          if (!call.callId) finishCurrentCall(call, 'stopped');
+          return;
         }
+        await failCurrentCall(call);
       }
     },
-    [finishCurrentCall, isSessionActive, sessionId]
+    [failCurrentCall, finishCurrentCall, isSessionActive, sessionId]
   );
 
   const toggleMute = useCallback(() => {

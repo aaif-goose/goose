@@ -73,14 +73,29 @@ describe('useLiveVoice', () => {
     expect(result.current.phase).toBe('idle');
   });
 
-  it('stops the server call when media setup fails after start', async () => {
+  it('blocks retry until the server call stops after media setup fails', async () => {
+    const cleanup = deferred<void>();
     media.applyAnswer.mockRejectedValueOnce(new Error('media failed'));
+    vi.mocked(acpStopLiveVoice).mockReturnValueOnce(cleanup.promise);
     const { result } = renderHook(() => useLiveVoice('main-session', true));
 
-    await act(async () => result.current.start());
+    let startPromise!: Promise<void>;
+    act(() => {
+      startPromise = result.current.start();
+    });
+    await waitFor(() => expect(acpStopLiveVoice).toHaveBeenCalledOnce());
 
     expect(media.teardown).toHaveBeenCalledOnce();
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
+    expect(result.current.phase).toBe('stopping');
+
+    await act(async () => result.current.start());
+    expect(acpStartLiveVoice).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      cleanup.resolve();
+      await startPromise;
+    });
     expect(result.current.phase).toBe('error');
   });
 
@@ -281,14 +296,22 @@ describe('useLiveVoice', () => {
     expect(result.current.phase).toBe('idle');
   });
 
-  it('ends the matching call when active media fails', async () => {
+  it('blocks retry until the server call stops after active media fails', async () => {
+    const cleanup = deferred<void>();
     const { result } = renderHook(() => useLiveVoice('main-session', true));
     await act(async () => result.current.start());
+    vi.mocked(acpStopLiveVoice).mockReturnValueOnce(cleanup.promise);
 
     act(() => mediaFailure());
 
     expect(media.teardown).toHaveBeenCalledOnce();
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
+    expect(result.current.phase).toBe('stopping');
+
+    await act(async () => result.current.start());
+    expect(acpStartLiveVoice).toHaveBeenCalledOnce();
+
+    await act(async () => cleanup.resolve());
     expect(result.current.phase).toBe('error');
   });
 });
