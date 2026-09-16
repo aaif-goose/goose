@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Compactage automatique à"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compacter maintenant"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Échec de l'enregistrement du seuil : {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Compris !"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose a terminé la tâche."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Fenêtre de contexte"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Erreur de dictée"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Échec de la mise à jour du répertoire de travail"
   },
@@ -4703,6 +4687,57 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visitez"
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} sur {limit} jetons utilisés. Afficher le contenu de la fenêtre de contexte"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compacter maintenant"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Libre"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Impossible de charger le rapport de contexte."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · fenêtre de contexte de {limit} jetons"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Actualiser"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Réessayer"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Fenêtre de contexte"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Le nombre de jetons est estimé avec le tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "sur {limit} jetons · {percent} de la fenêtre de contexte"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instructions et indices"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Résumé de compactage"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instructions des extensions"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversation"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt système"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Définitions d'outils"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Contexte du tour"
   },
   "settings.agentLoop.description": {
     "defaultMessage": "Utilise la boucle d’agent basée sur les opérations. Désactivez-la pour utiliser la boucle héritée."

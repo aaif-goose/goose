@@ -13,6 +13,7 @@ use super::gen_ai_telemetry;
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 #[cfg(feature = "code-mode")]
 use crate::agents::platform_extensions::code_execution;
+use crate::agents::prompt_manager::SystemPromptParts;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{Message, MessageContent, MessageUsage, ToolRequest};
 use crate::conversation::{fix_conversation, merge_consecutive_messages_for_request, Conversation};
@@ -199,6 +200,21 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
+        let prepared = self.prepare_prompt(session_id, working_dir).await?;
+        let (tools, toolshim_tools, system_prompt) = prepare_tools_for_provider(
+            prepared.tools,
+            prepared.prompt.join(),
+            &prepared.model_config,
+        );
+
+        Ok((tools, toolshim_tools, system_prompt, prepared.model_config))
+    }
+
+    pub(crate) async fn prepare_prompt(
+        &self,
+        session_id: &str,
+        working_dir: &std::path::Path,
+    ) -> Result<PreparedPrompt> {
         let tools = self.list_tools(session_id, None).await;
         ensure_unique_tool_names(&tools)?;
 
@@ -226,19 +242,26 @@ impl Agent {
         }
 
         let prompt_manager = self.prompt_manager.lock().await;
-        let system_prompt = prompt_manager
+        let prompt = prompt_manager
             .builder()
             .with_extensions(extensions_info.into_iter())
             .with_code_execution_mode(code_execution_active)
             .with_hints(working_dir)
             .with_goose_mode(goose_mode)
-            .build();
+            .build_parts();
 
-        let (tools, toolshim_tools, system_prompt) =
-            prepare_tools_for_provider(tools, system_prompt, &model_config);
-
-        Ok((tools, toolshim_tools, system_prompt, model_config))
+        Ok(PreparedPrompt {
+            tools,
+            prompt,
+            model_config,
+        })
     }
+}
+
+pub(crate) struct PreparedPrompt {
+    pub tools: Vec<Tool>,
+    pub prompt: SystemPromptParts,
+    pub model_config: ModelConfig,
 }
 
 pub(crate) fn prepare_inference_tools(

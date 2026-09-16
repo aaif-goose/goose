@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Compattazione automatica a"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compatta ora"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Impossibile salvare la soglia: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Capito!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose ha completato l'attività."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Finestra di contesto"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Errore di dettatura"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Impossibile aggiornare la cartella di lavoro"
   },
@@ -4703,6 +4687,57 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} di {limit} token usati. Mostra cosa c'è nella finestra di contesto"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compatta ora"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Libero"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Impossibile caricare il report del contesto."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · finestra di contesto da {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Aggiorna"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Riprova"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Finestra di contesto"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Il conteggio dei token è stimato con il tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "di {limit} token · {percent} della finestra di contesto"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Istruzioni e suggerimenti"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Riepilogo di compattazione"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Istruzioni delle estensioni"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversazione"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt di sistema"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definizioni degli strumenti"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Contesto del turno"
   },
   "settings.agentLoop.description": {
     "defaultMessage": "Usa il ciclo agente basato sulle operazioni. Disattivalo per usare il ciclo legacy."

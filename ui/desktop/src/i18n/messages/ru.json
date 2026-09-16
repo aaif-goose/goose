@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Автосжимать при"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Сжать сейчас"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Не удалось сохранить пороговое значение: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Понятно!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose завершил задачу."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Контекстное окно"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Ошибка диктовки"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Не удалось обновить рабочий каталог"
   },
@@ -4703,6 +4687,57 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Перейдите на"
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "Использовано {used} из {limit} токенов. Показать содержимое контекстного окна"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Сжать сейчас"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Свободно"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Не удалось загрузить отчёт о контексте."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · контекстное окно {limit} токенов"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Обновить"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Повторить"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Контекстное окно"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Число токенов оценивается токенизатором o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "из {limit} токенов · {percent} контекстного окна"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Инструкции и подсказки"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Сводка сжатия"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Инструкции расширений"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Диалог"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Системный промпт"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Определения инструментов"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Контекст хода"
   },
   "settings.agentLoop.description": {
     "defaultMessage": "Использовать цикл агента на основе операций. Отключите, чтобы использовать прежний цикл."
