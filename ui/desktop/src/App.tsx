@@ -271,14 +271,20 @@ const PermissionRoute = () => {
 };
 
 const ConfigureProvidersRoute = () => {
+  const location = useLocation();
   const navigate = useNavigate();
+
+  const closeProviderSettings = () => {
+    if (location.key === 'default') {
+      navigate('/settings', { replace: true, state: { section: 'models' } });
+    } else {
+      navigate(-1);
+    }
+  };
 
   return (
     <div className="w-screen h-screen bg-background-primary">
-      <ProviderSettings
-        onClose={() => navigate('/settings', { state: { section: 'models' } })}
-        isOnboarding={false}
-      />
+      <ProviderSettings onClose={closeProviderSettings} isOnboarding={false} />
     </div>
   );
 };
