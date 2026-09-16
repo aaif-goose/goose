@@ -556,7 +556,7 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
     if let Some(http_err) = error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
         return http_err
             .auth_challenge()
-            .map(|challenge| split_presented_token(challenge).0);
+            .map(|challenge| split_presented_id(challenge).0);
     }
 
     #[cfg(unix)]
@@ -566,7 +566,7 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
     {
         return http_err
             .auth_challenge()
-            .map(|challenge| split_presented_token(challenge).0);
+            .map(|challenge| split_presented_id(challenge).0);
     }
 
     None
@@ -778,27 +778,48 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
 const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
 
-const PRESENTED_TOKEN_MARKER: &str = " goose-presented-token=\"";
+const PRESENTED_TOKEN_MARKER: &str = " goose-presented-id=\"";
+const PRESENTED_TOKEN_MAP_LIMIT: usize = 64;
 
-fn encode_presented_token(challenge: &str, token: Option<&str>) -> String {
-    let Some(token) = token else {
-        return challenge.to_string();
-    };
-    format!(
-        "{challenge}{PRESENTED_TOKEN_MARKER}{}\"",
-        urlencoding::encode(token)
-    )
+fn presented_token_map() -> &'static std::sync::Mutex<HashMap<String, String>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<String, String>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-fn split_presented_token(challenge: &str) -> (String, Option<String>) {
+fn remember_presented_token(token: Option<String>) -> Option<String> {
+    let token = token?;
+    let id = uuid::Uuid::now_v7().to_string();
+    let mut tokens = presented_token_map().lock().unwrap();
+    if tokens.len() >= PRESENTED_TOKEN_MAP_LIMIT {
+        tokens.clear();
+    }
+    tokens.insert(id.clone(), token);
+    Some(id)
+}
+
+fn take_presented_token(id: &str) -> Option<String> {
+    presented_token_map().lock().unwrap().remove(id)
+}
+
+fn encode_presented_token(challenge: &str, token: Option<&str>) -> String {
+    let Some(id) = remember_presented_token(token.map(str::to_string)) else {
+        return challenge.to_string();
+    };
+    format!("{challenge}{PRESENTED_TOKEN_MARKER}{id}\"")
+}
+
+fn split_presented_id(challenge: &str) -> (String, Option<String>) {
     let Some((original, encoded)) = challenge.rsplit_once(PRESENTED_TOKEN_MARKER) else {
         return (challenge.to_string(), None);
     };
-    let encoded = encoded.strip_suffix('"').unwrap_or(encoded);
-    let token = urlencoding::decode(encoded)
-        .ok()
-        .map(|decoded| decoded.into_owned());
-    (original.to_string(), token)
+    let id = encoded.strip_suffix('"').unwrap_or(encoded);
+    (original.to_string(), Some(id.to_string()))
+}
+
+fn split_presented_token(challenge: &str) -> (String, Option<String>) {
+    let (original, id) = split_presented_id(challenge);
+    (original, id.as_deref().and_then(take_presented_token))
 }
 
 /// Forwards streamable HTTP calls while attaching the Bearer token rmcp
@@ -1165,9 +1186,7 @@ impl OAuthStepUpClient {
         };
         match first {
             Err(err) => {
-                if let Some((challenge, presented)) =
-                    challenge_and_presented_token_from_service_error(&err)
-                {
+                if auth_challenge_from_service_error(&err).is_some() {
                     let _step_up_guard = self.step_up_lock.lock().await;
                     let retry = {
                         let client = self.inner.read().await;
@@ -1175,14 +1194,17 @@ impl OAuthStepUpClient {
                     };
                     match retry {
                         Ok(value) => Ok(value),
-                        Err(retry_err)
-                            if auth_challenge_from_service_error(&retry_err).is_some() =>
-                        {
-                            self.step_up_reconnect(challenge, presented).await?;
-                            let client = self.inner.read().await;
-                            op(&client).await
+                        Err(retry_err) => {
+                            if let Some((challenge, presented)) =
+                                challenge_and_presented_token_from_service_error(&retry_err)
+                            {
+                                self.step_up_reconnect(challenge, presented).await?;
+                                let client = self.inner.read().await;
+                                op(&client).await
+                            } else {
+                                Err(retry_err)
+                            }
                         }
-                        Err(retry_err) => Err(retry_err),
                     }
                 } else {
                     Err(err)
@@ -4707,6 +4729,10 @@ mod tests {
         let first = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t1"));
         let second = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t2"));
 
+        assert!(
+            !first.contains("t1") && !second.contains("t2"),
+            "the live bearer token must not appear in the transport error"
+        );
         assert_eq!(
             split_presented_token(&first),
             (
@@ -4720,10 +4746,6 @@ mod tests {
                 r#"Bearer error="invalid_token""#.to_string(),
                 Some("t2".to_string())
             )
-        );
-        assert_ne!(
-            split_presented_token(&first).1,
-            split_presented_token(&second).1
         );
     }
 }
