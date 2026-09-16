@@ -57,40 +57,40 @@ describe('LiveVoiceButton', () => {
     expect(screen.queryByTestId('live-voice-button')).not.toBeInTheDocument();
   });
 
-  it('starts when idle and stops while connecting or live', () => {
+  it('starts when idle and keeps stop controls available while availability refreshes', () => {
     const onStart = vi.fn();
     const onStop = vi.fn();
+    const activeProps = { ...baseProps, availability: null, onStart, onStop };
     const { container, rerender } = renderButton({ onStart, onStop });
 
     screen.getByTestId('live-voice-button').click();
     expect(onStart).toHaveBeenCalledOnce();
 
-    rerender(
-      <LiveVoiceButton {...baseProps} phase="connecting" onStart={onStart} onStop={onStop} />
-    );
+    rerender(<LiveVoiceButton {...activeProps} phase="connecting" />);
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
     screen.getByTestId('live-voice-button').click();
     expect(onStop).toHaveBeenCalledOnce();
 
-    rerender(<LiveVoiceButton {...baseProps} phase="live" onStart={onStart} onStop={onStop} />);
+    rerender(<LiveVoiceButton {...activeProps} phase="live" />);
     screen.getByTestId('live-voice-button').click();
     expect(onStop).toHaveBeenCalledTimes(2);
   });
 
   it('disables the stopping state', () => {
-    renderButton({ phase: 'stopping' });
+    renderButton({ availability: null, phase: 'stopping' });
     expect(screen.getByTestId('live-voice-button')).toBeDisabled();
   });
 
   it('toggles microphone mute while live', () => {
     const onToggleMute = vi.fn();
-    const { rerender } = renderButton({ phase: 'live', onToggleMute });
+    const liveProps = { availability: null, phase: 'live', onToggleMute } as const;
+    const { rerender } = renderButton(liveProps);
 
     screen.getByTestId('live-voice-mute-button').click();
     expect(onToggleMute).toHaveBeenCalledOnce();
     expect(screen.getByTestId('live-voice-mute-button')).toHaveAccessibleName('Mute microphone');
 
-    rerender(<LiveVoiceButton {...baseProps} phase="live" muted onToggleMute={onToggleMute} />);
+    rerender(<LiveVoiceButton {...baseProps} {...liveProps} muted />);
     expect(screen.getByTestId('live-voice-mute-button')).toHaveAccessibleName('Unmute microphone');
   });
 });

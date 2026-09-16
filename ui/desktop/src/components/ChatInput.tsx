@@ -1815,7 +1815,7 @@ export default function ChatInput({
           </>
         )}
 
-        {liveVoice?.availability && (
+        {liveVoice && (
           <LiveVoiceButton
             availability={liveVoice.availability}
             phase={liveVoice.phase}

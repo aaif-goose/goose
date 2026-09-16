@@ -4,7 +4,7 @@ import { defineMessages, useIntl } from '../i18n';
 import { cn } from '../utils';
 import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
-import type { LiveVoicePhase } from '../liveVoice/useLiveVoice';
+import { isLiveVoiceActive, type LiveVoicePhase } from '../liveVoice/useLiveVoice';
 
 const i18n = defineMessages({
   emptyComposerRequired: {
@@ -57,9 +57,9 @@ export function LiveVoiceButton({
   onToggleMute,
 }: LiveVoiceButtonProps) {
   const intl = useIntl();
-  if (availability === null) return null;
+  if (availability === null && !isLiveVoiceActive(phase)) return null;
 
-  const eligible = availability.status === 'ready' && composerEmpty;
+  const eligible = availability?.status === 'ready' && composerEmpty;
   const stopping = phase === 'stopping';
   const canStart = phase === 'idle' || phase === 'error';
   const canStop = phase === 'connecting' || phase === 'live';
@@ -72,11 +72,11 @@ export function LiveVoiceButton({
           ? intl.formatMessage(i18n.stopping)
           : !composerEmpty
             ? intl.formatMessage(i18n.emptyComposerRequired)
-            : availability.status !== 'ready'
-              ? availability.message
+            : availability?.status !== 'ready'
+              ? availability?.message
               : phase === 'error'
                 ? intl.formatMessage(i18n.error)
-                : availability.message;
+                : availability?.message;
   const disabled = canStart ? !eligible : stopping;
 
   return (
