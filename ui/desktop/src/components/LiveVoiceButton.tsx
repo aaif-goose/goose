@@ -70,11 +70,13 @@ export function LiveVoiceButton({
         ? intl.formatMessage(i18n.live)
         : phase === 'stopping'
           ? intl.formatMessage(i18n.stopping)
-          : phase === 'error'
-            ? intl.formatMessage(i18n.error)
-            : composerEmpty
+          : !composerEmpty
+            ? intl.formatMessage(i18n.emptyComposerRequired)
+            : availability.status !== 'ready'
               ? availability.message
-              : intl.formatMessage(i18n.emptyComposerRequired);
+              : phase === 'error'
+                ? intl.formatMessage(i18n.error)
+                : availability.message;
   const disabled = canStart ? !eligible : stopping;
 
   return (

@@ -30,6 +30,7 @@ import { toastError } from '../toasts';
 import { formatClockDisplay } from '../utils/timeUtils';
 import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
 import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
+import { subscribeToAcpRecovery } from '../acp/acpConnection';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -80,17 +81,31 @@ export default function Hub({
   }, []);
 
   useEffect(() => {
-    let active = true;
-    void acpGetLiveVoiceAvailability().then(
-      (availability) => {
-        if (active) setLiveVoiceAvailability(availability);
-      },
-      () => {
-        if (active) setLiveVoiceAvailability(null);
+    let requestGeneration = 0;
+    const requestAvailability = async () => {
+      const generation = ++requestGeneration;
+      try {
+        const availability = await acpGetLiveVoiceAvailability();
+        if (generation === requestGeneration) {
+          setLiveVoiceAvailability(availability);
+        }
+      } catch {
+        if (generation === requestGeneration) {
+          setLiveVoiceAvailability(null);
+        }
       }
-    );
+    };
+
+    void requestAvailability();
+    const unsubscribe = subscribeToAcpRecovery((recovering) => {
+      if (!recovering) {
+        void requestAvailability();
+      }
+    });
+
     return () => {
-      active = false;
+      requestGeneration += 1;
+      unsubscribe();
     };
   }, []);
 

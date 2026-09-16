@@ -1,16 +1,21 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Hub from './Hub';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { createSession } from '../sessions';
 import { UserInput } from '../types/message';
+import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
+import { subscribeToAcpRecovery } from '../acp/acpConnection';
 
 type ChatInputCapture = {
   draftRef?: { current: string };
   handleSubmit: (input: UserInput) => void;
+  liveVoice?: {
+    availability: { status: string; message: string } | null;
+  };
 };
 
 type Session = Awaited<ReturnType<typeof createSession>>;
@@ -46,6 +51,10 @@ vi.mock('../acp/errors', () => ({ formatAcpError: (error: unknown) => String(err
 
 vi.mock('../toasts', () => ({ toastError: vi.fn() }));
 
+vi.mock('../acp/liveVoice', () => ({ acpGetLiveVoiceAvailability: vi.fn() }));
+
+vi.mock('../acp/acpConnection', () => ({ subscribeToAcpRecovery: vi.fn() }));
+
 const DRAFT = 'a half-written thought';
 const TYPED_WHILE_STARTING = 'and one more thought';
 
@@ -80,6 +89,31 @@ describe('Hub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     captured.chatInput = null;
+    vi.mocked(acpGetLiveVoiceAvailability).mockRejectedValue(new Error('ACP unavailable'));
+    vi.mocked(subscribeToAcpRecovery).mockReturnValue(() => undefined);
+  });
+
+  it('requests Live voice availability again after ACP recovers', async () => {
+    let recoveryChanged: ((recovering: boolean) => void) | undefined;
+    const available = { status: 'ready' as const, message: 'Start Live voice' };
+    vi.mocked(acpGetLiveVoiceAvailability)
+      .mockRejectedValueOnce(new Error('ACP disconnected'))
+      .mockResolvedValueOnce(available);
+    vi.mocked(subscribeToAcpRecovery).mockImplementation((listener) => {
+      recoveryChanged = listener;
+      return () => undefined;
+    });
+
+    renderHub({ current: '' });
+    await waitFor(() => expect(acpGetLiveVoiceAvailability).toHaveBeenCalledTimes(1));
+
+    act(() => recoveryChanged?.(true));
+    act(() => recoveryChanged?.(false));
+
+    await waitFor(() => {
+      expect(acpGetLiveVoiceAvailability).toHaveBeenCalledTimes(2);
+      expect(captured.chatInput?.liveVoice?.availability).toEqual(available);
+    });
   });
 
   it('hands the draft to the input', () => {
