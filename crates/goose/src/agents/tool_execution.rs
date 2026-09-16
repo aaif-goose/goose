@@ -14,6 +14,7 @@ use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use crate::permission::Permission;
+use crate::utils::is_token_cancelled;
 use rmcp::model::{ContentBlock, ServerNotification};
 
 #[derive(Clone)]
@@ -157,6 +158,9 @@ impl Agent {
     ) -> BoxStream<'a, anyhow::Result<Message>> {
         try_stream! {
         for request in tool_requests.iter() {
+            if is_token_cancelled(&cancellation_token) {
+                break;
+            }
             if let Ok(tool_call) = request.tool_call.clone() {
                 let security_message = inspection_results.iter()
                     .find(|result| result.tool_request_id == request.id)
@@ -183,7 +187,17 @@ impl Agent {
                     .user_only();
                 yield action_required_msg;
 
-                let confirmation = confirmation_rx.await
+                let cancelled = async {
+                    match &cancellation_token {
+                        Some(token) => token.cancelled().await,
+                        None => std::future::pending().await,
+                    }
+                };
+                let confirmation = tokio::select! {
+                    confirmation = confirmation_rx => confirmation,
+                    _ = cancelled => break,
+                };
+                let confirmation = confirmation
                     .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?;
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {

@@ -1936,10 +1936,20 @@ impl Agent {
                     }
                 }
 
-                let has_state_machine_answer = turn_guard
+                let Some(has_state_machine_answer) = turn_guard
                     .state()
                     .wait_for_all_confirmation_answers(&cancel)
-                    .await?;
+                    .await?
+                else {
+                    // One pass with the cancelled token answers the requests that never ran.
+                    let mut cancelled_stream = self
+                        .stream_state_machine_session(session_config.clone(), cancel.clone())
+                        .await?;
+                    while let Some(event) = cancelled_stream.next().await {
+                        yield event?;
+                    }
+                    return;
+                };
                 if !has_state_machine_answer {
                     return;
                 }
@@ -3068,9 +3078,19 @@ impl Agent {
                                         );
 
                                     let final_response = match &request.tool_call {
-                                        Ok(_) => request_to_response_map
-                                            .remove(&request.id)
-                                            .unwrap_or_else(|| Message::user().with_generated_id()),
+                                        Ok(_) => {
+                                            let mut response = request_to_response_map
+                                                .remove(&request.id)
+                                                .unwrap_or_else(|| Message::user().with_generated_id());
+                                            if !response.get_tool_response_ids().contains(request.id.as_str()) {
+                                                response.add_tool_response_with_metadata(
+                                                    request.id.clone(),
+                                                    goose_agent::tool::interrupted_result(),
+                                                    request.metadata.as_ref(),
+                                                );
+                                            }
+                                            response
+                                        }
                                         Err(error) => {
                                             error!("Tool call could not be parsed: {error}");
                                             let mut response = request_to_response_map

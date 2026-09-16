@@ -34,6 +34,11 @@ impl McpFixtureServer {
         )]))
     }
 
+    #[tool(description = "Never completes")]
+    async fn hang(&self) -> Result<CallToolResult, McpError> {
+        std::future::pending().await
+    }
+
     #[tool(
         description = "Get audience-scoped content",
         annotations(read_only_hint = true)

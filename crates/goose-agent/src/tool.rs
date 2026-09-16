@@ -64,7 +64,7 @@ fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> V
         .collect()
 }
 
-fn interrupted_result() -> Result<CallToolResult, ErrorData> {
+pub fn interrupted_result() -> Result<CallToolResult, ErrorData> {
     Ok(CallToolResult::error(vec![
         rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
     ]))

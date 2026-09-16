@@ -1005,9 +1005,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             if !answered.contains(request.id.as_str()) {
                 response.add_tool_response_with_metadata(
                     request.id.clone(),
-                    Ok(CallToolResult::error(vec![ContentBlock::text(
-                        "Tool call was interrupted before completing",
-                    )])),
+                    goose_agent::tool::interrupted_result(),
                     request.metadata.as_ref(),
                 );
             }
