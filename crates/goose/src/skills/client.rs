@@ -460,6 +460,61 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn selected_working_directory_alias_preserves_skill_root_boundary() {
+        let root = TempDir::new().unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let workspace = root_path.join("workspace");
+        let skill_directory = workspace.join(".goose/skills/alias-workspace-skill");
+        fs::create_dir_all(&skill_directory).unwrap();
+        fs::write(
+            skill_directory.join("SKILL.md"),
+            "---\nname: alias-workspace-skill\ndescription: Selected workspace description\n---\nSelected workspace body",
+        )
+        .unwrap();
+        fs::write(skill_directory.join("guide.md"), "Selected workspace guide").unwrap();
+        let outside = root_path.join("outside");
+        let outside_skill = outside.join("skills/escaped-alias-skill");
+        fs::create_dir_all(&outside_skill).unwrap();
+        fs::write(
+            outside_skill.join("SKILL.md"),
+            "---\nname: escaped-alias-skill\ndescription: Outside\n---\nOutside content",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join(".agents")).unwrap();
+        let alias = root_path.join("selected-alias");
+        std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+
+        let client = SkillsClient::default().with_builtin_skills(false);
+        let instructions = client.get_instructions("test", &alias).await.unwrap();
+        assert!(instructions.contains("alias-workspace-skill"));
+        assert!(!instructions.contains("escaped-alias-skill"));
+        let context = ToolCallContext::new("test".to_string(), Some(alias), None);
+        for (name, expected_text, should_error) in [
+            ("alias-workspace-skill", "Selected workspace body", false),
+            (
+                "alias-workspace-skill/guide.md",
+                "Selected workspace guide",
+                false,
+            ),
+            ("escaped-alias-skill", "Outside content", true),
+        ] {
+            let arguments = serde_json::from_value(serde_json::json!({"name": name})).unwrap();
+            let result = client
+                .call_tool(
+                    &context,
+                    "load_skill",
+                    Some(arguments),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.is_error.unwrap_or(false), should_error);
+            assert_eq!(result_text(&result).contains(expected_text), !should_error);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn nested_skill_under_linked_root_loads_only_regular_supporting_files() {
         let project = TempDir::new().unwrap();
         let working_dir = project.path().canonicalize().unwrap();
