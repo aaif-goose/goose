@@ -394,11 +394,13 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
 
     # Appends an export line to a file only if that file does not already
     # put $GOOSE_BIN_DIR on the PATH, so re-running the installer is idempotent.
+    # Only active (non-comment) lines that set PATH count; a commented-out old
+    # export must not suppress the append.
     add_path_line() {
       file="$1"
       line="$2"
       mkdir -p "$(dirname "$file")"
-      if [ -f "$file" ] && grep -Fq "$GOOSE_BIN_DIR" "$file"; then
+      if [ -f "$file" ] && grep -F "$GOOSE_BIN_DIR" "$file" | grep -v '^[[:space:]]*#' | grep -iq "path"; then
         echo "$file already references $GOOSE_BIN_DIR, skipping."
       else
         echo "$line" >> "$file"
@@ -412,9 +414,12 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
     EXPORT_LINE="export PATH=\"$GOOSE_BIN_DIR:\$PATH\""
     case "$SHELL_NAME" in
     bash)
-      # An existing ~/.bash_profile suppresses ~/.profile for bash login shells.
+      # Bash login shells read the first existing file of ~/.bash_profile,
+      # ~/.bash_login, ~/.profile — mirror that lookup order here.
       if [ -f "$HOME/.bash_profile" ]; then
         POSIX_LOGIN_FILE="$HOME/.bash_profile"
+      elif [ -f "$HOME/.bash_login" ]; then
+        POSIX_LOGIN_FILE="$HOME/.bash_login"
       else
         POSIX_LOGIN_FILE="$HOME/.profile"
       fi
@@ -468,7 +473,11 @@ if [[ ":$PATH:" != *":$GOOSE_BIN_DIR:"* ]]; then
         ;;
       2)
         echo ""
-        echo "Add it to your PATH by adding this line to ${POSIX_LOGIN_FILE:-$RC_FILE}:"
+        if [ -n "$POSIX_LOGIN_FILE" ] && [ -n "$RC_FILE" ]; then
+          echo "Add it to your PATH by adding this line to $POSIX_LOGIN_FILE and $RC_FILE:"
+        else
+          echo "Add it to your PATH by adding this line to ${POSIX_LOGIN_FILE:-$RC_FILE}:"
+        fi
         echo "    $EXPORT_LINE"
         echo "Then start a new shell or log in again to apply changes."
         ;;
