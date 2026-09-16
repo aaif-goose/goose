@@ -202,7 +202,15 @@ const SettingsRoute = () => {
     viewOptions.section = sectionFromUrl;
   }
 
-  return <SettingsView onClose={() => navigate('/')} setView={setView} viewOptions={viewOptions} />;
+  const closeSettings = () => {
+    if (location.key === 'default') {
+      navigate('/');
+    } else {
+      navigate(-1);
+    }
+  };
+
+  return <SettingsView onClose={closeSettings} setView={setView} viewOptions={viewOptions} />;
 };
 
 const SessionsRoute = () => {

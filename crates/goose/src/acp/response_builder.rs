@@ -466,6 +466,10 @@ pub(super) fn available_commands_for_working_dir(
 pub(super) fn available_commands_for_optional_working_dir(
     working_dir: Option<&std::path::Path>,
 ) -> Vec<AvailableCommand> {
+    if !crate::agents::execute_commands::slash_commands_enabled() {
+        return Vec::new();
+    }
+
     crate::slash_commands::slash_command::list_acp_commands(working_dir)
         .into_iter()
         .map(slash_command_to_available_command)

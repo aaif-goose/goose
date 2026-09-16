@@ -4062,10 +4062,10 @@
     "defaultMessage": "Chinese (Traditional)"
   },
   "settings.legacyAgentLoop.description": {
-    "defaultMessage": "Fall back to the classic agent loop if the new one causes issues"
+    "defaultMessage": "Use the operation-based agent loop. Turn this off to use the legacy loop."
   },
   "settings.legacyAgentLoop.title": {
-    "defaultMessage": "Use Legacy Agent Loop"
+    "defaultMessage": "Agent Loop"
   },
   "settings.menuBarIcon.description": {
     "defaultMessage": "Show goose in the menu bar"
@@ -4155,7 +4155,7 @@
     "defaultMessage": "Chat"
   },
   "settingsView.tabExternalBackend": {
-    "defaultMessage": "External Backend"
+    "defaultMessage": "Agent"
   },
   "settingsView.tabKeyboard": {
     "defaultMessage": "Keyboard"

@@ -960,8 +960,9 @@ mod tests {
         /// - The original tool pairs are marked invisible
         #[tokio::test]
         async fn test_batch_summarization_preserves_all_summaries() -> Result<()> {
-            // Set a low cutoff so we don't need hundreds of tool pairs.
-            // cutoff=2 means we need >2+10=12 visible tool pairs to trigger.
+            Config::global()
+                .set_param("GOOSE_TOOL_PAIR_SUMMARIZATION", true)
+                .unwrap();
             Config::global()
                 .set_param("GOOSE_TOOL_CALL_CUTOFF", 2)
                 .unwrap();

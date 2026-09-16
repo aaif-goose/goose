@@ -38,6 +38,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
   const safeIsMacOS = (window?.electron?.platform || 'darwin') === 'darwin';
   const chatContext = useChatContext();
   const isOnPairRoute = location.pathname === '/pair';
+  const isOnSettingsRoute = location.pathname === '/settings';
 
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -95,6 +96,17 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
   }
 
   const { setChat } = chatContext;
+
+  if (isOnSettingsRoute) {
+    return (
+      <div className="relative flex h-full w-full flex-1 bg-background-secondary">
+        <Outlet />
+        <div className="hidden">
+          <ChatSessionsContainer setChat={setChat} activeSessions={activeSessions} />
+        </div>
+      </div>
+    );
+  }
 
   const needsTrafficLightInset = safeIsMacOS && !isFullScreen;
   const headerPadding = needsTrafficLightInset ? 'pl-[96px]' : 'pl-4';

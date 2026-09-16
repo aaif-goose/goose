@@ -27,7 +27,7 @@ pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
     Config::global()
         .get_param::<bool>("GOOSE_TOOL_PAIR_SUMMARIZATION")
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 
 const CONVERSATION_CONTINUATION_TEXT: &str =
@@ -1175,6 +1175,9 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_tool_calls_share_one_summary_request() {
+        Config::global()
+            .set_param("GOOSE_TOOL_PAIR_SUMMARIZATION", true)
+            .unwrap();
         let provider = Arc::new(MockProvider::new(
             Message::assistant().with_text("summary"),
             1000,
