@@ -50,6 +50,28 @@ impl std::ops::Deref for DiscoveredSkill {
 }
 
 impl DiscoveredSkill {
+    pub(crate) fn loaded_context_with_args(&self, args: Option<&str>) -> Result<String> {
+        let Some(load_root) = &self.load_root else {
+            return loaded_skill_context_with_args(&self.source, args);
+        };
+        let mut rendered_source = self.source.clone();
+        rendered_source.path = load_root.resolved_path().to_string_lossy().into_owned();
+        rendered_source.supporting_files = self
+            .source
+            .supporting_files
+            .iter()
+            .map(|file| {
+                let relative = Path::new(file).strip_prefix(&self.source.path)?;
+                Ok(load_root
+                    .resolved_path()
+                    .join(relative)
+                    .to_string_lossy()
+                    .into_owned())
+            })
+            .collect::<Result<Vec<_>>>()?;
+        loaded_skill_context_with_args(&rendered_source, args)
+    }
+
     #[cfg(test)]
     pub(crate) fn new(source: SourceEntry, load_path: PathBuf) -> Self {
         Self {
@@ -651,8 +673,11 @@ where
                 let mut content = String::new();
                 match open_for_read().and_then(|mut file| file.read_to_string(&mut content)) {
                     Ok(_) => {
-                        let load_root = if inside_linked_skill_root {
-                            match OpenedSkillDirectory::from_opened(directory) {
+                        let load_root = if inside_linked_skill_root || preserve_path {
+                            match OpenedSkillDirectory::from_opened(
+                                directory,
+                                path.parent().unwrap(),
+                            ) {
                                 Ok(directory) => Some(directory),
                                 Err(error) => {
                                     warn!(
@@ -1628,6 +1653,12 @@ mod tests {
             nested.supporting_files,
             vec![linked_skill.join("nested/guide.md").to_string_lossy()]
         );
+        let rendered = nested.loaded_context_with_args(None).unwrap();
+        assert!(rendered.contains(&format!("Skill directory: {}", nested_skill.display())));
+        assert!(rendered.contains(&format!(
+            "guide.md → {}",
+            nested_skill.join("guide.md").display()
+        )));
         assert!(nested
             .load_supporting_file(Path::new("guide.md"), "nested-skill/guide.md")
             .is_ok());
@@ -1687,8 +1718,21 @@ mod tests {
             skill.supporting_files,
             vec![linked_skill.join("references/guide.md").to_string_lossy()]
         );
+        let assert_rendered_target = || {
+            let rendered = skill.loaded_context_with_args(None).unwrap();
+            assert!(rendered.contains(&format!("Skill directory: {}", original.display())));
+            assert!(rendered.contains(&format!(
+                "references/guide.md → {}",
+                original.join("references/guide.md").display()
+            )));
+            assert!(!rendered.contains(&linked_skill.to_string_lossy().to_string()));
+            assert!(!rendered.contains(&replacement.to_string_lossy().to_string()));
+            assert_eq!(skill.path, linked_skill.to_string_lossy());
+        };
+        assert_rendered_target();
         std::fs::remove_file(&linked_skill).unwrap();
         symlink(&load_replacement, &linked_skill).unwrap();
+        assert_rendered_target();
 
         let legacy = crate::skills::client::load_supporting_file(
             skill,
@@ -1783,13 +1827,21 @@ mod tests {
         std::fs::create_dir_all(&group).unwrap();
         let outside_skill_dir = temp_root.join("outside-skill");
         write_skill(&outside_skill_dir, "reviewer");
+        std::fs::write(outside_skill_dir.join("guide.md"), "guidance").unwrap();
         symlink(&outside_skill_dir, group.join("reviewer")).unwrap();
 
-        let sources = scan_skills_from_dir(&skill_root, false, &mut HashSet::new());
+        let sources =
+            scan_skills_from_dir_with_details(&skill_root, false, true, false, &mut HashSet::new());
 
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].name, "reviewer");
         assert_eq!(sources[0].path, group.join("reviewer").to_string_lossy());
+        let rendered = sources[0].loaded_context_with_args(None).unwrap();
+        assert!(rendered.contains(&format!("Skill directory: {}", outside_skill_dir.display())));
+        assert!(rendered.contains(&format!(
+            "guide.md → {}",
+            outside_skill_dir.join("guide.md").display()
+        )));
     }
 
     #[cfg(unix)]
