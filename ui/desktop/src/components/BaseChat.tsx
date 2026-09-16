@@ -192,6 +192,7 @@ export default function BaseChat({
     acpRecovering,
     hasActiveRun,
     isActiveSession,
+    liveVoice.phase,
     liveVoiceChatBusy,
     session?.goose_mode,
     sessionId,
