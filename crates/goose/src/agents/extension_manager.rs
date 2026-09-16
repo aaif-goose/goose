@@ -843,8 +843,13 @@ fn remember_presented_token(token: Option<String>) -> Option<String> {
     let token = token?;
     let id = uuid::Uuid::now_v7().to_string();
     let mut tokens = presented_token_map().lock().unwrap();
-    if tokens.len() >= PRESENTED_TOKEN_MAP_LIMIT {
-        tokens.clear();
+    while tokens.len() >= PRESENTED_TOKEN_MAP_LIMIT {
+        let oldest = tokens.keys().min().cloned();
+        if let Some(oldest) = oldest {
+            tokens.remove(&oldest);
+        } else {
+            break;
+        }
     }
     tokens.insert(id.clone(), token);
     Some(id)
@@ -899,6 +904,14 @@ impl RecordingHttpClient {
                     encode_presented_token(&error.www_authenticate_header, auth_token.as_deref()),
                     error.required_scope,
                 ))
+            }
+            StreamableHttpError::UnexpectedServerResponse(body)
+                if body.starts_with("HTTP 401") || body.starts_with("HTTP 403") =>
+            {
+                StreamableHttpError::AuthRequired(AuthRequiredError::new(encode_presented_token(
+                    &body,
+                    auth_token.as_deref(),
+                )))
             }
             other => other,
         }
@@ -4624,15 +4637,53 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().to_str().unwrap();
         let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
-        let err = streamable_err(
+        let err = streamable_err(RecordingHttpClient::attach_presented_token(
             rmcp::transport::streamable_http_client::StreamableHttpError::UnexpectedServerResponse(
                 std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
             ),
-        );
+            Some("rejected-token".to_string()),
+        ));
         let error = ExtensionError::InitializeError(err);
 
         assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
         assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_challenge_less_401_does_not_clear_a_successor_grant() {
+        use rmcp::transport::auth::{
+            InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+        };
+
+        let token_response: OAuthTokenResponse = serde_json::from_value(serde_json::json!({
+            "access_token": "successor-token",
+            "token_type": "bearer",
+        }))
+        .expect("valid fake token JSON");
+        let store = InMemoryCredentialStore::new();
+        store
+            .save(StoredCredentials::new(
+                "test-client".to_string(),
+                Some(token_response),
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_str().unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root))]);
+        let err = streamable_err(RecordingHttpClient::attach_presented_token(
+            rmcp::transport::streamable_http_client::StreamableHttpError::UnexpectedServerResponse(
+                std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
+            ),
+            Some("rejected-token".to_string()),
+        ));
+        let error = ExtensionError::InitializeError(err);
+
+        assert!(!clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
+        assert!(store.load().await.unwrap().is_some());
     }
 
     #[tokio::test]
@@ -4861,6 +4912,7 @@ mod tests {
 
     #[test]
     fn overlapping_challenges_keep_the_token_from_the_failing_request() {
+        presented_token_map().lock().unwrap().clear();
         let first = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t1"));
         let second = encode_presented_token(r#"Bearer error="invalid_token""#, Some("t2"));
 
@@ -4881,6 +4933,28 @@ mod tests {
                 r#"Bearer error="invalid_token""#.to_string(),
                 Some("t2".to_string())
             )
+        );
+    }
+
+    #[test]
+    fn presented_token_map_evicts_oldest_without_dropping_inflight_entries() {
+        presented_token_map().lock().unwrap().clear();
+        let mut challenges = Vec::new();
+        for i in 0..=PRESENTED_TOKEN_MAP_LIMIT {
+            challenges.push(encode_presented_token(
+                r#"Bearer error="invalid_token""#,
+                Some(&format!("t{i}")),
+            ));
+        }
+
+        let first = split_presented_token(&challenges[0]);
+        let last = split_presented_token(challenges.last().unwrap());
+        assert_eq!(first.1, None, "oldest in-flight mapping may be evicted");
+        let expected = format!("t{PRESENTED_TOKEN_MAP_LIMIT}");
+        assert_eq!(last.1.as_deref(), Some(expected.as_str()));
+        assert!(
+            split_presented_token(&challenges[1]).1.is_some(),
+            "newer in-flight mappings must survive the cap"
         );
     }
 }
