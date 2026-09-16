@@ -62,13 +62,10 @@ impl GooseAcpAgent {
             .ok_or_else(agent_client_protocol::Error::invalid_params)?;
         let session_id = req.session_id.clone();
         let session = self.load_live_voice_session(&session_id).await?;
-        if self
+        let reservation = self
             .live_voice
-            .availability(Some(&session_id), session.goose_mode)
-            .is_err()
-        {
-            return Err(map_live_voice_error(LiveVoiceError::Unavailable));
-        }
+            .reserve_call(&session_id, session.goose_mode)
+            .map_err(map_live_voice_error)?;
         let transcript_publisher = Self::live_transcript_publisher(cx, &req.session_id);
         let agent = self
             .prepare_live_agent(&req.session_id)
@@ -76,7 +73,7 @@ impl GooseAcpAgent {
             .map_err(|error| agent_client_protocol::Error::internal_error().data(error))?;
         let main_agent = self.live_main_agent(cx, agent);
         let start = self.live_voice.start_call(
-            &req.session_id,
+            reservation,
             offer,
             self.session_manager.clone(),
             transcript_publisher,

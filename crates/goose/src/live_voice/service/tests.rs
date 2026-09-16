@@ -89,9 +89,10 @@ fn spawn_start(
     session_manager: Arc<SessionManager>,
 ) -> JoinHandle<StartResult> {
     tokio::spawn(async move {
+        let reservation = service.reserve_call(&session_id, GooseMode::Auto).unwrap();
         service
             .start_call(
-                &session_id,
+                reservation,
                 WebRtcOffer::new(offer.into()).unwrap(),
                 session_manager,
                 ignore_transcript_publisher(),
@@ -139,9 +140,12 @@ async fn establish_call_with(
     let start_session_id = session_id.clone();
     let start_manager = manager.clone();
     let start_task = tokio::spawn(async move {
+        let reservation = start_service
+            .reserve_call(&start_session_id, GooseMode::Auto)
+            .unwrap();
         start_service
             .start_call(
-                &start_session_id,
+                reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
                 start_manager,
                 transcript_publisher,
@@ -214,17 +218,9 @@ async fn start_rechecks_requirements_before_contacting_the_provider() {
     let (provider, mut starts) = provider_channel();
     let mut service = LiveVoiceService::for_test(provider, Arc::new(ActiveRunRegistry::default()));
     service.live_voice_resolver = Arc::new(|| Err("Live voice is disabled"));
-    let (manager, session_id) = live_session([]).await;
+    let (_manager, session_id) = live_session([]).await;
 
-    let result = service
-        .start_call(
-            &session_id,
-            WebRtcOffer::new("offer".into()).unwrap(),
-            manager,
-            ignore_transcript_publisher(),
-            ignore_main_agent(),
-        )
-        .await;
+    let result = service.reserve_call(&session_id, GooseMode::Auto);
 
     assert!(matches!(result, Err(LiveVoiceError::Unavailable)));
     assert!(starts.try_recv().is_err());
@@ -316,15 +312,7 @@ async fn a_start_reserves_the_session_until_it_finishes() {
         Err("Live voice is unavailable while this session is busy")
     );
 
-    let second = service
-        .start_call(
-            &session_id,
-            WebRtcOffer::new("second-offer".into()).unwrap(),
-            manager,
-            ignore_transcript_publisher(),
-            ignore_main_agent(),
-        )
-        .await;
+    let second = service.reserve_call(&session_id, GooseMode::Auto);
     assert!(matches!(second, Err(LiveVoiceError::Unavailable)));
 
     pending.reject("failed").unwrap();
@@ -332,6 +320,32 @@ async fn a_start_reserves_the_session_until_it_finishes() {
         first.await.unwrap(),
         Err(LiveVoiceError::StartFailed)
     ));
+    assert_eq!(
+        service.availability(Some(&session_id), GooseMode::Auto),
+        Ok(())
+    );
+}
+
+#[tokio::test]
+async fn a_cancelled_reservation_does_not_contact_the_provider() {
+    let (provider, mut starts) = provider_channel();
+    let service = LiveVoiceService::for_test(provider, Arc::new(ActiveRunRegistry::default()));
+    let (manager, session_id) = live_session([]).await;
+    let reservation = service.reserve_call(&session_id, GooseMode::Auto).unwrap();
+    reservation.stop_requested().cancel();
+
+    let result = service
+        .start_call(
+            reservation,
+            WebRtcOffer::new("offer".into()).unwrap(),
+            manager,
+            ignore_transcript_publisher(),
+            ignore_main_agent(),
+        )
+        .await;
+
+    assert!(matches!(result, Err(LiveVoiceError::Unavailable)));
+    assert!(starts.try_recv().is_err());
     assert_eq!(
         service.availability(Some(&session_id), GooseMode::Auto),
         Ok(())
@@ -731,9 +745,12 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
     let start_session_id = session.id.clone();
     let start_manager = session_manager.clone();
     let start = tokio::spawn(async move {
+        let reservation = start_service
+            .reserve_call(&start_session_id, GooseMode::Auto)
+            .unwrap();
         start_service
             .start_call(
-                &start_session_id,
+                reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
                 start_manager,
                 transcript_publisher,
@@ -1021,9 +1038,12 @@ async fn provider_terminal_publishes_completion_after_release() {
     let (manager, session_id) = live_session([]).await;
     let start_session_id = session_id.clone();
     let start_task = tokio::spawn(async move {
+        let reservation = start_service
+            .reserve_call(&start_session_id, GooseMode::Auto)
+            .unwrap();
         start_service
             .start_call(
-                &start_session_id,
+                reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
                 manager,
                 ignore_transcript_publisher(),

@@ -52,7 +52,6 @@ async fn a_call_owns_and_stops_its_provider_connection() {
     let (stopped, did_stop) = oneshot::channel();
     let mut call = LiveVoiceCall::new(
         "test-session".into(),
-        LiveVoiceCallId("live-test".into()),
         Box::new(TestConnection {
             stopped: Some(stopped),
         }),
@@ -64,11 +63,7 @@ async fn a_call_owns_and_stops_its_provider_connection() {
 
 #[tokio::test]
 async fn an_undelivered_delegation_update_notifies_the_user() {
-    let mut call = LiveVoiceCall::new(
-        "test-session".into(),
-        LiveVoiceCallId("live-test".into()),
-        Box::new(UndeliveredConnection),
-    );
+    let mut call = LiveVoiceCall::new("test-session".into(), Box::new(UndeliveredConnection));
     let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
     let transcript_publisher: LiveVoiceTranscriptPublisher = Arc::new(move |message| {
         notice_tx.send(message).unwrap();
@@ -94,7 +89,6 @@ async fn an_undelivered_delegation_update_notifies_the_user() {
 fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
     let mut call = LiveVoiceCall::new(
         "test-session".into(),
-        LiveVoiceCallId("live-test".into()),
         Box::new(TestConnection { stopped: None }),
     );
     call.record_transcript("1".into(), Role::Assistant, "ready", 5);
@@ -158,7 +152,6 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
 
     let mut missing_user = LiveVoiceCall::new(
         "test-session".into(),
-        LiveVoiceCallId("live-test-2".into()),
         Box::new(TestConnection { stopped: None }),
     );
     missing_user.record_transcript("1".into(), Role::Assistant, "hello", 10);
@@ -172,7 +165,6 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
 fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff() {
     let mut call = LiveVoiceCall::new(
         "test-session".into(),
-        LiveVoiceCallId("live-test".into()),
         Box::new(TestConnection { stopped: None }),
     );
     call.record_transcript("1".into(), Role::Assistant, "Anything else?", 10);
@@ -197,7 +189,6 @@ fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff(
 fn transcript_grouping_projects_deltas_and_finalizes_messages() {
     let mut call = LiveVoiceCall::new(
         "test-session".into(),
-        LiveVoiceCallId("live-test".into()),
         Box::new(TestConnection { stopped: None }),
     );
     let first = call

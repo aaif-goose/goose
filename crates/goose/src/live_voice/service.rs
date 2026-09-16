@@ -69,8 +69,8 @@ impl LiveCallControl {
     }
 }
 
-/// Owns the call reservation from before provider setup until cleanup finishes.
-pub(super) struct LiveCallGuard {
+/// Owns the call reservation from before agent preparation until cleanup finishes.
+pub(crate) struct LiveCallGuard {
     active_runs: Arc<ActiveRunRegistry>,
     calls_by_session: LiveCallControls,
     session_id: String,
@@ -155,36 +155,36 @@ impl LiveVoiceService {
         session_id: Option<&str>,
         mode: GooseMode,
     ) -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
-        let provider = (self.live_voice_resolver)()?;
-
-        if mode != GooseMode::Auto {
-            Err("Live voice requires Autonomous mode")
-        } else if session_id.is_some_and(|session_id| self.active_runs.is_active(session_id)) {
+        let provider = self.provider_for_mode(mode)?;
+        if session_id.is_some_and(|session_id| self.active_runs.is_active(session_id)) {
             Err("Live voice is unavailable while this session is busy")
         } else {
             Ok(provider)
         }
     }
 
-    pub(crate) async fn start_call(
+    fn provider_for_mode(
+        &self,
+        mode: GooseMode,
+    ) -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
+        let provider = (self.live_voice_resolver)()?;
+        if mode != GooseMode::Auto {
+            Err("Live voice requires Autonomous mode")
+        } else {
+            Ok(provider)
+        }
+    }
+
+    pub(crate) fn reserve_call(
         &self,
         session_id: &str,
-        offer: WebRtcOffer,
-        session_manager: Arc<SessionManager>,
-        transcript_publisher: LiveVoiceTranscriptPublisher,
-        main_agent: LiveMainAgent,
-    ) -> Result<StartLiveVoiceCallResult, LiveVoiceError> {
-        let session = session_manager
-            .get_session(session_id, true)
-            .await
+        mode: GooseMode,
+    ) -> Result<LiveCallGuard, LiveVoiceError> {
+        self.eligible_provider(Some(session_id), mode)
             .map_err(|_| LiveVoiceError::Unavailable)?;
-        let provider = self
-            .eligible_provider(Some(session_id), session.goose_mode)
-            .map_err(|_| LiveVoiceError::Unavailable)?;
-        let call_id = LiveVoiceCallId::new();
-        let (completion_tx, completion_rx) = watch::channel(None);
+        let (completion_tx, _) = watch::channel(None);
         let control = Arc::new(LiveCallControl {
-            call_id: call_id.clone(),
+            call_id: LiveVoiceCallId::new(),
             stop_requested: CancellationToken::new(),
             cleanup_finished: CancellationToken::new(),
             completion_tx,
@@ -199,20 +199,43 @@ impl LiveVoiceService {
             }
             calls.insert(session_id.to_string(), control.clone());
         }
-        let call_guard = LiveCallGuard::new(
+        Ok(LiveCallGuard::new(
             self.active_runs.clone(),
             self.calls_by_session.clone(),
             session_id,
             control,
-        );
+        ))
+    }
+
+    pub(crate) async fn start_call(
+        &self,
+        call_guard: LiveCallGuard,
+        offer: WebRtcOffer,
+        session_manager: Arc<SessionManager>,
+        transcript_publisher: LiveVoiceTranscriptPublisher,
+        main_agent: LiveMainAgent,
+    ) -> Result<StartLiveVoiceCallResult, LiveVoiceError> {
+        let session = session_manager
+            .get_session(&call_guard.session_id, true)
+            .await
+            .map_err(|_| LiveVoiceError::Unavailable)?;
+        let provider = self
+            .provider_for_mode(session.goose_mode)
+            .map_err(|_| LiveVoiceError::Unavailable)?;
         let input_messages =
             live_voice_input_messages(&session.conversation.unwrap_or_default()).await?;
+        if call_guard.stop_requested().is_cancelled() {
+            return Err(LiveVoiceError::Unavailable);
+        }
         let (answer, provider_connection) = provider
             .start(offer, input_messages)
             .await
             .map_err(|_| LiveVoiceError::StartFailed)?;
 
-        let call = LiveVoiceCall::new(session_id.to_string(), call_id.clone(), provider_connection);
+        let session_id = call_guard.session_id.clone();
+        let call_id = call_guard.control.call_id.clone();
+        let completion_rx = call_guard.control.completion_tx.subscribe();
+        let call = LiveVoiceCall::new(session_id, provider_connection);
         let runtime = LiveCallRuntime::new(
             session_manager,
             transcript_publisher,

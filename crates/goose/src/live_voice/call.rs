@@ -30,7 +30,6 @@ impl LiveVoiceCallId {
 
 pub(super) struct LiveVoiceCall {
     session_id: String,
-    id: LiveVoiceCallId,
     provider_connection: Box<dyn ProviderConnection>,
     provider_event_ids: HashSet<String>,
     provider_delegation_ids: HashSet<String>,
@@ -59,12 +58,10 @@ enum DelegationDecision {
 impl LiveVoiceCall {
     pub(super) fn new(
         session_id: String,
-        id: LiveVoiceCallId,
         provider_connection: Box<dyn ProviderConnection>,
     ) -> Self {
         Self {
             session_id,
-            id,
             provider_connection,
             provider_event_ids: HashSet::new(),
             provider_delegation_ids: HashSet::new(),
