@@ -7,6 +7,7 @@ use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
 pub(crate) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
+#[cfg(feature = "live-voice")]
 use goose_providers::openai_live_voice_provider::{OpenAiLiveVoiceConfig, OpenAiLiveVoiceProvider};
 use std::{
     collections::HashMap,
@@ -17,7 +18,9 @@ use tokio_util::sync::CancellationToken;
 
 const LIVE_VOICE_INPUT_MESSAGE_LIMIT: usize = 128;
 const LIVE_VOICE_INPUT_TOKEN_LIMIT: usize = 8_192;
+#[cfg(feature = "live-voice")]
 const LIVE_VOICE_ENABLED_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENABLED";
+#[cfg(feature = "live-voice")]
 const LIVE_VOICE_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE";
 
 type LiveCallControls = Arc<Mutex<HashMap<String, Arc<LiveCallControl>>>>;
@@ -290,6 +293,7 @@ impl LiveVoiceService {
     }
 }
 
+#[cfg(feature = "live-voice")]
 fn configured_live_voice_enabled() -> bool {
     crate::config::Config::global()
         .get_param::<serde_json::Value>(LIVE_VOICE_ENABLED_CONFIG_KEY)
@@ -303,6 +307,7 @@ fn configured_live_voice_enabled() -> bool {
         })
 }
 
+#[cfg(feature = "live-voice")]
 fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     if !configured_live_voice_enabled() || !crate::agents::state_machine::enabled() {
         return Err("Live voice is disabled");
@@ -319,6 +324,11 @@ fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     OpenAiLiveVoiceProvider::new(api_key, provider_config)
         .map(|provider| Arc::new(provider) as Arc<dyn LiveVoiceProvider>)
         .map_err(|_| "Live voice provider is not configured")
+}
+
+#[cfg(not(feature = "live-voice"))]
+fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
+    Err("Live voice is disabled")
 }
 
 async fn live_voice_input_messages(

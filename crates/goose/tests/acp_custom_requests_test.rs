@@ -189,6 +189,7 @@ fn test_custom_get_tools() {
 
 #[test]
 #[serial]
+#[cfg(feature = "live-voice")]
 fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
     let _guard = env_lock::lock_env([
         ("GOOSE_LIVE_VOICE_ENABLED", None::<&str>),

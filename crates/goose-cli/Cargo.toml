@@ -99,11 +99,13 @@ default = [
     "nostr",
     "otel",
     "rustls-tls",
+    "live-voice",
     "system-keyring",
     "update",
 ]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
+live-voice = ["goose/live-voice"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
 cuda = ["goose/cuda", "local-inference"]
@@ -114,7 +116,7 @@ nostr = ["goose/nostr"]
 otel = ["goose/otel"]
 system-keyring = ["goose/system-keyring"]
 update = ["dep:sigstore-verify", "dep:snap"]
-portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
+portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
 # disables the update command
 disable-update = []
 rustls-tls = [

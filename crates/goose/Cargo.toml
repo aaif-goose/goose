@@ -20,6 +20,7 @@ otel = [
     "dep:opentelemetry-stdout",
 ]
 code-mode = ["dep:pctx_code_mode"]
+live-voice = ["goose-providers/live-websocket"]
 local-inference = [
     "dep:candle-core",
     "dep:candle-nn",
@@ -77,7 +78,7 @@ native-tls = [
     "goose-providers/native-tls",
 ]
 system-keyring = ["dep:keyring"]
-portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
+portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
 
 [lints]
@@ -137,7 +138,7 @@ once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = { version = "3.1", default-features = false }
 goose-context-management = { path = "../goose-context-management" }
-goose-providers = { path = "../goose-providers", default-features = false, features = ["live-websocket"] }
+goose-providers = { path = "../goose-providers", default-features = false }
 goose-download-manager = { path = "../goose-download-manager" }
 goose-sdk-types = { path = "../goose-sdk-types" }
 goose-agent = { path = "../goose-agent" }

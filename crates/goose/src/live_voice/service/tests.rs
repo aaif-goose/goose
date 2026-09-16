@@ -201,12 +201,22 @@ fn reports_each_eligibility_gate() {
 }
 
 #[test]
+#[cfg(feature = "live-voice")]
 fn configured_live_voice_requires_the_state_machine() {
     let _guard = env_lock::lock_env([
         ("GOOSE_LIVE_VOICE_ENABLED", Some("1")),
         ("GOOSE_STATE_MACHINE", None::<&str>),
     ]);
 
+    assert!(matches!(
+        configured_live_voice(),
+        Err("Live voice is disabled")
+    ));
+}
+
+#[test]
+#[cfg(not(feature = "live-voice"))]
+fn configured_live_voice_is_disabled_without_the_feature() {
     assert!(matches!(
         configured_live_voice(),
         Err("Live voice is disabled")
