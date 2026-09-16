@@ -108,7 +108,7 @@ impl Drop for ActionRequiredStream {
 }
 
 static RE_ENV_BRACES: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}").expect("valid regex"));
+    Lazy::new(|| regex::Regex::new(r"\$\{\s*([A-Za-z_][A-Za-z0-9_-]*)\s*\}").expect("valid regex"));
 
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
@@ -3307,6 +3307,7 @@ mod tests {
         let mut env_map = HashMap::new();
         env_map.insert("AUTH_TOKEN".to_string(), "secret123".to_string());
         env_map.insert("API_KEY".to_string(), "key456".to_string());
+        env_map.insert("X-API-Key".to_string(), "hyphenated-key".to_string());
 
         // Test ${VAR} syntax
         let result = substitute_env_vars("Bearer ${ AUTH_TOKEN }", &env_map);
@@ -3315,6 +3316,9 @@ mod tests {
         // Test ${VAR} syntax without spaces
         let result = substitute_env_vars("Bearer ${AUTH_TOKEN}", &env_map);
         assert_eq!(result, "Bearer secret123");
+
+        let result = substitute_env_vars("${X-API-Key}", &env_map);
+        assert_eq!(result, "hyphenated-key");
 
         // Test $VAR syntax
         let result = substitute_env_vars("Bearer $AUTH_TOKEN", &env_map);
