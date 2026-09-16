@@ -1175,9 +1175,7 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_tool_calls_share_one_summary_request() {
-        Config::global()
-            .set_param("GOOSE_TOOL_PAIR_SUMMARIZATION", true)
-            .unwrap();
+        let _guard = env_lock::lock_env([("GOOSE_TOOL_PAIR_SUMMARIZATION", Some("true"))]);
         let provider = Arc::new(MockProvider::new(
             Message::assistant().with_text("summary"),
             1000,

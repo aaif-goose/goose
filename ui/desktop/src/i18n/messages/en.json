@@ -3971,6 +3971,12 @@
   "sessions.toast.updated": {
     "defaultMessage": "Session description updated successfully"
   },
+  "settings.agentLoop.description": {
+    "defaultMessage": "Use the operation-based agent loop. Turn this off to use the legacy loop."
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Agent Loop"
+  },
   "settings.appearance.description": {
     "defaultMessage": "Configure how goose appears on your system"
   },
@@ -4060,12 +4066,6 @@
   },
   "settings.language.zhTW": {
     "defaultMessage": "Chinese (Traditional)"
-  },
-  "settings.legacyAgentLoop.description": {
-    "defaultMessage": "Use the operation-based agent loop. Turn this off to use the legacy loop."
-  },
-  "settings.legacyAgentLoop.title": {
-    "defaultMessage": "Agent Loop"
   },
   "settings.menuBarIcon.description": {
     "defaultMessage": "Show goose in the menu bar"

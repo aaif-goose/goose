@@ -7,11 +7,11 @@ import { defineMessages, useIntl } from '../../i18n';
 
 const i18n = defineMessages({
   title: {
-    id: 'settings.legacyAgentLoop.title',
+    id: 'settings.agentLoop.title',
     defaultMessage: 'Agent Loop',
   },
   description: {
-    id: 'settings.legacyAgentLoop.description',
+    id: 'settings.agentLoop.description',
     defaultMessage: 'Use the operation-based agent loop. Turn this off to use the legacy loop.',
   },
 });
