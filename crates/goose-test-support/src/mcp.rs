@@ -267,7 +267,9 @@ impl ServerHandler for McpFixtureServer {
 
 pub struct McpFixture {
     pub url: String,
-    initializations: Arc<AtomicUsize>,
+    /// Stateless 2026 HTTP builds a fresh server per request, so this counts
+    /// requests served, which is the observable a caller can reason about.
+    requests: Arc<AtomicUsize>,
     handle: JoinHandle<()>,
 }
 
@@ -279,11 +281,11 @@ impl Drop for McpFixture {
 
 impl McpFixture {
     pub async fn new() -> Self {
-        let initializations = Arc::new(AtomicUsize::new(0));
+        let requests = Arc::new(AtomicUsize::new(0));
         let service_factory = {
-            let initializations = Arc::clone(&initializations);
+            let requests = Arc::clone(&requests);
             move || {
-                initializations.fetch_add(1, Ordering::SeqCst);
+                requests.fetch_add(1, Ordering::SeqCst);
                 Ok::<_, std::io::Error>(McpFixtureServer::new())
             }
         };
@@ -304,12 +306,12 @@ impl McpFixture {
 
         Self {
             url,
-            initializations,
+            requests,
             handle,
         }
     }
 
-    pub fn initialization_count(&self) -> usize {
-        self.initializations.load(Ordering::SeqCst)
+    pub fn request_count(&self) -> usize {
+        self.requests.load(Ordering::SeqCst)
     }
 }

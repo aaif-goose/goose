@@ -366,12 +366,6 @@ async fn extension_lifecycle_across_real_transports() {
     );
     assert!(http_context.roots.is_empty());
     assert_eq!(
-        inspect_context(&lease, "fixture_http__inspect_context")
-            .await
-            .instance_id,
-        http_context.instance_id
-    );
-    assert_eq!(
         stdio_context.protocol_version,
         ProtocolVersion::V_2025_11_25.as_str()
     );

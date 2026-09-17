@@ -582,7 +582,9 @@ mod tests {
             );
         }
         assert_eq!(manager.session_count().await, 1);
-        assert_eq!(mcp.initialization_count(), 1);
+        // One discover from one extension start; a second initialization
+        // would have been a second request.
+        assert_eq!(mcp.request_count(), 1);
     }
 
     #[tokio::test]
