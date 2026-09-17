@@ -1899,14 +1899,9 @@ impl CliSession {
             goose::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
 
-        let config = Config::global();
-        let show_cost = config
+        let show_cost = Config::global()
             .get_param::<bool>("GOOSE_CLI_SHOW_COST")
             .unwrap_or(false);
-
-        let provider_name = config
-            .get_goose_provider()
-            .unwrap_or_else(|_| "unknown".to_string());
 
         match self.get_session().await {
             Ok(metadata) => {
@@ -1915,11 +1910,18 @@ impl CliSession {
                 output::display_context_usage(total_tokens, context_limit);
 
                 if show_cost {
-                    output::display_cost_usage(
-                        &provider_name,
-                        &model_config.model_name,
-                        &metadata.usage,
-                    );
+                    if let Ok(totals) = self
+                        .agent
+                        .config
+                        .session_manager
+                        .get_session_usage_totals(&self.session_id)
+                        .await
+                    {
+                        output::display_cost_usage(
+                            totals.accumulated_cost,
+                            &totals.accumulated_usage,
+                        );
+                    }
                 }
             }
             Err(_) => {
