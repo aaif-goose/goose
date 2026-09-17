@@ -14,6 +14,91 @@ const i18n = defineMessages({
     id: 'settings.agentLoop.description',
     defaultMessage: 'Use the operation-based agent loop. Turn this off to use the legacy loop.',
   },
+  operationsHeading: {
+    id: 'settings.agentLoop.operations.heading',
+    defaultMessage: 'Configurable operations',
+  },
+  enableOperation: {
+    id: 'settings.agentLoop.operations.enable',
+    defaultMessage: 'Enable {operation}',
+  },
+  slashCommandsTitle: {
+    id: 'settings.agentLoop.operations.slashCommands.title',
+    defaultMessage: 'Slash commands',
+  },
+  slashCommandsDescription: {
+    id: 'settings.agentLoop.operations.slashCommands.description',
+    defaultMessage: 'Recognizes commands such as /compact, /skills, and recipe shortcuts.',
+  },
+  maxTurnsTitle: {
+    id: 'settings.agentLoop.operations.maxTurns.title',
+    defaultMessage: 'Max turns',
+  },
+  maxTurnsDescription: {
+    id: 'settings.agentLoop.operations.maxTurns.description',
+    defaultMessage: 'Stops autonomous work and asks the user before continuing.',
+  },
+  contextCompactionTitle: {
+    id: 'settings.agentLoop.operations.contextCompaction.title',
+    defaultMessage: 'Context compaction',
+  },
+  contextCompactionDescription: {
+    id: 'settings.agentLoop.operations.contextCompaction.description',
+    defaultMessage: 'Summarizes conversation history before the context window fills.',
+  },
+  toolPairCompactionTitle: {
+    id: 'settings.agentLoop.operations.toolPairCompaction.title',
+    defaultMessage: 'Tool pair compaction',
+  },
+  toolPairCompactionDescription: {
+    id: 'settings.agentLoop.operations.toolPairCompaction.description',
+    defaultMessage:
+      'Summarizes older tool requests and responses to save context. The cutoff is automatic when blank.',
+  },
+  recipeRetryTitle: {
+    id: 'settings.agentLoop.operations.recipeRetry.title',
+    defaultMessage: 'Recipe retry',
+  },
+  recipeRetryDescription: {
+    id: 'settings.agentLoop.operations.recipeRetry.description',
+    defaultMessage: 'Runs recipe checks again when a configured success check fails.',
+  },
+  stopHooksTitle: {
+    id: 'settings.agentLoop.operations.stopHooks.title',
+    defaultMessage: 'Stop hooks',
+  },
+  stopHooksDescription: {
+    id: 'settings.agentLoop.operations.stopHooks.description',
+    defaultMessage: 'Lets hooks block completion while preventing endless stop cycles.',
+  },
+  turnsLabel: {
+    id: 'settings.agentLoop.operations.turns.label',
+    defaultMessage: 'Turns',
+  },
+  thresholdLabel: {
+    id: 'settings.agentLoop.operations.threshold.label',
+    defaultMessage: 'Threshold %',
+  },
+  cutoffLabel: {
+    id: 'settings.agentLoop.operations.cutoff.label',
+    defaultMessage: 'Cutoff',
+  },
+  retryTimeoutLabel: {
+    id: 'settings.agentLoop.operations.retryTimeout.label',
+    defaultMessage: 'Retry timeout',
+  },
+  failureTimeoutLabel: {
+    id: 'settings.agentLoop.operations.failureTimeout.label',
+    defaultMessage: 'Failure timeout',
+  },
+  blockLimitLabel: {
+    id: 'settings.agentLoop.operations.blockLimit.label',
+    defaultMessage: 'Block limit',
+  },
+  autoPlaceholder: {
+    id: 'settings.agentLoop.operations.auto.placeholder',
+    defaultMessage: 'Auto',
+  },
 });
 
 type NumberSetting =
@@ -52,6 +137,8 @@ function OperationRow({
   onEnabledChange?: (checked: boolean) => void;
   children?: ReactNode;
 }) {
+  const intl = useIntl();
+
   return (
     <div className="border-t border-border-primary py-3 first:border-t-0">
       <div className="min-w-0">
@@ -59,7 +146,7 @@ function OperationRow({
           {enabled !== undefined && onEnabledChange && (
             <input
               type="checkbox"
-              aria-label={`Enable ${title}`}
+              aria-label={intl.formatMessage(i18n.enableOperation, { operation: title })}
               checked={enabled}
               onChange={(event) => onEnabledChange(event.target.checked)}
               className="h-4 w-4 cursor-pointer rounded border-border-primary accent-bgApp"
@@ -235,22 +322,22 @@ export default function AgentLoopSettings() {
         {enabled && (
           <CardContent className="px-4">
             <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">
-              Configurable operations
+              {intl.formatMessage(i18n.operationsHeading)}
             </h3>
 
             <OperationRow
-              title="Slash commands"
-              description="Recognizes commands such as /compact, /skills, and recipe shortcuts."
+              title={intl.formatMessage(i18n.slashCommandsTitle)}
+              description={intl.formatMessage(i18n.slashCommandsDescription)}
               enabled={slashCommandsEnabled}
               onEnabledChange={handleSlashCommandsToggle}
             />
 
             <OperationRow
-              title="Max turns"
-              description="Stops autonomous work and asks the user before continuing."
+              title={intl.formatMessage(i18n.maxTurnsTitle)}
+              description={intl.formatMessage(i18n.maxTurnsDescription)}
             >
               <NumberInput
-                label="Turns"
+                label={intl.formatMessage(i18n.turnsLabel)}
                 value={numbers.maxTurns}
                 min={1}
                 max={10000}
@@ -260,11 +347,11 @@ export default function AgentLoopSettings() {
             </OperationRow>
 
             <OperationRow
-              title="Context compaction"
-              description="Summarizes conversation history before the context window fills."
+              title={intl.formatMessage(i18n.contextCompactionTitle)}
+              description={intl.formatMessage(i18n.contextCompactionDescription)}
             >
               <NumberInput
-                label="Threshold %"
+                label={intl.formatMessage(i18n.thresholdLabel)}
                 value={numbers.compactionThreshold}
                 min={1}
                 max={99}
@@ -284,18 +371,18 @@ export default function AgentLoopSettings() {
             </OperationRow>
 
             <OperationRow
-              title="Tool pair compaction"
-              description="Summarizes older tool requests and responses to save context. The cutoff is automatic when blank."
+              title={intl.formatMessage(i18n.toolPairCompactionTitle)}
+              description={intl.formatMessage(i18n.toolPairCompactionDescription)}
               enabled={toolPairCompactionEnabled}
               onEnabledChange={handleToolPairCompactionToggle}
             >
               <div className="flex flex-wrap items-center gap-4">
                 <NumberInput
-                  label="Cutoff"
+                  label={intl.formatMessage(i18n.cutoffLabel)}
                   value={numbers.toolCallCutoff}
                   min={1}
                   max={100000}
-                  placeholder="Auto"
+                  placeholder={intl.formatMessage(i18n.autoPlaceholder)}
                   disabled={!toolPairCompactionEnabled}
                   onChange={(value) => setNumber('toolCallCutoff', value)}
                   onBlur={saveToolCallCutoff}
@@ -304,12 +391,12 @@ export default function AgentLoopSettings() {
             </OperationRow>
 
             <OperationRow
-              title="Recipe retry"
-              description="Runs recipe checks again when a configured success check fails."
+              title={intl.formatMessage(i18n.recipeRetryTitle)}
+              description={intl.formatMessage(i18n.recipeRetryDescription)}
             >
               <div className="flex flex-col gap-2">
                 <NumberInput
-                  label="Retry timeout"
+                  label={intl.formatMessage(i18n.retryTimeoutLabel)}
                   value={numbers.retryTimeout}
                   min={1}
                   max={3600}
@@ -319,7 +406,7 @@ export default function AgentLoopSettings() {
                   }
                 />
                 <NumberInput
-                  label="Failure timeout"
+                  label={intl.formatMessage(i18n.failureTimeoutLabel)}
                   value={numbers.failureTimeout}
                   min={1}
                   max={3600}
@@ -332,11 +419,11 @@ export default function AgentLoopSettings() {
             </OperationRow>
 
             <OperationRow
-              title="Stop hooks"
-              description="Lets hooks block completion while preventing endless stop cycles."
+              title={intl.formatMessage(i18n.stopHooksTitle)}
+              description={intl.formatMessage(i18n.stopHooksDescription)}
             >
               <NumberInput
-                label="Block limit"
+                label={intl.formatMessage(i18n.blockLimitLabel)}
                 value={numbers.stopHookBlockCap}
                 min={1}
                 max={100}

@@ -4670,10 +4670,73 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Besuchen Sie"
   },
-  "settings.legacyAgentLoop.description": {
-    "defaultMessage": "Fall back to the classic agent loop if the new one causes issues"
+  "settings.agentLoop.description": {
+    "defaultMessage": "Verwende die operationsbasierte Agentenschleife. Deaktiviere sie, um die Legacy-Schleife zu verwenden."
   },
-  "settings.legacyAgentLoop.title": {
-    "defaultMessage": "Use Legacy Agent Loop"
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Automatisch"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Blockierungslimit"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Fasst den Gesprächsverlauf zusammen, bevor das Kontextfenster voll ist."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Kontextkomprimierung"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Grenzwert"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "{operation} aktivieren"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Zeitlimit bei Fehler"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Konfigurierbare Operationen"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Beendet autonomes Arbeiten und fragt vor dem Fortfahren nach."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Maximale Durchläufe"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Führt Rezeptprüfungen erneut aus, wenn eine konfigurierte Erfolgsprüfung fehlschlägt."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Wiederholung des Rezepts"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Zeitlimit für Wiederholung"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Erkennt Befehle wie /compact, /skills und Rezeptkürzel."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Slash-Befehle"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Ermöglicht Hooks, den Abschluss zu blockieren, und verhindert dabei endlose Stoppzyklen."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Stopp-Hooks"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Schwellenwert %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Fasst ältere Werkzeuganfragen und -antworten zusammen, um Kontext zu sparen. Ohne Eingabe wird der Grenzwert automatisch festgelegt."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Werkzeugpaar-Komprimierung"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Durchläufe"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Agentenschleife"
   }
 }

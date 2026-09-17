@@ -4670,10 +4670,73 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Kunjungi"
   },
-  "settings.legacyAgentLoop.description": {
-    "defaultMessage": "Fall back to the classic agent loop if the new one causes issues"
+  "settings.agentLoop.description": {
+    "defaultMessage": "Gunakan loop agen berbasis operasi. Matikan untuk menggunakan loop lama."
   },
-  "settings.legacyAgentLoop.title": {
-    "defaultMessage": "Use Legacy Agent Loop"
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Otomatis"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Batas pemblokiran"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Meringkas riwayat percakapan sebelum jendela konteks penuh."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Pemadatan konteks"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Batas"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "Aktifkan {operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Batas waktu kegagalan"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Operasi yang dapat dikonfigurasi"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Menghentikan kerja otonom dan meminta pengguna sebelum melanjutkan."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Putaran maksimum"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Menjalankan ulang pemeriksaan resep saat pemeriksaan keberhasilan yang dikonfigurasi gagal."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Coba ulang resep"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Batas waktu coba ulang"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Mengenali perintah seperti /compact, /skills, dan pintasan resep."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Perintah garis miring"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Memungkinkan hook memblokir penyelesaian sekaligus mencegah siklus berhenti tanpa akhir."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Hook penghentian"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Ambang %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Meringkas permintaan dan respons alat lama untuk menghemat konteks. Batas ditentukan otomatis jika dikosongkan."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Pemadatan pasangan alat"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Putaran"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Loop agen"
   }
 }

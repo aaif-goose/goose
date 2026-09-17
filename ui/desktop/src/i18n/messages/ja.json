@@ -4670,10 +4670,73 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "次のURLにアクセスし、"
   },
-  "settings.legacyAgentLoop.description": {
-    "defaultMessage": "Fall back to the classic agent loop if the new one causes issues"
+  "settings.agentLoop.description": {
+    "defaultMessage": "オペレーションベースのエージェントループを使用します。オフにすると従来のループを使用します。"
   },
-  "settings.legacyAgentLoop.title": {
-    "defaultMessage": "Use Legacy Agent Loop"
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "自動"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "ブロック上限"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "コンテキストウィンドウがいっぱいになる前に会話履歴を要約します。"
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "コンテキスト圧縮"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "カットオフ"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "{operation}を有効にする"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "失敗タイムアウト"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "設定可能なオペレーション"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "自律作業を停止し、続行する前にユーザーへ確認します。"
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "最大ターン数"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "設定された成功チェックが失敗した場合にレシピのチェックを再実行します。"
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "レシピの再試行"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "再試行タイムアウト"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "/compact、/skills、レシピのショートカットなどのコマンドを認識します。"
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "スラッシュコマンド"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "無限の停止サイクルを防ぎながら、フックによる完了のブロックを許可します。"
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "停止フック"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "しきい値 %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "古いツールのリクエストとレスポンスを要約してコンテキストを節約します。空欄の場合、カットオフは自動です。"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "ツールペア圧縮"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "ターン"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "エージェントループ"
   }
 }

@@ -4670,10 +4670,73 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "जाएं"
   },
-  "settings.legacyAgentLoop.description": {
-    "defaultMessage": "Fall back to the classic agent loop if the new one causes issues"
+  "settings.agentLoop.description": {
+    "defaultMessage": "ऑपरेशन-आधारित एजेंट लूप का उपयोग करें। लेगेसी लूप का उपयोग करने के लिए इसे बंद करें।"
   },
-  "settings.legacyAgentLoop.title": {
-    "defaultMessage": "Use Legacy Agent Loop"
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "स्वचालित"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "ब्लॉक सीमा"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "कॉन्टेक्स्ट विंडो भरने से पहले बातचीत के इतिहास का सारांश बनाता है।"
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "कॉन्टेक्स्ट संक्षेपण"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "कटऑफ"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "{operation} सक्षम करें"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "विफलता टाइमआउट"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "कॉन्फ़िगर करने योग्य ऑपरेशन"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "स्वायत्त काम रोकता है और जारी रखने से पहले उपयोगकर्ता से पूछता है।"
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "अधिकतम टर्न"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "कॉन्फ़िगर की गई सफलता जाँच विफल होने पर रेसिपी जाँच फिर से चलाता है।"
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "रेसिपी पुनः प्रयास"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "पुनः प्रयास टाइमआउट"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "/compact, /skills और रेसिपी शॉर्टकट जैसे कमांड पहचानता है।"
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "स्लैश कमांड"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "हुक को पूर्णता रोकने देता है और अंतहीन स्टॉप चक्रों से बचाता है।"
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "स्टॉप हुक"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "थ्रेशोल्ड %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "कॉन्टेक्स्ट बचाने के लिए पुराने टूल अनुरोधों और उत्तरों का सारांश बनाता है। खाली छोड़ने पर कटऑफ स्वचालित होता है।"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "टूल पेयर संक्षेपण"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "टर्न"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "एजेंट लूप"
   }
 }
