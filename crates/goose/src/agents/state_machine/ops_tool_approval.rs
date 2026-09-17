@@ -92,6 +92,13 @@ impl Operation<Session, GooseEffect> for ToolApprovalOperation<'_> {
                     goose_mode,
                 )
                 .await?;
+            if *self.goose_mode.lock().await == GooseMode::Chat {
+                return if effects.is_empty() {
+                    not_applicable()
+                } else {
+                    applied(effects)
+                };
+            }
             let permission_check_result = self
                 .tool_inspection_manager
                 .process_inspection_results_with_permission_inspector(

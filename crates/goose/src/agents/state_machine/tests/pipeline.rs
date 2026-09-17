@@ -34,7 +34,7 @@ use crate::providers::base::Provider;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{Session, SessionManager, SessionType};
-use crate::tool_inspection::ToolInspectionManager;
+use crate::tool_inspection::{ToolInspectionManager, ToolInspector};
 use goose_providers::model::ModelConfig;
 
 struct FeatureProvider {
@@ -225,6 +225,10 @@ impl TestPipeline {
         self
     }
 
+    pub(super) async fn set_live_goose_mode(&self, mode: GooseMode) {
+        *self.goose_mode.lock().await = mode;
+    }
+
     pub(super) fn context_limit(&self) -> usize {
         self.model_config.context_limit()
     }
@@ -271,6 +275,11 @@ impl TestPipeline {
 
     pub(super) fn with_hook_manager(mut self, hook_manager: HookManager) -> Self {
         self.hook_manager = hook_manager;
+        self
+    }
+
+    pub(super) fn with_tool_inspector(mut self, inspector: Box<dyn ToolInspector>) -> Self {
+        self.tool_inspection_manager.add_inspector(inspector);
         self
     }
 

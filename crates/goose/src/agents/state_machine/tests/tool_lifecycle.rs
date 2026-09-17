@@ -12,8 +12,47 @@ use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RE
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::{Message, MessageContent, ToolRequest};
 use crate::permission::Permission;
+use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
+use std::sync::Arc;
+
+struct PausingDenyInspector {
+    inspection: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait::async_trait]
+impl ToolInspector for PausingDenyInspector {
+    fn name(&self) -> &'static str {
+        "pausing-deny"
+    }
+
+    async fn inspect(
+        &self,
+        _session_id: &str,
+        tool_requests: &[ToolRequest],
+        _messages: &[Message],
+        _goose_mode: GooseMode,
+    ) -> Result<Vec<InspectionResult>> {
+        self.inspection.wait().await;
+        self.inspection.wait().await;
+        Ok(tool_requests
+            .iter()
+            .map(|request| InspectionResult {
+                tool_request_id: request.id.clone(),
+                action: InspectionAction::Deny,
+                reason: "denied by test inspector".to_string(),
+                confidence: 1.0,
+                inspector_name: self.name().to_string(),
+                finding_id: None,
+            })
+            .collect())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
 
 #[tokio::test]
 async fn basic_tool_calling() -> Result<()> {
@@ -464,6 +503,41 @@ async fn tool_availability_tracks_mode_and_extension_removal() -> Result<()> {
     result.assert_message(-1, Agent, "calculator removed");
     assert!(!api.calls().last().unwrap().advertises_tool(ADD));
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn auto_to_chat_during_inspection_skips_denied_tool() -> Result<()> {
+    let inspection = Arc::new(tokio::sync::Barrier::new(2));
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_tool_inspector(Box::new(PausingDenyInspector {
+        inspection: inspection.clone(),
+    }));
+
+    api.on("switch modes while inspecting").call(ADD, value(1));
+    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
+        .reply("tool stayed disabled");
+
+    let run = pipeline.run(["switch modes while inspecting"]);
+    let switch_mode = async {
+        inspection.wait().await;
+        pipeline.set_live_goose_mode(GooseMode::Chat).await;
+        inspection.wait().await;
+    };
+    let (result, ()) = tokio::join!(run, switch_mode);
+    let result = result?;
+
+    result.assert_message(-2, ToolResponse, CHAT_MODE_TOOL_SKIPPED_RESPONSE);
+    result.assert_message(-1, Agent, "tool stayed disabled");
+    assert_eq!(pipeline.calculator_total(), 0);
+    assert!(!result.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::Message(message)
+            if message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::ActionRequired(_)))
+    )));
     Ok(())
 }
 
