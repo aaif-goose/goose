@@ -289,6 +289,16 @@ mod tests {
             .await;
     }
 
+    async fn mount_classifier_without_auth(server: &MockServer) {
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([[{
+                "label": "SAFE",
+                "score": 1.0
+            }]])))
+            .mount(server)
+            .await;
+    }
+
     async fn assert_authorization(server: &MockServer, expected: &str) {
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1);
@@ -385,5 +395,56 @@ mod tests {
             .unwrap();
 
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn prompt_classifier_refreshes_after_model_mapping_changes() {
+        let first = MockServer::start().await;
+        let second = MockServer::start().await;
+        mount_classifier_without_auth(&first).await;
+        mount_classifier_without_auth(&second).await;
+        let _guard = env_lock::lock_env([
+            ("SECURITY_PROMPT_CLASSIFIER_ENABLED", Some("true")),
+            ("SECURITY_PROMPT_CLASSIFIER_MODEL", Some("prompt-model")),
+            ("SECURITY_PROMPT_CLASSIFIER_ENDPOINT", None),
+            ("SECURITY_PROMPT_CLASSIFIER_TOKEN", None),
+            ("SECURITY_COMMAND_CLASSIFIER_ENABLED", Some("false")),
+            ("SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE", None),
+            ("SECURITY_COMMAND_CLASSIFIER_MODEL", None),
+            ("SECURITY_COMMAND_CLASSIFIER_ENDPOINT", None),
+            ("SECURITY_COMMAND_CLASSIFIER_TOKEN", None),
+            ("SECURITY_ML_MODEL_MAPPING", Some("{}")),
+        ]);
+        let manager = SecurityManager::enabled();
+        let request = shell_request();
+        let messages = [Message::user().with_text("ordinary prompt")];
+
+        manager
+            .analyze_tool_requests(std::slice::from_ref(&request), &messages)
+            .await
+            .unwrap();
+        assert!(first.received_requests().await.unwrap().is_empty());
+
+        std::env::set_var(
+            "SECURITY_ML_MODEL_MAPPING",
+            json!({ "prompt-model": { "endpoint": first.uri() } }).to_string(),
+        );
+        manager
+            .analyze_tool_requests(std::slice::from_ref(&request), &messages)
+            .await
+            .unwrap();
+        assert_eq!(first.received_requests().await.unwrap().len(), 1);
+
+        std::env::set_var(
+            "SECURITY_ML_MODEL_MAPPING",
+            json!({ "prompt-model": { "endpoint": second.uri() } }).to_string(),
+        );
+        manager
+            .analyze_tool_requests(std::slice::from_ref(&request), &messages)
+            .await
+            .unwrap();
+
+        assert_eq!(first.received_requests().await.unwrap().len(), 1);
+        assert_eq!(second.received_requests().await.unwrap().len(), 1);
     }
 }
