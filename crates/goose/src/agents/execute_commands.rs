@@ -138,10 +138,6 @@ impl Agent {
         message_text: &str,
         session_id: &str,
     ) -> Result<Option<Message>> {
-        if !slash_commands_enabled() {
-            return Ok(None);
-        }
-
         let Some(parsed) = parse_slash_command(message_text) else {
             return Ok(None);
         };

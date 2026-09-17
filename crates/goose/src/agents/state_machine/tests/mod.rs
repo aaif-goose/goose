@@ -288,3 +288,17 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn disabled_slash_commands_fall_through_to_inference() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_SLASH_COMMANDS_ENABLED", Some("false"))]);
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("/status").reply("saw it");
+
+    let result = pipeline.run(["/status"]).await?;
+
+    assert_eq!(api.call_count(), 1);
+    result.assert_message(-1, Agent, "saw it");
+
+    Ok(())
+}
