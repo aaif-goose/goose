@@ -44,7 +44,13 @@ const MAX_RETRY_AFTER_SECS: f64 = 3600.0;
 /// `error.metadata.retry_after_seconds` (OpenRouter shape, more precise than
 /// the integer header) and falls back to the RFC 7231 `Retry-After` header
 /// in either its delay-seconds form or its HTTP-date form.
-fn extract_retry_after(headers: &HeaderMap, payload: Option<&Value>) -> Option<Duration> {
+/// The server's own answer to "how long", from the response.
+///
+/// Checks the JSON body's `error.metadata.retry_after_seconds` first, then the
+/// `Retry-After` header. Public so a provider that builds its own
+/// `RateLimitExceeded` can reach the same parser instead of discarding what the
+/// server said.
+pub fn extract_retry_after(headers: &HeaderMap, payload: Option<&Value>) -> Option<Duration> {
     if let Some(secs) = payload
         .and_then(|p| p.get("error"))
         .and_then(|e| e.get("metadata"))

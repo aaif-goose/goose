@@ -355,14 +355,25 @@ impl GcpVertexAIProvider {
                         }),
                     );
                 }
-                let msg =
-                    rate_limit_error_message(&read_error_body(response).await.unwrap_or_default());
+                // Read before the body is consumed: `read_error_body` takes the
+                // response by value, and the headers go with it.
+                let headers = response.headers().clone();
+                let body = read_error_body(response).await.unwrap_or_default();
+                let retry_delay = goose_providers::http_status::extract_retry_after(
+                    &headers,
+                    serde_json::from_str::<serde_json::Value>(&body).ok().as_ref(),
+                );
+                let msg = rate_limit_error_message(&body);
                 tracing::warn!("429 (attempt {rate_limit_attempts}/{max_retries}): {msg}");
                 last_error = Some(ProviderError::RateLimitExceeded {
                     details: msg,
-                    retry_delay: None,
+                    retry_delay,
                 });
-                sleep(self.retry_config.delay_for_attempt(rate_limit_attempts)).await;
+                // The server said how long; the attempt-indexed schedule is a
+                // guess about a limit it just described. Waiting the shorter of
+                // the two is how a retry walks back into the same 429.
+                let backoff = self.retry_config.delay_for_attempt(rate_limit_attempts);
+                sleep(retry_delay.map_or(backoff, |asked| asked.max(backoff))).await;
             } else if status == *STATUS_API_OVERLOADED {
                 overloaded_attempts += 1;
                 if overloaded_attempts > max_retries {
