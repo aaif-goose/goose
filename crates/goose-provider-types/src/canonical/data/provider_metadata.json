@@ -77,6 +77,17 @@
     "model_count": 5
   },
   {
+    "id": "ai21",
+    "display_name": "AI21 Labs",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.ai21.com/studio/v1",
+    "doc": "https://docs.ai21.com/docs/jamba-foundation-models",
+    "env": [
+      "AI21_API_KEY"
+    ],
+    "model_count": 2
+  },
+  {
     "id": "aiand",
     "display_name": "ai&",
     "npm": "@ai-sdk/openai-compatible",
@@ -86,6 +97,17 @@
       "AIAND_API_KEY"
     ],
     "model_count": 11
+  },
+  {
+    "id": "ainetcafe",
+    "display_name": "ainetcafe",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://microquickjs.com/v1",
+    "doc": "https://ainetcafe.com/k3/guides/",
+    "env": [
+      "AINETCAFE_API_KEY"
+    ],
+    "model_count": 1
   },
   {
     "id": "aixy",
@@ -118,7 +140,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 55
+    "model_count": 56
   },
   {
     "id": "alibaba-cn",
@@ -129,7 +151,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 87
+    "model_count": 89
   },
   {
     "id": "alibaba-coding-plan",
@@ -162,7 +184,7 @@
     "env": [
       "ALIBABA_TOKEN_PLAN_API_KEY"
     ],
-    "model_count": 26
+    "model_count": 28
   },
   {
     "id": "alibaba-token-plan-cn",
@@ -173,7 +195,7 @@
     "env": [
       "ALIBABA_TOKEN_PLAN_API_KEY"
     ],
-    "model_count": 27
+    "model_count": 28
   },
   {
     "id": "ambient",
@@ -383,7 +405,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 107
+    "model_count": 106
   },
   {
     "id": "crof",
@@ -516,7 +538,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 282
+    "model_count": 283
   },
   {
     "id": "empiriolabs",
@@ -560,7 +582,7 @@
     "env": [
       "FIREWORKS_API_KEY"
     ],
-    "model_count": 23
+    "model_count": 33
   },
   {
     "id": "freemodel",
@@ -681,7 +703,7 @@
     "env": [
       "HYPER_API_KEY"
     ],
-    "model_count": 34
+    "model_count": 23
   },
   {
     "id": "iflowcn",
@@ -710,7 +732,7 @@
     "display_name": "Inception",
     "npm": "@ai-sdk/openai-compatible",
     "api": "https://api.inceptionlabs.ai/v1/",
-    "doc": "https://platform.inceptionlabs.ai/docs",
+    "doc": "https://docs.inceptionlabs.ai/get-started/models",
     "env": [
       "INCEPTION_API_KEY"
     ],
@@ -726,6 +748,17 @@
       "INCEPTRON_API_KEY"
     ],
     "model_count": 4
+  },
+  {
+    "id": "inco",
+    "display_name": "Inco",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.inco.ai/v1",
+    "doc": "https://platform.inco.ai/docs",
+    "env": [
+      "INCO_API_KEY"
+    ],
+    "model_count": 7
   },
   {
     "id": "infer",
@@ -792,7 +825,7 @@
     "env": [
       "ITERACOMPUTE_API_KEY"
     ],
-    "model_count": 2
+    "model_count": 9
   },
   {
     "id": "jalapeno",
@@ -836,7 +869,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 375
+    "model_count": 378
   },
   {
     "id": "kimi-for-coding",
@@ -1188,7 +1221,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 580
+    "model_count": 574
   },
   {
     "id": "nearai",
@@ -1277,7 +1310,18 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 104
+    "model_count": 105
+  },
+  {
+    "id": "oci",
+    "display_name": "OCI Generative AI",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/openai/v1",
+    "doc": "https://docs.oracle.com/en-us/iaas/Content/generative-ai/pretrained-models.htm",
+    "env": [
+      "OCI_GENAI_API_KEY"
+    ],
+    "model_count": 9
   },
   {
     "id": "ofox",
@@ -1288,7 +1332,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 143
+    "model_count": 144
   },
   {
     "id": "ollama-cloud",
@@ -1310,7 +1354,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 102
+    "model_count": 103
   },
   {
     "id": "opencode-go",
@@ -1321,7 +1365,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 36
+    "model_count": 37
   },
   {
     "id": "openreason",
@@ -1432,7 +1476,7 @@
       "PRIVATEMODE_API_KEY",
       "PRIVATEMODE_ENDPOINT"
     ],
-    "model_count": 9
+    "model_count": 11
   },
   {
     "id": "qihang-ai",
@@ -1542,7 +1586,7 @@
     "env": [
       "SCNET_API_KEY"
     ],
-    "model_count": 18
+    "model_count": 19
   },
   {
     "id": "scx-ai",
@@ -1610,17 +1654,6 @@
       "STACKIT_API_KEY"
     ],
     "model_count": 8
-  },
-  {
-    "id": "standardcompute",
-    "display_name": "Standard Compute",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://api.stdcmpt.com/v1",
-    "doc": "https://standardcompute.com/models",
-    "env": [
-      "STANDARDCOMPUTE_API_KEY"
-    ],
-    "model_count": 1
   },
   {
     "id": "stepfun",
@@ -1697,7 +1730,7 @@
     "env": [
       "SYNTHETIC_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 10
   },
   {
     "id": "tencent-coding-plan",
@@ -1741,7 +1774,7 @@
     "env": [
       "TENSORX_API_KEY"
     ],
-    "model_count": 25
+    "model_count": 26
   },
   {
     "id": "the-grid-ai",
@@ -1774,7 +1807,7 @@
     "env": [
       "TINFOIL_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 8
   },
   {
     "id": "tokengo",
@@ -1818,7 +1851,7 @@
     "env": [
       "UMANS_AI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 6
   },
   {
     "id": "umans-ai-coding-plan",
@@ -1829,7 +1862,7 @@
     "env": [
       "UMANS_AI_CODING_PLAN_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 7
   },
   {
     "id": "unorouter",
@@ -1865,6 +1898,17 @@
     "model_count": 8
   },
   {
+    "id": "vispark",
+    "display_name": "Vispark",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.lab.vispark.in/v1",
+    "doc": "https://lab.vispark.in/#vision",
+    "env": [
+      "VISPARK_LAB_API_KEY"
+    ],
+    "model_count": 3
+  },
+  {
     "id": "vivgrid",
     "display_name": "Vivgrid",
     "npm": "@ai-sdk/openai",
@@ -1884,7 +1928,7 @@
     "env": [
       "ARK_API_KEY"
     ],
-    "model_count": 15
+    "model_count": 16
   },
   {
     "id": "volcengine-coding-plan",
@@ -1932,10 +1976,10 @@
   },
   {
     "id": "wandb",
-    "display_name": "Weights & Biases",
+    "display_name": "CoreWeave",
     "npm": "@ai-sdk/openai-compatible",
     "api": "https://api.inference.wandb.ai/v1",
-    "doc": "https://docs.wandb.ai/guides/integrations/inference/",
+    "doc": "https://docs.wandb.ai/inference",
     "env": [
       "WANDB_API_KEY"
     ],
@@ -2071,6 +2115,6 @@
     "env": [
       "ZHIPU_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 4
   }
 ]
