@@ -4,8 +4,11 @@ use crate::providers::base::Provider;
 use anyhow::{anyhow, Result};
 use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
-use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
+use goose_providers::{
+    canonical::Modality,
+    model::{normalize_modalities, strip_reasoning_effort_suffix, ModelConfig},
+};
 use rmcp::model::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -39,12 +42,80 @@ pub fn materialize_model_config(provider_name: &str, model: ModelConfig) -> Resu
     Ok(apply_canonical_limits(provider_name, model))
 }
 
+fn custom_model_modalities(
+    provider_name: &str,
+    model_name: &str,
+) -> Option<goose_providers::base::ModelModalities> {
+    let provider = crate::config::declarative_providers::load_provider(provider_name)
+        .ok()
+        .filter(|provider| provider.is_editable)?;
+
+    provider
+        .config
+        .models
+        .iter()
+        .find(|candidate| candidate.name == model_name)
+        .or_else(|| {
+            provider.config.models.iter().find(|candidate| {
+                strip_reasoning_effort_suffix(&candidate.name)
+                    .is_some_and(|(base, _)| base == model_name)
+            })
+        })
+        .and_then(|model| model.modalities.clone())
+}
+
+fn resolve_modalities(
+    provider_name: &str,
+    model_name: &str,
+    legacy_input_modalities: Vec<Modality>,
+) -> (Vec<Modality>, Vec<Modality>) {
+    let canonical_provider = crate::config::declarative_providers::load_provider(provider_name)
+        .ok()
+        .filter(|provider| provider.is_editable)
+        .and_then(|provider| provider.config.catalog_provider_id)
+        .unwrap_or_else(|| provider_name.to_string());
+    let canonical =
+        goose_providers::canonical::maybe_get_canonical_model(&canonical_provider, model_name)
+            .or_else(|| {
+                let (base, _effort) = strip_reasoning_effort_suffix(model_name)?;
+                goose_providers::canonical::maybe_get_canonical_model(&canonical_provider, &base)
+            });
+    let custom = custom_model_modalities(provider_name, model_name);
+
+    (
+        normalize_modalities(
+            custom
+                .as_ref()
+                .and_then(|modalities| modalities.input.clone())
+                .unwrap_or_else(|| {
+                    canonical
+                        .as_ref()
+                        .map(|model| model.modalities.input.clone())
+                        .unwrap_or(legacy_input_modalities)
+                }),
+        ),
+        normalize_modalities(
+            custom
+                .and_then(|modalities| modalities.output)
+                .unwrap_or_else(|| {
+                    canonical
+                        .map(|model| model.modalities.output)
+                        .unwrap_or_default()
+                }),
+        ),
+    )
+}
+
 fn apply_canonical_limits(provider_name: &str, model: ModelConfig) -> ModelConfig {
-    if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
+    let model = if provider_name == goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
         model
     } else {
         model.with_canonical_limits(provider_name)
-    }
+    };
+    let legacy_input_modalities = model.input_modalities.clone();
+    let (input_modalities, output_modalities) =
+        resolve_modalities(provider_name, &model.model_name, legacy_input_modalities);
+    model.with_modalities(input_modalities, output_modalities)
 }
 
 fn materialize_model_config_inner(
@@ -132,7 +203,8 @@ fn base_model_config_from_user_config(
         toolshim_model: get_goose_toolshim_model(config)?,
         request_params: None,
         reasoning: None,
-        supports_vision: None,
+        input_modalities: vec![Modality::Text],
+        output_modalities: vec![Modality::Text],
         request_headers: None,
     };
     if provider_name != goose_providers::azure_foundry::AZURE_FOUNDRY_PROVIDER_NAME {
@@ -228,6 +300,146 @@ fn parse_yaml_bool_config(key: &str, value: serde_yaml::Value) -> Result<bool> {
             serde_yaml::to_string(&other).unwrap_or_else(|_| "<unprintable>".to_string()).trim()
         ))
         }
+    }
+}
+
+#[cfg(test)]
+mod modality_tests {
+    use super::*;
+    use crate::config::declarative_providers::{
+        create_custom_provider, CreateCustomProviderParams,
+    };
+    use goose_providers::base::{ModelInfo, ModelModalities};
+
+    fn create_provider(model: ModelInfo) -> String {
+        create_custom_provider(CreateCustomProviderParams {
+            engine: "openai".to_string(),
+            display_name: "Modalities".to_string(),
+            api_url: "https://example.invalid/v1".to_string(),
+            api_key: None,
+            models: vec![model],
+            supports_streaming: Some(true),
+            headers: None,
+            requires_auth: false,
+            catalog_provider_id: None,
+            base_path: None,
+            toolshim: false,
+            preserves_thinking: None,
+            auth: None,
+        })
+        .unwrap()
+        .name
+    }
+
+    #[test]
+    fn custom_modalities_override_canonical_metadata_per_direction() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
+        let mut model = ModelInfo::new("gpt-4o");
+        model.modalities = Some(ModelModalities {
+            input: Some(vec![Modality::Text]),
+            output: Some(vec![Modality::Audio]),
+        });
+        let provider = create_provider(model);
+
+        let config = materialize_model_config(&provider, ModelConfig::new("gpt-4o")).unwrap();
+        assert_eq!(config.input_modalities, vec![Modality::Text]);
+        assert_eq!(config.output_modalities, vec![Modality::Audio]);
+    }
+
+    #[test]
+    fn custom_modalities_fall_back_independently_and_normalize_empty_lists() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
+        let mut model = ModelInfo::new("unknown-model");
+        model.modalities = Some(ModelModalities {
+            input: Some(Vec::new()),
+            output: None,
+        });
+        let provider = create_provider(model);
+
+        let config =
+            materialize_model_config(&provider, ModelConfig::new("unknown-model")).unwrap();
+        assert_eq!(config.input_modalities, vec![Modality::Text]);
+        assert_eq!(config.output_modalities, vec![Modality::Text]);
+    }
+
+    #[test]
+    fn suffixed_custom_model_matches_normalized_runtime_model() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
+        let mut model = ModelInfo::new("gpt-5-high");
+        model.modalities = Some(ModelModalities {
+            input: Some(vec![Modality::Text, Modality::Image]),
+            output: Some(vec![Modality::Text]),
+        });
+        let provider = create_provider(model);
+
+        let config = materialize_model_config(&provider, ModelConfig::new("gpt-5")).unwrap();
+        assert!(config.supports_input_modality(Modality::Image));
+    }
+
+    #[test]
+    fn xai_suffixed_custom_model_matches_normalized_runtime_model() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
+        let mut model = ModelInfo::new("grok-3-mini-high");
+        model.modalities = Some(ModelModalities {
+            input: Some(vec![Modality::Text, Modality::Image]),
+            output: Some(vec![Modality::Text]),
+        });
+        let provider = create_provider(model);
+
+        let config = materialize_model_config(&provider, ModelConfig::new("grok-3-mini")).unwrap();
+        assert!(config.supports_input_modality(Modality::Image));
+    }
+
+    #[test]
+    fn custom_input_modalities_control_openai_image_formatting() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root.as_str()))]);
+        let mut model = ModelInfo::new("gpt-4o");
+        model.modalities = Some(ModelModalities {
+            input: Some(vec![Modality::Text, Modality::Image]),
+            output: None,
+        });
+        let provider = create_provider(model);
+        let messages = vec![Message::user().with_image("aW1hZ2U=", "image/png")];
+
+        let config = materialize_model_config(&provider, ModelConfig::new("gpt-4o")).unwrap();
+        let request = goose_providers::formats::openai::create_request(
+            &config,
+            "",
+            &messages,
+            &[],
+            &goose_providers::images::ImageFormat::OpenAi,
+            false,
+        )
+        .unwrap();
+        assert!(request.to_string().contains("image_url"));
+
+        let mut model = ModelInfo::new("gpt-4o");
+        model.modalities = Some(ModelModalities {
+            input: Some(vec![Modality::Text]),
+            output: None,
+        });
+        let provider = create_provider(model);
+        let config = materialize_model_config(&provider, ModelConfig::new("gpt-4o")).unwrap();
+        let request = goose_providers::formats::openai::create_request(
+            &config,
+            "",
+            &messages,
+            &[],
+            &goose_providers::images::ImageFormat::OpenAi,
+            false,
+        )
+        .unwrap();
+        assert!(!request.to_string().contains("image_url"));
     }
 }
 

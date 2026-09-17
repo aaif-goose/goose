@@ -1677,7 +1677,8 @@ pub fn create_request(
         for_streaming,
         OpenAiFormatOptions {
             preserve_thinking_context: true,
-            supports_vision: model_config.supports_vision.unwrap_or_default(),
+            supports_vision: model_config
+                .supports_input_modality(crate::canonical::Modality::Image),
             ..Default::default()
         },
     )
@@ -2508,7 +2509,13 @@ mod tests {
         let message = Message::user().with_text(format!("Here is an image: {}", png_path_str));
 
         // Vision affirmed: path is converted to an image_url block.
-        let vision = ModelConfig::new("gpt-4o").with_vision_support(true);
+        let vision = ModelConfig::new("gpt-4o").with_modalities(
+            vec![
+                crate::canonical::Modality::Text,
+                crate::canonical::Modality::Image,
+            ],
+            vec![crate::canonical::Modality::Text],
+        );
         let request = create_request(
             &vision,
             "system",
@@ -2538,7 +2545,10 @@ mod tests {
         assert!(!content.contains("image_url"));
 
         // Explicitly non-vision: passthrough, no image_url.
-        let non_vision = ModelConfig::new("gpt-4o").with_vision_support(false);
+        let non_vision = ModelConfig::new("gpt-4o").with_modalities(
+            vec![crate::canonical::Modality::Text],
+            vec![crate::canonical::Modality::Text],
+        );
         let request = create_request(
             &non_vision,
             "system",

@@ -74,7 +74,8 @@ impl OpenAiCompatibleProvider {
             for_streaming,
             OpenAiFormatOptions {
                 preserve_thinking_context: true,
-                supports_vision: model_config.supports_vision.unwrap_or_default(),
+                supports_vision: model_config
+                    .supports_input_modality(crate::canonical::Modality::Image),
                 ..Default::default()
             },
         )

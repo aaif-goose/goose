@@ -497,7 +497,11 @@ Custom providers must use OpenAI, Anthropic, or Ollama compatible API formats. T
       "models": [
         {
           "name": "gpt-4o",
-          "context_limit": 128000
+          "context_limit": 128000,
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
         },
         {
           "name": "gpt-3.5-turbo",
@@ -512,6 +516,10 @@ Custom providers must use OpenAI, Anthropic, or Ollama compatible API formats. T
       "requires_auth": true
     }
     ```
+
+    A model can optionally declare `modalities` with separate `input` and `output` lists. Supported values are `text`, `image`, `audio`, `video`, and `pdf`. For each direction, goose uses the custom declaration when present, otherwise canonical model-card metadata, and otherwise `["text"]`. A declaration replaces rather than merges canonical metadata; an explicitly empty list is normalized to `["text"]`.
+
+    This metadata describes capabilities goose already knows how to use; it does not guarantee that every provider engine transports every listed modality. Modality declarations are JSON-only in this release and are preserved when the Desktop or ACP model-name-only form updates an existing model.
 
     Then use the `api_key_env` to set the key for your session. For example:
     ```bash

@@ -661,7 +661,7 @@ pub fn create_responses_request_for_model(
     add_message_items(
         &mut input_items,
         messages,
-        model_config.supports_vision.unwrap_or_default(),
+        model_config.supports_input_modality(crate::canonical::Modality::Image),
     );
 
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
@@ -1718,7 +1718,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -1954,7 +1955,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -1999,7 +2001,8 @@ mod tests {
                 toolshim_model: None,
                 request_params: None,
                 reasoning: None,
-                supports_vision: None,
+                input_modalities: vec![crate::canonical::Modality::Text],
+                output_modalities: vec![crate::canonical::Modality::Text],
                 request_headers: None,
             };
 
@@ -2110,7 +2113,8 @@ mod tests {
                 toolshim_model: None,
                 request_params: None,
                 reasoning: None,
-                supports_vision: None,
+                input_modalities: vec![crate::canonical::Modality::Text],
+                output_modalities: vec![crate::canonical::Modality::Text],
                 request_headers: None,
             };
 
@@ -2162,7 +2166,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2189,7 +2194,8 @@ mod tests {
                 serde_json::json!(true),
             )])),
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2215,7 +2221,11 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: Some(true),
+            input_modalities: vec![
+                crate::canonical::Modality::Text,
+                crate::canonical::Modality::Image,
+            ],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2265,7 +2275,11 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: Some(true),
+            input_modalities: vec![
+                crate::canonical::Modality::Text,
+                crate::canonical::Modality::Image,
+            ],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2303,7 +2317,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2336,7 +2351,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2368,7 +2384,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2403,7 +2420,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2443,7 +2461,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2470,7 +2489,11 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: Some(true),
+            input_modalities: vec![
+                crate::canonical::Modality::Text,
+                crate::canonical::Modality::Image,
+            ],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2503,7 +2526,11 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: Some(true),
+            input_modalities: vec![
+                crate::canonical::Modality::Text,
+                crate::canonical::Modality::Image,
+            ],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -2598,7 +2625,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -3039,7 +3067,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -3072,7 +3101,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -3105,7 +3135,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
