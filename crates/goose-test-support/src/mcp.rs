@@ -1,8 +1,8 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use once_cell::sync::Lazy;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, ElicitRequestParams, ElicitationAction,
@@ -27,17 +27,22 @@ pub const TEST_IMAGE_B64: &str = include_str!("test_assets/test_image.b64").trim
 pub const APP_CARD_RESOURCE_URI: &str = "ui://fixture/card";
 pub const APP_CARD_HTML: &str = "<html><body>card</body></html>";
 
-/// Changes on every process start, so a test can tell a restart from a reuse.
-static INSTANCE_ID: Lazy<String> = Lazy::new(|| {
-    format!(
-        "{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    )
-});
+static NEXT_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
+
+const SESSION_ID_META_KEY: &str = "agent-session-id";
+const WORKING_DIR_META_KEY: &str = "agent-working-dir";
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextReport {
+    pub instance_id: String,
+    pub protocol_version: String,
+    pub process_cwd: String,
+    pub process_session_id: Option<String>,
+    pub request_session_id: Option<String>,
+    pub request_working_dir: Option<String>,
+    pub roots: Vec<String>,
+}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ElicitArgs {
@@ -48,6 +53,8 @@ pub struct ElicitArgs {
 
 #[derive(Clone)]
 pub struct McpFixtureServer {
+    instance_id: String,
+    max_protocol_version: ProtocolVersion,
     tool_router: rmcp::handler::server::router::tool::ToolRouter<Self>,
 }
 
@@ -60,7 +67,17 @@ impl Default for McpFixtureServer {
 #[tool_router]
 impl McpFixtureServer {
     pub fn new() -> Self {
+        Self::with_max_protocol_version(ProtocolVersion::V_2026_07_28)
+    }
+
+    pub fn with_max_protocol_version(max_protocol_version: ProtocolVersion) -> Self {
         Self {
+            instance_id: format!(
+                "{}-{}",
+                std::process::id(),
+                NEXT_INSTANCE_ID.fetch_add(1, Ordering::Relaxed)
+            ),
+            max_protocol_version,
             tool_router: Self::tool_router(),
         }
     }
@@ -92,10 +109,55 @@ impl McpFixtureServer {
         ]))
     }
 
-    #[tool(description = "An id that is the same for the life of this server process")]
-    fn instance_id(&self) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Report the process and request context seen by the server",
+        annotations(read_only_hint = true)
+    )]
+    #[expect(deprecated)]
+    async fn inspect_context(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let protocol_version = context
+            .peer
+            .peer_info()
+            .map(|info| info.protocol_version.clone())
+            .unwrap_or_default();
+        let roots = if protocol_version < ProtocolVersion::V_2026_07_28 {
+            context
+                .peer
+                .list_roots()
+                .await
+                .map_err(|error| McpError::internal_error(error.to_string(), None))?
+                .roots
+                .into_iter()
+                .map(|root| root.uri)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let meta = &context.meta.0 .0;
+        let meta_value = |key: &str| {
+            meta.iter()
+                .find(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
+                .and_then(|(_, value)| value.as_str())
+                .map(str::to_string)
+        };
+        let report = ContextReport {
+            instance_id: self.instance_id.clone(),
+            protocol_version: protocol_version.as_str().to_string(),
+            process_cwd: std::env::current_dir()
+                .map_err(|error| McpError::internal_error(error.to_string(), None))?
+                .to_string_lossy()
+                .into_owned(),
+            process_session_id: std::env::var("AGENT_SESSION_ID").ok(),
+            request_session_id: meta_value(SESSION_ID_META_KEY),
+            request_working_dir: meta_value(WORKING_DIR_META_KEY),
+            roots,
+        };
         Ok(CallToolResult::success(vec![ContentBlock::text(
-            INSTANCE_ID.as_str(),
+            serde_json::to_string(&report)
+                .map_err(|error| McpError::internal_error(error.to_string(), None))?,
         )]))
     }
 
@@ -173,6 +235,10 @@ impl McpFixtureServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for McpFixtureServer {
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(ProtocolVersion::known_up_to(&self.max_protocol_version))
+    }
+
     fn get_info(&self) -> ServerInfo {
         InitializeResult::new(
             ServerCapabilities::builder()
@@ -180,7 +246,7 @@ impl ServerHandler for McpFixtureServer {
                 .enable_resources()
                 .build(),
         )
-        .with_protocol_version(ProtocolVersion::LATEST)
+        .with_protocol_version(self.max_protocol_version.clone())
         .with_server_info(Implementation::new("mcp-fixture", "1.0.0"))
         .with_instructions("Test server with code, image, and audience-scoped content tools.")
     }

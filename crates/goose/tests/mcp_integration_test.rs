@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::{env, fs};
 
 use futures::StreamExt;
-use rmcp::model::{CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, Tool};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, ProtocolVersion, Tool,
+};
 use rmcp::object;
 use tokio_util::sync::CancellationToken;
 
@@ -21,7 +23,7 @@ use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
 use goose::session::SessionType;
 use goose_providers::model::ModelConfig;
-use goose_test_support::mcp::{APP_CARD_HTML, APP_CARD_RESOURCE_URI};
+use goose_test_support::mcp::{ContextReport, APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
 
 use test_case::test_case;
@@ -206,12 +208,14 @@ impl Fixture {
     }
 }
 
-fn stdio_fixture(name: &str, available_tools: &[&str]) -> ExtensionConfig {
+fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> ExtensionConfig {
+    let mut args = vec!["stdio".to_string()];
+    args.extend(mode.map(str::to_string));
     ExtensionConfig::Stdio {
         name: name.to_string(),
         description: "stdio fixture".to_string(),
         cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
-        args: vec!["stdio".to_string()],
+        args,
         envs: Envs::default(),
         env_keys: vec![],
         timeout: Some(30),
@@ -291,6 +295,10 @@ async fn call_text(lease: &ExtensionLease, name: &str) -> String {
     text_of(&call(lease, name, None).await.unwrap())
 }
 
+async fn inspect_context(lease: &ExtensionLease, name: &str) -> ContextReport {
+    serde_json::from_str(&call_text(lease, name).await).unwrap()
+}
+
 /// One manager, three transports, one lease: the catalog, mangled-name
 /// recovery, filtering, app scoping, the restart-on-config-change rule, and
 /// what a held lease does and does not see when the registry changes.
@@ -301,7 +309,11 @@ async fn extension_lifecycle_across_real_transports() {
     let session = fx.session(SessionType::Hidden).await;
 
     let http = http_fixture("fixture_http", &http_server.url);
-    let stdio = stdio_fixture("fixture_stdio", &["get_code", "instance_id"]);
+    let stdio = stdio_fixture(
+        "fixture_stdio",
+        Some("legacy"),
+        &["get_code", "inspect_context"],
+    );
     let todo = platform("todo");
     for config in [&http, &stdio, &todo] {
         fx.add(&session, config).await;
@@ -315,7 +327,7 @@ async fn extension_lifecycle_across_real_transports() {
         "fixture_http__get_code",
         "fixture_http__db.query",
         "fixture_stdio__get_code",
-        "fixture_stdio__instance_id",
+        "fixture_stdio__inspect_context",
         "todo__todo_write",
     ] {
         assert!(names.contains(&expected.to_string()), "{names:?}");
@@ -325,7 +337,7 @@ async fn extension_lifecycle_across_real_transports() {
     stdio_names.sort();
     assert_eq!(
         stdio_names,
-        ["fixture_stdio__get_code", "fixture_stdio__instance_id"]
+        ["fixture_stdio__get_code", "fixture_stdio__inspect_context"]
     );
     assert!(tool_names(&lease.tools_excluding("fixture_stdio").await)
         .iter()
@@ -336,6 +348,54 @@ async fn extension_lifecycle_across_real_transports() {
     assert_eq!(
         call_text(&lease, "fixture_stdio__get_code").await,
         FAKE_CODE
+    );
+    let http_context = inspect_context(&lease, "fixture_http__inspect_context").await;
+    let stdio_context = inspect_context(&lease, "fixture_stdio__inspect_context").await;
+    let working_dir = session.working_dir.to_string_lossy().into_owned();
+    assert_eq!(
+        http_context.protocol_version,
+        ProtocolVersion::V_2026_07_28.as_str()
+    );
+    assert_eq!(
+        http_context.request_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+    assert_eq!(
+        http_context.request_working_dir.as_deref(),
+        Some(working_dir.as_str())
+    );
+    assert!(http_context.roots.is_empty());
+    assert_eq!(
+        inspect_context(&lease, "fixture_http__inspect_context")
+            .await
+            .instance_id,
+        http_context.instance_id
+    );
+    assert_eq!(
+        stdio_context.protocol_version,
+        ProtocolVersion::V_2025_11_25.as_str()
+    );
+    assert_eq!(
+        fs::canonicalize(&stdio_context.process_cwd).unwrap(),
+        fs::canonicalize(&session.working_dir).unwrap()
+    );
+    assert_eq!(
+        stdio_context.process_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+    assert_eq!(
+        stdio_context.request_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+    assert_eq!(
+        stdio_context.request_working_dir.as_deref(),
+        Some(working_dir.as_str())
+    );
+    assert_eq!(
+        stdio_context.roots,
+        [url::Url::from_file_path(&session.working_dir)
+            .unwrap()
+            .to_string()]
     );
     assert!(text_of(
         &call(
@@ -388,27 +448,36 @@ async fn extension_lifecycle_across_real_transports() {
 
     // Re-adding an identical config keeps the process; a changed one restarts
     // it. A lease resolved before the restart keeps the old process.
-    let first_instance = call_text(&lease, "fixture_stdio__instance_id").await;
+    let first_instance = stdio_context.instance_id;
     fx.add(&session, &stdio).await;
     assert_eq!(
-        call_text(
+        inspect_context(
             &fx.resolve(&session, &configs).await,
-            "fixture_stdio__instance_id"
+            "fixture_stdio__inspect_context",
         )
-        .await,
+        .await
+        .instance_id,
         first_instance
     );
-    let wider_stdio = stdio_fixture("fixture_stdio", &["get_code", "instance_id", "db.query"]);
+    let wider_stdio = stdio_fixture(
+        "fixture_stdio",
+        Some("legacy"),
+        &["get_code", "inspect_context", "db.query"],
+    );
     fx.add(&session, &wider_stdio).await;
     let after_restart = fx
         .resolve(&session, &[http.clone(), wider_stdio.clone(), todo.clone()])
         .await;
     assert_ne!(
-        call_text(&after_restart, "fixture_stdio__instance_id").await,
+        inspect_context(&after_restart, "fixture_stdio__inspect_context")
+            .await
+            .instance_id,
         first_instance
     );
     assert_eq!(
-        call_text(&lease, "fixture_stdio__instance_id").await,
+        inspect_context(&lease, "fixture_stdio__inspect_context")
+            .await
+            .instance_id,
         first_instance
     );
     // The old config no longer matches what is running, so a set that still
@@ -442,7 +511,7 @@ async fn extension_protocol_traffic_through_a_lease() {
     let fx = fixture(true).await;
     let user = fx.session(SessionType::User).await;
     let subagent = fx.session(SessionType::SubAgent).await;
-    let stdio = stdio_fixture("fixture", &[]);
+    let stdio = stdio_fixture("fixture", None, &[]);
     let manager_ext = platform("extensionmanager");
     fx.add(&user, &stdio).await;
     fx.add(&user, &manager_ext).await;

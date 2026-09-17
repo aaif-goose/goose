@@ -6,15 +6,23 @@ use rmcp::{transport::stdio, ServiceExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    match std::env::args().nth(1).as_deref() {
-        Some("stdio") => {
+    let mut args = std::env::args().skip(1);
+    match (args.next().as_deref(), args.next().as_deref()) {
+        (Some("stdio"), None) => {
             McpFixtureServer::new()
                 .serve(stdio())
                 .await?
                 .waiting()
                 .await?;
         }
-        Some("http") | None => {
+        (Some("stdio"), Some("legacy")) => {
+            McpFixtureServer::with_max_protocol_version(rmcp::model::ProtocolVersion::V_2025_11_25)
+                .serve(stdio())
+                .await?
+                .waiting()
+                .await?;
+        }
+        (Some("http") | None, None) => {
             let service = StreamableHttpService::new(
                 || Ok(McpFixtureServer::new()),
                 LocalSessionManager::default().into(),
@@ -28,7 +36,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             axum::serve(listener, router).await?;
         }
-        Some(other) => return Err(format!("unknown transport {other}; use stdio or http").into()),
+        (transport, mode) => {
+            return Err(format!(
+                "unknown fixture mode {transport:?} {mode:?}; use stdio [legacy] or http"
+            )
+            .into())
+        }
     }
     Ok(())
 }

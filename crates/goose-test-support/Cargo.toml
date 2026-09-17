@@ -12,7 +12,6 @@ description.workspace = true
 axum = { workspace = true }
 env-lock = { workspace = true }
 opentelemetry = { workspace = true, features = ["trace", "metrics"] }
-once_cell = { workspace = true }
 rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server", "transport-io", "elicitation"] }
 schemars = { workspace = true }
 serde = { workspace = true }
