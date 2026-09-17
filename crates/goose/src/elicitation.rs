@@ -54,7 +54,7 @@ pub(crate) async fn complete_elicitation_with_message(
     claim.submit(response)
 }
 
-pub(crate) async fn complete_elicitation_with_generated_message(
+pub async fn complete_elicitation_with_generated_message(
     session_manager: &SessionManager,
     session_id: &str,
     elicitation_id: &str,

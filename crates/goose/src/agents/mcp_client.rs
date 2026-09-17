@@ -261,28 +261,14 @@ impl GooseClient {
         self.session_id.lock().await.clone()
     }
 
-    async fn resolve_session_id(&self, extensions: &Extensions) -> Option<String> {
-        // Prefer explicit MCP metadata, then the active request scope.
-        let current_session_id = self.current_session_id().await;
-        Self::session_id_from_extensions(extensions).or(current_session_id)
-    }
-
-    fn session_id_from_extensions(extensions: &Extensions) -> Option<String> {
-        let meta = extensions.get::<MetaObject>()?;
-        meta.0
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(SESSION_ID_HEADER))
-            .and_then(|(_, value)| value.as_str())
-            .map(|value| value.to_string())
-    }
-
-    fn tool_call_request_id_from_extensions(extensions: &Extensions) -> Option<String> {
-        let meta = extensions.get::<MetaObject>()?;
-        meta.0
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(TOOL_CALL_REQUEST_ID_HEADER))
-            .and_then(|(_, value)| value.as_str())
-            .map(|value| value.to_string())
+    /// A server that echoes our request `_meta` on its own requests lets us
+    /// route them to the exact call; otherwise fall back to the session this
+    /// client serves.
+    async fn resolve_session_id(&self, meta: &MetaObject) -> Option<String> {
+        match meta_value(meta, SESSION_ID_HEADER) {
+            Some(session_id) => Some(session_id),
+            None => self.current_session_id().await,
+        }
     }
 
     fn register_active_tool_call(
@@ -306,9 +292,9 @@ impl GooseClient {
     fn resolve_tool_call_request_id(
         &self,
         session_id: &str,
-        extensions: &Extensions,
+        meta: &MetaObject,
     ) -> Result<String, ErrorData> {
-        if let Some(tool_call_request_id) = Self::tool_call_request_id_from_extensions(extensions) {
+        if let Some(tool_call_request_id) = meta_value(meta, TOOL_CALL_REQUEST_ID_HEADER) {
             return Ok(tool_call_request_id);
         }
 
@@ -368,6 +354,14 @@ impl GooseClient {
 }
 
 #[expect(deprecated)]
+fn meta_value(meta: &MetaObject, key: &str) -> Option<String> {
+    meta.0
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .and_then(|(_, value)| value.as_str())
+        .map(str::to_string)
+}
+
 fn working_dir_roots(dir: &std::path::Path) -> ListRootsResult {
     let uri = url::Url::from_file_path(dir)
         .map(|u| u.to_string())
@@ -446,7 +440,7 @@ impl ClientHandler for GooseClient {
             .clone();
 
         // Prefer explicit MCP metadata, then the active request scope.
-        let session_id = self.resolve_session_id(&context.extensions).await;
+        let session_id = self.resolve_session_id(&context.meta).await;
 
         let provider_ready_messages: Vec<crate::conversation::message::Message> = params
             .messages
@@ -531,7 +525,7 @@ impl ClientHandler for GooseClient {
         }
 
         let session_id = self
-            .resolve_session_id(&context.extensions)
+            .resolve_session_id(&context.meta)
             .await
             .ok_or_else(|| {
                 ErrorData::new(
@@ -541,7 +535,7 @@ impl ClientHandler for GooseClient {
                 )
             })?;
         let tool_call_request_id =
-            self.resolve_tool_call_request_id(&session_id, &context.extensions)?;
+            self.resolve_tool_call_request_id(&session_id, &context.meta)?;
 
         let (message, schema_value) = match &request {
             ElicitRequestParams::FormElicitationParams {
