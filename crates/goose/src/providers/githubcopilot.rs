@@ -387,6 +387,7 @@ impl GithubCopilotProvider {
         &self,
         github_token: &str,
     ) -> Result<CopilotTokenInfo, ProviderError> {
+        validate_copilot_api_endpoint(&self.urls.copilot_token_url)?;
         let response = self
             .client
             .get(&self.urls.copilot_token_url)
@@ -982,6 +983,43 @@ mod tests {
 
             assert!(matches!(error, ProviderError::Authentication(_)));
         }
+    }
+
+    #[tokio::test]
+    async fn refresh_api_info_rejects_plaintext_remote_token_endpoint_before_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/copilot-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "token": "copilot-secret",
+                "expires_at": 0,
+                "refresh_in": 600,
+                "endpoints": { "api": "https://api.example.com" }
+            })))
+            .mount(&server)
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let provider = GithubCopilotProvider {
+            client: Client::new(),
+            cache: DiskCache {
+                cache_path: directory.path().join("info.json"),
+            },
+            mu: tokio::sync::Mutex::new(RefCell::new(None)),
+            urls: GithubCopilotUrls {
+                device_code_url: String::new(),
+                access_token_url: String::new(),
+                copilot_token_url: format!("{}/copilot-token", server.uri())
+                    .replace("127.0.0.1", "0.0.0.0"),
+            },
+            client_id: DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string(),
+            name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
+            tls_config: None,
+        };
+
+        let error = provider.refresh_api_info("github-token").await.unwrap_err();
+
+        assert!(matches!(error, ProviderError::RequestFailed(_)));
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     #[tokio::test]
