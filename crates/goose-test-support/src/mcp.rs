@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use once_cell::sync::Lazy;
 use rmcp::handler::server::wrapper::Parameters;
@@ -199,6 +201,7 @@ impl ServerHandler for McpFixtureServer {
 
 pub struct McpFixture {
     pub url: String,
+    initializations: Arc<AtomicUsize>,
     handle: JoinHandle<()>,
 }
 
@@ -210,7 +213,14 @@ impl Drop for McpFixture {
 
 impl McpFixture {
     pub async fn new() -> Self {
-        let service_factory = || Ok::<_, std::io::Error>(McpFixtureServer::new());
+        let initializations = Arc::new(AtomicUsize::new(0));
+        let service_factory = {
+            let initializations = Arc::clone(&initializations);
+            move || {
+                initializations.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, std::io::Error>(McpFixtureServer::new())
+            }
+        };
 
         let service = StreamableHttpService::new(
             service_factory,
@@ -226,6 +236,14 @@ impl McpFixture {
             axum::serve(listener, router).await.unwrap();
         });
 
-        Self { url, handle }
+        Self {
+            url,
+            initializations,
+            handle,
+        }
+    }
+
+    pub fn initialization_count(&self) -> usize {
+        self.initializations.load(Ordering::SeqCst)
     }
 }
