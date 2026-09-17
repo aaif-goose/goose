@@ -331,7 +331,7 @@ impl ExtensionLease {
             .await)
     }
 
-    pub(crate) async fn call_for_app(
+    pub async fn call_for_app(
         &self,
         tool_call: CallToolRequestParams,
         app_extension: &str,

@@ -353,7 +353,6 @@ impl GooseClient {
     }
 }
 
-#[expect(deprecated)]
 fn meta_value(meta: &MetaObject, key: &str) -> Option<String> {
     meta.0
         .iter()
@@ -362,6 +361,7 @@ fn meta_value(meta: &MetaObject, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+#[expect(deprecated)]
 fn working_dir_roots(dir: &std::path::Path) -> ListRootsResult {
     let uri = url::Url::from_file_path(dir)
         .map(|u| u.to_string())
@@ -534,8 +534,7 @@ impl ClientHandler for GooseClient {
                     None,
                 )
             })?;
-        let tool_call_request_id =
-            self.resolve_tool_call_request_id(&session_id, &context.meta)?;
+        let tool_call_request_id = self.resolve_tool_call_request_id(&session_id, &context.meta)?;
 
         let (message, schema_value) = match &request {
             ElicitRequestParams::FormElicitationParams {
@@ -1320,123 +1319,6 @@ mod tests {
         ClientRequest::GetPromptRequest(req)
     }
 
-    #[test_case(
-        Some("ext-session"),
-        Some("current-session"),
-        Some("ext-session");
-        "extensions win"
-    )]
-    #[test_case(
-        None,
-        Some("current-session"),
-        Some("current-session");
-        "current when no extensions"
-    )]
-    #[test_case(
-        None,
-        None,
-        None;
-        "no session when no extensions or current"
-    )]
-    fn test_resolve_session_id(
-        ext_session: Option<&str>,
-        current_session: Option<&str>,
-        expected: Option<&str>,
-    ) {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async {
-            let client = new_client(GoosePlatform::GooseCli);
-            if let Some(session_id) = current_session {
-                client.set_session_id(session_id).await;
-            }
-
-            let extensions =
-                inject_session_context_into_extensions(Extensions::new(), ext_session, None, None);
-
-            let resolved = client.resolve_session_id(&extensions).await;
-
-            let expected = expected.map(str::to_string);
-            assert_eq!(resolved, expected);
-        });
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_from_extensions() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard = client.register_active_tool_call("session-a", "active-tool-call");
-        let extensions = inject_session_context_into_extensions(
-            Extensions::new(),
-            Some("session-a"),
-            None,
-            Some("extension-tool-call"),
-        );
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &extensions)
-            .unwrap();
-
-        assert_eq!(resolved, "extension-tool-call");
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_from_active_call() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard = client.register_active_tool_call("session-a", "active-tool-call");
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &Extensions::new())
-            .unwrap();
-
-        assert_eq!(resolved, "active-tool-call");
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_errors_when_calls_overlap() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard_a = client.register_active_tool_call("session-a", "active-tool-call-a");
-        let _guard_b = client.register_active_tool_call("session-a", "active-tool-call-b");
-
-        let error = client
-            .resolve_tool_call_request_id("session-a", &Extensions::new())
-            .expect_err("ambiguous elicitation should not resolve to an arbitrary call");
-
-        assert_eq!(error.code, ErrorCode::INTERNAL_ERROR);
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_prefers_echoed_id_while_calls_overlap() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard_a = client.register_active_tool_call("session-a", "active-tool-call-a");
-        let _guard_b = client.register_active_tool_call("session-a", "active-tool-call-b");
-        let extensions = inject_session_context_into_extensions(
-            Extensions::new(),
-            Some("session-a"),
-            None,
-            Some("active-tool-call-a"),
-        );
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &extensions)
-            .unwrap();
-
-        assert_eq!(resolved, "active-tool-call-a");
-    }
-
-    #[test]
-    fn test_dropping_guard_unregisters_active_tool_call() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let guard_a = client.register_active_tool_call("session-a", "active-tool-call-a");
-        let _guard_b = client.register_active_tool_call("session-a", "active-tool-call-b");
-
-        drop(guard_a);
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &Extensions::new())
-            .unwrap();
-
-        assert_eq!(resolved, "active-tool-call-b");
-    }
-
     #[test_case(list_resources_request; "list_resources")]
     #[test_case(read_resource_request; "read_resource")]
     #[test_case(list_tools_request; "list_tools")]
@@ -1472,27 +1354,6 @@ mod tests {
         if matches!(request, ClientRequest::CallToolRequest(_)) {
             assert!(!meta.0.contains_key(TOOL_CALL_REQUEST_ID_HEADER));
         }
-    }
-
-    #[test]
-    fn test_session_id_in_mcp_meta() {
-        let session_id = "test-session-789";
-        let extensions = inject_session_context_into_extensions(
-            Default::default(),
-            Some(session_id),
-            None,
-            None,
-        );
-        let mcp_meta = extensions.get::<MetaObject>().unwrap();
-
-        assert_eq!(
-            &mcp_meta.0,
-            json!({
-                SESSION_ID_HEADER: session_id
-            })
-            .as_object()
-            .unwrap()
-        );
     }
 
     #[test_case(
@@ -1538,37 +1399,6 @@ mod tests {
         let mcp_meta = extensions.get::<MetaObject>().unwrap();
 
         assert_eq!(&mcp_meta.0, expected_meta.as_object().unwrap());
-    }
-
-    #[test]
-    fn test_tool_call_request_id_injected_only_for_call_tool() {
-        let session_id = "test-session-id";
-        let tool_call_request_id = "tool-request-1";
-
-        let call_request = inject_session_context_into_request(
-            call_tool_request(Extensions::new()),
-            Some(session_id),
-            None,
-            Some(tool_call_request_id),
-        );
-        let call_meta = request_extensions(&call_request)
-            .and_then(|extensions| extensions.get::<MetaObject>())
-            .expect("call request should have meta");
-        assert_eq!(
-            call_meta.0.get(TOOL_CALL_REQUEST_ID_HEADER),
-            Some(&Value::String(tool_call_request_id.to_string()))
-        );
-
-        let tools_request = inject_session_context_into_request(
-            list_tools_request(Extensions::new()),
-            Some(session_id),
-            None,
-            Some(tool_call_request_id),
-        );
-        let tools_meta = request_extensions(&tools_request)
-            .and_then(|extensions| extensions.get::<MetaObject>())
-            .expect("list tools request should have meta");
-        assert!(!tools_meta.0.contains_key(TOOL_CALL_REQUEST_ID_HEADER));
     }
 
     #[test]
@@ -1700,16 +1530,6 @@ mod tests {
 
         assert!(extensions.contains_key(MCP_APPS_UI_EXTENSION_ID));
         assert_eq!(info.client_info.name, "goose2");
-    }
-
-    #[test]
-    #[expect(deprecated)]
-    fn test_working_dir_roots_returns_current_dir_as_root() {
-        let dir = PathBuf::from("/tmp/test-project");
-        let result = working_dir_roots(&dir);
-        assert_eq!(result.roots.len(), 1);
-        assert_eq!(result.roots[0].uri, "file:///tmp/test-project");
-        assert_eq!(result.roots[0].name.as_deref(), Some("working_directory"));
     }
 
     #[tokio::test]

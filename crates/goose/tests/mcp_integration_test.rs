@@ -6,17 +6,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{env, fs};
 
-use rmcp::model::{CallToolRequestParams, CallToolResult, Tool};
+use futures::StreamExt;
+use rmcp::model::{CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, Tool};
 use rmcp::object;
 use tokio_util::sync::CancellationToken;
 
+use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{
     CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionSet,
 };
 use goose::agents::GoosePlatform;
 use goose::config::GooseMode;
+use goose::conversation::message::ActionRequiredData;
+use goose::session::SessionType;
 use goose_providers::model::ModelConfig;
+use goose_test_support::mcp::{APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
 
 use test_case::test_case;
@@ -89,15 +94,15 @@ impl Provider for MockProvider {
     }
 }
 
-fn build_and_get_binary_path() -> PathBuf {
+fn build_bin(package: &str, bin: &str) -> PathBuf {
     let output = Command::new("cargo")
         .args([
             "build",
             "--frozen",
             "-p",
-            "goose-test",
+            package,
             "--bin",
-            "capture",
+            bin,
             "--message-format=json",
         ])
         .output()
@@ -113,9 +118,7 @@ fn build_and_get_binary_path() -> PathBuf {
         .filter_map(Result::ok)
         .filter(|message| message.reason == "compiler-artifact")
         .filter_map(|message| {
-            if message.target.name == "capture"
-                && message.target.kind.contains(&String::from("bin"))
-            {
+            if message.target.name == bin && message.target.kind.contains(&String::from("bin")) {
                 Some(PathBuf::from(message.executable))
             } else {
                 None
@@ -125,106 +128,56 @@ fn build_and_get_binary_path() -> PathBuf {
         .expect("failed to parse binary path")
 }
 
-static REPLAY_BINARY_PATH: Lazy<PathBuf> = Lazy::new(build_and_get_binary_path);
+static REPLAY_BINARY_PATH: Lazy<PathBuf> = Lazy::new(|| build_bin("goose-test", "capture"));
+static FIXTURE_BINARY_PATH: Lazy<PathBuf> =
+    Lazy::new(|| build_bin("goose-test-support", "mcp_fixture_server"));
 
-async fn call_text(
-    lease: &ExtensionLease,
-    name: &str,
-    arguments: Option<rmcp::model::JsonObject>,
-) -> String {
-    let mut request = CallToolRequestParams::new(name.to_string());
-    if let Some(arguments) = arguments {
-        request = request.with_arguments(arguments);
-    }
-    let result = lease
-        .call(
-            request,
-            CallRequest::new(format!("call-{name}")),
-            CancellationToken::default(),
-        )
-        .await
-        .unwrap()
-        .result
-        .await
-        .unwrap();
-
-    result
-        .content
-        .iter()
-        .filter_map(|content| content.as_text())
-        .map(|content| content.text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
+struct Fixture {
+    manager: Arc<ExtensionManager>,
+    session_manager: Arc<goose::session::SessionManager>,
+    _temp_dir: tempfile::TempDir,
 }
 
-#[tokio::test]
-async fn extension_lease_contract_runs_real_transports_and_platform_extension() {
-    let http_fixture = McpFixture::new().await;
+async fn fixture(mcpui: bool) -> Fixture {
     let temp_dir = tempfile::tempdir().unwrap();
     let session_manager = Arc::new(goose::session::SessionManager::new(
         temp_dir.path().to_path_buf(),
     ));
-    let session = session_manager
-        .create_session(
-            temp_dir.path().to_path_buf(),
-            "extension-contract".to_string(),
-            goose::session::SessionType::Hidden,
-            GooseMode::Auto,
-        )
-        .await
-        .unwrap();
     let manager = Arc::new(ExtensionManager::new(
         Arc::new(tokio::sync::Mutex::new(None)),
-        session_manager,
+        session_manager.clone(),
         None,
         "extension-contract".to_string(),
         ExtensionManagerCapabilities {
-            mcpui: false,
+            mcpui,
             host_info: None,
             elicitation_handler: None,
             protocol_version: None,
         },
         false,
     ));
+    Fixture {
+        manager,
+        session_manager,
+        _temp_dir: temp_dir,
+    }
+}
 
-    let http = ExtensionConfig::StreamableHttp {
-        name: "fixture_http".to_string(),
-        description: "HTTP fixture".to_string(),
-        uri: http_fixture.url.clone(),
-        envs: Envs::default(),
-        env_keys: vec![],
-        headers: HashMap::new(),
-        timeout: Some(30),
-        socket: None,
-        client_id: None,
-        client_secret_key: None,
-        scopes: vec![],
-        bundled: Some(false),
-        available_tools: vec![],
-    };
-    let stdio = ExtensionConfig::Stdio {
-        name: "fixture_stdio".to_string(),
-        description: "stdio fixture".to_string(),
-        cmd: REPLAY_BINARY_PATH.to_string_lossy().to_string(),
-        args: vec!["stdio".to_string(), "fixture".to_string()],
-        envs: Envs::default(),
-        env_keys: vec![],
-        timeout: Some(30),
-        cwd: None,
-        bundled: Some(false),
-        available_tools: vec!["get_code".to_string()],
-    };
-    let platform = ExtensionConfig::Platform {
-        name: "todo".to_string(),
-        description: "Todo".to_string(),
-        display_name: Some("Todo".to_string()),
-        bundled: Some(true),
-        available_tools: vec![],
-    };
-    let configs = vec![http, stdio, platform];
+impl Fixture {
+    async fn session(&self, session_type: SessionType) -> goose::session::Session {
+        self.session_manager
+            .create_session(
+                self._temp_dir.path().to_path_buf(),
+                format!("{session_type:?}"),
+                session_type,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap()
+    }
 
-    for config in &configs {
-        manager
+    async fn add(&self, session: &goose::session::Session, config: &ExtensionConfig) {
+        self.manager
             .add_extension(
                 config.clone(),
                 Some(session.working_dir.clone()),
@@ -235,90 +188,404 @@ async fn extension_lease_contract_runs_real_transports_and_platform_extension() 
             .unwrap();
     }
 
-    let set = ExtensionSet::new(
-        &session.id,
-        Some(session.working_dir.clone()),
-        configs.clone(),
-    )
-    .unwrap();
-    let lease = manager.resolve(&set).await;
-    let tool_names = lease
-        .tools()
-        .await
-        .into_iter()
-        .map(|tool| tool.name.to_string())
-        .collect::<Vec<_>>();
-
-    assert!(tool_names.contains(&"fixture_http__get_code".to_string()));
-    assert!(tool_names.contains(&"fixture_stdio__get_code".to_string()));
-    assert!(tool_names.contains(&"todo__todo_write".to_string()));
-    assert!(!tool_names.contains(&"fixture_stdio__get_image".to_string()));
-    assert_eq!(
-        lease
-            .tools_for("fixture_stdio")
+    async fn resolve(
+        &self,
+        session: &goose::session::Session,
+        configs: &[ExtensionConfig],
+    ) -> ExtensionLease {
+        self.manager
+            .resolve(
+                &ExtensionSet::new(
+                    &session.id,
+                    Some(session.working_dir.clone()),
+                    configs.to_vec(),
+                )
+                .unwrap(),
+            )
             .await
-            .iter()
-            .map(|tool| tool.name.to_string())
-            .collect::<Vec<_>>(),
-        vec!["fixture_stdio__get_code"]
-    );
-    assert!(lease
-        .tools_excluding("fixture_stdio")
-        .await
-        .iter()
-        .all(|tool| !tool.name.starts_with("fixture_stdio__")));
+    }
+}
 
-    assert_eq!(
-        call_text(&lease, "fixture_http__get_code", None).await,
-        FAKE_CODE
-    );
-    assert_eq!(
-        call_text(&lease, "fixture_stdio__get_code", None).await,
-        FAKE_CODE
-    );
-    assert!(call_text(
-        &lease,
+fn stdio_fixture(name: &str, available_tools: &[&str]) -> ExtensionConfig {
+    ExtensionConfig::Stdio {
+        name: name.to_string(),
+        description: "stdio fixture".to_string(),
+        cmd: FIXTURE_BINARY_PATH.to_string_lossy().to_string(),
+        args: vec!["stdio".to_string()],
+        envs: Envs::default(),
+        env_keys: vec![],
+        timeout: Some(30),
+        cwd: None,
+        bundled: Some(false),
+        available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
+    ExtensionConfig::StreamableHttp {
+        name: name.to_string(),
+        description: "HTTP fixture".to_string(),
+        uri: uri.to_string(),
+        envs: Envs::default(),
+        env_keys: vec![],
+        headers: HashMap::new(),
+        timeout: Some(30),
+        socket: None,
+        client_id: None,
+        client_secret_key: None,
+        scopes: vec![],
+        bundled: Some(false),
+        available_tools: vec![],
+    }
+}
+
+fn platform(name: &str) -> ExtensionConfig {
+    ExtensionConfig::Platform {
+        name: name.to_string(),
+        description: name.to_string(),
+        display_name: Some(name.to_string()),
+        bundled: Some(true),
+        available_tools: vec![],
+    }
+}
+
+fn tool_names(tools: &[Tool]) -> Vec<String> {
+    tools.iter().map(|tool| tool.name.to_string()).collect()
+}
+
+fn request(name: &str, arguments: Option<rmcp::model::JsonObject>) -> CallToolRequestParams {
+    let mut request = CallToolRequestParams::new(name.to_string());
+    if let Some(arguments) = arguments {
+        request = request.with_arguments(arguments);
+    }
+    request
+}
+
+async fn call(
+    lease: &ExtensionLease,
+    name: &str,
+    arguments: Option<rmcp::model::JsonObject>,
+) -> Result<CallToolResult, ErrorData> {
+    lease
+        .call(
+            request(name, arguments),
+            CallRequest::new(format!("call-{name}")),
+            CancellationToken::default(),
+        )
+        .await?
+        .result
+        .await
+}
+
+fn text_of(result: &CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|content| content.as_text())
+        .map(|content| content.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn call_text(lease: &ExtensionLease, name: &str) -> String {
+    text_of(&call(lease, name, None).await.unwrap())
+}
+
+/// One manager, three transports, one lease: the catalog, mangled-name
+/// recovery, filtering, app scoping, the restart-on-config-change rule, and
+/// what a held lease does and does not see when the registry changes.
+#[tokio::test]
+async fn extension_lifecycle_across_real_transports() {
+    let http_server = McpFixture::new().await;
+    let fx = fixture(false).await;
+    let session = fx.session(SessionType::Hidden).await;
+
+    let http = http_fixture("fixture_http", &http_server.url);
+    let stdio = stdio_fixture("fixture_stdio", &["get_code", "instance_id"]);
+    let todo = platform("todo");
+    for config in [&http, &stdio, &todo] {
+        fx.add(&session, config).await;
+    }
+    let configs = vec![http.clone(), stdio.clone(), todo.clone()];
+    let lease = fx.resolve(&session, &configs).await;
+
+    // The catalog: prefixed per extension, filtered by available_tools.
+    let names = tool_names(&lease.tools().await);
+    for expected in [
+        "fixture_http__get_code",
+        "fixture_http__db.query",
+        "fixture_stdio__get_code",
+        "fixture_stdio__instance_id",
         "todo__todo_write",
-        Some(object!({ "content": "- [ ] contract" })),
+    ] {
+        assert!(names.contains(&expected.to_string()), "{names:?}");
+    }
+    assert!(!names.contains(&"fixture_stdio__get_image".to_string()));
+    let mut stdio_names = tool_names(&lease.tools_for("fixture_stdio").await);
+    stdio_names.sort();
+    assert_eq!(
+        stdio_names,
+        ["fixture_stdio__get_code", "fixture_stdio__instance_id"]
+    );
+    assert!(tool_names(&lease.tools_excluding("fixture_stdio").await)
+        .iter()
+        .all(|name| !name.starts_with("fixture_stdio__")));
+
+    // Calls reach each transport.
+    assert_eq!(call_text(&lease, "fixture_http__get_code").await, FAKE_CODE);
+    assert_eq!(
+        call_text(&lease, "fixture_stdio__get_code").await,
+        FAKE_CODE
+    );
+    assert!(text_of(
+        &call(
+            &lease,
+            "todo__todo_write",
+            Some(object!({ "content": "- [ ] contract" }))
+        )
+        .await
+        .unwrap()
     )
-    .await
     .starts_with("Updated ("));
 
-    let unavailable = match lease
-        .call(
-            CallToolRequestParams::new("fixture_stdio__get_image"),
-            CallRequest::new("filtered-tool"),
+    // Spellings a model mangles resolve to the same tools; an exact dotted
+    // name is never rewritten.
+    assert_eq!(call_text(&lease, "fixture_stdio.get_code").await, FAKE_CODE);
+    assert_eq!(
+        call_text(&lease, "functions.fixture_stdio__get_code").await,
+        FAKE_CODE
+    );
+    assert_eq!(call_text(&lease, "fixture_http__db.query").await, "rows");
+    assert_eq!(call_text(&lease, "fixture_http.db.query").await, "rows");
+    let unknown = call(&lease, "no_such_tool", None).await.unwrap_err();
+    assert_eq!(unknown.code, ErrorCode::RESOURCE_NOT_FOUND);
+    assert!(
+        unknown.message.contains("no_such_tool")
+            && unknown.message.contains("fixture_http__get_code")
+    );
+
+    // Filtered out by available_tools, and an app scoped to one extension
+    // cannot reach another's tool.
+    assert_eq!(
+        call(&lease, "fixture_stdio__get_image", None)
+            .await
+            .unwrap_err()
+            .code,
+        ErrorCode::RESOURCE_NOT_FOUND
+    );
+    let Err(scoped) = lease
+        .call_for_app(
+            request("fixture_http__get_code", None),
+            "fixture_stdio",
+            CallRequest::default(),
             CancellationToken::default(),
         )
         .await
-    {
-        Ok(_) => panic!("filtered tool should not resolve"),
-        Err(error) => error,
+    else {
+        panic!("an app scoped to fixture_stdio reached fixture_http's tool");
     };
-    assert_eq!(unavailable.code, rmcp::model::ErrorCode::RESOURCE_NOT_FOUND);
+    assert_eq!(scoped.code, ErrorCode::RESOURCE_NOT_FOUND);
 
-    manager.remove_extension("todo").await.unwrap();
-    assert!(lease
-        .tools()
-        .await
-        .iter()
-        .any(|tool| tool.name == "todo__todo_write"));
-
-    let replacement = manager
-        .resolve(
-            &ExtensionSet::new(
-                &session.id,
-                Some(session.working_dir.clone()),
-                configs[..2].to_vec(),
-            )
-            .unwrap(),
+    // Re-adding an identical config keeps the process; a changed one restarts
+    // it. A lease resolved before the restart keeps the old process.
+    let first_instance = call_text(&lease, "fixture_stdio__instance_id").await;
+    fx.add(&session, &stdio).await;
+    assert_eq!(
+        call_text(
+            &fx.resolve(&session, &configs).await,
+            "fixture_stdio__instance_id"
         )
+        .await,
+        first_instance
+    );
+    let wider_stdio = stdio_fixture("fixture_stdio", &["get_code", "instance_id", "db.query"]);
+    fx.add(&session, &wider_stdio).await;
+    let after_restart = fx
+        .resolve(&session, &[http.clone(), wider_stdio.clone(), todo.clone()])
         .await;
-    assert!(!replacement
-        .tools()
+    assert_ne!(
+        call_text(&after_restart, "fixture_stdio__instance_id").await,
+        first_instance
+    );
+    assert_eq!(
+        call_text(&lease, "fixture_stdio__instance_id").await,
+        first_instance
+    );
+    // The old config no longer matches what is running, so a set that still
+    // names it gets nothing for that extension.
+    assert!(
+        tool_names(&fx.resolve(&session, &configs).await.tools().await)
+            .iter()
+            .all(|name| !name.starts_with("fixture_stdio__"))
+    );
+
+    // Removal is invisible to a held lease and visible to a fresh one.
+    fx.manager.remove_extension("todo").await.unwrap();
+    assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
+    assert!(!tool_names(
+        &fx.resolve(&session, &[http.clone(), wider_stdio.clone(), todo.clone()])
+            .await
+            .tools()
+            .await
+    )
+    .contains(&"todo__todo_write".to_string()));
+
+    assert!(ExtensionSet::new("s", None, vec![todo.clone(), platform("Todo")]).is_err());
+}
+
+/// Everything that crosses the wire besides a plain call: per-session tool
+/// lists, progress notifications, MCP-app hydration, forged result meta, and
+/// elicitation routed back to the originating call with and without the
+/// server echoing `_meta`.
+#[tokio::test]
+async fn extension_protocol_traffic_through_a_lease() {
+    let fx = fixture(true).await;
+    let user = fx.session(SessionType::User).await;
+    let subagent = fx.session(SessionType::SubAgent).await;
+    let stdio = stdio_fixture("fixture", &[]);
+    let manager_ext = platform("extensionmanager");
+    fx.add(&user, &stdio).await;
+    fx.add(&user, &manager_ext).await;
+    let configs = vec![stdio, manager_ext];
+
+    // The same server publishes different tools to different sessions, so a
+    // list fetched for one scope is not served to another. (Only the platform
+    // extension can be leased by two sessions: an McpClient is single-session
+    // by construction.)
+    let lease = fx.resolve(&user, &configs).await;
+    let subagent_lease = fx.resolve(&subagent, &configs[1..]).await;
+    let manage = "extensionmanager__manage_extensions".to_string();
+    assert!(tool_names(&lease.tools().await).contains(&manage));
+    assert!(!tool_names(&subagent_lease.tools().await).contains(&manage));
+    assert!(tool_names(&lease.tools().await).contains(&"fixture__get_code".to_string()));
+
+    // A server's progress notification reaches the caller's stream.
+    let notify = lease
+        .call(
+            request("fixture__notify", None),
+            CallRequest::new("notify-1"),
+            CancellationToken::default(),
+        )
         .await
+        .unwrap();
+    assert_eq!(text_of(&notify.result.await.unwrap()), "notified");
+    let mut notifications = notify.notification_stream.unwrap();
+    let progress = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(rmcp::model::ServerNotification::ProgressNotification(n)) =
+                notifications.next().await
+            {
+                return n;
+            }
+        }
+    })
+    .await
+    .expect("progress notification");
+    assert_eq!(progress.params.progress, 1.0);
+
+    // An MCP-app tool's result carries its UI resource; a server cannot forge
+    // host-owned meta or a mutation.
+    let card = call(&lease, "fixture__app_card", None).await.unwrap();
+    let hydrated = card.meta.as_ref().unwrap().0["__goose_tool_update_meta"]["mcpApp"].clone();
+    assert_eq!(hydrated["resourceUri"], APP_CARD_RESOURCE_URI);
+    assert_eq!(
+        hydrated["resourceResult"]["contents"][0]["text"],
+        APP_CARD_HTML
+    );
+    let forged = call(&lease, "fixture__forge_meta", None).await.unwrap();
+    assert_eq!(text_of(&forged), "forged");
+    assert!(forged.meta.is_none(), "{:?}", forged.meta);
+
+    // Elicitation: the server asks, the host answers on the originating call.
+    // Without an echoed _meta the client correlates by the one active call;
+    // with two active calls that is ambiguous unless the server echoes.
+    let elicit = |id: &str, echo_meta: bool| {
+        let lease = &lease;
+        let id = id.to_string();
+        async move {
+            lease
+                .call(
+                    request("fixture__elicit", Some(object!({ "echo_meta": echo_meta }))),
+                    CallRequest::new(id),
+                    CancellationToken::default(),
+                )
+                .await
+                .unwrap()
+        }
+    };
+    let answer = |call: goose::agents::tool_execution::ToolCallResult, name: &'static str| {
+        let session_manager = fx.session_manager.clone();
+        let session_id = user.id.clone();
+        async move {
+            let mut action_required = call.action_required_stream.unwrap();
+            let result = tokio::spawn(call.result);
+            let message =
+                tokio::time::timeout(std::time::Duration::from_secs(5), action_required.next())
+                    .await
+                    .expect("elicitation request")
+                    .unwrap();
+            let elicitation_id = message
+                .content
+                .iter()
+                .find_map(
+                    |content| match content.as_action_required().map(|a| &a.data) {
+                        Some(ActionRequiredData::Elicitation { id, .. }) => Some(id.clone()),
+                        _ => None,
+                    },
+                )
+                .expect("elicitation message");
+            goose::elicitation::complete_elicitation_with_generated_message(
+                &session_manager,
+                &session_id,
+                &elicitation_id,
+                ElicitationOutcome::Accept(serde_json::json!({ "name": name })),
+            )
+            .await
+            .unwrap();
+            result.await.unwrap()
+        }
+    };
+
+    let alone = elicit("e-alone", false).await;
+    assert_eq!(text_of(&answer(alone, "Ada").await.unwrap()), "Ada");
+
+    let first = elicit("e-first", false).await;
+    let mut first_requests = first.action_required_stream.unwrap();
+    let first_result = tokio::spawn(first.result);
+    let first_message =
+        tokio::time::timeout(std::time::Duration::from_secs(5), first_requests.next())
+            .await
+            .unwrap()
+            .unwrap();
+
+    let ambiguous = elicit("e-ambiguous", false).await.result.await.unwrap_err();
+    assert!(
+        ambiguous.message.contains("multiple tool calls are active"),
+        "{ambiguous:?}"
+    );
+
+    let echoed = elicit("e-echoed", true).await;
+    assert_eq!(text_of(&answer(echoed, "Grace").await.unwrap()), "Grace");
+
+    let first_id = first_message
+        .content
         .iter()
-        .any(|tool| tool.name == "todo__todo_write"));
+        .find_map(
+            |content| match content.as_action_required().map(|a| &a.data) {
+                Some(ActionRequiredData::Elicitation { id, .. }) => Some(id.clone()),
+                _ => None,
+            },
+        )
+        .unwrap();
+    goose::elicitation::complete_elicitation_with_generated_message(
+        &fx.session_manager,
+        &user.id,
+        &first_id,
+        ElicitationOutcome::Accept(serde_json::json!({ "name": "Linus" })),
+    )
+    .await
+    .unwrap();
+    assert_eq!(text_of(&first_result.await.unwrap().unwrap()), "Linus");
 }
 
 enum TestMode {

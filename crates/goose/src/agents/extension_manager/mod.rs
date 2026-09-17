@@ -1309,27 +1309,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use tokio::sync::{mpsc, Semaphore};
 
-    struct ResolvedTool {
-        extension_name: String,
-        actual_tool_name: String,
-    }
-
     impl ExtensionManager {
-        async fn resolve_tool(
-            &self,
-            session_id: &str,
-            tool_name: &str,
-        ) -> Result<ResolvedTool, ErrorData> {
-            let lease = self
-                .resolve(&self.current_set(session_id, None).await)
-                .await;
-            let resolved = lease.resolve(tool_name, None).await?;
-            Ok(ResolvedTool {
-                extension_name: resolved.extension.key.clone(),
-                actual_tool_name: resolved.actual_name.to_string(),
-            })
-        }
-
         async fn add_mock_extension(&self, name: String, client: McpClientBox) {
             self.add_mock_extension_with_tools(name, client, vec![])
                 .await;
@@ -1621,38 +1601,6 @@ mod tests {
         assert_eq!(methods, vec!["client/subscription"]);
     }
 
-    #[tokio::test]
-    async fn test_mcp_app_tools_identified_for_code_mode_exclusion() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("autovisualiser".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools = extension_manager
-            .get_prefixed_tools_excluding("test-session-id", "code_execution")
-            .await
-            .unwrap();
-
-        let (mcp_app_tools, regular_tools): (Vec<_>, Vec<_>) = tools
-            .iter()
-            .partition(|t| get_tool_resource_uri(t).is_some());
-
-        assert_eq!(mcp_app_tools.len(), 1, "exactly one MCP app tool");
-        assert_eq!(
-            mcp_app_tools[0].name.as_ref(),
-            "autovisualiser__render_chart"
-        );
-        assert!(
-            regular_tools
-                .iter()
-                .all(|t| get_tool_resource_uri(t).is_none()),
-            "non-MCP-app tools have no resourceUri"
-        );
-    }
-
     #[test]
     fn test_tool_owner_binding_uses_metadata_not_flattened_name() {
         let tool = |name: &str, owner: &str| {
@@ -1677,13 +1625,7 @@ mod tests {
         assert!(!is_tool_owned_by_extension(&sibling_tool, "ext_a"));
     }
 
-    struct NamedToolsClient(Vec<Tool>, AtomicUsize);
-
-    impl NamedToolsClient {
-        fn new(tools: Vec<Tool>) -> Self {
-            Self(tools, AtomicUsize::new(0))
-        }
-    }
+    struct NamedToolsClient(Vec<Tool>);
 
     #[async_trait::async_trait]
     impl McpClientTrait for NamedToolsClient {
@@ -1693,7 +1635,6 @@ mod tests {
             _next_cursor: Option<String>,
             _cancellation_token: CancellationToken,
         ) -> Result<ListToolsResult, Error> {
-            self.1.fetch_add(1, Ordering::SeqCst);
             Ok(ListToolsResult {
                 tools: self.0.clone(),
                 next_cursor: None,
@@ -1743,13 +1684,13 @@ mod tests {
         extension_manager
             .add_mock_extension(
                 "ext_a__ext_b".to_string(),
-                Arc::new(NamedToolsClient::new(vec![app_tool("secret")])),
+                Arc::new(NamedToolsClient(vec![app_tool("secret")])),
             )
             .await;
         extension_manager
             .add_mock_extension(
                 "ext_a".to_string(),
-                Arc::new(NamedToolsClient::new(vec![app_tool("ext_b__secret")])),
+                Arc::new(NamedToolsClient(vec![app_tool("ext_b__secret")])),
             )
             .await;
 
@@ -1886,35 +1827,6 @@ mod tests {
         assert!(error.to_string().contains("appears twice"));
     }
 
-    /// A server may publish different tools to different sessions, so a list
-    /// fetched for one scope must not be served to another.
-    #[tokio::test]
-    async fn tool_cache_is_per_scope() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        let client = Arc::new(NamedToolsClient::new(vec![app_tool("t")]));
-        extension_manager
-            .add_mock_extension("ext".to_string(), client.clone())
-            .await;
-
-        extension_manager
-            .get_prefixed_tools("a", None)
-            .await
-            .unwrap();
-        extension_manager
-            .get_prefixed_tools("a", None)
-            .await
-            .unwrap();
-        assert_eq!(client.1.load(Ordering::SeqCst), 1);
-
-        extension_manager
-            .get_prefixed_tools("b", None)
-            .await
-            .unwrap();
-        assert_eq!(client.1.load(Ordering::SeqCst), 2);
-    }
-
     #[tokio::test]
     async fn tool_list_changed_during_fetch_prevents_stale_cache() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1956,240 +1868,6 @@ mod tests {
             .unwrap();
         assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
         assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_error_includes_available_tools() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let result = extension_manager
-            .resolve_tool("test-session-id", "definitely_not_a_real_tool")
-            .await;
-        let err = match result {
-            Ok(_) => panic!("resolve_tool should fail for an unknown name"),
-            Err(e) => e,
-        };
-
-        let msg = err.message.to_string();
-        assert!(
-            msg.contains("definitely_not_a_real_tool"),
-            "error should echo the bad name; got: {msg}"
-        );
-        assert!(
-            msg.contains("ext_a__"),
-            "error should list at least one real tool name; got: {msg}"
-        );
-    }
-
-    struct MockDottedClient {}
-
-    #[async_trait::async_trait]
-    impl McpClientTrait for MockDottedClient {
-        fn get_info(&self) -> Option<&InitializeResult> {
-            None
-        }
-
-        async fn list_resources(
-            &self,
-            _session_id: &str,
-            _next_cursor: Option<String>,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ListResourcesResult, Error> {
-            Err(Error::TransportClosed)
-        }
-
-        async fn read_resource(
-            &self,
-            _session_id: &str,
-            _uri: &str,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ReadResourceResult, Error> {
-            Err(Error::TransportClosed)
-        }
-
-        async fn list_tools(
-            &self,
-            _session_id: &str,
-            _next_cursor: Option<String>,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ListToolsResult, Error> {
-            use serde_json::json;
-            use std::sync::Arc;
-            Ok(ListToolsResult {
-                tools: vec![
-                    Tool::new(
-                        "db.query".to_string(),
-                        "A tool with a dotted name".to_string(),
-                        Arc::new(json!({}).as_object().unwrap().clone()),
-                    ),
-                    Tool::new(
-                        "db__query".to_string(),
-                        "A sibling with the separator name".to_string(),
-                        Arc::new(json!({}).as_object().unwrap().clone()),
-                    ),
-                ],
-                next_cursor: None,
-                meta: None,
-                ..Default::default()
-            })
-        }
-
-        async fn call_tool(
-            &self,
-            _ctx: &ToolCallContext,
-            name: &str,
-            _arguments: Option<JsonObject>,
-            _cancellation_token: CancellationToken,
-        ) -> Result<CallToolResult, Error> {
-            match name {
-                "db.query" | "db__query" => Ok(CallToolResult::success(vec![])),
-                _ => Err(Error::TransportClosed),
-            }
-        }
-
-        async fn list_prompts(
-            &self,
-            _session_id: &str,
-            _next_cursor: Option<String>,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ListPromptsResult, Error> {
-            Err(Error::TransportClosed)
-        }
-
-        async fn get_prompt(
-            &self,
-            _session_id: &str,
-            _name: &str,
-            _arguments: Value,
-            _cancellation_token: CancellationToken,
-        ) -> Result<GetPromptResult, Error> {
-            Err(Error::TransportClosed)
-        }
-
-        async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-            mpsc::channel(1).1
-        }
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_recovers_dotted_mangled_name() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "test_client.tool")
-            .await
-            .expect("mangled dotted name should resolve to the real tool");
-        assert_eq!(resolved.extension_name, "test_client");
-        assert_eq!(resolved.actual_tool_name, "tool");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_recovers_functions_prefixed_name() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "functions.test_client__tool")
-            .await
-            .expect("functions-prefixed name should resolve to the real tool");
-        assert_eq!(resolved.extension_name, "test_client");
-        assert_eq!(resolved.actual_tool_name, "tool");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_exact_dotted_name_never_rewritten() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("dotted".to_string(), Arc::new(MockDottedClient {}))
-            .await;
-
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "dotted__db.query")
-            .await
-            .expect("exact dotted tool name must resolve");
-        assert_eq!(resolved.extension_name, "dotted");
-        assert_eq!(resolved.actual_tool_name, "db.query");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_recovers_mangled_separator_with_dotted_tool_name() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("dotted".to_string(), Arc::new(MockDottedClient {}))
-            .await;
-
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "dotted.db.query")
-            .await
-            .expect("mangled extension separator should resolve");
-        assert_eq!(resolved.extension_name, "dotted");
-        assert_eq!(resolved.actual_tool_name, "db.query");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_recovers_unprefixed_platform_extension_name() {
-        // GLM's documented reproduction (#9486): the built-in "developer"
-        // platform extension is registered with unprefixed_tools=true, so its
-        // tools are advertised with no "__" prefix at all (owner only in
-        // metadata). "developer.tool" must still resolve to the real "tool".
-        // Naming the mock extension literally "developer" makes
-        // is_unprefixed_extension look it up in the real PLATFORM_EXTENSIONS
-        // registry, exercising production behavior, not a fake stand-in.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("developer".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "developer.tool")
-            .await
-            .expect("unprefixed extension namespace mangling should resolve");
-        assert_eq!(resolved.actual_tool_name, "tool");
-        assert_eq!(resolved.extension_name, "developer");
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_rejects_unadvertised_tool_implemented_by_extension() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let ctx = ToolCallContext::new("test-session-id".to_string(), None, None);
-        let tool_call = CallToolRequestParams::new("test_client__unadvertised_tool".to_string());
-
-        let err = match extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
-            .await
-        {
-            Ok(_) => panic!("an unadvertised tool must not be dispatched"),
-            Err(err) => err,
-        };
-
-        assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
     }
 
     #[test]
@@ -2282,152 +1960,6 @@ mod tests {
         assert_eq!(
             recover_mangled_tool_name("platform.manage_schedule", tools.iter().copied()).as_deref(),
             Some("platform__manage_schedule")
-        );
-    }
-
-    #[test]
-    fn test_remove_untrusted_mcp_app_meta_strips_spoofed_payload() {
-        let mut result = CallToolResult::success(vec![]);
-        result.meta = Some(MetaObject(
-            serde_json::from_value(serde_json::json!({
-                "goose": {
-                    "mcpApp": {
-                        "resourceUri": "ui://spoofed/app",
-                    },
-                    "other": true,
-                },
-                TRUSTED_TOOL_UPDATE_META_KEY: {
-                    "mcpApp": {
-                        "resourceUri": "ui://spoofed/internal",
-                    },
-                },
-            }))
-            .unwrap(),
-        ));
-
-        remove_untrusted_mcp_app_meta(&mut result);
-
-        let meta = result.meta.expect("expected remaining meta");
-        assert_eq!(meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY), None);
-        assert_eq!(
-            meta.0.get("goose"),
-            Some(&serde_json::json!({ "other": true }))
-        );
-    }
-
-    #[test]
-    fn test_insert_trusted_tool_update_meta_stores_backend_payload() {
-        let mut result = CallToolResult::success(vec![]);
-        let attachment = GooseMcpAppToolAttachment {
-            tool_name: "render__secret".to_string(),
-            tool_name_is_actual: true,
-            extension_name: "weather".to_string(),
-            resource_uri: "ui://weather/app".to_string(),
-            tool_meta: None,
-            resource_result: Some(serde_json::json!({
-                "contents": [
-                    {
-                        "uri": "ui://weather/app",
-                        "mimeType": "text/html;profile=mcp-app",
-                        "text": "<div>Hello</div>",
-                    },
-                ],
-            })),
-            read_error: None,
-        };
-
-        insert_trusted_tool_update_meta(&mut result, &attachment);
-
-        let meta = result.meta.expect("expected trusted meta");
-        assert_eq!(
-            meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY),
-            Some(&serde_json::json!({
-                "mcpApp": {
-                    "toolName": "render__secret",
-                    "toolNameIsActual": true,
-                    "extensionName": "weather",
-                    "resourceUri": "ui://weather/app",
-                    "resourceResult": {
-                        "contents": [
-                            {
-                                "uri": "ui://weather/app",
-                                "mimeType": "text/html;profile=mcp-app",
-                                "text": "<div>Hello</div>",
-                            },
-                        ],
-                    },
-                },
-            })),
-        );
-    }
-
-    #[tokio::test]
-    async fn test_add_extension_noop_on_identical_config() {
-        // When add_extension is called with a config that is byte-for-byte identical to
-        // the already-loaded one, it must return Ok(()) without removing the extension.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let em = Arc::new(ExtensionManager::new_without_provider(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let config = ExtensionConfig::Platform {
-            name: "test-ext".to_string(),
-            description: "original".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-
-        em.add_client(config.clone(), Arc::new(MockClient {}), None)
-            .await;
-        assert_eq!(em.extensions.lock().await.len(), 1);
-
-        // Calling add_extension with the same config must be a no-op (Ok, count unchanged).
-        let result = em.add_extension(config, None, None, None).await;
-        assert!(result.is_ok(), "identical config should be a no-op");
-        assert_eq!(
-            em.extensions.lock().await.len(),
-            1,
-            "extension must not be removed on no-op"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_add_extension_replaces_extension_on_config_change() {
-        // When add_extension is called with an updated config (same name, different fields),
-        // the existing extension must be removed so the caller can re-add with new config.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let em = Arc::new(ExtensionManager::new_without_provider(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let config_a = ExtensionConfig::Platform {
-            name: "test-ext".to_string(),
-            description: "version-a".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-        let config_b = ExtensionConfig::Platform {
-            name: "test-ext".to_string(),
-            description: "version-b".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-
-        em.add_client(config_a, Arc::new(MockClient {}), None).await;
-        assert_eq!(em.extensions.lock().await.len(), 1);
-
-        let result = em.add_extension(config_b, None, None, None).await;
-        assert!(
-            result.is_err(),
-            "unknown platform extension must return Err"
-        );
-        assert_eq!(
-            em.extensions.lock().await.len(),
-            1,
-            "old extension must be preserved when replacement client creation fails"
         );
     }
 }
