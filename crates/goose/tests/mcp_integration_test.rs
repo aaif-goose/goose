@@ -132,7 +132,7 @@ async fn call_text(
     name: &str,
     arguments: Option<rmcp::model::JsonObject>,
 ) -> String {
-    let mut request = CallToolRequestParams::new(name);
+    let mut request = CallToolRequestParams::new(name.to_string());
     if let Some(arguments) = arguments {
         request = request.with_arguments(arguments);
     }
@@ -253,6 +253,20 @@ async fn extension_lease_contract_runs_real_transports_and_platform_extension() 
     assert!(tool_names.contains(&"fixture_stdio__get_code".to_string()));
     assert!(tool_names.contains(&"todo__todo_write".to_string()));
     assert!(!tool_names.contains(&"fixture_stdio__get_image".to_string()));
+    assert_eq!(
+        lease
+            .tools_for("fixture_stdio")
+            .await
+            .iter()
+            .map(|tool| tool.name.to_string())
+            .collect::<Vec<_>>(),
+        vec!["fixture_stdio__get_code"]
+    );
+    assert!(lease
+        .tools_excluding("fixture_stdio")
+        .await
+        .iter()
+        .all(|tool| !tool.name.starts_with("fixture_stdio__")));
 
     assert_eq!(
         call_text(&lease, "fixture_http__get_code", None).await,
@@ -464,15 +478,8 @@ async fn test_replayed_session(
     #[allow(clippy::redundant_closure_call)]
     let result = (async || -> Result<(), Box<dyn std::error::Error>> {
         extension_manager
-            .add_extension(extension_config.clone(), None, None, None)
+            .add_extension(extension_config, None, None, None)
             .await?;
-        let lease = extension_manager
-            .resolve(&ExtensionSet::new(
-                "test-session-id",
-                None,
-                vec![extension_config],
-            )?)
-            .await;
         let mut results = Vec::new();
         for tool_call in tool_calls {
             let mut new_call = CallToolRequestParams::new(format!("test__{}", tool_call.name));
@@ -480,12 +487,16 @@ async fn test_replayed_session(
                 new_call = new_call.with_arguments(args);
             }
             let tool_call = new_call;
-            let result = lease
-                .call(
-                    tool_call,
-                    CallRequest::new("test-id"),
-                    CancellationToken::default(),
-                )
+            // One dispatch per call, as the recordings were made: a server that
+            // sends tools/list_changed between calls gets re-listed. A held
+            // lease would freeze the catalog and diverge from the transcript.
+            let ctx = goose::agents::ToolCallContext::new(
+                "test-session-id".to_string(),
+                None,
+                Some("test-id".to_string()),
+            );
+            let result = extension_manager
+                .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
                 .await;
 
             let tool_result = result?;
