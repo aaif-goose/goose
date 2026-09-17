@@ -104,7 +104,11 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions, liv
       <div className="relative flex h-full w-full flex-1 bg-background-secondary">
         <Outlet />
         <div className="hidden">
-          <ChatSessionsContainer setChat={setChat} activeSessions={activeSessions} />
+          <ChatSessionsContainer
+            setChat={setChat}
+            activeSessions={activeSessions}
+            liveVoice={liveVoice}
+          />
         </div>
       </div>
     );
