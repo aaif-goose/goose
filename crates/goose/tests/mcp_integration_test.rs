@@ -11,9 +11,13 @@ use rmcp::object;
 use tokio_util::sync::CancellationToken;
 
 use goose::agents::extension::{Envs, ExtensionConfig};
-use goose::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
+use goose::agents::extension_manager::{
+    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionSet,
+};
 use goose::agents::GoosePlatform;
+use goose::config::GooseMode;
 use goose_providers::model::ModelConfig;
+use goose_test_support::{McpFixture, FAKE_CODE};
 
 use test_case::test_case;
 
@@ -122,6 +126,186 @@ fn build_and_get_binary_path() -> PathBuf {
 }
 
 static REPLAY_BINARY_PATH: Lazy<PathBuf> = Lazy::new(build_and_get_binary_path);
+
+async fn call_text(
+    lease: &ExtensionLease,
+    name: &str,
+    arguments: Option<rmcp::model::JsonObject>,
+) -> String {
+    let mut request = CallToolRequestParams::new(name);
+    if let Some(arguments) = arguments {
+        request = request.with_arguments(arguments);
+    }
+    let result = lease
+        .call(
+            request,
+            CallRequest::new(format!("call-{name}")),
+            CancellationToken::default(),
+        )
+        .await
+        .unwrap()
+        .result
+        .await
+        .unwrap();
+
+    result
+        .content
+        .iter()
+        .filter_map(|content| content.as_text())
+        .map(|content| content.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[tokio::test]
+async fn extension_lease_contract_runs_real_transports_and_platform_extension() {
+    let http_fixture = McpFixture::new().await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let session_manager = Arc::new(goose::session::SessionManager::new(
+        temp_dir.path().to_path_buf(),
+    ));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "extension-contract".to_string(),
+            goose::session::SessionType::Hidden,
+            GooseMode::Auto,
+        )
+        .await
+        .unwrap();
+    let manager = Arc::new(ExtensionManager::new(
+        Arc::new(tokio::sync::Mutex::new(None)),
+        session_manager,
+        None,
+        "extension-contract".to_string(),
+        ExtensionManagerCapabilities {
+            mcpui: false,
+            host_info: None,
+            elicitation_handler: None,
+            protocol_version: None,
+        },
+        false,
+    ));
+
+    let http = ExtensionConfig::StreamableHttp {
+        name: "fixture_http".to_string(),
+        description: "HTTP fixture".to_string(),
+        uri: http_fixture.url.clone(),
+        envs: Envs::default(),
+        env_keys: vec![],
+        headers: HashMap::new(),
+        timeout: Some(30),
+        socket: None,
+        client_id: None,
+        client_secret_key: None,
+        scopes: vec![],
+        bundled: Some(false),
+        available_tools: vec![],
+    };
+    let stdio = ExtensionConfig::Stdio {
+        name: "fixture_stdio".to_string(),
+        description: "stdio fixture".to_string(),
+        cmd: REPLAY_BINARY_PATH.to_string_lossy().to_string(),
+        args: vec!["stdio".to_string(), "fixture".to_string()],
+        envs: Envs::default(),
+        env_keys: vec![],
+        timeout: Some(30),
+        cwd: None,
+        bundled: Some(false),
+        available_tools: vec!["get_code".to_string()],
+    };
+    let platform = ExtensionConfig::Platform {
+        name: "todo".to_string(),
+        description: "Todo".to_string(),
+        display_name: Some("Todo".to_string()),
+        bundled: Some(true),
+        available_tools: vec![],
+    };
+    let configs = vec![http, stdio, platform];
+
+    for config in &configs {
+        manager
+            .add_extension(
+                config.clone(),
+                Some(session.working_dir.clone()),
+                None,
+                Some(&session.id),
+            )
+            .await
+            .unwrap();
+    }
+
+    let set = ExtensionSet::new(
+        &session.id,
+        Some(session.working_dir.clone()),
+        configs.clone(),
+    )
+    .unwrap();
+    let lease = manager.resolve(&set).await;
+    let tool_names = lease
+        .tools()
+        .await
+        .into_iter()
+        .map(|tool| tool.name.to_string())
+        .collect::<Vec<_>>();
+
+    assert!(tool_names.contains(&"fixture_http__get_code".to_string()));
+    assert!(tool_names.contains(&"fixture_stdio__get_code".to_string()));
+    assert!(tool_names.contains(&"todo__todo_write".to_string()));
+    assert!(!tool_names.contains(&"fixture_stdio__get_image".to_string()));
+
+    assert_eq!(
+        call_text(&lease, "fixture_http__get_code", None).await,
+        FAKE_CODE
+    );
+    assert_eq!(
+        call_text(&lease, "fixture_stdio__get_code", None).await,
+        FAKE_CODE
+    );
+    assert!(call_text(
+        &lease,
+        "todo__todo_write",
+        Some(object!({ "content": "- [ ] contract" })),
+    )
+    .await
+    .starts_with("Updated ("));
+
+    let unavailable = match lease
+        .call(
+            CallToolRequestParams::new("fixture_stdio__get_image"),
+            CallRequest::new("filtered-tool"),
+            CancellationToken::default(),
+        )
+        .await
+    {
+        Ok(_) => panic!("filtered tool should not resolve"),
+        Err(error) => error,
+    };
+    assert_eq!(unavailable.code, rmcp::model::ErrorCode::RESOURCE_NOT_FOUND);
+
+    manager.remove_extension("todo").await.unwrap();
+    assert!(lease
+        .tools()
+        .await
+        .iter()
+        .any(|tool| tool.name == "todo__todo_write"));
+
+    let replacement = manager
+        .resolve(
+            &ExtensionSet::new(
+                &session.id,
+                Some(session.working_dir.clone()),
+                configs[..2].to_vec(),
+            )
+            .unwrap(),
+        )
+        .await;
+    assert!(!replacement
+        .tools()
+        .await
+        .iter()
+        .any(|tool| tool.name == "todo__todo_write"));
+}
 
 enum TestMode {
     Record,
@@ -280,8 +464,15 @@ async fn test_replayed_session(
     #[allow(clippy::redundant_closure_call)]
     let result = (async || -> Result<(), Box<dyn std::error::Error>> {
         extension_manager
-            .add_extension(extension_config, None, None, None)
+            .add_extension(extension_config.clone(), None, None, None)
             .await?;
+        let lease = extension_manager
+            .resolve(&ExtensionSet::new(
+                "test-session-id",
+                None,
+                vec![extension_config],
+            )?)
+            .await;
         let mut results = Vec::new();
         for tool_call in tool_calls {
             let mut new_call = CallToolRequestParams::new(format!("test__{}", tool_call.name));
@@ -289,13 +480,12 @@ async fn test_replayed_session(
                 new_call = new_call.with_arguments(args);
             }
             let tool_call = new_call;
-            let ctx = goose::agents::ToolCallContext::new(
-                "test-session-id".to_string(),
-                None,
-                Some("test-id".to_string()),
-            );
-            let result = extension_manager
-                .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
+            let result = lease
+                .call(
+                    tool_call,
+                    CallRequest::new("test-id"),
+                    CancellationToken::default(),
+                )
                 .await;
 
             let tool_result = result?;

@@ -1,6 +1,6 @@
-use std::io;
-
 use clap::{Parser, Subcommand, ValueEnum};
+use goose_test_support::mcp::McpFixtureServer;
+use rmcp::{transport::stdio, ServiceExt};
 
 use goose_test::mcp::stdio::playback::playback;
 use goose_test::mcp::stdio::record::record;
@@ -29,9 +29,11 @@ enum Mode {
     Playback {
         file: String,
     },
+    Fixture,
 }
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.mode {
@@ -39,7 +41,13 @@ fn main() -> io::Result<()> {
             file,
             command,
             args,
-        } => record(&file, &command, &args),
-        Mode::Playback { file } => playback(&file),
+        } => record(&file, &command, &args)?,
+        Mode::Playback { file } => playback(&file)?,
+        Mode::Fixture => {
+            let service = McpFixtureServer::new().serve(stdio()).await?;
+            service.waiting().await?;
+        }
     }
+
+    Ok(())
 }

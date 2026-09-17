@@ -319,7 +319,7 @@ impl ExtensionLease {
         })
     }
 
-    pub(crate) async fn call(
+    pub async fn call(
         &self,
         tool_call: CallToolRequestParams,
         request: CallRequest,
@@ -449,13 +449,13 @@ impl ExtensionLease {
 /// What a caller supplies per call. Session and working directory are the
 /// lease's, not the caller's.
 #[derive(Default)]
-pub(crate) struct CallRequest {
+pub struct CallRequest {
     pub(crate) id: Option<String>,
     pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
 }
 
 impl CallRequest {
-    pub(crate) fn new(id: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: Some(id.into()),
             notification_emitter: None,

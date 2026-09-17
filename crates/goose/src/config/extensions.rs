@@ -325,6 +325,13 @@ mod tests {
     use tracing::{Event, Level, Subscriber};
     use tracing_subscriber::layer::SubscriberExt;
 
+    #[test]
+    fn extension_names_have_stable_keys() {
+        assert_eq!(name_to_key("Test Client"), "testclient");
+        assert_eq!(name_to_key("__cli__ent__"), "__cli__ent__");
+        assert_eq!(name_to_key("client 🚀"), "client_");
+    }
+
     fn test_config(content: &str) -> (Config, NamedTempFile, NamedTempFile) {
         let config_file = NamedTempFile::new().unwrap();
         let secrets_file = NamedTempFile::new().unwrap();

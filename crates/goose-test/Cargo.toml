@@ -17,4 +17,7 @@ path = "src/bin/capture.rs"
 
 [dependencies]
 clap = { workspace = true }
+goose-test-support = { version = "1.51.0", path = "../goose-test-support" }
+rmcp = { workspace = true, features = ["transport-io"] }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
