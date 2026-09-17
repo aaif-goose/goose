@@ -121,6 +121,9 @@ impl LiveVoiceInteraction {
                         offset_ms,
                     },
                 ) => {
+                    if stopping {
+                        continue;
+                    }
                     if self
                         .receive_delegation(event_id, delegation_id, offset_ms)
                         .await

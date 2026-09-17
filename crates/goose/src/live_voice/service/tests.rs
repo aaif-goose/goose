@@ -821,6 +821,13 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
     });
     let stop_response = connection.next_stop_request().await.unwrap();
     connection.send_event(delta("2", " world")).unwrap();
+    connection
+        .send_event(ProviderConnectionEvent::DelegationRequested {
+            event_id: "stopping-delegation-event".into(),
+            delegation_id: "stopping-delegation".into(),
+            offset_ms: 1,
+        })
+        .unwrap();
     stop_response.send(Ok(())).unwrap();
     connection
         .send_event(ProviderConnectionEvent::Closed)
@@ -829,6 +836,7 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
     let revised = transcript_rx.recv().await.unwrap();
     assert_eq!(revised.as_concat_text(), " world");
     assert!(stop.await.unwrap().is_ok());
+    assert!(start_rx.try_recv().is_err());
 
     let stored = session_manager
         .get_session(&session.id, true)
