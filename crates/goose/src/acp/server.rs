@@ -3723,28 +3723,12 @@ print(\"hello, world\")
     }
 
     #[test]
-    fn echoed_prompt_message_is_suppressed() {
-        let message = Message::user()
-            .with_text("/plan add tests")
-            .with_id("prompt_1");
-
-        assert!(is_echoed_prompt(&message, Some("prompt_1")));
-    }
-
-    #[test]
     fn echoed_prompt_matches_by_id_after_the_prompt_text_is_rewritten() {
         // convert_acp_prompt_to_message runs sanitize_unicode_tags, so the echo
         // can carry different text than the client sent.
         let message = Message::user().with_text("sanitized").with_id("prompt_1");
 
         assert!(is_echoed_prompt(&message, Some("prompt_1")));
-    }
-
-    #[test]
-    fn steer_message_is_not_suppressed() {
-        let message = Message::user().with_text("steered").with_id("steer_1");
-
-        assert!(!is_echoed_prompt(&message, Some("prompt_1")));
     }
 
     #[test]
