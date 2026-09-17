@@ -4502,6 +4502,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "工具详情"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "工具标识符"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "工具结果"
   },

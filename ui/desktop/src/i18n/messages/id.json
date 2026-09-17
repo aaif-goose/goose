@@ -4502,6 +4502,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Detail Alat"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Pengidentifikasi alat"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Hasil alat"
   },

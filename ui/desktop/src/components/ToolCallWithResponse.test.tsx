@@ -148,4 +148,53 @@ describe('ToolCallWithResponse live output', () => {
       'allow_once'
     );
   });
+
+  it.each([
+    'example__read_file',
+    'example__READ_FILE',
+    'example__Read_File',
+    'shell',
+    'extension__nested__read_file',
+    `extension__${'long_tool_name_'.repeat(20)}READ_FILE`,
+  ])('shows the exact identifier %s before inline approval', (toolName) => {
+    const permissionMessage: Message = {
+      content: [
+        {
+          type: 'actionRequired',
+          data: {
+            actionType: 'toolConfirmation',
+            arguments: { command: 'build' },
+            generation: 'permission-generation-1',
+            id: 'tool-1',
+            toolName,
+          },
+        },
+      ],
+      created: 0,
+      metadata: { agentVisible: true, userVisible: true },
+      role: 'assistant',
+    };
+
+    render(
+      <ToolCallWithResponse
+        sessionId="session-1"
+        isCancelledMessage={false}
+        toolRequest={{
+          ...toolRequest,
+          toolCall: {
+            status: 'success',
+            value: {
+              name: toolName,
+              arguments: { command: 'build' },
+            },
+          },
+        }}
+        isPendingApproval
+        confirmationContent={getAnyToolConfirmationData(permissionMessage)}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByText(toolName, { selector: 'code' })).toBeInTheDocument();
+  });
 });

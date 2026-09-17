@@ -4502,6 +4502,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "도구 세부정보"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "도구 식별자"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "도구 결과"
   },
