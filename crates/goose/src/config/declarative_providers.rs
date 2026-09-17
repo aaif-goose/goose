@@ -199,13 +199,14 @@ pub struct UpdateCustomProviderParams {
 pub fn create_custom_provider(
     params: CreateCustomProviderParams,
 ) -> Result<DeclarativeProviderConfig> {
-    create_custom_provider_with_persist(params, |path, contents| {
+    create_custom_provider_with_persist(Config::global(), params, |path, contents| {
         write_private_file(path, contents)?;
         Ok(())
     })
 }
 
 fn create_custom_provider_with_persist(
+    config: &Config,
     params: CreateCustomProviderParams,
     persist: impl FnOnce(&Path, &str) -> Result<()>,
 ) -> Result<DeclarativeProviderConfig> {
@@ -274,7 +275,6 @@ fn create_custom_provider_with_persist(
 
     let json_content = serde_json::to_string_pretty(&provider_config)?;
     let file_path = custom_provider_file_path(&id)?;
-    let config = Config::global();
     let previous_api_key = if api_key.is_some() {
         config.invalidate_secrets_cache();
         config.all_secrets()?.get(&api_key_env).cloned()
@@ -675,6 +675,14 @@ mod tests {
         }
     }
 
+    fn file_backed_test_config(directory: &Path) -> Config {
+        Config::new_with_file_secrets(
+            directory.join("config.yaml"),
+            directory.join("secrets.yaml"),
+        )
+        .unwrap()
+    }
+
     fn test_huggingface_config() -> DeclarativeProviderConfig {
         DeclarativeProviderConfig {
             name: "custom_hf".to_string(),
@@ -883,15 +891,17 @@ mod tests {
         let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([
             ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
-            ("GOOSE_DISABLE_KEYRING", Some("1")),
             ("CUSTOM_COLLISION_API_KEY", None),
             ("CUSTOM_COLLISION_1_API_KEY", None),
         ]);
+        let config = Arc::new(file_backed_test_config(temp_dir.path()));
 
         let (first_at_persist_tx, first_at_persist_rx) = mpsc::channel();
         let (release_first_tx, release_first_rx) = mpsc::channel();
+        let first_config = config.clone();
         let first = std::thread::spawn(move || {
             create_custom_provider_with_persist(
+                &first_config,
                 custom_provider_create_params(
                     "Collision",
                     "https://first.example.invalid/v1",
@@ -910,9 +920,11 @@ mod tests {
         let (second_at_persist_tx, second_at_persist_rx) = mpsc::channel();
         let second_start = Arc::new(Barrier::new(2));
         let second_thread_start = second_start.clone();
+        let second_config = config.clone();
         let second = std::thread::spawn(move || {
             second_thread_start.wait();
             create_custom_provider_with_persist(
+                &second_config,
                 custom_provider_create_params(
                     "Collision",
                     "https://second.example.invalid/v1",
@@ -948,12 +960,11 @@ mod tests {
             let loaded = load_provider(&created.name).unwrap().config;
             assert_eq!(loaded.base_url, expected_url);
             assert_eq!(
-                Config::global()
-                    .get_secret::<String>(&loaded.api_key_env)
-                    .unwrap(),
+                config.get_secret::<String>(&loaded.api_key_env).unwrap(),
                 expected_key
             );
         }
+        assert!(temp_dir.path().join("secrets.yaml").exists());
     }
 
     #[test]
@@ -1030,12 +1041,13 @@ mod tests {
         let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([
             ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
-            ("GOOSE_DISABLE_KEYRING", Some("1")),
             ("CUSTOM_ROLLBACK_API_KEY", None),
             ("CUSTOM_ORPHAN_ROLLBACK_API_KEY", None),
         ]);
+        let config = file_backed_test_config(temp_dir.path());
 
         let result = create_custom_provider_with_persist(
+            &config,
             custom_provider_create_params(
                 "Rollback",
                 "https://rollback.example.invalid/v1",
@@ -1049,15 +1061,16 @@ mod tests {
             .to_string()
             .contains("injected persistence failure"));
         assert!(matches!(
-            Config::global().get_secret::<String>("CUSTOM_ROLLBACK_API_KEY"),
+            config.get_secret::<String>("CUSTOM_ROLLBACK_API_KEY"),
             Err(crate::config::ConfigError::NotFound(_))
         ));
         assert!(!custom_providers_dir().join("custom_rollback.json").exists());
 
-        Config::global()
+        config
             .set_secret("CUSTOM_ORPHAN_ROLLBACK_API_KEY", &"previous-key")
             .unwrap();
         let result = create_custom_provider_with_persist(
+            &config,
             custom_provider_create_params(
                 "Orphan Rollback",
                 "https://rollback.example.invalid/v1",
@@ -1068,7 +1081,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            Config::global()
+            config
                 .get_secret::<String>("CUSTOM_ORPHAN_ROLLBACK_API_KEY")
                 .unwrap(),
             "previous-key"
