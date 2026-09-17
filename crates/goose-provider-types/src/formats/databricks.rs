@@ -567,7 +567,8 @@ pub fn create_request_for_provider(
         tool_call_id: None,
     };
 
-    let model_supports_vision = model_config.supports_vision.unwrap_or_default();
+    let model_supports_vision =
+        model_config.supports_input_modality(crate::canonical::Modality::Image);
     let messages_spec = format_messages(
         messages,
         image_format,
@@ -1338,7 +1339,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1374,7 +1376,8 @@ mod tests {
             toolshim_model: None,
             request_params: Some(params),
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1395,7 +1398,8 @@ mod tests {
             toolshim_model: None,
             request_params: Some(params),
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1417,7 +1421,8 @@ mod tests {
             toolshim_model: None,
             request_params: Some(params),
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1437,7 +1442,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1457,7 +1463,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1477,7 +1484,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
@@ -1865,7 +1873,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 
@@ -1919,7 +1928,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         };
 

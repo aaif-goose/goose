@@ -8,7 +8,9 @@ use std::pin::Pin;
 use tokio::sync::watch;
 
 use crate::{
-    canonical::{catalog::ProviderSetupMetadata, map_to_canonical_model, CanonicalModelRegistry},
+    canonical::{
+        catalog::ProviderSetupMetadata, map_to_canonical_model, CanonicalModelRegistry, Modality,
+    },
     conversation::{
         message::{Message, MessageContentBlock},
         token_usage::{ProviderUsage, Usage},
@@ -241,6 +243,15 @@ pub enum ThinkingPreservationFormat {
     ReasoningContent,
 }
 
+/// A partial custom declaration of a model's input and output modalities.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ModelModalities {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<Vec<Modality>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<Vec<Modality>>,
+}
+
 /// Information about a model's capabilities
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelInfo {
@@ -262,6 +273,9 @@ pub struct ModelInfo {
     /// Whether this model supports reasoning/thinking controls
     #[serde(default)]
     pub reasoning: bool,
+    /// Explicit input/output modality declarations for this custom provider model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modalities: Option<ModelModalities>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
     /// Static params merged into the request body for this model.
@@ -280,6 +294,7 @@ impl ModelInfo {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            modalities: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -311,6 +326,7 @@ impl ModelInfo {
             currency: Some("$".to_string()),
             supports_cache_control: None,
             reasoning: false,
+            modalities: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -356,6 +372,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         currency: None,
         supports_cache_control: None,
         reasoning,
+        modalities: None,
         thinking_preservation_format: None,
         request_params: None,
     }
@@ -1039,6 +1056,7 @@ mod tests {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            modalities: None,
             thinking_preservation_format: None,
             request_params: None,
         };
@@ -1054,6 +1072,7 @@ mod tests {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            modalities: None,
             thinking_preservation_format: None,
             request_params: None,
         };
@@ -1069,10 +1088,32 @@ mod tests {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            modalities: None,
             thinking_preservation_format: None,
             request_params: None,
         };
         assert_ne!(info, info3);
+    }
+
+    #[test]
+    fn model_modalities_round_trip_preserves_missing_and_empty_directions() {
+        let info: ModelInfo = serde_json::from_str(
+            r#"{"name":"model","modalities":{"input":[],"output":["text","audio"]}}"#,
+        )
+        .unwrap();
+        assert_eq!(info.modalities.as_ref().unwrap().input, Some(Vec::new()));
+        assert_eq!(
+            info.modalities.as_ref().unwrap().output,
+            Some(vec![Modality::Text, Modality::Audio])
+        );
+
+        let missing: ModelInfo =
+            serde_json::from_str(r#"{"name":"model","modalities":{"input":["image"]}}"#).unwrap();
+        assert_eq!(missing.modalities.unwrap().output, None);
+        assert!(serde_json::to_value(ModelInfo::new("model"))
+            .unwrap()
+            .get("modalities")
+            .is_none());
     }
 
     #[test]
