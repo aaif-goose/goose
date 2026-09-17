@@ -1153,7 +1153,7 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn chat_mode_does_not_collect_skipped_recipe_final_output_or_run_hooks() -> Result<()> {
+async fn live_chat_mode_skips_recipe_final_output_before_session_persistence() -> Result<()> {
     let env = RecordingHookEnv::new(&[
         ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
         ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
@@ -1168,7 +1168,7 @@ async fn chat_mode_does_not_collect_skipped_recipe_final_output_or_run_hooks() -
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline
         .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Chat)
+        .with_live_goose_mode(GooseMode::Chat)
         .await
         .with_max_turns(2);
     pipeline.set_recipe(final_output_recipe()).await?;
@@ -1181,6 +1181,7 @@ async fn chat_mode_does_not_collect_skipped_recipe_final_output_or_run_hooks() -
 
     let result = pipeline.run(["produce the answer"]).await?;
 
+    assert_eq!(result.session.goose_mode, GooseMode::Auto);
     let messages = result.conversation().messages();
     let emitted_chat_skip = messages
         .iter()
@@ -1237,6 +1238,48 @@ async fn chat_mode_rejects_unadvertised_unknown_tool_without_hooks() -> Result<(
 
     result.assert_message(-2, ToolResponse, "Tool 'missing__tool' is not available.");
     result.assert_message(-1, Agent, "hidden tool rejected");
+    assert!(env.payloads("pre.log").is_empty());
+    assert!(env.payloads("result.log").is_empty());
+    assert!(env.payloads("post.log").is_empty());
+    assert!(env.payloads("postfail.log").is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_chat_mode_skips_unknown_tool_hooks_before_session_persistence() -> Result<()> {
+    let env = RecordingHookEnv::new(&[
+        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
+        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
+        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
+        (
+            "PostToolUseFailure",
+            "",
+            "postfail.sh",
+            RECORD_POST_FAILURE_SCRIPT,
+        ),
+    ]);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(env.hook_manager())
+        .with_live_goose_mode(GooseMode::Chat)
+        .await;
+    pipeline
+        .seed([
+            Message::user().with_text("try the missing tool"),
+            Message::assistant().with_tool_request(
+                "missing_1",
+                Ok(rmcp::model::CallToolRequestParams::new("missing__tool")),
+            ),
+        ])
+        .await?;
+    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
+        .reply("unknown tool stayed disabled");
+
+    let result = pipeline.resume().await?;
+
+    assert_eq!(result.session.goose_mode, GooseMode::Auto);
+    result.assert_message(-2, ToolResponse, CHAT_MODE_TOOL_SKIPPED_RESPONSE);
+    result.assert_message(-1, Agent, "unknown tool stayed disabled");
     assert!(env.payloads("pre.log").is_empty());
     assert!(env.payloads("result.log").is_empty());
     assert!(env.payloads("post.log").is_empty());

@@ -146,8 +146,12 @@ impl TestPipeline {
             )),
             Arc::new(DoctorOperation),
             Arc::new(ProjectOperation),
-            Arc::new(SkillOperation::new(self.hook_manager.clone())),
+            Arc::new(SkillOperation::new(
+                &self.goose_mode,
+                self.hook_manager.clone(),
+            )),
             Arc::new(RecipeOperation::new(
+                &self.goose_mode,
                 provider.clone(),
                 self.hook_manager.clone(),
             )),
@@ -156,7 +160,10 @@ impl TestPipeline {
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
             )),
-            Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
+            Arc::new(UnknownToolOperation::new(
+                &self.goose_mode,
+                self.hook_manager.clone(),
+            )),
             Arc::new(RetryOperation::new(
                 &self.goal,
                 &self.grind,
@@ -210,6 +217,11 @@ impl TestPipeline {
             .apply()
             .await
             .unwrap();
+        self
+    }
+
+    pub(super) async fn with_live_goose_mode(self, mode: GooseMode) -> Self {
+        *self.goose_mode.lock().await = mode;
         self
     }
 

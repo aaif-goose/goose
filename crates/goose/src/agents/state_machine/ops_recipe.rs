@@ -6,6 +6,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
+use tokio::sync::Mutex;
 use tracing_futures::Instrument;
 
 use crate::agents::final_output_tool::{
@@ -28,14 +29,20 @@ use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::Session;
 
-pub struct RecipeOperation {
+pub struct RecipeOperation<'a> {
+    goose_mode: &'a Mutex<GooseMode>,
     provider: Arc<dyn Provider>,
     hook_manager: HookManager,
 }
 
-impl RecipeOperation {
-    pub fn new(provider: Arc<dyn Provider>, hook_manager: HookManager) -> Self {
+impl<'a> RecipeOperation<'a> {
+    pub fn new(
+        goose_mode: &'a Mutex<GooseMode>,
+        provider: Arc<dyn Provider>,
+        hook_manager: HookManager,
+    ) -> Self {
         Self {
+            goose_mode,
             provider,
             hook_manager,
         }
@@ -205,7 +212,7 @@ impl RecipeOperation {
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for RecipeOperation {
+impl Operation<Session, GooseEffect> for RecipeOperation<'_> {
     fn name(&self) -> &'static str {
         "recipe"
     }
@@ -310,7 +317,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
             },
         );
         if let Some((request, _)) = pending {
-            if session.goose_mode == GooseMode::Chat {
+            if *self.goose_mode.lock().await == GooseMode::Chat {
                 let mut response = Message::user();
                 response.add_tool_response_with_metadata(
                     request.id,

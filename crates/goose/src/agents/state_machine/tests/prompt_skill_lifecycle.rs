@@ -7,9 +7,9 @@ use super::pipeline::{
 };
 #[cfg(feature = "code-mode")]
 use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
+use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 #[cfg(feature = "code-mode")]
 use crate::config::permission::PermissionLevel;
-#[cfg(feature = "code-mode")]
 use crate::config::GooseMode;
 #[cfg(feature = "code-mode")]
 use crate::conversation::message::MessageContent;
@@ -86,6 +86,35 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
     assert_eq!(call.input_occurrences("Four."), 1);
     assert_eq!(call.input_occurrences("Why?"), 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_chat_mode_skips_skill_load_before_session_persistence() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let skill_dir = pipeline.working_dir().join(".agents/skills/private");
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: private\ndescription: Private test skill\n---\nPRIVATE_SKILL_CONTENT",
+    )?;
+
+    let pipeline = pipeline.with_live_goose_mode(GooseMode::Chat).await;
+    api.on("try the private skill")
+        .call("load_skill", json!({ "name": "private" }));
+    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
+        .reply("skill load stayed disabled");
+
+    let result = pipeline.run(["try the private skill"]).await?;
+
+    assert_eq!(result.session.goose_mode, GooseMode::Auto);
+    result.assert_message(-2, ToolResponse, CHAT_MODE_TOOL_SKIPPED_RESPONSE);
+    result.assert_message(-1, Agent, "skill load stayed disabled");
+    assert!(!result
+        .conversation()
+        .messages()
+        .iter()
+        .any(|message| message.as_concat_text().contains("PRIVATE_SKILL_CONTENT")));
     Ok(())
 }
 

@@ -9,6 +9,7 @@ use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::sync::Mutex;
 use tracing_futures::Instrument;
 
 use crate::agents::state_machine::ops_toolcalling::{
@@ -28,7 +29,8 @@ use crate::session::Session;
 
 const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
-pub struct SkillOperation {
+pub struct SkillOperation<'a> {
+    goose_mode: &'a Mutex<GooseMode>,
     hook_manager: HookManager,
 }
 
@@ -191,9 +193,12 @@ fn load_supporting_file(
     }
 }
 
-impl SkillOperation {
-    pub fn new(hook_manager: HookManager) -> Self {
-        Self { hook_manager }
+impl<'a> SkillOperation<'a> {
+    pub fn new(goose_mode: &'a Mutex<GooseMode>, hook_manager: HookManager) -> Self {
+        Self {
+            goose_mode,
+            hook_manager,
+        }
     }
 
     async fn command_response(
@@ -228,7 +233,7 @@ impl SkillOperation {
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for SkillOperation {
+impl Operation<Session, GooseEffect> for SkillOperation<'_> {
     fn name(&self) -> &'static str {
         "skills"
     }
@@ -318,8 +323,9 @@ impl Operation<Session, GooseEffect> for SkillOperation {
 
         let mut response = Message::user();
         for (request, disposition) in pending {
+            let goose_mode = *self.goose_mode.lock().await;
             let result: std::result::Result<CallToolResult, ErrorData> = match disposition {
-                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => {
+                ToolDisposition::Execute if goose_mode == GooseMode::Chat => {
                     // Nothing executes in chat mode, so no tool lifecycle runs.
                     Ok(CallToolResult::success(vec![ContentBlock::text(
                         CHAT_MODE_TOOL_SKIPPED_RESPONSE,

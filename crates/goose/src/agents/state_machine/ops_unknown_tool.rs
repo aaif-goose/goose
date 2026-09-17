@@ -20,21 +20,26 @@ use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
+use tokio::sync::Mutex;
 
 pub(super) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
-pub struct UnknownToolOperation {
+pub struct UnknownToolOperation<'a> {
+    goose_mode: &'a Mutex<GooseMode>,
     hook_manager: HookManager,
 }
 
-impl UnknownToolOperation {
-    pub fn new(hook_manager: HookManager) -> Self {
-        Self { hook_manager }
+impl<'a> UnknownToolOperation<'a> {
+    pub fn new(goose_mode: &'a Mutex<GooseMode>, hook_manager: HookManager) -> Self {
+        Self {
+            goose_mode,
+            hook_manager,
+        }
     }
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for UnknownToolOperation {
+impl Operation<Session, GooseEffect> for UnknownToolOperation<'_> {
     fn name(&self) -> &'static str {
         "unknown_tool"
     }
@@ -71,6 +76,7 @@ impl Operation<Session, GooseEffect> for UnknownToolOperation {
             return not_applicable();
         }
 
+        let goose_mode = *self.goose_mode.lock().await;
         let mut response = Message::user();
         for (request, disposition) in pending {
             let tool_name = request
@@ -95,7 +101,7 @@ impl Operation<Session, GooseEffect> for UnknownToolOperation {
                         true,
                     )
                 }
-                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => (
+                ToolDisposition::Execute if goose_mode == GooseMode::Chat => (
                     Ok(CallToolResult::success(vec![ContentBlock::text(
                         CHAT_MODE_TOOL_SKIPPED_RESPONSE,
                     )])),

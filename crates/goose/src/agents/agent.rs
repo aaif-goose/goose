@@ -1708,8 +1708,12 @@ impl Agent {
             )),
             Arc::new(DoctorOperation),
             Arc::new(ProjectOperation),
-            Arc::new(SkillOperation::new(self.hook_manager.clone())),
+            Arc::new(SkillOperation::new(
+                &self.current_goose_mode,
+                self.hook_manager.clone(),
+            )),
             Arc::new(RecipeOperation::new(
+                &self.current_goose_mode,
                 provider.clone(),
                 self.hook_manager.clone(),
             )),
@@ -1718,7 +1722,10 @@ impl Agent {
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
             )),
-            Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
+            Arc::new(UnknownToolOperation::new(
+                &self.current_goose_mode,
+                self.hook_manager.clone(),
+            )),
             Arc::new(RetryOperation::new(
                 &self.goal,
                 &self.grind,
