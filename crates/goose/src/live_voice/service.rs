@@ -311,16 +311,15 @@ impl LiveVoiceService {
                 .interactions_by_session
                 .lock()
                 .expect("live voice lock poisoned");
-            let control = interactions
-                .get(session_id)
-                .ok_or(LiveVoiceError::Unavailable)?;
+            let Some(control) = interactions.get(session_id) else {
+                return Ok(());
+            };
             if &control.interaction_id != interaction_id {
-                return Err(LiveVoiceError::Unavailable);
+                return Ok(());
             }
             control.request_stop()
         };
-        let completion = wait_for_completion(completion_rx).await?;
-        match completion {
+        match wait_for_completion(completion_rx).await? {
             LiveVoiceInteractionCompletion::Stopped => Ok(()),
             LiveVoiceInteractionCompletion::Failed => Err(LiveVoiceError::StopFailed),
         }

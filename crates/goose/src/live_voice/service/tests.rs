@@ -536,6 +536,30 @@ async fn repeated_stop_uses_one_provider_shutdown() {
 }
 
 #[tokio::test]
+async fn stale_stop_does_not_stop_the_current_interaction() {
+    let service = service();
+    let current_id = LiveVoiceInteractionId("current".into());
+    let (completion_tx, _) = watch::channel(None);
+    let control = Arc::new(LiveVoiceInteractionControl {
+        interaction_id: current_id,
+        stop_requested: CancellationToken::new(),
+        cleanup_finished: CancellationToken::new(),
+        completion_tx,
+    });
+    service
+        .interactions_by_session
+        .lock()
+        .unwrap()
+        .insert("main-session".into(), control.clone());
+
+    assert!(service
+        .stop_interaction("main-session", &LiveVoiceInteractionId("stale".into()))
+        .await
+        .is_ok());
+    assert!(!control.stop_requested.is_cancelled());
+}
+
+#[tokio::test]
 async fn transcript_without_delegation_saves_raw_and_main_agent_context_after_stop() {
     let (service, mut connection, interaction_id, session_id, manager) =
         establish_interaction_with(ignore_main_agent(), ignore_transcript_publisher()).await;
@@ -1035,10 +1059,10 @@ async fn provider_terminal_events_fail_and_release_the_session() {
             wait_for_completion(completion_rx).await.unwrap(),
             LiveVoiceInteractionCompletion::Failed
         );
-        assert!(matches!(
-            service.stop_interaction(&session_id, &interaction_id).await,
-            Err(LiveVoiceError::Unavailable)
-        ));
+        assert!(service
+            .stop_interaction(&session_id, &interaction_id)
+            .await
+            .is_ok());
         assert_eq!(
             service.availability(Some(&session_id), GooseMode::Auto),
             Ok(())
