@@ -127,6 +127,11 @@ fn steer_chunk_message_ids(updates: &[SessionUpdate]) -> Vec<String> {
         .collect()
 }
 
+/// Holds a fixture turn open long enough that a poll can observe its run even
+/// on a slow runner. Cancellation aborts the delayed reply early, so only a
+/// turn that runs to completion pays the full delay.
+const DELAYED_REPLY: Duration = Duration::from_secs(5);
+
 fn active_run_id_from_session_info(response: &serde_json::Value) -> Option<String> {
     response["session"]["_meta"]["goose"]["activeRunId"]
         .as_str()
@@ -732,7 +737,7 @@ fn test_cancel_clears_the_active_run_from_session_info() {
                 include_str!("acp_test_data/openai_steer_first.txt"),
             )],
             Arc::new(IgnoreSessionId),
-            Duration::from_secs(1),
+            DELAYED_REPLY,
         )
         .await;
         let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
@@ -773,7 +778,7 @@ fn test_completed_turn_clears_the_active_run_from_session_info() {
                 include_str!("acp_test_data/openai_steer_first.txt"),
             )],
             Arc::new(IgnoreSessionId),
-            Duration::from_secs(1),
+            DELAYED_REPLY,
         )
         .await;
         let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
