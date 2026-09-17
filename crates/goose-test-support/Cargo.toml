@@ -12,17 +12,20 @@ description.workspace = true
 axum = { workspace = true }
 env-lock = { workspace = true }
 opentelemetry = { workspace = true, features = ["trace", "metrics"] }
-rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server"] }
+once_cell = { workspace = true }
+rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server", "transport-io", "elicitation"] }
+schemars = { workspace = true }
+serde = { workspace = true }
 serde_json.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
-[[example]]
+[[bin]]
 name = "mcp_fixture_server"
-path = "examples/mcp_fixture_server.rs"
+path = "src/bin/mcp_fixture_server.rs"
 
 [lints]
 workspace = true
 
 [package.metadata.cargo-machete]
-# Used for tool description in mcp.rs
-ignored = ["serde_json"]
+# Used by the rmcp tool macros in mcp.rs
+ignored = ["serde_json", "schemars"]

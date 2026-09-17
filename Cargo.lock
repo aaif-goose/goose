@@ -5597,10 +5597,7 @@ name = "goose-test"
 version = "1.51.0"
 dependencies = [
  "clap",
- "goose-test-support",
- "rmcp 3.3.0",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -5609,8 +5606,11 @@ version = "1.51.0"
 dependencies = [
  "axum",
  "env-lock",
+ "once_cell",
  "opentelemetry 0.32.0",
  "rmcp 3.3.0",
+ "schemars 1.2.2",
+ "serde",
  "serde_json",
  "tokio",
 ]
