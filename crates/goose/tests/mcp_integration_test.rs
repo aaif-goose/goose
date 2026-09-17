@@ -140,7 +140,9 @@ struct Fixture {
     _temp_dir: tempfile::TempDir,
 }
 
-async fn fixture(mcpui: bool) -> Fixture {
+/// `protocol_version` pins the client to the legacy `initialize` handshake;
+/// `None` lets it probe `server/discover` first.
+async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixture {
     let temp_dir = tempfile::tempdir().unwrap();
     let session_manager = Arc::new(goose::session::SessionManager::new(
         temp_dir.path().to_path_buf(),
@@ -154,7 +156,7 @@ async fn fixture(mcpui: bool) -> Fixture {
             mcpui,
             host_info: None,
             elicitation_handler: None,
-            protocol_version: None,
+            protocol_version,
         },
         false,
     ));
@@ -302,16 +304,24 @@ async fn inspect_context(lease: &ExtensionLease, name: &str) -> ContextReport {
 /// One manager, three transports, one lease: the catalog, mangled-name
 /// recovery, filtering, app scoping, the restart-on-config-change rule, and
 /// what a held lease does and does not see when the registry changes.
+///
+/// The client is pinned to the legacy `initialize` handshake, so this is
+/// also where legacy HTTP is stateful — one server instance per session, a
+/// GET stream for server-initiated traffic — and where the stdio server
+/// speaks each version the handshake still has to negotiate down to.
+#[test_case(ProtocolVersion::V_2025_11_25; "stdio_2025_11_25")]
+#[test_case(ProtocolVersion::V_2025_06_18; "stdio_2025_06_18")]
+#[test_case(ProtocolVersion::V_2024_11_05; "stdio_2024_11_05")]
 #[tokio::test]
-async fn extension_lifecycle_across_real_transports() {
-    let http_server = McpFixture::new().await;
-    let fx = fixture(false).await;
+async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersion) {
+    let http_server = McpFixture::with_max_protocol_version(ProtocolVersion::V_2025_11_25).await;
+    let fx = fixture(false, Some(ProtocolVersion::V_2025_11_25)).await;
     let session = fx.session(SessionType::Hidden).await;
 
     let http = http_fixture("fixture_http", &http_server.url);
     let stdio = stdio_fixture(
         "fixture_stdio",
-        Some("legacy"),
+        Some(stdio_version.as_str()),
         &["get_code", "inspect_context"],
     );
     let todo = platform("todo");
@@ -354,7 +364,7 @@ async fn extension_lifecycle_across_real_transports() {
     let working_dir = session.working_dir.to_string_lossy().into_owned();
     assert_eq!(
         http_context.protocol_version,
-        ProtocolVersion::V_2026_07_28.as_str()
+        ProtocolVersion::V_2025_11_25.as_str()
     );
     assert_eq!(
         http_context.request_session_id.as_deref(),
@@ -364,11 +374,19 @@ async fn extension_lifecycle_across_real_transports() {
         http_context.request_working_dir.as_deref(),
         Some(working_dir.as_str())
     );
-    assert!(http_context.roots.is_empty());
+    let working_dir_root = url::Url::from_file_path(&session.working_dir)
+        .unwrap()
+        .to_string();
+    assert_eq!(http_context.roots, std::slice::from_ref(&working_dir_root));
     assert_eq!(
-        stdio_context.protocol_version,
-        ProtocolVersion::V_2025_11_25.as_str()
+        inspect_context(&lease, "fixture_http__inspect_context")
+            .await
+            .instance_id,
+        http_context.instance_id
     );
+    // The client proposes 2025-11-25; the handshake lands on whatever the
+    // server can do.
+    assert_eq!(stdio_context.protocol_version, stdio_version.as_str());
     assert_eq!(
         fs::canonicalize(&stdio_context.process_cwd).unwrap(),
         fs::canonicalize(&session.working_dir).unwrap()
@@ -385,12 +403,7 @@ async fn extension_lifecycle_across_real_transports() {
         stdio_context.request_working_dir.as_deref(),
         Some(working_dir.as_str())
     );
-    assert_eq!(
-        stdio_context.roots,
-        [url::Url::from_file_path(&session.working_dir)
-            .unwrap()
-            .to_string()]
-    );
+    assert_eq!(stdio_context.roots, [working_dir_root]);
     assert!(text_of(
         &call(
             &lease,
@@ -455,7 +468,7 @@ async fn extension_lifecycle_across_real_transports() {
     );
     let wider_stdio = stdio_fixture(
         "fixture_stdio",
-        Some("legacy"),
+        Some(stdio_version.as_str()),
         &["get_code", "inspect_context", "db.query"],
     );
     fx.add(&session, &wider_stdio).await;
@@ -482,6 +495,28 @@ async fn extension_lifecycle_across_real_transports() {
             .all(|name| !name.starts_with("fixture_stdio__"))
     );
 
+    // tools/list_changed arrives on the GET stream: the next resolve sees the
+    // new tool while the held lease stays as it was.
+    let late = "fixture_http__late_tool".to_string();
+    let current = vec![http.clone(), wider_stdio.clone(), todo.clone()];
+    assert!(!tool_names(&lease.tools().await).contains(&late));
+    assert_eq!(
+        call_text(&lease, "fixture_http__change_tools").await,
+        "changed"
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !tool_names(&fx.resolve(&session, &current).await.tools().await).contains(&late) {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("tools/list_changed never invalidated the cache");
+    assert!(!tool_names(&lease.tools().await).contains(&late));
+    assert_eq!(
+        call_text(&fx.resolve(&session, &current).await, &late).await,
+        "late"
+    );
+
     // Removal is invisible to a held lease and visible to a fresh one.
     fx.manager.remove_extension("todo").await.unwrap();
     assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
@@ -502,21 +537,24 @@ async fn extension_lifecycle_across_real_transports() {
 /// server echoing `_meta`.
 #[tokio::test]
 async fn extension_protocol_traffic_through_a_lease() {
-    let fx = fixture(true).await;
+    let http_server = McpFixture::new().await;
+    let fx = fixture(true, None).await;
     let user = fx.session(SessionType::User).await;
     let subagent = fx.session(SessionType::SubAgent).await;
     let stdio = stdio_fixture("fixture", None, &[]);
     let manager_ext = platform("extensionmanager");
+    let http = http_fixture("fixture_http", &http_server.url);
     fx.add(&user, &stdio).await;
     fx.add(&user, &manager_ext).await;
-    let configs = vec![stdio, manager_ext];
+    fx.add(&user, &http).await;
+    let configs = vec![stdio, manager_ext, http];
 
     // The same server publishes different tools to different sessions, so a
     // list fetched for one scope is not served to another. (Only the platform
     // extension can be leased by two sessions: an McpClient is single-session
     // by construction.)
     let lease = fx.resolve(&user, &configs).await;
-    let subagent_lease = fx.resolve(&subagent, &configs[1..]).await;
+    let subagent_lease = fx.resolve(&subagent, &configs[1..2]).await;
     let manage = "extensionmanager__manage_extensions".to_string();
     assert!(tool_names(&lease.tools().await).contains(&manage));
     assert!(!tool_names(&subagent_lease.tools().await).contains(&manage));
@@ -558,6 +596,22 @@ async fn extension_protocol_traffic_through_a_lease() {
     let forged = call(&lease, "fixture__forge_meta", None).await.unwrap();
     assert_eq!(text_of(&forged), "forged");
     assert!(forged.meta.is_none(), "{:?}", forged.meta);
+
+    // 2026 HTTP is stateless: server/discover, per-request _meta, no roots,
+    // and a fresh server instance per request.
+    let modern = inspect_context(&lease, "fixture_http__inspect_context").await;
+    assert_eq!(
+        modern.protocol_version,
+        ProtocolVersion::V_2026_07_28.as_str()
+    );
+    assert_eq!(modern.request_session_id.as_deref(), Some(user.id.as_str()));
+    assert!(modern.roots.is_empty());
+    assert_ne!(
+        inspect_context(&lease, "fixture_http__inspect_context")
+            .await
+            .instance_id,
+        modern.instance_id
+    );
 
     // Elicitation: the server asks, the host answers on the originating call.
     // Without an echoed _meta the client correlates by the one active call;
@@ -611,7 +665,6 @@ async fn extension_protocol_traffic_through_a_lease() {
 
     let alone = elicit("e-alone", false).await;
     assert_eq!(text_of(&answer(alone, "Ada").await.unwrap()), "Ada");
-
     let first = elicit("e-first", false).await;
     let mut first_requests = first.action_required_stream.unwrap();
     let first_result = tokio::spawn(first.result);

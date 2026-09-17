@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use rmcp::handler::server::wrapper::Parameters;
@@ -36,6 +36,7 @@ const WORKING_DIR_META_KEY: &str = "agent-working-dir";
 #[serde(rename_all = "camelCase")]
 pub struct ContextReport {
     pub instance_id: String,
+    /// The protocol version this session negotiated.
     pub protocol_version: String,
     pub process_cwd: String,
     pub process_session_id: Option<String>,
@@ -55,6 +56,8 @@ pub struct ElicitArgs {
 pub struct McpFixtureServer {
     instance_id: String,
     max_protocol_version: ProtocolVersion,
+    /// Set by `change_tools`; `late_tool` is only published afterwards.
+    tools_changed: Arc<AtomicBool>,
     tool_router: rmcp::handler::server::router::tool::ToolRouter<Self>,
 }
 
@@ -78,6 +81,7 @@ impl McpFixtureServer {
                 NEXT_INSTANCE_ID.fetch_add(1, Ordering::Relaxed)
             ),
             max_protocol_version,
+            tools_changed: Arc::new(AtomicBool::new(false)),
             tool_router: Self::tool_router(),
         }
     }
@@ -161,6 +165,20 @@ impl McpFixtureServer {
         )]))
     }
 
+    #[tool(description = "Publish late_tool and send tools/list_changed")]
+    async fn change_tools(&self, peer: Peer<RoleServer>) -> Result<CallToolResult, McpError> {
+        self.tools_changed.store(true, Ordering::SeqCst);
+        peer.notify_tool_list_changed()
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![ContentBlock::text("changed")]))
+    }
+
+    #[tool(description = "Only published after change_tools")]
+    fn late_tool(&self) -> Result<CallToolResult, McpError> {
+        Ok(CallToolResult::success(vec![ContentBlock::text("late")]))
+    }
+
     #[tool(name = "db.query", description = "A tool whose name contains a dot")]
     fn db_query(&self) -> Result<CallToolResult, McpError> {
         Ok(CallToolResult::success(vec![ContentBlock::text("rows")]))
@@ -239,6 +257,38 @@ impl ServerHandler for McpFixtureServer {
         Cow::Borrowed(ProtocolVersion::known_up_to(&self.max_protocol_version))
     }
 
+    /// A server capped below 2026-07-28 is a real legacy server: it has no
+    /// `server/discover`, so the client must fall back to `initialize`.
+    async fn discover(
+        &self,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::DiscoverResult, McpError> {
+        if self.max_protocol_version < ProtocolVersion::V_2026_07_28 {
+            return Err(McpError::method_not_found::<
+                rmcp::model::DiscoverRequestMethod,
+            >());
+        }
+        Ok(rmcp::model::DiscoverResult::from_server_info(
+            self.supported_protocol_versions().into_owned(),
+            self.get_info(),
+        ))
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, McpError> {
+        let changed = self.tools_changed.load(Ordering::SeqCst);
+        Ok(rmcp::model::ListToolsResult::with_all_items(
+            self.tool_router
+                .list_all()
+                .into_iter()
+                .filter(|tool| changed || tool.name != "late_tool")
+                .collect(),
+        ))
+    }
+
     fn get_info(&self) -> ServerInfo {
         InitializeResult::new(
             ServerCapabilities::builder()
@@ -281,12 +331,18 @@ impl Drop for McpFixture {
 
 impl McpFixture {
     pub async fn new() -> Self {
+        Self::with_max_protocol_version(ProtocolVersion::V_2026_07_28).await
+    }
+
+    pub async fn with_max_protocol_version(max_protocol_version: ProtocolVersion) -> Self {
         let requests = Arc::new(AtomicUsize::new(0));
         let service_factory = {
             let requests = Arc::clone(&requests);
             move || {
                 requests.fetch_add(1, Ordering::SeqCst);
-                Ok::<_, std::io::Error>(McpFixtureServer::new())
+                Ok::<_, std::io::Error>(McpFixtureServer::with_max_protocol_version(
+                    max_protocol_version.clone(),
+                ))
             }
         };
 

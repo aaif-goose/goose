@@ -1,4 +1,5 @@
 use goose_test_support::mcp::McpFixtureServer;
+use rmcp::model::ProtocolVersion;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
@@ -8,15 +9,16 @@ use rmcp::{transport::stdio, ServiceExt};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match (args.next().as_deref(), args.next().as_deref()) {
-        (Some("stdio"), None) => {
-            McpFixtureServer::new()
-                .serve(stdio())
-                .await?
-                .waiting()
-                .await?;
-        }
-        (Some("stdio"), Some("legacy")) => {
-            McpFixtureServer::with_max_protocol_version(rmcp::model::ProtocolVersion::V_2025_11_25)
+        (Some("stdio"), max_version) => {
+            let max_version = match max_version {
+                Some(version) => ProtocolVersion::KNOWN_VERSIONS
+                    .iter()
+                    .find(|known| known.as_str() == version)
+                    .cloned()
+                    .ok_or_else(|| format!("unknown protocol version {version}"))?,
+                None => ProtocolVersion::V_2026_07_28,
+            };
+            McpFixtureServer::with_max_protocol_version(max_version)
                 .serve(stdio())
                 .await?
                 .waiting()
@@ -38,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         (transport, mode) => {
             return Err(format!(
-                "unknown fixture mode {transport:?} {mode:?}; use stdio [legacy] or http"
+                "unknown fixture mode {transport:?} {mode:?}; use stdio [<max protocol version>] or http"
             )
             .into())
         }
