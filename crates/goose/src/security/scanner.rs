@@ -28,6 +28,7 @@ struct ClassifierSettings {
 pub(crate) struct ScannerSettings {
     command: ClassifierSettings,
     prompt: ClassifierSettings,
+    model_mapping: Option<String>,
 }
 
 impl ScannerSettings {
@@ -44,9 +45,20 @@ impl ScannerSettings {
             .get_param::<bool>("SECURITY_PROMPT_CLASSIFIER_ENABLED")
             .unwrap_or(false);
 
+        let command = Self::classifier_settings("COMMAND", command_enabled);
+        let prompt = Self::classifier_settings("PROMPT", prompt_enabled);
+        let uses_model_mapping = command.model_name.is_some()
+            || prompt.model_name.is_some()
+            || (command.enabled && command.endpoint.is_none());
+
         Self {
-            command: Self::classifier_settings("COMMAND", command_enabled),
-            prompt: Self::classifier_settings("PROMPT", prompt_enabled),
+            command,
+            prompt,
+            model_mapping: if uses_model_mapping {
+                std::env::var("SECURITY_ML_MODEL_MAPPING").ok()
+            } else {
+                None
+            },
         }
     }
 
