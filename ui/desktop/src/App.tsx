@@ -324,13 +324,14 @@ export function AppInner() {
   const location = useLocation();
   const setView = useNavigation();
   const liveVoice = useLiveVoice();
+  const { activeSessionId: activeLiveVoiceSessionId, stop: stopLiveVoice } = liveVoice;
 
   useEffect(() => {
     const hasLiveVoiceEntryPoint = location.pathname === '/' || location.pathname === '/pair';
-    if (!hasLiveVoiceEntryPoint && liveVoice.activeSessionId) {
-      void liveVoice.stop();
+    if (!hasLiveVoiceEntryPoint && activeLiveVoiceSessionId) {
+      void stopLiveVoice();
     }
-  }, [liveVoice.activeSessionId, liveVoice.stop, location.pathname]);
+  }, [activeLiveVoiceSessionId, location.pathname, stopLiveVoice]);
 
   const [chat, setChat] = useState<ChatType>({
     sessionId: '',

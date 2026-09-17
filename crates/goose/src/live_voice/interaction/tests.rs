@@ -102,8 +102,8 @@ async fn an_undelivered_delegation_update_notifies_the_user() {
     );
 }
 
-#[test]
-fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
+#[tokio::test]
+async fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
     let mut interaction = test_interaction(TestConnection { stopped: None });
     interaction.record_transcript("1".into(), Role::Assistant, "ready", 5);
     interaction.record_transcript("2".into(), Role::User, "do ", 10);
@@ -180,8 +180,8 @@ fn delegation_preparation_respects_offset_and_suppresses_duplicates() {
     ));
 }
 
-#[test]
-fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff() {
+#[tokio::test]
+async fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff() {
     let mut interaction = test_interaction(TestConnection { stopped: None });
     interaction.record_transcript("1".into(), Role::Assistant, "Anything else?", 10);
     interaction.record_transcript("2".into(), Role::User, "No thanks", 20);
@@ -206,14 +206,16 @@ fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_handoff(
     interaction
         .transcript
         .mark_context_sent_to_main_agent_through(30);
-    assert!(interaction
-        .transcript
-        .context_waiting_for_main_agent()
-        .is_none());
+    assert!(
+        interaction
+            .transcript
+            .context_waiting_for_main_agent()
+            .is_none()
+    );
 }
 
-#[test]
-fn transcript_grouping_projects_deltas_and_finalizes_messages() {
+#[tokio::test]
+async fn transcript_grouping_projects_deltas_and_finalizes_messages() {
     let mut interaction = test_interaction(TestConnection { stopped: None });
     let first = interaction
         .record_transcript("1".into(), Role::User, "hello", 10)
@@ -227,9 +229,11 @@ fn transcript_grouping_projects_deltas_and_finalizes_messages() {
     assert_eq!(second.id, message_id);
     assert_eq!(second.as_concat_text(), " world");
 
-    assert!(interaction
-        .record_transcript("2".into(), Role::User, " world", 20)
-        .is_none());
+    assert!(
+        interaction
+            .record_transcript("2".into(), Role::User, " world", 20)
+            .is_none()
+    );
 
     let role_change = interaction
         .record_transcript("3".into(), Role::Assistant, "hello", 30)
