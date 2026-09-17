@@ -9,7 +9,7 @@ use rmcp::model::{
     CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, ServerNotification, Tool,
 };
 use rmcp::service::ServiceError;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -137,7 +137,9 @@ pub struct ExtensionLease {
     scope_id: String,
     working_dir: Option<PathBuf>,
     members: Vec<Arc<Extension>>,
-    catalog: ToolCatalog,
+    /// Built on first use: callers that only want instructions or MOIM never
+    /// list tools.
+    catalog: OnceCell<ToolCatalog>,
     action_required: Arc<ActionRequiredManager>,
     hydrate_mcp_apps: bool,
 }
@@ -155,16 +157,21 @@ impl ExtensionLease {
         action_required: Arc<ActionRequiredManager>,
         hydrate_mcp_apps: bool,
     ) -> Self {
-        let catalog = ToolCatalog::build(&set.id, &members).await;
         Self {
             id: LeaseId::next(),
             scope_id: set.id.clone(),
             working_dir: set.working_dir.clone(),
             members,
-            catalog,
+            catalog: OnceCell::new(),
             action_required,
             hydrate_mcp_apps,
         }
+    }
+
+    async fn catalog(&self) -> &ToolCatalog {
+        self.catalog
+            .get_or_init(|| ToolCatalog::build(&self.scope_id, &self.members))
+            .await
     }
 
     pub fn id(&self) -> LeaseId {
@@ -175,17 +182,19 @@ impl ExtensionLease {
         &self.scope_id
     }
 
-    pub fn tools(&self) -> Vec<Tool> {
-        self.catalog
+    pub async fn tools(&self) -> Vec<Tool> {
+        self.catalog()
+            .await
             .entries
             .iter()
             .map(|e| e.tool.clone())
             .collect()
     }
 
-    pub fn tools_for(&self, extension: &str) -> Vec<Tool> {
+    pub async fn tools_for(&self, extension: &str) -> Vec<Tool> {
         let key = name_to_key(extension);
-        self.catalog
+        self.catalog()
+            .await
             .entries
             .iter()
             .filter(|e| e.extension.key == key)
@@ -193,9 +202,10 @@ impl ExtensionLease {
             .collect()
     }
 
-    pub fn tools_excluding(&self, extension: &str) -> Vec<Tool> {
+    pub async fn tools_excluding(&self, extension: &str) -> Vec<Tool> {
         let key = name_to_key(extension);
-        self.catalog
+        self.catalog()
+            .await
             .entries
             .iter()
             .filter(|e| e.extension.key != key)
@@ -247,14 +257,14 @@ impl ExtensionLease {
 
     /// `app_extension` is set for calls made by an MCP app: the tool must belong
     /// to that extension and be visible to apps.
-    pub(super) fn resolve(
+    pub(super) async fn resolve(
         &self,
         tool_name: &str,
         app_extension: Option<&str>,
     ) -> Result<ResolvedTool<'_>, ErrorData> {
-        let entry = self.catalog.get(tool_name).or_else(|| {
-            let owners = self
-                .catalog
+        let catalog = self.catalog().await;
+        let entry = catalog.get(tool_name).or_else(|| {
+            let owners = catalog
                 .entries
                 .iter()
                 .map(|e| (e.tool.name.as_ref(), get_tool_owner(&e.tool)));
@@ -265,12 +275,11 @@ impl ExtensionLease {
                     .iter()
                     .map(|(n, o)| (*n, o.as_deref())),
             )
-            .and_then(|recovered| self.catalog.get(&recovered))
+            .and_then(|recovered| catalog.get(&recovered))
         });
 
         let Some(entry) = entry else {
-            let available = self
-                .catalog
+            let available = catalog
                 .entries
                 .iter()
                 .map(|e| e.tool.name.as_ref())
@@ -316,7 +325,7 @@ impl ExtensionLease {
         request: CallRequest,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        let resolved = self.resolve(&tool_call.name, None)?;
+        let resolved = self.resolve(&tool_call.name, None).await?;
         Ok(self
             .call_resolved(resolved, tool_call.arguments, request, cancellation_token)
             .await)
@@ -329,7 +338,7 @@ impl ExtensionLease {
         request: CallRequest,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        let resolved = self.resolve(&tool_call.name, Some(app_extension))?;
+        let resolved = self.resolve(&tool_call.name, Some(app_extension)).await?;
         Ok(self
             .call_resolved(resolved, tool_call.arguments, request, cancellation_token)
             .await)

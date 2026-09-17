@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
+use futures::FutureExt;
 use futures::Stream;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -17,7 +18,8 @@ use tracing::warn;
 
 use super::container::Container;
 use super::extension::{
-    ExtensionConfig, ExtensionInfo, ExtensionResult, PlatformExtensionContext, PLATFORM_EXTENSIONS,
+    ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
+    PLATFORM_EXTENSIONS,
 };
 use super::tool_execution::{ToolCallContext, ToolCallResult};
 use super::types::SharedProvider;
@@ -26,7 +28,7 @@ use crate::agents::mcp_client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
 use crate::config::extensions::name_to_key;
-use crate::config::Config;
+use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
@@ -45,11 +47,13 @@ pub use lease::{ExtensionLease, ExtensionSet, LeaseId};
 
 /// A change to the set an agent wants, produced by the `manage_extensions`
 /// tool and applied by the loop that dispatched it — which, unlike the tool,
-/// knows the session's working directory and container.
+/// knows the session's working directory and container. Carries the name
+/// only: the config is looked up at apply time so secrets never travel in a
+/// tool result.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "action", rename_all = "lowercase")]
 pub enum ExtensionMutation {
-    Enable { config: Box<ExtensionConfig> },
+    Enable { name: String },
     Disable { name: String },
 }
 
@@ -148,7 +152,16 @@ pub(super) struct Extension {
     /// Bumped by the client on tools/list_changed; a cached list is only valid
     /// for the version it was fetched under.
     tools_version: Arc<AtomicU64>,
-    tools: Mutex<Option<(u64, Arc<Vec<Tool>>)>>,
+    /// Servers may publish different tools to different sessions (extension
+    /// management hides itself from subagents), so the scope is part of the
+    /// cache key.
+    tools: Mutex<Option<CachedTools>>,
+}
+
+struct CachedTools {
+    scope_id: String,
+    version: u64,
+    tools: Arc<Vec<Tool>>,
 }
 
 impl Extension {
@@ -191,19 +204,23 @@ impl Extension {
     /// The extension's tools as the model sees them: filtered by
     /// `available_tools`, prefixed unless first-class, tagged with the owner,
     /// schema-normalized.
-    pub(super) async fn public_tools(&self, session_id: &str) -> Arc<Vec<Tool>> {
+    pub(super) async fn public_tools(&self, scope_id: &str) -> Arc<Vec<Tool>> {
         let version = self.tools_version.load(Ordering::SeqCst);
-        if let Some((cached_version, tools)) = &*self.tools.lock().await {
-            if *cached_version == version {
-                return Arc::clone(tools);
+        if let Some(cached) = &*self.tools.lock().await {
+            if cached.version == version && cached.scope_id == scope_id {
+                return Arc::clone(&cached.tools);
             }
         }
 
-        let tools = Arc::new(self.fetch_public_tools(session_id).await);
+        let tools = Arc::new(self.fetch_public_tools(scope_id).await);
 
         let mut cache = self.tools.lock().await;
         if self.tools_version.load(Ordering::SeqCst) == version {
-            *cache = Some((version, Arc::clone(&tools)));
+            *cache = Some(CachedTools {
+                scope_id: scope_id.to_string(),
+                version,
+                tools: Arc::clone(&tools),
+            });
         }
         tools
     }
@@ -756,26 +773,61 @@ impl ExtensionManager {
         session_id: &str,
     ) -> ExtensionResult<()> {
         match mutation {
-            ExtensionMutation::Enable { config } => {
-                self.add_extension(*config, working_dir, container, Some(session_id))
+            ExtensionMutation::Enable { name } => {
+                let config = get_extension_by_name(&name).ok_or_else(|| {
+                    ExtensionError::ConfigError(format!("Extension '{}' not found", name))
+                })?;
+                self.add_extension(config, working_dir, container, Some(session_id))
                     .await
             }
             ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
         }
     }
 
+    /// Wrap a `manage_extensions` result so the change it declares is applied
+    /// before anything downstream — post-tool hooks, telemetry, the model —
+    /// sees the result. A failed apply is the tool's failure.
+    pub fn applying_mutation(
+        self: &Arc<Self>,
+        result: ToolCallResult,
+        working_dir: Option<PathBuf>,
+        container: Option<Container>,
+        session_id: &str,
+    ) -> ToolCallResult {
+        let manager = Arc::clone(self);
+        let session_id = session_id.to_string();
+        let inner = result.result;
+        ToolCallResult {
+            result: Box::new(
+                async move {
+                    let mut result = inner.await?;
+                    if let Some(mutation) = ExtensionMutation::take(&mut result) {
+                        manager
+                            .apply(mutation, working_dir, container.as_ref(), &session_id)
+                            .await
+                            .map_err(|e| {
+                                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+                            })?;
+                    }
+                    Ok(result)
+                }
+                .boxed(),
+            ),
+            ..result
+        }
+    }
+
     pub async fn add_client(
         &self,
-        name: String,
         config: ExtensionConfig,
         client: McpClientBox,
         info: Option<ServerInfo>,
     ) {
-        let normalized = name_to_key(&name);
+        let key = config.key();
         self.extensions.lock().await.insert(
-            normalized.clone(),
+            key.clone(),
             Arc::new(Extension::new(
-                normalized,
+                key,
                 config.clone(),
                 config,
                 client,
@@ -839,8 +891,8 @@ impl ExtensionManager {
             .resolve(&self.current_set(session_id, None).await)
             .await;
         Ok(match extension_name {
-            Some(name) => lease.tools_for(&name),
-            None => lease.tools(),
+            Some(name) => lease.tools_for(&name).await,
+            None => lease.tools().await,
         })
     }
 
@@ -881,7 +933,7 @@ impl ExtensionManager {
         let lease = self
             .resolve(&self.current_set(session_id, None).await)
             .await;
-        Ok(lease.tools_excluding(exclude))
+        Ok(lease.tools_excluding(exclude).await)
     }
 
     // Function that gets executed for read_resource tool
@@ -1272,7 +1324,7 @@ mod tests {
             let lease = self
                 .resolve(&self.current_set(session_id, None).await)
                 .await;
-            let resolved = lease.resolve(tool_name, None)?;
+            let resolved = lease.resolve(tool_name, None).await?;
             Ok(ResolvedTool {
                 extension_name: resolved.extension.key.clone(),
                 actual_tool_name: resolved.actual_name.to_string(),
@@ -1298,7 +1350,7 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            self.add_client(name, config, client, None).await;
+            self.add_client(config, client, None).await;
         }
     }
 
@@ -1940,7 +1992,13 @@ mod tests {
         assert!(!is_tool_owned_by_extension(&sibling_tool, "ext_a"));
     }
 
-    struct NamedToolsClient(Vec<Tool>);
+    struct NamedToolsClient(Vec<Tool>, AtomicUsize);
+
+    impl NamedToolsClient {
+        fn new(tools: Vec<Tool>) -> Self {
+            Self(tools, AtomicUsize::new(0))
+        }
+    }
 
     #[async_trait::async_trait]
     impl McpClientTrait for NamedToolsClient {
@@ -1950,6 +2008,7 @@ mod tests {
             _next_cursor: Option<String>,
             _cancellation_token: CancellationToken,
         ) -> Result<ListToolsResult, Error> {
+            self.1.fetch_add(1, Ordering::SeqCst);
             Ok(ListToolsResult {
                 tools: self.0.clone(),
                 next_cursor: None,
@@ -1999,13 +2058,13 @@ mod tests {
         extension_manager
             .add_mock_extension(
                 "ext_a__ext_b".to_string(),
-                Arc::new(NamedToolsClient(vec![app_tool("secret")])),
+                Arc::new(NamedToolsClient::new(vec![app_tool("secret")])),
             )
             .await;
         extension_manager
             .add_mock_extension(
                 "ext_a".to_string(),
-                Arc::new(NamedToolsClient(vec![app_tool("ext_b__secret")])),
+                Arc::new(NamedToolsClient::new(vec![app_tool("ext_b__secret")])),
             )
             .await;
 
@@ -2013,12 +2072,13 @@ mod tests {
             .resolve(&extension_manager.current_set("session", None).await)
             .await;
         assert_eq!(
-            lease.tools().len(),
+            lease.tools().await.len(),
             1,
             "colliding names collapse to one entry"
         );
         let owner = lease
             .resolve("ext_a__ext_b__secret", None)
+            .await
             .unwrap()
             .extension
             .key
@@ -2124,7 +2184,7 @@ mod tests {
         .unwrap();
         let lease = extension_manager.resolve(&narrower).await;
         assert!(!lease.is_enabled("ext_a"));
-        assert!(lease.tools().is_empty());
+        assert!(lease.tools().await.is_empty());
     }
 
     #[test]
@@ -2139,6 +2199,35 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("appears twice"));
+    }
+
+    /// A server may publish different tools to different sessions, so a list
+    /// fetched for one scope must not be served to another.
+    #[tokio::test]
+    async fn tool_cache_is_per_scope() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let client = Arc::new(NamedToolsClient::new(vec![app_tool("t")]));
+        extension_manager
+            .add_mock_extension("ext".to_string(), client.clone())
+            .await;
+
+        extension_manager
+            .get_prefixed_tools("a", None)
+            .await
+            .unwrap();
+        extension_manager
+            .get_prefixed_tools("a", None)
+            .await
+            .unwrap();
+        assert_eq!(client.1.load(Ordering::SeqCst), 1);
+
+        extension_manager
+            .get_prefixed_tools("b", None)
+            .await
+            .unwrap();
+        assert_eq!(client.1.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -2604,13 +2693,8 @@ mod tests {
             available_tools: vec![],
         };
 
-        em.add_client(
-            "test-ext".to_string(),
-            config.clone(),
-            Arc::new(MockClient {}),
-            None,
-        )
-        .await;
+        em.add_client(config.clone(), Arc::new(MockClient {}), None)
+            .await;
         assert_eq!(em.extensions.lock().await.len(), 1);
 
         // Calling add_extension with the same config must be a no-op (Ok, count unchanged).
@@ -2647,13 +2731,7 @@ mod tests {
             available_tools: vec![],
         };
 
-        em.add_client(
-            "test-ext".to_string(),
-            config_a,
-            Arc::new(MockClient {}),
-            None,
-        )
-        .await;
+        em.add_client(config_a, Arc::new(MockClient {}), None).await;
         assert_eq!(em.extensions.lock().await.len(), 1);
 
         let result = em.add_extension(config_b, None, None, None).await;

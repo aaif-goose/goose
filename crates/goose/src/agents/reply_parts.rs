@@ -200,7 +200,7 @@ impl Agent {
         working_dir: &std::path::Path,
     ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
         let lease = self.resolve_lease(session_id, working_dir).await;
-        let mut tools = lease.tools();
+        let mut tools = lease.tools().await;
         if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
             tools.push(final_output_tool.tool());
         }

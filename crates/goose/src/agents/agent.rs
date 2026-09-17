@@ -23,7 +23,7 @@ use super::tool_execution::{
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{
-    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionMutation,
+    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
@@ -1182,40 +1182,22 @@ impl Agent {
             );
             ToolCallResult::from(Err(error_data))
         });
+        let result = if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+            let container = self.container.lock().await.clone();
+            self.extension_manager.applying_mutation(
+                result,
+                Some(session.working_dir.clone()),
+                container,
+                &session.id,
+            )
+        } else {
+            result
+        };
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
 
         let result = self.with_post_tool_hook(result, &tool_call, session, &request_id);
         (request_id, Ok(result))
-    }
-
-    /// A `manage_extensions` result carries the change it wants; apply it
-    /// with this session's context and turn a failure into the tool's error.
-    async fn apply_extension_mutation(
-        &self,
-        output: Result<CallToolResult, ErrorData>,
-        session: &Session,
-    ) -> Result<CallToolResult, ErrorData> {
-        let mut result = output?;
-        let Some(mutation) = ExtensionMutation::take(&mut result) else {
-            return Ok(result);
-        };
-        let container = self.container.lock().await.clone();
-        match self
-            .extension_manager
-            .apply(
-                mutation,
-                Some(session.working_dir.clone()),
-                container.as_ref(),
-                &session.id,
-            )
-            .await
-        {
-            Ok(()) => Ok(result),
-            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(
-                error.to_string(),
-            )])),
-        }
     }
 
     /// Save current extension state to session metadata
@@ -3004,10 +2986,7 @@ impl Agent {
                                                                 }
                                                                 yield AgentEvent::Message(msg);
                                                             }
-                                                            ToolStreamItem::Result(mut output) => {
-                                                                if enable_extension_request_ids.contains(&request_id) {
-                                                                    output = self.apply_extension_mutation(output, &session).await;
-                                                                }
+                                                            ToolStreamItem::Result(output) => {
                                                                 if let Ok(ref call_result) = output {
                                                                     if let Some(ref meta) = call_result.meta {
                                                                         if let Some(notification_data) = meta.0.get("platform_notification") {

@@ -8,9 +8,7 @@ use futures::{FutureExt, StreamExt};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
 use crate::agents::container::Container;
-use crate::agents::extension_manager::{
-    CallRequest, ExtensionLease, ExtensionManager, ExtensionMutation,
-};
+use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_tool_approval::request_executable;
@@ -341,34 +339,6 @@ impl<'a> ToolExecutionOperation<'a> {
         }
     }
 
-    /// A `manage_extensions` result carries the change it wants; apply it
-    /// with this session's context and turn a failure into the tool's error.
-    async fn apply_extension_mutation(
-        &self,
-        output: Result<CallToolResult, ErrorData>,
-        session: &Session,
-    ) -> Result<CallToolResult, ErrorData> {
-        let mut result = output?;
-        let Some(mutation) = ExtensionMutation::take(&mut result) else {
-            return Ok(result);
-        };
-        match self
-            .extension_manager
-            .apply(
-                mutation,
-                Some(session.working_dir.clone()),
-                self.container.as_ref(),
-                &session.id,
-            )
-            .await
-        {
-            Ok(()) => Ok(result),
-            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(
-                error.to_string(),
-            )])),
-        }
-    }
-
     async fn lease(&self, session: &Session) -> Arc<ExtensionLease> {
         if let Some(lease) = self.lease.lock().await.as_ref() {
             if lease.scope_id() == session.id {
@@ -438,6 +408,16 @@ impl<'a> ToolExecutionOperation<'a> {
                 );
                 ToolCallResult::from(Err(error))
             });
+            let result = if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+                self.extension_manager.applying_mutation(
+                    result,
+                    Some(session.working_dir.clone()),
+                    self.container.clone(),
+                    &session.id,
+                )
+            } else {
+                result
+            };
             Ok(with_post_tool_hooks(
                 &self.hook_manager,
                 result,
@@ -814,7 +794,8 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         Ok(self
             .resolve_lease(session)
             .await
-            .tools_excluding(crate::skills::EXTENSION_NAME))
+            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .await)
     }
 
     async fn moim_parts(
@@ -890,6 +871,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             .lease(session)
             .await
             .tools_excluding(crate::skills::EXTENSION_NAME)
+            .await
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect();
@@ -1005,12 +987,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                 item = combined.next() => {
                     let Some((request_id, item)) = item else { break };
                     match item {
-                        ToolStreamItem::Result(mut output) => {
-                            if manage_extensions_ids.contains(request_id.as_str()) {
-                                output = self.apply_extension_mutation(output, session).await;
-                                if output.is_err() {
-                                    extension_change_failed = true;
-                                }
+                        ToolStreamItem::Result(output) => {
+                            if manage_extensions_ids.contains(request_id.as_str())
+                                && output.is_err()
+                            {
+                                extension_change_failed = true;
                             }
                             if let Ok(result) = &output {
                                 if let Some(notification) = platform_notification(result) {

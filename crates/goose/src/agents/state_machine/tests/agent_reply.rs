@@ -87,7 +87,6 @@ async fn agent_with_calculator() -> Result<(
     agent
         .extension_manager
         .add_client(
-            "calculator".to_string(),
             ExtensionConfig::Platform {
                 name: "calculator".to_string(),
                 description: "Stateful test calculator".to_string(),

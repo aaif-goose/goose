@@ -789,7 +789,6 @@ mod tests {
         ));
         manager
             .add_client(
-                "visibility".to_string(),
                 ExtensionConfig::Builtin {
                     name: "visibility".to_string(),
                     description: "Visibility test tools".to_string(),

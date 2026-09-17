@@ -179,19 +179,19 @@ impl ExtensionManagerClient {
                 ),
             ),
             ManageExtensionAction::Enable => {
-                let config = get_extension_by_name(&extension_name).ok_or_else(|| {
-                    ErrorData::new(
+                if get_extension_by_name(&extension_name).is_none() {
+                    return Err(ErrorData::new(
                         ErrorCode::RESOURCE_NOT_FOUND,
                         format!(
                             "Extension '{}' not found. Please check the extension name and try again.",
                             extension_name
                         ),
                         None,
-                    )
-                })?;
+                    ));
+                }
                 (
                     ExtensionMutation::Enable {
-                        config: Box::new(config),
+                        name: extension_name.clone(),
                     },
                     format!(
                         "The extension '{}' has been installed successfully",
@@ -617,11 +617,12 @@ mod tests {
 
         let mut user_enable = manage(&client, &user_id, "enable").await;
         assert!(!user_enable.is_error.unwrap_or(false));
-        let Some(ExtensionMutation::Enable { config }) = ExtensionMutation::take(&mut user_enable)
-        else {
-            panic!("user enable should carry an Enable mutation");
-        };
-        assert_eq!(config.key(), "developer");
+        assert_eq!(
+            ExtensionMutation::take(&mut user_enable),
+            Some(ExtensionMutation::Enable {
+                name: "developer".to_string()
+            })
+        );
         assert!(
             user_enable.meta.is_none(),
             "the mutation is for the loop, not the model"

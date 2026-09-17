@@ -850,7 +850,6 @@ async fn build_test_pipeline(
         if extension.name() == "calculator" {
             extension_manager
                 .add_client(
-                    "calculator".to_string(),
                     extension,
                     calculator.clone(),
                     calculator.get_info().cloned(),
