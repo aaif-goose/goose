@@ -524,7 +524,37 @@ pub fn format_messages_with_options(
         inline_reasoning_content(&mut messages_spec, format);
     }
 
+    for message in &mut messages_spec {
+        canonicalize_message_key_order(message);
+    }
+
     messages_spec
+}
+
+/// Serialize `content` before `tool_calls` in every message. Key order is
+/// semantically irrelevant in JSON, but the Databricks OpenAI-to-Anthropic
+/// translation builds Anthropic content blocks in key-encounter order: a
+/// final assistant message serialized as `tool_calls`-then-`content` gets
+/// translated to a conversation ending with an assistant text block, which
+/// no-prefill Claude endpoints reject with a 400 ("This model does not
+/// support assistant message prefill").
+fn canonicalize_message_key_order(message: &mut Value) {
+    let Some(object) = message.as_object_mut() else {
+        return;
+    };
+    let entries = std::mem::take(object);
+    let mut reordered = serde_json::Map::new();
+    for key in ["role", "content", "tool_calls", "tool_call_id"] {
+        if let Some(value) = entries.get(key) {
+            reordered.insert(key.to_string(), value.clone());
+        }
+    }
+    for (key, value) in entries {
+        if !reordered.contains_key(&key) {
+            reordered.insert(key, value);
+        }
+    }
+    *object = reordered;
 }
 
 /// A conversation-level pass removes trailing assistant messages, but a
@@ -2057,6 +2087,31 @@ mod tests {
 
     fn test_model_config(model_name: &str) -> ModelConfig {
         ModelConfig::new(model_name)
+    }
+
+    #[test]
+    fn assistant_message_serializes_content_before_tool_calls() {
+        let message = Message::assistant()
+            .with_text("Let me check.")
+            .with_tool_request(
+                "call_1",
+                Ok(CallToolRequestParams::new("shell").with_arguments(object!({"command": "ls"}))),
+            );
+
+        let spec = format_messages(&[message], &ImageFormat::OpenAi);
+
+        let keys: Vec<&str> = spec[0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+        let content_pos = keys.iter().position(|k| *k == "content").unwrap();
+        let tool_calls_pos = keys.iter().position(|k| *k == "tool_calls").unwrap();
+        assert!(
+            content_pos < tool_calls_pos,
+            "content must serialize before tool_calls (Databricks translates in key order), got {keys:?}"
+        );
     }
 
     #[test]
