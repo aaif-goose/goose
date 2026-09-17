@@ -206,12 +206,10 @@ async fn context_waiting_for_main_agent_excludes_instruction_and_clears_after_ha
     interaction
         .transcript
         .mark_context_sent_to_main_agent_through(30);
-    assert!(
-        interaction
-            .transcript
-            .context_waiting_for_main_agent()
-            .is_none()
-    );
+    assert!(interaction
+        .transcript
+        .context_waiting_for_main_agent()
+        .is_none());
 }
 
 #[tokio::test]
@@ -229,11 +227,9 @@ async fn transcript_grouping_projects_deltas_and_finalizes_messages() {
     assert_eq!(second.id, message_id);
     assert_eq!(second.as_concat_text(), " world");
 
-    assert!(
-        interaction
-            .record_transcript("2".into(), Role::User, " world", 20)
-            .is_none()
-    );
+    assert!(interaction
+        .record_transcript("2".into(), Role::User, " world", 20)
+        .is_none());
 
     let role_change = interaction
         .record_transcript("3".into(), Role::Assistant, "hello", 30)
