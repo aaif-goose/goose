@@ -5,7 +5,6 @@ import { ResponseStylesSection } from '../response_styles/ResponseStylesSection'
 import { GoosehintsSection } from './GoosehintsSection';
 import { LiveVoiceSettings } from './LiveVoiceSettings';
 import { SpellcheckToggle } from './SpellcheckToggle';
-import { LegacyAgentLoopToggle } from './LegacyAgentLoopToggle';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -65,12 +64,6 @@ export default function ChatSettingsSection() {
         </CardHeader>
         <CardContent className="px-2">
           <ResponseStylesSection />
-        </CardContent>
-      </Card>
-
-      <Card className="pb-2 rounded-lg">
-        <CardContent className="px-4 pt-4">
-          <LegacyAgentLoopToggle />
         </CardContent>
       </Card>
 
