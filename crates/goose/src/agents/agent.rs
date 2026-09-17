@@ -180,7 +180,6 @@ pub struct ReplyContext {
     pub tools: Vec<Tool>,
     pub toolshim_tools: Vec<Tool>,
     pub system_prompt: String,
-    pub goose_mode: GooseMode,
     pub tool_call_cut_off: usize,
     pub model_config: goose_providers::model::ModelConfig,
 }
@@ -863,8 +862,6 @@ impl Agent {
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
 
-        let goose_mode = *self.current_goose_mode.lock().await;
-
         let tool_call_cut_off = match Config::global().get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
         {
             Ok(v) => v,
@@ -890,7 +887,6 @@ impl Agent {
             tools,
             toolshim_tools,
             system_prompt,
-            goose_mode,
             tool_call_cut_off,
             model_config,
         })
@@ -2437,7 +2433,6 @@ impl Agent {
             mut toolshim_tools,
             mut system_prompt,
             tool_call_cut_off,
-            goose_mode,
             model_config,
         } = context;
 
@@ -2849,7 +2844,8 @@ impl Agent {
                                     request_metadata.insert(request.id.clone(), request.metadata.clone());
                                 }
 
-                                if goose_mode == GooseMode::Chat {
+                                let tool_request_mode = *self.current_goose_mode.lock().await;
+                                if tool_request_mode == GooseMode::Chat {
                                     for request in &tool_requests {
                                         // An unparseable tool call should surface the parse error
                                         // (added in the Err branch below), not a successful skip —
@@ -2873,7 +2869,7 @@ impl Agent {
                                             &session_config.id,
                                             &tool_requests,
                                             conversation.messages(),
-                                            goose_mode,
+                                            tool_request_mode,
                                         )
                                         .await?;
 
@@ -3940,7 +3936,7 @@ mod tests {
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
     use rmcp::model::{Annotations, Role, TextContent, Tool};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tempfile::TempDir;
 
     fn persisted_builtin(name: &str) -> ExtensionConfig {
@@ -4854,6 +4850,149 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         fn get_name(&self) -> &str {
             "counting-text"
         }
+    }
+
+    struct ModeSwitchToolProvider {
+        mode_change: tokio::sync::Barrier,
+        call_count: AtomicUsize,
+        saw_chat_skip: AtomicBool,
+    }
+
+    impl ModeSwitchToolProvider {
+        fn new() -> Self {
+            Self {
+                mode_change: tokio::sync::Barrier::new(2),
+                call_count: AtomicUsize::new(0),
+                saw_chat_skip: AtomicBool::new(false),
+            }
+        }
+
+        async fn wait_for_tool_request(&self) {
+            self.mode_change.wait().await;
+        }
+
+        async fn release_tool_request(&self) {
+            self.mode_change.wait().await;
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for ModeSwitchToolProvider {
+        async fn stream(
+            &self,
+            _model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            messages: &[Message],
+            tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+            let message = if call == 0 {
+                self.mode_change.wait().await;
+                self.mode_change.wait().await;
+                let tool_name = tools
+                    .iter()
+                    .find(|tool| tool.name.contains("search_available_extensions"))
+                    .expect("extension search tool is advertised")
+                    .name
+                    .clone();
+                Message::assistant().with_tool_request(
+                    "mode-switch-tool",
+                    Ok(CallToolRequestParams::new(tool_name)),
+                )
+            } else {
+                self.saw_chat_skip.store(
+                    messages.iter().flat_map(|message| &message.content).any(
+                        |content| match content {
+                            MessageContent::ToolResponse(response) => {
+                                response.tool_result.as_ref().is_ok_and(|result| {
+                                    result.content.iter().any(|content| {
+                                        content.as_text().is_some_and(|text| {
+                                            text.text == CHAT_MODE_TOOL_SKIPPED_RESPONSE
+                                        })
+                                    })
+                                })
+                            }
+                            _ => false,
+                        },
+                    ),
+                    Ordering::SeqCst,
+                );
+                Message::assistant().with_text("finished after tool request")
+            };
+            let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+            Ok(stream_from_single_message(message, usage))
+        }
+
+        fn get_name(&self) -> &str {
+            "mode-switch-tool"
+        }
+    }
+
+    async fn legacy_reply_after_mode_change(
+        initial_mode: GooseMode,
+        tool_request_mode: GooseMode,
+    ) -> Result<bool> {
+        let temp_dir = tempfile::tempdir()?;
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let provider = Arc::new(ModeSwitchToolProvider::new());
+        let (agent, session_id) =
+            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        agent
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    description: "Extension Manager".to_string(),
+                    display_name: Some("Extension Manager".to_string()),
+                    bundled: Some(true),
+                    available_tools: vec![],
+                },
+                &session_id,
+            )
+            .await?;
+        agent.update_goose_mode(initial_mode, &session_id).await?;
+        let agent = Arc::new(agent);
+        let reply_agent = agent.clone();
+        let reply_session_id = session_id.clone();
+        let reply_task = tokio::spawn(async move {
+            let session_config = SessionConfig {
+                id: reply_session_id,
+                schedule_id: None,
+                max_turns: Some(2),
+                retry_config: None,
+            };
+            let mut stream = reply_agent
+                .reply(
+                    Message::user().with_text("call a tool"),
+                    session_config,
+                    false,
+                    None,
+                )
+                .await?;
+            while let Some(event) = stream.next().await {
+                event?;
+            }
+            Ok::<_, anyhow::Error>(())
+        });
+
+        provider.wait_for_tool_request().await;
+        agent
+            .update_goose_mode(tool_request_mode, &session_id)
+            .await?;
+        assert_eq!(agent.goose_mode().await, tool_request_mode);
+        provider.release_tool_request().await;
+        let reply_result =
+            tokio::time::timeout(std::time::Duration::from_secs(5), reply_task).await?;
+        reply_result??;
+
+        assert_eq!(provider.call_count.load(Ordering::SeqCst), 2);
+        Ok(provider.saw_chat_skip.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn legacy_tool_processing_uses_mode_at_tool_request_time() -> Result<()> {
+        assert!(legacy_reply_after_mode_change(GooseMode::Auto, GooseMode::Chat).await?);
+        assert!(!legacy_reply_after_mode_change(GooseMode::Chat, GooseMode::Auto).await?);
+        Ok(())
     }
 
     struct ChunkedTextProvider;
