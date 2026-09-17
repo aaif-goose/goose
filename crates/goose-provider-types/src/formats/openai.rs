@@ -527,6 +527,26 @@ pub fn format_messages_with_options(
     messages_spec
 }
 
+/// A conversation-level pass removes trailing assistant messages, but a
+/// conversation can still end with a message whose blocks all format to
+/// nothing on the wire (tool confirmations, system notifications), leaving
+/// the request ending with an assistant message. Providers that do not
+/// support assistant prefill (e.g. Databricks-hosted Claude) reject such
+/// requests with a 400, so append a continuation user message instead.
+fn ensure_no_trailing_assistant(messages_spec: &mut Vec<Value>) {
+    if messages_spec.last().map(|m| m.get("role")) == Some(Some(&json!("assistant"))) {
+        tracing::warn!(
+            "conversation formatted to end with an assistant message; appending continuation user message"
+        );
+        messages_spec.push(json!({
+            "role": "user",
+            "content": CONTINUATION_USER_MESSAGE,
+        }));
+    }
+}
+
+const CONTINUATION_USER_MESSAGE: &str = "Continue.";
+
 /// Rewrites `reasoning_content` into the message `content` for models that reject a
 /// separate reasoning field on replay.
 ///
@@ -1746,7 +1766,8 @@ pub fn create_request_for_model_with_options(
         "content": system
     });
 
-    let messages_spec = format_messages_with_options(messages, image_format, format_options);
+    let mut messages_spec = format_messages_with_options(messages, image_format, format_options);
+    ensure_no_trailing_assistant(&mut messages_spec);
     let mut tools_spec = format_tools(tools)?;
 
     validate_tool_schemas(&mut tools_spec);
@@ -2036,6 +2057,56 @@ mod tests {
 
     fn test_model_config(model_name: &str) -> ModelConfig {
         ModelConfig::new(model_name)
+    }
+
+    #[test]
+    fn trailing_assistant_message_gets_user_continuation() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+        ];
+
+        let request = create_request(
+            &test_model_config("gpt-4o"),
+            "system",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+
+        let spec = request["messages"].as_array().unwrap();
+        assert_eq!(spec.last().unwrap()["role"], "user");
+        assert_eq!(spec.last().unwrap()["content"], "Continue.");
+        Ok(())
+    }
+
+    #[test]
+    fn trailing_user_message_that_formats_to_nothing_gets_user_continuation() -> anyhow::Result<()>
+    {
+        use crate::conversation::message::SystemNotificationType;
+        let messages = vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+            Message::user().with_content(MessageContentBlock::system_notification(
+                SystemNotificationType::InlineMessage,
+                "notification only",
+            )),
+        ];
+
+        let request = create_request(
+            &test_model_config("gpt-4o"),
+            "system",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+
+        let spec = request["messages"].as_array().unwrap();
+        assert_eq!(spec.last().unwrap()["role"], "user");
+        assert_eq!(spec.last().unwrap()["content"], "Continue.");
+        Ok(())
     }
 
     #[test]
