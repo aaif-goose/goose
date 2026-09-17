@@ -53,7 +53,7 @@ use crate::context_mgmt::{
 };
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, MessageUsage, ProviderMetadata,
-    SystemNotificationType,
+    SystemNotificationType, ToolRequest,
 };
 use crate::conversation::{debug_conversation_fix, fix_conversation, Conversation};
 use crate::permission::permission_inspector::PermissionInspector;
@@ -335,6 +335,28 @@ async fn persist_and_push_message_with_id(
 
 fn project_message_for_user_event(message: &Message) -> Message {
     message.user_visible_content()
+}
+
+fn add_chat_mode_tool_skips(
+    tool_requests: &[ToolRequest],
+    request_to_response_map: &mut HashMap<String, Message>,
+) {
+    for request in tool_requests {
+        // An unparseable tool call should surface the parse error instead of a successful skip so
+        // the model can correct the arguments.
+        if request.tool_call.is_err() {
+            continue;
+        }
+        if let Some(response) = request_to_response_map.get_mut(&request.id) {
+            response.add_tool_response_with_metadata(
+                request.id.clone(),
+                Ok(CallToolResult::success(vec![ContentBlock::text(
+                    CHAT_MODE_TOOL_SKIPPED_RESPONSE,
+                )])),
+                request.metadata.as_ref(),
+            );
+        }
+    }
 }
 
 fn agent_visible_message_text(message: &Message) -> String {
@@ -2846,22 +2868,10 @@ impl Agent {
 
                                 let tool_request_mode = *self.current_goose_mode.lock().await;
                                 if tool_request_mode == GooseMode::Chat {
-                                    for request in &tool_requests {
-                                        // An unparseable tool call should surface the parse error
-                                        // (added in the Err branch below), not a successful skip —
-                                        // otherwise the model sees a malformed call as "skipped OK"
-                                        // and can't correct the arguments.
-                                        if request.tool_call.is_err() {
-                                            continue;
-                                        }
-                                        if let Some(response) = request_to_response_map.get_mut(&request.id) {
-                                            response.add_tool_response_with_metadata(
-                                                request.id.clone(),
-                                                Ok(CallToolResult::success(vec![ContentBlock::text(CHAT_MODE_TOOL_SKIPPED_RESPONSE)])),
-                                                request.metadata.as_ref(),
-                                            );
-                                        }
-                                    }
+                                    add_chat_mode_tool_skips(
+                                        &tool_requests,
+                                        &mut request_to_response_map,
+                                    );
                                 } else {
                                     // Run all tool inspectors
                                     let inspection_results = self.tool_inspection_manager
@@ -2873,27 +2883,43 @@ impl Agent {
                                         )
                                         .await?;
 
-                                    let permission_check_result = self.tool_inspection_manager
-                                        .process_inspection_results_with_permission_inspector(
+                                    let skip_tool_execution =
+                                        *self.current_goose_mode.lock().await == GooseMode::Chat;
+                                    let permission_check_result = if skip_tool_execution {
+                                        add_chat_mode_tool_skips(
                                             &tool_requests,
-                                            &inspection_results,
-                                        )
-                                        .unwrap_or_else(|| {
-                                            let mut result = PermissionCheckResult {
-                                                approved: vec![],
-                                                needs_approval: vec![],
-                                                denied: vec![],
-                                            };
-                                            result.needs_approval.extend(tool_requests.iter().cloned());
-                                            result
-                                        });
+                                            &mut request_to_response_map,
+                                        );
+                                        PermissionCheckResult {
+                                            approved: vec![],
+                                            needs_approval: vec![],
+                                            denied: vec![],
+                                        }
+                                    } else {
+                                        self.tool_inspection_manager
+                                            .process_inspection_results_with_permission_inspector(
+                                                &tool_requests,
+                                                &inspection_results,
+                                            )
+                                            .unwrap_or_else(|| {
+                                                let mut result = PermissionCheckResult {
+                                                    approved: vec![],
+                                                    needs_approval: vec![],
+                                                    denied: vec![],
+                                                };
+                                                result.needs_approval.extend(tool_requests.iter().cloned());
+                                                result
+                                            })
+                                    };
 
                                     // Track extension requests
                                     let mut enable_extension_request_ids = vec![];
-                                    for request in &tool_requests {
-                                        if let Ok(tool_call) = &request.tool_call {
-                                            if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
-                                                enable_extension_request_ids.push(request.id.clone());
+                                    if !skip_tool_execution {
+                                        for request in &tool_requests {
+                                            if let Ok(tool_call) = &request.tool_call {
+                                                if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+                                                    enable_extension_request_ids.push(request.id.clone());
+                                                }
                                             }
                                         }
                                     }
@@ -4858,6 +4884,39 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         saw_chat_skip: AtomicBool,
     }
 
+    struct PausingInspector {
+        mode_change: Arc<tokio::sync::Barrier>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::tool_inspection::ToolInspector for PausingInspector {
+        fn name(&self) -> &'static str {
+            "pausing"
+        }
+
+        async fn inspect(
+            &self,
+            _session_id: &str,
+            _tool_requests: &[ToolRequest],
+            _messages: &[Message],
+            _goose_mode: GooseMode,
+        ) -> Result<Vec<crate::tool_inspection::InspectionResult>> {
+            self.mode_change.wait().await;
+            self.mode_change.wait().await;
+            Ok(vec![])
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum ModeChangePoint {
+        BeforeToolRequest,
+        DuringInspection,
+    }
+
     impl ModeSwitchToolProvider {
         fn new() -> Self {
             Self {
@@ -4931,12 +4990,25 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn legacy_reply_after_mode_change(
         initial_mode: GooseMode,
         tool_request_mode: GooseMode,
+        change_point: ModeChangePoint,
     ) -> Result<bool> {
         let temp_dir = tempfile::tempdir()?;
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let provider = Arc::new(ModeSwitchToolProvider::new());
-        let (agent, session_id) =
+        let (mut agent, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        let inspection_mode_change = match change_point {
+            ModeChangePoint::BeforeToolRequest => None,
+            ModeChangePoint::DuringInspection => {
+                let mode_change = Arc::new(tokio::sync::Barrier::new(2));
+                agent
+                    .tool_inspection_manager
+                    .add_inspector(Box::new(PausingInspector {
+                        mode_change: mode_change.clone(),
+                    }));
+                Some(mode_change)
+            }
+        };
         agent
             .add_extension(
                 ExtensionConfig::Platform {
@@ -4975,11 +5047,23 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         });
 
         provider.wait_for_tool_request().await;
-        agent
-            .update_goose_mode(tool_request_mode, &session_id)
-            .await?;
+        match inspection_mode_change {
+            None => {
+                agent
+                    .update_goose_mode(tool_request_mode, &session_id)
+                    .await?;
+                provider.release_tool_request().await;
+            }
+            Some(inspection_mode_change) => {
+                provider.release_tool_request().await;
+                inspection_mode_change.wait().await;
+                agent
+                    .update_goose_mode(tool_request_mode, &session_id)
+                    .await?;
+                inspection_mode_change.wait().await;
+            }
+        }
         assert_eq!(agent.goose_mode().await, tool_request_mode);
-        provider.release_tool_request().await;
         let reply_result =
             tokio::time::timeout(std::time::Duration::from_secs(5), reply_task).await?;
         reply_result??;
@@ -4990,8 +5074,35 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
     #[tokio::test]
     async fn legacy_tool_processing_uses_mode_at_tool_request_time() -> Result<()> {
-        assert!(legacy_reply_after_mode_change(GooseMode::Auto, GooseMode::Chat).await?);
-        assert!(!legacy_reply_after_mode_change(GooseMode::Chat, GooseMode::Auto).await?);
+        assert!(
+            legacy_reply_after_mode_change(
+                GooseMode::Auto,
+                GooseMode::Chat,
+                ModeChangePoint::BeforeToolRequest,
+            )
+            .await?
+        );
+        assert!(
+            !legacy_reply_after_mode_change(
+                GooseMode::Chat,
+                GooseMode::Auto,
+                ModeChangePoint::BeforeToolRequest,
+            )
+            .await?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_auto_to_chat_during_inspection_skips_tool_execution() -> Result<()> {
+        assert!(
+            legacy_reply_after_mode_change(
+                GooseMode::Auto,
+                GooseMode::Chat,
+                ModeChangePoint::DuringInspection,
+            )
+            .await?
+        );
         Ok(())
     }
 
