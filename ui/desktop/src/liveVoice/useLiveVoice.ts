@@ -14,9 +14,11 @@ export function isLiveVoiceActive(phase: LiveVoicePhase): boolean {
 }
 
 export interface LiveVoiceController {
+  activeSessionId: string | null;
+  liveVoiceSessionId: string | null;
   phase: LiveVoicePhase;
   muted: boolean;
-  start: (initialCommentary?: string) => Promise<void>;
+  start: (sessionId: string, initialCommentary?: string) => Promise<void>;
   stop: () => Promise<void>;
   toggleMute: () => void;
 }
@@ -47,7 +49,8 @@ async function stopRemoteInteraction(
   }
 }
 
-export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveVoiceController {
+export function useLiveVoice(): LiveVoiceController {
+  const [liveVoiceSessionId, setLiveVoiceSessionId] = useState<string | null>(null);
   const [phase, setPhase] = useState<LiveVoicePhase>('idle');
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
@@ -69,6 +72,9 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
 
       interactionRef.current = null;
       invalidateInteractionAndReleaseMedia(interaction);
+      if (outcome !== 'failed') {
+        setLiveVoiceSessionId(null);
+      }
       setMuted(false);
       setPhase(outcome === 'failed' ? 'error' : 'idle');
       return true;
@@ -92,20 +98,15 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
   );
 
   useEffect(() => {
-    setPhase('idle');
-    mutedRef.current = false;
-    setMuted(false);
-    if (!isSessionActive) return;
-
     return () => {
       const interaction = interactionRef.current;
-      if (!interaction || interaction.sessionId !== sessionId) return;
+      if (!interaction) return;
 
       interactionRef.current = null;
       invalidateInteractionAndReleaseMedia(interaction);
       void stopRemoteInteraction(interaction);
     };
-  }, [invalidateInteractionAndReleaseMedia, isSessionActive, sessionId]);
+  }, [invalidateInteractionAndReleaseMedia]);
 
   useEffect(() => {
     return subscribeToLiveVoiceInteractionEnded((notification) => {
@@ -133,17 +134,18 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
       if (!recovering) return;
 
       const interaction = interactionRef.current;
-      if (interaction?.sessionId === sessionId) {
+      if (interaction) {
         interaction.acpConnectionLost = true;
         finishCurrentInteraction(interaction, 'stopped');
       }
     });
-  }, [finishCurrentInteraction, sessionId]);
+  }, [finishCurrentInteraction]);
 
   const start = useCallback(
-    async (initialCommentary?: string) => {
-      if (!isSessionActive || interactionRef.current || isAcpRecovering()) return;
+    async (sessionId: string, initialCommentary?: string) => {
+      if (interactionRef.current || isAcpRecovering()) return;
 
+      setLiveVoiceSessionId(sessionId);
       mutedRef.current = false;
       setMuted(false);
       setPhase('connecting');
@@ -202,7 +204,7 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
         await failCurrentInteraction(interaction);
       }
     },
-    [failCurrentInteraction, finishCurrentInteraction, isSessionActive, sessionId]
+    [failCurrentInteraction, finishCurrentInteraction]
   );
 
   const toggleMute = useCallback(() => {
@@ -226,6 +228,7 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
         return;
       }
       interactionRef.current = null;
+      setLiveVoiceSessionId(null);
       setPhase('idle');
       return;
     }
@@ -234,5 +237,6 @@ export function useLiveVoice(sessionId: string, isSessionActive: boolean): LiveV
     finishCurrentInteraction(interaction, await stopRemoteInteraction(interaction));
   }, [finishCurrentInteraction, invalidateInteractionAndReleaseMedia]);
 
-  return { phase, muted, start, stop, toggleMute };
+  const activeSessionId = isLiveVoiceActive(phase) ? liveVoiceSessionId : null;
+  return { activeSessionId, liveVoiceSessionId, phase, muted, start, stop, toggleMute };
 }

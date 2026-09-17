@@ -9,17 +9,29 @@ import { createSession } from '../sessions';
 import { UserInput } from '../types/message';
 import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
 import { subscribeToAcpRecovery } from '../acp/acpConnection';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 type ChatInputCapture = {
   draftRef?: { current: string };
   handleSubmit: (input: UserInput) => void;
   liveVoice?: {
     availability: { status: string; message: string } | null;
+    start: () => Promise<void>;
   };
   onNextChatExtensionDraftChange?: (draft: { selectedNames: Set<string> }) => void;
 };
 
 type Session = Awaited<ReturnType<typeof createSession>>;
+
+const liveVoice: LiveVoiceController = {
+  activeSessionId: null,
+  liveVoiceSessionId: null,
+  phase: 'idle',
+  muted: false,
+  start: vi.fn(),
+  stop: vi.fn(),
+  toggleMute: vi.fn(),
+};
 
 const captured = vi.hoisted(() => ({ chatInput: null as ChatInputCapture | null }));
 
@@ -72,10 +84,10 @@ function pendingSession() {
   return settle;
 }
 
-function renderHub(draftRef: { current: string }) {
+function renderHub(draftRef: { current: string }, setView = vi.fn()) {
   return render(
     <IntlTestWrapper>
-      <Hub setView={vi.fn()} draftRef={draftRef} />
+      <Hub setView={setView} draftRef={draftRef} liveVoice={liveVoice} />
     </IntlTestWrapper>
   );
 }
@@ -89,6 +101,9 @@ async function submit() {
 describe('Hub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    liveVoice.activeSessionId = null;
+    liveVoice.liveVoiceSessionId = null;
+    liveVoice.phase = 'idle';
     captured.chatInput = null;
     vi.mocked(acpGetLiveVoiceAvailability).mockRejectedValue(new Error('ACP unavailable'));
     vi.mocked(subscribeToAcpRecovery).mockReturnValue(() => undefined);
@@ -115,6 +130,19 @@ describe('Hub', () => {
       expect(acpGetLiveVoiceAvailability).toHaveBeenCalledTimes(2);
       expect(captured.chatInput?.liveVoice?.availability).toEqual(available);
     });
+  });
+
+  it('returns to the session with the active Live voice interaction', async () => {
+    const setView = vi.fn();
+    liveVoice.activeSessionId = 'session-with-live-voice';
+    renderHub({ current: '' }, setView);
+
+    await act(async () => captured.chatInput?.liveVoice?.start?.());
+
+    expect(setView).toHaveBeenCalledWith('pair', {
+      resumeSessionId: 'session-with-live-voice',
+    });
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it('starts a chat with no extensions when the user cleared the picker', async () => {

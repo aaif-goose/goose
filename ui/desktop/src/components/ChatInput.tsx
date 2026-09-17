@@ -72,8 +72,13 @@ interface PastedImage {
   error?: string;
 }
 
-type ChatInputLiveVoice = LiveVoiceController & {
+type ChatInputLiveVoice = Pick<
+  LiveVoiceController,
+  'phase' | 'muted' | 'stop' | 'toggleMute'
+> & {
   availability: LiveVoiceAvailabilityResponse_unstable | null;
+  activeInAnotherSession: boolean;
+  start: () => Promise<void>;
 };
 
 const moveQueuedMessageToFront = (
@@ -1816,6 +1821,7 @@ export default function ChatInput({
             availability={liveVoice.availability}
             phase={liveVoice.phase}
             muted={liveVoice.muted}
+            activeInAnotherSession={liveVoice.activeInAnotherSession}
             onStart={() => void liveVoice.start()}
             onStop={() => void liveVoice.stop()}
             onToggleMute={liveVoice.toggleMute}

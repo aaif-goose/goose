@@ -36,7 +36,7 @@ import SessionActionsHeader from './SessionActionsHeader';
 import { isAcpRecovering, subscribeToAcpRecovery } from '../acp/acpConnection';
 import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
 import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
-import { useLiveVoice } from '../liveVoice/useLiveVoice';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 const NEW_LIVE_VOICE_GREETING = 'Hello! What can I help you with?';
 
@@ -74,6 +74,7 @@ interface BaseChatProps {
   isActiveSession: boolean;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  liveVoice: LiveVoiceController;
 }
 
 export default function BaseChat({
@@ -85,6 +86,7 @@ export default function BaseChat({
   initialMessage,
   noAutoSubmit,
   isActiveSession,
+  liveVoice,
 }: BaseChatProps) {
   const intl = useIntl();
   const location = useLocation();
@@ -97,11 +99,27 @@ export default function BaseChat({
   const [acpRecovering, setAcpRecovering] = useState(isAcpRecovering);
   const [liveVoiceAvailability, setLiveVoiceAvailability] =
     useState<LiveVoiceAvailabilityResponse_unstable | null>(null);
-  const liveVoice = useLiveVoice(sessionId, isActiveSession);
-  const startLiveVoice = liveVoice.start;
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
   const setView = useNavigation();
+  const {
+    activeSessionId: activeLiveVoiceSessionId,
+    liveVoiceSessionId,
+    start: startSharedLiveVoice,
+  } = liveVoice;
+  const ownsLiveVoice = liveVoiceSessionId === sessionId;
+  const liveVoiceActiveInAnotherSession =
+    activeLiveVoiceSessionId !== null && activeLiveVoiceSessionId !== sessionId;
+  const startLiveVoice = useCallback(
+    async (initialCommentary?: string) => {
+      if (activeLiveVoiceSessionId && activeLiveVoiceSessionId !== sessionId) {
+        setView('pair', { resumeSessionId: activeLiveVoiceSessionId });
+        return;
+      }
+      await startSharedLiveVoice(sessionId, initialCommentary);
+    },
+    [activeLiveVoiceSessionId, sessionId, setView, startSharedLiveVoice]
+  );
   const isNavCollapsed = !navContext?.isNavExpanded;
   const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
@@ -162,7 +180,7 @@ export default function BaseChat({
   ]);
 
   useEffect(() => {
-    if (!isActiveSession || !sessionLoaded || acpRecovering) {
+    if (!isActiveSession || !sessionLoaded || acpRecovering || liveVoiceActiveInAnotherSession) {
       setLiveVoiceAvailability(null);
       return;
     }
@@ -189,6 +207,7 @@ export default function BaseChat({
     hasActiveRun,
     isActiveSession,
     liveVoice.phase,
+    liveVoiceActiveInAnotherSession,
     liveVoiceChatBusy,
     session?.goose_mode,
     sessionId,
@@ -577,7 +596,15 @@ export default function BaseChat({
             workingDir={session?.working_dir}
             onWorkingDirChange={handleWorkingDirChange}
             latestInference={latestInference}
-            liveVoice={{ ...liveVoice, availability: liveVoiceAvailability }}
+            liveVoice={{
+              availability: liveVoiceAvailability,
+              phase: ownsLiveVoice ? liveVoice.phase : 'idle',
+              muted: ownsLiveVoice ? liveVoice.muted : false,
+              activeInAnotherSession: liveVoiceActiveInAnotherSession,
+              start: () => startLiveVoice(),
+              stop: liveVoice.stop,
+              toggleMute: liveVoice.toggleMute,
+            }}
             {...customChatInputProps}
           />
         </ChatInputCard>

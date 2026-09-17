@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatSessionsContainer from './ChatSessionsContainer';
 import { subscribeToAcpRecovery } from '../acp/acpConnection';
 import { acpChatSessionController } from '../acp/chatSessionController';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 vi.mock('react-router', () => ({
   useSearchParams: () => [new URLSearchParams('resumeSessionId=session-1')],
@@ -38,6 +39,17 @@ describe('ChatSessionsContainer', () => {
       <ChatSessionsContainer
         setChat={vi.fn()}
         activeSessions={[{ sessionId: 'session-1' }, { sessionId: 'session-2' }]}
+        liveVoice={
+          {
+            activeSessionId: null,
+            liveVoiceSessionId: null,
+            phase: 'idle',
+            muted: false,
+            start: vi.fn(),
+            stop: vi.fn(),
+            toggleMute: vi.fn(),
+          } satisfies LiveVoiceController
+        }
       />
     );
 

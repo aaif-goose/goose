@@ -35,6 +35,10 @@ const i18n = defineMessages({
     id: 'liveVoice.unmute',
     defaultMessage: 'Unmute microphone',
   },
+  returnToActive: {
+    id: 'liveVoice.returnToActive',
+    defaultMessage: 'Return to active Live voice',
+  },
 });
 
 interface LiveVoiceButtonProps {
@@ -42,6 +46,7 @@ interface LiveVoiceButtonProps {
   composerEmpty: boolean;
   phase: LiveVoicePhase;
   muted: boolean;
+  activeInAnotherSession: boolean;
   onStart: () => void;
   onStop: () => void;
   onToggleMute: () => void;
@@ -52,32 +57,33 @@ export function LiveVoiceButton({
   composerEmpty,
   phase,
   muted,
+  activeInAnotherSession,
   onStart,
   onStop,
   onToggleMute,
 }: LiveVoiceButtonProps) {
   const intl = useIntl();
-  if (availability === null && !isLiveVoiceActive(phase)) return null;
+  if (availability === null && !isLiveVoiceActive(phase) && !activeInAnotherSession) return null;
 
-  const eligible = availability?.status === 'ready' && composerEmpty;
+  const eligible = activeInAnotherSession || (availability?.status === 'ready' && composerEmpty);
   const stopping = phase === 'stopping';
   const canStart = phase === 'idle' || phase === 'error';
   const canStop = phase === 'connecting' || phase === 'live';
-  const label =
-    phase === 'connecting'
-      ? intl.formatMessage(i18n.connecting)
-      : phase === 'live'
-        ? intl.formatMessage(i18n.live)
-        : phase === 'stopping'
-          ? intl.formatMessage(i18n.stopping)
-          : !composerEmpty
-            ? intl.formatMessage(i18n.emptyComposerRequired)
-            : availability?.status !== 'ready'
-              ? availability?.message
-              : phase === 'error'
-                ? intl.formatMessage(i18n.error)
-                : availability?.message;
-  const disabled = canStart ? !eligible : stopping;
+  let label = availability?.message;
+  if (activeInAnotherSession) {
+    label = intl.formatMessage(i18n.returnToActive);
+  } else if (phase === 'connecting') {
+    label = intl.formatMessage(i18n.connecting);
+  } else if (phase === 'live') {
+    label = intl.formatMessage(i18n.live);
+  } else if (phase === 'stopping') {
+    label = intl.formatMessage(i18n.stopping);
+  } else if (!composerEmpty) {
+    label = intl.formatMessage(i18n.emptyComposerRequired);
+  } else if (availability?.status === 'ready' && phase === 'error') {
+    label = intl.formatMessage(i18n.error);
+  }
+  const disabled = activeInAnotherSession ? false : canStart ? !eligible : stopping;
 
   return (
     <>
@@ -109,7 +115,7 @@ export function LiveVoiceButton({
               size="sm"
               shape="round"
               disabled={disabled}
-              onClick={canStop ? onStop : onStart}
+              onClick={activeInAnotherSession ? onStart : canStop ? onStop : onStart}
               aria-label={label}
               data-testid="live-voice-button"
               data-eligible={eligible}

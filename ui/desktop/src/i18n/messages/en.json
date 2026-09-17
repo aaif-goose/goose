@@ -1769,6 +1769,9 @@
   "liveVoice.mute": {
     "defaultMessage": "Mute microphone"
   },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
   "liveVoice.stopping": {
     "defaultMessage": "Stopping Live voice"
   },

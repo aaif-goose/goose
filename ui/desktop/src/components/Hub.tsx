@@ -31,6 +31,7 @@ import { formatClockDisplay } from '../utils/timeUtils';
 import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
 import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
 import { subscribeToAcpRecovery } from '../acp/acpConnection';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -51,10 +52,12 @@ function useClock() {
 export default function Hub({
   setView,
   draftRef,
+  liveVoice,
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
   /** Unsent input of this screen, kept above the route outlet across the unmount. */
   draftRef: RefObject<string>;
+  liveVoice: LiveVoiceController;
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
@@ -192,6 +195,11 @@ export default function Hub({
   };
 
   const handleStartLiveVoice = async () => {
+    if (liveVoice.activeSessionId) {
+      setView('pair', { resumeSessionId: liveVoice.activeSessionId });
+      return;
+    }
+
     const session = await createHubSession();
     if (!session) return;
 
@@ -248,9 +256,10 @@ export default function Hub({
               availability: isCreatingSession ? null : liveVoiceAvailability,
               phase: 'idle',
               muted: false,
+              activeInAnotherSession: liveVoice.activeSessionId !== null,
               start: handleStartLiveVoice,
-              stop: async () => {},
-              toggleMute: () => {},
+              stop: liveVoice.stop,
+              toggleMute: liveVoice.toggleMute,
             }}
           />
         </ChatInputCard>

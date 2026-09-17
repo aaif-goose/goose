@@ -9,6 +9,7 @@ const baseProps: ComponentProps<typeof LiveVoiceButton> = {
   composerEmpty: true,
   phase: 'idle',
   muted: false,
+  activeInAnotherSession: false,
   onStart: vi.fn(),
   onStop: vi.fn(),
   onToggleMute: vi.fn(),
@@ -55,6 +56,22 @@ describe('LiveVoiceButton', () => {
   it('does not render without eligibility for the displayed session', () => {
     renderButton({ availability: null });
     expect(screen.queryByTestId('live-voice-button')).not.toBeInTheDocument();
+  });
+
+  it('returns to an interaction active in another session', () => {
+    const onStart = vi.fn();
+    renderButton({
+      availability: null,
+      composerEmpty: false,
+      activeInAnotherSession: true,
+      onStart,
+    });
+
+    const button = screen.getByTestId('live-voice-button');
+    expect(button).toBeEnabled();
+    expect(button).toHaveAccessibleName('Return to active Live voice');
+    button.click();
+    expect(onStart).toHaveBeenCalledOnce();
   });
 
   it('starts when idle and keeps stop controls available while availability refreshes', () => {

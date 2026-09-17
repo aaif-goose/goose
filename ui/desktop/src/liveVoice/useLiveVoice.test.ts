@@ -60,28 +60,30 @@ describe('useLiveVoice', () => {
   });
 
   it('starts media from the start response and stops the same connection', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
+    const { result } = renderHook(() => useLiveVoice());
 
-    await act(async () => result.current.start());
+    await act(async () => result.current.start('main-session'));
     expect(media.applyAnswer).toHaveBeenCalledWith('answer');
     expect(media.setMuted).toHaveBeenCalledWith(false);
     expect(result.current.phase).toBe('live');
+    expect(result.current.activeSessionId).toBe('main-session');
 
     await act(async () => result.current.stop());
     expect(media.teardown).toHaveBeenCalledOnce();
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
     expect(result.current.phase).toBe('idle');
+    expect(result.current.activeSessionId).toBeNull();
   });
 
   it('blocks retry until the server interaction stops after media setup fails', async () => {
     const cleanup = deferred<void>();
     media.applyAnswer.mockRejectedValueOnce(new Error('media failed'));
     vi.mocked(acpStopLiveVoice).mockReturnValueOnce(cleanup.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
+    const { result } = renderHook(() => useLiveVoice());
 
     let startPromise!: Promise<void>;
     act(() => {
-      startPromise = result.current.start();
+      startPromise = result.current.start('main-session');
     });
     await waitFor(() => expect(acpStopLiveVoice).toHaveBeenCalledOnce());
 
@@ -89,7 +91,7 @@ describe('useLiveVoice', () => {
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
     expect(result.current.phase).toBe('stopping');
 
-    await act(async () => result.current.start());
+    await act(async () => result.current.start('main-session'));
     expect(acpStartLiveVoice).toHaveBeenCalledOnce();
 
     await act(async () => {
@@ -100,8 +102,8 @@ describe('useLiveVoice', () => {
   });
 
   it('tears down and stops an active interaction when unmounted', async () => {
-    const { result, unmount } = renderHook(() => useLiveVoice('main-session', true));
-    await act(async () => result.current.start());
+    const { result, unmount } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
 
     unmount();
 
@@ -109,21 +111,15 @@ describe('useLiveVoice', () => {
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
   });
 
-  it('stops the interaction and prevents new interactions when the session becomes inactive', async () => {
-    const { result, rerender } = renderHook(
-      ({ isSessionActive }) => useLiveVoice('main-session', isSessionActive),
-      { initialProps: { isSessionActive: true } }
-    );
-    await act(async () => result.current.start());
+  it('keeps one interaction when another session tries to start', async () => {
+    const { result } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
 
-    rerender({ isSessionActive: false });
+    await act(async () => result.current.start('other-session'));
 
-    expect(media.teardown).toHaveBeenCalledOnce();
-    expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
-    expect(result.current.phase).toBe('idle');
-
-    await act(async () => result.current.start());
-
+    expect(result.current.activeSessionId).toBe('main-session');
+    expect(media.teardown).not.toHaveBeenCalled();
+    expect(acpStopLiveVoice).not.toHaveBeenCalled();
     expect(LiveVoiceMediaSession).toHaveBeenCalledOnce();
     expect(acpStartLiveVoice).toHaveBeenCalledOnce();
   });
@@ -133,9 +129,9 @@ describe('useLiveVoice', () => {
     async (action) => {
       const pending = deferred<{ interactionId: string; answerSdp: string }>();
       vi.mocked(acpStartLiveVoice).mockReturnValueOnce(pending.promise);
-      const { result, unmount } = renderHook(() => useLiveVoice('main-session', true));
+      const { result, unmount } = renderHook(() => useLiveVoice());
       act(() => {
-        void result.current.start();
+        void result.current.start('main-session');
       });
       await waitFor(() => expect(acpStartLiveVoice).toHaveBeenCalledOnce());
 
@@ -160,9 +156,9 @@ describe('useLiveVoice', () => {
   it('does not become live after stopping during answer setup', async () => {
     const pending = deferred<void>();
     media.applyAnswer.mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
+    const { result } = renderHook(() => useLiveVoice());
     act(() => {
-      void result.current.start();
+      void result.current.start('main-session');
     });
     await waitFor(() => expect(media.applyAnswer).toHaveBeenCalledOnce());
 
@@ -174,8 +170,8 @@ describe('useLiveVoice', () => {
   });
 
   it('applies rapid mute changes to the current media session', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
-    await act(async () => result.current.start());
+    const { result } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
 
     act(() => {
       result.current.toggleMute();
@@ -188,8 +184,8 @@ describe('useLiveVoice', () => {
   });
 
   it('cleans up when the backend reports that the current interaction failed', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
-    await act(async () => result.current.start());
+    const { result } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
 
     act(() => {
       publishLiveVoiceInteractionEnded({
@@ -216,8 +212,8 @@ describe('useLiveVoice', () => {
   });
 
   it('ignores stale session and interaction endings', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
-    await act(async () => result.current.start());
+    const { result } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
 
     act(() => {
       publishLiveVoiceInteractionEnded({
@@ -245,9 +241,9 @@ describe('useLiveVoice', () => {
   it('reconciles a terminal update that arrives before the start response', async () => {
     const pending = deferred<{ interactionId: string; answerSdp: string }>();
     vi.mocked(acpStartLiveVoice).mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
+    const { result } = renderHook(() => useLiveVoice());
     act(() => {
-      void result.current.start();
+      void result.current.start('main-session');
     });
     await waitFor(() => expect(acpStartLiveVoice).toHaveBeenCalledOnce());
 
@@ -271,8 +267,8 @@ describe('useLiveVoice', () => {
   });
 
   it('cleans up locally without stopping through a recovering ACP connection', async () => {
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
-    await act(async () => result.current.start());
+    const { result } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
 
     act(() => recoveryChanged(true));
 
@@ -284,9 +280,9 @@ describe('useLiveVoice', () => {
   it('does not stop a late interaction response through a recovered ACP connection', async () => {
     const pending = deferred<{ interactionId: string; answerSdp: string }>();
     vi.mocked(acpStartLiveVoice).mockReturnValueOnce(pending.promise);
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
+    const { result } = renderHook(() => useLiveVoice());
     act(() => {
-      void result.current.start();
+      void result.current.start('main-session');
     });
     await waitFor(() => expect(acpStartLiveVoice).toHaveBeenCalledOnce());
 
@@ -302,8 +298,8 @@ describe('useLiveVoice', () => {
 
   it('blocks retry until the server interaction stops after active media fails', async () => {
     const cleanup = deferred<void>();
-    const { result } = renderHook(() => useLiveVoice('main-session', true));
-    await act(async () => result.current.start());
+    const { result } = renderHook(() => useLiveVoice());
+    await act(async () => result.current.start('main-session'));
     vi.mocked(acpStopLiveVoice).mockReturnValueOnce(cleanup.promise);
 
     act(() => mediaFailure());
@@ -312,7 +308,7 @@ describe('useLiveVoice', () => {
     expect(acpStopLiveVoice).toHaveBeenCalledWith('main-session', 'live-opaque');
     expect(result.current.phase).toBe('stopping');
 
-    await act(async () => result.current.start());
+    await act(async () => result.current.start('main-session'));
     expect(acpStartLiveVoice).toHaveBeenCalledOnce();
 
     await act(async () => cleanup.resolve());
