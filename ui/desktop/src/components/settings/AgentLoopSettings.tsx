@@ -79,6 +79,7 @@ function NumberInput({
   value,
   min,
   max,
+  step = 1,
   placeholder,
   disabled = false,
   onChange,
@@ -88,6 +89,7 @@ function NumberInput({
   value: string;
   min: number;
   max: number;
+  step?: number;
   placeholder?: string;
   disabled?: boolean;
   onChange: (value: string) => void;
@@ -101,6 +103,7 @@ function NumberInput({
         value={value}
         min={min}
         max={max}
+        step={step}
         placeholder={placeholder}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
@@ -153,7 +156,9 @@ export default function AgentLoopSettings() {
         );
         setNumbers({
           maxTurns: String(readNumber(maxTurns, 1000)),
-          compactionThreshold: String(Math.round(readNumber(compactionThreshold, 0.8) * 100)),
+          compactionThreshold: String(
+            Number((readNumber(compactionThreshold, 0.8) * 100).toFixed(2))
+          ),
           toolCallCutoff:
             typeof toolCallCutoff === 'number' && Number.isFinite(toolCallCutoff)
               ? String(toolCallCutoff)
@@ -179,10 +184,12 @@ export default function AgentLoopSettings() {
     configKey: string,
     min: number,
     max: number,
-    serialize: (value: number) => number = (value) => value
+    serialize: (value: number) => number = (value) => value,
+    integer = true
   ) => {
     const parsed = Number(numbers[setting]);
-    const value = Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : min));
+    const clamped = Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : min));
+    const value = integer ? Math.round(clamped) : clamped;
     setNumber(setting, String(value));
     await upsert(configKey, serialize(value), false);
   };
@@ -261,6 +268,7 @@ export default function AgentLoopSettings() {
                 value={numbers.compactionThreshold}
                 min={1}
                 max={99}
+                step={0.1}
                 onChange={(value) => setNumber('compactionThreshold', value)}
                 onBlur={() =>
                   saveNumber(
@@ -268,7 +276,8 @@ export default function AgentLoopSettings() {
                     'GOOSE_AUTO_COMPACT_THRESHOLD',
                     1,
                     99,
-                    (value) => value / 100
+                    (value) => value / 100,
+                    false
                   )
                 }
               />
