@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import type { ImageData, Message, MessageContent } from '../types/message';
 import { IntlTestWrapper } from '../i18n/test-utils';
-import ProgressiveMessageList from './ProgressiveMessageList';
+import ProgressiveMessageList, {
+  HEAD_MESSAGE_COUNT,
+  MESSAGE_DISPLAY_LIMIT,
+  TAIL_MESSAGE_COUNT,
+} from './ProgressiveMessageList';
 
 const renderCounts = vi.hoisted(() => new Map<string, number>());
 const messageUpdateCallbacks = vi.hoisted(
@@ -252,5 +256,75 @@ describe('ProgressiveMessageList batching', () => {
 
     act(() => vi.advanceTimersByTime(50));
     expect(onRenderingComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProgressiveMessageList truncation', () => {
+  // One user message per turn, so every index is its own turn boundary and the
+  // window lands exactly on HEAD_MESSAGE_COUNT / TAIL_MESSAGE_COUNT.
+  function turns(count: number): Message[] {
+    return Array.from({ length: count }, (_, index) =>
+      message(`user-${index}`, 'user', [{ type: 'text', text: `Message ${index}` }])
+    );
+  }
+
+  function renderAll(messages: Message[]) {
+    return render(
+      <ProgressiveMessageList
+        messages={messages}
+        sessionId="test-session"
+        append={append}
+        isUserMessage={isUserMessage}
+        showLoadingThreshold={messages.length}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+  }
+
+  it('renders every message at the truncation limit', () => {
+    renderAll(turns(MESSAGE_DISPLAY_LIMIT));
+
+    expect(screen.queryByText(`user-${HEAD_MESSAGE_COUNT}`)).not.toBeNull();
+    expect(screen.queryByText(/messages omitted/)).toBeNull();
+  });
+
+  it('keeps the first and last turns and omits the middle past the limit', () => {
+    const total = MESSAGE_DISPLAY_LIMIT + 1;
+    renderAll(turns(total));
+
+    expect(screen.queryByText('user-0')).not.toBeNull();
+    expect(screen.queryByText(`user-${HEAD_MESSAGE_COUNT - 1}`)).not.toBeNull();
+    expect(screen.queryByText(`user-${HEAD_MESSAGE_COUNT}`)).toBeNull();
+    expect(screen.queryByText(`user-${total - TAIL_MESSAGE_COUNT - 1}`)).toBeNull();
+    expect(screen.queryByText(`user-${total - TAIL_MESSAGE_COUNT}`)).not.toBeNull();
+    expect(screen.queryByText(`user-${total - 1}`)).not.toBeNull();
+
+    const omitted = total - TAIL_MESSAGE_COUNT - HEAD_MESSAGE_COUNT;
+    expect(screen.queryByText(`${omitted} earlier messages omitted`)).not.toBeNull();
+  });
+
+  it('never splits a tool request from its response', () => {
+    const messages = turns(MESSAGE_DISPLAY_LIMIT + 1);
+    const tailBoundary = messages.length - TAIL_MESSAGE_COUNT;
+    // An unsnapped window would start on the response and cut off its request.
+    messages[tailBoundary - 1] = message('assistant-call', 'assistant', [toolRequest('tool-1')]);
+    messages[tailBoundary] = message('user-response', 'user', [toolResponse('tool-1')]);
+
+    renderAll(messages);
+
+    expect(screen.queryByText('assistant-call')).not.toBeNull();
+    expect(screen.queryByText(`user-${tailBoundary - 2}`)).not.toBeNull();
+    expect(screen.queryByText(`user-${tailBoundary - 3}`)).toBeNull();
+  });
+
+  it('shows everything once the user asks for all messages', () => {
+    renderAll(turns(MESSAGE_DISPLAY_LIMIT + 1));
+
+    act(() => {
+      screen.getByRole('button', { name: 'Show all' }).click();
+    });
+
+    expect(screen.queryByText(`user-${HEAD_MESSAGE_COUNT}`)).not.toBeNull();
+    expect(screen.queryByText(/messages omitted/)).toBeNull();
   });
 });

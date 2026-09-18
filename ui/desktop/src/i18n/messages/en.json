@@ -2654,11 +2654,17 @@
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Loading messages... ({renderedCount}/{totalCount})"
   },
+  "progressiveMessageList.messagesOmitted": {
+    "defaultMessage": "{count,plural,one{# earlier message omitted} other{# earlier messages omitted}}"
+  },
   "progressiveMessageList.modelChanged": {
     "defaultMessage": "Model changed: {previousModel} → {currentModel}"
   },
   "progressiveMessageList.searchHint": {
     "defaultMessage": "Press Cmd/Ctrl+F to load all messages immediately for search"
+  },
+  "progressiveMessageList.showAllMessages": {
+    "defaultMessage": "Show all"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "All prompts reset to defaults"

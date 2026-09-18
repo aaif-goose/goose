@@ -11,11 +11,12 @@ import {
   CreditsExhaustedNotification,
   getCreditsExhaustedNotification,
 } from './context_management/CreditsExhaustedNotification';
-import type {
-  ImageData,
-  Message,
-  NotificationEvent,
-  SystemNotificationContent,
+import {
+  getToolResponses,
+  type ImageData,
+  type Message,
+  type NotificationEvent,
+  type SystemNotificationContent,
 } from '../types/message';
 import LoadingGoose from './LoadingGoose';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
@@ -34,7 +35,69 @@ const i18n = defineMessages({
     id: 'progressiveMessageList.modelChanged',
     defaultMessage: 'Model changed: {previousModel} → {currentModel}',
   },
+  messagesOmitted: {
+    id: 'progressiveMessageList.messagesOmitted',
+    defaultMessage:
+      '{count, plural, one {# earlier message omitted} other {# earlier messages omitted}}',
+  },
+  showAllMessages: {
+    id: 'progressiveMessageList.showAllMessages',
+    defaultMessage: 'Show all',
+  },
 });
+
+export const MESSAGE_DISPLAY_LIMIT = 250;
+export const HEAD_MESSAGE_COUNT = 10;
+export const TAIL_MESSAGE_COUNT = 190;
+
+interface DisplayWindow {
+  displayed: Message[];
+  headLength: number;
+  omitted: number;
+}
+
+function startsTurn(message: Message): boolean {
+  return (
+    message.role === 'user' &&
+    message.metadata.userVisible &&
+    getToolResponses(message).length === 0
+  );
+}
+
+function everyMessage(messages: Message[]): DisplayWindow {
+  return { displayed: messages, headLength: messages.length, omitted: 0 };
+}
+
+/**
+ * Long conversations render only their opening and their most recent turns.
+ * Both edges are snapped to a turn boundary so a tool request is never
+ * separated from the response that arrives in a later message.
+ */
+function displayWindow(messages: Message[]): DisplayWindow {
+  if (messages.length <= MESSAGE_DISPLAY_LIMIT) {
+    return everyMessage(messages);
+  }
+
+  let headEnd = HEAD_MESSAGE_COUNT;
+  while (headEnd < messages.length && !startsTurn(messages[headEnd])) {
+    headEnd += 1;
+  }
+
+  let tailStart = messages.length - TAIL_MESSAGE_COUNT;
+  while (tailStart > 0 && !startsTurn(messages[tailStart])) {
+    tailStart -= 1;
+  }
+
+  if (tailStart <= headEnd) {
+    return everyMessage(messages);
+  }
+
+  return {
+    displayed: [...messages.slice(0, headEnd), ...messages.slice(tailStart)],
+    headLength: headEnd,
+    omitted: tailStart - headEnd,
+  };
+}
 
 const emptyToolCallNotifications = new Map<string, NotificationEvent[]>();
 const emptyAppend = () => {};
@@ -172,7 +235,7 @@ interface ProgressiveMessageListProps {
 }
 
 export default function ProgressiveMessageList({
-  messages,
+  messages: allMessages,
   sessionId,
   toolCallNotifications = emptyToolCallNotifications,
   append = emptyAppend,
@@ -187,6 +250,15 @@ export default function ProgressiveMessageList({
   submitElicitationResponse,
 }: ProgressiveMessageListProps) {
   const intl = useIntl();
+  const [showAllMessages, setShowAllMessages] = useState(false);
+  const {
+    displayed: messages,
+    headLength,
+    omitted,
+  } = useMemo(
+    () => (showAllMessages ? everyMessage(allMessages) : displayWindow(allMessages)),
+    [allMessages, showAllMessages]
+  );
   const [renderedCount, setRenderedCount] = useState(() =>
     messages.length <= showLoadingThreshold ? messages.length : Math.min(batchSize, messages.length)
   );
@@ -223,20 +295,21 @@ export default function ProgressiveMessageList({
   }, [isLoading, messages.length, onRenderingComplete, sessionId]);
 
   useEffect(() => {
-    if (!isLoading) return;
+    if (!isLoading && omitted === 0) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
       const isSearchShortcut = (isMac ? event.metaKey : event.ctrlKey) && event.key === 'f';
 
       if (isSearchShortcut) {
-        setRenderedCount(messages.length);
+        setShowAllMessages(true);
+        setRenderedCount(allMessages.length);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading, messages.length]);
+  }, [isLoading, omitted, allMessages.length]);
 
   const rowContexts = useMemo(() => deriveMessageRowContexts(messages), [messages]);
   const messagesToRender = messages.slice(0, renderedCount);
@@ -265,7 +338,7 @@ export default function ProgressiveMessageList({
         toolCallNotifications.get(toolState.requestId)
       );
 
-      return (
+      const row = (
         <MessageRow
           key={messageKey}
           append={append}
@@ -285,6 +358,24 @@ export default function ProgressiveMessageList({
           submitElicitationResponse={submitElicitationResponse}
           toolNotifications={toolNotifications}
         />
+      );
+
+      if (omitted === 0 || index !== headLength) return row;
+
+      return (
+        <Fragment key={messageKey}>
+          <div className="flex flex-wrap items-center justify-center gap-2 my-4 text-xs text-text-muted">
+            <span>{intl.formatMessage(i18n.messagesOmitted, { count: omitted })}</span>
+            <button
+              type="button"
+              className="underline hover:text-text-standard"
+              onClick={() => setShowAllMessages(true)}
+            >
+              {intl.formatMessage(i18n.showAllMessages)}
+            </button>
+          </div>
+          {row}
+        </Fragment>
       );
     })
     .filter(Boolean);
