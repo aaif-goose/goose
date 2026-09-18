@@ -895,13 +895,13 @@ pub struct DecisionRequest {
     pub model: String,
     pub state_json: String,
     pub questions: HashMap<String, DecisionQuestion>,
-    #[uniffi(default = None)]
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct OpenRouterDecisionOptions {
     pub provider_json: Option<String>,
-    #[uniffi(default = None)]
     pub session_id: Option<String>,
-    #[uniffi(default = None)]
     pub trace_json: Option<String>,
-    #[uniffi(default = None)]
     pub user: Option<String>,
 }
 
@@ -946,16 +946,6 @@ impl TryFrom<DecisionRequest> for GooseDecisionRequest {
                 .into_iter()
                 .map(|(name, question)| (name, question.into()))
                 .collect(),
-            provider: value
-                .provider_json
-                .map(|json| serde_json::from_str(&json))
-                .transpose()?,
-            session_id: value.session_id,
-            trace: value
-                .trace_json
-                .map(|json| serde_json::from_str(&json))
-                .transpose()?,
-            user: value.user,
         })
     }
 }
@@ -1034,6 +1024,53 @@ impl From<GooseDecisionAnswer> for DecisionAnswer {
                 probabilities,
             },
         }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct OpenRouterDecisionProvider {
+    provider: Arc<goose_providers::openrouter::OpenRouterProvider>,
+}
+
+#[uniffi::export]
+impl OpenRouterDecisionProvider {
+    pub async fn create_decision(
+        &self,
+        request: DecisionRequest,
+    ) -> Result<DecisionResponse, GooseError> {
+        let request = request.try_into()?;
+        let provider = Arc::clone(&self.provider);
+        let response =
+            run_on_runtime(async move { provider.create_decision(&request).await }).await??;
+        Ok(response.into())
+    }
+
+    pub async fn create_decision_with_options(
+        &self,
+        request: DecisionRequest,
+        options: OpenRouterDecisionOptions,
+    ) -> Result<DecisionResponse, GooseError> {
+        let request = request.try_into()?;
+        let options = goose_providers::openrouter::OpenRouterDecisionOptions {
+            provider: options
+                .provider_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()?,
+            session_id: options.session_id,
+            trace: options
+                .trace_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()?,
+            user: options.user,
+        };
+        let provider = Arc::clone(&self.provider);
+        let response = run_on_runtime(async move {
+            provider
+                .create_decision_with_options(&request, &options)
+                .await
+        })
+        .await??;
+        Ok(response.into())
     }
 }
 
@@ -1233,15 +1270,17 @@ fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<Deci
 pub fn openrouter_decision_provider(
     api_key: String,
     base_url: Option<String>,
-) -> Result<Arc<DecisionProvider>, GooseError> {
+) -> Result<Arc<OpenRouterDecisionProvider>, GooseError> {
     let client = ApiClient::new_with_tls(
         base_url.unwrap_or_else(|| "https://openrouter.ai".to_string()),
         AuthMethod::BearerToken(api_key),
         None,
     )?;
-    Ok(decision_provider(
-        goose_providers::openrouter::OpenRouterProvider::new(client, None, None),
-    ))
+    Ok(Arc::new(OpenRouterDecisionProvider {
+        provider: Arc::new(goose_providers::openrouter::OpenRouterProvider::new(
+            client, None, None,
+        )),
+    }))
 }
 
 #[uniffi::export]

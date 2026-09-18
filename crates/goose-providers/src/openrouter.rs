@@ -396,15 +396,36 @@ impl crate::base::ProviderDescriptor for OpenRouterProvider {
     }
 }
 
-#[async_trait]
-impl DecisionProvider for OpenRouterProvider {
-    async fn create_decision(
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct OpenRouterDecisionOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+impl OpenRouterProvider {
+    pub async fn create_decision_with_options(
         &self,
         request: &DecisionRequest,
+        options: &OpenRouterDecisionOptions,
     ) -> Result<DecisionResponse, ProviderError> {
-        let payload = serde_json::to_value(request).map_err(|error| {
+        let mut payload = serde_json::to_value(request).map_err(|error| {
             ProviderError::RequestFailed(format!("Failed to serialize Decisions request: {error}"))
         })?;
+        let option_values = serde_json::to_value(options).map_err(|error| {
+            ProviderError::RequestFailed(format!(
+                "Failed to serialize OpenRouter Decisions options: {error}"
+            ))
+        })?;
+        if let (Some(payload), Some(options)) = (payload.as_object_mut(), option_values.as_object())
+        {
+            payload.extend(options.clone());
+        }
         let response = self
             .api_client
             .request("api/alpha/decisions")
@@ -414,6 +435,17 @@ impl DecisionProvider for OpenRouterProvider {
         response.json().await.map_err(|error| {
             ProviderError::RequestFailed(format!("Failed to parse Decisions response: {error}"))
         })
+    }
+}
+
+#[async_trait]
+impl DecisionProvider for OpenRouterProvider {
+    async fn create_decision(
+        &self,
+        request: &DecisionRequest,
+    ) -> Result<DecisionResponse, ProviderError> {
+        self.create_decision_with_options(request, &OpenRouterDecisionOptions::default())
+            .await
     }
 }
 

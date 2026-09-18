@@ -9,14 +9,6 @@ pub struct DecisionRequest {
     pub model: String,
     pub state: Value,
     pub questions: HashMap<String, DecisionQuestion>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

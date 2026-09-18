@@ -61,10 +61,6 @@ mod tests {
                     criteria: None,
                 },
             )]),
-            provider: None,
-            session_id: None,
-            trace: None,
-            user: None,
         };
 
         Mock::given(method("POST"))
