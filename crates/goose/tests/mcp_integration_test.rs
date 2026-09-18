@@ -542,12 +542,18 @@ async fn extension_protocol_traffic_through_a_lease() {
     let user = fx.session(SessionType::User).await;
     let subagent = fx.session(SessionType::SubAgent).await;
     let stdio = stdio_fixture("fixture", None, &[]);
+    let discovery_2025 = stdio_fixture(
+        "fixture_discovery_2025",
+        Some(ProtocolVersion::V_2025_11_25.as_str()),
+        &["inspect_context"],
+    );
     let manager_ext = platform("extensionmanager");
     let http = http_fixture("fixture_http", &http_server.url);
     fx.add(&user, &stdio).await;
+    fx.add(&user, &discovery_2025).await;
     fx.add(&user, &manager_ext).await;
     fx.add(&user, &http).await;
-    let configs = vec![stdio, manager_ext, http];
+    let configs = vec![stdio, manager_ext, http, discovery_2025];
 
     // The same server publishes different tools to different sessions, so a
     // list fetched for one scope is not served to another. (Only the platform
@@ -559,6 +565,13 @@ async fn extension_protocol_traffic_through_a_lease() {
     assert!(tool_names(&lease.tools().await).contains(&manage));
     assert!(!tool_names(&subagent_lease.tools().await).contains(&manage));
     assert!(tool_names(&lease.tools().await).contains(&"fixture__get_code".to_string()));
+
+    let discovery_2025_context =
+        inspect_context(&lease, "fixture_discovery_2025__inspect_context").await;
+    assert_eq!(
+        discovery_2025_context.protocol_version,
+        ProtocolVersion::V_2025_11_25.as_str()
+    );
 
     // A server's progress notification reaches the caller's stream.
     let notify = lease

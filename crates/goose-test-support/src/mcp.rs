@@ -257,23 +257,6 @@ impl ServerHandler for McpFixtureServer {
         Cow::Borrowed(ProtocolVersion::known_up_to(&self.max_protocol_version))
     }
 
-    /// A server capped below 2026-07-28 is a real legacy server: it has no
-    /// `server/discover`, so the client must fall back to `initialize`.
-    async fn discover(
-        &self,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::DiscoverResult, McpError> {
-        if self.max_protocol_version < ProtocolVersion::V_2026_07_28 {
-            return Err(McpError::method_not_found::<
-                rmcp::model::DiscoverRequestMethod,
-            >());
-        }
-        Ok(rmcp::model::DiscoverResult::from_server_info(
-            self.supported_protocol_versions().into_owned(),
-            self.get_info(),
-        ))
-    }
-
     async fn list_tools(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
@@ -293,6 +276,7 @@ impl ServerHandler for McpFixtureServer {
         InitializeResult::new(
             ServerCapabilities::builder()
                 .enable_tools()
+                .enable_tool_list_changed()
                 .enable_resources()
                 .build(),
         )
