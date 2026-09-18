@@ -415,6 +415,10 @@ prompt: |
   **Prerequisites**: The active provider must be `zai_coding_plan`, with a Coding Plan API key
   configured and the developer extension enabled. Otherwise record this phase as SKIPPED.
 
+  In Desktop, confirm the provider appears in Settings → Models, accepts the API key,
+  and refreshes available models from the Coding Plan endpoint. Record this UI check
+  as SKIPPED in headless mode. Newly discovered models must also use `tool_stream`.
+
   1. Use the file-writing tool to create a substantial Python module in the test workspace
      in a single call, including Unicode text and escaped newlines. Read it back and run it.
   2. Modify that module in a second tool call, then run it again. Verify the tool-result

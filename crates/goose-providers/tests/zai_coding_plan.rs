@@ -68,12 +68,23 @@ fn sse(deltas: Vec<Value>, finish: &str) -> String {
 async fn streams_fragmented_tools_and_replays_reasoning_with_tool_results() {
     let server = MockServer::start().await;
     let provider = provider(&server);
+    Mock::given(method("GET"))
+        .and(path("/api/coding/paas/v4/models"))
+        .and(header("authorization", "Bearer test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{"id":"glm-5.3"}, {"id":"glm-5.3-flash"}, {"id":"glm-future"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
     assert_eq!(
         provider.fetch_supported_models().await.unwrap(),
-        ["glm-5.3", "glm-5.3-flash"]
+        ["glm-5.3", "glm-5.3-flash", "glm-future"]
     );
+    server.verify().await;
+    server.reset().await;
 
-    for model in ["glm-5.3", "glm-5.3-flash"] {
+    for model in ["glm-5.3", "glm-5.3-flash", "glm-future"] {
         let response = sse(
             vec![
                 json!({"role":"assistant","reasoning_content":"Inspect first. "}),

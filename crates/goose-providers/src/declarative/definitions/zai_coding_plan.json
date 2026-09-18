@@ -7,19 +7,17 @@
   "base_url": "https://api.z.ai/api/coding/paas/v4",
   "model_doc_link": "https://docs.z.ai/devpack/overview",
   "preserves_thinking": true,
-  "dynamic_models": false,
+  "dynamic_models": true,
   "models": [
     {
       "name": "glm-5.3",
       "context_limit": 1000000,
-      "reasoning": true,
-      "request_params": {"tool_stream": true}
+      "reasoning": true
     },
     {
       "name": "glm-5.3-flash",
       "context_limit": 1000000,
-      "reasoning": true,
-      "request_params": {"tool_stream": true}
+      "reasoning": true
     }
   ],
   "supports_streaming": true,

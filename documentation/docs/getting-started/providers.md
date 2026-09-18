@@ -93,13 +93,20 @@ See the [ACP Providers guide](/docs/guides/acp-providers) for detailed setup ins
 
 ### Z.AI Coding Plan
 
-Select **Z.AI Coding Plan** in `goose configure` and supply your Coding Plan API key,
+In goose Desktop, open **Settings → Models**, choose **Z.AI Coding Plan**, and
+enter your Coding Plan API key. The model selector discovers available models
+from your Coding Plan endpoint; use **Refresh** to update the list.
+Z.AI may list models that your subscription cannot use; access is checked when
+you send a request.
+
+In the CLI, select **Z.AI Coding Plan** in `goose configure` and supply your Coding Plan API key,
 or set `GOOSE_PROVIDER=zai_coding_plan`, `GOOSE_MODEL=glm-5.3`, and
-`ZAI_CODING_PLAN_API_KEY`. The provider also offers `glm-5.3-flash`.
+`ZAI_CODING_PLAN_API_KEY`. GLM-5.3 and GLM-5.3-Flash are the fallback choices
+when the endpoint does not support model discovery.
 
 This provider uses the dedicated OpenAI-compatible endpoint
 `https://api.z.ai/api/coding/paas/v4`. It enables both `stream` and `tool_stream`
-for the listed models so tool arguments arrive incrementally, and preserves
+for streaming requests, including newly discovered models, so tool arguments arrive incrementally, and preserves
 `reasoning_content` across tool-result turns. The existing **Z.AI** provider
 continues to use the Anthropic-compatible endpoint.
 
