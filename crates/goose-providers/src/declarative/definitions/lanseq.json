@@ -1,0 +1,21 @@
+{
+  "name": "lanseq",
+  "engine": "openai",
+  "display_name": "Lanseq",
+  "description": "OpenAI-compatible inference for open-weight models.",
+  "api_key_env": "LANSEQ_API_KEY",
+  "base_url": "https://api.lanseq.cloud/v1",
+  "models": [
+    {
+      "name": "qwen3.8-27b-int4",
+      "context_limit": 70000
+    }
+  ],
+  "dynamic_models": false,
+  "supports_streaming": true,
+  "model_doc_link": "https://api.lanseq.cloud/docs",
+  "setup_steps": [
+    "Obtain a Lanseq API key",
+    "Set LANSEQ_API_KEY to the issued key"
+  ]
+}
