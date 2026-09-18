@@ -33,6 +33,7 @@ pub mod openai_live;
 pub mod openai_live_voice_provider;
 pub mod openrouter;
 pub mod openrouter_format;
+pub mod typesafe;
 
 pub use declarative::declarative_providers::*;
 
