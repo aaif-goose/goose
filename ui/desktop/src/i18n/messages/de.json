@@ -4706,6 +4706,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatisch"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Konfiguriert"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe-API-Schlüssel"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API-Schlüssel eingeben"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Schlüssel entfernen"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Schlüssel speichern"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Verwendet Jev, um den Denkaufwand für jede Anfrage auszuwählen. Der Text der aktuellen Anfrage wird an TypeSafe AI gesendet."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatischer Denkaufwand"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Blockierungslimit"
   },

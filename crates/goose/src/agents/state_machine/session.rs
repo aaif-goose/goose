@@ -83,6 +83,18 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     self.update_tool_request_meta(&session.id, tool_call_id, patch.clone())
                         .await?;
                 }
+                GooseEffect::Conversation(ConversationEffect::SetMessageOperationNote {
+                    message_id,
+                    operation,
+                    key,
+                    value,
+                }) => {
+                    self.update_message_metadata(&session.id, message_id, |mut metadata| {
+                        metadata.set_operation_note(operation, key, value.clone());
+                        metadata
+                    })
+                    .await?;
+                }
                 GooseEffect::Conversation(ConversationEffect::SetMessageVisibility {
                     message_id,
                     user_visible,

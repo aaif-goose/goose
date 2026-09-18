@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatico"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configurata"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Chiave API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Inserisci la chiave API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Rimuovi chiave"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Salva chiave"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Usa Jev per scegliere il livello di ragionamento per ogni richiesta. Il testo della richiesta corrente viene inviato a TypeSafe AI."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Livello di ragionamento automatico"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Limite di blocco"
   },

@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatik"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Yapılandırıldı"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API anahtarı"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API anahtarını girin"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Anahtarı kaldır"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Anahtarı kaydet"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Her istek için düşünme düzeyini seçmek üzere Jev’i kullanır. Geçerli istek metni TypeSafe AI’a gönderilir."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Otomatik düşünme düzeyi"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Engelleme sınırı"
   },

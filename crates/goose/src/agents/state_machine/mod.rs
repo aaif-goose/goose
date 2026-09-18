@@ -7,6 +7,7 @@
 
 mod effects;
 mod inference_preparation;
+mod ops_auto_effort;
 mod ops_bang_shell;
 mod ops_compaction;
 mod ops_doctor;
@@ -49,6 +50,7 @@ pub(crate) use tool_confirmation::{
 };
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
+pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;

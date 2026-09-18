@@ -204,6 +204,12 @@ pub enum ConversationEffect {
         tool_call_id: String,
         patch: serde_json::Value,
     },
+    SetMessageOperationNote {
+        message_id: String,
+        operation: String,
+        key: String,
+        value: serde_json::Value,
+    },
     SetMessageVisibility {
         message_id: String,
         user_visible: bool,

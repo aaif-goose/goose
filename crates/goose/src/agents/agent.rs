@@ -32,13 +32,13 @@ use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
-    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation, MAX_TURNS_MESSAGE,
+    persist_tool_confirmation_decision, run_goose, AutoEffortOperation, BangShellOperation,
+    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner,
+    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
@@ -1732,6 +1732,9 @@ impl Agent {
             Arc::new(ExitOnErrorOperation),
         ];
         operations.extend(remaining_operations);
+        if let Some(auto_effort) = AutoEffortOperation::from_config(&model_config) {
+            operations.push(Arc::new(auto_effort));
+        }
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]
             extension_manager: self.extension_manager.clone(),
