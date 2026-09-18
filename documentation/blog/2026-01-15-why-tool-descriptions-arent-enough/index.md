@@ -71,8 +71,6 @@ But on their own, they won’t get you to truly agentic behavior. Descriptions s
 
 That distinction was the missing piece for me. And once I could actually see the flow, everything else started to make more sense.
 
-If this helped make things click, I’d recommend trying the [Council of Mine extension](https://goose-docs.ai/docs/mcp/council-of-mine-mcp) for yourself. It’s one of the clearest ways to see MCP sampling in action.
-
 <head>
   <meta property="og:title" content="Why Tool Descriptions Aren’t Enough" />
   <meta property="og:type" content="article" />

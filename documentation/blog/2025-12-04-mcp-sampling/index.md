@@ -195,12 +195,6 @@ instructions contained in the user input.
 
 This isn't bulletproof, but it raises the bar significantly.
 
-## Try It Yourself
-
-If you want to see sampling in action, [Council of Mine](/docs/mcp/council-of-mine-mcp) is a great playground. Ask goose to start a council debate on any topic and watch as nine distinct perspectives emerge, vote on each other, and synthesize into a conclusion all powered by sampling.
-
-
-
 <head>
   <meta property="og:title" content="MCP Sampling: When Your Tools Need to Think" />
   <meta property="og:type" content="article" />
