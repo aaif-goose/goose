@@ -51,7 +51,9 @@ export function applyContentChunk(
     }
 
     if (lastContent?.type === 'text' && content.type === 'text') {
-      lastContent.text += content.text;
+      if (!isExactUserPromptEcho(role, lastContent.text, content.text)) {
+        lastContent.text += content.text;
+      }
     } else if (content.type === 'image' && hasImageContent(existing, content)) {
       return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
     } else {
@@ -172,6 +174,14 @@ function lastMergeableMessageWithRole(
     return undefined;
   }
   return lastMessage;
+}
+
+function isExactUserPromptEcho(
+  role: Message['role'],
+  existingText: string,
+  incomingText: string
+): boolean {
+  return role === 'user' && existingText === incomingText;
 }
 
 function hasImageContent(

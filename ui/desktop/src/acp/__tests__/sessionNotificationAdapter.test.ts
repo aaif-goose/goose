@@ -165,6 +165,51 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hell' });
       });
 
+      it('does not concatenate an ACP echo of the optimistic local user prompt', () => {
+        const adapter = createAcpSessionNotificationAdapter([
+          {
+            id: 'local-1',
+            role: 'user',
+            created: 123,
+            content: [{ type: 'text', text: 'Hello goose' }],
+            metadata: { userVisible: true, agentVisible: true },
+          },
+        ]);
+
+        const messages = expectOnlyMessagesChange(adapter.apply(userText('Hello goose')));
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0].role).toBe('user');
+        expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hello goose' });
+      });
+
+      it('still concatenates a shorter user streaming delta', () => {
+        const adapter = createAcpSessionNotificationAdapter([
+          {
+            id: 'local-1',
+            role: 'user',
+            created: 123,
+            content: [{ type: 'text', text: 'Hello ' }],
+            metadata: { userVisible: true, agentVisible: true },
+          },
+        ]);
+
+        const messages = expectOnlyMessagesChange(adapter.apply(userText('goose')));
+
+        expect(messages).toHaveLength(1);
+        expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hello goose' });
+      });
+
+      it('still concatenates an equal assistant chunk onto the current bubble', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(agentText('ha'));
+        const messages = expectOnlyMessagesChange(adapter.apply(agentText('ha')));
+
+        expect(messages).toHaveLength(1);
+        expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'haha' });
+      });
+
       it('keeps streamed content visible when an output-limit fallback chunk arrives later', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
