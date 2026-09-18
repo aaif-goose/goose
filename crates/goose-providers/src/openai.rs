@@ -451,6 +451,10 @@ impl OpenAiProvider {
 
     const PROVIDERS_NEEDING_STANDARD_CHAT_PARAMS: &[&str] = &["nearai", "pleumrouter"];
 
+    /// Providers whose endpoints require the non-standard `tool_stream`
+    /// field to stream tool-call arguments incrementally.
+    const PROVIDERS_NEEDING_TOOL_STREAM: &[&str] = &["zai_coding_plan"];
+
     /// Providers whose reasoning models accept an OpenAI-style
     /// `reasoning_effort` field on chat-completions requests but aren't
     /// matched by [`is_openai_responses_model`] (which only recognises
@@ -486,7 +490,9 @@ impl OpenAiProvider {
         model_config: &ModelConfig,
     ) -> serde_json::Value {
         if let Some(obj) = payload.as_object_mut() {
-            if self.name == "zai_coding_plan" && obj.get("stream") == Some(&json!(true)) {
+            if Self::PROVIDERS_NEEDING_TOOL_STREAM.contains(&self.name.as_str())
+                && obj.get("stream") == Some(&json!(true))
+            {
                 obj.entry("tool_stream").or_insert(json!(true));
             }
 

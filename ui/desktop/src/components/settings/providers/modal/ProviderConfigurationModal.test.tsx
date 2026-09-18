@@ -121,7 +121,8 @@ describe('ProviderConfigurationModal', () => {
       },
     };
     let finishSecondCheck:
-      ((value: Awaited<ReturnType<typeof acpRefreshProviderDetails>>) => void) | undefined;
+      | ((value: Awaited<ReturnType<typeof acpRefreshProviderDetails>>) => void)
+      | undefined;
     vi.mocked(acpRefreshProviderDetails)
       .mockResolvedValueOnce({
         provider: acpProvider,
