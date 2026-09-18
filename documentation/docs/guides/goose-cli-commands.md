@@ -324,6 +324,24 @@ Session removal is permanent and cannot be undone. goose will show which session
 
 ---
 
+#### session rename [options]
+Rename a saved session. If no session ID is provided, goose will prompt you to select a session interactively.
+
+**Options:**
+- **`--session-id <session_id>`**: Rename a specific session by its session ID (e.g., `20251108_3`)
+- **`-n, --new-name <name>`**: The new name for the session (required)
+
+**Usage:**
+```bash
+# Rename a specific session by ID
+goose session rename --session-id 20251108_3 --new-name my-project
+
+# Interactive selection (prompts you to choose a session)
+goose session rename --new-name my-project
+```
+
+---
+
 #### session export [options]
 Export sessions in different formats for backup, sharing, migration, or documentation purposes.
 
