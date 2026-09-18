@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -178,6 +178,7 @@ pub(crate) fn stop_hook_block_cap_warning(plugin: &str, cap: u32) -> Message {
 
 /// Context needed for the reply function
 pub struct ReplyContext {
+    lease: Arc<ExtensionLease>,
     pub conversation: Conversation,
     pub tools: Vec<Tool>,
     pub toolshim_tools: Vec<Tool>,
@@ -285,9 +286,9 @@ pub struct Agent {
     pub(super) current_goose_mode: Mutex<GooseMode>,
 
     pub extension_manager: Arc<ExtensionManager>,
-    /// Resolved when an inference is prepared and held for that inference's
-    /// tool calls; same rule as the state machine's ToolExecutionOperation.
-    lease: Mutex<Option<Arc<ExtensionLease>>>,
+    /// Points to the lease owned by the active legacy inference without
+    /// extending that lease's lifetime.
+    lease: Mutex<Weak<ExtensionLease>>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
     pub(super) tool_confirmation_router: ToolConfirmationRouter,
@@ -438,7 +439,7 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_goose_mode: Mutex::new(initial_mode),
-            lease: Mutex::new(None),
+            lease: Mutex::new(Weak::new()),
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
@@ -865,7 +866,7 @@ impl Agent {
                 )
             );
         }
-        let (tools, toolshim_tools, system_prompt, model_config) = self
+        let (lease, tools, toolshim_tools, system_prompt, model_config) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
 
@@ -892,6 +893,7 @@ impl Agent {
         };
 
         Ok(ReplyContext {
+            lease,
             conversation,
             tools,
             toolshim_tools,
@@ -1475,14 +1477,14 @@ impl Agent {
             .current_set(session_id, Some(working_dir))
             .await;
         let lease = Arc::new(self.extension_manager.resolve(&set).await);
-        *self.lease.lock().await = Some(Arc::clone(&lease));
+        *self.lease.lock().await = Arc::downgrade(&lease);
         lease
     }
 
     async fn lease(&self, session_id: &str, working_dir: &std::path::Path) -> Arc<ExtensionLease> {
-        if let Some(lease) = self.lease.lock().await.as_ref() {
+        if let Some(lease) = self.lease.lock().await.upgrade() {
             if lease.scope_id() == session_id {
-                return Arc::clone(lease);
+                return lease;
             }
         }
         self.resolve_lease(session_id, working_dir).await
@@ -2451,6 +2453,7 @@ impl Agent {
             .prepare_reply_context(&session.id, conversation, session.working_dir.as_path())
             .await?;
         let ReplyContext {
+            lease: mut inference_lease,
             mut conversation,
             mut tools,
             mut toolshim_tools,
@@ -2622,7 +2625,7 @@ impl Agent {
                 if first_inference {
                     first_inference = false;
                 } else {
-                    (tools, toolshim_tools, system_prompt, _) =
+                    (inference_lease, tools, toolshim_tools, system_prompt, _) =
                         self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
                     if let Some(project_addendum) = &project_addendum {
                         system_prompt = format!("{system_prompt}\n\n{project_addendum}");
@@ -3584,6 +3587,7 @@ impl Agent {
             if !stop_hook_handled_for_exit {
                 self.emit_stop_hook(&session_config.id, &last_assistant_text, &session.working_dir.to_string_lossy()).await;
             }
+            drop(inference_lease);
         }.instrument(reply_stream_span));
         Ok(inner)
     }
@@ -3972,6 +3976,20 @@ mod tests {
             bundled: None,
             available_tools: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn agent_does_not_keep_resolved_lease_alive() {
+        let agent = Agent::new();
+        let working_dir = tempfile::tempdir().unwrap();
+        let lease = agent
+            .resolve_lease("test-session", working_dir.path())
+            .await;
+        let lease_reference = Arc::downgrade(&lease);
+
+        drop(lease);
+
+        assert!(lease_reference.upgrade().is_none());
     }
 
     #[test]

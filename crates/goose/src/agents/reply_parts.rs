@@ -10,7 +10,7 @@ use tracing::debug;
 
 use super::super::agents::Agent;
 use super::gen_ai_telemetry;
-use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
+use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name, ExtensionLease};
 #[cfg(feature = "code-mode")]
 use crate::agents::platform_extensions::code_execution;
 use crate::config::{Config, GooseMode};
@@ -198,7 +198,13 @@ impl Agent {
         &self,
         session_id: &str,
         working_dir: &std::path::Path,
-    ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
+    ) -> Result<(
+        Arc<ExtensionLease>,
+        Vec<Tool>,
+        Vec<Tool>,
+        String,
+        ModelConfig,
+    )> {
         let lease = self.resolve_lease(session_id, working_dir).await;
         let mut tools = lease.tools().await;
         if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
@@ -234,7 +240,7 @@ impl Agent {
         let (tools, toolshim_tools, system_prompt) =
             prepare_tools_for_provider(tools, system_prompt, &model_config);
 
-        Ok((tools, toolshim_tools, system_prompt, model_config))
+        Ok((lease, tools, toolshim_tools, system_prompt, model_config))
     }
 }
 
