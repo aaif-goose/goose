@@ -8,6 +8,7 @@ use super::tool_calls::conversion::{
 use super::tool_calls::enrichment::tool_chain_summary;
 use super::*;
 use agent_client_protocol::schema::v1::ToolCall;
+use std::time::Instant;
 
 fn replay_audience_annotations(audience: &[Role]) -> Annotations {
     Annotations::new().audience(
@@ -105,13 +106,53 @@ fn replay_tail_from_meta(meta: Option<&Meta>) -> Option<usize> {
         .map(|v| v as usize)
 }
 
+/// Approximate size of what a content item contributes to the replay stream.
+/// Payload lengths are read directly from the stored content; tool call
+/// arguments are the one case that has to be serialized to be measured.
+fn approximate_replay_bytes(content: &MessageContent) -> usize {
+    match content {
+        MessageContent::Text(text) => text.text.len(),
+        MessageContent::Image(image) => image.data.len(),
+        MessageContent::Thinking(thinking) => thinking.thinking.len(),
+        MessageContent::Error(error) => error.message.len(),
+        MessageContent::ToolRequest(tool_request) => {
+            tool_request.tool_call.as_ref().map_or(0, |tool_call| {
+                tool_call.name.len()
+                    + tool_call.arguments.as_ref().map_or(0, |arguments| {
+                        serde_json::to_string(arguments).map_or(0, |json| json.len())
+                    })
+            })
+        }
+        MessageContent::ToolResponse(tool_response) => {
+            tool_response.tool_result.as_ref().map_or(0, |tool_result| {
+                tool_result
+                    .content
+                    .iter()
+                    .map(|item| {
+                        item.as_text().map_or(0, |text| text.text.len())
+                            + item.as_image().map_or(0, |image| image.data.len())
+                    })
+                    .sum()
+            })
+        }
+        _ => 0,
+    }
+}
+
+struct ReplaySummary {
+    skipped: usize,
+    messages: usize,
+    notifications: usize,
+    approximate_bytes: usize,
+}
+
 fn replay_conversation_to_client(
     cx: &ConnectionTo<Client>,
     session: &Session,
     supports_goose_custom_notifications: bool,
     client_requests_tool_call_label_enrichment: bool,
     replay_tail: Option<usize>,
-) -> Result<usize, agent_client_protocol::Error> {
+) -> Result<ReplaySummary, agent_client_protocol::Error> {
     let session_id = SessionId::new(session.id.clone());
     let tool_call_notifier = ToolCallNotifier::new(cx, &session_id);
 
@@ -126,9 +167,12 @@ fn replay_conversation_to_client(
     let messages = &messages[skipped..];
 
     let mut replay_tool_requests = HashMap::new();
+    let mut notifications = 0usize;
+    let mut approximate_bytes = 0usize;
 
     for message in messages {
         for content_item in &message.content {
+            approximate_bytes += approximate_replay_bytes(content_item);
             match content_item {
                 MessageContent::Text(text) => {
                     let mut tc = TextContent::new(text.text.clone());
@@ -138,6 +182,7 @@ fn replay_conversation_to_client(
                         tc = tc.annotations(replay_audience_annotations(audience));
                     }
                     send_replay_content_chunk(cx, &session_id, message, ContentBlock::Text(tc))?;
+                    notifications += 1;
                 }
                 MessageContent::Image(image) => {
                     let mut image_content =
@@ -154,6 +199,7 @@ fn replay_conversation_to_client(
                         message,
                         ContentBlock::Image(image_content),
                     )?;
+                    notifications += 1;
                 }
                 MessageContent::ToolRequest(tool_request) => {
                     replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
@@ -165,6 +211,7 @@ fn replay_conversation_to_client(
                     );
 
                     tool_call_notifier.send_initial(tool_call)?;
+                    notifications += 1;
                 }
                 MessageContent::ToolResponse(tool_response) => {
                     let fields = tool_call_update_fields_from_response(
@@ -178,6 +225,7 @@ fn replay_conversation_to_client(
                         ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
                             .meta(merge_message_meta(meta, message));
                     tool_call_notifier.send_update(update)?;
+                    notifications += 1;
                 }
                 MessageContent::Thinking(thinking) => {
                     cx.send_notification(SessionNotification::new(
@@ -187,6 +235,7 @@ fn replay_conversation_to_client(
                             ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
                         )),
                     ))?;
+                    notifications += 1;
                 }
                 MessageContent::Error(error) => {
                     send_replay_content_chunk(
@@ -195,6 +244,7 @@ fn replay_conversation_to_client(
                         message,
                         ContentBlock::Text(TextContent::new(error.message.clone())),
                     )?;
+                    notifications += 1;
                 }
                 MessageContent::SystemNotification(_) => {}
                 _ => {}
@@ -210,11 +260,17 @@ fn replay_conversation_to_client(
                         usage,
                     )),
                 })?;
+                notifications += 1;
             }
         }
     }
 
-    Ok(skipped)
+    Ok(ReplaySummary {
+        skipped,
+        messages: messages.len(),
+        notifications,
+        approximate_bytes,
+    })
 }
 
 impl GooseAcpAgent {
@@ -404,13 +460,23 @@ impl GooseAcpAgent {
             .prepare_session_for_activation(session, cwd, args.mcp_servers, true)
             .await?;
 
-        let replayed_from = replay_conversation_to_client(
+        let replay_started = Instant::now();
+        let replay = replay_conversation_to_client(
             cx,
             &session,
             self.supports_goose_custom_notifications(),
             self.requests_tool_call_label_enrichment(),
             replay_tail_from_meta(args.meta.as_ref()),
         )?;
+        info!(
+            session_id = %session_id_str,
+            messages_replayed = replay.messages,
+            messages_skipped = replay.skipped,
+            notifications = replay.notifications,
+            approximate_bytes = replay.approximate_bytes,
+            elapsed_ms = replay_started.elapsed().as_millis() as u64,
+            "session load replay complete"
+        );
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
         self.apply_session_recipe(&agent, &session).await?;
         self.register_acp_session(session_id_str.clone(), agent.clone())
@@ -444,10 +510,10 @@ impl GooseAcpAgent {
         }
 
         let mut meta = session_response_meta(&session, &extension_results);
-        if replayed_from > 0 {
+        if replay.skipped > 0 {
             meta.insert(
                 "replaySkipped".to_string(),
-                serde_json::Value::Number(replayed_from.into()),
+                serde_json::Value::Number(replay.skipped.into()),
             );
         }
         response = response.meta(meta);
@@ -580,6 +646,24 @@ mod tests {
             Message::assistant().with_text("a1"),
         ];
         assert_eq!(replay_start_index(&messages, 0), 0);
+    }
+
+    #[test]
+    fn replay_tail_from_meta_reads_client_requested_cap() {
+        assert_eq!(replay_tail_from_meta(None), None);
+        assert_eq!(replay_tail_from_meta(Some(&Meta::new())), None);
+
+        let mut meta = Meta::new();
+        meta.insert("replayTail".to_string(), serde_json::json!(200));
+        assert_eq!(replay_tail_from_meta(Some(&meta)), Some(200));
+
+        let mut wrong_type = Meta::new();
+        wrong_type.insert("replayTail".to_string(), serde_json::json!("200"));
+        assert_eq!(replay_tail_from_meta(Some(&wrong_type)), None);
+
+        let mut negative = Meta::new();
+        negative.insert("replayTail".to_string(), serde_json::json!(-1));
+        assert_eq!(replay_tail_from_meta(Some(&negative)), None);
     }
 
     #[test]

@@ -52,6 +52,7 @@ export interface AcpChatSessionController {
     recipe?: AcpRecipeOptions
   ): Promise<Session>;
   loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<void>;
+  loadFullSessionHistory(sessionId: string): Promise<void>;
   restoreSession(sessionId: string): Promise<void>;
   submitMessage(
     sessionId: string,
@@ -148,25 +149,64 @@ async function restoreSession(sessionId: string): Promise<void> {
 
 async function loadSessionFromServer(
   sessionId: string,
-  options: AcpLoadSessionOptions = {}
+  options: AcpLoadSessionOptions = {},
+  replayAll = false
 ): Promise<void> {
   if (!isAcpSessionLoadInFlight(sessionId)) {
     acpChatSessionActions.startSessionLoad(sessionId);
   }
 
+  const startedAt = Date.now();
   try {
-    const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    const { sessionInfo, meta } = await acpLoadSession(sessionId, replayAll);
 
     showExtensionLoadResults(meta.extensionResults);
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
-    acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
+    acpChatSessionActions.finishSessionLoad(
+      sessionId,
+      sessionInfoToSession(sessionInfo, meta),
+      meta.replaySkipped ?? 0
+    );
     options.onSessionLoaded?.();
   } catch (error) {
     console.error('Failed to load ACP session:', error);
-    acpChatSessionActions.failSessionLoad(sessionId, formatAcpError(error));
+    const progress = describeLoadProgress(sessionId, startedAt);
+    acpChatSessionActions.failSessionLoad(
+      sessionId,
+      progress ? `${formatAcpError(error)} ${progress}` : formatAcpError(error),
+      buildSessionLoadDiagnostics(sessionId, startedAt, error)
+    );
   }
+}
+
+function loadFullSessionHistory(sessionId: string): Promise<void> {
+  return loadSessionFromServer(sessionId, {}, true);
+}
+
+function describeLoadProgress(sessionId: string, startedAt: number): string | undefined {
+  const notifications = acpChatSessionActions.getReplayNotificationCount(sessionId);
+  if (notifications === 0) {
+    return undefined;
+  }
+  const messageCount = acpChatSessionStore.getSnapshot(sessionId)?.session?.message_count;
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  return messageCount
+    ? `(received ${notifications} updates for ~${messageCount} stored messages after ${seconds}s)`
+    : `(received ${notifications} updates after ${seconds}s)`;
+}
+
+function buildSessionLoadDiagnostics(sessionId: string, startedAt: number, error: unknown): string {
+  const snapshot = acpChatSessionStore.getSnapshot(sessionId);
+  return [
+    `sessionId: ${sessionId}`,
+    `storedMessages: ${snapshot?.session?.message_count ?? 'unknown'}`,
+    `replayUpdatesReceived: ${acpChatSessionActions.getReplayNotificationCount(sessionId)}`,
+    `elapsedMs: ${Date.now() - startedAt}`,
+    `desktopVersion: ${window.electron.getVersion()}`,
+    `error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+  ].join('\n');
 }
 
 async function submitMessage(
@@ -327,6 +367,7 @@ async function updateMessage(
 export const acpChatSessionController: AcpChatSessionController = {
   createSession,
   loadSession,
+  loadFullSessionHistory,
   restoreSession,
   submitMessage,
   stop,

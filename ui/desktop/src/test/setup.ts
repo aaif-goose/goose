@@ -88,6 +88,7 @@ Object.defineProperty(window, 'electron', {
     getIsFullScreen: vi.fn(() => Promise.resolve(false)),
     logInfo: vi.fn(),
     logError: vi.fn(),
+    getVersion: vi.fn(() => '0.0.0-test'),
     on: vi.fn(),
     off: vi.fn(),
   },

@@ -2,6 +2,7 @@ import {
   methods,
   type ForkSessionRequest,
   type ListSessionsRequest,
+  type LoadSessionRequest,
   type LoadSessionResponse,
   type NewSessionRequest,
   type SessionInfo,
@@ -53,7 +54,16 @@ export interface LoadSessionMeta {
   userRecipeValues?: Record<string, string> | null;
   extensionResults?: ExtensionLoadResult[] | null;
   workingDir?: string;
+  replaySkipped?: number;
 }
+
+/**
+ * Conversations longer than REPLAY_TAIL_THRESHOLD messages replay only their last
+ * REPLAY_TAIL messages on load. The hidden prefix stays in the session and in the
+ * agent's context; the user can ask for it with a full reload.
+ */
+export const REPLAY_TAIL_THRESHOLD = 250;
+export const REPLAY_TAIL = 200;
 
 export interface AcpLoadSessionResult {
   sessionInfo: SessionInfo;
@@ -70,6 +80,7 @@ function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
     userRecipeValues: meta.userRecipeValues,
     extensionResults: meta.extensionResults,
     workingDir: typeof meta.workingDir === 'string' ? meta.workingDir : undefined,
+    replaySkipped: typeof meta.replaySkipped === 'number' ? meta.replaySkipped : undefined,
   };
 }
 
@@ -183,13 +194,16 @@ export async function acpGetSessionListItem(sessionId: string): Promise<SessionL
   return sessionInfoToListItem(response.session);
 }
 
-export async function acpLoadSession(sessionId: string): Promise<AcpLoadSessionResult> {
+export async function acpLoadSession(
+  sessionId: string,
+  replayAll = false
+): Promise<AcpLoadSessionResult> {
   const pendingLoad = inFlightSessionLoads.get(sessionId);
   if (pendingLoad) {
     return pendingLoad;
   }
 
-  const loadPromise = loadAcpSession(sessionId);
+  const loadPromise = loadAcpSession(sessionId, replayAll);
   inFlightSessionLoads.set(sessionId, loadPromise);
   try {
     return await loadPromise;
@@ -204,15 +218,23 @@ export function isAcpSessionLoadInFlight(sessionId: string): boolean {
   return inFlightSessionLoads.has(sessionId);
 }
 
-async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> {
+async function loadAcpSession(
+  sessionId: string,
+  replayAll: boolean
+): Promise<AcpLoadSessionResult> {
   const client = await getAcpClient();
   const initialSessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });
   const initialSessionInfo = initialSessionInfoResponse.session;
-  const response = await client.connection.agent.request(methods.agent.session.load, {
+  const request: LoadSessionRequest = {
     sessionId,
     cwd: initialSessionInfo.cwd,
     mcpServers: [],
-  });
+  };
+  const messageCount = sessionInfoMeta(initialSessionInfo).messageCount ?? 0;
+  if (!replayAll && messageCount > REPLAY_TAIL_THRESHOLD) {
+    request._meta = { replayTail: REPLAY_TAIL };
+  }
+  const response = await client.connection.agent.request(methods.agent.session.load, request);
   // Loading can populate missing provider/model metadata.
   const sessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });
 

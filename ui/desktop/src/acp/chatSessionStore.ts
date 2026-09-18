@@ -23,6 +23,8 @@ export interface AcpChatSessionSnapshot {
   progressMessage: string | undefined;
   chatState: ChatState;
   sessionLoadError: string | undefined;
+  sessionLoadDiagnostics: string | undefined;
+  replaySkipped: number;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
   pendingCancelPromptAttemptId: string | null;
@@ -32,6 +34,7 @@ type SnapshotListener = (snapshot: AcpChatSessionSnapshot) => void;
 
 interface StoreEntry extends AcpChatSessionSnapshot {
   adapter: AcpSessionNotificationAdapter;
+  replayNotificationCount: number;
   promptCancellationRestoreState: {
     activeRunId: string | null;
     chatState: ChatState;
@@ -81,8 +84,17 @@ export interface AcpChatSessionActions {
 
   setSessionMetadata(sessionId: string, session: Session | undefined): AcpChatSessionSnapshot;
   startSessionLoad(sessionId: string): AcpChatSessionSnapshot;
-  finishSessionLoad(sessionId: string, session: Session): AcpChatSessionSnapshot;
-  failSessionLoad(sessionId: string, sessionLoadError: string): AcpChatSessionSnapshot;
+  finishSessionLoad(
+    sessionId: string,
+    session: Session,
+    replaySkipped?: number
+  ): AcpChatSessionSnapshot;
+  failSessionLoad(
+    sessionId: string,
+    sessionLoadError: string,
+    sessionLoadDiagnostics?: string
+  ): AcpChatSessionSnapshot;
+  getReplayNotificationCount(sessionId: string): number;
   setSessionLoadError(
     sessionId: string,
     sessionLoadError: string | undefined
@@ -179,6 +191,9 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       progressMessage: undefined,
       chatState: ChatState.Idle,
       sessionLoadError: undefined,
+      sessionLoadDiagnostics: undefined,
+      replaySkipped: 0,
+      replayNotificationCount: 0,
       activePromptAttemptId: null,
       activeRunId: null,
       pendingCancelPromptAttemptId: null,
@@ -214,15 +229,22 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     const entry = getOrCreateEntry(sessionId);
     resetReplayState(entry);
     entry.sessionLoadError = undefined;
+    entry.sessionLoadDiagnostics = undefined;
     entry.progressMessage = undefined;
     entry.chatState = ChatState.LoadingConversation;
     return notify(sessionId, entry);
   };
 
-  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (sessionId, session) => {
+  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (
+    sessionId,
+    session,
+    replaySkipped = 0
+  ) => {
     const entry = getOrCreateEntry(sessionId);
     entry.session = session;
     entry.sessionLoadError = undefined;
+    entry.sessionLoadDiagnostics = undefined;
+    entry.replaySkipped = replaySkipped;
     entry.progressMessage = undefined;
     // Materialize the replayed conversation in one pass (the per-notification
     // fast path above skips message copies while loading).
@@ -234,14 +256,20 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
 
   const failSessionLoad: AcpChatSessionActions['failSessionLoad'] = (
     sessionId,
-    sessionLoadError
+    sessionLoadError,
+    sessionLoadDiagnostics
   ) => {
     const entry = getOrCreateEntry(sessionId);
     entry.sessionLoadError = sessionLoadError;
+    entry.sessionLoadDiagnostics = sessionLoadDiagnostics;
     entry.progressMessage = undefined;
     entry.chatState = ChatState.Idle;
     return notify(sessionId, entry);
   };
+
+  const getReplayNotificationCount: AcpChatSessionActions['getReplayNotificationCount'] = (
+    sessionId
+  ) => sessionsById.get(sessionId)?.replayNotificationCount ?? 0;
 
   const setMessages: AcpChatSessionActions['setMessages'] = (sessionId, messages) => {
     const entry = getOrCreateEntry(sessionId);
@@ -453,6 +481,9 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     notification
   ) => {
     const entry = getOrCreateEntry(notification.sessionId);
+    if (entry.chatState === ChatState.LoadingConversation) {
+      entry.replayNotificationCount += 1;
+    }
     if (shouldClearProgressMessage(notification)) {
       entry.progressMessage = undefined;
     }
@@ -475,6 +506,9 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const applyAcpGooseSessionNotification: AcpChatSessionActions['applyAcpGooseSessionNotification'] =
     (notification) => {
       const entry = getOrCreateEntry(notification.sessionId);
+      if (entry.chatState === ChatState.LoadingConversation) {
+        entry.replayNotificationCount += 1;
+      }
       const changes = entry.adapter.applyGoose(notification);
       // Same session-load replay fast path as applyAcpSessionNotification.
       if (entry.chatState === ChatState.LoadingConversation && entry.lastSnapshot) {
@@ -551,6 +585,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     startSessionLoad,
     finishSessionLoad,
     failSessionLoad,
+    getReplayNotificationCount,
     setSessionLoadError,
     setMessages,
     addPendingLocalSteerMessage,
@@ -631,6 +666,7 @@ function actionsFromStore(store: AcpChatSessionStoreInternal): AcpChatSessionAct
     startSessionLoad: store.startSessionLoad,
     finishSessionLoad: store.finishSessionLoad,
     failSessionLoad: store.failSessionLoad,
+    getReplayNotificationCount: store.getReplayNotificationCount,
     setSessionLoadError: store.setSessionLoadError,
     setMessages: store.setMessages,
     addPendingLocalSteerMessage: store.addPendingLocalSteerMessage,
@@ -693,6 +729,8 @@ function shouldClearProgressMessage(notification: SessionNotification): boolean 
 
 function resetReplayState(entry: StoreEntry): void {
   entry.messages = [];
+  entry.replaySkipped = 0;
+  entry.replayNotificationCount = 0;
   entry.tokenState = { ...initialTokenState };
   entry.notifications = [];
   entry.progressMessage = undefined;
@@ -773,6 +811,8 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     progressMessage: entry.progressMessage,
     chatState: entry.chatState,
     sessionLoadError: entry.sessionLoadError,
+    sessionLoadDiagnostics: entry.sessionLoadDiagnostics,
+    replaySkipped: entry.replaySkipped,
     activePromptAttemptId: entry.activePromptAttemptId,
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,
