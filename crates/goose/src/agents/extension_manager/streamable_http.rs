@@ -695,7 +695,6 @@ mod tests {
     fn test_ctx(working_dir: &std::path::Path) -> ConnectContext {
         ConnectContext {
             timeout: Duration::from_secs(5),
-            provider: Arc::new(Mutex::new(None)),
             client_name: "goose-test".to_string(),
             capabilities: GooseMcpClientCapabilities {
                 mcpui: false,
