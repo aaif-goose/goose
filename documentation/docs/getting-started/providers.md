@@ -91,6 +91,22 @@ goose supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) a
 See the [ACP Providers guide](/docs/guides/acp-providers) for detailed setup instructions.
 :::
 
+### Z.AI Coding Plan
+
+Select **Z.AI Coding Plan** in `goose configure` and supply your Coding Plan API key,
+or set `GOOSE_PROVIDER=zai_coding_plan`, `GOOSE_MODEL=glm-5.3`, and
+`ZAI_CODING_PLAN_API_KEY`. The provider also offers `glm-5.3-flash`.
+
+This provider uses the dedicated OpenAI-compatible endpoint
+`https://api.z.ai/api/coding/paas/v4`. It enables both `stream` and `tool_stream`
+for the listed models so tool arguments arrive incrementally, and preserves
+`reasoning_content` across tool-result turns. The existing **Z.AI** provider
+continues to use the Anthropic-compatible endpoint.
+
+See Z.AI's [Coding Plan model availability](https://docs.z.ai/devpack/overview),
+[tool streaming](https://docs.z.ai/guides/capabilities/stream-tool), and
+[thinking preservation](https://docs.z.ai/guides/capabilities/thinking-mode) documentation.
+
 ## Configure Provider and Model
 
 To configure your chosen provider, see available options, or select a model, visit the `Models` tab in goose Desktop or run `goose configure` in the CLI.
