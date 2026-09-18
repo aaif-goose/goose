@@ -1,11 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, type RenderOptions, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  type RenderOptions,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ScheduledJobDto } from '@aaif/goose-acp-client';
 import { ScheduleModal } from '../ScheduleModal';
 import { IntlTestWrapper } from '../../../i18n/test-utils';
 import { listSavedRecipes } from '../../../recipe/recipe_management';
-import type { RecipeManifest } from '../../../recipe';
+import {
+  parseDeeplink,
+  parseRecipeFromFile,
+  type Recipe,
+  type RecipeManifest,
+} from '../../../recipe';
+
+vi.mock('../../../recipe', async () => {
+  const actual = await vi.importActual<typeof import('../../../recipe')>('../../../recipe');
+  return { ...actual, parseDeeplink: vi.fn(), parseRecipeFromFile: vi.fn() };
+});
 
 vi.mock('../../../recipe/recipe_management', () => ({
   listSavedRecipes: vi.fn(),
@@ -191,5 +209,104 @@ describe('ScheduleModal', () => {
       expect(screen.getByText('Please provide a valid recipe source.')).toBeInTheDocument();
     });
     expect(baseProps.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('clears a parsed recipe while a replacement deeplink is pending', async () => {
+    const priorRecipe = {
+      title: 'Project Helper',
+      description: 'Looks harmless',
+      instructions: 'Run the discarded recipe',
+    } as Recipe;
+    vi.mocked(parseDeeplink)
+      .mockResolvedValueOnce(priorRecipe)
+      .mockImplementationOnce(() => new Promise<Recipe>(() => {}));
+    const user = userEvent.setup();
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Deep link' }));
+    const input = screen.getByPlaceholderText('Paste goose://recipe link here...');
+    fireEvent.change(input, {
+      target: { value: 'goose://recipe?config=discarded' },
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Title: Project Helper')).toBeInTheDocument();
+    });
+
+    fireEvent.change(input, {
+      target: { value: 'goose://recipe?config=replacement' },
+    });
+    expect(screen.queryByText('Title: Project Helper')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create Schedule' }));
+
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText('Please provide a valid recipe source.')).toBeInTheDocument();
+  });
+
+  it('clears a parsed recipe while a replacement YAML file is pending', async () => {
+    const priorRecipe = {
+      title: 'Project Helper',
+      description: 'Looks harmless',
+      instructions: 'Run the discarded recipe',
+    } as Recipe;
+    const replacementRecipe = {
+      title: 'Trusted Helper',
+      description: 'Known local recipe',
+      instructions: 'Run the selected recipe',
+    } as Recipe;
+    let resolveReplacement!: (recipe: Recipe) => void;
+    const pendingReplacement = new Promise<Recipe>((resolve) => {
+      resolveReplacement = resolve;
+    });
+    vi.mocked(parseRecipeFromFile)
+      .mockResolvedValueOnce(priorRecipe)
+      .mockReturnValueOnce(pendingReplacement);
+    window.electron.selectRecipeFile = vi
+      .fn()
+      .mockResolvedValueOnce({
+        found: true,
+        filePath: '/received/project-helper.yaml',
+        file: 'discarded recipe',
+      })
+      .mockResolvedValueOnce({
+        found: true,
+        filePath: '/trusted/project-helper.yaml',
+        file: 'replacement recipe',
+      });
+    const user = userEvent.setup();
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+    const browse = screen.getByRole('button', { name: 'Browse for YAML file...' });
+
+    await user.click(browse);
+    await waitFor(() => {
+      expect(parseRecipeFromFile).toHaveBeenCalledTimes(1);
+      expect(screen.getByLabelText(/name/i)).toHaveValue('project-helper');
+    });
+
+    await user.click(browse);
+    await waitFor(() => {
+      expect(screen.getByText('Selected: /trusted/project-helper.yaml')).toBeInTheDocument();
+      expect(parseRecipeFromFile).toHaveBeenCalledTimes(2);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Create Schedule' }));
+
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText('Please provide a valid recipe source.')).toBeInTheDocument();
+
+    await act(async () => resolveReplacement(replacementRecipe));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/name/i)).toHaveValue('trusted-helper');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Create Schedule' }));
+    await waitFor(() => {
+      expect(baseProps.onSubmit).toHaveBeenCalledWith({
+        sourceType: 'file',
+        id: 'trusted-helper',
+        recipe: replacementRecipe,
+        cron: expect.any(String),
+      });
+    });
   });
 });
