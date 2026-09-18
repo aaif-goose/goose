@@ -57,6 +57,19 @@ const i18n = defineMessages({
     id: 'baseChat.reconnecting',
     defaultMessage: 'Connection lost. Reconnecting…',
   },
+  hiddenMessages: {
+    id: 'baseChat.hiddenMessages',
+    defaultMessage:
+      '{count, plural, one {# earlier message is hidden} other {# earlier messages are hidden}}. goose still has the full history for this conversation.',
+  },
+  showFullHistory: {
+    id: 'baseChat.showFullHistory',
+    defaultMessage: 'Show full history',
+  },
+  copyDiagnostics: {
+    id: 'baseChat.copyDiagnostics',
+    defaultMessage: 'Copy diagnostics',
+  },
 });
 
 const isUserMessage = (message: Message) => message.role === 'user';
@@ -138,7 +151,10 @@ export default function BaseChat({
     submitElicitationResponse,
     stopStreaming,
     retrySessionLoad,
+    loadFullSessionHistory,
     sessionLoadError,
+    sessionLoadDiagnostics,
+    replaySkipped,
     tokenState,
     notifications: toolCallNotifications,
     pauseQueueOnStop,
@@ -452,6 +468,14 @@ export default function BaseChat({
                   <Button variant="outline" onClick={() => setView('chat')}>
                     {intl.formatMessage(i18n.goHome)}
                   </Button>
+                  {sessionLoadDiagnostics && (
+                    <Button
+                      variant="outline"
+                      onClick={() => void navigator.clipboard.writeText(sessionLoadDiagnostics)}
+                    >
+                      {intl.formatMessage(i18n.copyDiagnostics)}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -520,6 +544,18 @@ export default function BaseChat({
 
             {messages.length > 0 || recipe ? (
               <>
+                {replaySkipped > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4 p-3 rounded-lg bg-background-muted text-text-muted text-sm">
+                    <span>{intl.formatMessage(i18n.hiddenMessages, { count: replaySkipped })}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void loadFullSessionHistory()}
+                    >
+                      {intl.formatMessage(i18n.showFullHistory)}
+                    </Button>
+                  </div>
+                )}
                 <SearchView>
                   <ProgressiveMessageList
                     messages={messages}

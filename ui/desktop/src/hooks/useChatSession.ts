@@ -66,6 +66,8 @@ export function useChatSession({
   const chatState = acpSnapshot?.chatState ?? ChatState.LoadingConversation;
   const progressMessage = acpSnapshot?.progressMessage;
   const sessionLoadError = acpSnapshot?.sessionLoadError;
+  const sessionLoadDiagnostics = acpSnapshot?.sessionLoadDiagnostics;
+  const replaySkipped = acpSnapshot?.replaySkipped ?? 0;
   const tokenState = acpSnapshot?.tokenState ?? initialTokenState;
   const queueProcessingBlocked = acpSnapshot?.pendingCancelPromptAttemptId != null;
   const hasActiveRun = acpSnapshot?.activeRunId != null;
@@ -150,6 +152,11 @@ export function useChatSession({
   const retrySessionLoad = useCallback(
     () => acpChatSessionController.loadSession(sessionId, { onSessionLoaded }),
     [sessionId, onSessionLoaded]
+  );
+
+  const loadFullSessionHistory = useCallback(
+    () => acpChatSessionController.loadFullSessionHistory(sessionId),
+    [sessionId]
   );
 
   // Load session on mount or sessionId change
@@ -341,6 +348,9 @@ export function useChatSession({
 
   return {
     sessionLoadError,
+    sessionLoadDiagnostics,
+    replaySkipped,
+    loadFullSessionHistory,
     messages,
     session,
     chatState,

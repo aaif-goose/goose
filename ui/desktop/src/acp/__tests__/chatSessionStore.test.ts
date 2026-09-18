@@ -207,6 +207,37 @@ describe('acpChatSessionStore', () => {
     expect(snapshot.sessionLoadError).toBeUndefined();
   });
 
+  it('reports and then clears the number of messages left out of the replay', () => {
+    const currentSessionId = sessionId('session-1');
+
+    const finished = acpChatSessionActions.finishSessionLoad(
+      currentSessionId,
+      session(currentSessionId),
+      623
+    );
+    expect(finished.replaySkipped).toBe(623);
+
+    const reloading = acpChatSessionActions.startSessionLoad(currentSessionId);
+    expect(reloading.replaySkipped).toBe(0);
+  });
+
+  it('counts replayed notifications so a failed load can report its progress', () => {
+    const currentSessionId = sessionId('session-1');
+
+    acpChatSessionActions.startSessionLoad(currentSessionId);
+    acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(currentSessionId, 'message-1', 'Hello')
+    );
+    acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(currentSessionId, 'message-2', 'World')
+    );
+
+    expect(acpChatSessionActions.getReplayNotificationCount(currentSessionId)).toBe(2);
+
+    acpChatSessionActions.startSessionLoad(currentSessionId);
+    expect(acpChatSessionActions.getReplayNotificationCount(currentSessionId)).toBe(0);
+  });
+
   it('keeps multiple session snapshots isolated', () => {
     const firstSessionId = sessionId('session-1');
     const secondSessionId = sessionId('session-2');

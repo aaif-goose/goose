@@ -23,7 +23,10 @@ export interface UseChatSessionResult {
   ) => Promise<boolean>;
   stopStreaming: () => void;
   retrySessionLoad: () => Promise<void>;
+  loadFullSessionHistory: () => Promise<void>;
   sessionLoadError?: string;
+  sessionLoadDiagnostics?: string;
+  replaySkipped: number;
   tokenState: TokenState;
   notifications: Map<string, NotificationEvent[]>;
   pauseQueueOnStop: boolean;

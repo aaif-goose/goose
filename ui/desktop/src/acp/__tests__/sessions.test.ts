@@ -7,6 +7,8 @@ import {
   acpLoadSession,
   acpNewSession,
   sessionInfoToSession,
+  REPLAY_TAIL,
+  REPLAY_TAIL_THRESHOLD,
 } from '../sessions';
 
 vi.mock('../acpConnection', () => ({
@@ -151,6 +153,61 @@ describe('ACP sessions', () => {
       mcpServers: [],
       _meta: { client: 'goose-desktop' },
     });
+  });
+
+  it('caps the replay of long conversations and lifts the cap on a full reload', async () => {
+    const longSessionInfo = sessionInfo({
+      _meta: {
+        createdAt: '2026-01-01T00:00:00Z',
+        messageCount: REPLAY_TAIL_THRESHOLD + 1,
+      },
+    });
+    const request = vi.fn().mockResolvedValue({});
+    const client = {
+      connection: { agent: { request } },
+      goose: {
+        sessionInfo_unstable: vi.fn().mockResolvedValue({ session: longSessionInfo }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    await acpLoadSession('session-1');
+
+    expect(request).toHaveBeenCalledWith(methods.agent.session.load, {
+      sessionId: 'session-1',
+      cwd: '/tmp',
+      mcpServers: [],
+      _meta: { replayTail: REPLAY_TAIL },
+    });
+
+    request.mockClear();
+    await acpLoadSession('session-1', true);
+
+    expect(request).toHaveBeenCalledWith(methods.agent.session.load, {
+      sessionId: 'session-1',
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+  });
+
+  it('reports how many messages the server left out of the replay', async () => {
+    const client = {
+      connection: {
+        agent: { request: vi.fn().mockResolvedValue({ _meta: { replaySkipped: 623 } }) },
+      },
+      goose: {
+        sessionInfo_unstable: vi.fn().mockResolvedValue({ session: sessionInfo() }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    const result = await acpLoadSession('session-1');
+
+    expect(result.meta.replaySkipped).toBe(623);
   });
 
   it('carries the recipe parameter scope id in new-session metadata', async () => {

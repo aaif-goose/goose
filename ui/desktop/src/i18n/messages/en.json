@@ -146,17 +146,26 @@
   "backButton.back": {
     "defaultMessage": "Back"
   },
+  "baseChat.copyDiagnostics": {
+    "defaultMessage": "Copy diagnostics"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Failed to Load Session"
   },
   "baseChat.goHome": {
     "defaultMessage": "Go home"
   },
+  "baseChat.hiddenMessages": {
+    "defaultMessage": "{count,plural,one{# earlier message is hidden. goose still has the full history for this conversation.} other{# earlier messages are hidden. goose still has the full history for this conversation.}}"
+  },
   "baseChat.reconnecting": {
     "defaultMessage": "Connection lost. Reconnecting…"
   },
   "baseChat.retry": {
     "defaultMessage": "Retry"
+  },
+  "baseChat.showFullHistory": {
+    "defaultMessage": "Show full history"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Extension Updated"

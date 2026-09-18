@@ -28,6 +28,7 @@ vi.mock('../chatSessionStore', () => ({
     startSessionLoad: vi.fn(),
     finishSessionLoad: vi.fn(),
     failSessionLoad: vi.fn(),
+    getReplayNotificationCount: vi.fn(() => 0),
     startPromptAttempt: vi.fn(),
     finishPromptAttemptIfCurrent: vi.fn(),
     isCurrentPromptAttempt: vi.fn(),
@@ -111,6 +112,8 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     progressMessage: undefined,
     chatState: activePromptAttemptId ? ChatState.Streaming : ChatState.Idle,
     sessionLoadError: undefined,
+    sessionLoadDiagnostics: undefined,
+    replaySkipped: 0,
     activePromptAttemptId,
     activeRunId: activePromptAttemptId ? 'run-1' : null,
     pendingCancelPromptAttemptId: null,
@@ -149,10 +152,52 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      0
+    );
+  });
+
+  it('lifts the replay cap when the user asks for the full history', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+
+    await acpChatSessionController.loadFullSessionHistory(SESSION_ID);
+
+    expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, true);
+  });
+
+  it('records how far the replay got when a session load fails', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: { ...loadedSession(), message_count: 823 },
+    });
+    vi.mocked(acpChatSessionActions.getReplayNotificationCount).mockReturnValue(412);
+    vi.mocked(acpLoadSession).mockRejectedValue(new Error('ACP connection closed'));
+
+    await acpChatSessionController.restoreSession(SESSION_ID);
+
+    const [, message, diagnostics] = vi.mocked(acpChatSessionActions.failSessionLoad).mock.calls[0];
+    expect(message).toContain('ACP connection closed');
+    expect(message).toContain('received 412 updates for ~823 stored messages');
+    expect(diagnostics).toContain('replayUpdatesReceived: 412');
+    expect(diagnostics).toContain('storedMessages: 823');
+  });
+
+  it('leaves the error message alone when the replay never started', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    vi.mocked(acpChatSessionActions.getReplayNotificationCount).mockReturnValue(0);
+    vi.mocked(acpLoadSession).mockRejectedValue(new Error('Session not found'));
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledWith(
+      SESSION_ID,
+      'Session not found',
+      expect.stringContaining('replayUpdatesReceived: 0')
     );
   });
 
@@ -162,10 +207,11 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).not.toHaveBeenCalled();
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      0
     );
   });
 
@@ -180,7 +226,7 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
   });
 
   it('restores a cached session from the server', async () => {
@@ -193,10 +239,11 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.restoreSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      0
     );
   });
 });
