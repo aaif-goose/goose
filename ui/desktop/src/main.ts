@@ -983,6 +983,13 @@ let appConfig = {
   // If GOOSE_ALLOWLIST_WARNING env var is not set, defaults to false (strict blocking mode)
   GOOSE_ALLOWLIST_WARNING: process.env.GOOSE_ALLOWLIST_WARNING === 'true',
   GOOSE_DISABLE_NOSTR_SHARING: process.env.GOOSE_DISABLE_NOSTR_SHARING === 'true',
+  // Decision model used for just-in-time routing (see src/decisionModel).
+  // Jev is used when TYPESAFE_API_KEY is set; otherwise any OpenAI-compatible
+  // endpoint can be plugged in via DECISION_MODEL_BASE_URL + DECISION_MODEL.
+  TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY || '',
+  DECISION_MODEL_BASE_URL: process.env.DECISION_MODEL_BASE_URL || '',
+  DECISION_MODEL: process.env.DECISION_MODEL || '',
+  DECISION_MODEL_API_KEY: process.env.DECISION_MODEL_API_KEY || '',
 };
 
 const windowMap = new Map<number, BrowserWindow>();
@@ -2025,6 +2032,42 @@ ipcMain.handle('get-acp-url', async (event) => {
   }
   return gooseServeLeases.getAcpUrl(windowId) ?? null;
 });
+
+// The decision model API is server-to-server and sends no CORS headers, so the
+// renderer cannot call it directly. Relaying through main also keeps the API key
+// out of the renderer entirely.
+ipcMain.handle(
+  'decision-model-request',
+  async (
+    _event,
+    request: { url: string; body: unknown; apiKeyName: string }
+  ): Promise<{ ok: true; data: unknown } | { ok: false; status: number; error: string }> => {
+    const apiKey = process.env[request.apiKeyName];
+    if (!apiKey) {
+      return { ok: false, status: 0, error: `${request.apiKeyName} is not set` };
+    }
+
+    try {
+      const response = await fetch(request.url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request.body),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        return { ok: false, status: response.status, error: detail.slice(0, 500) };
+      }
+
+      return { ok: true, data: await response.json() };
+    } catch (error) {
+      return { ok: false, status: 0, error: String(error) };
+    }
+  }
+);
 
 // Handle menu bar icon visibility
 ipcMain.handle('set-menu-bar-icon', async (_event, show: boolean) => {

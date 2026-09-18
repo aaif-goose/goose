@@ -133,6 +133,10 @@ describe('buildCSP', () => {
     expect(csp).toContain('http://dev.company.net:12604');
   });
 
+  it('allows the decision model API so JIT model routing can reach it', () => {
+    expect(buildCSP()).toContain('https://api.typesafe.ai');
+  });
+
   it('always includes core directives', () => {
     const config: ExternalBackendConfig = {
       enabled: true,

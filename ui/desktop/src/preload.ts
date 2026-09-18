@@ -112,6 +112,11 @@ type ElectronAPI = {
   openInChrome: (url: string) => void;
   reloadApp: () => void;
   checkForOllama: () => Promise<boolean>;
+  decisionModelRequest: (request: {
+    url: string;
+    body: unknown;
+    apiKeyName: string;
+  }) => Promise<{ ok: true; data: unknown } | { ok: false; status: number; error: string }>;
   selectFileOrDirectory: (defaultPath?: string) => Promise<string | null>;
   selectImportSessionFile: () => Promise<{
     filePath: string;
@@ -214,6 +219,7 @@ const electronAPI: ElectronAPI = {
   openInChrome: (url: string) => ipcRenderer.send('open-in-chrome', url),
   reloadApp: () => ipcRenderer.send('reload-app'),
   checkForOllama: () => ipcRenderer.invoke('check-ollama'),
+  decisionModelRequest: (request) => ipcRenderer.invoke('decision-model-request', request),
 
   selectFileOrDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke('select-file-or-directory', defaultPath),

@@ -37,6 +37,13 @@ import { isAcpRecovering, subscribeToAcpRecovery } from '../acp/acpConnection';
 import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
 import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
 import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
+import { acpSetSessionProviderModel } from '../acp/providers';
+import { toastError, toastSuccess } from '../toasts';
+import {
+  decideModelForPrompt,
+  isModelRoutingEnabled,
+  type RoutingDecision,
+} from '../decisionModel/modelRouting';
 
 const NEW_LIVE_VOICE_GREETING = 'Hello! What can I help you with?';
 
@@ -97,6 +104,7 @@ export default function BaseChat({
   const shouldStartLiveVoice = location.state?.startLiveVoice === true;
   const [hasStartedUsingRecipe, setHasStartedUsingRecipe] = React.useState(false);
   const [acpRecovering, setAcpRecovering] = useState(isAcpRecovering);
+  const [routingDecision, setRoutingDecision] = useState<RoutingDecision | null>(null);
   const [liveVoiceAvailability, setLiveVoiceAvailability] =
     useState<LiveVoiceAvailabilityResponse_unstable | null>(null);
   const isMobile = useIsMobile();
@@ -294,14 +302,41 @@ export default function BaseChat({
       .reverse();
   }, [messages]);
 
-  const chatInputSubmit = (input: UserInput) => {
+  const chatInputSubmit = async (input: UserInput) => {
     if (recipe && input.msg.trim()) {
       setHasStartedUsingRecipe(true);
     }
+
+    const provider = session?.provider_name;
+    if (isModelRoutingEnabled() && provider) {
+      const decision = await decideModelForPrompt(input.msg, provider);
+      if (decision) {
+        try {
+          await acpSetSessionProviderModel(
+            sessionId,
+            provider,
+            decision.model,
+            decision.thinkingEffort
+          );
+          setRoutingDecision(decision);
+          toastSuccess({
+            title: `${decision.decidedBy} selected ${decision.model}`,
+            msg: `${decision.thinkingEffort} thinking · ${decision.reason}`,
+          });
+        } catch (error) {
+          console.error('[decisionModel] failed to apply selected model', error);
+          toastError({
+            title: 'Decision model could not switch models',
+            msg: `${error}`,
+          });
+        }
+      }
+    }
+
     handleSubmit(input);
   };
 
-  const sessionModel = session?.model_config?.model_name ?? null;
+  const sessionModel = routingDecision?.model ?? session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
   const latestInference = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -549,6 +584,30 @@ export default function BaseChat({
         {acpRecovering && (
           <div role="status" className="mx-4 mb-2 text-sm text-text-secondary">
             {intl.formatMessage(i18n.reconnecting)}
+          </div>
+        )}
+
+        {routingDecision && (
+          <div
+            role="status"
+            className="mx-4 mb-2 flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2 text-sm text-text-primary animate-[fadein_300ms_ease-in_forwards]"
+          >
+            <span className="rounded-full bg-background-inverse px-2 py-0.5 text-xs font-medium text-text-inverse">
+              {routingDecision.decidedBy}
+            </span>
+            <span className="flex-1 truncate">
+              <span className="font-medium">{routingDecision.model}</span>
+              <span className="text-text-secondary">
+                {` · ${routingDecision.thinkingEffort} thinking · ${Math.round(routingDecision.confidence * 100)}% confidence`}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setRoutingDecision(null)}
+              className="text-xs text-text-secondary hover:text-text-primary"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 

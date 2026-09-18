@@ -13,6 +13,8 @@ const DEFAULT_CONNECT_SOURCES = [
   'https://api.github.com',
   'https://github.com',
   'https://objects.githubusercontent.com',
+  // Decision model API used for just-in-time model routing (src/decisionModel)
+  'https://api.typesafe.ai',
 ];
 
 export interface BackendOriginLease {
