@@ -294,6 +294,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
       if (fileResponse.filePath.endsWith('.yaml') || fileResponse.filePath.endsWith('.yml')) {
         const requestId = bumpSourceRequest();
         setRecipeSourcePath(fileResponse.filePath);
+        setParsedRecipe(null);
         setInternalValidationError(null);
 
         try {
