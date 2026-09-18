@@ -11,6 +11,7 @@ pub type OpenRouterSessionIdProvider = Box<dyn Fn() -> Option<String> + Send + S
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
 use crate::conversation::message::Message;
+use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
 use crate::formats::openai::create_request;
 use crate::model::ModelConfig;
@@ -392,6 +393,27 @@ impl crate::base::ProviderDescriptor for OpenRouterProvider {
                 ConfigKey::new(OPENROUTER_PARAMETERS_CONFIG_KEY, false, false, None, false),
             ],
         )
+    }
+}
+
+#[async_trait]
+impl DecisionProvider for OpenRouterProvider {
+    async fn create_decision(
+        &self,
+        request: &DecisionRequest,
+    ) -> Result<DecisionResponse, ProviderError> {
+        let payload = serde_json::to_value(request).map_err(|error| {
+            ProviderError::RequestFailed(format!("Failed to serialize Decisions request: {error}"))
+        })?;
+        let response = self
+            .api_client
+            .request("api/alpha/decisions")
+            .response_post(&payload)
+            .await?;
+        let response = handle_status(response).await?;
+        response.json().await.map_err(|error| {
+            ProviderError::RequestFailed(format!("Failed to parse Decisions response: {error}"))
+        })
     }
 }
 
