@@ -334,11 +334,7 @@ Then, you can try asking questions that require using the extension you added.
 
 ---
 
-## Advanced Features for MCP Extensions
-
-goose supports MCP Apps for extensions that need an interactive interface.
-
-### MCP Apps: Interactive Extensions
+## MCP Apps: Interactive Extensions
 
 **[MCP Apps](/docs/tutorials/building-mcp-apps)** enable rich, interactive user interfaces instead of text-only responses.
 

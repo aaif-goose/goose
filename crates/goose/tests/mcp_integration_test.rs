@@ -6,24 +6,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{env, fs};
 
-use rmcp::model::{CallToolRequestParams, CallToolResult, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use rmcp::object;
 use tokio_util::sync::CancellationToken;
 
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
 use goose::agents::GoosePlatform;
-use goose_providers::model::ModelConfig;
 
 use test_case::test_case;
 
-use async_trait::async_trait;
-use goose::conversation::message::Message;
-use goose::providers::base::{
-    stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
-};
-use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use goose_providers::errors::ProviderError;
 use once_cell::sync::Lazy;
 use std::process::Command;
 
@@ -38,51 +30,6 @@ struct CargoBuildMessage {
 struct Target {
     name: String,
     kind: Vec<String>,
-}
-
-#[derive(Clone, Default)]
-pub struct MockProvider;
-
-impl MockProvider {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl goose::providers::base::ProviderDescriptor for MockProvider {
-    fn metadata() -> ProviderMetadata {
-        ProviderMetadata::empty()
-    }
-}
-
-impl ProviderDef for MockProvider {
-    type Provider = Self;
-
-    fn from_env(
-        _extensions: Vec<goose::config::ExtensionConfig>,
-        _tls_config: Option<goose::providers::api_client::TlsConfig>,
-    ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
-        Box::pin(async move { Ok(Self::new()) })
-    }
-}
-
-#[async_trait]
-impl Provider for MockProvider {
-    fn get_name(&self) -> &str {
-        "mock"
-    }
-
-    async fn stream(
-        &self,
-        _model_config: &ModelConfig,
-        _system: &str,
-        _messages: &[Message],
-        _tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
-        let message = Message::assistant().with_text("mock response");
-        let usage = ProviderUsage::new("mock".to_string(), Usage::default());
-        Ok(stream_from_single_message(message, usage))
-    }
 }
 
 fn build_and_get_binary_path() -> PathBuf {
@@ -253,15 +200,12 @@ async fn test_replayed_session(
         available_tools: vec![],
     };
 
-    let provider = Arc::new(tokio::sync::Mutex::new(Some(
-        Arc::new(MockProvider::new()) as Arc<dyn Provider>
-    )));
     let temp_dir = tempfile::tempdir().unwrap();
     let session_manager = Arc::new(goose::session::SessionManager::new(
         temp_dir.path().to_path_buf(),
     ));
     let extension_manager = Arc::new(ExtensionManager::new(
-        provider,
+        Arc::new(tokio::sync::Mutex::new(None)),
         session_manager,
         None,
         GoosePlatform::GooseDesktop.to_string(),
