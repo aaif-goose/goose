@@ -26,6 +26,11 @@ impl MachineSession for Session {
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
     }
+    fn thinking_effort(&self) -> Option<goose_providers::thinking::ThinkingEffort> {
+        self.model_config
+            .as_ref()
+            .and_then(|config| config.thinking_effort())
+    }
 }
 
 #[async_trait]
@@ -116,6 +121,12 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 GooseEffect::SetExtensionData(extension_data) => {
                     self.update(&session.id)
                         .extension_data(extension_data.clone())
+                        .apply()
+                        .await?;
+                }
+                GooseEffect::SetModelConfig(model_config) => {
+                    self.update(&session.id)
+                        .model_config(model_config.clone())
                         .apply()
                         .await?;
                 }

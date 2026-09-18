@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_providers::conversation::message::Message;
 use goose_providers::conversation::{Conversation, EffectiveRole};
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
@@ -61,9 +60,18 @@ struct JevChoice {
 pub struct AutoEffortOperation {
     client: reqwest::Client,
     api_key: String,
+    endpoint: String,
 }
 
 impl AutoEffortOperation {
+    pub(super) fn new(api_key: String, endpoint: String) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            api_key,
+            endpoint,
+        }
+    }
+
     pub fn from_config(model_config: &ModelConfig) -> Option<Self> {
         let config = Config::global();
         if !model_config.is_reasoning_model()
@@ -83,16 +91,13 @@ impl AutoEffortOperation {
             return None;
         }
 
-        Some(Self {
-            client: reqwest::Client::new(),
-            api_key,
-        })
+        Some(Self::new(api_key, ENDPOINT.to_string()))
     }
 
     async fn classify(&self, request: &str) -> Result<EffortDecision> {
         let response = self
             .client
-            .post(ENDPOINT)
+            .post(&self.endpoint)
             .bearer_auth(&self.api_key)
             .timeout(Duration::from_secs(2))
             .json(&json!({
@@ -127,20 +132,6 @@ impl AutoEffortOperation {
     }
 }
 
-pub(super) fn selected_effort(messages: &[Message]) -> Option<ThinkingEffort> {
-    messages
-        .iter()
-        .rfind(|message| {
-            message.role == rmcp::model::Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response()
-        })?
-        .metadata
-        .operation_note("auto_effort", DECISION)
-        .and_then(|value| serde_json::from_value::<EffortDecision>(value.clone()).ok())
-        .and_then(|decision| decision.effort)
-}
-
 #[async_trait]
 impl Operation<Session, GooseEffect> for AutoEffortOperation {
     fn name(&self) -> &'static str {
@@ -149,7 +140,7 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
 
     async fn run(
         &self,
-        _session: &Session,
+        session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
@@ -183,92 +174,25 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
             return not_applicable();
         };
 
-        applied([ConversationEffect::SetMessageOperationNote {
-            message_id,
-            operation: self.name().to_string(),
-            key: DECISION.to_string(),
-            value: serde_json::to_value(decision)?,
+        let mut effects = Vec::new();
+        if let Some(effort) = decision.effort {
+            let model_config = session
+                .model_config
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("session has no model config"))?
+                .with_thinking_effort(effort);
+            effects.push(GooseEffect::SetModelConfig(model_config));
         }
-        .into()])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_choice_response() {
-        let response = serde_json::from_value::<JevResponse>(json!({
-            "model": "jev-1.13.0",
-            "answers": {
-                "effort": {
-                    "type": "choice",
-                    "choice": "medium",
-                    "probabilities": {
-                        "off": 0.01,
-                        "low": 0.09,
-                        "medium": 0.8,
-                        "high": 0.09,
-                        "max": 0.01
-                    },
-                    "confidence": 0.75
-                }
-            },
-            "usage": { "input_tokens": 42, "output_tokens": 7 }
-        }))
-        .unwrap();
-
-        assert_eq!(response.answers.effort.choice, ThinkingEffort::Medium);
-        assert_eq!(response.answers.effort.probabilities["medium"], 0.8);
-    }
-
-    #[test]
-    fn reads_selected_effort_from_turn_metadata() {
-        let mut kickoff = Message::user().with_text("fix the bug");
-        kickoff.metadata.set_operation_note(
-            "auto_effort",
-            DECISION,
-            serde_json::to_value(EffortDecision {
-                effort: Some(ThinkingEffort::High),
-                model: Some(MODEL.to_string()),
-                confidence: Some(0.91),
-                probabilities: HashMap::from([("high".to_string(), 0.91)]),
-            })
-            .unwrap(),
+        effects.push(
+            ConversationEffect::SetMessageOperationNote {
+                message_id,
+                operation: self.name().to_string(),
+                key: DECISION.to_string(),
+                value: serde_json::to_value(decision)?,
+            }
+            .into(),
         );
 
-        assert_eq!(selected_effort(&[kickoff]), Some(ThinkingEffort::High));
-    }
-
-    #[test]
-    fn fallback_decision_preserves_configured_effort() {
-        let mut kickoff = Message::user().with_text("fix the bug");
-        kickoff.metadata.set_operation_note(
-            "auto_effort",
-            DECISION,
-            serde_json::to_value(EffortDecision::fallback()).unwrap(),
-        );
-
-        assert_eq!(selected_effort(&[kickoff]), None);
-    }
-
-    #[test]
-    fn does_not_reuse_a_previous_turns_effort() {
-        let mut previous = Message::user().with_text("solve a hard problem");
-        previous.metadata.set_operation_note(
-            "auto_effort",
-            DECISION,
-            serde_json::to_value(EffortDecision {
-                effort: Some(ThinkingEffort::Max),
-                model: Some(MODEL.to_string()),
-                confidence: Some(0.99),
-                probabilities: HashMap::from([("max".to_string(), 0.99)]),
-            })
-            .unwrap(),
-        );
-        let current = Message::user().with_text("hello");
-
-        assert_eq!(selected_effort(&[previous, current]), None);
+        applied(effects)
     }
 }

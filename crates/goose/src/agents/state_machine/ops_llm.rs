@@ -117,15 +117,12 @@ impl Provider for GooseInferenceProvider {
         messages: &[Message],
         tools: &[rmcp::model::Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let model_config = super::ops_auto_effort::selected_effort(messages)
-            .map(|effort| model_config.clone().with_thinking_effort(effort))
-            .unwrap_or_else(|| model_config.clone());
         let messages = enrich_unclaimed_tool_errors(messages, tools);
         let (tools, toolshim_tools, system_prompt) =
             crate::agents::reply_parts::prepare_tools_for_provider(
                 tools.to_vec(),
                 system.to_string(),
-                &model_config,
+                model_config,
             );
         let advertised_tool_descriptors = tools
             .iter()
@@ -147,7 +144,7 @@ impl Provider for GooseInferenceProvider {
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let stream = crate::agents::reply_parts::stream_response_from_provider(
             self.inner.clone(),
-            model_config,
+            model_config.clone(),
             &session_id,
             &system_prompt,
             &messages,

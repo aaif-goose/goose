@@ -4,6 +4,7 @@ use crate::providers::base::ProviderUsage;
 use crate::recipe::Recipe;
 use crate::session::ExtensionData;
 use goose_agent::operation::{ConversationEffect, MachineEffect};
+use goose_providers::model::ModelConfig;
 
 pub enum GooseEffect {
     Conversation(ConversationEffect),
@@ -13,6 +14,7 @@ pub enum GooseEffect {
     },
     SetRecipe(Box<Option<Recipe>>),
     SetExtensionData(ExtensionData),
+    SetModelConfig(ModelConfig),
     RecordUsage(ProviderUsage),
 }
 

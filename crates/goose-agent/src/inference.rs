@@ -16,6 +16,7 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
+use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
     Inference, InferenceInput, Operation, OperationResult,
@@ -320,7 +321,7 @@ impl<S: Sync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> 
 }
 
 #[async_trait]
-impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
@@ -346,7 +347,11 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             return not_applicable();
         }
 
-        let span = inference_span(self.provider.as_ref(), &self.model_config);
+        let model_config = session
+            .thinking_effort()
+            .map(|effort| self.model_config.clone().with_thinking_effort(effort))
+            .unwrap_or_else(|| self.model_config.clone());
+        let span = inference_span(self.provider.as_ref(), &model_config);
 
         async {
             let PreparedInferenceRequest {
@@ -383,7 +388,7 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             let stream = self
                 .provider
                 .stream(
-                    &self.model_config,
+                    &model_config,
                     &system_prompt,
                     conversation_for_provider.messages(),
                     &tools,
@@ -398,7 +403,7 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
                 }
             };
 
-            let requested_model = self.model_config.model_name.clone();
+            let requested_model = model_config.model_name.clone();
             let resolved_model = self
                 .provider
                 .fetch_model_info(&requested_model)
