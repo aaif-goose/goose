@@ -611,7 +611,6 @@ impl ExtensionManager {
             self.context.session_manager.action_required(),
             self.hydrate_mcp_apps(),
         )
-        .await
     }
 
     /// Everything running, in key order. Callers that do not yet hold a set of
