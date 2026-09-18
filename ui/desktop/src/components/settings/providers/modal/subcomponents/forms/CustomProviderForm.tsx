@@ -128,6 +128,36 @@ const i18n = defineMessages({
     id: 'customProviderForm.modelsPlaceholder',
     defaultMessage: 'model-a, model-b, model-c',
   },
+  fetchModels: {
+    id: 'customProviderForm.fetchModels',
+    defaultMessage: 'Fetch model list',
+  },
+  fetchingModels: {
+    id: 'customProviderForm.fetchingModels',
+    defaultMessage: 'Fetching…',
+  },
+  useAllModels: {
+    id: 'customProviderForm.useAllModels',
+    defaultMessage: 'Use all',
+  },
+  fetchModelsHint: {
+    id: 'customProviderForm.fetchModelsHint',
+    defaultMessage:
+      'GET …/v1/models with the current API URL and key. If the URL already ends in /v1, another /v1 is not appended. When editing an existing provider, paste the key first (a blank field does not reuse the stored secret). Check models to keep, or use all.',
+  },
+  fetchModelsNeedUrl: {
+    id: 'customProviderForm.fetchModelsNeedUrl',
+    defaultMessage: 'Enter an API URL first.',
+  },
+  fetchModelsNeedKey: {
+    id: 'customProviderForm.fetchModelsNeedKey',
+    defaultMessage: 'Paste the API key before fetching when editing an existing provider.',
+  },
+  fetchModelsFailed: {
+    id: 'customProviderForm.fetchModelsFailed',
+    defaultMessage:
+      'Could not fetch models. Check the URL, key, and that the relay exposes /v1/models. {detail}',
+  },
   toolCalling: {
     id: 'customProviderForm.toolCalling',
     defaultMessage: 'Tool calling',
@@ -229,6 +259,41 @@ const i18n = defineMessages({
   },
 });
 
+export function resolveModelListUrls(apiUrl: string): string[] {
+  const base = apiUrl.trim().replace(/\/+$/, '');
+  if (!base) return [];
+  if (/\/models$/i.test(base)) return [base];
+  // OpenAI-compatible providers already store https://host/v1 — do not emit /v1/v1/models.
+  if (/\/v\d+$/i.test(base)) return [`${base}/models`];
+  return [`${base}/v1/models`, `${base}/models`];
+}
+
+function parseModelIds(payload: unknown): string[] {
+  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const list = Array.isArray(record.data)
+    ? record.data
+    : Array.isArray(record.models)
+      ? record.models
+      : Array.isArray(payload)
+        ? payload
+        : [];
+  return [
+    ...new Set(
+      list
+        .map((item) => {
+          if (typeof item === 'string') return item.trim();
+          if (item && typeof item === 'object') {
+            const rec = item as Record<string, unknown>;
+            const id = rec.id ?? rec.name;
+            return typeof id === 'string' ? id.trim() : '';
+          }
+          return '';
+        })
+        .filter(Boolean)
+    ),
+  ];
+}
+
 type Step = 'choice' | 'catalog' | 'form';
 
 type ProviderEngine = 'openai_compatible' | 'anthropic_compatible' | 'ollama_compatible';
@@ -274,6 +339,9 @@ export default function CustomProviderForm({
   const [basePath, setBasePath] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [models, setModels] = useState('');
+  const [fetchedModelIds, setFetchedModelIds] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [supportsStreaming, setSupportsStreaming] = useState(true);
   const [toolshim, setToolshim] = useState(false);
@@ -355,6 +423,8 @@ export default function CustomProviderForm({
     setApiUrl('');
     setBasePath('');
     setModels('');
+    setFetchedModelIds([]);
+    setFetchModelsError(null);
     setEngine('openai_compatible');
     setSupportsStreaming(true);
     setRequiresAuth(false);
@@ -364,6 +434,71 @@ export default function CustomProviderForm({
   const handleBackToChoice = () => {
     clearSensitiveState();
     setStep('choice');
+  };
+
+  const applySelectedModels = (ids: string[]) => {
+    setModels(ids.join(', '));
+  };
+
+  const handleFetchModels = async () => {
+    setFetchModelsError(null);
+    const urls = resolveModelListUrls(apiUrl);
+    if (urls.length === 0) {
+      setFetchModelsError(intl.formatMessage(i18n.fetchModelsNeedUrl));
+      return;
+    }
+    if (requiresAuth && !apiKey.trim()) {
+      setFetchModelsError(intl.formatMessage(i18n.fetchModelsNeedKey));
+      return;
+    }
+
+    const headerObject = headers.reduce(
+      (acc, header) => {
+        if (header.key.trim() && header.value.trim()) {
+          acc[header.key.trim()] = header.value.trim();
+        }
+        return acc;
+      },
+      {} as Record<string, string>
+    );
+
+    setFetchingModels(true);
+    try {
+      let lastDetail = '';
+      for (const url of urls) {
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              ...(apiKey.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : {}),
+              ...headerObject,
+            },
+          });
+          if (!response.ok) {
+            lastDetail = `${response.status} ${url}`;
+            continue;
+          }
+          const ids = parseModelIds(await response.json());
+          if (ids.length === 0) {
+            lastDetail = `empty ${url}`;
+            continue;
+          }
+          setFetchedModelIds(ids);
+          const selected = models
+            .split(',')
+            .map((name) => name.trim())
+            .filter((name) => ids.includes(name));
+          applySelectedModels(selected.length > 0 ? selected : ids);
+          return;
+        } catch (error) {
+          lastDetail = error instanceof Error ? error.message : String(error);
+        }
+      }
+      setFetchModelsError(intl.formatMessage(i18n.fetchModelsFailed, { detail: lastDetail }));
+    } finally {
+      setFetchingModels(false);
+    }
   };
 
   const handleCancel = () => {
@@ -813,6 +948,64 @@ export default function CustomProviderForm({
             aria-describedby={validationErrors.models ? 'available-models-error' : undefined}
             className={validationErrors.models ? 'border-red-500' : ''}
           />
+          <div className="flex flex-wrap gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={fetchingModels}
+              onClick={() => void handleFetchModels()}
+            >
+              {fetchingModels
+                ? intl.formatMessage(i18n.fetchingModels)
+                : intl.formatMessage(i18n.fetchModels)}
+            </Button>
+            {fetchedModelIds.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => applySelectedModels(fetchedModelIds)}
+              >
+                {intl.formatMessage(i18n.useAllModels)}
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-text-muted mt-1">{intl.formatMessage(i18n.fetchModelsHint)}</p>
+          {fetchModelsError && (
+            <p className="text-red-500 text-sm mt-1" role="alert">
+              {fetchModelsError}
+            </p>
+          )}
+          {fetchedModelIds.length > 0 && (
+            <div className="mt-2 max-h-40 overflow-y-auto border border-border rounded-md p-2 space-y-1">
+              {fetchedModelIds.map((id) => {
+                const selected = models
+                  .split(',')
+                  .map((name) => name.trim())
+                  .filter(Boolean)
+                  .includes(id);
+                return (
+                  <label key={id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => {
+                        const current = models
+                          .split(',')
+                          .map((name) => name.trim())
+                          .filter(Boolean);
+                        applySelectedModels(
+                          selected ? current.filter((name) => name !== id) : [...current, id]
+                        );
+                      }}
+                    />
+                    <span className="font-mono text-xs">{id}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
           {validationErrors.models && (
             <p id="available-models-error" className="text-red-500 text-sm mt-1">
               {validationErrors.models}
