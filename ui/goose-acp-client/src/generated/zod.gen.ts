@@ -2201,6 +2201,19 @@ export const zLocalInferenceBuiltinChatTemplatesListResponse_unstable = z.object
     templates: z.array(z.string())
 });
 
+export const zProjectCostAggregateRequest_unstable = z.record(z.string(), z.unknown());
+
+export const zProjectCostEntry = z.object({
+    workingDir: z.string(),
+    totalCost: z.number().nullish(),
+    sessionCount: z.int().gte(0),
+    sessionsWithCost: z.int().gte(0)
+});
+
+export const zProjectCostAggregateResponse_unstable = z.object({
+    projects: z.array(zProjectCostEntry)
+});
+
 /**
  * Streaming context-window usage update for a session.
  */
@@ -2439,7 +2452,8 @@ export const zExtRequest = z.object({
             zLocalInferenceModelSettingsUpdateRequest_unstable,
             zLocalInferenceHuggingFaceSearchRequest_unstable,
             zLocalInferenceHuggingFaceRepoVariantsRequest_unstable,
-            zLocalInferenceBuiltinChatTemplatesListRequest_unstable
+            zLocalInferenceBuiltinChatTemplatesListRequest_unstable,
+            zProjectCostAggregateRequest_unstable
         ]),
         z.record(z.string(), z.unknown())
     ]).nullish()
@@ -2526,7 +2540,8 @@ export const zExtResponse = z.union([
                 zLocalInferenceModelSettingsUpdateResponse_unstable,
                 zLocalInferenceHuggingFaceSearchResponse_unstable,
                 zLocalInferenceHuggingFaceRepoVariantsResponse_unstable,
-                zLocalInferenceBuiltinChatTemplatesListResponse_unstable
+                zLocalInferenceBuiltinChatTemplatesListResponse_unstable,
+                zProjectCostAggregateResponse_unstable
             ]),
             z.unknown()
         ]).optional()

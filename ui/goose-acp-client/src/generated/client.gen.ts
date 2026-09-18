@@ -131,6 +131,8 @@ import type {
   PreferencesReadRequest_unstable,
   PreferencesReadResponse_unstable,
   PreferencesSaveRequest_unstable,
+  ProjectCostAggregateRequest_unstable,
+  ProjectCostAggregateResponse_unstable,
   PromptOperationResponse_unstable,
   ProviderCatalogListRequest_unstable,
   ProviderCatalogListResponse_unstable,
@@ -246,6 +248,7 @@ import {
   zOnboardingImportScanResponse_unstable,
   zParseRecipeResponse_unstable,
   zPreferencesReadResponse_unstable,
+  zProjectCostAggregateResponse_unstable,
   zPromptOperationResponse_unstable,
   zProviderCatalogListResponse_unstable,
   zProviderCatalogTemplateResponse_unstable,
@@ -1407,5 +1410,17 @@ export class GooseExtClient {
     return zLocalInferenceBuiltinChatTemplatesListResponse_unstable.parse(
       raw,
     ) as LocalInferenceBuiltinChatTemplatesListResponse_unstable;
+  }
+
+  async sessionCostAggregate_unstable(
+    params: ProjectCostAggregateRequest_unstable,
+  ): Promise<ProjectCostAggregateResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/session/cost/aggregate",
+      params,
+    );
+    return zProjectCostAggregateResponse_unstable.parse(
+      raw,
+    ) as ProjectCostAggregateResponse_unstable;
   }
 }

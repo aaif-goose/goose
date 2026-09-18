@@ -918,4 +918,12 @@ impl GooseAcpAgent {
         self.on_local_inference_builtin_chat_templates_list(req)
             .await
     }
+
+    #[custom_method(ProjectCostAggregateRequest)]
+    async fn dispatch_aggregate_project_costs(
+        &self,
+        req: ProjectCostAggregateRequest,
+    ) -> Result<ProjectCostAggregateResponse, agent_client_protocol::Error> {
+        self.on_aggregate_project_costs(req).await
+    }
 }

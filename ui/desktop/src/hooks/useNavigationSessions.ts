@@ -6,9 +6,11 @@ import { AppEvents } from '../constants/events';
 import type { Session } from '../types/session';
 import {
   acpGetSessionListItem,
+  acpGetProjectCostAggregate,
   acpListRecentSessions,
   type SessionListItem,
 } from '../acp/sessions';
+import type { ProjectCostEntry } from '@aaif/goose-acp-client';
 import { groupSessionsByProject } from '../utils/projectSessions';
 
 const MAX_RECENT_SESSIONS = 25;
@@ -61,10 +63,22 @@ export function useNavigationSessions() {
   const chatContext = useChatContext();
 
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
-  const recentSessionsByProject = useMemo(
-    () => groupSessionsByProject(recentSessions),
-    [recentSessions]
-  );
+  const [projectCosts, setProjectCosts] = useState<ProjectCostEntry[]>([]);
+  const recentSessionsByProject = useMemo(() => {
+    const groups = groupSessionsByProject(recentSessions);
+    if (projectCosts.length === 0) return groups;
+    const costByDir = new Map(projectCosts.map((c) => [c.workingDir, c]));
+    return groups.map((g) => {
+      const cost = costByDir.get(g.path);
+      if (!cost) return g;
+      return {
+        ...g,
+        totalCost: cost.totalCost,
+        sessionCount: cost.sessionCount,
+        sessionsWithCost: cost.sessionsWithCost,
+      };
+    });
+  }, [recentSessions, projectCosts]);
   const lastSessionIdRef = useRef<string | null>(null);
 
   const activeSessionId = searchParams.get('resumeSessionId') ?? undefined;
@@ -79,8 +93,13 @@ export function useNavigationSessions() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS);
-      setRecentSessions(sessions);
+      const [sessions, costs] = await Promise.allSettled([
+        acpListRecentSessions(MAX_RECENT_SESSIONS),
+        acpGetProjectCostAggregate(),
+      ]);
+      if (sessions.status === 'fulfilled') setRecentSessions(sessions.value);
+      else console.error('Failed to fetch sessions:', sessions.reason);
+      if (costs.status === 'fulfilled') setProjectCosts(costs.value);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }

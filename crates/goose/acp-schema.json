@@ -6734,6 +6734,55 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/local-inference/chat-templates/builtin/list"
     },
+    "ProjectCostAggregateRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/cost/aggregate"
+    },
+    "ProjectCostAggregateResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectCostEntry"
+          }
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/cost/aggregate"
+    },
+    "ProjectCostEntry": {
+      "type": "object",
+      "properties": {
+        "workingDir": {
+          "type": "string"
+        },
+        "totalCost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sessionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionsWithCost": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "workingDir",
+        "sessionCount",
+        "sessionsWithCost"
+      ]
+    },
     "GooseSessionNotification_unstable": {
       "type": "object",
       "properties": {
@@ -8118,6 +8167,15 @@
                   ],
                   "description": "Params for _goose/unstable/local-inference/chat-templates/builtin/list",
                   "title": "LocalInferenceBuiltinChatTemplatesListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProjectCostAggregateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/cost/aggregate",
+                  "title": "ProjectCostAggregateRequest_unstable"
                 }
               ]
             },
@@ -8764,6 +8822,14 @@
                         }
                       ],
                       "title": "LocalInferenceBuiltinChatTemplatesListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ProjectCostAggregateResponse_unstable"
+                        }
+                      ],
+                      "title": "ProjectCostAggregateResponse_unstable"
                     }
                   ]
                 },

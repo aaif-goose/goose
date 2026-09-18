@@ -2353,6 +2353,26 @@ pub struct SetToolPermissionsRequest {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct SetToolPermissionsResponse {}
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/session/cost/aggregate", response = ProjectCostAggregateResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCostAggregateRequest {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCostEntry {
+    pub working_dir: String,
+    pub total_cost: Option<f64>,
+    pub session_count: u32,
+    pub sessions_with_cost: u32,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCostAggregateResponse {
+    pub projects: Vec<ProjectCostEntry>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
