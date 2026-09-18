@@ -589,6 +589,27 @@
     "environmentVariables": []
   },
   {
+    "id": "prolifik",
+    "name": "Prolifik",
+    "description": "AI short-form video platform. Paste a URL, get branded videos in six formats, and auto-post to Instagram Reels, TikTok and YouTube Shorts.",
+    "url": "https://app.getprolifik.com/mcp",
+    "link": "https://getprolifik.com/",
+    "installation_notes": "This is a remote extension that requires a Prolifik API key from Settings > Developer API as a Request Header e.g Authorization: Bearer <YOUR_PROLIFIK_API_KEY>.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Bearer <YOUR_PROLIFIK_API_KEY>",
+        "required": true
+      }
+    ],
+    "show_install_command": false,
+    "type": "streamable-http",
+    "documentation": "https://getprolifik.com/docs/"
+  },
+  {
     "id": "prompts-chat-mcp",
     "name": "prompts.chat",
     "description": "Access thousands of AI prompts directly in your AI assistant",
