@@ -1,7 +1,7 @@
 use crate::session::builder::ExtensionFailure;
 use anstream::{adapter::strip_str, eprintln, println};
 use bat::WrappingMode;
-use console::{Color, StyledObject, Term, measure_text_width, style};
+use console::{measure_text_width, style, Color, StyledObject, Term};
 use goose::agents::platform_extensions::todo::TODO_WRITE_TOOL_NAME_COMPLETE;
 use goose::config::Config;
 use goose::conversation::message::{
@@ -1264,7 +1264,7 @@ fn extract_markdown_table(content: &str) -> Option<(String, Vec<&str>, &str)> {
 }
 
 fn print_table(table_lines: &[&str], theme: Theme) {
-    use comfy_table::{Cell, CellAlignment, ContentArrangement, Table, presets};
+    use comfy_table::{presets, Cell, CellAlignment, ContentArrangement, Table};
 
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
