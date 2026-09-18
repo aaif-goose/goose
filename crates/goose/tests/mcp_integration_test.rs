@@ -79,7 +79,7 @@ impl Provider for MockProvider {
         _messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let message = Message::assistant().with_text("\"So we beat on, boats against the current, borne back ceaselessly into the past.\" — F. Scott Fitzgerald, The Great Gatsby (1925)");
+        let message = Message::assistant().with_text("mock response");
         let usage = ProviderUsage::new("mock".to_string(), Usage::default());
         Ok(stream_from_single_message(message, usage))
     }
@@ -134,8 +134,7 @@ enum TestMode {
         CallToolRequestParams::new("echo").with_arguments(object!({"message": "Hello, world!" })),
         CallToolRequestParams::new("get-sum").with_arguments(object!({"a": 1, "b": 2 })),
         CallToolRequestParams::new("trigger-long-running-operation").with_arguments(object!({"duration": 1, "steps": 5 })),
-        CallToolRequestParams::new("get-structured-content").with_arguments(object!({"location": "New York"})),
-        CallToolRequestParams::new("trigger-sampling-request").with_arguments(object!({"prompt": "Please provide a quote from The Great Gatsby", "maxTokens": 100 }))
+        CallToolRequestParams::new("get-structured-content").with_arguments(object!({"location": "New York"}))
     ],
     vec![]
 )]
@@ -177,8 +176,6 @@ async fn test_replayed_session(
 
     let _env = env_lock::lock_env([
         ("GOOSE_MCP_CLIENT_VERSION", Some("0.0.0")),
-        ("GOOSE_PROVIDER", Some("openai")),
-        ("GOOSE_MODEL", Some("gpt-4o")),
         ("GOOSE_WORKING_DIR", Some(TEST_WORKING_DIR)),
     ]);
 

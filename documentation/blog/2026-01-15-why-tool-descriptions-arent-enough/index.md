@@ -7,6 +7,9 @@ authors:
 ---
 ![blog banner](/img/blog/tool-descriptions-banner.png)
 
+:::note
+This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and goose no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
+:::
 
 The first question I had when I heard about MCP sampling was:
 
@@ -22,7 +25,7 @@ But something still felt off.
 
 The tools still weren’t really *thinking*. They were fetching data, returning text, and leaving all the heavy reasoning to my LLM. That’s when I realized the issue wasn’t my descriptions. It was how the system actually worked under the hood.
 
-That’s where [MCP sampling](https://goose-docs.ai/docs/guides/mcp-sampling/) came in.
+That’s where MCP sampling came in.
 Not as a magic feature, but as a different way of structuring how tools and the LLM actually collaborate.
 
 ## What actually changed my understanding

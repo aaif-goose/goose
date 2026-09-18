@@ -25,7 +25,7 @@ Step into the role of the lead AI engineer at a bustling Winter Festival. You're
 
 **Day 11:** Create an automated poster generator to free Elena from 8 hours of daily Photoshop work.
 
-**Day 14:** Use MCP sampling to build a council of AI personalities that debate and vote on the perfect festival mascot.
+**Day 14:** Build a council of AI personalities that debate and vote on the perfect festival mascot.
 
 **Day 17:** Deploy a cross-platform wishlist app using MCP-UI so vendors know exactly what visitors want.
 

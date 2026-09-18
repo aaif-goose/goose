@@ -7,6 +7,10 @@ authors:
 
 ![](mcp-sampling.png)
 
+:::note
+This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and goose no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
+:::
+
 If you've been following MCP, you've probably heard about tools which are functions that let AI assistants do things like read files, query databases, or call APIs. But there's another MCP feature that's less talked about and arguably more interesting: **[Sampling](https://modelcontextprotocol.io/docs/learn/client-concepts#sampling)**.
 
 Sampling flips the script. Instead of the AI calling your tool, your tool calls the AI.
