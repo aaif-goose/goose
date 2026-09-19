@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -364,17 +365,180 @@ fn review_git_command(repo_root: &Path) -> Command {
     cmd
 }
 
-fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
-    let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff").arg("--name-only");
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
+fn filter_driver_bytes(key: &[u8]) -> Option<&[u8]> {
+    let key = key.strip_prefix(b"filter.")?;
+    [b".clean".as_slice(), b".process", b".required"]
+        .iter()
+        .find_map(|suffix| key.strip_suffix(*suffix))
+}
+
+#[cfg(unix)]
+fn filter_driver_from_key(key: &[u8]) -> Result<Option<OsString>> {
+    use std::os::unix::ffi::OsStringExt;
+
+    Ok(filter_driver_bytes(key).map(|driver| OsString::from_vec(driver.to_vec())))
+}
+
+#[cfg(not(unix))]
+fn filter_driver_from_key(key: &[u8]) -> Result<Option<OsString>> {
+    filter_driver_bytes(key)
+        .map(|driver| {
+            std::str::from_utf8(driver)
+                .map(OsString::from)
+                .map_err(|_| anyhow!("Git filter driver name is not valid UTF-8 on this platform"))
+        })
+        .transpose()
+}
+
+fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<OsString>> {
+    let output = review_git_command(repo_root)
+        .args(["config", "--null", "--name-only", "--list"])
+        .output()
+        .context("git config failed")?;
+    if !output.status.success() {
+        bail!(
+            "git config failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let mut drivers = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .map(filter_driver_from_key)
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    drivers.sort_unstable();
+    drivers.dedup();
+    Ok(drivers)
+}
+
+fn filter_config_key(driver: &OsStr, suffix: &str) -> OsString {
+    let mut key = OsString::from("filter.");
+    key.push(driver);
+    key.push(suffix);
+    key
+}
+
+fn inherited_git_config_count() -> Result<usize> {
+    match std::env::var_os("GIT_CONFIG_COUNT") {
+        None => Ok(0),
+        Some(count) => count
+            .to_str()
+            .and_then(|count| count.parse().ok())
+            .ok_or_else(|| anyhow!("GIT_CONFIG_COUNT is not a valid non-negative integer")),
+    }
+}
+
+fn append_git_config_overrides(
+    cmd: &mut Command,
+    inherited_count: usize,
+    overrides: Vec<(OsString, OsString)>,
+) -> Result<()> {
+    let config_count = inherited_count
+        .checked_add(overrides.len())
+        .ok_or_else(|| anyhow!("too many Git configuration overrides"))?;
+    cmd.env("GIT_CONFIG_COUNT", config_count.to_string());
+    for (offset, (key, value)) in overrides.into_iter().enumerate() {
+        let index = inherited_count + offset;
+        cmd.env(format!("GIT_CONFIG_KEY_{index}"), key)
+            .env(format!("GIT_CONFIG_VALUE_{index}"), value);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn quote_git_config_parameter(value: &OsStr) -> OsString {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let mut quoted = vec![b'\''];
+    for byte in value.as_bytes() {
+        if *byte == b'\'' {
+            quoted.extend_from_slice(b"'\\''");
+        } else {
+            quoted.push(*byte);
         }
     }
+    quoted.push(b'\'');
+    OsString::from_vec(quoted)
+}
+
+#[cfg(not(unix))]
+fn quote_git_config_parameter(value: &OsStr) -> OsString {
+    let value = value.to_string_lossy();
+    OsString::from(format!("'{}'", value.replace('\'', "'\\''")))
+}
+
+fn append_git_config_parameters(
+    cmd: &mut Command,
+    mut parameters: OsString,
+    overrides: &[(OsString, OsString)],
+) {
+    for (key, value) in overrides {
+        if !parameters.is_empty() {
+            parameters.push(" ");
+        }
+        parameters.push(quote_git_config_parameter(key));
+        parameters.push("=");
+        parameters.push(quote_git_config_parameter(value));
+    }
+    cmd.env("GIT_CONFIG_PARAMETERS", parameters);
+}
+
+fn review_diff_command(repo_root: &Path) -> Result<Command> {
+    review_diff_command_with_inherited_config(
+        repo_root,
+        inherited_git_config_count()?,
+        std::env::var_os("GIT_CONFIG_PARAMETERS").unwrap_or_default(),
+    )
+}
+
+fn review_diff_command_with_inherited_config(
+    repo_root: &Path,
+    inherited_count: usize,
+    inherited_parameters: OsString,
+) -> Result<Command> {
+    let mut cmd = review_git_command(repo_root);
+    let mut config_overrides = vec![(OsString::from("core.fsmonitor"), OsString::from("false"))];
+    for driver in configured_filter_drivers(repo_root)? {
+        config_overrides.extend([
+            (filter_config_key(&driver, ".clean"), OsString::new()),
+            (filter_config_key(&driver, ".smudge"), OsString::new()),
+            (filter_config_key(&driver, ".process"), OsString::new()),
+            (
+                filter_config_key(&driver, ".required"),
+                OsString::from("false"),
+            ),
+        ]);
+    }
+    append_git_config_overrides(&mut cmd, inherited_count, config_overrides.clone())?;
+    append_git_config_parameters(&mut cmd, inherited_parameters, &config_overrides);
+    cmd.env("GIT_NO_LAZY_FETCH", "1");
+    cmd.args([
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--submodule=short",
+        "--ignore-submodules=dirty",
+    ]);
+    Ok(cmd)
+}
+
+fn append_diff_range(cmd: &mut Command, range: Option<&str>) -> Result<()> {
+    let range = range.unwrap_or("HEAD");
+    if range.starts_with('-') {
+        bail!("review range cannot start with '-'");
+    }
+    cmd.arg(range);
+    Ok(())
+}
+
+fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
+    let mut cmd = review_diff_command(repo_root)?;
+    cmd.arg("--name-only");
+    append_diff_range(&mut cmd, range)?;
     if !files.is_empty() {
         cmd.arg("--");
         for f in files {
@@ -396,16 +560,8 @@ fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Res
 }
 
 fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
-    let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff");
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
-        }
-    }
+    let mut cmd = review_diff_command(repo_root)?;
+    append_diff_range(&mut cmd, range)?;
     if !files.is_empty() {
         cmd.arg("--");
         for f in files {
@@ -420,16 +576,9 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
 }
 
 fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
-    let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff").arg("--stat");
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
-        }
-    }
+    let mut cmd = review_diff_command(repo_root)?;
+    cmd.arg("--stat");
+    append_diff_range(&mut cmd, range)?;
     if !files.is_empty() {
         cmd.arg("--");
         for f in files {
@@ -1136,6 +1285,51 @@ mod tests {
     use goose::checks::Check;
     use std::path::PathBuf;
 
+    #[cfg(unix)]
+    fn run_git(root: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_COUNT", "0")
+            .env_remove("GIT_CONFIG")
+            .env_remove("GIT_CONFIG_PARAMETERS")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn review_test_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        run_git(root, &["init", "--quiet"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
+        run_git(root, &["config", "user.name", "Test"]);
+        fs::write(root.join("tracked.txt"), "before\n").unwrap();
+        run_git(root, &["add", "tracked.txt"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "initial"],
+        );
+        dir
+    }
+
+    #[cfg(unix)]
+    fn write_executable_script(path: &Path, body: &str) {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::write(path, body).unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
     fn open_test_untracked_root(path: &Path) -> std::io::Result<UntrackedRoot> {
         #[cfg(unix)]
         let path = fs::canonicalize(path)?;
@@ -1222,6 +1416,347 @@ mod tests {
         let out = prepend_instructions("BASE", Some("Refactor only — flag any behavior change."));
         assert!(out.starts_with("## Reviewer instructions\n\nRefactor only"));
         assert!(out.ends_with("BASE"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_external_diff_helpers() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("external-diff-ran");
+        let script = root.join("external-diff.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/external-diff-ran\"\nexit 0\n",
+        );
+        run_git(root, &["config", "diff.external", script.to_str().unwrap()]);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_textconv_helpers() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("textconv-ran");
+        let script = root.join("textconv.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/textconv-ran\"\ncat \"$1\"\n",
+        );
+        fs::write(
+            root.join(".gitattributes"),
+            "tracked.txt diff=review-test\n",
+        )
+        .unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        run_git(
+            root,
+            &[
+                "config",
+                "diff.review-test.textconv",
+                script.to_str().unwrap(),
+            ],
+        );
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_rejects_option_shaped_ranges() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("textconv-ran");
+        let script = root.join("textconv.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/textconv-ran\"\ncat \"$1\"\n",
+        );
+        fs::write(
+            root.join(".gitattributes"),
+            "tracked.txt diff=review-test\n",
+        )
+        .unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        run_git(
+            root,
+            &[
+                "config",
+                "diff.review-test.textconv",
+                script.to_str().unwrap(),
+            ],
+        );
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        for error in [
+            touched_files(root, Some("--ext-diff"), &[]).unwrap_err(),
+            collect_diff(root, Some("--textconv"), &[]).unwrap_err(),
+            collect_diff_stat(root, Some("--submodule=diff"), &[]).unwrap_err(),
+        ] {
+            assert!(error.to_string().contains("range cannot start"));
+        }
+        assert!(!marker.exists());
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn non_utf8_filter_driver_keys_are_rejected() {
+        let error = filter_driver_from_key(b"filter.\xff.clean").unwrap_err();
+        assert!(error.to_string().contains("not valid UTF-8"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_content_filters() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("content-filter-ran");
+        let script = root.join("content-filter.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/content-filter-ran\"\nexit 1\n",
+        );
+        fs::write(root.join(".gitattributes"), "tracked.txt filter=x=y\n").unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        for key in [
+            "filter.x=y.clean",
+            "filter.x=y.process",
+            "filter.x=y.smudge",
+        ] {
+            run_git(root, &["config", key, script.to_str().unwrap()]);
+        }
+        run_git(root, &["config", "filter.x=y.required", "true"]);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_non_utf8_content_filters() {
+        use std::io::Write;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("non-utf8-filter-ran");
+        let script = root.join("non-utf8-filter.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/non-utf8-filter-ran\"\nexit 1\n",
+        );
+        fs::write(root.join(".gitattributes"), b"tracked.txt filter=\xff\n").unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        let mut config = fs::OpenOptions::new()
+            .append(true)
+            .open(root.join(".git/config"))
+            .unwrap();
+        config.write_all(b"\n[filter \"").unwrap();
+        config.write_all(&[0xff]).unwrap();
+        config.write_all(b"\"]\n\tclean = ").unwrap();
+        config.write_all(script.as_os_str().as_bytes()).unwrap();
+        config.write_all(b"\n\trequired = true\n").unwrap();
+        drop(config);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn git_config_overrides_follow_inherited_entries() {
+        let mut command = Command::new("git");
+        append_git_config_overrides(
+            &mut command,
+            2,
+            vec![(OsString::from("core.fsmonitor"), OsString::from("false"))],
+        )
+        .unwrap();
+        let env = command.get_envs().collect::<Vec<_>>();
+
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_CONFIG_COUNT") && *value == Some(OsStr::new("3"))
+        }));
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_CONFIG_KEY_2") && *value == Some(OsStr::new("core.fsmonitor"))
+        }));
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_CONFIG_VALUE_2") && *value == Some(OsStr::new("false"))
+        }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_fsmonitor_hooks() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("fsmonitor-ran");
+        let script = root.join("fsmonitor.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/fsmonitor-ran\"\nexit 1\n",
+        );
+        run_git(
+            root,
+            &["config", "core.fsmonitor", script.to_str().unwrap()],
+        );
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_overrides_git_config_parameters() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("parameter-fsmonitor-ran");
+        let script = root.join("parameter-fsmonitor.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/parameter-fsmonitor-ran\"\nexit 1\n",
+        );
+        let parameters = format!("'core.fsmonitor'='{}'", script.display());
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        let command =
+            review_diff_command_with_inherited_config(root, 0, OsString::from(parameters.clone()))
+                .unwrap();
+        let env = command.get_envs().collect::<Vec<_>>();
+        let final_parameters = env
+            .iter()
+            .find_map(|(key, value)| {
+                if *key == OsStr::new("GIT_CONFIG_PARAMETERS") {
+                    value.map(OsStr::to_string_lossy)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let appended_parameters = final_parameters.strip_prefix(&parameters).unwrap();
+        assert!(appended_parameters.contains("'core.fsmonitor'='false'"));
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_NO_LAZY_FETCH") && *value == Some(OsStr::new("1"))
+        }));
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_does_not_probe_submodule_worktrees() {
+        let submodule_source = review_test_repo();
+        let source_root = submodule_source.path();
+        fs::write(
+            source_root.join(".gitattributes"),
+            "tracked.txt filter=review-test\n",
+        )
+        .unwrap();
+        run_git(source_root, &["add", ".gitattributes"]);
+        run_git(
+            source_root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+
+        let dir = review_test_repo();
+        let root = dir.path();
+        run_git(
+            root,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--quiet",
+                source_root.to_str().unwrap(),
+                "nested",
+            ],
+        );
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-am", "add submodule"],
+        );
+
+        let nested = root.join("nested");
+        let marker = nested.join("submodule-filter-ran");
+        let script = nested.join("submodule-filter.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/submodule-filter-ran\"\nexit 1\n",
+        );
+        for key in [
+            "filter.review-test.clean",
+            "filter.review-test.process",
+            "filter.review-test.smudge",
+        ] {
+            run_git(&nested, &["config", key, script.to_str().unwrap()]);
+        }
+        run_git(&nested, &["config", "filter.review-test.required", "true"]);
+        run_git(root, &["config", "diff.submodule", "diff"]);
+        fs::write(nested.join("tracked.txt"), "changed").unwrap();
+
+        assert!(touched_files(root, None, &[]).unwrap().is_empty());
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(!marker.exists());
+        assert!(diff.is_empty());
+        assert!(collect_diff_stat(root, None, &[]).unwrap().is_empty());
     }
 
     #[cfg(any(unix, windows))]
