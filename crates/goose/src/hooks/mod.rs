@@ -2184,7 +2184,11 @@ mod tests {
         )
         .unwrap();
         let helper = login_bin.join("hook-visible-tool");
-        std::fs::write(&helper, "#!/bin/sh\nprintf 'hook-visible-tool-ran'\n").unwrap();
+        std::fs::write(
+            &helper,
+            "#!/bin/sh\ncat > /dev/null\nprintf 'hook-visible-tool-ran'\n",
+        )
+        .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

@@ -35,7 +35,7 @@ or wire p2p agent access into your own application.
 ## The core idea: roaming is an ACP transport
 
 Roaming does exactly one thing: it provides an **authenticated, peer-to-peer
-[ACP](/docs/guides/acp-clients) transport**. The host runs goose's real ACP
+[ACP](/docs/gdk/acp) transport**. The host runs goose's real ACP
 server; the connecting side is an ACP client. That's it.
 
 Everything that feels "session-shaped" is therefore just plain ACP that happens
@@ -163,10 +163,9 @@ goose roam delegate 'goose+roam://…' --session <SESSION_ID> "Now fix the first
 
 `connect` and `delegate` embed goose's own ACP client. `bridge` does the
 opposite: it exposes a remote agent as a **local ACP endpoint**, so any ACP
-client — [Zed](/docs/guides/acp-clients) or another editor — can drive it as if
-it were running locally. It runs no UI and no agent
-of its own; it transparently proxies ACP bytes between the local client and the
-remote agent.
+client — Zed or another editor — can drive it as if it were running locally. It
+runs no UI and no agent of its own; it transparently proxies ACP bytes between
+the local client and the remote agent.
 
 Bridge over stdio (the default — for a client that launches goose as a
 subprocess):
@@ -182,11 +181,15 @@ forwarded to the remote agent.
 Or bridge over a local TCP port, for a client that connects to an address:
 
 ```bash
-goose roam bridge laptop --listen 127.0.0.1:8900
+goose roam bridge laptop --listen 127.0.0.1:8900 --allow-remote-clients
 ```
 
 This accepts a single ACP connection on that address and proxies it to the
-remote agent. Saved peer names work here too.
+remote agent. Saved peer names work here too. The explicit opt-in is required
+because the TCP listener does not authenticate its client: even on loopback,
+another local user or process can connect and receive the remote agent's ACP
+access. Use TCP bridging only on a trusted host where you control who can
+connect to the listener.
 
 Because a default `share` serves the full ACP surface, a bridged client gets
 everything — it can list, create, and load the host's sessions, not just a

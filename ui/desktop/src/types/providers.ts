@@ -28,7 +28,6 @@ export type ProviderMetadata = {
   default_model: string;
   description: string;
   display_name: string;
-  fast_model?: string | null;
   known_models: ModelInfo[];
   model_doc_link: string;
   name: string;
@@ -63,4 +62,5 @@ export type UpdateCustomProviderRequest = {
   preserves_thinking?: boolean | null;
   requires_auth?: boolean;
   supports_streaming?: boolean | null;
+  toolshim: boolean;
 };

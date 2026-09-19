@@ -8,7 +8,10 @@ use std::pin::Pin;
 use tokio::sync::watch;
 
 use crate::{
-    canonical::{catalog::ProviderSetupMetadata, map_to_canonical_model, CanonicalModelRegistry},
+    canonical::{
+        catalog::ProviderSetupMetadata, map_to_canonical_model, recommended_models_from_registry,
+        CanonicalModelRegistry,
+    },
     conversation::{
         message::{Message, MessageContentBlock},
         token_usage::{ProviderUsage, Usage},
@@ -41,10 +44,6 @@ pub struct ProviderMetadata {
     /// step-by-step instructions for set up providers eg: api key
     #[serde(default)]
     pub setup_steps: Vec<String>,
-    /// The name of a fast/cheap model to use for lightweight tasks (e.g. session naming,
-    /// compaction). When set, fast-path callers prefer this model over the main model.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fast_model: Option<String>,
     /// Setup information exposed to clients.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup: Option<ProviderSetupMetadata>,
@@ -80,7 +79,6 @@ impl ProviderMetadata {
             model_doc_link: model_doc_link.to_string(),
             config_keys,
             setup_steps: vec![],
-            fast_model: None,
             setup: None,
             deprecated: None,
         }
@@ -104,7 +102,6 @@ impl ProviderMetadata {
             model_doc_link: model_doc_link.to_string(),
             config_keys,
             setup_steps: vec![],
-            fast_model: None,
             setup: None,
             deprecated: None,
         }
@@ -120,7 +117,6 @@ impl ProviderMetadata {
             model_doc_link: "".to_string(),
             config_keys: vec![],
             setup_steps: vec![],
-            fast_model: None,
             setup: None,
             deprecated: None,
         }
@@ -128,11 +124,6 @@ impl ProviderMetadata {
 
     pub fn with_setup_steps(mut self, steps: Vec<&str>) -> Self {
         self.setup_steps = steps.into_iter().map(|s| s.to_string()).collect();
-        self
-    }
-
-    pub fn with_fast_model(mut self, fast_model: &str) -> Self {
-        self.fast_model = Some(fast_model.to_string());
         self
     }
 
@@ -371,6 +362,13 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         thinking_preservation_format: None,
         request_params: None,
     }
+}
+
+pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
+    recommended_models_from_registry(provider)
+        .into_iter()
+        .map(|name| model_info_for_provider_model(provider, &name))
+        .collect()
 }
 
 /// Collect all chunks from a MessageStream into a single Message and ProviderUsage
@@ -642,6 +640,10 @@ pub trait Provider: Send + Sync {
     /// the provider's internal state is the source of truth.
     fn manages_own_context(&self) -> bool {
         false
+    }
+
+    fn uses_local_session_naming(&self) -> bool {
+        self.manages_own_context()
     }
 
     fn supports_builtin_tools(&self) -> bool {

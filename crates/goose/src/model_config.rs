@@ -81,97 +81,16 @@ fn materialize_model_config_inner(
     Ok(model)
 }
 
-fn configured_fast_model_name() -> Option<String> {
-    Config::global()
-        .get_param::<String>("GOOSE_FAST_MODEL")
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
-/// Resolve the model config to use for lightweight "fast" tasks (session
-/// naming, tool-call labels, orchestrator routing). Resolution order:
-///   1. `GOOSE_FAST_MODEL` (user override)
-///   2. the provider's declared default fast model
-///   3. the supplied `model_config` (i.e. the main model)
-///
-/// The resulting config is materialized against the same provider so it picks
-/// up context limits, temperature, and other provider defaults.
-pub async fn get_fast_model(
-    provider_name: &str,
-    model_config: &ModelConfig,
-) -> Result<ModelConfig> {
-    let fast_model_name = match configured_fast_model_name() {
-        Some(name) => Some(name),
-        None => provider_default_fast_model(provider_name).await,
-    };
-
-    match fast_model_name {
-        Some(name) if name != model_config.model_name => {
-            model_config_from_user_config(provider_name, name)
-                .map(|config| config.with_request_headers(model_config.request_headers.clone()))
-        }
-        _ => Ok(model_config.clone()),
-    }
-}
-
-/// A one-shot task summarizes a transcript or tool result that never recurs, so
-/// a prompt cache entry written for it can never be read back and only costs the
-/// cache-write premium.
 fn one_shot_model_config(model_config: ModelConfig) -> ModelConfig {
     model_config
         .with_thinking_effort(ThinkingEffort::Off)
         .with_prompt_cache_disabled()
 }
 
-/// Run a completion for a lightweight "fast" task (session naming, tool-call
-/// labels, orchestrator routing) using the provider's fast model.
-pub async fn complete_fast(
-    provider: &dyn Provider,
-    model_config: &ModelConfig,
-    session_id: &str,
-    system: &str,
-    messages: &[Message],
-    tools: &[Tool],
-    fallback_to_main_model: bool,
-) -> Result<(Message, ProviderUsage), ProviderError> {
-    let fast_model_config = one_shot_model_config(
-        get_fast_model(provider.get_name(), model_config)
-            .await
-            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?,
-    );
-
-    match crate::session_context::with_session_id(
-        Some(session_id.to_string()),
-        provider.complete(&fast_model_config, system, messages, tools),
-    )
-    .await
-    {
-        Ok(response) => Ok(response),
-        Err(e)
-            if fallback_to_main_model
-                && fast_model_config.model_name != model_config.model_name =>
-        {
-            tracing::warn!(
-                "Fast model {} failed with error: {}. Falling back to main model {}",
-                fast_model_config.model_name,
-                e,
-                model_config.model_name
-            );
-            let fallback_config = one_shot_model_config(model_config.clone());
-            crate::session_context::with_session_id(
-                Some(session_id.to_string()),
-                provider.complete(&fallback_config, system, messages, tools),
-            )
-            .await
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// Run a completion for compaction or tool-result summarization on the main
-/// session model with one-shot semantics (thinking off, no prompt-cache writes).
-pub async fn complete_compaction(
+/// Run a completion for a one-shot auxiliary task on the main session model.
+/// Thinking is disabled and prompt-cache writes are skipped because this prompt
+/// will not recur.
+pub async fn complete_one_shot(
     provider: &dyn Provider,
     model_config: &ModelConfig,
     session_id: &str,
@@ -179,24 +98,13 @@ pub async fn complete_compaction(
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<(Message, ProviderUsage), ProviderError> {
-    let compaction_model_config = one_shot_model_config(model_config.clone());
+    let one_shot_model_config = one_shot_model_config(model_config.clone());
 
     crate::session_context::with_session_id(
         Some(session_id.to_string()),
-        provider.complete(&compaction_model_config, system, messages, tools),
+        provider.complete(&one_shot_model_config, system, messages, tools),
     )
     .await
-}
-
-async fn provider_default_fast_model(provider_name: &str) -> Option<String> {
-    if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME {
-        return crate::providers::openai_def::live_fast_model();
-    }
-
-    crate::providers::get_from_registry(provider_name)
-        .await
-        .ok()
-        .and_then(|entry| entry.metadata().fast_model.clone())
 }
 
 fn apply_openai_request_params(mut model: ModelConfig) -> ModelConfig {
@@ -328,8 +236,13 @@ mod one_shot_tests {
     use super::*;
 
     #[test]
-    fn prompt_cache_is_disabled() {
-        assert!(one_shot_model_config(ModelConfig::new("claude-haiku-4-5")).prompt_cache_disabled());
+    fn thinking_and_prompt_cache_are_disabled() {
+        let config = one_shot_model_config(
+            ModelConfig::new("claude-haiku-4-5").with_thinking_effort(ThinkingEffort::High),
+        );
+
+        assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Off));
+        assert!(config.prompt_cache_disabled());
     }
 }
 

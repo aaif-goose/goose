@@ -6,7 +6,7 @@ import {
   type NewSessionRequest,
   type SessionInfo,
 } from '@agentclientprotocol/sdk';
-import type { GooseExtension, SessionExportFormat, SessionImportSource } from '@aaif/goose-sdk';
+import type { GooseExtension, SessionExportFormat, SessionImportSource } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
@@ -235,14 +235,19 @@ export interface AcpRecipeOptions {
   recipeParameterScopeId?: string;
 }
 
+/**
+ * `gooseExtensions` is three-valued: `undefined` leaves the key out so the backend
+ * uses the configured set, while `[]` asks for a session with no extensions. The
+ * backend already distinguishes the two, so the client has to as well.
+ */
 export async function acpNewSession(
   cwd: string,
-  gooseExtensions: GooseExtension[],
+  gooseExtensions: GooseExtension[] | undefined,
   recipe?: AcpRecipeOptions
 ): Promise<AcpNewSessionResult> {
   const client = await getAcpClient();
   const meta: Record<string, unknown> = { client: 'goose-desktop' };
-  if (gooseExtensions.length > 0) {
+  if (gooseExtensions !== undefined) {
     meta.enabledExtensions = gooseExtensions;
   }
   if (recipe?.recipeId) {

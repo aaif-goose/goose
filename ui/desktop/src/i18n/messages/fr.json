@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Ajouter"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Toujours utiliser Toolshim pour ce fournisseur"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Compatible Anthropic"
   },
@@ -926,6 +929,8 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
+
+
 
 
   "dirSwitcher.failedToUpdateWorkingDir": {
@@ -1732,6 +1737,36 @@
   "launcher.placeholder": {
     "defaultMessage": "Demandez n'importe quoi à goose..."
   },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Discutez avec Goose en temps réel par la voix"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "Voix en direct"
+  },
   "loadingGoose.compacting": {
     "defaultMessage": "goose compacte la conversation..."
   },
@@ -1757,13 +1792,10 @@
     "defaultMessage": "Supprimer ce modèle ? Vous pourrez le retélécharger plus tard."
   },
   "localInferenceSettings.description": {
-    "defaultMessage": "Téléchargez et gérez des modèles LLM locaux pour l'inférence sans clés API. Recherchez des modèles GGUF ou MLX sur HuggingFace, ou utilisez les sélections présentées ci-dessous."
+    "defaultMessage": "Téléchargez et gérez des modèles LLM locaux pour l’inférence sans clés API. Recherchez des modèles GGUF ou MLX sur Hugging Face."
   },
   "localInferenceSettings.dismiss": {
     "defaultMessage": "Ignorer"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Télécharger"
   },
   "localInferenceSettings.downloadCancelled": {
     "defaultMessage": "Téléchargement annulé"
@@ -1782,9 +1814,6 @@
   },
   "localInferenceSettings.evictFromMemory": {
     "defaultMessage": "Evict from memory"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Modèles en vedette"
   },
   "localInferenceSettings.huggingFaceSignInNote": {
     "defaultMessage": "Connectez-vous pour augmenter les limites de débit lors de la recherche et du téléchargement de modèles, et pour accéder aux dépôts Hugging Face privés ou à accès restreint."
@@ -1809,12 +1838,6 @@
   },
   "localInferenceSettings.retry": {
     "defaultMessage": "Réessayer"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Afficher tous les modèles en vedette ({count} de plus)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Afficher uniquement les modèles recommandés"
   },
   "localInferenceSettings.title": {
     "defaultMessage": "Modèles d'inférence locale"
@@ -3170,7 +3193,7 @@
     "defaultMessage": "Aucune recette enregistrée"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Les recettes enregistrées à partir des conversations apparaîtront ici."
+    "defaultMessage": "Les recettes enregistrées apparaîtront ici."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Ouvrir dans une nouvelle fenêtre"
@@ -3707,7 +3730,7 @@
     "defaultMessage": "JSON de la session copié"
   },
   "sessionActionsHeader.copiedModelInteractions": {
-    "defaultMessage": "Recent model interactions copied"
+    "defaultMessage": "Interactions récentes du modèle copiées"
   },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "Texte copié"
@@ -3740,10 +3763,10 @@
     "defaultMessage": "Chargement du JSON..."
   },
   "sessionActionsHeader.modelInteractionsFailed": {
-    "defaultMessage": "Failed to load model interactions: {error}"
+    "defaultMessage": "Échec du chargement des interactions du modèle : {error}"
   },
   "sessionActionsHeader.modelInteractionsTitle": {
-    "defaultMessage": "Recent model interactions"
+    "defaultMessage": "Interactions récentes du modèle"
   },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Échec du renommage de la session : {error}"
@@ -3770,7 +3793,7 @@
     "defaultMessage": "Afficher le JSON de la session"
   },
   "sessionActionsHeader.viewModelInteractions": {
-    "defaultMessage": "View recent model interactions"
+    "defaultMessage": "Afficher les interactions récentes du modèle"
   },
   "sessionIndicators.error": {
     "defaultMessage": "La session a rencontré une erreur"
@@ -4680,5 +4703,74 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visitez"
+  },
+  "settings.agentLoop.description": {
+    "defaultMessage": "Utilise la boucle d’agent basée sur les opérations. Désactivez-la pour utiliser la boucle héritée."
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Automatique"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Limite de blocage"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Résume l’historique de la conversation avant que la fenêtre de contexte soit pleine."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Compactage du contexte"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Seuil de coupure"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "Activer {operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Délai d’échec"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Opérations configurables"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Arrête le travail autonome et demande confirmation à l’utilisateur avant de continuer."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Nombre maximal de tours"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Relance les vérifications de recette lorsqu’une vérification de réussite configurée échoue."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Nouvelle tentative de recette"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Délai de nouvelle tentative"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Reconnaît les commandes comme /compact, /skills et les raccourcis de recettes."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Commandes slash"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Permet aux hooks de bloquer la fin tout en évitant les cycles d’arrêt infinis."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Hooks d’arrêt"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Seuil %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Résume les anciennes requêtes et réponses d’outils pour économiser le contexte. Le seuil est automatique si le champ est vide."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Compactage des paires d’outils"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Tours"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Boucle d’agent"
   }
 }

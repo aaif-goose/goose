@@ -292,6 +292,13 @@ jobs:
         run: node scripts/verify-mac-update-resources.js "$APP_PATH"
         working-directory: ui/desktop
 
+      - name: Record macOS update requirements
+        env:
+          APP_PATH: ${{ inputs.target == 'x86_64-apple-darwin' && 'out/Goose-darwin-x64/Goose.app' || 'out/Goose-darwin-arm64/Goose.app' }}
+          METADATA_PATH: ${{ inputs.target == 'x86_64-apple-darwin' && 'out/Goose-darwin-x64/Goose_intel_mac.zip.macos.json' || 'out/Goose-darwin-arm64/Goose.zip.macos.json' }}
+        run: node scripts/mac-update-requirements.js "$APP_PATH" "$METADATA_PATH"
+        working-directory: ui/desktop
+
       - name: Clean up signing keychain
         if: always()
         run: |
@@ -309,7 +316,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ${{ inputs.target == 'x86_64-apple-darwin' && 'Goose-darwin-x64' || 'Goose-darwin-arm64' }}
-          path: ${{ inputs.target == 'x86_64-apple-darwin' && 'ui/desktop/out/Goose-darwin-x64/Goose_intel_mac.zip' || 'ui/desktop/out/Goose-darwin-arm64/Goose.zip' }}
+          path: |
+            ${{ inputs.target == 'x86_64-apple-darwin' && 'ui/desktop/out/Goose-darwin-x64/Goose_intel_mac.zip' || 'ui/desktop/out/Goose-darwin-arm64/Goose.zip' }}
+            ${{ inputs.target == 'x86_64-apple-darwin' && 'ui/desktop/out/Goose-darwin-x64/Goose_intel_mac.zip.macos.json' || 'ui/desktop/out/Goose-darwin-arm64/Goose.zip.macos.json' }}
           if-no-files-found: error
           overwrite: true
 

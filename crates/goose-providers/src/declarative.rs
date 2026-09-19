@@ -13,12 +13,14 @@ pub(crate) mod declarative_providers {
     use super::*;
 
     expose_declarative_providers!(
+        aimlapi,
         alibaba,
         atomic_chat,
         celeris,
         cerebras,
         deepseek,
         empiriolabs,
+        eurouter,
         fireworks,
         friendli,
         futurmix,
@@ -57,6 +59,7 @@ pub(crate) mod declarative_providers {
         venice,
         vercel_ai_gateway,
         zai,
+        zai_coding_plan,
         zhipu,
     );
 }
@@ -154,6 +157,9 @@ pub struct DeclarativeProviderConfig {
     pub base_url: String,
     pub models: Vec<ModelInfo>,
     pub headers: Option<HashMap<String, String>>,
+    /// Overrides the default `agent-session-id` header name for session ID propagation.
+    #[serde(default)]
+    pub session_id_header_override: Option<String>,
     pub timeout_seconds: Option<u64>,
     pub supports_streaming: Option<bool>,
     #[serde(default = "default_requires_auth")]
@@ -182,8 +188,8 @@ pub struct DeclarativeProviderConfig {
     pub model_doc_link: Option<String>,
     #[serde(default)]
     pub setup_steps: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_non_empty_string")]
-    pub fast_model: Option<String>,
+    #[serde(default)]
+    pub toolshim: bool,
     #[serde(default)]
     pub preserves_thinking: bool,
     /// Enables Z.AI's `clear_thinking` field, which Anthropic does not support.
@@ -532,6 +538,20 @@ mod tests {
         }
 
         assert!(!seen_ids.is_empty(), "no bundled providers were found");
+    }
+
+    #[test]
+    fn opencode_go_overrides_session_id_header() {
+        let config = fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "opencode_go")
+            .expect("opencode_go should be bundled");
+
+        assert_eq!(
+            config.session_id_header_override.as_deref(),
+            Some("x-opencode-session")
+        );
     }
 
     #[test]

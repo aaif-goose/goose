@@ -16,7 +16,6 @@
   ],
   "catalog_provider_id": "zai",
   "model_doc_link": "https://docs.z.ai/devpack/tool/goose",
-  "fast_model": "glm-5.3-flash",
   "preserves_thinking": true,
   "emit_clear_thinking": true,
   "models": [

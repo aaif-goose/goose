@@ -1,6 +1,10 @@
 use crate::base::ThinkingPreservationFormat;
 use crate::conversation::message::{Message, MessageContentBlock, ProviderMetadata};
 use crate::conversation::token_usage::{CostSource, ProviderUsage, Usage};
+use crate::documents::{
+    convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
+    ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
+};
 use crate::errors::ProviderError;
 use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
 use crate::json::{parse_tool_arguments, truncation_error_message};
@@ -423,6 +427,22 @@ pub fn format_messages_with_options(
                         content_array.push(json!({
                             "type": "text",
                             "text": "[Image content removed - not supported in assistant messages]"
+                        }));
+                    }
+                }
+                MessageContentBlock::Document(document) => {
+                    if message.role != Role::User {
+                        content_array.push(json!({
+                            "type": "text",
+                            "text": unsupported_document_text(document, ASSISTANT_ROLE_REASON)
+                        }));
+                    } else if document_media_type_is_supported(&document.mime_type) {
+                        has_non_text_content = true;
+                        content_array.push(convert_document(document, &DocumentFormat::OpenAi));
+                    } else {
+                        content_array.push(json!({
+                            "type": "text",
+                            "text": unsupported_document_text(document, UNSUPPORTED_MEDIA_TYPE_REASON)
                         }));
                     }
                 }
@@ -1361,7 +1381,12 @@ where
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
                                         for delta_call in delta_tool_calls {
                                             if let Some(index) = delta_call.index {
-                                                if let Some((_, _, ref mut args, ref mut extra)) = tool_call_data.get_mut(&index) {
+                                                if let Some((_, ref mut stored_name, ref mut args, ref mut extra)) = tool_call_data.get_mut(&index) {
+                                                    if let Some(new_name) = &delta_call.function.name {
+                                                        if !new_name.is_empty() {
+                                                            *stored_name = new_name.clone();
+                                                        }
+                                                    }
                                                     args.push_str(&delta_call.function.arguments);
                                                     if extra.is_none() && delta_call.extra.is_some() {
                                                         *extra = delta_call.extra.clone();
@@ -1816,14 +1841,15 @@ pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
 /// True when the model should use the OpenAI Responses API.
 ///
 /// The Responses API is backwards-compatible with all OpenAI reasoning
-/// models, so every `o`-series (`o1`, `o3`, `o4`, …) and `gpt-5` variant
+/// models, so every `o`-series (`o1`, `o3`, `o4`, …), `gpt-5`, and `gpt-6` variant
 /// routes here. The matcher intentionally scans the full model identifier so
 /// hosted aliases like `databricks-gpt-5.4`, `goose-o3-mini`, or
 /// `headless-goose-o3-mini` work without provider-specific normalization.
 pub fn is_openai_responses_model(model_name: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re =
-        RE.get_or_init(|| Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-5(?:$|[-.]))").unwrap());
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-(?:5|6)(?:$|[-.]))").unwrap()
+    });
     re.is_match(model_name)
 }
 
@@ -1894,7 +1920,7 @@ pub fn openai_reasoning_effort_for_thinking(
 pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
     let normalized = model_name.to_ascii_lowercase();
 
-    if normalized.contains("gpt-5") {
+    if normalized.contains("gpt-5") || normalized.contains("gpt-6") {
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
         } else if normalized.contains("gpt-5.4")
@@ -1928,6 +1954,73 @@ pub fn is_valid_function_name(name: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
     re.is_match(name)
+}
+
+#[cfg(test)]
+mod document_tests {
+    use super::*;
+
+    fn format(messages: &[Message]) -> Vec<Value> {
+        format_messages_with_options(
+            messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                supports_vision: true,
+                ..Default::default()
+            },
+        )
+    }
+
+    #[test]
+    fn user_document_becomes_a_file_content_part() {
+        let spec = format(&[Message::user().with_document(
+            "cGRmLWJ5dGVz",
+            "application/pdf",
+            Some("q3-report.pdf".to_string()),
+        )]);
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(
+            spec[0]["content"][0],
+            json!({
+                "type": "file",
+                "file": {
+                    "filename": "q3-report.pdf",
+                    "file_data": "data:application/pdf;base64,cGRmLWJ5dGVz",
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn assistant_document_becomes_a_text_part() {
+        let spec = format(&[Message::assistant().with_document(
+            "cGRmLWJ5dGVz",
+            "application/pdf",
+            Some("q3-report.pdf".to_string()),
+        )]);
+
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["role"], "assistant");
+        let text = spec[0]["content"].as_str().unwrap();
+        assert!(text.contains("q3-report.pdf"), "{text}");
+        assert!(text.contains("user messages"), "{text}");
+        assert!(!text.contains("cGRmLWJ5dGVz"), "{text}");
+    }
+
+    #[test]
+    fn unsupported_document_media_type_becomes_an_explicit_text_part() {
+        let spec = format(&[Message::user().with_document(
+            "cm93cw==",
+            "text/csv",
+            Some("rows.csv".to_string()),
+        )]);
+
+        let text = spec[0]["content"].as_str().unwrap();
+        assert!(text.contains("rows.csv"), "{text}");
+        assert!(text.contains("application/pdf"), "{text}");
+        assert!(!text.contains("cm93cw=="), "{text}");
+    }
 }
 
 #[cfg(test)]
@@ -3190,6 +3283,43 @@ mod tests {
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_openai_reasoning_effort_gpt6_does_not_support_none() {
+        for model in [
+            "gpt-6-astra",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
+            "openrouter/openai/gpt-6-astra",
+        ] {
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
+                Some("low".to_string()),
+                "{model} Off should map to low, not none"
+            );
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Medium),
+                Some("medium".to_string()),
+                "{model} medium should remain medium"
+            );
+            assert!(
+                !openai_reasoning_efforts_for_model(model).contains(&"none"),
+                "{model} must not advertise none"
+            );
+        }
+
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5.6-luna", ThinkingEffort::Off),
+            Some("none".to_string())
+        );
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5.4", ThinkingEffort::Off),
+            Some("none".to_string())
+        );
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5", ThinkingEffort::Off),
+            Some("low".to_string())
+        );
     }
 
     #[test]
@@ -5200,7 +5330,7 @@ data: [DONE]"#;
     }
 
     #[test]
-    fn test_is_openai_responses_model_matches_o_and_gpt5_families() {
+    fn test_is_openai_responses_model_matches_openai_reasoning_families() {
         for model in [
             "o3",
             "o3-mini",
@@ -5213,6 +5343,8 @@ data: [DONE]"#;
             "gpt-5-2-pro",
             "databricks-gpt-5.4",
             "goose-gpt-5.4-high",
+            "gpt-6-astra",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
             "headless-goose-o3-mini",
         ] {
             assert!(is_openai_responses_model(model), "{model} should match");

@@ -51,7 +51,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Todo",
                 description:
                     "Enable a todo list for goose so it can keep track of what it is doing",
-                default_enabled: true,
+                default_enabled: false,
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| Some(Box::new(todo::TodoClient::new(ctx).unwrap())),

@@ -20,11 +20,12 @@ otel = [
     "dep:opentelemetry-stdout",
 ]
 code-mode = ["dep:pctx_code_mode"]
+live-voice = ["goose-providers/live-websocket"]
 local-inference = [
     "dep:candle-core",
     "dep:candle-nn",
     "dep:candle-transformers",
-    "goose-providers/local-inference",
+    "goose-providers/local-inference-hf-hub",
     "dep:tokenizers",
     "dep:symphonia",
     "dep:rubato",
@@ -77,7 +78,7 @@ native-tls = [
     "goose-providers/native-tls",
 ]
 system-keyring = ["dep:keyring"]
-portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
+portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
 
 [lints]
@@ -104,7 +105,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = { version = "0.1.8", default-features = false }
 serde_urlencoded = { version = "0.7.1", default-features = false }
-jsonschema = { version = "0.52", default-features = false }
+jsonschema = { version = "0.55", default-features = false }
 uuid = { workspace = true, features = ["v7"] }
 regex = { workspace = true }
 async-trait = { workspace = true }
@@ -155,14 +156,14 @@ sqlx = { version = "0.9.0", default-features = false, features = [
 ] }
 
 # For Bedrock provider (optional, behind "aws-providers" feature)
-aws-config = { version = "1.8", default-features = false, features = ["credentials-process", "rt-tokio", "sso", "behavior-version-latest"], optional = true }
-aws-smithy-types = { version = "1.3.4", default-features = false, features = ["rt-tokio"], optional = true }
-aws-sdk-bedrockruntime = { version = "1.132", default-features = false, features = ["rt-tokio"], optional = true }
-aws-smithy-runtime-api = { version = "1.13", default-features = false, features = ["client"], optional = true }
+aws-config = { version = "=1.12.0", default-features = false, features = ["credentials-process", "rt-tokio", "sso", "behavior-version-latest"], optional = true }
+aws-smithy-types = { version = "=1.6.3", default-features = false, features = ["rt-tokio"], optional = true }
+aws-sdk-bedrockruntime = { version = "=1.143.0", default-features = false, features = ["rt-tokio"], optional = true }
+aws-smithy-runtime-api = { version = "=1.16.0", default-features = false, features = ["client"], optional = true }
 smithy-transport-reqwest = { version = "0.1", default-features = false, features = ["http2", "system-proxy"], optional = true }
 
 # For SageMaker TGI provider (optional, behind "aws-providers" feature)
-aws-sdk-sagemakerruntime = { version = "1.104", default-features = false, features = ["rt-tokio"], optional = true }
+aws-sdk-sagemakerruntime = { version = "=1.113.0", default-features = false, features = ["rt-tokio"], optional = true }
 
 # For GCP Vertex AI provider auth
 jsonwebtoken = { version = "11.0", default-features = false, features = ["use_pem"] }
@@ -256,7 +257,7 @@ libc = { version = "0.2.182", default-features = false, features = ["std"] }
 serial_test = { workspace = true }
 mockall = { version = "0.15", default-features = false }
 wiremock = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-util = { workspace = true, features = ["compat"] }
 dotenvy = { workspace = true }
 ctor = { version = "1.0", default-features = false, features = ["proc_macro"] }

@@ -331,6 +331,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_aimlapi_provider_registry_wiring() {
+        let aimlapi = get_from_registry("aimlapi")
+            .await
+            .expect("aimlapi provider should be registered");
+        let meta = aimlapi.metadata();
+
+        assert_eq!(meta.name, "aimlapi");
+        assert_eq!(meta.display_name, "AI/ML API");
+        assert_eq!(meta.default_model, "openai/gpt-5-5");
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "AIMLAPI_API_KEY" && key.secret));
+    }
+
+    #[tokio::test]
     async fn test_gondola_provider_registry_wiring() {
         let gondola = get_from_registry("gondola")
             .await
