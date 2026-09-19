@@ -456,7 +456,12 @@ fn review_diff_command(repo_root: &Path) -> Result<Command> {
         ]);
     }
     append_git_config_overrides(&mut cmd, inherited_git_config_count()?, config_overrides)?;
-    cmd.args(["diff", "--no-ext-diff", "--no-textconv"]);
+    cmd.args([
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--submodule=short",
+    ]);
     Ok(cmd)
 }
 
@@ -1546,6 +1551,71 @@ mod tests {
             .unwrap()
             .contains("tracked.txt"));
         assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_does_not_recurse_into_submodules() {
+        let submodule_source = review_test_repo();
+        let source_root = submodule_source.path();
+        fs::write(
+            source_root.join(".gitattributes"),
+            "tracked.txt filter=review-test\n",
+        )
+        .unwrap();
+        run_git(source_root, &["add", ".gitattributes"]);
+        run_git(
+            source_root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+
+        let dir = review_test_repo();
+        let root = dir.path();
+        run_git(
+            root,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--quiet",
+                source_root.to_str().unwrap(),
+                "nested",
+            ],
+        );
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-am", "add submodule"],
+        );
+
+        let nested = root.join("nested");
+        let marker = nested.join("submodule-filter-ran");
+        let script = nested.join("submodule-filter.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/submodule-filter-ran\"\nexit 1\n",
+        );
+        for key in [
+            "filter.review-test.clean",
+            "filter.review-test.process",
+            "filter.review-test.smudge",
+        ] {
+            run_git(&nested, &["config", key, script.to_str().unwrap()]);
+        }
+        run_git(&nested, &["config", "filter.review-test.required", "true"]);
+        run_git(root, &["config", "diff.submodule", "diff"]);
+        fs::write(nested.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["nested"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(!marker.exists());
+        assert!(diff.contains("diff --git a/nested b/nested"));
+        assert!(diff.contains("Subproject commit"));
+        assert!(!diff.contains("-before"));
+        assert!(!diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("nested"));
     }
 
     #[cfg(any(unix, windows))]
