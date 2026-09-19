@@ -371,7 +371,6 @@ mod tests {
         ]);
         let server = AcpServer::new(AcpServerFactoryConfig {
             builtins: AcpBuiltinSelection::default(),
-            data_dir: root.path().join("data"),
             config_dir: root.path().join("config"),
             goose_platform: GoosePlatform::GooseCli,
             additional_source_roots: Vec::new(),
