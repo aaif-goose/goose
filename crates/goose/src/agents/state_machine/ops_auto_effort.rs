@@ -11,7 +11,7 @@ use serde_json::json;
 
 use super::{
     applied, last_effective_role, messages_since_kickoff, not_applicable, ConversationEffect,
-    Emitter, GooseEffect, Operation, OperationResult,
+    Emitter, GooseEffect, Operation, OperationResult, CLIENT_LOG,
 };
 use crate::config::Config;
 use crate::session::Session;
@@ -183,15 +183,29 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
                 .with_thinking_effort(effort);
             effects.push(GooseEffect::SetModelConfig(model_config));
         }
+        let client_log = decision
+            .effort
+            .map(|effort| format!("Thinking effort: {effort}"));
         effects.push(
             ConversationEffect::SetMessageOperationNote {
-                message_id,
+                message_id: message_id.clone(),
                 operation: self.name().to_string(),
                 key: DECISION.to_string(),
                 value: serde_json::to_value(decision)?,
             }
             .into(),
         );
+        if let Some(client_log) = client_log {
+            effects.push(
+                ConversationEffect::SetMessageOperationNote {
+                    message_id,
+                    operation: self.name().to_string(),
+                    key: CLIENT_LOG.to_string(),
+                    value: client_log.into(),
+                }
+                .into(),
+            );
+        }
 
         applied(effects)
     }

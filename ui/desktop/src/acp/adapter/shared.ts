@@ -28,6 +28,7 @@ export interface GooseMessageMeta {
   created?: number;
   outputTokenLimitReached?: boolean;
   fallbackContent?: boolean;
+  operationLogs?: string[];
   steer?: boolean;
 }
 
@@ -68,12 +69,16 @@ export function getGooseMessageMeta(update: { _meta?: unknown }): GooseMessageMe
   }
 
   const outputTokenLimitReached = goose.outputTokenLimitReached === true;
+  const operationLogs = Array.isArray(goose.operationLogs)
+    ? goose.operationLogs.filter((line): line is string => typeof line === 'string')
+    : undefined;
 
   return {
     created: typeof goose.created === 'number' ? goose.created : undefined,
     messageId: typeof goose.messageId === 'string' ? goose.messageId : undefined,
     outputTokenLimitReached: outputTokenLimitReached ? true : undefined,
     fallbackContent: goose.fallbackContent === true ? true : undefined,
+    operationLogs,
     steer: goose.steer === true ? true : undefined,
   };
 }

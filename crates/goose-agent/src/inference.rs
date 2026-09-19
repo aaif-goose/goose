@@ -19,7 +19,7 @@ use tracing_futures::Instrument;
 use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
-    Inference, InferenceInput, Operation, OperationResult,
+    Inference, InferenceInput, Operation, OperationResult, CLIENT_LOG,
 };
 
 pub struct PreparedInferenceRequest {
@@ -93,6 +93,34 @@ fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Mess
     chunk
         .content
         .retain(|content| !(is_thinking(content) && prior.contains(&content)));
+}
+
+fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
+    let mut seen = messages
+        .iter()
+        .flat_map(|message| message.metadata.operation_logs.iter().map(String::as_str))
+        .collect::<std::collections::HashSet<_>>();
+    let mut logs = Vec::new();
+
+    for line in messages
+        .iter()
+        .filter_map(|message| message.metadata.operations.as_deref())
+        .flat_map(|operations| operations.values())
+        .filter_map(|notes| notes.get(CLIENT_LOG))
+        .filter_map(serde_json::Value::as_str)
+    {
+        if seen.insert(line) {
+            logs.push(line.to_string());
+        }
+    }
+
+    logs
+}
+
+fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
+    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
+        message.metadata.operation_logs = std::mem::take(logs);
+    }
 }
 
 pub fn chat_span(
@@ -286,10 +314,16 @@ impl<'a, S: Sync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         self
     }
 
-    async fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Vec<E> {
+    async fn error_outcome(
+        &self,
+        err: &ProviderError,
+        operation_logs: &mut Vec<String>,
+        emit: &Emitter,
+    ) -> Vec<E> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        let message = Message::from_provider_error(err);
+        let mut message = Message::from_provider_error(err);
+        attach_operation_logs(&mut message, operation_logs);
         let message = emit.message(message).await;
         vec![E::from(message)]
     }
@@ -346,6 +380,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
         if !ends_with_provider_turn(&messages_for_provider) {
             return not_applicable();
         }
+        let mut operation_logs = pending_operation_logs(messages);
 
         let model_config = session
             .thinking_effort()
@@ -398,7 +433,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             let mut stream = match stream {
                 Ok(stream) => stream,
                 Err(err) => {
-                    usage_effects.extend(self.error_outcome(&err, emit).await);
+                    usage_effects.extend(self.error_outcome(&err, &mut operation_logs, emit).await);
                     return applied(usage_effects);
                 }
             };
@@ -438,7 +473,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                                     usage_effects.push(E::record_usage(usage));
                                 }
                                 usage_effects.extend(accumulator.into_iter().map(E::from));
-                                usage_effects.extend(self.error_outcome(&err, emit).await);
+                                usage_effects.extend(self.error_outcome(&err, &mut operation_logs, emit).await);
                                 return applied(usage_effects);
                             }
                         };
@@ -460,11 +495,13 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                             drop_repeated_tool_call_thinking(&accumulator, &mut chunk);
                             if chunk.content.is_empty() {
                                 if chunk.metadata.output_token_limit_reached {
+                                    attach_operation_logs(&mut chunk, &mut operation_logs);
                                     chunk = emit.message(chunk).await;
                                 }
                                 accumulator.push(chunk);
                                 continue;
                             }
+                            attach_operation_logs(&mut chunk, &mut operation_logs);
                             let chunk = emit.message(chunk).await;
                             accumulator.push(chunk);
                         }
@@ -489,7 +526,8 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     .any(|message| message.metadata.output_token_limit_reached)
                 && accumulator.iter().all(is_empty_response);
             if empty_response {
-                let message = Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE);
+                let mut message = Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE);
+                attach_operation_logs(&mut message, &mut operation_logs);
                 let message = emit.message(message).await;
                 usage_effects.push(E::from(message));
                 return yielded_with(usage_effects);

@@ -12,6 +12,8 @@ use rmcp::model::Tool;
 
 pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+pub const CLIENT_LOG: &str = "client_log";
+
 pub struct SlashCommand<'a> {
     pub command: &'a str,
     pub params_str: &'a str,

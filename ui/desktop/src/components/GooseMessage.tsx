@@ -97,6 +97,12 @@ function GooseMessage({
   return (
     <div className="goose-message flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
+        {message.metadata.operationLogs?.map((line, index) => (
+          <div key={`${index}-${line}`} className="mb-2 text-xs text-text-secondary">
+            {line}
+          </div>
+        ))}
+
         {thinkingContent && (
           <ThinkingContent
             content={thinkingContent}
