@@ -1,0 +1,87 @@
+{
+  "name": "the_grid_ai",
+  "engine": "openai",
+  "display_name": "The Grid",
+  "description": "Spot market for inference over an OpenAI-compatible API. Model ids are market instruments -- a task type (text, code, agent) paired with a quality tier (standard, prime, max), plus lab-scoped markets -- rather than fixed models, so each request is filled by whichever supplier is competitive at the time and the model reported in a response differs from the instrument requested.",
+  "api_key_env": "THEGRID_API_KEY",
+  "base_url": "https://api.thegrid.ai/v1",
+  "catalog_provider_id": "the-grid-ai",
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "models": [
+    {
+      "name": "agent-max",
+      "context_limit": 1000000
+    },
+    {
+      "name": "agent-prime",
+      "context_limit": 196608
+    },
+    {
+      "name": "agent-standard",
+      "context_limit": 128000
+    },
+    {
+      "name": "bytedance-pro-latest",
+      "context_limit": 262144
+    },
+    {
+      "name": "claude-opus-latest",
+      "context_limit": 1000000
+    },
+    {
+      "name": "code-max",
+      "context_limit": 1000000
+    },
+    {
+      "name": "code-prime",
+      "context_limit": 196608
+    },
+    {
+      "name": "code-standard",
+      "context_limit": 128000
+    },
+    {
+      "name": "deepseek-pro-latest",
+      "context_limit": 1000000
+    },
+    {
+      "name": "gemini-pro-latest",
+      "context_limit": 1000000
+    },
+    {
+      "name": "glm-latest",
+      "context_limit": 1000000
+    },
+    {
+      "name": "gpt-sol-latest",
+      "context_limit": 1000000
+    },
+    {
+      "name": "kimi-latest",
+      "context_limit": 1048576
+    },
+    {
+      "name": "minimax-latest",
+      "context_limit": 1000000
+    },
+    {
+      "name": "text-max",
+      "context_limit": 1000000
+    },
+    {
+      "name": "text-prime",
+      "context_limit": 196608
+    },
+    {
+      "name": "text-standard",
+      "context_limit": 128000
+    }
+  ],
+  "model_doc_link": "https://thegrid.ai/docs/instrument-specifications/current-instruments",
+  "setup_steps": [
+    "Sign up at https://thegrid.ai",
+    "Create a consumption API key",
+    "Paste the key above as THEGRID_API_KEY"
+  ]
+}
