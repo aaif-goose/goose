@@ -149,13 +149,13 @@ mod tests {
         message_with_log
             .metadata
             .operation_logs
-            .push("Thinking effort: high".to_string());
+            .push("ops_auto_effort: thinking high".to_string());
         assert_eq!(
             message_meta(&message_with_log).get("goose"),
             Some(&serde_json::json!({
                 "created": 1_700_000_000,
                 "messageId": "msg_live",
-                "operationLogs": ["Thinking effort: high"],
+                "operationLogs": ["ops_auto_effort: thinking high"],
             })),
         );
 

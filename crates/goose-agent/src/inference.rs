@@ -98,19 +98,24 @@ fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Mess
 fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
     let mut seen = messages
         .iter()
-        .flat_map(|message| message.metadata.operation_logs.iter().map(String::as_str))
+        .flat_map(|message| message.metadata.operation_logs.iter().cloned())
         .collect::<std::collections::HashSet<_>>();
     let mut logs = Vec::new();
 
-    for line in messages
+    for (operation, line) in messages
         .iter()
         .filter_map(|message| message.metadata.operations.as_deref())
-        .flat_map(|operations| operations.values())
-        .filter_map(|notes| notes.get(CLIENT_LOG))
-        .filter_map(serde_json::Value::as_str)
+        .flat_map(|operations| operations.iter())
+        .filter_map(|(operation, notes)| {
+            notes
+                .get(CLIENT_LOG)
+                .and_then(serde_json::Value::as_str)
+                .map(|line| (operation, line))
+        })
     {
-        if seen.insert(line) {
-            logs.push(line.to_string());
+        let log = format!("ops_{operation}: {line}");
+        if seen.insert(log.clone()) {
+            logs.push(log);
         }
     }
 

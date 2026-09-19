@@ -33,8 +33,10 @@ const FULL_USAGE: MessageUsage = {
   isCompaction: false,
 };
 
-function renderUsage(usage: MessageUsage) {
-  return render(<MessageUsageStats usage={usage} />, { wrapper: IntlTestWrapper });
+function renderUsage(usage: MessageUsage, operationLogs?: string[]) {
+  return render(<MessageUsageStats usage={usage} operationLogs={operationLogs} />, {
+    wrapper: IntlTestWrapper,
+  });
 }
 
 describe('MessageUsageStats', () => {
@@ -79,7 +81,7 @@ describe('MessageUsageStats', () => {
 
   it('breaks down tokens and cost in the tooltip on hover', async () => {
     const user = userEvent.setup();
-    renderUsage(FULL_USAGE);
+    renderUsage(FULL_USAGE, ['ops_auto_effort: thinking off']);
 
     await user.hover(screen.getByText('1.5k tok'));
 
@@ -92,5 +94,6 @@ describe('MessageUsageStats', () => {
     expect(tooltip.getByText('Output')).toBeInTheDocument();
     expect(tooltip.getByText('340')).toBeInTheDocument();
     expect(tooltip.getByText('(estimated)')).toBeInTheDocument();
+    expect(tooltip.getByText('ops_auto_effort: thinking off')).toBeInTheDocument();
   });
 });

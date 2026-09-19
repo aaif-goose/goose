@@ -109,7 +109,13 @@ function StatRow({
  * Per-message usage chip (tok/s, cost, total tokens) with a tooltip breaking
  * down tokens, caching, timing, and cost. Renders nothing without data.
  */
-export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
+export default function MessageUsageStats({
+  usage,
+  operationLogs = [],
+}: {
+  usage: MessageUsage;
+  operationLogs?: string[];
+}) {
   const intl = useIntl();
   const {
     inputTokens,
@@ -278,6 +284,14 @@ export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
           {isCompaction && (
             <div className={cn(section, 'text-amber-300/90')}>
               {intl.formatMessage(i18n.compaction)}
+            </div>
+          )}
+
+          {operationLogs.length > 0 && (
+            <div className={cn(section, 'font-mono text-text-inverse/70')}>
+              {operationLogs.map((line, index) => (
+                <div key={`${index}-${line}`}>{line}</div>
+              ))}
             </div>
           )}
         </div>

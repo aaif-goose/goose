@@ -249,11 +249,11 @@ async fn turn_state_is_persisted_once_per_turn_and_reused_across_inferences() ->
     assert_eq!(logged_messages.len(), 2);
     assert_eq!(
         logged_messages[0].metadata.operation_logs,
-        ["Thinking effort: high"]
+        ["ops_auto_effort: thinking high"]
     );
     assert_eq!(
         logged_messages[1].metadata.operation_logs,
-        ["Thinking effort: off"]
+        ["ops_auto_effort: thinking off"]
     );
     assert!(logged_messages[0].is_tool_request());
     assert_eq!(logged_messages[1].as_concat_text(), "hi there!");

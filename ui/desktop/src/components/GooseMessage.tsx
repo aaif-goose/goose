@@ -97,12 +97,6 @@ function GooseMessage({
   return (
     <div className="goose-message flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
-        {message.metadata.operationLogs?.map((line, index) => (
-          <div key={`${index}-${line}`} className="mb-2 text-xs text-text-secondary">
-            {line}
-          </div>
-        ))}
-
         {thinkingContent && (
           <ThinkingContent
             content={thinkingContent}
@@ -145,7 +139,10 @@ function GooseMessage({
                 )}
                 {!isStreaming && message.metadata.usage && (
                   <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
+                    <MessageUsageStats
+                      usage={message.metadata.usage}
+                      operationLogs={message.metadata.operationLogs}
+                    />
                   </div>
                 )}
               </div>
@@ -193,7 +190,10 @@ function GooseMessage({
                 </div>
                 {!isStreaming && message.metadata.usage && (
                   <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
+                    <MessageUsageStats
+                      usage={message.metadata.usage}
+                      operationLogs={message.metadata.operationLogs}
+                    />
                   </div>
                 )}
               </div>

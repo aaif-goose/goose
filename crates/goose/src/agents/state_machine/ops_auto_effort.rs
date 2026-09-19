@@ -183,9 +183,7 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
                 .with_thinking_effort(effort);
             effects.push(GooseEffect::SetModelConfig(model_config));
         }
-        let client_log = decision
-            .effort
-            .map(|effort| format!("Thinking effort: {effort}"));
+        let client_log = decision.effort.map(|effort| format!("thinking {effort}"));
         effects.push(
             ConversationEffect::SetMessageOperationNote {
                 message_id: message_id.clone(),
