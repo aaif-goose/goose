@@ -130,6 +130,17 @@ client certificates are not supported by this provider. Use a model listed by
 Tinfoil, such as `gpt-oss-120b`; model discovery also uses the verified connection.
 Prompt-cache reuse is scoped to the current provider instance.
 
+### Attested inference indicator
+
+In goose Desktop, an **Attested TEE** badge appears on responses delivered over a
+connection bound to a locally verified trusted execution environment. It appears
+as the response streams and remains in saved conversations. The badge describes
+the model connection for that response; it does not cover tool execution.
+
+The indicator is provider-independent. Tinfoil supplies this verification state;
+other providers can support it by reporting verified attestation through the same
+response metadata. A provider name or a claim in model output cannot activate it.
+
 ## Configure Provider and Model
 
 To configure your chosen provider, see available options, or select a model, visit the `Models` tab in goose Desktop or run `goose configure` in the CLI.

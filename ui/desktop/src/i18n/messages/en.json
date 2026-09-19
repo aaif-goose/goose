@@ -1514,6 +1514,12 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Your YAML or JSON file should follow this structure. Required fields are: title, description, and either instructions or prompt."
   },
+  "inferenceSecurityBadge.description": {
+    "defaultMessage": "The model connection for this response was bound to a verified trusted execution environment (TEE). Tool execution is outside this guarantee."
+  },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "Attested TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Click to edit"
   },

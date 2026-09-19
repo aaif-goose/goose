@@ -18,6 +18,7 @@ import ToolCallConfirmation from './ToolCallConfirmation';
 import ElicitationRequest from './ElicitationRequest';
 import MessageCopyLink from './MessageCopyLink';
 import MessageUsageStats from './MessageUsageStats';
+import InferenceSecurityBadge from './InferenceSecurityBadge';
 import { getTextDirection } from '../utils/textDirection';
 import { cn } from '../utils';
 import type { ToolRenderState } from './messageRowContext';
@@ -97,6 +98,7 @@ function GooseMessage({
   return (
     <div className="goose-message flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
+        <InferenceSecurityBadge security={message.metadata.inferenceSecurity} />
         {thinkingContent && (
           <ThinkingContent
             content={thinkingContent}

@@ -472,9 +472,11 @@ prompt: |
   {% if test_phases == "all" or "tinfoil" in test_phases %}
   ## Tinfoil Provider Testing
 
-  1. Run `cargo test -p goose-providers --features rustls-tls --test request_executor`.
+  1. Run `cargo test -p goose-providers --features rustls-tls --test request_executor
+     --test inference_security`.
      Verify GET, JSON POST, streaming POST, and multipart requests cannot bypass a
      rejecting transport, including after header or transport-policy changes.
+     Verify only local verification can mark a response as attested.
   2. Run `cargo test -p goose --features rustls-tls --lib providers::tinfoil`.
      Verify failed attestation sends no inference requests, connection failures
      reverify before retrying, and failed re-verification cannot reuse stale trust.
@@ -487,6 +489,14 @@ prompt: |
      Ask the model to use a shell tool to compute 17 * 23, then ask a follow-up
      question to verify tool-result replay and multi-turn conversations.
   6. Repeat the live conversation with GOOSE_STATE_MACHINE=1.
+  7. Run `cargo test -p goose --features rustls-tls --test inference_security`
+     to check attestation metadata in both agent loops and saved conversations.
+  8. In ui/desktop, run `pnpm exec vitest run
+     src/components/InferenceSecurityBadge.test.tsx src/acp/__tests__/inferenceSecurity.test.ts`.
+     In a live desktop session, verify the Attested TEE badge appears as verified
+     responses stream and after reopening the session. Its tooltip should scope
+     verification to the model connection, excluding tools. Ordinary provider
+     responses must not receive the badge, even if model text claims attestation.
 
   Log results to: {{ workspace_dir }}/tinfoil.md
   {% endif %}

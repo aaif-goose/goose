@@ -3047,6 +3047,8 @@ impl Agent {
                                         } else {
                                             Message::assistant().with_generated_id()
                                         };
+                                    request_msg.metadata.inference_security =
+                                        response.metadata.inference_security;
 
                                     let thinking = if index == 0 {
                                         &direct_thinking

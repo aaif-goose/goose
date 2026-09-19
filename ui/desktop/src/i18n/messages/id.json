@@ -1497,6 +1497,12 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "File YAML atau JSON Anda harus mengikuti struktur ini. Bidang yang diperlukan adalah: title, description, dan salah satu dari instructions atau prompt."
   },
+  "inferenceSecurityBadge.description": {
+    "defaultMessage": "Koneksi model untuk respons ini terikat pada lingkungan eksekusi tepercaya (TEE) yang telah diverifikasi. Eksekusi alat berada di luar jaminan ini."
+  },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "TEE teratestasi"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Klik untuk mengedit"
   },

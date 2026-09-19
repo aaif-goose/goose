@@ -37,6 +37,8 @@ export function applyContentChunk(
     const shouldSkipFallbackChunk = isOutputLimitFallbackChunk && existingMessageHasContent;
 
     existing.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+    existing.metadata.inferenceSecurity =
+      role === 'assistant' ? gooseMeta.inferenceSecurity : undefined;
     existing.metadata.fallbackContent = shouldSkipFallbackChunk
       ? undefined
       : gooseMeta.fallbackContent;
@@ -70,6 +72,7 @@ export function applyContentChunk(
         ...(gooseMeta.steer ? { steer: true } : {}),
         outputTokenLimitReached: gooseMeta.outputTokenLimitReached,
         fallbackContent: gooseMeta.fallbackContent,
+        inferenceSecurity: role === 'assistant' ? gooseMeta.inferenceSecurity : undefined,
       },
     });
   }
@@ -101,6 +104,7 @@ export function applyThoughtChunk(
   }
 
   message.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+  message.metadata.inferenceSecurity = gooseMeta.inferenceSecurity;
 
   const lastContent = message.content[message.content.length - 1];
   if (lastContent?.type === 'thinking') {

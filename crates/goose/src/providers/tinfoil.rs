@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use super::api_client::{ApiClient, AuthMethod, RequestExecutor, TlsConfig};
 use super::base::{ConfigKey, ProviderDef, ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS};
 use super::openai_compatible::OpenAiCompatibleProvider;
+use goose_providers::conversation::message::InferenceSecurity;
 
 const TINFOIL_HOST: &str = "inference.tinfoil.sh";
 const TINFOIL_REPO: &str = "tinfoilsh/confidential-model-router";
@@ -143,7 +144,7 @@ impl<C: AttestedEnclave> RequestExecutor for TinfoilTransport<C> {
                 .await
                 .context("Tinfoil attestation verification failed")?;
         }
-        match enclave.execute(request).await {
+        let mut response = match enclave.execute(request).await {
             Err(error)
                 if error.chain().any(|cause| {
                     cause
@@ -163,7 +164,11 @@ impl<C: AttestedEnclave> RequestExecutor for TinfoilTransport<C> {
                 }
             }
             result => result,
-        }
+        }?;
+        response
+            .extensions_mut()
+            .insert(InferenceSecurity::AttestedTee);
+        Ok(response)
     }
 }
 

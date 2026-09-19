@@ -1497,6 +1497,12 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "YAML veya JSON dosyanız bu yapıyı takip etmelidir. Zorunlu alanlar şunlardır: başlık, açıklama ve talimatlar veya bilgi istemi."
   },
+  "inferenceSecurityBadge.description": {
+    "defaultMessage": "Bu yanıt için model bağlantısı, doğrulanmış bir güvenilir yürütme ortamına (TEE) bağlıydı. Araçların çalıştırılması bu garantinin kapsamı dışındadır."
+  },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "Onaylanmış TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Düzenlemek için tıklayın"
   },

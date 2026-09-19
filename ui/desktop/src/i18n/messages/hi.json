@@ -1497,6 +1497,12 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "आपकी YAML या JSON फ़ाइल को इस संरचना का पालन करना चाहिए। आवश्यक फ़ील्ड हैं: शीर्षक, विवरण, और या तो निर्देश या संकेत।"
   },
+  "inferenceSecurityBadge.description": {
+    "defaultMessage": "इस उत्तर के लिए मॉडल का कनेक्शन एक सत्यापित विश्वसनीय निष्पादन परिवेश (TEE) से जुड़ा था। टूल का निष्पादन इस गारंटी के दायरे में नहीं आता।"
+  },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "सत्यापित TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "संपादित करने के लिए क्लिक करें"
   },

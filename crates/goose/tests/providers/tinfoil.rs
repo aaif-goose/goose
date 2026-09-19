@@ -250,6 +250,10 @@ async fn verified_transport_preserves_model_discovery_streaming_tools_and_usage(
     while let Some(event) = stream.next().await {
         let (message, event_usage) = event.unwrap();
         if let Some(message) = message {
+            assert_eq!(
+                message.metadata.inference_security,
+                Some(InferenceSecurity::AttestedTee)
+            );
             for content in message.content {
                 if let Some(call) = content.as_tool_request() {
                     calls.push(call.clone());

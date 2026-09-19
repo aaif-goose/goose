@@ -1493,6 +1493,12 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Ihre YAML- oder JSON-Datei sollte dieser Struktur folgen. Erforderliche Felder sind: title, description und entweder instructions oder prompt."
   },
+  "inferenceSecurityBadge.description": {
+    "defaultMessage": "Die Modellverbindung für diese Antwort war an eine verifizierte vertrauenswürdige Ausführungsumgebung (TEE) gebunden. Die Ausführung von Tools ist von dieser Garantie nicht abgedeckt."
+  },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "Attestierte TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Zum Bearbeiten klicken"
   },
