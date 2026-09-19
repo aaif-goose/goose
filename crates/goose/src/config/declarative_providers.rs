@@ -7,13 +7,16 @@ use crate::providers::huggingface_auth;
 use crate::providers::inventory::declarative_inventory_identity;
 use crate::providers::ollama_def::OllamaProviderDef;
 use crate::providers::openai_def::OpenAiProviderDef;
+use crate::providers::private_file::write_private_file;
 use anyhow::Result;
+use fs2::FileExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub use goose_providers::declarative::*;
@@ -62,11 +65,15 @@ pub struct LoadedProvider {
     pub is_editable: bool,
 }
 
-static ID_GENERATION_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static CUSTOM_PROVIDER_CREATE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 pub fn generate_id(display_name: &str) -> String {
-    let _guard = ID_GENERATION_LOCK.lock().unwrap();
+    let _guard = CUSTOM_PROVIDER_CREATE_LOCK.lock().unwrap();
 
+    generate_id_unlocked(display_name)
+}
+
+fn generate_id_unlocked(display_name: &str) -> String {
     let normalized = display_name
         .to_lowercase()
         .chars()
@@ -92,6 +99,19 @@ pub fn generate_id(display_name: &str) -> String {
     }
 
     candidate_id
+}
+
+fn lock_custom_provider_creation() -> Result<std::fs::File> {
+    let custom_dir = custom_providers_dir();
+    std::fs::create_dir_all(&custom_dir)?;
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(custom_dir.join(".create.lock"))?;
+    FileExt::lock_exclusive(&lock_file)?;
+    Ok(lock_file)
 }
 
 pub fn validate_provider_id(id: &str) -> Result<()> {
@@ -172,9 +192,17 @@ pub struct UpdateCustomProviderParams {
 pub fn create_custom_provider(
     params: CreateCustomProviderParams,
 ) -> Result<DeclarativeProviderConfig> {
-    let id = generate_id(&params.display_name);
-    validate_provider_id(&id)?;
+    create_custom_provider_with_persist(Config::global(), params, |path, contents| {
+        write_private_file(path, contents)?;
+        Ok(())
+    })
+}
 
+fn create_custom_provider_with_persist(
+    config: &Config,
+    params: CreateCustomProviderParams,
+    persist: impl FnOnce(&Path, &str) -> Result<()>,
+) -> Result<DeclarativeProviderConfig> {
     if params.auth.is_some()
         && params
             .api_key
@@ -184,37 +212,41 @@ pub fn create_custom_provider(
         anyhow::bail!("cannot set both apiKey and auth.command");
     }
 
-    let api_key_env = if params.auth.is_some() {
-        String::new()
-    } else if params.requires_auth {
-        let api_key = params
-            .api_key
-            .as_deref()
-            .filter(|api_key| !api_key.trim().is_empty())
-            .ok_or_else(|| anyhow::anyhow!("apiKey cannot be empty"))?;
-        let api_key_name = generate_api_key_name(&id);
-        let config = Config::global();
-        config.set_secret(&api_key_name, &api_key)?;
-        api_key_name
+    let api_key = if params.auth.is_none() && params.requires_auth {
+        Some(
+            params
+                .api_key
+                .as_deref()
+                .filter(|api_key| !api_key.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("apiKey cannot be empty"))?
+                .to_string(),
+        )
     } else {
-        String::new()
+        None
     };
-
-    let model_infos = params.models;
 
     let engine = ProviderEngine::from_str(&params.engine)?;
     let preserves_thinking = params
         .preserves_thinking
         .unwrap_or_else(|| should_preserve_thinking_by_default(&engine));
 
+    let _process_guard = CUSTOM_PROVIDER_CREATE_LOCK.lock().unwrap();
+    let _storage_guard = lock_custom_provider_creation()?;
+    let id = generate_id_unlocked(&params.display_name);
+    validate_provider_id(&id)?;
+    let api_key_env = api_key
+        .as_ref()
+        .map(|_| generate_api_key_name(&id))
+        .unwrap_or_default();
+
     let provider_config = DeclarativeProviderConfig {
         name: id.clone(),
         engine,
         display_name: params.display_name.clone(),
         description: Some(format!("Custom {} provider", params.display_name)),
-        api_key_env,
+        api_key_env: api_key_env.clone(),
         base_url: params.api_url,
-        models: model_infos,
+        models: params.models,
         headers: params.headers,
         session_id_header_override: None,
         timeout_seconds: None,
@@ -234,12 +266,33 @@ pub fn create_custom_provider(
         setup: None,
     };
 
-    let custom_providers_dir = custom_providers_dir();
-    std::fs::create_dir_all(&custom_providers_dir)?;
-
     let json_content = serde_json::to_string_pretty(&provider_config)?;
-    let file_path = custom_providers_dir.join(format!("{}.json", id));
-    std::fs::write(file_path, json_content)?;
+    let file_path = custom_provider_file_path(&id)?;
+    let previous_api_key = if api_key.is_some() {
+        config.invalidate_secrets_cache();
+        config.all_secrets()?.get(&api_key_env).cloned()
+    } else {
+        None
+    };
+
+    if let Some(api_key) = api_key {
+        config.set_secret(&api_key_env, &api_key)?;
+    }
+
+    if let Err(persist_error) = persist(&file_path, &json_content) {
+        if !api_key_env.is_empty() {
+            let rollback_result = match previous_api_key {
+                Some(previous_api_key) => config.set_secret(&api_key_env, &previous_api_key),
+                None => config.delete_secret(&api_key_env),
+            };
+            if let Err(rollback_error) = rollback_result {
+                return Err(anyhow::anyhow!(
+                    "{persist_error}; failed to roll back {api_key_env}: {rollback_error}"
+                ));
+            }
+        }
+        return Err(persist_error);
+    }
 
     Ok(provider_config)
 }
@@ -593,6 +646,38 @@ fn huggingface_declarative_inventory_configured_from_sources(
 mod tests {
     use super::*;
 
+    const CREATE_LOCK_CHILD_ENV: &str = "GOOSE_CUSTOM_PROVIDER_CREATE_LOCK_TEST_CHILD";
+
+    fn custom_provider_create_params(
+        display_name: &str,
+        api_url: &str,
+        api_key: Option<&str>,
+    ) -> CreateCustomProviderParams {
+        CreateCustomProviderParams {
+            engine: "openai".to_string(),
+            display_name: display_name.to_string(),
+            api_url: api_url.to_string(),
+            api_key: api_key.map(str::to_string),
+            models: vec![ModelInfo::new("test-model")],
+            supports_streaming: Some(true),
+            headers: None,
+            requires_auth: api_key.is_some(),
+            catalog_provider_id: None,
+            base_path: None,
+            toolshim: false,
+            preserves_thinking: None,
+            auth: None,
+        }
+    }
+
+    fn file_backed_test_config(directory: &Path) -> Config {
+        Config::new_with_file_secrets(
+            directory.join("config.yaml"),
+            directory.join("secrets.yaml"),
+        )
+        .unwrap()
+    }
+
     fn test_huggingface_config() -> DeclarativeProviderConfig {
         DeclarativeProviderConfig {
             name: "custom_hf".to_string(),
@@ -790,6 +875,215 @@ mod tests {
                 assert_eq!(key.secret, ev.secret, "{id}: {} secret", ev.name);
             }
         }
+    }
+
+    #[test]
+    fn concurrent_custom_provider_creates_keep_ids_and_secrets_distinct() {
+        use std::sync::{mpsc, Arc, Barrier};
+        use std::time::Duration;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
+            ("CUSTOM_COLLISION_API_KEY", None),
+            ("CUSTOM_COLLISION_1_API_KEY", None),
+        ]);
+        let config = Arc::new(file_backed_test_config(temp_dir.path()));
+
+        let (first_at_persist_tx, first_at_persist_rx) = mpsc::channel();
+        let (release_first_tx, release_first_rx) = mpsc::channel();
+        let first_config = config.clone();
+        let first = std::thread::spawn(move || {
+            create_custom_provider_with_persist(
+                &first_config,
+                custom_provider_create_params(
+                    "Collision",
+                    "https://first.example.invalid/v1",
+                    Some("first-key"),
+                ),
+                |path, contents| {
+                    first_at_persist_tx.send(()).unwrap();
+                    release_first_rx.recv().unwrap();
+                    write_private_file(path, contents)?;
+                    Ok(())
+                },
+            )
+        });
+        first_at_persist_rx.recv().unwrap();
+
+        let (second_at_persist_tx, second_at_persist_rx) = mpsc::channel();
+        let second_start = Arc::new(Barrier::new(2));
+        let second_thread_start = second_start.clone();
+        let second_config = config.clone();
+        let second = std::thread::spawn(move || {
+            second_thread_start.wait();
+            create_custom_provider_with_persist(
+                &second_config,
+                custom_provider_create_params(
+                    "Collision",
+                    "https://second.example.invalid/v1",
+                    Some("second-key"),
+                ),
+                |path, contents| {
+                    second_at_persist_tx.send(()).unwrap();
+                    write_private_file(path, contents)?;
+                    Ok(())
+                },
+            )
+        });
+
+        second_start.wait();
+        let second_reached_persistence_while_first_was_paused = second_at_persist_rx
+            .recv_timeout(Duration::from_millis(250))
+            .is_ok();
+        release_first_tx.send(()).unwrap();
+
+        let first = first.join().unwrap().unwrap();
+        let second = second.join().unwrap().unwrap();
+        assert!(
+            !second_reached_persistence_while_first_was_paused,
+            "concurrent create entered persistence before the first transaction completed"
+        );
+        assert_eq!(first.name, "custom_collision");
+        assert_eq!(second.name, "custom_collision_1");
+
+        for (created, expected_url, expected_key) in [
+            (first, "https://first.example.invalid/v1", "first-key"),
+            (second, "https://second.example.invalid/v1", "second-key"),
+        ] {
+            let loaded = load_provider(&created.name).unwrap().config;
+            assert_eq!(loaded.base_url, expected_url);
+            assert_eq!(
+                config.get_secret::<String>(&loaded.api_key_env).unwrap(),
+                expected_key
+            );
+        }
+        assert!(temp_dir.path().join("secrets.yaml").exists());
+    }
+
+    #[test]
+    fn custom_provider_creation_lock_blocks_other_processes() {
+        if std::env::var_os(CREATE_LOCK_CHILD_ENV).is_some() {
+            let lock_file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(custom_providers_dir().join(".create.lock"))
+                .unwrap();
+            let error = FileExt::try_lock_exclusive(&lock_file)
+                .expect_err("child unexpectedly acquired the create lock");
+            assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+            return;
+        }
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
+        let _storage_guard = lock_custom_provider_creation().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg(
+                "config::declarative_providers::tests::custom_provider_creation_lock_blocks_other_processes",
+            )
+            .arg("--nocapture")
+            .env(CREATE_LOCK_CHILD_ENV, "1")
+            .env("GOOSE_PATH_ROOT", temp_root)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "child test failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn sequential_custom_provider_creates_keep_existing_suffix_behavior() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
+
+        let first = create_custom_provider(custom_provider_create_params(
+            "Repeated",
+            "https://first.example.invalid/v1",
+            None,
+        ))
+        .unwrap();
+        let second = create_custom_provider(custom_provider_create_params(
+            "Repeated",
+            "https://second.example.invalid/v1",
+            None,
+        ))
+        .unwrap();
+
+        assert_eq!(first.name, "custom_repeated");
+        assert_eq!(second.name, "custom_repeated_1");
+        assert_eq!(
+            load_provider(&first.name).unwrap().config.base_url,
+            first.base_url
+        );
+        assert_eq!(
+            load_provider(&second.name).unwrap().config.base_url,
+            second.base_url
+        );
+    }
+
+    #[test]
+    fn custom_provider_create_rolls_back_secret_when_persistence_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(temp_root.as_str())),
+            ("CUSTOM_ROLLBACK_API_KEY", None),
+            ("CUSTOM_ORPHAN_ROLLBACK_API_KEY", None),
+        ]);
+        let config = file_backed_test_config(temp_dir.path());
+
+        let result = create_custom_provider_with_persist(
+            &config,
+            custom_provider_create_params(
+                "Rollback",
+                "https://rollback.example.invalid/v1",
+                Some("new-key"),
+            ),
+            |_, _| anyhow::bail!("injected persistence failure"),
+        );
+
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("injected persistence failure"));
+        assert!(matches!(
+            config.get_secret::<String>("CUSTOM_ROLLBACK_API_KEY"),
+            Err(crate::config::ConfigError::NotFound(_))
+        ));
+        assert!(!custom_providers_dir().join("custom_rollback.json").exists());
+
+        config
+            .set_secret("CUSTOM_ORPHAN_ROLLBACK_API_KEY", &"previous-key")
+            .unwrap();
+        let result = create_custom_provider_with_persist(
+            &config,
+            custom_provider_create_params(
+                "Orphan Rollback",
+                "https://rollback.example.invalid/v1",
+                Some("replacement-key"),
+            ),
+            |_, _| anyhow::bail!("injected persistence failure"),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            config
+                .get_secret::<String>("CUSTOM_ORPHAN_ROLLBACK_API_KEY")
+                .unwrap(),
+            "previous-key"
+        );
+        assert!(!custom_providers_dir()
+            .join("custom_orphan_rollback.json")
+            .exists());
     }
 
     #[test]
