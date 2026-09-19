@@ -449,6 +449,41 @@ fn append_git_config_overrides(
     Ok(())
 }
 
+#[cfg(unix)]
+fn quote_git_config_parameter(value: &OsStr) -> OsString {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let mut quoted = vec![b'\''];
+    for byte in value.as_bytes() {
+        if *byte == b'\'' {
+            quoted.extend_from_slice(b"'\\''");
+        } else {
+            quoted.push(*byte);
+        }
+    }
+    quoted.push(b'\'');
+    OsString::from_vec(quoted)
+}
+
+#[cfg(not(unix))]
+fn quote_git_config_parameter(value: &OsStr) -> OsString {
+    let value = value.to_string_lossy();
+    OsString::from(format!("'{}'", value.replace('\'', "'\\''")))
+}
+
+fn append_git_config_parameters(cmd: &mut Command, overrides: &[(OsString, OsString)]) {
+    let mut parameters = std::env::var_os("GIT_CONFIG_PARAMETERS").unwrap_or_default();
+    for (key, value) in overrides {
+        if !parameters.is_empty() {
+            parameters.push(" ");
+        }
+        parameters.push(quote_git_config_parameter(key));
+        parameters.push("=");
+        parameters.push(quote_git_config_parameter(value));
+    }
+    cmd.env("GIT_CONFIG_PARAMETERS", parameters);
+}
+
 fn review_diff_command(repo_root: &Path) -> Result<Command> {
     let mut cmd = review_git_command(repo_root);
     let mut config_overrides = vec![(OsString::from("core.fsmonitor"), OsString::from("false"))];
@@ -463,7 +498,13 @@ fn review_diff_command(repo_root: &Path) -> Result<Command> {
             ),
         ]);
     }
-    append_git_config_overrides(&mut cmd, inherited_git_config_count()?, config_overrides)?;
+    append_git_config_overrides(
+        &mut cmd,
+        inherited_git_config_count()?,
+        config_overrides.clone(),
+    )?;
+    append_git_config_parameters(&mut cmd, &config_overrides);
+    cmd.env("GIT_NO_LAZY_FETCH", "1");
     cmd.args([
         "diff",
         "--no-ext-diff",
@@ -1586,6 +1627,52 @@ mod tests {
             &["config", "core.fsmonitor", script.to_str().unwrap()],
         );
         fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_overrides_git_config_parameters() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("parameter-fsmonitor-ran");
+        let script = root.join("parameter-fsmonitor.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/parameter-fsmonitor-ran\"\nexit 1\n",
+        );
+        let parameters = format!("'core.fsmonitor'='{}'", script.display());
+        let _guard = env_lock::lock_env([
+            ("GIT_CONFIG_PARAMETERS", Some(parameters.as_str())),
+            ("GIT_CONFIG_COUNT", None),
+        ]);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        let command = review_diff_command(root).unwrap();
+        let env = command.get_envs().collect::<Vec<_>>();
+        let final_parameters = env
+            .iter()
+            .find_map(|(key, value)| {
+                if *key == OsStr::new("GIT_CONFIG_PARAMETERS") {
+                    value.map(OsStr::to_string_lossy)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let appended_parameters = final_parameters.strip_prefix(&parameters).unwrap();
+        assert!(appended_parameters.contains("'core.fsmonitor'='false'"));
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_NO_LAZY_FETCH") && *value == Some(OsStr::new("1"))
+        }));
 
         assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
         let diff = collect_diff(root, None, &[]).unwrap();
