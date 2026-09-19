@@ -61,7 +61,7 @@ export default function DefaultCardButtons({
         />
       )}
       {/*show Launch button for configured providers on onboarding page*/}
-      {provider.is_configured && isOnboardingPage && (
+      {provider.is_enabled && provider.is_configured && isOnboardingPage && (
         <RocketButton
           tooltip={intl.formatMessage(i18n.getStarted)}
           onClick={(e) => {

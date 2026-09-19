@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Adicionar fornecedor"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Todos"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Escolher modelo"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Configurar fornecedor"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Atuais e ativados"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Obsoletos"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Editar fornecedor"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Filtrar fornecedores"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "A partir de um modelo ou configuração manual"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Nenhum fornecedor obsoleto"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Nenhum fornecedor corresponde a \"{query}\""
@@ -2923,7 +2938,7 @@
     "defaultMessage": "Tem a certeza de que pretende eliminar os parâmetros de configuração de {providerName}? Esta ação não pode ser anulada."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Eliminar fornecedor"
+    "defaultMessage": "Eliminar configuração"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Ativar fornecedor"
@@ -4215,8 +4230,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Parâmetros obrigatórios em falta"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "O fornecedor {name} está configurado"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "O fornecedor {name} está ativado"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Adicionar Existente"
@@ -4664,6 +4679,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Obsoleto — use {replacement} em vez disso."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Desativar"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Ativar"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "É necessário configurar ou iniciar sessão"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Ocultar do seletor de modelos e manter as credenciais e configurações guardadas"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "Adaptador ACP encontrado"

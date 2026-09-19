@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "プロバイダーを追加"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "すべて"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "モデルを選択"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "プロバイダーを設定"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "現行・有効"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "非推奨"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "プロバイダーを編集"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "プロバイダーを絞り込む"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "テンプレートまたは手動設定から"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "非推奨のプロバイダーはありません"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "「{query}」に一致するプロバイダーはありません"
@@ -2923,7 +2938,7 @@
     "defaultMessage": "{providerName}の設定パラメーターを削除してもよろしいですか？この操作は元に戻せません。"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "プロバイダーを削除"
+    "defaultMessage": "設定を削除"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "プロバイダーを有効化"
@@ -4215,8 +4230,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "必須パラメータが不足しています"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name}プロバイダーが設定されています"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} プロバイダーは有効です"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "既存を追加"
@@ -4664,6 +4679,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "非推奨です。代わりに {replacement} を使用してください。"
+  },
+  "providerCard.disable": {
+    "defaultMessage": "無効にする"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "有効にする"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "設定またはログインが必要です"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "モデル選択から非表示にし、保存済みの認証情報と設定を保持します"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACPアダプターが見つかりました"

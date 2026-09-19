@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "प्रदाता जोड़ें"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "सभी"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "मॉडल चुनें"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "प्रदाता को कॉन्फ़िगर करें"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "वर्तमान और सक्षम"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "अप्रचलित"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "प्रदाता संपादित करें"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "प्रदाता फ़िल्टर करें"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "टेम्प्लेट या मैन्युअल सेटअप से"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "कोई अप्रचलित प्रदाता नहीं"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "\"{query}\" से मेल खाने वाला कोई प्रदाता नहीं"
@@ -2923,7 +2938,7 @@
     "defaultMessage": "क्या आप वाकई {providerName} के लिए कॉन्फ़िगरेशन पैरामीटर हटाना चाहते हैं? इस कार्रवाई को वापस नहीं किया जा सकता।"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "प्रदाता हटाएँ"
+    "defaultMessage": "कॉन्फ़िगरेशन हटाएँ"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "प्रदाता सक्षम करें"
@@ -4215,8 +4230,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "आवश्यक पैरामीटर गुम हैं"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name} प्रदाता कॉन्फ़िगर किया गया है"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} प्रदाता सक्षम है"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "मौजूदा जोड़ें"
@@ -4664,6 +4679,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "अप्रचलित — इसके बजाय {replacement} का उपयोग करें।"
+  },
+  "providerCard.disable": {
+    "defaultMessage": "अक्षम करें"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "सक्षम करें"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "सेटअप या साइन इन आवश्यक है"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "मॉडल चयन सूची से छिपाएँ और सहेजे गए क्रेडेंशियल और सेटिंग्स बनाए रखें"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACP अडैप्टर मिल गया"
