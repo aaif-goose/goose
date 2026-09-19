@@ -1,0 +1,1 @@
+../../../../crates/goose/src/skills/builtins/gdk.md
