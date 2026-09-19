@@ -4536,6 +4536,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Butiran Alat"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Pengecam alat"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Hasil alat"
   },
