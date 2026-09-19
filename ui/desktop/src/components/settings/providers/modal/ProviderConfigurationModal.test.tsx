@@ -31,6 +31,7 @@ vi.mock('../../../../acp/providers', () => ({
 
 const oauthProvider: ProviderDetails = {
   name: 'github_copilot',
+  is_enabled: true,
   is_configured: true,
   is_available: true,
   visible_in_setup: true,
@@ -63,6 +64,7 @@ describe('ProviderConfigurationModal', () => {
       ...oauthProvider,
       name: 'zai_coding_plan',
       provider_type: 'Declarative',
+      is_enabled: false,
       is_configured: false,
       supports_refresh: true,
       metadata: {
@@ -167,6 +169,7 @@ describe('ProviderConfigurationModal', () => {
     const acpProvider: ProviderDetails = {
       ...oauthProvider,
       name: 'codex-acp',
+      is_enabled: false,
       is_configured: false,
       uses_acp: true,
       metadata: {
@@ -183,6 +186,7 @@ describe('ProviderConfigurationModal', () => {
     });
     const configuredProvider = {
       ...acpProvider,
+      is_enabled: true,
       is_configured: true,
       metadata: {
         ...acpProvider.metadata,
@@ -215,6 +219,7 @@ describe('ProviderConfigurationModal', () => {
       expect(onConfigured).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'codex-acp',
+          is_enabled: true,
           is_configured: true,
           metadata: expect.objectContaining({
             known_models: [{ name: 'gpt-5', context_limit: 0 }],

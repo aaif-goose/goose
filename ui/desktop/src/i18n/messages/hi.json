@@ -2923,7 +2923,7 @@
     "defaultMessage": "क्या आप वाकई {providerName} के लिए कॉन्फ़िगरेशन पैरामीटर हटाना चाहते हैं? इस कार्रवाई को वापस नहीं किया जा सकता।"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "प्रदाता हटाएँ"
+    "defaultMessage": "कॉन्फ़िगरेशन हटाएँ"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "प्रदाता सक्षम करें"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "आवश्यक पैरामीटर गुम हैं"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name} प्रदाता कॉन्फ़िगर किया गया है"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} प्रदाता सक्षम है"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "मौजूदा जोड़ें"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "अप्रचलित — इसके बजाय {replacement} का उपयोग करें।"
+  },
+  "providerCard.disable": {
+    "defaultMessage": "अक्षम करें"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "सक्षम करें"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "सेटअप या साइन इन आवश्यक है"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "मॉडल चयन सूची से छिपाएँ और सहेजे गए क्रेडेंशियल और सेटिंग्स बनाए रखें"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACP अडैप्टर मिल गया"

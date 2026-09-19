@@ -249,7 +249,7 @@ function ProviderCards({
     const providersArray = Array.isArray(providers) ? providers : [];
     const sortedProviders = [...providersArray].sort(
       (a, b) =>
-        Number(b.is_configured) - Number(a.is_configured) ||
+        Number(b.is_enabled) - Number(a.is_enabled) ||
         a.metadata.display_name.localeCompare(b.metadata.display_name)
     );
     const filteredProviders = query
@@ -266,6 +266,7 @@ function ProviderCards({
         onConfigure={() => configureProviderViaModal(provider)}
         onLaunch={() => handleProviderLaunchWithModelSelection(provider)}
         isOnboarding={isOnboarding}
+        onEnablementChanged={refreshProviders}
       />
     ));
 
@@ -276,6 +277,7 @@ function ProviderCards({
     return cards;
   }, [
     providers,
+    refreshProviders,
     query,
     isOnboarding,
     configureProviderViaModal,
