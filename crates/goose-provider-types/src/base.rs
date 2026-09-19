@@ -514,6 +514,15 @@ pub trait Provider: Send + Sync {
             .await
     }
 
+    /// Context limit the provider itself reports for `model` (consumer
+    /// configuration or live discovery), without canonical or default
+    /// fallback. Returns `None` when the provider reports nothing.
+    async fn probe_context_limit(&self, model: &str) -> Option<usize> {
+        crate::context_limit::ContextLimitResolver::new(self.get_name())
+            .resolve_provider_reported(model, None, || async { Ok(None) })
+            .await
+    }
+
     fn retry_config(&self) -> RetryConfig {
         RetryConfig::default()
     }

@@ -564,9 +564,10 @@ impl OpenAiProvider {
         parse_model_ids(&json)
     }
 
-    /// llama.cpp and Ollama expose the actual allocated context window in the
-    /// non-standard `meta.n_ctx` field of `/v1/models`. Returns `None` when absent
-    /// (e.g. real OpenAI).
+    /// Probe `/v1/models` for the context window the server can actually
+    /// work with for `model_name` (`meta.n_ctx` on llama.cpp/Ollama,
+    /// `context_length` or the configured `recipe_options.ctx_size` on
+    /// Lemonade). Returns `None` when absent (e.g. real OpenAI).
     async fn fetch_n_ctx_from_api(&self, model_name: &str) -> Result<Option<usize>, ProviderError> {
         let models_path =
             Self::map_base_path(&self.base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH);
@@ -601,31 +602,97 @@ fn parse_model_ids(json: &serde_json::Value) -> Result<Vec<String>, ProviderErro
     Ok(model_ids)
 }
 
-/// Extract `meta.n_ctx` for `model_name` from a `/v1/models` response body.
+/// Extract the working context window for `model_name` from a `/v1/models` response body.
+///
+/// Servers expose this in different shapes: llama.cpp and Ollama use the
+/// non-standard `meta.n_ctx`, while Lemonade (and LM Studio) use top-level
+/// `context_length` (loaded context) and Lemonade adds
+/// `recipe_options.ctx_size` (the context a model loads with). Static
+/// capability fields such as `max_context_window` are deliberately ignored:
+/// the server can only work with what is configured/loaded, so the most
+/// specific working-window value present wins.
 fn parse_n_ctx_from_models(json: &serde_json::Value, model_name: &str) -> Option<usize> {
     let data = json.get("data")?.as_array()?;
 
-    let n_ctx = |entry: &serde_json::Value| -> Option<usize> {
-        entry
-            .get("meta")?
-            .get("n_ctx")?
-            .as_u64()
+    let parse_window = |value: Option<&serde_json::Value>| -> Option<usize> {
+        value
+            .and_then(|v| {
+                v.as_u64().or_else(|| {
+                    v.as_f64()
+                        .filter(|f| f.fract() == 0.0 && *f >= 0.0)
+                        .map(|f| f as u64)
+                })
+            })
             .map(|v| v as usize)
+    };
+    // Parse each source separately so a present-but-unparseable field (float,
+    // null, string) falls through to the next source instead of failing the
+    // whole lookup.
+    let context_limit = |entry: &serde_json::Value| -> Option<usize> {
+        parse_window(entry.get("meta").and_then(|meta| meta.get("n_ctx")))
+            .or_else(|| parse_window(entry.get("context_length")))
+            .or_else(|| parse_window(entry.get("recipe_options").and_then(|o| o.get("ctx_size"))))
     };
 
     if let Some(entry) = data
         .iter()
         .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(model_name))
     {
-        return n_ctx(entry);
+        return context_limit(entry);
     }
 
     // For single-model servers without --alias, llama.cpp reports the loaded model
     // file path as id rather than the client's alias, so no entry matches above.
-    // Fall back to the sole entry's n_ctx.
+    // Fall back to the sole entry's context limit.
     match data.as_slice() {
-        [only] => n_ctx(only),
+        [only] => context_limit(only),
         _ => None,
+    }
+}
+
+impl OpenAiProvider {
+    fn context_limit_resolver(&self) -> goose_provider_types::context_limit::ContextLimitResolver {
+        let configured_limits = self
+            .custom_models
+            .iter()
+            .flatten()
+            .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
+        goose_provider_types::context_limit::ContextLimitResolver::new(&self.name)
+            .with_configured_limits(configured_limits)
+    }
+
+    /// Discover the context window the server reports for `model` (with
+    /// caching). `Ok(None)` means the server reports nothing.
+    async fn discover_context_limit(&self, model: &str) -> Result<Option<usize>, ProviderError> {
+        if let Some(cached) = self
+            .n_ctx_cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(model).copied())
+            .and_then(CachedContextLimit::value)
+        {
+            return Ok(cached);
+        }
+
+        let probed =
+            match tokio::time::timeout(N_CTX_PROBE_TIMEOUT, self.fetch_n_ctx_from_api(model)).await
+            {
+                Ok(Ok(limit)) => Ok(limit),
+                Ok(Err(error)) if error.is_endpoint_not_found() => Ok(None),
+                Ok(Err(error)) => Err(error),
+                Err(_) => Err(ProviderError::RequestFailed(
+                    "Context-limit discovery timed out".into(),
+                )),
+            };
+
+        if let Ok(mut cache) = self.n_ctx_cache.lock() {
+            let cached = match probed.as_ref() {
+                Ok(limit) => CachedContextLimit::Success(*limit),
+                Err(_) => CachedContextLimit::Failure(Instant::now()),
+            };
+            cache.insert(model.to_string(), cached);
+        }
+        probed
     }
 }
 
@@ -688,49 +755,14 @@ impl Provider for OpenAiProvider {
     }
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        let configured_limits = self
-            .custom_models
-            .iter()
-            .flatten()
-            .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
-        let resolver = goose_provider_types::context_limit::ContextLimitResolver::new(&self.name)
-            .with_configured_limits(configured_limits);
+        self.context_limit_resolver()
+            .resolve(model, override_limit, || self.discover_context_limit(model))
+            .await
+    }
 
-        resolver
-            .resolve(model, override_limit, || async {
-                if let Some(cached) = self
-                    .n_ctx_cache
-                    .lock()
-                    .ok()
-                    .and_then(|cache| cache.get(model).copied())
-                    .and_then(CachedContextLimit::value)
-                {
-                    return Ok(cached);
-                }
-
-                let probed = match tokio::time::timeout(
-                    N_CTX_PROBE_TIMEOUT,
-                    self.fetch_n_ctx_from_api(model),
-                )
-                .await
-                {
-                    Ok(Ok(limit)) => Ok(limit),
-                    Ok(Err(error)) if error.is_endpoint_not_found() => Ok(None),
-                    Ok(Err(error)) => Err(error),
-                    Err(_) => Err(ProviderError::RequestFailed(
-                        "Context-limit discovery timed out".into(),
-                    )),
-                };
-
-                if let Ok(mut cache) = self.n_ctx_cache.lock() {
-                    let cached = match probed.as_ref() {
-                        Ok(limit) => CachedContextLimit::Success(*limit),
-                        Err(_) => CachedContextLimit::Failure(Instant::now()),
-                    };
-                    cache.insert(model.to_string(), cached);
-                }
-                probed
-            })
+    async fn probe_context_limit(&self, model: &str) -> Option<usize> {
+        self.context_limit_resolver()
+            .resolve_provider_reported(model, None, || self.discover_context_limit(model))
             .await
     }
 
@@ -1455,6 +1487,127 @@ mod tests {
             ]
         });
         assert_eq!(parse_n_ctx_from_models(&body, "model-c"), None);
+    }
+
+    #[test]
+    fn parse_n_ctx_reads_lemonade_context_length() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "gemma",
+                    "object": "model",
+                    "owned_by": "lemonade",
+                    "context_length": 50_000,
+                    "max_context_window": 262_144,
+                    "recipe_options": { "ctx_size": 50_000 }
+                }
+            ]
+        });
+        assert_eq!(parse_n_ctx_from_models(&body, "gemma"), Some(50_000));
+    }
+
+    #[test]
+    fn parse_n_ctx_reads_lemonade_ctx_size_when_unloaded() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "gemma",
+                    "object": "model",
+                    "max_context_window": 262_144,
+                    "recipe_options": { "ctx_size": 50_000 }
+                },
+                {
+                    "id": "muse",
+                    "object": "model",
+                    "max_context_window": 131_072,
+                    "recipe_options": { "ctx_size": 131_072 }
+                }
+            ]
+        });
+        assert_eq!(parse_n_ctx_from_models(&body, "gemma"), Some(50_000));
+        assert_eq!(parse_n_ctx_from_models(&body, "muse"), Some(131_072));
+    }
+
+    #[test]
+    fn parse_n_ctx_prefers_loaded_context_over_configured() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "m",
+                    "context_length": 32_768,
+                    "recipe_options": { "ctx_size": 131_072 }
+                }
+            ]
+        });
+        assert_eq!(parse_n_ctx_from_models(&body, "m"), Some(32_768));
+    }
+
+    #[test]
+    fn parse_n_ctx_falls_through_unparseable_fields() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "float",
+                    "context_length": 8192.0,
+                    "recipe_options": { "ctx_size": 50_000 }
+                },
+                {
+                    "id": "null",
+                    "context_length": null,
+                    "recipe_options": { "ctx_size": 32_000 }
+                },
+                {
+                    "id": "string",
+                    "meta": { "n_ctx": "4096" },
+                    "context_length": 64_000
+                }
+            ]
+        });
+        // Integral float is a valid window.
+        assert_eq!(parse_n_ctx_from_models(&body, "float"), Some(8192));
+        // null context_length falls through to recipe_options.ctx_size.
+        assert_eq!(parse_n_ctx_from_models(&body, "null"), Some(32_000));
+        // string n_ctx falls through to context_length.
+        assert_eq!(parse_n_ctx_from_models(&body, "string"), Some(64_000));
+    }
+
+    #[test]
+    fn parse_n_ctx_ignores_static_max_window() {
+        let body = json!({
+            "data": [
+                { "id": "gemma", "object": "model", "max_context_window": 262_144 }
+            ]
+        });
+        assert_eq!(parse_n_ctx_from_models(&body, "gemma"), None);
+    }
+
+    #[test]
+    fn parse_n_ctx_meta_n_ctx_beats_lemonade_fields() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "m",
+                    "meta": { "n_ctx": 16_384 },
+                    "context_length": 8192,
+                    "recipe_options": { "ctx_size": 131_072 }
+                }
+            ]
+        });
+        assert_eq!(parse_n_ctx_from_models(&body, "m"), Some(16_384));
+    }
+
+    #[test]
+    fn parse_n_ctx_lemonade_falls_back_to_sole_entry_when_id_differs() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "some/other/alias",
+                    "max_context_window": 262_144,
+                    "recipe_options": { "ctx_size": 50_000 }
+                }
+            ]
+        });
+        assert_eq!(parse_n_ctx_from_models(&body, "qwen3"), Some(50_000));
     }
 
     #[test]

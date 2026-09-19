@@ -380,6 +380,18 @@ impl ProviderDescriptor for OllamaProvider {
     }
 }
 
+impl OllamaProvider {
+    fn context_limit_resolver(&self) -> crate::context_limit::ContextLimitResolver {
+        let configured_limits = self
+            .custom_models
+            .iter()
+            .flatten()
+            .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
+        crate::context_limit::ContextLimitResolver::new(&self.name)
+            .with_configured_limits(configured_limits)
+    }
+}
+
 #[async_trait]
 impl Provider for OllamaProvider {
     fn get_name(&self) -> &str {
@@ -437,16 +449,16 @@ impl Provider for OllamaProvider {
     }
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        let configured_limits = self
-            .custom_models
-            .iter()
-            .flatten()
-            .filter_map(|model| model.context_limit.map(|limit| (model.name.clone(), limit)));
-        crate::context_limit::ContextLimitResolver::new(&self.name)
-            .with_configured_limits(configured_limits)
+        self.context_limit_resolver()
             .resolve(model, override_limit, || async {
                 Ok(self.options.input_limit)
             })
+            .await
+    }
+
+    async fn probe_context_limit(&self, model: &str) -> Option<usize> {
+        self.context_limit_resolver()
+            .resolve_provider_reported(model, None, || async { Ok(self.options.input_limit) })
             .await
     }
 
