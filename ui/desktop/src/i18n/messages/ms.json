@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Padatkan automatik pada"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Padatkan sekarang"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Gagal menyimpan ambang: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Faham!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose telah menyelesaikan tugasan."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Tetingkap konteks"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Ralat Imlak"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal mengemas kini direktori kerja"
   },
@@ -4703,6 +4687,57 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Lawati"
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} daripada {limit} token digunakan. Tunjukkan kandungan tetingkap konteks"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Padatkan sekarang"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Kosong"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Tidak dapat memuatkan laporan konteks."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · tetingkap konteks {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Muat semula"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Cuba lagi"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Tetingkap konteks"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Bilangan token dianggarkan dengan tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "daripada {limit} token · {percent} daripada tetingkap konteks"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Arahan & petunjuk"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Ringkasan pemadatan"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Arahan sambungan"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Perbualan"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt sistem"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definisi alat"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Konteks giliran"
   },
   "settings.agentLoop.description": {
     "defaultMessage": "Gunakan gelung ejen berasaskan operasi. Matikan untuk menggunakan gelung legasi."

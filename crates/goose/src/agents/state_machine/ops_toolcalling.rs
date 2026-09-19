@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
+use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
@@ -730,6 +731,31 @@ fn approval_denied(permission: Option<&crate::permission::Permission>) -> bool {
     )
 }
 
+/// The extension block, as a header part plus one part per extension. Prompt
+/// extras are joined with a blank line, so this renders the same text as one
+/// combined part while keeping each extension's tokens attributable.
+fn extension_prompt_parts(extensions: &[ExtensionInfo]) -> Vec<(String, String)> {
+    let mut parts = vec![(
+        "extensions".to_string(),
+        "# Extensions\n\n\
+         Extensions provide additional tools and context from different data sources and applications.\n\
+         You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
+         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
+            .to_string(),
+    )];
+    for extension in extensions {
+        let mut lines = vec![format!("## {}", extension.name)];
+        if extension.has_resources {
+            lines.push(format!("{} supports resources.", extension.name));
+        }
+        if !extension.instructions.is_empty() {
+            lines.push(format!("### Instructions\n{}", extension.instructions));
+        }
+        parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
+    }
+    parts
+}
+
 #[async_trait]
 impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
     fn name(&self) -> &'static str {
@@ -808,24 +834,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         }
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
-
-        let mut lines = vec![
-            "# Extensions".to_string(),
-            "Extensions provide additional tools and context from different data sources and applications.\n\
-             You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
-             Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
-                .to_string(),
-        ];
-        for extension in extensions {
-            lines.push(format!("## {}", extension.name));
-            if extension.has_resources {
-                lines.push(format!("{} supports resources.", extension.name));
-            }
-            if !extension.instructions.is_empty() {
-                lines.push(format!("### Instructions\n{}", extension.instructions));
-            }
-        }
-        prompt_parts.push(("extensions".to_string(), lines.join("\n\n")));
+        prompt_parts.extend(extension_prompt_parts(&extensions));
         Ok(prompt_parts)
     }
 
@@ -1028,6 +1037,30 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_prompt_parts_render_one_block_per_extension() {
+        let extensions = vec![
+            ExtensionInfo::new("developer", "Shell things.", false),
+            ExtensionInfo::new("memory", "", true),
+        ];
+
+        let parts = extension_prompt_parts(&extensions);
+
+        let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
+        assert_eq!(
+            keys,
+            ["extensions", "extension:developer", "extension:memory"]
+        );
+        let rendered = parts
+            .iter()
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        assert!(rendered.ends_with(
+            "## developer\n\n### Instructions\nShell things.\n\n## memory\n\nmemory supports resources."
+        ));
+    }
 
     #[test]
     fn externally_dispatched_observations_are_not_pending_execution() {

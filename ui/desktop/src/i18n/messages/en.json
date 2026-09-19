@@ -20,15 +20,6 @@
   "acpReadinessPanel.connectionNotChecked": {
     "defaultMessage": "Check your account connection before continuing."
   },
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Auto compact at"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compact now"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Failed to save threshold: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Got it!"
   },
@@ -197,9 +188,6 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose finished the task."
   },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Context window"
-  },
   "chatInput.dictationError": {
     "defaultMessage": "Dictation Error"
   },
@@ -340,6 +328,57 @@
   },
   "confirmationModal.processing": {
     "defaultMessage": "Processing..."
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} of {limit} tokens used. Show what is in the context window"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instructions & hints"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Compaction summary"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Extension instructions"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversation"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "System prompt"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Tool definitions"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Turn context"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compact now"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Free"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Could not load the context report."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} token context window"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Refresh"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Retry"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Context window"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Token counts are estimated with the o200k tokenizer."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "of {limit} tokens · {percent} of the context window"
   },
   "conversationLimitsDropdown.conversationLimits": {
     "defaultMessage": "Conversation Limits"

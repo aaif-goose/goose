@@ -325,6 +325,84 @@ pub struct DiagnosticsGetResponse {
     pub report: serde_json::Value,
 }
 
+/// Break down what fills the model's context window if the session were
+/// prompted right now. Makes no model call.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/context/report", response = ContextReportResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextReportRequest {
+    pub session_id: String,
+    /// Which loop to model, matching the `unrolledAgentLoop` prompt meta the
+    /// client sends. Defaults to the agent's own default when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unrolled_agent_loop: Option<bool>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextReportResponse {
+    pub model: ContextReportModel,
+    /// Measured with goose's local tokenizer; always the sum of the segments.
+    pub total_tokens: u64,
+    /// Non-overlapping, in request order.
+    pub segments: Vec<ContextSegment>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextReportModel {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    pub model_name: String,
+    pub context_limit: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextSegment {
+    pub category: ContextCategory,
+    pub label: String,
+    /// Display-only provenance, such as a file path or a tool count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    pub token_count: u64,
+    /// Truncated with a trailing `… (+N more chars)` marker. Omitted when
+    /// `parts` carries the previews.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_preview: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ContextPart>,
+}
+
+/// Parts add up to their segment's `tokenCount`, except where a segment is
+/// split into prose sections; there the headings and framing are carried by
+/// the segment alone.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextPart {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    pub token_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextCategory {
+    /// The base prompt, plus the residual row that reconciles the segments
+    /// with the request total.
+    SystemPrompt,
+    ExtensionInstructions,
+    /// Hint files, project instructions and other prompt extras.
+    AdditionalInstructions,
+    TurnContext,
+    ToolDefinitions,
+    CompactionSummary,
+    Messages,
+}
+
 /// Information about a prompt template, including its default content and customization status.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

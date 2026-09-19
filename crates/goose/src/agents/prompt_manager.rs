@@ -106,6 +106,10 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     }
 
     pub fn build(self) -> String {
+        self.build_parts().join()
+    }
+
+    pub fn build_parts(self) -> SystemPromptParts {
         let mut extensions_info = self.extensions_info;
 
         // Stable tool ordering is important for multi session prompt caching.
@@ -117,6 +121,11 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
                 ext_info.instructions = sanitize_unicode_tags(&ext_info.instructions);
                 ext_info
             })
+            .collect();
+        let instruction_texts: Vec<(String, String)> = sanitized_extensions_info
+            .iter()
+            .filter(|ext_info| !ext_info.instructions.is_empty())
+            .map(|ext_info| (ext_info.name.clone(), ext_info.instructions.clone()))
             .collect();
 
         let goose_mode = self
@@ -134,7 +143,8 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             moim_system_prompt_block: moim::system_prompt_block(),
         };
 
-        let base_prompt = if let Some(override_prompt) = &self.manager.system_prompt_override {
+        let base_is_override = self.manager.system_prompt_override.is_some();
+        let rendered = if let Some(override_prompt) = &self.manager.system_prompt_override {
             let sanitized_override_prompt = sanitize_unicode_tags(override_prompt);
             prompt_template::render_string(&sanitized_override_prompt, &context)
         } else {
@@ -143,35 +153,97 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         .unwrap_or_else(|_| {
             "You are a general-purpose AI agent called goose, created by Block".to_string()
         });
+        let (base, extension_instructions) =
+            split_extension_instructions(&rendered, &instruction_texts);
 
-        let mut system_prompt_extras = self.manager.system_prompt_extras.clone();
-        system_prompt_extras.extend(self.prompt_extras);
+        let mut extras = self.manager.system_prompt_extras.clone();
+        extras.extend(self.prompt_extras);
 
-        // Add hints if provided
         if let Some(hints) = self.hints {
-            system_prompt_extras.insert("hints".to_string(), hints);
+            extras.insert("hints".to_string(), hints);
         }
 
         if goose_mode == GooseMode::Chat {
-            system_prompt_extras.insert(
+            extras.insert(
                 "chat_mode".to_string(),
                 "Right now you are in the chat only mode, no access to any tool use and system."
                     .to_string(),
             );
         }
 
-        if system_prompt_extras.is_empty() {
-            base_prompt
-        } else {
-            let sanitized_system_prompt_extras: Vec<String> = system_prompt_extras
-                .into_values()
-                .map(|extra| sanitize_unicode_tags(&extra))
-                .collect();
+        SystemPromptParts {
+            rendered,
+            base,
+            base_is_override,
+            extension_instructions,
+            extras: extras
+                .into_iter()
+                .map(|(key, extra)| (key, sanitize_unicode_tags(&extra)))
+                .collect(),
+        }
+    }
+}
 
+/// Locates each extension's instructions in the rendered prompt, so the split
+/// never alters what the template sees. Longer texts claim their spans first
+/// so instructions that contain another extension's are not mislabelled;
+/// instructions a template transforms stay in the base.
+fn split_extension_instructions(
+    rendered: &str,
+    instructions: &[(String, String)],
+) -> (String, Vec<(String, String)>) {
+    let mut by_length: Vec<&(String, String)> = instructions.iter().collect();
+    by_length.sort_by_key(|(_, text)| std::cmp::Reverse(text.len()));
+
+    let mut spans: Vec<(usize, &str, &str)> = Vec::new();
+    for (name, text) in by_length {
+        for (start, _) in rendered.match_indices(text.as_str()) {
+            let end = start + text.len();
+            if !spans.iter().any(|(claimed, _, claimed_text)| {
+                start < claimed + claimed_text.len() && *claimed < end
+            }) {
+                spans.push((start, name, text));
+            }
+        }
+    }
+    spans.sort_by_key(|(start, _, _)| *start);
+
+    let mut base = String::with_capacity(rendered.len());
+    let mut cursor = 0;
+    for (start, _, text) in &spans {
+        base.push_str(rendered.get(cursor..*start).unwrap_or_default());
+        cursor = start + text.len();
+    }
+    base.push_str(rendered.get(cursor..).unwrap_or_default());
+    let extension_instructions = spans
+        .into_iter()
+        .map(|(_, name, text)| (name.to_string(), text.to_string()))
+        .collect();
+    (base, extension_instructions)
+}
+
+pub struct SystemPromptParts {
+    rendered: String,
+    /// The rendered template minus every extension's instructions.
+    pub base: String,
+    pub base_is_override: bool,
+    pub extension_instructions: Vec<(String, String)>,
+    pub extras: IndexMap<String, String>,
+}
+
+impl SystemPromptParts {
+    pub fn join(&self) -> String {
+        if self.extras.is_empty() {
+            self.rendered.clone()
+        } else {
             format!(
                 "{}\n\n# Additional Instructions:\n\n{}",
-                base_prompt,
-                sanitized_system_prompt_extras.join("\n\n")
+                self.rendered,
+                self.extras
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
             )
         }
     }
@@ -233,13 +305,23 @@ impl PromptManager {
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
+        self.build_system_prompt_parts(working_dir, prompt_parts, goose_mode)
+            .join()
+    }
+
+    pub fn build_system_prompt_parts(
+        &mut self,
+        working_dir: &Path,
+        prompt_parts: Vec<(String, String)>,
+        goose_mode: GooseMode,
+    ) -> SystemPromptParts {
         self.load_subdirectory_hints(working_dir);
         self.builder()
             .with_prompt_extras(prompt_parts)
             .with_hints(working_dir)
             .with_goose_mode(goose_mode)
             .without_extensions()
-            .build()
+            .build_parts()
     }
 
     /// Override the system prompt with custom text
@@ -311,6 +393,82 @@ mod tests {
         assert!(!result.contains('\u{E0043}'));
         assert!(result.contains("Extra instruction"));
         assert!(result.contains("hidden"));
+    }
+
+    #[test]
+    fn build_parts_splits_the_prompt_build_produces() {
+        let mut manager = PromptManager::new();
+        manager.add_system_prompt_extra("recipe".to_string(), "Follow the recipe.".to_string());
+        let extensions = || {
+            [
+                ExtensionInfo::new("zeta", "Zeta instructions", false),
+                ExtensionInfo::new("alpha", "", true),
+                ExtensionInfo::new("mid", "Mid instructions", false),
+            ]
+            .into_iter()
+        };
+
+        let built = manager.builder().with_extensions(extensions()).build();
+        let parts = manager
+            .builder()
+            .with_extensions(extensions())
+            .build_parts();
+
+        assert_eq!(parts.join(), built);
+        assert!(!parts.base.contains("Mid instructions"));
+        assert!(parts.base.contains("## alpha"));
+        assert_eq!(
+            parts.extension_instructions,
+            vec![
+                ("mid".to_string(), "Mid instructions".to_string()),
+                ("zeta".to_string(), "Zeta instructions".to_string()),
+            ]
+        );
+        assert_eq!(
+            parts.extras.get("recipe").map(String::as_str),
+            Some("Follow the recipe.")
+        );
+    }
+
+    #[test]
+    fn build_parts_follows_an_override_that_reorders_repeats_and_transforms_extensions() {
+        let mut manager = PromptManager::new();
+        manager.set_system_prompt_override(
+            "{% for extension in extensions | reverse %}{{extension.instructions}}\n{% endfor %}\
+             Again: {% for extension in extensions %}{{extension.instructions}}{% endfor %}\
+             Upper: {{extensions[0].instructions | upper}}"
+                .to_string(),
+        );
+        let extensions = || {
+            [
+                ExtensionInfo::new("alpha", "Alpha instructions", false),
+                ExtensionInfo::new("zeta", "Zeta instructions", false),
+            ]
+            .into_iter()
+        };
+
+        let built = manager.builder().with_extensions(extensions()).build();
+        let parts = manager
+            .builder()
+            .with_extensions(extensions())
+            .build_parts();
+
+        assert_eq!(
+            built,
+            "Zeta instructions\nAlpha instructions\nAgain: Alpha instructionsZeta instructions\
+             Upper: ALPHA INSTRUCTIONS"
+        );
+        assert_eq!(parts.join(), built);
+        assert_eq!(parts.base, "\n\nAgain: Upper: ALPHA INSTRUCTIONS");
+        assert_eq!(
+            parts.extension_instructions,
+            vec![
+                ("zeta".to_string(), "Zeta instructions".to_string()),
+                ("alpha".to_string(), "Alpha instructions".to_string()),
+                ("alpha".to_string(), "Alpha instructions".to_string()),
+                ("zeta".to_string(), "Zeta instructions".to_string()),
+            ]
+        );
     }
 
     #[test]

@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "ऑटो कॉम्पैक्ट पर"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "अब संक्षिप्त करें"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "सीमा सहेजने में विफल: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "समझ गया!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose ने कार्य पूरा किया।"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "प्रसंग विंडो"
   },
   "chatInput.dictationError": {
     "defaultMessage": "श्रुतलेख त्रुटि"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "कार्यशील निर्देशिका अद्यतन करने में विफल"
   },
@@ -4703,6 +4687,57 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "जाएं"
+  },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} में से {used} टोकन उपयोग में। कॉन्टेक्स्ट विंडो में क्या है, दिखाएँ"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "अभी संक्षिप्त करें"
+  },
+  "contextXray.free": {
+    "defaultMessage": "खाली"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "कॉन्टेक्स्ट रिपोर्ट लोड नहीं हो सकी।"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} टोकन कॉन्टेक्स्ट विंडो"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "रीफ़्रेश करें"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "पुनः प्रयास करें"
+  },
+  "contextXray.title": {
+    "defaultMessage": "कॉन्टेक्स्ट विंडो"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "टोकन गिनती o200k टोकनाइज़र से अनुमानित है।"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "{limit} टोकन में से · कॉन्टेक्स्ट विंडो का {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "निर्देश और संकेत"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "संक्षेपण सारांश"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "एक्सटेंशन निर्देश"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "वार्तालाप"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "सिस्टम प्रॉम्प्ट"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "टूल परिभाषाएँ"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "टर्न कॉन्टेक्स्ट"
   },
   "settings.agentLoop.description": {
     "defaultMessage": "ऑपरेशन-आधारित एजेंट लूप का उपयोग करें। लेगेसी लूप का उपयोग करने के लिए इसे बंद करें।"

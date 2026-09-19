@@ -167,6 +167,14 @@ impl GooseAcpAgent {
         self.on_get_diagnostics(req).await
     }
 
+    #[custom_method(ContextReportRequest)]
+    async fn dispatch_get_context_report(
+        &self,
+        req: ContextReportRequest,
+    ) -> Result<ContextReportResponse, agent_client_protocol::Error> {
+        self.on_get_context_report(req).await
+    }
+
     #[custom_method(ListPromptsRequest)]
     async fn dispatch_list_prompts(
         &self,
