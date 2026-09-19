@@ -17,6 +17,8 @@ struct GooseMessageMeta<'a> {
     output_token_limit_reached: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     fallback_content: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_logs: Option<&'a [String]>,
 }
 
 fn goose_message_meta(
@@ -29,6 +31,8 @@ fn goose_message_meta(
         steer,
         output_token_limit_reached: message.metadata.output_token_limit_reached,
         fallback_content: has_output_token_limit_fallback_content(message),
+        operation_logs: (!message.metadata.operation_logs.is_empty())
+            .then_some(message.metadata.operation_logs.as_slice()),
     };
 
     match serde_json::to_value(message_meta) {
@@ -138,6 +142,20 @@ mod tests {
             message_meta(&message_without_id).get("goose"),
             Some(&serde_json::json!({
                 "created": 1_700_000_000,
+            })),
+        );
+
+        let mut message_with_log = message.clone();
+        message_with_log
+            .metadata
+            .operation_logs
+            .push("ops_auto_effort: thinking high".to_string());
+        assert_eq!(
+            message_meta(&message_with_log).get("goose"),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_live",
+                "operationLogs": ["ops_auto_effort: thinking high"],
             })),
         );
 

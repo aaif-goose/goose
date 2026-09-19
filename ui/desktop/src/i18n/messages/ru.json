@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Автоматически"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Настроено"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "API-ключ TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Введите API-ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Удалить ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Сохранить ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Использует Jev для выбора уровня рассуждений для каждого запроса. Текст текущего запроса отправляется в TypeSafe AI."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Автоматический уровень рассуждений"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Лимит блокировок"
   },

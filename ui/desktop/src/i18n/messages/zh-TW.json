@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "已設定"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "輸入 API 金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "移除金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "儲存金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "使用 Jev 為每個請求選擇思考層級。目前的請求文字將傳送至 TypeSafe AI。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "自動思考層級"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "封鎖上限"
   },

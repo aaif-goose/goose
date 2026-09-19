@@ -7,6 +7,7 @@
 
 mod effects;
 mod inference_preparation;
+mod ops_auto_effort;
 mod ops_bang_shell;
 mod ops_compaction;
 mod ops_doctor;
@@ -42,6 +43,7 @@ pub use goose_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, SlashCommand, StepResult,
+    CLIENT_LOG,
 };
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -49,6 +51,7 @@ pub(crate) use tool_confirmation::{
 };
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
+pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;

@@ -9,10 +9,14 @@ use crate::operation::{
     OperationFuture, OperationResult, StepResult,
 };
 use goose_provider_types::conversation::Conversation;
+use goose_provider_types::thinking::ThinkingEffort;
 
 pub trait MachineSession: Send + Sync {
     fn id(&self) -> &str;
     fn conversation(&self) -> Option<&Conversation>;
+    fn thinking_effort(&self) -> Option<ThinkingEffort> {
+        None
+    }
 }
 
 #[async_trait]
