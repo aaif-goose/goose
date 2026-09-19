@@ -1771,6 +1771,11 @@
           "type": "string",
           "description": "The default/recommended model for this provider."
         },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the user has enabled this provider in the model picker.",
+          "default": false
+        },
         "configured": {
           "type": "boolean",
           "description": "Whether Goose has enough configuration to use this provider."
@@ -2894,6 +2899,24 @@
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/providers/config/status"
+    },
+    "ProviderEnablementSetRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "providerId",
+        "enabled"
+      ],
+      "description": "Set model picker visibility without changing credentials, models, or existing sessions.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/providers/enablement/set"
     },
     "ProviderConfigSaveRequest_unstable": {
       "type": "object",
@@ -7470,6 +7493,15 @@
                   ],
                   "description": "Params for _goose/unstable/providers/config/status",
                   "title": "ProviderConfigStatusRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderEnablementSetRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/providers/enablement/set",
+                  "title": "ProviderEnablementSetRequest_unstable"
                 },
                 {
                   "allOf": [

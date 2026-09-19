@@ -2923,7 +2923,7 @@
     "defaultMessage": "您確定要刪除 {providerName} 的組態參數嗎？此操作無法復原。"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "刪除提供者"
+    "defaultMessage": "刪除設定"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "啟用提供者"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "缺少必要參數"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "已設定 {name} 提供者"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "已啟用 {name} 供應商"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "新增現有項目"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "已棄用 — 請改用 {replacement}。"
+  },
+  "providerCard.disable": {
+    "defaultMessage": "停用"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "啟用"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "需要設定或登入"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "從模型選擇器中隱藏，並保留已儲存的憑證與設定"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "已找到 ACP 轉接器"

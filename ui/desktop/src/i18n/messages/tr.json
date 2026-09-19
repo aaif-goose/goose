@@ -2923,7 +2923,7 @@
     "defaultMessage": "{providerName} için yapılandırma parametrelerini silmek istediğinizden emin misiniz? Bu eylem geri alınamaz."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Sağlayıcıyı Sil"
+    "defaultMessage": "Yapılandırmayı sil"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Sağlayıcıyı Etkinleştir"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Gerekli parametreler eksik"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name} sağlayıcısı yapılandırıldı"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} sağlayıcısı etkin"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Mevcut Ekle"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Kullanımdan kaldırıldı — bunun yerine {replacement} kullanın."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Devre dışı bırak"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Etkinleştir"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Kurulum veya oturum açma gerekli"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Model seçiciden gizle ve kayıtlı kimlik bilgileri ile ayarları koru"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACP bağdaştırıcısı bulundu"

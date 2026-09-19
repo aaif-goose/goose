@@ -2923,7 +2923,7 @@
     "defaultMessage": "Adakah anda pasti mahu memadamkan parameter konfigurasi untuk {providerName}? Tindakan ini tidak boleh dibuat asal."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Padam Penyedia"
+    "defaultMessage": "Padam konfigurasi"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Dayakan Penyedia"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Parameter yang diperlukan tiada"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "Penyedia {name} telah dikonfigurasikan"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "Penyedia {name} didayakan"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Tambah Sedia Ada"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Tidak digunakan lagi — gunakan {replacement} sebagai gantinya."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Nyahdayakan"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Dayakan"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Persediaan atau log masuk diperlukan"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Sembunyikan daripada pemilih model dan kekalkan kelayakan serta tetapan yang disimpan"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "Penyesuai ACP ditemui"
