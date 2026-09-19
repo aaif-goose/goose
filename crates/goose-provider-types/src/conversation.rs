@@ -277,6 +277,7 @@ fn fix_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
         remove_empty_messages,
         fix_empty_tool_results,
         fix_tool_calling,
+        remove_thinking_only_assistant_turns,
         merge_consecutive_messages,
         dedupe_signed_thinking,
         fix_lead_trail,
@@ -515,6 +516,39 @@ fn fix_tool_calling(mut messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
 /// is safe to persist.
 pub fn merge_consecutive_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
     merge_consecutive(messages, false)
+}
+
+/// A cancelled turn can leave an assistant turn holding nothing but signed
+/// thinking, which some signed-replay APIs refuse. Consecutive assistant
+/// messages count as one turn so thinking persisted apart from its output stays.
+fn remove_thinking_only_assistant_turns(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
+    let mut issues = Vec::new();
+    let mut fixed: Vec<Message> = Vec::with_capacity(messages.len());
+    let mut turn: Vec<Message> = Vec::new();
+
+    fn flush(turn: &mut Vec<Message>, fixed: &mut Vec<Message>, issues: &mut Vec<String>) {
+        if turn.is_empty() {
+            return;
+        }
+        if turn.iter().flat_map(|m| &m.content).all(is_signed_thinking) {
+            issues.push("Removed assistant turn containing only signed thinking".to_string());
+            turn.clear();
+        } else {
+            fixed.append(turn);
+        }
+    }
+
+    for message in messages {
+        if effective_role(&message) == EffectiveRole::Assistant {
+            turn.push(message);
+        } else {
+            flush(&mut turn, &mut fixed, &mut issues);
+            fixed.push(message);
+        }
+    }
+    flush(&mut turn, &mut fixed, &mut issues);
+
+    (fixed, issues)
 }
 
 /// Merges regardless of visibility, for providers that require strict role
@@ -1582,6 +1616,32 @@ mod tests {
 
         assert_eq!(fixed_messages[5].as_concat_text(), "Non-vis C");
         assert!(!fixed_messages[5].metadata.agent_visible);
+    }
+
+    #[test]
+    fn test_removes_thinking_only_turn_left_by_cancelled_tool_call() {
+        let messages = vec![
+            Message::user().with_text("Do the thing"),
+            Message::assistant()
+                .with_thinking("", "sig-1")
+                .with_tool_request(
+                    "tool_1",
+                    Ok(CallToolRequestParams::new("do_thing").with_arguments(object!({}))),
+                ),
+            Message::user().with_text("Try again"),
+        ];
+
+        let (fixed, issues) = run_verify(messages);
+
+        assert_has_issues_unordered!(
+            fixed,
+            issues,
+            "Removed orphaned tool request 'tool_1'",
+            "Removed assistant turn containing only signed thinking",
+            "Merged consecutive user messages",
+        );
+        assert_eq!(fixed.len(), 1);
+        assert_eq!(fixed[0].role, Role::User);
     }
 
     #[test]

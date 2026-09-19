@@ -3,10 +3,10 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
-    NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
-    SessionConfigOptionValue, SessionInfo, SessionUpdate, SetSessionConfigOptionRequest,
-    StopReason, TextContent,
+    CancelNotification, ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer,
+    McpServerHttp, NewSessionRequest, PromptRequest, SessionConfigKind,
+    SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo, SessionUpdate,
+    SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::{
@@ -41,6 +41,7 @@ use goose::recipe_deeplink;
 use goose::session::{SessionManager, SessionType};
 use goose_test_support::{McpFixture, FAKE_CODE};
 use std::path::Path;
+use std::time::Duration;
 
 tests_config_option_set_error!(AcpServerConnection);
 tests_mode_set_error!(AcpServerConnection);
@@ -1296,6 +1297,74 @@ fn test_prompt_usage_updates_during_turn_legacy_loop() {
 #[test]
 fn test_prompt_usage_updates_during_turn_state_machine() {
     run_test(async { assert_usage_updates_during_prompt(true).await });
+}
+
+async fn assert_cancel_during_tool_call_keeps_turn_replayable(state_machine: bool) {
+    let _agent_loop = AgentLoopOverride::new(state_machine);
+    let prompt = "Call the hang tool.";
+    let mcp = McpFixture::new().await;
+    let openai = OpenAiFixture::new(
+        vec![
+            (
+                prompt.to_string(),
+                include_str!("acp_test_data/openai_hang_tool_call.txt"),
+            ),
+            (
+                r#""tool_call_id":"call_eLXEeL8ZQBgXACKp78eNmyNp""#.to_string(),
+                include_str!("acp_test_data/openai_basic.txt"),
+            ),
+        ],
+        <AcpServerConnection as Connection>::expected_session_id(),
+    )
+    .await;
+    let config = TestConnectionConfig {
+        mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
+        goose_mode: GooseMode::Auto,
+        ..Default::default()
+    };
+    let mut conn = <AcpServerConnection as Connection>::new(config, openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+    let session_id = session.session_id().clone();
+
+    let content = vec![ContentBlock::Text(TextContent::new(prompt))];
+    let request = PromptRequest::new(session_id.clone(), content);
+    let mut response = std::pin::pin!(conn.cx().send_request(request).block_task());
+    let mut cancelled = false;
+    let response = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            tokio::select! {
+                response = &mut response => break response.unwrap(),
+                _ = tokio::time::sleep(Duration::from_millis(20)), if !cancelled => {
+                    let updates = session.session_updates();
+                    if updates.iter().any(|update| matches!(update, SessionUpdate::ToolCall(_))) {
+                        conn.cx()
+                            .send_notification(CancelNotification::new(session_id.clone()))
+                            .unwrap();
+                        cancelled = true;
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(response.stop_reason, StopReason::Cancelled);
+
+    let output = session
+        .prompt("What happened?", PermissionDecision::Cancel)
+        .await
+        .unwrap();
+    assert_eq!(output.text, "2");
+}
+
+#[test]
+fn test_prompt_cancel_during_tool_call_legacy_loop() {
+    run_test(async { assert_cancel_during_tool_call_keeps_turn_replayable(false).await });
+}
+
+#[test]
+fn test_prompt_cancel_during_tool_call_state_machine() {
+    run_test(async { assert_cancel_during_tool_call_keeps_turn_replayable(true).await });
 }
 
 #[test]

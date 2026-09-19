@@ -84,10 +84,11 @@ impl SessionToolConfirmationState {
         Ok(())
     }
 
+    /// Resolves to `None` when the turn is cancelled before every answer arrives.
     pub(super) async fn wait_for_all_confirmation_answers(
         &self,
         cancel: &CancellationToken,
-    ) -> Result<bool> {
+    ) -> Result<Option<bool>> {
         loop {
             let answer_received = self.confirmation_answered.notified();
             tokio::pin!(answer_received);
@@ -107,12 +108,12 @@ impl SessionToolConfirmationState {
                 )
             };
             if let Some(has_state_machine_answer) = completed {
-                return Ok(has_state_machine_answer);
+                return Ok(Some(has_state_machine_answer));
             }
 
             tokio::select! {
                 _ = answer_received => {}
-                _ = cancel.cancelled() => return Err(anyhow!("state-machine turn cancelled")),
+                _ = cancel.cancelled() => return Ok(None),
             }
         }
     }
@@ -201,7 +202,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(has_state_machine_answer);
+        assert_eq!(has_state_machine_answer, Some(true));
     }
 
     #[test]

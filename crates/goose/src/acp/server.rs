@@ -2126,7 +2126,6 @@ impl GooseAcpAgent {
         cancel_token: &CancellationToken,
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
-        let mut was_cancelled = false;
         let mut output_token_limit_reached = false;
         let mut tool_requests = HashMap::new();
         let mut chain_tracker = ToolChainTracker::default();
@@ -2137,12 +2136,8 @@ impl GooseAcpAgent {
             cancel_token: Some(cancel_token.clone()),
         };
 
+        // The agent loops answer interrupted tool calls only after they observe the token.
         while let Some(event) = stream.next().await {
-            if cancel_token.is_cancelled() {
-                was_cancelled = true;
-                break;
-            }
-
             match event {
                 Ok(crate::agents::AgentEvent::Message(mut message)) => {
                     update_output_token_limit_reached(&mut output_token_limit_reached, &message);
@@ -2236,10 +2231,7 @@ impl GooseAcpAgent {
             }
         }
 
-        if cancel_token.is_cancelled() {
-            was_cancelled = true;
-        }
-
+        let was_cancelled = cancel_token.is_cancelled();
         if !was_cancelled {
             if let Some(chain) = chain_tracker.close_current_chain() {
                 self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
