@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Adicionar fornecedor"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Todos"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Escolher modelo"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Configurar fornecedor"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Atuais e ativados"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Obsoletos"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Editar fornecedor"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Filtrar fornecedores"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "A partir de um modelo ou configuração manual"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Nenhum fornecedor obsoleto"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Nenhum fornecedor corresponde a \"{query}\""

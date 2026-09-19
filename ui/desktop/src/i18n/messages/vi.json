@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Thêm nhà cung cấp"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Tất cả"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Chọn mô hình"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Cấu hình nhà cung cấp"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Hiện hành và đã bật"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Không còn được khuyến nghị"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Chỉnh sửa nhà cung cấp"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Lọc nhà cung cấp"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Từ mẫu hoặc thiết lập thủ công"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Không có nhà cung cấp lỗi thời"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Không có nhà cung cấp nào khớp với \"{query}\""

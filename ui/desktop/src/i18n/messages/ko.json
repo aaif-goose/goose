@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "제공업체 추가"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "모두"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "모델 선택"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "제공업체 구성"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "현재 및 활성화됨"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "사용 중단"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "제공업체 편집"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "제공자 필터"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "템플릿 또는 수동 설정으로 시작"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "사용 중단된 제공자가 없습니다"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "\"{query}\"와 일치하는 제공업체가 없습니다"

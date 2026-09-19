@@ -2852,17 +2852,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Anbieter hinzufügen"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Alle"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Modell auswählen"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Anbieter konfigurieren"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Aktuelle & aktivierte"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Veraltet"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Anbieter bearbeiten"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Anbieter filtern"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Aus Vorlage oder manuelle Einrichtung"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Keine veralteten Anbieter"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Keine Anbieter entsprechen \"{query}\""

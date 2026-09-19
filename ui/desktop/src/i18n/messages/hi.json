@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "प्रदाता जोड़ें"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "सभी"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "मॉडल चुनें"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "प्रदाता को कॉन्फ़िगर करें"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "वर्तमान और सक्षम"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "अप्रचलित"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "प्रदाता संपादित करें"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "प्रदाता फ़िल्टर करें"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "टेम्प्लेट या मैन्युअल सेटअप से"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "कोई अप्रचलित प्रदाता नहीं"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "\"{query}\" से मेल खाने वाला कोई प्रदाता नहीं"

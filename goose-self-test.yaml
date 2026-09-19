@@ -444,8 +444,12 @@ prompt: |
   3. Disable Bedrock, reload the provider list, and restart Goose. It must stay disabled
      even when its credentials are present. Re-enable it and verify its model and saved
      credentials were preserved.
-  4. Verify disabled providers remain accessible in Configure Providers but are omitted
-     from Switch Models and recipe model choices. Existing sessions retain their provider.
+  4. Verify disabled providers are omitted from Switch Models and recipe model choices.
+     In Configure Providers, disabled deprecated providers are hidden by default, while
+     enabled deprecated providers remain visible. Verify the top-right All and Deprecated
+     filters reveal disabled deprecated providers and combine correctly with search.
+     Disable a deprecated provider and verify it disappears from the default view after
+     refresh. Existing sessions retain their provider.
   5. Verify a failed settings write is shown to the user and does not claim a successful toggle.
 
   Log results to: {{ workspace_dir }}/provider_enablement.md

@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Tambah Penyedia"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Semua"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Pilih Model"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Konfigurasikan Penyedia"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Semasa & didayakan"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Lapuk"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Edit Penyedia"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Tapis penyedia"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Daripada templat atau persediaan manual"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Tiada penyedia lapuk"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Tiada penyedia yang sepadan dengan \"{query}\""

@@ -48,6 +48,14 @@ const i18n = defineMessages({
     id: 'providerGrid.searchPlaceholder',
     defaultMessage: 'Search providers...',
   },
+  filterLabel: { id: 'providerGrid.filterLabel', defaultMessage: 'Filter providers' },
+  defaultFilter: { id: 'providerGrid.defaultFilter', defaultMessage: 'Current & enabled' },
+  allFilter: { id: 'providerGrid.allFilter', defaultMessage: 'All' },
+  deprecatedFilter: { id: 'providerGrid.deprecatedFilter', defaultMessage: 'Deprecated' },
+  noDeprecated: {
+    id: 'providerGrid.noDeprecated',
+    defaultMessage: 'No deprecated providers',
+  },
   noMatch: {
     id: 'providerGrid.noMatch',
     defaultMessage: 'No providers match "{query}"',
@@ -107,6 +115,7 @@ function ProviderCards({
 }) {
   const intl = useIntl();
   const [searchQuery, setSearchQuery] = useState('');
+  const [providerFilter, setProviderFilter] = useState('default');
   const [configuringProvider, setConfiguringProvider] = useState<ProviderDetails | null>(null);
   const [showCustomProviderModal, setShowCustomProviderModal] = useState(false);
   const [showSwitchModelModal, setShowSwitchModelModal] = useState(false);
@@ -252,13 +261,18 @@ function ProviderCards({
         Number(b.is_enabled) - Number(a.is_enabled) ||
         a.metadata.display_name.localeCompare(b.metadata.display_name)
     );
-    const filteredProviders = query
-      ? sortedProviders.filter(
-          (provider) =>
-            provider.metadata.display_name.toLowerCase().includes(query) ||
-            provider.metadata.description.toLowerCase().includes(query)
-        )
-      : sortedProviders;
+    const filteredProviders = sortedProviders.filter((provider) => {
+      const matchesFilter =
+        providerFilter === 'all' ||
+        (providerFilter === 'deprecated'
+          ? provider.deprecated
+          : !provider.deprecated || provider.is_enabled);
+      const matchesSearch =
+        !query ||
+        provider.metadata.display_name.toLowerCase().includes(query) ||
+        provider.metadata.description.toLowerCase().includes(query);
+      return matchesFilter && matchesSearch;
+    });
     const cards = filteredProviders.map((provider) => (
       <ProviderCard
         key={provider.name}
@@ -279,6 +293,7 @@ function ProviderCards({
     providers,
     refreshProviders,
     query,
+    providerFilter,
     isOnboarding,
     configureProviderViaModal,
     handleProviderLaunchWithModelSelection,
@@ -311,8 +326,8 @@ function ProviderCards({
     : intl.formatMessage(i18n.addProviderTitle);
   return (
     <>
-      <div className="mx-auto mb-4 max-w-md px-1">
-        <div className="relative">
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3 px-1">
+        <div className="relative min-w-0 flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
           <Input
             type="search"
@@ -323,11 +338,26 @@ function ProviderCards({
             data-testid="provider-search-input"
           />
         </div>
+        <select
+          aria-label={intl.formatMessage(i18n.filterLabel)}
+          value={providerFilter}
+          onChange={(event) => setProviderFilter(event.target.value)}
+          className="h-10 rounded-md border border-border-primary bg-background-primary px-3 text-sm text-text-primary"
+        >
+          <option value="default">{intl.formatMessage(i18n.defaultFilter)}</option>
+          <option value="all">{intl.formatMessage(i18n.allFilter)}</option>
+          <option value="deprecated">{intl.formatMessage(i18n.deprecatedFilter)}</option>
+        </select>
       </div>
       <GridLayout>{providerCards}</GridLayout>
       {hasNoMatches && (
         <div className="mt-2 text-center text-sm text-text-secondary">
           {intl.formatMessage(i18n.noMatch, { query: searchQuery.trim() })}
+        </div>
+      )}
+      {!query && providerFilter === 'deprecated' && providerCards.length === 1 && (
+        <div className="mt-2 text-center text-sm text-text-secondary">
+          {intl.formatMessage(i18n.noDeprecated)}
         </div>
       )}
       <Dialog open={showCustomProviderModal} onOpenChange={handleCloseModal}>

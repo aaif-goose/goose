@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Aggiungi provider"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Tutti"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Scegli modello"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Configura provider"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Attuali e abilitati"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Deprecati"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Modifica provider"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Filtra provider"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Da modello o configurazione manuale"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Nessun provider deprecato"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Nessun provider corrisponde a \"{query}\""

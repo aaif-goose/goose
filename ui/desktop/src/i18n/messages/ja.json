@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "プロバイダーを追加"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "すべて"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "モデルを選択"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "プロバイダーを設定"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "現行・有効"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "非推奨"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "プロバイダーを編集"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "プロバイダーを絞り込む"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "テンプレートまたは手動設定から"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "非推奨のプロバイダーはありません"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "「{query}」に一致するプロバイダーはありません"

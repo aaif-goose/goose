@@ -2912,17 +2912,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Add Provider"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "All"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Choose Model"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Configure Provider"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Current & enabled"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Deprecated"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Edit Provider"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Filter providers"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "From template or manual setup"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "No deprecated providers"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "No providers match \"{query}\""

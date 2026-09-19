@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Добавить провайдера"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "Все"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Выбрать модель"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Настроить провайдера"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Актуальные и включённые"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Устаревшие"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Изменить провайдера"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Фильтр провайдеров"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "Из шаблона или вручную"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "Нет устаревших провайдеров"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "Нет провайдеров, соответствующих \"{query}\""

@@ -2856,17 +2856,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "新增提供者"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "全部"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "選擇模型"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "設定提供者"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "目前及已啟用"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "已棄用"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "編輯提供者"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "篩選供應商"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "從範本或手動設定"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "沒有已棄用的供應商"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "沒有符合 \"{query}\" 的提供者"
