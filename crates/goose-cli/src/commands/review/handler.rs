@@ -364,14 +364,55 @@ fn review_git_command(repo_root: &Path) -> Command {
     cmd
 }
 
-fn review_diff_command(repo_root: &Path) -> Command {
+fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<String>> {
+    let output = review_git_command(repo_root)
+        .args([
+            "config",
+            "--null",
+            "--name-only",
+            "--get-regexp",
+            r"^filter\..*\.(clean|process|required)$",
+        ])
+        .output()
+        .context("git config failed")?;
+    if !output.status.success() && output.status.code() != Some(1) {
+        bail!(
+            "git config failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let mut drivers = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter_map(|key| std::str::from_utf8(key).ok())
+        .filter_map(|key| key.strip_prefix("filter."))
+        .filter_map(|key| {
+            [".clean", ".process", ".required"]
+                .iter()
+                .find_map(|suffix| key.strip_suffix(suffix))
+        })
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    drivers.sort_unstable();
+    drivers.dedup();
+    Ok(drivers)
+}
+
+fn review_diff_command(repo_root: &Path) -> Result<Command> {
     let mut cmd = review_git_command(repo_root);
+    for driver in configured_filter_drivers(repo_root)? {
+        cmd.args(["-c", &format!("filter.{driver}.clean=")])
+            .args(["-c", &format!("filter.{driver}.smudge=")])
+            .args(["-c", &format!("filter.{driver}.process=")])
+            .args(["-c", &format!("filter.{driver}.required=false")]);
+    }
     cmd.args(["diff", "--no-ext-diff", "--no-textconv"]);
-    cmd
+    Ok(cmd)
 }
 
 fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
-    let mut cmd = review_diff_command(repo_root);
+    let mut cmd = review_diff_command(repo_root)?;
     cmd.arg("--name-only");
     match range {
         Some(r) => {
@@ -402,7 +443,7 @@ fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Res
 }
 
 fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
-    let mut cmd = review_diff_command(repo_root);
+    let mut cmd = review_diff_command(repo_root)?;
     match range {
         Some(r) => {
             cmd.arg(r);
@@ -425,7 +466,7 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
 }
 
 fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
-    let mut cmd = review_diff_command(repo_root);
+    let mut cmd = review_diff_command(repo_root)?;
     cmd.arg("--stat");
     match range {
         Some(r) => {
@@ -1327,6 +1368,47 @@ mod tests {
         let diff = collect_diff(root, None, &[]).unwrap();
         assert!(diff.contains("-before"));
         assert!(diff.contains("+after"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_content_filters() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("content-filter-ran");
+        let script = root.join("content-filter.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/content-filter-ran\"\nexit 1\n",
+        );
+        fs::write(
+            root.join(".gitattributes"),
+            "tracked.txt filter=review-test\n",
+        )
+        .unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        for key in [
+            "filter.review-test.clean",
+            "filter.review-test.process",
+            "filter.review-test.smudge",
+        ] {
+            run_git(root, &["config", key, script.to_str().unwrap()]);
+        }
+        run_git(root, &["config", "filter.review-test.required", "true"]);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
         assert!(!marker.exists());
     }
 
