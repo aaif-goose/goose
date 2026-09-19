@@ -21,15 +21,15 @@ use common_tests::run_prompt_codemode;
 use common_tests::{
     run_close_session, run_config_mcp, run_config_option_mode_set, run_config_option_model_set,
     run_delete_session, run_fs_read_text_file_true, run_fs_write_text_file_false,
-    run_fs_write_text_file_true, run_initialize_doesnt_hit_provider, run_list_sessions,
-    run_load_mode, run_load_model, run_load_session_error, run_load_session_mcp,
-    run_load_session_replays_image_attachment, run_mode_set, run_model_list, run_model_set,
-    run_model_set_error_session_not_found, run_new_session_returns_initial_config,
-    run_new_session_uses_current_config_mode, run_permission_persistence, run_prompt_basic,
-    run_prompt_error, run_prompt_image, run_prompt_image_attachment, run_prompt_mcp,
-    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification,
-    run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
-    OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
+    run_fs_write_text_file_null_response, run_fs_write_text_file_true,
+    run_initialize_doesnt_hit_provider, run_list_sessions, run_load_mode, run_load_model,
+    run_load_session_error, run_load_session_mcp, run_load_session_replays_image_attachment,
+    run_mode_set, run_model_list, run_model_set, run_model_set_error_session_not_found,
+    run_new_session_returns_initial_config, run_new_session_uses_current_config_mode,
+    run_permission_persistence, run_prompt_basic, run_prompt_error, run_prompt_image,
+    run_prompt_image_attachment, run_prompt_mcp, run_prompt_model_mismatch, run_prompt_skill,
+    run_session_name_update_notification, run_shell_terminal_false, run_shell_terminal_true,
+    GENERATED_SESSION_TITLE, OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
@@ -804,6 +804,11 @@ fn test_fs_write_text_file_false() {
 #[test]
 fn test_fs_write_text_file_true() {
     run_test(async { run_fs_write_text_file_true::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_fs_write_text_file_null_response() {
+    run_test(async { run_fs_write_text_file_null_response::<AcpServerConnection>().await });
 }
 
 #[test]

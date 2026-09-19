@@ -723,6 +723,7 @@ pub struct TestConnectionConfig {
     pub provider_factory: Option<AcpProviderFactory>,
     pub read_text_file: Option<ReadTextFileHandler>,
     pub write_text_file: Option<WriteTextFileHandler>,
+    pub write_text_file_null: bool,
     pub terminal: Option<Arc<TerminalFixture>>,
     // The model the server-side provider starts with. Defaults to TEST_MODEL.
     pub current_model: String,
@@ -740,6 +741,7 @@ impl Default for TestConnectionConfig {
             provider_factory: None,
             read_text_file: None,
             write_text_file: None,
+            write_text_file_null: false,
             terminal: None,
             current_model: TEST_MODEL.to_string(),
             disable_session_naming: true,

@@ -56,11 +56,20 @@ async fn acp_write_text_file(
 ) -> Result<(), String> {
     let request =
         WriteTextFileRequest::new(session_id.clone(), path.to_path_buf(), content.to_string());
-    cx.send_request(request)
-        .block_task()
-        .await
-        .map_err(|e| format!("{e:?}"))?;
-    Ok(())
+    match cx.send_request(request).block_task().await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if e.data
+                .as_ref()
+                .and_then(|d| d.get("json"))
+                .is_some_and(|v| v.is_null())
+            {
+                Ok(())
+            } else {
+                Err(format!("{e:?}"))
+            }
+        }
+    }
 }
 
 pub(crate) struct AcpTools {

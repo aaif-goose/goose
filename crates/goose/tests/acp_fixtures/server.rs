@@ -22,6 +22,7 @@ use goose_test_support::{ExpectedSessionId, IgnoreSessionId};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 pub struct AcpServerConnection {
     cx: ConnectionTo<Agent>,
@@ -213,7 +214,7 @@ impl Connection for AcpServerConnection {
         if config.read_text_file.is_some() {
             fs_cap = fs_cap.read_text_file(true);
         }
-        if config.write_text_file.is_some() {
+        if config.write_text_file.is_some() || config.write_text_file_null {
             fs_cap = fs_cap.write_text_file(true);
         }
 
@@ -223,6 +224,7 @@ impl Connection for AcpServerConnection {
             let permission_clone = permission.clone();
             let read_handler = config.read_text_file;
             let write_handler = config.write_text_file;
+            let write_null = config.write_text_file_null;
             let terminal = config.terminal;
 
             let cx_holder: Arc<Mutex<Option<ConnectionTo<Agent>>>> = Arc::new(Mutex::new(None));
@@ -341,46 +343,56 @@ impl Connection for AcpServerConnection {
                         },
                         agent_client_protocol::on_receive_request!(),
                     )
-                    .connect_with(transport.into_byte_streams(), {
-                        let cx_holder = cx_holder_clone;
-                        async move |cx: ConnectionTo<Agent>| {
-                            let resp = cx
-                                .send_request(
-                                    InitializeRequest::new(ProtocolVersion::V1)
-                                        .client_capabilities(
-                                            ClientCapabilities::new()
-                                                .fs(fs_cap)
-                                                .terminal(terminal.is_some()),
-                                        ),
-                                )
-                                .block_task()
-                                .await
-                                .unwrap();
-                            assert_eq!(
-                                resp.protocol_version,
-                                ProtocolVersion::V1,
-                                "initialize response must negotiate ACP V1"
-                            );
-                            assert_eq!(
-                                resp.agent_info.as_ref().map(|info| info.name.as_str()),
-                                Some("goose"),
-                                "initialize response must identify the agent"
-                            );
-                            assert!(
-                                resp.agent_capabilities
-                                    .session_capabilities
-                                    .delete
-                                    .as_ref()
-                                    .is_some(),
-                                "initialize response must advertise session/delete"
-                            );
+                    .connect_with(
+                        if write_null {
+                            let (out, inc) = transport.into_parts();
+                            let (w, r) = intercept_null_write_response(out, inc);
+                            agent_client_protocol::ByteStreams::new(w, r)
+                        } else {
+                            transport.into_byte_streams()
+                        },
+                        {
+                            let cx_holder = cx_holder_clone;
+                            async move |cx: ConnectionTo<Agent>| {
+                                let resp = cx
+                                    .send_request(
+                                        InitializeRequest::new(ProtocolVersion::V1)
+                                            .client_capabilities(
+                                                ClientCapabilities::new()
+                                                    .fs(fs_cap)
+                                                    .terminal(terminal.is_some()),
+                                            ),
+                                    )
+                                    .block_task()
+                                    .await
+                                    .unwrap();
+                                assert_eq!(
+                                    resp.protocol_version,
+                                    ProtocolVersion::V1,
+                                    "initialize response must negotiate ACP V1"
+                                );
+                                assert_eq!(
+                                    resp.agent_info.as_ref().map(|info| info.name.as_str()),
+                                    Some("goose"),
+                                    "initialize response must identify the agent"
+                                );
+                                assert!(
+                                    resp.agent_capabilities
+                                        .session_capabilities
+                                        .delete
+                                        .as_ref()
+                                        .is_some(),
+                                    "initialize response must advertise session/delete"
+                                );
 
-                            *cx_holder.lock().unwrap() = Some(cx.clone());
-                            let _ = ready_tx.send(());
+                                *cx_holder.lock().unwrap() = Some(cx.clone());
+                                let _ = ready_tx.send(());
 
-                            std::future::pending::<Result<(), agent_client_protocol::Error>>().await
-                        }
-                    })
+                                std::future::pending::<Result<(), agent_client_protocol::Error>>()
+                                    .await
+                            }
+                        },
+                    )
                     .await;
 
                 if let Err(e) = result {
@@ -632,6 +644,64 @@ fn extract_model_state_from_config_options(
         current_model_id: select.current_value.0.to_string(),
         available_models,
     })
+}
+
+fn intercept_null_write_response(
+    outgoing: super::CompatDuplexStream,
+    incoming: super::CompatDuplexStream,
+) -> (super::CompatDuplexStream, super::CompatDuplexStream) {
+    let (sdk_reads, goose_to_sdk_pipe) = tokio::io::duplex(64 * 1024);
+    let (sdk_to_goose_pipe, sdk_writes) = tokio::io::duplex(64 * 1024);
+
+    let pending_ids: Arc<Mutex<Vec<serde_json::Value>>> = Arc::new(Mutex::new(Vec::new()));
+    let pending_ids2 = pending_ids.clone();
+
+    let mut to_sdk = goose_to_sdk_pipe.compat_write();
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(incoming).lines();
+        while let Some(Ok(line)) = lines.next().await {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if v.get("method").and_then(|m| m.as_str()) == Some("fs/write_text_file") {
+                    if let Some(id) = v.get("id").cloned() {
+                        pending_ids.lock().unwrap().push(id);
+                    }
+                }
+            }
+            let _ = to_sdk.write_all(format!("{line}\n").as_bytes()).await;
+            let _ = to_sdk.flush().await;
+        }
+    });
+
+    let from_sdk = sdk_to_goose_pipe.compat();
+    let mut to_goose = outgoing;
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(from_sdk).lines();
+        while let Some(Ok(line)) = lines.next().await {
+            let output = if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&line) {
+                let id = v.get("id").cloned();
+                let is_write_id = id
+                    .as_ref()
+                    .is_some_and(|id| pending_ids2.lock().unwrap().contains(id));
+                if is_write_id && v.get("result").is_some() {
+                    if let Some(ref id) = id {
+                        pending_ids2.lock().unwrap().retain(|x| x != id);
+                    }
+                    v.as_object_mut()
+                        .unwrap()
+                        .insert("result".to_string(), serde_json::Value::Null);
+                    v.to_string()
+                } else {
+                    line
+                }
+            } else {
+                line
+            };
+            let _ = to_goose.write_all(format!("{output}\n").as_bytes()).await;
+            let _ = to_goose.flush().await;
+        }
+    });
+
+    (sdk_writes.compat_write(), sdk_reads.compat())
 }
 
 fn collect_agent_text(updates: &Arc<Mutex<Vec<SessionNotification>>>) -> String {

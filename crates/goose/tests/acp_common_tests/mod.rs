@@ -446,6 +446,47 @@ pub async fn run_fs_write_text_file_true<C: Connection>() {
     expected_session_id.assert_matches(&session.session_id().0);
 }
 
+pub async fn run_fs_write_text_file_null_response<C: Connection>() {
+    let expected_session_id = C::expected_session_id();
+    let prompt =
+        "Use the write tool to write 'test-write-content-67890' to /tmp/test_acp_write.txt";
+    let openai = OpenAiFixture::new(
+        vec![
+            (
+                prompt.to_string(),
+                include_str!("../acp_test_data/openai_fs_write_tool_call.txt"),
+            ),
+            (
+                r#"Created /tmp/test_acp_write.txt"#.into(),
+                include_str!("../acp_test_data/openai_fs_write_tool_result.txt"),
+            ),
+        ],
+        expected_session_id.clone(),
+    )
+    .await;
+
+    let fs = FsFixture::new();
+    let config = TestConnectionConfig {
+        builtins: vec!["developer".to_string()],
+        write_text_file: Some(
+            fs.write_handler("/tmp/test_acp_write.txt", "test-write-content-67890"),
+        ),
+        write_text_file_null: true,
+        ..Default::default()
+    };
+    let mut conn = C::new(config, openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+    expected_session_id.set(&session.session_id().0);
+
+    let output = session
+        .prompt(prompt, PermissionDecision::AllowOnce)
+        .await
+        .unwrap();
+    assert!(!output.text.is_empty());
+    fs.assert_called();
+    expected_session_id.assert_matches(&session.session_id().0);
+}
+
 pub async fn run_initialize_doesnt_hit_provider<C: Connection>() {
     let provider_factory: AcpProviderFactory =
         Arc::new(|_, _, _, _| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
