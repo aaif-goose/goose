@@ -365,24 +365,29 @@ fn review_git_command(repo_root: &Path) -> Command {
     cmd
 }
 
-#[cfg(unix)]
-fn filter_driver_from_key(key: &[u8]) -> Option<OsString> {
-    use std::os::unix::ffi::OsStringExt;
-
+fn filter_driver_bytes(key: &[u8]) -> Option<&[u8]> {
     let key = key.strip_prefix(b"filter.")?;
     [b".clean".as_slice(), b".process", b".required"]
         .iter()
         .find_map(|suffix| key.strip_suffix(*suffix))
-        .map(|driver| OsString::from_vec(driver.to_vec()))
+}
+
+#[cfg(unix)]
+fn filter_driver_from_key(key: &[u8]) -> Result<Option<OsString>> {
+    use std::os::unix::ffi::OsStringExt;
+
+    Ok(filter_driver_bytes(key).map(|driver| OsString::from_vec(driver.to_vec())))
 }
 
 #[cfg(not(unix))]
-fn filter_driver_from_key(key: &[u8]) -> Option<OsString> {
-    let key = std::str::from_utf8(key).ok()?.strip_prefix("filter.")?;
-    [".clean", ".process", ".required"]
-        .iter()
-        .find_map(|suffix| key.strip_suffix(suffix))
-        .map(OsString::from)
+fn filter_driver_from_key(key: &[u8]) -> Result<Option<OsString>> {
+    filter_driver_bytes(key)
+        .map(|driver| {
+            std::str::from_utf8(driver)
+                .map(OsString::from)
+                .map_err(|_| anyhow!("Git filter driver name is not valid UTF-8 on this platform"))
+        })
+        .transpose()
 }
 
 fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<OsString>> {
@@ -400,7 +405,10 @@ fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<OsString>> {
     let mut drivers = output
         .stdout
         .split(|byte| *byte == 0)
-        .filter_map(filter_driver_from_key)
+        .map(filter_driver_from_key)
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
         .collect::<Vec<_>>();
     drivers.sort_unstable();
     drivers.dedup();
@@ -465,17 +473,19 @@ fn review_diff_command(repo_root: &Path) -> Result<Command> {
     Ok(cmd)
 }
 
+fn append_diff_range(cmd: &mut Command, range: Option<&str>) -> Result<()> {
+    let range = range.unwrap_or("HEAD");
+    if range.starts_with('-') {
+        bail!("review range cannot start with '-'");
+    }
+    cmd.arg(range);
+    Ok(())
+}
+
 fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
     let mut cmd = review_diff_command(repo_root)?;
     cmd.arg("--name-only");
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
-        }
-    }
+    append_diff_range(&mut cmd, range)?;
     if !files.is_empty() {
         cmd.arg("--");
         for f in files {
@@ -498,14 +508,7 @@ fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Res
 
 fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = review_diff_command(repo_root)?;
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
-        }
-    }
+    append_diff_range(&mut cmd, range)?;
     if !files.is_empty() {
         cmd.arg("--");
         for f in files {
@@ -522,14 +525,7 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
 fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = review_diff_command(repo_root)?;
     cmd.arg("--stat");
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
-        }
-    }
+    append_diff_range(&mut cmd, range)?;
     if !files.is_empty() {
         cmd.arg("--");
         for f in files {
@@ -1423,6 +1419,54 @@ mod tests {
         assert!(diff.contains("-before"));
         assert!(diff.contains("+after"));
         assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_rejects_option_shaped_ranges() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("textconv-ran");
+        let script = root.join("textconv.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/textconv-ran\"\ncat \"$1\"\n",
+        );
+        fs::write(
+            root.join(".gitattributes"),
+            "tracked.txt diff=review-test\n",
+        )
+        .unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        run_git(
+            root,
+            &[
+                "config",
+                "diff.review-test.textconv",
+                script.to_str().unwrap(),
+            ],
+        );
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        for error in [
+            touched_files(root, Some("--ext-diff"), &[]).unwrap_err(),
+            collect_diff(root, Some("--textconv"), &[]).unwrap_err(),
+            collect_diff_stat(root, Some("--submodule=diff"), &[]).unwrap_err(),
+        ] {
+            assert!(error.to_string().contains("range cannot start"));
+        }
+        assert!(!marker.exists());
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn non_utf8_filter_driver_keys_are_rejected() {
+        let error = filter_driver_from_key(b"filter.\xff.clean").unwrap_err();
+        assert!(error.to_string().contains("not valid UTF-8"));
     }
 
     #[cfg(unix)]
