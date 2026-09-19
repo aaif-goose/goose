@@ -25,6 +25,9 @@ use std::collections::HashSet;
 pub struct ResponsesApiResponse {
     pub id: String,
     pub object: String,
+    // Not every OpenAI-compatible provider echoes created_at back; the value
+    // is carried but never used, so tolerate its absence.
+    #[serde(default)]
     pub created_at: i64,
     pub status: String,
     pub model: String,
@@ -336,6 +339,7 @@ fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<Respon
 pub struct ResponseMetadata {
     pub id: String,
     pub object: String,
+    #[serde(default)]
     pub created_at: i64,
     pub status: String,
     pub model: String,
@@ -1392,6 +1396,41 @@ mod tests {
         assert_eq!(usage.usage.input_tokens, Some(10));
         assert_eq!(usage.usage.output_tokens, Some(4));
         assert_eq!(usage.usage.total_tokens, Some(14));
+
+        Ok(())
+    }
+
+    // OpenAI-compatible providers do not all echo `created_at` back on
+    // `response.*` events; a strict i64 there terminates the whole session on
+    // the first event. The timestamp is carried but never used, so a missing
+    // field must degrade to the default instead of killing the stream.
+    #[tokio::test]
+    async fn test_responses_stream_tolerates_missing_created_at() -> anyhow::Result<()> {
+        let lines = vec![
+            r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-5.2-pro","output":[]}}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#.to_string(),
+            r#"data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","status":"completed","model":"gpt-5.2-pro","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#.to_string(),
+            "data: [DONE]".to_string(),
+        ];
+
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let messages = responses_api_to_streaming_message(response_stream);
+        futures::pin_mut!(messages);
+
+        let mut text_parts = Vec::new();
+        while let Some(item) = messages.next().await {
+            let (message, _) = item?;
+            if let Some(msg) = message {
+                for content in msg.content {
+                    if let MessageContentBlock::Text(text) = content {
+                        text_parts.push(text.text.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text_parts.concat(), "Hello world");
 
         Ok(())
     }
