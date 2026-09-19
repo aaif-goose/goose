@@ -510,6 +510,7 @@ fn review_diff_command(repo_root: &Path) -> Result<Command> {
         "--no-ext-diff",
         "--no-textconv",
         "--submodule=short",
+        "--ignore-submodules=dirty",
     ]);
     Ok(cmd)
 }
@@ -1686,7 +1687,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn review_diff_collection_does_not_recurse_into_submodules() {
+    fn review_diff_collection_does_not_probe_submodule_worktrees() {
         let submodule_source = review_test_repo();
         let source_root = submodule_source.path();
         fs::write(
@@ -1735,18 +1736,13 @@ mod tests {
         }
         run_git(&nested, &["config", "filter.review-test.required", "true"]);
         run_git(root, &["config", "diff.submodule", "diff"]);
-        fs::write(nested.join("tracked.txt"), "after\n").unwrap();
+        fs::write(nested.join("tracked.txt"), "changed").unwrap();
 
-        assert_eq!(touched_files(root, None, &[]).unwrap(), ["nested"]);
+        assert!(touched_files(root, None, &[]).unwrap().is_empty());
         let diff = collect_diff(root, None, &[]).unwrap();
         assert!(!marker.exists());
-        assert!(diff.contains("diff --git a/nested b/nested"));
-        assert!(diff.contains("Subproject commit"));
-        assert!(!diff.contains("-before"));
-        assert!(!diff.contains("+after"));
-        assert!(collect_diff_stat(root, None, &[])
-            .unwrap()
-            .contains("nested"));
+        assert!(diff.is_empty());
+        assert!(collect_diff_stat(root, None, &[]).unwrap().is_empty());
     }
 
     #[cfg(any(unix, windows))]
