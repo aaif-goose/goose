@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -364,18 +365,32 @@ fn review_git_command(repo_root: &Path) -> Command {
     cmd
 }
 
-fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<String>> {
+#[cfg(unix)]
+fn filter_driver_from_key(key: &[u8]) -> Option<OsString> {
+    use std::os::unix::ffi::OsStringExt;
+
+    let key = key.strip_prefix(b"filter.")?;
+    [b".clean".as_slice(), b".process", b".required"]
+        .iter()
+        .find_map(|suffix| key.strip_suffix(*suffix))
+        .map(|driver| OsString::from_vec(driver.to_vec()))
+}
+
+#[cfg(not(unix))]
+fn filter_driver_from_key(key: &[u8]) -> Option<OsString> {
+    let key = std::str::from_utf8(key).ok()?.strip_prefix("filter.")?;
+    [".clean", ".process", ".required"]
+        .iter()
+        .find_map(|suffix| key.strip_suffix(suffix))
+        .map(OsString::from)
+}
+
+fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<OsString>> {
     let output = review_git_command(repo_root)
-        .args([
-            "config",
-            "--null",
-            "--name-only",
-            "--get-regexp",
-            r"^filter\..*\.(clean|process|required)$",
-        ])
+        .args(["config", "--null", "--name-only", "--list"])
         .output()
         .context("git config failed")?;
-    if !output.status.success() && output.status.code() != Some(1) {
+    if !output.status.success() {
         bail!(
             "git config failed: {}",
             String::from_utf8_lossy(&output.stderr)
@@ -385,36 +400,62 @@ fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<String>> {
     let mut drivers = output
         .stdout
         .split(|byte| *byte == 0)
-        .filter_map(|key| std::str::from_utf8(key).ok())
-        .filter_map(|key| key.strip_prefix("filter."))
-        .filter_map(|key| {
-            [".clean", ".process", ".required"]
-                .iter()
-                .find_map(|suffix| key.strip_suffix(suffix))
-        })
-        .map(str::to_string)
+        .filter_map(filter_driver_from_key)
         .collect::<Vec<_>>();
     drivers.sort_unstable();
     drivers.dedup();
     Ok(drivers)
 }
 
-fn review_diff_command(repo_root: &Path) -> Result<Command> {
-    let mut cmd = review_git_command(repo_root);
-    let mut config_overrides = vec![("core.fsmonitor".to_string(), "false".to_string())];
-    for driver in configured_filter_drivers(repo_root)? {
-        config_overrides.extend([
-            (format!("filter.{driver}.clean"), String::new()),
-            (format!("filter.{driver}.smudge"), String::new()),
-            (format!("filter.{driver}.process"), String::new()),
-            (format!("filter.{driver}.required"), "false".to_string()),
-        ]);
+fn filter_config_key(driver: &OsStr, suffix: &str) -> OsString {
+    let mut key = OsString::from("filter.");
+    key.push(driver);
+    key.push(suffix);
+    key
+}
+
+fn inherited_git_config_count() -> Result<usize> {
+    match std::env::var_os("GIT_CONFIG_COUNT") {
+        None => Ok(0),
+        Some(count) => count
+            .to_str()
+            .and_then(|count| count.parse().ok())
+            .ok_or_else(|| anyhow!("GIT_CONFIG_COUNT is not a valid non-negative integer")),
     }
-    cmd.env("GIT_CONFIG_COUNT", config_overrides.len().to_string());
-    for (index, (key, value)) in config_overrides.into_iter().enumerate() {
+}
+
+fn append_git_config_overrides(
+    cmd: &mut Command,
+    inherited_count: usize,
+    overrides: Vec<(OsString, OsString)>,
+) -> Result<()> {
+    let config_count = inherited_count
+        .checked_add(overrides.len())
+        .ok_or_else(|| anyhow!("too many Git configuration overrides"))?;
+    cmd.env("GIT_CONFIG_COUNT", config_count.to_string());
+    for (offset, (key, value)) in overrides.into_iter().enumerate() {
+        let index = inherited_count + offset;
         cmd.env(format!("GIT_CONFIG_KEY_{index}"), key)
             .env(format!("GIT_CONFIG_VALUE_{index}"), value);
     }
+    Ok(())
+}
+
+fn review_diff_command(repo_root: &Path) -> Result<Command> {
+    let mut cmd = review_git_command(repo_root);
+    let mut config_overrides = vec![(OsString::from("core.fsmonitor"), OsString::from("false"))];
+    for driver in configured_filter_drivers(repo_root)? {
+        config_overrides.extend([
+            (filter_config_key(&driver, ".clean"), OsString::new()),
+            (filter_config_key(&driver, ".smudge"), OsString::new()),
+            (filter_config_key(&driver, ".process"), OsString::new()),
+            (
+                filter_config_key(&driver, ".required"),
+                OsString::from("false"),
+            ),
+        ]);
+    }
+    append_git_config_overrides(&mut cmd, inherited_git_config_count()?, config_overrides)?;
     cmd.args(["diff", "--no-ext-diff", "--no-textconv"]);
     Ok(cmd)
 }
@@ -1414,6 +1455,70 @@ mod tests {
             .unwrap()
             .contains("tracked.txt"));
         assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_non_utf8_content_filters() {
+        use std::io::Write;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("non-utf8-filter-ran");
+        let script = root.join("non-utf8-filter.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/non-utf8-filter-ran\"\nexit 1\n",
+        );
+        fs::write(root.join(".gitattributes"), b"tracked.txt filter=\xff\n").unwrap();
+        run_git(root, &["add", ".gitattributes"]);
+        run_git(
+            root,
+            &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
+        );
+        let mut config = fs::OpenOptions::new()
+            .append(true)
+            .open(root.join(".git/config"))
+            .unwrap();
+        config.write_all(b"\n[filter \"").unwrap();
+        config.write_all(&[0xff]).unwrap();
+        config.write_all(b"\"]\n\tclean = ").unwrap();
+        config.write_all(script.as_os_str().as_bytes()).unwrap();
+        config.write_all(b"\n\trequired = true\n").unwrap();
+        drop(config);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn git_config_overrides_follow_inherited_entries() {
+        let mut command = Command::new("git");
+        append_git_config_overrides(
+            &mut command,
+            2,
+            vec![(OsString::from("core.fsmonitor"), OsString::from("false"))],
+        )
+        .unwrap();
+        let env = command.get_envs().collect::<Vec<_>>();
+
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_CONFIG_COUNT") && *value == Some(OsStr::new("3"))
+        }));
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_CONFIG_KEY_2") && *value == Some(OsStr::new("core.fsmonitor"))
+        }));
+        assert!(env.iter().any(|(key, value)| {
+            *key == OsStr::new("GIT_CONFIG_VALUE_2") && *value == Some(OsStr::new("false"))
+        }));
     }
 
     #[cfg(unix)]
