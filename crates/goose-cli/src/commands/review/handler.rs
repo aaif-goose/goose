@@ -471,8 +471,11 @@ fn quote_git_config_parameter(value: &OsStr) -> OsString {
     OsString::from(format!("'{}'", value.replace('\'', "'\\''")))
 }
 
-fn append_git_config_parameters(cmd: &mut Command, overrides: &[(OsString, OsString)]) {
-    let mut parameters = std::env::var_os("GIT_CONFIG_PARAMETERS").unwrap_or_default();
+fn append_git_config_parameters(
+    cmd: &mut Command,
+    mut parameters: OsString,
+    overrides: &[(OsString, OsString)],
+) {
     for (key, value) in overrides {
         if !parameters.is_empty() {
             parameters.push(" ");
@@ -485,6 +488,18 @@ fn append_git_config_parameters(cmd: &mut Command, overrides: &[(OsString, OsStr
 }
 
 fn review_diff_command(repo_root: &Path) -> Result<Command> {
+    review_diff_command_with_inherited_config(
+        repo_root,
+        inherited_git_config_count()?,
+        std::env::var_os("GIT_CONFIG_PARAMETERS").unwrap_or_default(),
+    )
+}
+
+fn review_diff_command_with_inherited_config(
+    repo_root: &Path,
+    inherited_count: usize,
+    inherited_parameters: OsString,
+) -> Result<Command> {
     let mut cmd = review_git_command(repo_root);
     let mut config_overrides = vec![(OsString::from("core.fsmonitor"), OsString::from("false"))];
     for driver in configured_filter_drivers(repo_root)? {
@@ -498,12 +513,8 @@ fn review_diff_command(repo_root: &Path) -> Result<Command> {
             ),
         ]);
     }
-    append_git_config_overrides(
-        &mut cmd,
-        inherited_git_config_count()?,
-        config_overrides.clone(),
-    )?;
-    append_git_config_parameters(&mut cmd, &config_overrides);
+    append_git_config_overrides(&mut cmd, inherited_count, config_overrides.clone())?;
+    append_git_config_parameters(&mut cmd, inherited_parameters, &config_overrides);
     cmd.env("GIT_NO_LAZY_FETCH", "1");
     cmd.args([
         "diff",
@@ -1651,13 +1662,11 @@ mod tests {
             "#!/bin/sh\ntouch \"$(dirname \"$0\")/parameter-fsmonitor-ran\"\nexit 1\n",
         );
         let parameters = format!("'core.fsmonitor'='{}'", script.display());
-        let _guard = env_lock::lock_env([
-            ("GIT_CONFIG_PARAMETERS", Some(parameters.as_str())),
-            ("GIT_CONFIG_COUNT", None),
-        ]);
         fs::write(root.join("tracked.txt"), "after\n").unwrap();
 
-        let command = review_diff_command(root).unwrap();
+        let command =
+            review_diff_command_with_inherited_config(root, 0, OsString::from(parameters.clone()))
+                .unwrap();
         let env = command.get_envs().collect::<Vec<_>>();
         let final_parameters = env
             .iter()
