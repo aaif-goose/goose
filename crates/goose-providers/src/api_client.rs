@@ -22,6 +22,13 @@ pub const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
 pub type RequestBuilderDecorator =
     Arc<dyn Fn(reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> + Send + Sync>;
 
+/// Executes requests using a provider-owned transport. Implementations must enforce
+/// their own TLS and redirect policies; ApiClient's client policies do not apply.
+#[async_trait]
+pub trait RequestExecutor: Send + Sync {
+    async fn execute(&self, request: reqwest::Request) -> Result<Response>;
+}
+
 pub struct ApiClient {
     client: Client,
     host: String,
@@ -31,6 +38,7 @@ pub struct ApiClient {
     timeout: Duration,
     tls_config: Option<TlsConfig>,
     request_builder: Option<RequestBuilderDecorator>,
+    request_executor: Option<Arc<dyn RequestExecutor>>,
     transport_policy: TransportPolicy,
 }
 
@@ -293,6 +301,7 @@ impl ApiClient {
             timeout,
             tls_config,
             request_builder: None,
+            request_executor: None,
             transport_policy: TransportPolicy::Default,
         })
     }
@@ -435,6 +444,12 @@ impl ApiClient {
         self
     }
 
+    /// Route every request through this executor, including after client rebuilds.
+    pub fn with_request_executor(mut self, executor: Arc<dyn RequestExecutor>) -> Self {
+        self.request_executor = Some(executor);
+        self
+    }
+
     // Auth is applied fresh on every request, so unlike `with_headers` this
     // doesn't need to rebuild the underlying `reqwest::Client`.
     pub fn with_auth(mut self, auth: AuthMethod) -> Self {
@@ -553,6 +568,20 @@ impl<'a> ApiRequestBuilder<'a> {
     }
 
     async fn send_bounded(&self, request: reqwest::RequestBuilder) -> Result<Response> {
+        if let Some(executor) = &self.client.request_executor {
+            let mut request = request.build()?;
+            for (name, value) in &self.client.default_headers {
+                request.headers_mut().entry(name).or_insert(value.clone());
+            }
+            let deadline = tokio::time::Instant::now() + self.client.timeout;
+            let mut response = tokio::time::timeout_at(deadline, executor.execute(request))
+                .await
+                .map_err(|_| {
+                    crate::errors::ProviderError::NetworkError("Request timed out".to_string())
+                })??;
+            crate::http_status::set_response_deadline(&mut response, deadline);
+            return Ok(response);
+        }
         if self.streaming {
             Ok(crate::http_status::send_bounded(request, self.client.timeout).await?)
         } else {
@@ -567,7 +596,7 @@ impl<'a> ApiRequestBuilder<'a> {
 
     pub async fn multipart_post(self, form: reqwest::multipart::Form) -> Result<Response> {
         let request = self.send_request(|url, client| client.post(url)).await?;
-        Ok(request.multipart(form).send().await?)
+        self.send_bounded(request.multipart(form)).await
     }
 
     pub async fn api_get(self) -> Result<ApiResponse> {

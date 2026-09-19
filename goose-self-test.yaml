@@ -10,6 +10,7 @@ activities:
   - Validate shell command execution and error handling
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
+  - Validate Tinfoil attestation failures, certificate rotation, and verified inference
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -26,7 +27,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, tinfoil, advanced"
 
   - key: test_depth
     input_type: string
@@ -466,6 +467,28 @@ prompt: |
   5. Verify `clear_observability_hook` stops events for in-flight requests as well as new ones.
 
   Log results to: {{ workspace_dir }}/phase3e_observability.md
+  {% endif %}
+
+  {% if test_phases == "all" or "tinfoil" in test_phases %}
+  ## Tinfoil Provider Testing
+
+  1. Run `cargo test -p goose-providers --features rustls-tls --test request_executor`.
+     Verify GET, JSON POST, streaming POST, and multipart requests cannot bypass a
+     rejecting transport, including after header or transport-policy changes.
+  2. Run `cargo test -p goose --features rustls-tls --lib providers::tinfoil`.
+     Verify failed attestation sends no inference requests, connection failures
+     reverify before retrying, and failed re-verification cannot reuse stale trust.
+  3. With network access, run `cargo test -p goose --features rustls-tls --lib
+     providers::tinfoil::tests::live_tinfoil_attestation_and_pinned_connection -- --ignored`.
+     This verifies live attestation and pinned TLS without an API key or prompts.
+  4. If TINFOIL_API_KEY is available, start a session with the Tinfoil provider and
+     gpt-oss-120b. Otherwise record the live checks as SKIPPED.
+  5. Verify model discovery and streaming replies work without a local proxy.
+     Ask the model to use a shell tool to compute 17 * 23, then ask a follow-up
+     question to verify tool-result replay and multi-turn conversations.
+  6. Repeat the live conversation with GOOSE_STATE_MACHINE=1.
+
+  Log results to: {{ workspace_dir }}/tinfoil.md
   {% endif %}
 
   {% if test_phases == "all" or "advanced" in test_phases %}

@@ -63,6 +63,7 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Snowflake](https://docs.snowflake.com/user-guide/snowflake-cortex/aisql#choosing-a-model) | Access the latest models using Snowflake Cortex services, including Claude models. **Requires a Snowflake account and programmatic access token (PAT)**.                                                     | `SNOWFLAKE_HOST`, `SNOWFLAKE_TOKEN`                                                                                                                                                                 |
 | [VMware Tanzu Platform](https://techdocs.broadcom.com/us/en/vmware-tanzu/platform/ai-services/10-3/ai/index.html) | Enterprise-managed LLM access through AI Services on VMware Tanzu Platform. Models are fetched dynamically from the endpoint. | `TANZU_AI_API_KEY`, `TANZU_AI_ENDPOINT` |
 | [Tetrate Agent Router Service](https://router.tetrate.ai)                   | Unified API gateway for AI models including Claude, Gemini, GPT, open-weight models, and others. Supports PKCE authentication flow for secure API key generation.                                                                                | `TETRATE_API_KEY`, `TETRATE_HOST` (optional)                                                                                                                                        |
+| [Tinfoil](https://tinfoil.sh/) | Private inference with hardware attestation verification and TLS pinning; no local proxy required. | `TINFOIL_API_KEY` |
 | [TrustedRouter](https://trustedrouter.com)                                  | Models from OpenAI, Anthropic, Google, DeepSeek and others via TrustedRouter's OpenAI-compatible API, with per-request routing and failover.                                                                                                     | `TRUSTEDROUTER_API_KEY`                                                                                                                                                             |
 | [Venice AI](https://venice.ai/home)                                         | Provides access to open source models like Llama, Mistral, and Qwen while prioritizing user privacy. **Requires an account and an [API key](https://docs.venice.ai/overview/guides/generating-api-key)**.                 | `VENICE_API_KEY`, `VENICE_HOST` (optional), `VENICE_BASE_PATH` (optional), `VENICE_MODELS_PATH` (optional)                                                                          |
 | [Cerebras](https://cerebras.ai/)                                            | Fast inference on Cerebras wafer-scale engines with models like Llama, Qwen, and others.                                                                                                                                  | `CEREBRAS_API_KEY`                                                                                                                                                                  |
@@ -113,6 +114,21 @@ continues to use the Anthropic-compatible endpoint.
 See Z.AI's [Coding Plan model availability](https://docs.z.ai/devpack/overview),
 [tool streaming](https://docs.z.ai/guides/capabilities/stream-tool), and
 [thinking preservation](https://docs.z.ai/guides/capabilities/thinking-mode) documentation.
+
+### Tinfoil
+
+Select **Tinfoil** in `goose configure` or the desktop provider settings and enter
+your `TINFOIL_API_KEY`. The provider connects directly to Tinfoil; no local proxy
+is required. It verifies hardware attestation and signed build measurements using
+the [official Tinfoil Rust SDK](https://github.com/tinfoilsh/tinfoil-rs), then pins
+TLS connections to the attested enclave at `inference.tinfoil.sh`.
+
+Verification failures stop requests. A connection failure triggers one
+re-verification attempt before retrying, allowing certificate rotation without
+falling back to an unverified connection. Custom endpoints, CA certificates, and
+client certificates are not supported by this provider. Use a model listed by
+Tinfoil, such as `gpt-oss-120b`; model discovery also uses the verified connection.
+Prompt-cache reuse is scoped to the current provider instance.
 
 ## Configure Provider and Model
 
