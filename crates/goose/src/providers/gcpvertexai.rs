@@ -681,8 +681,155 @@ impl Provider for GcpVertexAIProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::gcpauth::{EnvOps, RealFilesystemOps};
     use goose_providers::base::ProviderDescriptor as _;
     use reqwest::StatusCode;
+    use wiremock::matchers::{body_string_contains, header, method};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct CredentialEnvironment {
+        home: String,
+    }
+
+    impl EnvOps for CredentialEnvironment {
+        fn get_var(&self, key: &str) -> Result<String, std::env::VarError> {
+            if key == if cfg!(windows) { "APPDATA" } else { "HOME" } {
+                Ok(self.home.clone())
+            } else {
+                Err(std::env::VarError::NotPresent)
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum AuthenticationFailure {
+        Http(u16),
+        TokenExchange,
+    }
+
+    #[test_case::test_case(AuthenticationFailure::Http(401), false; "401_missing_file")]
+    #[test_case::test_case(AuthenticationFailure::Http(403), false; "403_missing_file")]
+    #[test_case::test_case(AuthenticationFailure::TokenExchange, false; "token_failure_missing_file")]
+    #[test_case::test_case(AuthenticationFailure::Http(401), true; "401_replaced_file")]
+    #[test_case::test_case(AuthenticationFailure::Http(403), true; "403_replaced_file")]
+    #[test_case::test_case(AuthenticationFailure::TokenExchange, true; "token_failure_replaced_file")]
+    #[tokio::test]
+    async fn auth_retry_preserves_selected_source(failure: AuthenticationFailure, replace: bool) {
+        let directory = tempfile::tempdir().unwrap();
+        let credential_path = directory.path().join(if cfg!(windows) {
+            "gcloud/application_default_credentials.json"
+        } else {
+            ".config/gcloud/application_default_credentials.json"
+        });
+        tokio::fs::create_dir_all(credential_path.parent().unwrap())
+            .await
+            .unwrap();
+        let tokens = MockServer::start().await;
+        let metadata = MockServer::start().await;
+        let vertex = MockServer::start().await;
+        let credentials = |account| {
+            serde_json::json!({
+                "type": "authorized_user",
+                "client_id": account,
+                "client_secret": "test-secret",
+                "refresh_token": "test-refresh",
+                "token_uri": tokens.uri(),
+            })
+            .to_string()
+        };
+        tokio::fs::write(&credential_path, credentials("original"))
+            .await
+            .unwrap();
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "ambient-service-account", "expires_in": 3600,
+            })))
+            .expect(0)
+            .mount(&metadata)
+            .await;
+        let auth = GcpAuth::new_impl(
+            &RealFilesystemOps,
+            &CredentialEnvironment {
+                home: directory.path().to_string_lossy().into_owned(),
+            },
+            &metadata.uri(),
+        )
+        .await
+        .unwrap();
+        let original_token_response = match failure {
+            AuthenticationFailure::Http(_) => ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"access_token": "original-token", "expires_in": 3600}),
+            ),
+            AuthenticationFailure::TokenExchange => ResponseTemplate::new(400),
+        };
+        Mock::given(method("POST"))
+            .and(body_string_contains("client_id=original"))
+            .respond_with(original_token_response)
+            .expect(1)
+            .mount(&tokens)
+            .await;
+        if let AuthenticationFailure::Http(status) = failure {
+            assert_eq!(
+                auth.get_token().await.unwrap().token_value,
+                "original-token"
+            );
+            Mock::given(method("POST"))
+                .and(header("Authorization", "Bearer original-token"))
+                .respond_with(ResponseTemplate::new(status))
+                .expect(1)
+                .mount(&vertex)
+                .await;
+        }
+        if replace {
+            tokio::fs::write(&credential_path, credentials("replacement"))
+                .await
+                .unwrap();
+            Mock::given(method("POST"))
+                .and(body_string_contains("client_id=replacement"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "replacement-token", "expires_in": 3600,
+                })))
+                .expect(1)
+                .mount(&tokens)
+                .await;
+            Mock::given(method("POST"))
+                .and(header("Authorization", "Bearer replacement-token"))
+                .respond_with(ResponseTemplate::new(200))
+                .expect(1)
+                .mount(&vertex)
+                .await;
+        } else {
+            tokio::fs::remove_file(&credential_path).await.unwrap();
+        }
+        let provider = GcpVertexAIProvider {
+            client: Client::new(),
+            auth,
+            host: vertex.uri(),
+            project_id: "test-project".into(),
+            location: "global".into(),
+            retry_config: RetryConfig::default(),
+            name: GCP_VERTEX_AI_PROVIDER_NAME.into(),
+            request_builder: std::sync::Arc::new(Ok),
+        };
+        let result = provider
+            .send_request_with_retry(
+                &ModelConfig::new("test-model"),
+                Url::parse(&vertex.uri()).unwrap(),
+                &serde_json::json!({"synthetic": "request"}),
+            )
+            .await;
+        if replace {
+            assert_eq!(result.unwrap().status(), StatusCode::OK);
+        } else {
+            assert!(matches!(result, Err(ProviderError::Authentication(_))));
+        }
+        let initial_requests = usize::from(matches!(failure, AuthenticationFailure::Http(_)));
+        assert_eq!(
+            vertex.received_requests().await.unwrap().len(),
+            initial_requests + usize::from(replace)
+        );
+        assert!(metadata.received_requests().await.unwrap().is_empty());
+    }
 
     #[test]
     fn test_retry_config_delay_calculation() {
