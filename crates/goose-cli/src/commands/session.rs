@@ -32,7 +32,12 @@ fn display_path_with_tilde(path: &Path) -> String {
 async fn remove_sessions(session_manager: &SessionManager, sessions: Vec<Session>) -> Result<()> {
     println!("The following sessions will be removed:");
     for session in &sessions {
-        println!("- {} {}", session.id, session.name);
+        println!(
+            "- {} {} ({})",
+            session.id,
+            session.name,
+            display_path_with_tilde(&session.working_dir)
+        );
     }
 
     let should_delete = confirm("Are you sure you want to delete these sessions?")
@@ -70,8 +75,13 @@ fn prompt_interactive_session_removal(sessions: &[Session]) -> Result<Vec<Sessio
                 &s.name
             };
             let truncated_desc = safe_truncate(desc, TRUNCATED_DESC_LENGTH);
-            let display_text =
-                format!("{} - {} ({})", session_activity_at(s), truncated_desc, s.id);
+            let display_text = format!(
+                "{} - {} ({}) - {}",
+                session_activity_at(s),
+                truncated_desc,
+                s.id,
+                display_path_with_tilde(&s.working_dir)
+            );
             (display_text, s.clone())
         })
         .collect();
