@@ -1136,7 +1136,7 @@ impl GooseAcpAgent {
 
         agent
             .extension_manager
-            .add_client("developer".into(), developer_config, client, info)
+            .add_client(developer_config, client, info)
             .await;
     }
 

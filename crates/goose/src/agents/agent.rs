@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -22,7 +22,9 @@ use super::tool_execution::{
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
-use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
+use crate::agents::extension_manager::{
+    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
+};
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
     FINAL_OUTPUT_TOOL_NAME,
@@ -176,6 +178,7 @@ pub(crate) fn stop_hook_block_cap_warning(plugin: &str, cap: u32) -> Message {
 
 /// Context needed for the reply function
 pub struct ReplyContext {
+    lease: Arc<ExtensionLease>,
     pub conversation: Conversation,
     pub tools: Vec<Tool>,
     pub toolshim_tools: Vec<Tool>,
@@ -283,6 +286,9 @@ pub struct Agent {
     pub(super) current_goose_mode: Mutex<GooseMode>,
 
     pub extension_manager: Arc<ExtensionManager>,
+    /// Points to the lease owned by the active legacy inference without
+    /// extending that lease's lifetime.
+    lease: Mutex<Weak<ExtensionLease>>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
     pub(super) tool_confirmation_router: ToolConfirmationRouter,
@@ -433,6 +439,7 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_goose_mode: Mutex::new(initial_mode),
+            lease: Mutex::new(Weak::new()),
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
@@ -859,7 +866,7 @@ impl Agent {
                 )
             );
         }
-        let (tools, toolshim_tools, system_prompt, model_config) = self
+        let (lease, tools, toolshim_tools, system_prompt, model_config) = self
             .prepare_tools_and_prompt(session_id, working_dir)
             .await?;
 
@@ -886,6 +893,7 @@ impl Agent {
         };
 
         Ok(ReplyContext {
+            lease,
             conversation,
             tools,
             toolshim_tools,
@@ -1158,18 +1166,13 @@ impl Agent {
             };
         }
 
-        let ctx = super::tool_execution::ToolCallContext::new(
-            session.id.clone(),
-            Some(session.working_dir.clone()),
-            Some(request_id.clone()),
-        );
-
         debug!("WAITING_TOOL_START: {}", tool_call.name);
         let result = self
-            .extension_manager
-            .dispatch_tool_call(
-                &ctx,
+            .lease(&session.id, &session.working_dir)
+            .await
+            .call(
                 tool_call.clone(),
+                CallRequest::new(request_id.clone()),
                 cancellation_token.unwrap_or_default(),
             )
             .await;
@@ -1181,6 +1184,17 @@ impl Agent {
             );
             ToolCallResult::from(Err(error_data))
         });
+        let result = if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+            let container = self.container.lock().await.clone();
+            self.extension_manager.applying_mutation(
+                result,
+                Some(session.working_dir.clone()),
+                container,
+                &session.id,
+            )
+        } else {
+            result
+        };
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
 
@@ -1453,6 +1467,29 @@ impl Agent {
         Ok(())
     }
 
+    pub(crate) async fn resolve_lease(
+        &self,
+        session_id: &str,
+        working_dir: &std::path::Path,
+    ) -> Arc<ExtensionLease> {
+        let set = self
+            .extension_manager
+            .current_set(session_id, Some(working_dir))
+            .await;
+        let lease = Arc::new(self.extension_manager.resolve(&set).await);
+        *self.lease.lock().await = Arc::downgrade(&lease);
+        lease
+    }
+
+    async fn lease(&self, session_id: &str, working_dir: &std::path::Path) -> Arc<ExtensionLease> {
+        if let Some(lease) = self.lease.lock().await.upgrade() {
+            if lease.scope_id() == session_id {
+                return lease;
+            }
+        }
+        self.resolve_lease(session_id, working_dir).await
+    }
+
     pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
         let include_final_output = extension_name.is_none();
         let mut prefixed_tools = self
@@ -1640,7 +1677,7 @@ impl Agent {
         false
     }
 
-    pub(super) fn create_state_machine(
+    pub(super) async fn create_state_machine(
         &self,
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
@@ -1649,6 +1686,7 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
+        let container = self.container.lock().await.clone();
         let max_turns = max_turns.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_MAX_TURNS")
@@ -1717,6 +1755,7 @@ impl Agent {
                 &self.current_goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
+                container,
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
@@ -1974,14 +2013,16 @@ impl Agent {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
-        let machine = self.create_state_machine(
-            provider,
-            model_config,
-            context_limit,
-            session_config.max_turns,
-            cancel.clone(),
-            steer_queue,
-        );
+        let machine = self
+            .create_state_machine(
+                provider,
+                model_config,
+                context_limit,
+                session_config.max_turns,
+                cancel.clone(),
+                steer_queue,
+            )
+            .await;
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(
@@ -2425,6 +2466,7 @@ impl Agent {
             .prepare_reply_context(&session.id, conversation, session.working_dir.as_path())
             .await?;
         let ReplyContext {
+            lease: mut inference_lease,
             mut conversation,
             mut tools,
             mut toolshim_tools,
@@ -2434,7 +2476,8 @@ impl Agent {
             model_config,
         } = context;
 
-        if let Some(project_addendum) = self.load_project_instructions(&session).await {
+        let project_addendum = self.load_project_instructions(&session).await;
+        if let Some(project_addendum) = &project_addendum {
             system_prompt = format!("{system_prompt}\n\n{project_addendum}");
         }
 
@@ -2583,9 +2626,23 @@ impl Agent {
             // Snapshot after the turn-context append so a retry keeps the sent prefix.
             let initial_messages = conversation.messages().clone();
 
+            let mut first_inference = true;
             loop {
                 if is_token_cancelled(&cancel_token) {
                     break;
+                }
+
+                // Rebuilt before every provider call, same as the state
+                // machine, so the lease dispatch resolves against is the
+                // one this inference was shown.
+                if first_inference {
+                    first_inference = false;
+                } else {
+                    (inference_lease, tools, toolshim_tools, system_prompt, _) =
+                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
+                    if let Some(project_addendum) = &project_addendum {
+                        system_prompt = format!("{system_prompt}\n\n{project_addendum}");
+                    }
                 }
 
                 if can_drain_pending_steers {
@@ -2708,7 +2765,6 @@ impl Agent {
 
                 let mut no_tools_called = true;
                 let mut messages_to_add = Conversation::default();
-                let mut tools_updated = false;
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
                 let mut provider_errored = false;
@@ -2991,7 +3047,6 @@ impl Agent {
                                         if let Err(e) = self.save_extension_state(&session_config).await {
                                             warn!("Failed to save extension state after runtime changes: {}", e);
                                         }
-                                        tools_updated = true;
                                     }
                                 }
 
@@ -3265,22 +3320,10 @@ impl Agent {
                 }
                 can_drain_pending_steers = true;
 
-                if tools_updated {
-                    (tools, toolshim_tools, system_prompt, _) =
-                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                }
-
-                {
-                    let has_new_hints = self
-                        .prompt_manager
-                        .lock()
-                        .await
-                        .load_subdirectory_hints(&working_dir);
-                    if has_new_hints && !tools_updated {
-                        (tools, toolshim_tools, system_prompt, _) =
-                            self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                    }
-                }
+                self.prompt_manager
+                    .lock()
+                    .await
+                    .load_subdirectory_hints(&working_dir);
 
                 // An empty provider response — no tool calls, no text, and no error
                 // or recovery compaction that legitimately produces no assistant
@@ -3557,6 +3600,7 @@ impl Agent {
             if !stop_hook_handled_for_exit {
                 self.emit_stop_hook(&session_config.id, &last_assistant_text, &session.working_dir.to_string_lossy()).await;
             }
+            drop(inference_lease);
         }.instrument(reply_stream_span));
         Ok(inner)
     }
@@ -3945,6 +3989,20 @@ mod tests {
             bundled: None,
             available_tools: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn agent_does_not_keep_resolved_lease_alive() {
+        let agent = Agent::new();
+        let working_dir = tempfile::tempdir().unwrap();
+        let lease = agent
+            .resolve_lease("test-session", working_dir.path())
+            .await;
+        let lease_reference = Arc::downgrade(&lease);
+
+        drop(lease);
+
+        assert!(lease_reference.upgrade().is_none());
     }
 
     #[test]

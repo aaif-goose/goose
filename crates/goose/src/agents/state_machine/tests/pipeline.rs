@@ -155,6 +155,7 @@ impl TestPipeline {
                 &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
+                None,
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
@@ -849,7 +850,6 @@ async fn build_test_pipeline(
         if extension.name() == "calculator" {
             extension_manager
                 .add_client(
-                    "calculator".to_string(),
                     extension,
                     calculator.clone(),
                     calculator.get_info().cloned(),

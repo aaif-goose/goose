@@ -49,16 +49,11 @@ impl SummarizeClient {
     }
 
     async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
+        let provider = self
             .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-
-        let provider = provider_guard
+            .provider
+            .lock()
+            .await
             .as_ref()
             .ok_or("Provider not available")?
             .clone();

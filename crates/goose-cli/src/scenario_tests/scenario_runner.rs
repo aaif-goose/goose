@@ -214,9 +214,8 @@ where
     agent
         .extension_manager
         .add_client(
-            "weather_extension".to_string(),
             ExtensionConfig::Builtin {
-                name: "".to_string(),
+                name: "weather_extension".to_string(),
                 display_name: None,
                 description: "".to_string(),
                 timeout: None,

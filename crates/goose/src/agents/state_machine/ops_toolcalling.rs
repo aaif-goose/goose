@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
-use crate::agents::extension_manager::ExtensionManager;
+use crate::agents::container::Container;
+use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_tool_approval::request_executable;
@@ -316,6 +317,10 @@ pub struct ToolExecutionOperation<'a> {
     goose_mode: &'a Mutex<GooseMode>,
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
+    container: Option<Container>,
+    /// Resolved in `inference_tools` and held for the rest of that inference,
+    /// so dispatch sees the catalog the model was shown.
+    lease: Mutex<Option<Arc<ExtensionLease>>>,
 }
 
 impl<'a> ToolExecutionOperation<'a> {
@@ -323,12 +328,34 @@ impl<'a> ToolExecutionOperation<'a> {
         goose_mode: &'a Mutex<GooseMode>,
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
+        container: Option<Container>,
     ) -> Self {
         Self {
             goose_mode,
             extension_manager,
             hook_manager,
+            container,
+            lease: Mutex::new(None),
         }
+    }
+
+    async fn lease(&self, session: &Session) -> Arc<ExtensionLease> {
+        if let Some(lease) = self.lease.lock().await.as_ref() {
+            if lease.scope_id() == session.id {
+                return Arc::clone(lease);
+            }
+        }
+        self.resolve_lease(session).await
+    }
+
+    async fn resolve_lease(&self, session: &Session) -> Arc<ExtensionLease> {
+        let set = self
+            .extension_manager
+            .current_set(&session.id, Some(&session.working_dir))
+            .await;
+        let lease = Arc::new(self.extension_manager.resolve(&set).await);
+        *self.lease.lock().await = Some(Arc::clone(&lease));
+        lease
     }
 
     async fn dispatch_tool_call(
@@ -364,14 +391,14 @@ impl<'a> ToolExecutionOperation<'a> {
             )
             .await;
 
-            let context = crate::agents::tool_execution::ToolCallContext::new(
-                session.id.clone(),
-                Some(session.working_dir.clone()),
-                Some(request_id.clone()),
-            );
             let result = self
-                .extension_manager
-                .dispatch_tool_call(&context, tool_call.clone(), cancellation_token)
+                .lease(session)
+                .await
+                .call(
+                    tool_call.clone(),
+                    CallRequest::new(request_id.clone()),
+                    cancellation_token,
+                )
                 .await;
             let result = result.unwrap_or_else(|error| {
                 #[cfg(feature = "telemetry")]
@@ -381,6 +408,16 @@ impl<'a> ToolExecutionOperation<'a> {
                 );
                 ToolCallResult::from(Err(error))
             });
+            let result = if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+                self.extension_manager.applying_mutation(
+                    result,
+                    Some(session.working_dir.clone()),
+                    self.container.clone(),
+                    &session.id,
+                )
+            } else {
+                result
+            };
             Ok(with_post_tool_hooks(
                 &self.hook_manager,
                 result,
@@ -754,12 +791,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        let tools = self
-            .extension_manager
-            .get_prefixed_tools_excluding(&session.id, crate::skills::EXTENSION_NAME)
+        Ok(self
+            .resolve_lease(session)
             .await
-            .unwrap_or_default();
-        Ok(tools)
+            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .await)
     }
 
     async fn moim_parts(
@@ -767,7 +803,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<String>> {
-        Ok(self.extension_manager.collect_moim_parts(&session.id).await)
+        Ok(self.lease(session).await.moim().await)
     }
 
     async fn prompt_parts(
@@ -787,27 +823,17 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         }
         let mut prompt_parts = hints.load_new_hints(&session.working_dir);
 
+        let lease = self.lease(session).await;
         #[cfg(feature = "code-mode")]
-        if self
-            .extension_manager
-            .is_extension_enabled(
-                crate::agents::platform_extensions::code_execution::EXTENSION_NAME,
-            )
-            .await
-        {
+        if lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return Ok(prompt_parts);
         }
 
-        let mut extensions = self
-            .extension_manager
-            .get_extensions_info(&session.working_dir)
-            .await;
+        let mut extensions = lease.instructions();
         extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);
         if extensions.is_empty() {
             return Ok(prompt_parts);
         }
-        // HashMap order shuffles across restarts and would bust the prompt cache.
-        extensions.sort_by(|a, b| a.name.cmp(&b.name));
 
         let mut lines = vec![
             "# Extensions".to_string(),
@@ -842,10 +868,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         }
 
         let known_tools: HashSet<_> = self
-            .extension_manager
-            .get_prefixed_tools_excluding(&session.id, crate::skills::EXTENSION_NAME)
+            .lease(session)
             .await
-            .unwrap_or_default()
+            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .await
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect();

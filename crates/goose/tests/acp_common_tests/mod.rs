@@ -572,12 +572,21 @@ pub async fn run_load_session_mcp<C: Connection>() {
 
     let expected_session_id = C::expected_session_id();
     let prompt = "Use the get_code tool and output only its result.";
+    let shell_prompt =
+        format!("Run the command echo {SHELL_TEST_CONTENT} and output only its result.");
     let mcp = McpFixture::new().await;
     let mcp_url = mcp.url.clone();
 
-    // Two rounds of tool call + tool result: one for new session, one for loaded session.
     let openai = OpenAiFixture::new(
         vec![
+            (
+                shell_prompt.clone(),
+                include_str!("../acp_test_data/openai_shell_tool_call.txt"),
+            ),
+            (
+                SHELL_TEST_CONTENT.into(),
+                include_str!("../acp_test_data/openai_shell_tool_result.txt"),
+            ),
             (
                 prompt.to_string(),
                 include_str!("../acp_test_data/openai_tool_call.txt"),
@@ -585,6 +594,14 @@ pub async fn run_load_session_mcp<C: Connection>() {
             (
                 format!(r#""content":"{FAKE_CODE}""#),
                 include_str!("../acp_test_data/openai_tool_result.txt"),
+            ),
+            (
+                shell_prompt.clone(),
+                include_str!("../acp_test_data/openai_shell_tool_call.txt"),
+            ),
+            (
+                SHELL_TEST_CONTENT.into(),
+                include_str!("../acp_test_data/openai_shell_tool_result.txt"),
             ),
             (
                 prompt.to_string(),
@@ -599,14 +616,13 @@ pub async fn run_load_session_mcp<C: Connection>() {
     )
     .await;
 
-    let mcp_servers = vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp_url))];
-
     let config = TestConnectionConfig {
         data_root: temp_dir.path().to_path_buf(),
-        mcp_servers: mcp_servers.clone(),
+        mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp_url))],
         ..Default::default()
     };
     let mut conn = C::new(config, openai).await;
+    let global_config = fs::read_to_string(temp_dir.path().join(CONFIG_YAML_NAME)).unwrap();
     let SessionData { mut session, .. } = conn.new_session().await.unwrap();
     expected_session_id.set(&session.session_id().0);
     assert_stored_extensions(
@@ -616,27 +632,42 @@ pub async fn run_load_session_mcp<C: Connection>() {
     )
     .await;
 
-    // First prompt: tool should work in the new session.
+    let output = session
+        .prompt(&shell_prompt, PermissionDecision::AllowOnce)
+        .await
+        .unwrap();
+    assert_eq!(output.text, SHELL_TEST_CONTENT);
     let output = session
         .prompt(prompt, PermissionDecision::Cancel)
         .await
         .unwrap();
     assert_eq!(output.text, FAKE_CODE, "tool call failed in new session");
+    assert_eq!(
+        fs::read_to_string(temp_dir.path().join(CONFIG_YAML_NAME)).unwrap(),
+        global_config
+    );
 
-    // Load the same session with MCP servers re-specified.
     let session_id = session.session_id().0.to_string();
     let SessionData {
         session: mut loaded_session,
         ..
-    } = conn.load_session(&session_id, mcp_servers).await.unwrap();
+    } = conn.load_session(&session_id, vec![]).await.unwrap();
     assert_stored_extensions(&conn, &session_id, &["developer", "mcp-fixture"]).await;
 
-    // Second prompt: tool should work in the loaded session.
+    let output = loaded_session
+        .prompt(&shell_prompt, PermissionDecision::AllowOnce)
+        .await
+        .unwrap();
+    assert_eq!(output.text, SHELL_TEST_CONTENT);
     let output = loaded_session
         .prompt(prompt, PermissionDecision::Cancel)
         .await
         .unwrap();
     assert_eq!(output.text, FAKE_CODE, "tool call failed in loaded session");
+    assert_eq!(
+        fs::read_to_string(temp_dir.path().join(CONFIG_YAML_NAME)).unwrap(),
+        global_config
+    );
 }
 
 async fn assert_stored_extensions<C: Connection>(conn: &C, session_id: &str, expected: &[&str]) {
