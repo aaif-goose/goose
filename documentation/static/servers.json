@@ -516,6 +516,17 @@
     "environmentVariables": []
   },
   {
+    "id": "openllm",
+    "name": "OpenLLM",
+    "description": "Semantic search across code and documentation with persistent memory",
+    "command": "npx -y @openllmsh/npm mcp",
+    "link": "https://github.com/openllmsh/npm",
+    "installation_notes": "The npm launcher installs or invokes the native OpenLLM CLI.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
     "id": "openmetadata",
     "name": "OpenMetadata",
     "description": "Bring OpenMetadata's single source of truth across your data systems to agents",
