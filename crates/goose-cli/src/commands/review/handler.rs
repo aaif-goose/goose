@@ -401,11 +401,19 @@ fn configured_filter_drivers(repo_root: &Path) -> Result<Vec<String>> {
 
 fn review_diff_command(repo_root: &Path) -> Result<Command> {
     let mut cmd = review_git_command(repo_root);
+    let mut config_overrides = vec![("core.fsmonitor".to_string(), "false".to_string())];
     for driver in configured_filter_drivers(repo_root)? {
-        cmd.args(["-c", &format!("filter.{driver}.clean=")])
-            .args(["-c", &format!("filter.{driver}.smudge=")])
-            .args(["-c", &format!("filter.{driver}.process=")])
-            .args(["-c", &format!("filter.{driver}.required=false")]);
+        config_overrides.extend([
+            (format!("filter.{driver}.clean"), String::new()),
+            (format!("filter.{driver}.smudge"), String::new()),
+            (format!("filter.{driver}.process"), String::new()),
+            (format!("filter.{driver}.required"), "false".to_string()),
+        ]);
+    }
+    cmd.env("GIT_CONFIG_COUNT", config_overrides.len().to_string());
+    for (index, (key, value)) in config_overrides.into_iter().enumerate() {
+        cmd.env(format!("GIT_CONFIG_KEY_{index}"), key)
+            .env(format!("GIT_CONFIG_VALUE_{index}"), value);
     }
     cmd.args(["diff", "--no-ext-diff", "--no-textconv"]);
     Ok(cmd)
@@ -1382,24 +1390,47 @@ mod tests {
             &script,
             "#!/bin/sh\ntouch \"$(dirname \"$0\")/content-filter-ran\"\nexit 1\n",
         );
-        fs::write(
-            root.join(".gitattributes"),
-            "tracked.txt filter=review-test\n",
-        )
-        .unwrap();
+        fs::write(root.join(".gitattributes"), "tracked.txt filter=x=y\n").unwrap();
         run_git(root, &["add", ".gitattributes"]);
         run_git(
             root,
             &["commit", "--quiet", "--no-gpg-sign", "-m", "add attributes"],
         );
         for key in [
-            "filter.review-test.clean",
-            "filter.review-test.process",
-            "filter.review-test.smudge",
+            "filter.x=y.clean",
+            "filter.x=y.process",
+            "filter.x=y.smudge",
         ] {
             run_git(root, &["config", key, script.to_str().unwrap()]);
         }
-        run_git(root, &["config", "filter.review-test.required", "true"]);
+        run_git(root, &["config", "filter.x=y.required", "true"]);
+        fs::write(root.join("tracked.txt"), "after\n").unwrap();
+
+        assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
+        let diff = collect_diff(root, None, &[]).unwrap();
+        assert!(diff.contains("-before"));
+        assert!(diff.contains("+after"));
+        assert!(collect_diff_stat(root, None, &[])
+            .unwrap()
+            .contains("tracked.txt"));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn review_diff_collection_ignores_fsmonitor_hooks() {
+        let dir = review_test_repo();
+        let root = dir.path();
+        let marker = root.join("fsmonitor-ran");
+        let script = root.join("fsmonitor.sh");
+        write_executable_script(
+            &script,
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/fsmonitor-ran\"\nexit 1\n",
+        );
+        run_git(
+            root,
+            &["config", "core.fsmonitor", script.to_str().unwrap()],
+        );
         fs::write(root.join("tracked.txt"), "after\n").unwrap();
 
         assert_eq!(touched_files(root, None, &[]).unwrap(), ["tracked.txt"]);
