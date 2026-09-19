@@ -143,6 +143,19 @@ pub async fn handle_session_remove(
     remove_sessions(&session_manager, matched_sessions).await
 }
 
+pub async fn handle_session_rename(session_id: String, new_name: String) -> Result<()> {
+    let session_manager = SessionManager::instance();
+
+    session_manager
+        .update(&session_id)
+        .user_provided_name(&new_name)
+        .apply()
+        .await?;
+
+    println!("Session `{}` renamed to '{}'.", session_id, new_name);
+    Ok(())
+}
+
 fn write_line_or_broken_pipe_ok<W: Write>(out: &mut W, line: &str) -> Result<bool> {
     match writeln!(out, "{line}") {
         Ok(()) => Ok(true),

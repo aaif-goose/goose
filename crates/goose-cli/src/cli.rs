@@ -29,7 +29,7 @@ use crate::commands::schedule::{
     handle_schedule_run_now, handle_schedule_services_status, handle_schedule_services_stop,
     handle_schedule_sessions,
 };
-use crate::commands::session::{handle_session_list, handle_session_remove};
+use crate::commands::session::{handle_session_list, handle_session_remove, handle_session_rename};
 use crate::commands::skills::handle_skills_list;
 use crate::recipes::extract_from_cli::extract_recipe_info_from_cli;
 use crate::recipes::recipe::{explain_recipe, render_recipe_as_yaml};
@@ -602,6 +602,19 @@ enum SessionCommand {
 
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
+    },
+    #[command(about = "Rename a session")]
+    Rename {
+        #[arg(
+            long = "session-id",
+            alias = "id",
+            value_name = "SESSION_ID",
+            help = "Session ID to rename (e.g., '20250921_143022'). If omitted, prompts interactively."
+        )]
+        session_id: Option<String>,
+
+        #[arg(short = 'n', long = "new-name", help = "New name for the session")]
+        new_name: String,
     },
 }
 
@@ -1981,6 +1994,28 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                 }
             };
             crate::commands::session::handle_diagnostics(&session_id, output).await?;
+        }
+        SessionCommand::Rename {
+            session_id,
+            new_name,
+        } => {
+            let session_manager = SessionManager::instance();
+            let session_id = if let Some(id) = session_id {
+                id
+            } else {
+                match crate::commands::session::prompt_interactive_session_selection(
+                    &session_manager,
+                )
+                .await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        return Ok(());
+                    }
+                }
+            };
+            handle_session_rename(session_id, new_name).await?;
         }
     }
     Ok(())
