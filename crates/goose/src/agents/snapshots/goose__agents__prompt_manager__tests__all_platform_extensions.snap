@@ -141,17 +141,11 @@ You have these skills at your disposal, when it is clear they can help you solve
 ### Instructions
 Your todo content is automatically available in your context.
 
-Workflow:
-- Start: write initial checklist
-- During: update progress
-- End: verify all complete
-
-Template:
-- [x] Requirement 1
-- [ ] Task
-  - [ ] Sub-task
-- [ ] Requirement 2
-- [ ] Another task
+Use it as brief planning notes for yourself:
+- When given a multi-step task, you may jot a short plan
+- Update it only if your plan changes
+- Items never need to be checked off, closed out, or verified
+- Never redo or re-verify completed work because of these notes
 
 ## tom
 

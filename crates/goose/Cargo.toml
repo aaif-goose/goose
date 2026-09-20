@@ -20,6 +20,7 @@ otel = [
     "dep:opentelemetry-stdout",
 ]
 code-mode = ["dep:pctx_code_mode"]
+live-voice = ["goose-providers/live-websocket"]
 local-inference = [
     "dep:candle-core",
     "dep:candle-nn",
@@ -77,7 +78,7 @@ native-tls = [
     "goose-providers/native-tls",
 ]
 system-keyring = ["dep:keyring"]
-portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
+portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
 
 [lints]
@@ -256,7 +257,7 @@ libc = { version = "0.2.182", default-features = false, features = ["std"] }
 serial_test = { workspace = true }
 mockall = { version = "0.15", default-features = false }
 wiremock = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-util = { workspace = true, features = ["compat"] }
 dotenvy = { workspace = true }
 ctor = { version = "1.0", default-features = false, features = ["proc_macro"] }

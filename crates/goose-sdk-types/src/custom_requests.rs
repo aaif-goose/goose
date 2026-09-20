@@ -1,4 +1,6 @@
-use agent_client_protocol::schema::v1::{AvailableCommand, ContentBlock, McpServer, SessionInfo};
+use agent_client_protocol::schema::v1::{
+    AvailableCommand, ContentBlock, McpServer, Meta, SessionInfo,
+};
 use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -239,7 +241,65 @@ pub struct SteerSessionResponse {
     pub message_id: String,
 }
 
+/// Ask whether a new or existing chat can enter direct Live voice.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/session/live-voice/availability",
+    response = LiveVoiceAvailabilityResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVoiceAvailabilityRequest {
+    pub session_id: Option<String>,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Meta>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveVoiceStatus {
+    Ready,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVoiceAvailabilityResponse {
+    pub status: LiveVoiceStatus,
+    pub message: String,
+}
+
 /// Get a diagnostic report for a session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/session/live-voice/start",
+    response = LiveVoiceStartResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVoiceStartRequest {
+    pub session_id: String,
+    pub offer_sdp: String,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Meta>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVoiceStartResponse {
+    pub interaction_id: String,
+    pub answer_sdp: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/session/live-voice/stop",
+    response = EmptyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVoiceStopRequest {
+    pub session_id: String,
+    pub interaction_id: String,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/diagnostics/get",

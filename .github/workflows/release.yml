@@ -131,7 +131,6 @@ jobs:
           merge-multiple: true
 
       - name: Generate macOS update manifest
-        if: ${{ env.ENABLE_MAC_NATIVE_AUTO_UPDATE == 'true' }}
         run: node ui/desktop/scripts/generate-mac-update-manifest.js --version "${GITHUB_REF_NAME}" --directory .
 
       - name: Attest macOS update manifest
@@ -152,6 +151,7 @@ jobs:
             *.rpm
             *.flatpak
             download_cli.sh
+            mac-update-requirements.json
 
       # Create/update the versioned release
       - name: Release versioned
@@ -167,6 +167,7 @@ jobs:
             *.rpm
             *.flatpak
             download_cli.sh
+            mac-update-requirements.json
           allowUpdates: true
           omitBody: true
           omitPrereleaseDuringUpdate: true
@@ -187,6 +188,7 @@ jobs:
             *.rpm
             *.flatpak
             download_cli.sh
+            mac-update-requirements.json
           allowUpdates: true
           omitBody: true
           omitPrereleaseDuringUpdate: true

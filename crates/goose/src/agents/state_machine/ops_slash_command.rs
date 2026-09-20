@@ -53,6 +53,10 @@ impl Operation<Session, GooseEffect> for SlashCommandOperation<'_> {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
+        if !crate::agents::execute_commands::slash_commands_enabled() {
+            return not_applicable();
+        }
+
         let messages = messages_since_kickoff(conversation)?;
         let Some(user_message) = messages.first() else {
             return not_applicable();

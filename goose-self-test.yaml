@@ -15,6 +15,7 @@ activities:
   - Test load tool for knowledge injection and discovery
   - Test delegate tool for task delegation (sync and async)
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
+  - Test Z.AI Coding Plan streamed tool calls and interruption recovery
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Test error boundaries including nested delegation prevention
@@ -25,7 +26,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
 
   - key: test_depth
     input_type: string
@@ -406,6 +407,30 @@ prompt: |
   2. Verify neither turn errors and that earlier reasoning is still reflected in later answers.
 
   Log results to: {{ workspace_dir }}/phase3c_reasoning.md
+  {% endif %}
+
+  {% if test_phases == "all" or "zai-coding-plan" in test_phases %}
+  ## Z.AI Coding Plan
+
+  **Prerequisites**: The active provider must be `zai_coding_plan`, with a Coding Plan API key
+  configured and the developer extension enabled. Otherwise record this phase as SKIPPED.
+
+  In Desktop, confirm the provider appears in Settings → Models, accepts the API key,
+  and refreshes available models from the Coding Plan endpoint. Record this UI check
+  as SKIPPED in headless mode. Newly discovered models must also use `tool_stream`.
+
+  1. Use the file-writing tool to create a substantial Python module in the test workspace
+     in a single call, including Unicode text and escaped newlines. Read it back and run it.
+  2. Modify that module in a second tool call, then run it again. Verify the tool-result
+     continuation succeeds without malformed JSON, missing tool IDs, or reasoning errors.
+  3. Ask the human tester to interrupt a long response with Ctrl+C and give a replacement
+     instruction. Verify the next turn follows the replacement and tool use still works.
+     In headless mode, mark this interactive step SKIPPED rather than claiming success.
+  4. When transport diagnostics are available, verify `stream: true` and `tool_stream: true`
+     on requests, multiple argument deltas for the large tool call, and unmodified
+     `reasoning_content` on subsequent tool-result turns. Never log API keys.
+
+  Log results to: {{ workspace_dir }}/zai_coding_plan.md
   {% endif %}
 
   {% if test_phases == "all" or "acp-effort" in test_phases %}

@@ -41,6 +41,9 @@ import { getTextDirection } from '../utils/textDirection';
 import { defineMessages, useIntl } from '../i18n';
 import TurndownService from 'turndown';
 import type { NextChatExtensionDraft } from '../utils/nextChatExtensions';
+import { LiveVoiceButton } from './LiveVoiceButton';
+import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
+import { isLiveVoiceActive, type LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -68,6 +71,15 @@ interface PastedImage {
   isLoading: boolean;
   error?: string;
 }
+
+type ChatInputLiveVoice = Pick<
+  LiveVoiceController,
+  'phase' | 'muted' | 'stop' | 'toggleMute'
+> & {
+  availability: LiveVoiceAvailabilityResponse_unstable | null;
+  activeInAnotherSession: boolean;
+  start: () => Promise<void>;
+};
 
 const moveQueuedMessageToFront = (
   messages: QueuedMessage[],
@@ -163,6 +175,7 @@ interface ChatInputProps {
   sessionId: string | null;
   handleSubmit: (input: UserInput) => void;
   chatState: ChatState;
+  hasActiveRun: boolean;
   onStop?: () => void;
   onSteerQueuedMessage?: (input: UserInput) => Promise<boolean>;
   pauseQueueOnStop?: boolean;
@@ -187,7 +200,6 @@ interface ChatInputProps {
   disableAnimation?: boolean;
   recipe?: Recipe | null;
   recipeId?: string | null;
-  recipeAccepted?: boolean;
   initialPrompt?: string;
   append?: (message: Message) => void;
   onWorkingDirChange?: (newDir: string) => Promise<void> | void;
@@ -199,12 +211,14 @@ interface ChatInputProps {
   latestInference?: Message['metadata']['inference'] | null;
   nextChatExtensionDraft?: NextChatExtensionDraft;
   onNextChatExtensionDraftChange?: (draft: NextChatExtensionDraft) => void;
+  liveVoice?: ChatInputLiveVoice;
 }
 
 export default function ChatInput({
   sessionId,
   handleSubmit,
   chatState = ChatState.Idle,
+  hasActiveRun,
   onStop,
   onSteerQueuedMessage,
   pauseQueueOnStop = false,
@@ -224,7 +238,6 @@ export default function ChatInput({
   disableAnimation = false,
   recipe: _recipe,
   recipeId: _recipeId,
-  recipeAccepted,
   initialPrompt,
   append: _append,
   onWorkingDirChange,
@@ -236,6 +249,7 @@ export default function ChatInput({
   latestInference,
   nextChatExtensionDraft,
   onNextChatExtensionDraftChange,
+  liveVoice,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
@@ -258,13 +272,14 @@ export default function ChatInput({
 
   // Derived state - chatState != Idle means we're in some form of loading state
   const isLoading = chatState !== ChatState.Idle;
-  const isLoadingRef = useRef(isLoading);
-
+  const liveVoiceBlocksSubmission = liveVoice ? isLiveVoiceActive(liveVoice.phase) : false;
+  const isSubmissionBusy = isLoading || hasActiveRun || liveVoiceBlocksSubmission;
+  const isSubmissionBusyRef = useRef(isSubmissionBusy);
   const composerDir = useMemo(() => getTextDirection(displayValue) ?? undefined, [displayValue]);
   const queueProcessingBlockedRef = useRef(queueProcessingBlocked);
-  const wasLoadingRef = useRef(isLoading);
+  const wasSubmissionBusyRef = useRef(isSubmissionBusy);
   const wasQueueProcessingBlockedRef = useRef(queueProcessingBlocked);
-  isLoadingRef.current = isLoading;
+  isSubmissionBusyRef.current = isSubmissionBusy;
   queueProcessingBlockedRef.current = queueProcessingBlocked;
 
   // Queue functionality - ephemeral, only exists in memory for this chat instance
@@ -395,12 +410,12 @@ export default function ChatInput({
 
   // Queue processing
   useEffect(() => {
-    const becameIdle = wasLoadingRef.current && !isLoading;
+    const becameAvailable = wasSubmissionBusyRef.current && !isSubmissionBusy;
     const becameUnblocked = wasQueueProcessingBlockedRef.current && !queueProcessingBlocked;
     const hasSendNowInFlight = sendNowInFlightMessageIdsRef.current.size > 0;
 
     if (
-      (becameIdle || (becameUnblocked && !isLoading)) &&
+      (becameAvailable || (becameUnblocked && !isSubmissionBusy)) &&
       !queueProcessingBlocked &&
       !hasSendNowInFlight &&
       queuedMessages.length > 0
@@ -412,13 +427,13 @@ export default function ChatInput({
 
       if (pendingSendAfterStopId && !messageToSend) {
         clearPendingSendAfterStop(pendingSendAfterStopId);
-        wasLoadingRef.current = isLoading;
+        wasSubmissionBusyRef.current = isSubmissionBusy;
         wasQueueProcessingBlockedRef.current = queueProcessingBlocked;
         return;
       }
 
       if (!messageToSend) {
-        wasLoadingRef.current = isLoading;
+        wasSubmissionBusyRef.current = isSubmissionBusy;
         wasQueueProcessingBlockedRef.current = queueProcessingBlocked;
         return;
       }
@@ -454,10 +469,10 @@ export default function ChatInput({
         }
       }
     }
-    wasLoadingRef.current = isLoading;
+    wasSubmissionBusyRef.current = isSubmissionBusy;
     wasQueueProcessingBlockedRef.current = queueProcessingBlocked;
   }, [
-    isLoading,
+    isSubmissionBusy,
     queueProcessingBlocked,
     queuedMessages,
     handleSubmit,
@@ -553,17 +568,15 @@ export default function ChatInput({
     setHasUserTyped(false);
   }, [initialValue, draftRef]);
 
-  // Handle recipe prompt updates
   useEffect(() => {
-    // If recipe is accepted and we have an initial prompt, and no messages yet, and we haven't set it before
-    if (recipeAccepted && initialPrompt && messages.length === 0) {
+    if (initialPrompt && messages.length === 0) {
       setDisplayValue(initialPrompt);
       setValue(initialPrompt);
       setTimeout(() => {
         textAreaRef.current?.focus();
       }, 0);
     }
-  }, [recipeAccepted, initialPrompt, messages.length, textAreaRef]);
+  }, [initialPrompt, messages.length, textAreaRef]);
 
   const [isComposing, setIsComposing] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -1076,14 +1089,14 @@ export default function ChatInput({
   };
 
   const handleInterruptionAndQueue = () => {
-    if (!isLoading || !hasSubmittableContent) {
+    if (!isSubmissionBusy || !hasSubmittableContent) {
       return false;
     }
 
     const imageData = convertImagesToImageData();
     const contentToQueue = appendDroppedFilePaths(displayValue.trim());
 
-    const interruptionMatch = detectInterruption(displayValue.trim());
+    const interruptionMatch = isLoading ? detectInterruption(displayValue.trim()) : null;
 
     if (interruptionMatch && interruptionMatch.shouldInterrupt) {
       setLastInterruption(interruptionMatch.matchedText);
@@ -1126,7 +1139,7 @@ export default function ChatInput({
   };
 
   const canSubmit =
-    !isLoading &&
+    !isSubmissionBusy &&
     !queueProcessingBlocked &&
     (displayValue.trim() ||
       pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
@@ -1248,12 +1261,12 @@ export default function ChatInput({
     if (queueProcessingBlocked) {
       return;
     }
-    if (isLoading && hasSubmittableContent) {
+    if (isSubmissionBusy && hasSubmittableContent) {
       handleInterruptionAndQueue();
       return;
     }
     const canSubmit =
-      !isLoading &&
+      !isSubmissionBusy &&
       !queueProcessingBlocked &&
       (displayValue.trim() ||
         pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
@@ -1363,7 +1376,6 @@ export default function ChatInput({
     allDroppedFiles.some((file) => !file.error && !file.isLoading);
   const isAnyImageLoading = pastedImages.some((img) => img.isLoading);
   const isAnyDroppedFileLoading = allDroppedFiles.some((file) => file.isLoading);
-
   const isSubmitButtonDisabled =
     !hasSubmittableContent ||
     isAnyImageLoading ||
@@ -1416,7 +1428,7 @@ export default function ChatInput({
     if (!messageToSend) return;
     if (queueProcessingBlocked) return;
 
-    if (!isLoading) {
+    if (!isSubmissionBusy) {
       setQueuedMessages((prev) => removeQueuedMessage(prev, messageId));
       LocalMessageStorage.addMessage(messageToSend.content);
       handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
@@ -1455,7 +1467,7 @@ export default function ChatInput({
         setSendNowInFlightMessage(messageId, false);
       }
 
-      if (!isLoadingRef.current && !queueProcessingBlockedRef.current) {
+      if (!isSubmissionBusyRef.current && !queueProcessingBlockedRef.current) {
         queuePausedRef.current = wasQueuePausedBeforeSteer;
         setQueuedMessages((prev) => {
           const newQueue = removeQueuedMessage(prev, messageId);
@@ -1486,7 +1498,7 @@ export default function ChatInput({
   const handleResumeQueue = () => {
     queuePausedRef.current = false;
     setLastInterruption(null);
-    if (!isLoading && !queueProcessingBlocked && queuedMessages.length > 0) {
+    if (!isSubmissionBusy && !queueProcessingBlocked && queuedMessages.length > 0) {
       const nextMessage = queuedMessages[0];
       LocalMessageStorage.addMessage(nextMessage.content);
       handleSubmit({ msg: nextMessage.content, images: nextMessage.images });
@@ -1557,7 +1569,7 @@ export default function ChatInput({
             onBlur={() => setIsFocused(false)}
             ref={textAreaRef}
             rows={1}
-            readOnly={isRecording}
+            readOnly={isRecording || liveVoiceBlocksSubmission}
             style={{
               minHeight: `${minTextareaHeight}px`,
               maxHeight: `${maxHeight}px`,
@@ -1802,6 +1814,23 @@ export default function ChatInput({
               <TooltipContent>Attach file</TooltipContent>
             </Tooltip>
           </>
+        )}
+
+        {liveVoice && (
+          <LiveVoiceButton
+            availability={liveVoice.availability}
+            phase={liveVoice.phase}
+            muted={liveVoice.muted}
+            activeInAnotherSession={liveVoice.activeInAnotherSession}
+            onStart={() => void liveVoice.start()}
+            onStop={() => void liveVoice.stop()}
+            onToggleMute={liveVoice.toggleMute}
+            composerEmpty={
+              displayValue.trim().length === 0 &&
+              pastedImages.length === 0 &&
+              allDroppedFiles.length === 0
+            }
+          />
         )}
 
         {/* Right: mic — ghost icon, no background when idle */}

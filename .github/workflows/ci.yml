@@ -177,10 +177,10 @@ jobs:
         run: |
           gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
-          cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode
-          cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }}
-          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode -- --skip scenario_tests::scenarios::tests
-          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode --jobs 1 scenario_tests::scenarios::tests
+          cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode,live-voice
+          cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket
+          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,live-voice -- --skip scenario_tests::scenarios::tests
+          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,live-voice --jobs 1 scenario_tests::scenarios::tests
         env:
           RUST_MIN_STACK: 8388608
 
@@ -370,6 +370,10 @@ jobs:
 
       - name: Run Tests
         run: source ../../bin/activate-hermit && pnpm run test:run
+        working-directory: ui/desktop
+
+      - name: Test macOS update manifests
+        run: source ../../bin/activate-hermit && node --test scripts/mac-update-requirements.test.cjs
         working-directory: ui/desktop
 
   desktop-updater-install:

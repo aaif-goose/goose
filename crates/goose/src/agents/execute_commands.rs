@@ -10,6 +10,12 @@ use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
 use super::Agent;
 
+pub fn slash_commands_enabled() -> bool {
+    crate::config::Config::global()
+        .get_param::<bool>("GOOSE_SLASH_COMMANDS_ENABLED")
+        .unwrap_or(true)
+}
+
 pub const COMPACT_TRIGGERS: &[&str] =
     &["/compact", "Please compact this conversation", "/summarize"];
 

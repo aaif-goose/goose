@@ -863,7 +863,6 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use goose::agents::{AgentConfig, SessionConfig};
-        use goose::config::base::Config;
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -960,11 +959,10 @@ mod tests {
         /// - The original tool pairs are marked invisible
         #[tokio::test]
         async fn test_batch_summarization_preserves_all_summaries() -> Result<()> {
-            // Set a low cutoff so we don't need hundreds of tool pairs.
-            // cutoff=2 means we need >2+10=12 visible tool pairs to trigger.
-            Config::global()
-                .set_param("GOOSE_TOOL_CALL_CUTOFF", 2)
-                .unwrap();
+            let _guard = env_lock::lock_env([
+                ("GOOSE_TOOL_PAIR_SUMMARIZATION", Some("true")),
+                ("GOOSE_TOOL_CALL_CUTOFF", Some("2")),
+            ]);
 
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
@@ -1122,9 +1120,6 @@ mod tests {
                 agent_reply_pos,
             );
 
-            // Clean up the config override
-            Config::global().delete("GOOSE_TOOL_CALL_CUTOFF").unwrap();
-
             Ok(())
         }
     }
@@ -1141,7 +1136,7 @@ mod tests {
         use goose::config::GooseMode;
         use goose::session::SessionManager;
 
-        async fn setup_agent_with_extension_manager() -> (Agent, String) {
+        async fn setup_agent_with_extension_manager() -> (Agent, String, tempfile::TempDir) {
             use goose::session::session_manager::SessionType;
 
             // Add the TODO extension to the config so it can be discovered by search_available_extensions
@@ -1198,12 +1193,12 @@ mod tests {
                 .add_extension(ext_config, &session_id)
                 .await
                 .expect("Failed to add extension manager");
-            (agent, session_id)
+            (agent, session_id, temp_dir)
         }
 
         #[tokio::test]
         async fn test_extension_manager_tools_available() {
-            let (agent, session_id) = setup_agent_with_extension_manager().await;
+            let (agent, session_id, _temp_dir) = setup_agent_with_extension_manager().await;
             let tools = agent.list_tools(&session_id, None).await;
 
             // Note: Tool names are prefixed with the normalized extension name "extensionmanager"
