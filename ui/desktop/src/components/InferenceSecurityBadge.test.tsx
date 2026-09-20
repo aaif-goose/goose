@@ -26,6 +26,7 @@ describe('InferenceSecurityBadge', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     rerender(<InferenceSecurityBadge security="attested_tee" />);
     expect(screen.getByRole('button', { name: 'Attested TEE' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Attested TEE' })).toHaveTextContent(/^$/);
     rerender(<InferenceSecurityBadge security={null} />);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });

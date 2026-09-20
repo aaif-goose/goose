@@ -4,7 +4,6 @@ import type {
   CustomProviderReadResponse_unstable,
   ProviderSecretDto,
   ProviderInventoryEntryDto,
-  RefreshProviderInventoryResponse_unstable,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from '@aaif/goose-acp-client';
@@ -123,26 +122,17 @@ export async function acpGetProviderDetails(providerId: string): Promise<Provide
 async function waitForProviderInventoryRefresh(
   client: Awaited<ReturnType<typeof getAcpClient>>,
   providerId: string,
-  refresh: RefreshProviderInventoryResponse_unstable,
   signal?: globalThis.AbortSignal
-): Promise<ProviderDetails> {
-  const shouldWait =
-    refresh.started.includes(providerId) ||
-    refresh.skipped?.some(
-      (skip) => skip.providerId === providerId && skip.reason === 'already_refreshing'
-    );
-
+): Promise<ProviderInventoryEntryDto> {
   let entry: ProviderInventoryEntryDto | undefined;
-  const attempts = shouldWait
-    ? INVENTORY_REFRESH_TIMEOUT_MS / INVENTORY_REFRESH_POLL_INTERVAL_MS
-    : 1;
+  const attempts = INVENTORY_REFRESH_TIMEOUT_MS / INVENTORY_REFRESH_POLL_INTERVAL_MS;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     throwIfAborted(signal);
     const response = await client.goose.providersList_unstable({ providerIds: [providerId] });
     throwIfAborted(signal);
     entry = response.entries.find((candidate) => candidate.providerId === providerId);
     if (!entry) throw new Error(`Unknown provider: ${providerId}`);
-    if (!entry.refreshing) return providerEntryToDetails(entry);
+    if (!entry.refreshing) return entry;
     await waitForInventoryPoll(signal);
   }
 
@@ -184,10 +174,12 @@ export async function acpRefreshProviderDetails(
   }
 
   if (entry.supportsRefresh) {
-    const refresh = await client.goose.providersInventoryRefresh_unstable({
+    await client.goose.providersInventoryRefresh_unstable({
       providerIds: [providerId],
     });
-    const provider = await waitForProviderInventoryRefresh(client, providerId, refresh, signal);
+    const provider = providerEntryToDetails(
+      await waitForProviderInventoryRefresh(client, providerId, signal)
+    );
     return { provider, connectionChecked: true, readinessError: null };
   }
 
@@ -200,8 +192,8 @@ export async function acpRefreshProviderDetails(
 
 export async function acpListProviderModels(providerId: string) {
   const client = await getAcpClient();
-  const { entries } = await client.goose.providersList_unstable({ providerIds: [providerId] });
-  return entries.find((e) => e.providerId === providerId)?.models ?? [];
+  const entry = await waitForProviderInventoryRefresh(client, providerId);
+  return entry.models;
 }
 
 export async function acpListProviderCatalogEntries(
@@ -276,12 +268,12 @@ export async function acpEnableProvider(
 ): Promise<ProviderDetails> {
   const client = await getAcpClient();
   throwIfAborted(signal);
-  const { refresh } = await client.goose.providersConfigSave_unstable({
+  await client.goose.providersConfigSave_unstable({
     providerId,
     fields: [],
   });
   throwIfAborted(signal);
-  return waitForProviderInventoryRefresh(client, providerId, refresh, signal);
+  return providerEntryToDetails(await waitForProviderInventoryRefresh(client, providerId, signal));
 }
 
 export async function acpAuthenticateProvider(providerId: string): Promise<void> {

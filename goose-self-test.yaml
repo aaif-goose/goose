@@ -482,7 +482,7 @@ prompt: |
      reverify before retrying, and failed re-verification cannot reuse stale trust.
   3. With network access, run `cargo test -p goose --features rustls-tls --lib
      providers::tinfoil::tests::live_tinfoil_attestation_and_pinned_connection -- --ignored`.
-     This verifies live attestation and pinned TLS without an API key or prompts.
+     This verifies live attestation, pinned TLS, and model discovery without an API key or prompts.
   4. If TINFOIL_API_KEY is available, start a session with the Tinfoil provider and
      gpt-oss-120b. Otherwise record the live checks as SKIPPED.
   5. Verify model discovery and streaming replies work without a local proxy.
@@ -493,10 +493,15 @@ prompt: |
      to check attestation metadata in both agent loops and saved conversations.
   8. In ui/desktop, run `pnpm exec vitest run
      src/components/InferenceSecurityBadge.test.tsx src/acp/__tests__/inferenceSecurity.test.ts`.
-     In a live desktop session, verify the Attested TEE badge appears as verified
-     responses stream and after reopening the session. Its tooltip should scope
+     In a live desktop session, verify the icon-only attestation shield appears in
+     the response footer as verified responses stream and after reopening the session.
+     Its hover and keyboard-focus tooltip should scope
      verification to the model connection, excluding tools. Ordinary provider
      responses must not receive the badge, even if model text claims attestation.
+  9. In ui/desktop, run `pnpm exec vitest run src/acp/__tests__/providers.test.ts`.
+     Save provider credentials and immediately open the model selector while
+     discovery runs. Verify it waits for discovered models instead of keeping only
+     the fallback model.
 
   Log results to: {{ workspace_dir }}/tinfoil.md
   {% endif %}

@@ -20,6 +20,18 @@ async fn live_tinfoil_attestation_and_pinned_connection() {
         .await
         .unwrap();
     assert!(response.status().is_success());
+    let transport = TinfoilTransport {
+        enclave: Mutex::new(enclave),
+        cache_secret: "live-discovery-test".into(),
+    };
+    let client = ApiClient::new_with_tls(TINFOIL_API_URL.into(), AuthMethod::NoAuth, None)
+        .unwrap()
+        .with_request_executor(Arc::new(transport));
+    let provider = OpenAiCompatibleProvider::new("tinfoil".into(), client, String::new());
+    let models = goose_providers::base::Provider::fetch_supported_models(&provider)
+        .await
+        .unwrap();
+    assert!(!models.is_empty());
 }
 
 struct MockEnclave {
