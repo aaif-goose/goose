@@ -255,3 +255,11 @@ codefromthecrypt:
     github: codefromthecrypt
     x: adrianfcole
     linkedin: adrianfcole
+
+vivekgupta_memcode:
+  name: Vivek Gupta
+  title: Memcode
+  image_url: https://github.com/vivekgupta-memcode.png
+  page: true
+  socials:
+    github: vivekgupta-memcode
