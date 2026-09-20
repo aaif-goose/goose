@@ -103,7 +103,7 @@ Place the plugin under a discovered plugin location, such as `~/.agents/plugins/
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "developer__shell|developer__text_editor",
+        "matcher": "^(shell|edit)$",
         "hooks": [
           {
             "type": "command",
@@ -145,7 +145,7 @@ Use `${PLUGIN_ROOT}` in a command to reference the plugin directory. goose also 
 | `BeforeShellExecution` | Before goose runs a shell command | Shell command |
 | `AfterShellExecution` | After goose successfully runs a shell command | Shell command |
 
-The matcher is a regular expression matched against the most relevant string for the event. For example, use `"\\.rs$"` to match Rust files on `AfterFileEdit`, or `"^(cargo test|pnpm test)"` to match test commands on `AfterShellExecution`. The match is unanchored, so `"developer__shell"` also matches `"developer__shell_foo"`; anchor with `^`/`$` when you need an exact match.
+The matcher is a regular expression matched against the most relevant string for the event. For example, use `"\\.rs$"` to match Rust files on `AfterFileEdit`, or `"^(cargo test|pnpm test)"` to match test commands on `AfterShellExecution`. The match is unanchored, so `"shell"` also matches another extension's `"remote__shell_exec"`; anchor with `^`/`$` when you need an exact match.
 
 :::warning Use `.*`, not `*`, to match everything
 The matcher is a regular expression, not a glob. A bare `"*"` is an invalid regex, so the whole rule is **silently skipped** (goose logs a warning and moves on). To run a rule for every event, either omit `matcher` entirely or use `".*"`.
@@ -184,8 +184,8 @@ Example payload for a tool event:
 {
   "event": "PostToolUse",
   "session_id": "abc-123",
-  "matcher_context": "developer__shell",
-  "tool_name": "developer__shell",
+  "matcher_context": "shell",
+  "tool_name": "shell",
   "tool_input": { "command": "rg TODO" },
   "working_dir": "/Users/you/project"
 }
@@ -227,15 +227,15 @@ echo "goose hook: event=$event tool=$tool" >> "${PLUGIN_ROOT}/hook.log"
 
 ### Tool Input Keys
 
-`tool_name` uses the tool's namespaced name (for example `developer__shell`), and `tool_input` holds that tool's own arguments. The keys are the tool's schema, so they vary by tool—a hook that inspects a file path must read the right field for the tool it matched. The keys for goose's built-in `developer` tools are:
+`tool_name` is the name goose sends to the model, and `tool_input` holds that tool's own arguments. Most extensions namespace their tools as `{extension}__{tool}`, for example `todo__todo_write`. The `developer`, `analyze`, `summon` and `code_execution` extensions are exposed without that prefix, so their tools arrive under their bare name: the shell tool is `shell`, not `developer__shell`. The keys are the tool's schema, so they vary by tool—a hook that inspects a file path must read the right field for the tool it matched. The keys for goose's built-in `developer` tools are:
 
 | `tool_name` | `tool_input` keys |
 |---|---|
-| `developer__shell` | `command`, `timeout_secs` (optional) |
-| `developer__write` | `path`, `content` |
-| `developer__edit` | `path`, `before`, `after` |
-| `developer__tree` | `path`, `depth` |
-| `developer__read_image` | `source`, `crop` (optional) |
+| `shell` | `command`, `timeout_secs` (optional) |
+| `write` | `path`, `content` |
+| `edit` | `path`, `before`, `after` |
+| `tree` | `path`, `depth` |
+| `read_image` | `source`, `crop` (optional) |
 
 For the shell and file tools, `matcher_context` already carries the shell command (on `BeforeShellExecution`/`AfterShellExecution`) or the file path (on `BeforeReadFile`/`AfterFileEdit`), so those hooks can match without parsing `tool_input`.
 
@@ -290,7 +290,7 @@ For a policy you actually depend on, set `on_failure` to `block` on the action. 
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "developer__shell",
+        "matcher": "^shell$",
         "hooks": [
           {
             "type": "command",
@@ -343,7 +343,7 @@ This `PreToolUse` hook blocks any shell command that uses `sudo`:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "developer__shell",
+        "matcher": "^shell$",
         "hooks": [
           {
             "type": "command",
