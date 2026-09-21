@@ -7,7 +7,7 @@
   "base_url": "https://api.deepseek.com",
   "models": [
     {
-      "name": "deepseek-v4-flash",
+      "name": "deepseek-flash",
       "context_limit": 128000,
       "input_token_cost": null,
       "output_token_cost": null,
