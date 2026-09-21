@@ -330,10 +330,10 @@
     "defaultMessage": "Goose 要求使用者輸入前的最大代理回合數"
   },
   "costTracker.costUnavailable": {
-    "defaultMessage": "{model} 無可用的費用資料（輸入 {inputTokens} 個權杖，輸出 {outputTokens} 個權杖）"
+    "defaultMessage": "{model} 無可用的費用資料（輸入 {inputTokens} 個詞元，輸出 {outputTokens} 個詞元）"
   },
   "costTracker.inputOutputTooltip": {
-    "defaultMessage": "輸入：{inputTokens} 個權杖（{inputCost}）｜輸出：{outputTokens} 個權杖（{outputCost}）"
+    "defaultMessage": "輸入：{inputTokens} 個詞元（{inputCost}）｜輸出：{outputTokens} 個詞元（{outputCost}）"
   },
   "costTracker.pricingUnavailable": {
     "defaultMessage": "{model} 無可用的定價資料"
@@ -616,6 +616,9 @@
   },
   "customProviderForm.add": {
     "defaultMessage": "新增"
+  },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "一律為此供應商使用 Toolshim"
   },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic 相容"
@@ -926,6 +929,10 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
+
+
+
+
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "無法更新工作目錄"
   },
@@ -1730,6 +1737,36 @@
   "launcher.placeholder": {
     "defaultMessage": "向 goose 詢問任何問題…"
   },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "與 Goose 進行即時語音對話"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "即時語音"
+  },
   "loadingGoose.compacting": {
     "defaultMessage": "goose 正在壓縮對話…"
   },
@@ -2037,7 +2074,7 @@
     "defaultMessage": "（估算）"
   },
   "messageUsageStats.firstToken": {
-    "defaultMessage": "首個權杖"
+    "defaultMessage": "首個詞元"
   },
   "messageUsageStats.input": {
     "defaultMessage": "輸入"
@@ -2214,10 +2251,10 @@
     "defaultMessage": "防止模型被置換到磁碟"
   },
   "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "最大輸出 token 數"
+    "defaultMessage": "最大輸出詞元數"
   },
   "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "生成 token 的上限"
+    "defaultMessage": "生成詞元的上限"
   },
   "modelSettingsPanel.minP": {
     "defaultMessage": "Min P"
@@ -2241,7 +2278,7 @@
     "defaultMessage": "重複視窗"
   },
   "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "回溯的 token 數"
+    "defaultMessage": "回溯的詞元數"
   },
   "modelSettingsPanel.repetitionPenalty": {
     "defaultMessage": "重複懲罰"
@@ -2577,7 +2614,7 @@
     "defaultMessage": "所使用的提供者與模型"
   },
   "privacyInfoModal.collectSession": {
-    "defaultMessage": "工作階段指標（持續時間、互動次數、權杖用量）"
+    "defaultMessage": "工作階段指標（持續時間、互動次數、詞元用量）"
   },
   "privacyInfoModal.collectVersion": {
     "defaultMessage": "goose 版本與安裝方式"
@@ -3156,7 +3193,7 @@
     "defaultMessage": "尚無已儲存的食譜"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "從聊天儲存的食譜會顯示在這裡。"
+    "defaultMessage": "已儲存的食譜會顯示在這裡。"
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "在新視窗中開啟"
@@ -3693,7 +3730,7 @@
     "defaultMessage": "工作階段 JSON 已複製"
   },
   "sessionActionsHeader.copiedModelInteractions": {
-    "defaultMessage": "Recent model interactions copied"
+    "defaultMessage": "已複製最近的模型互動"
   },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "文字已複製"
@@ -3726,10 +3763,10 @@
     "defaultMessage": "正在載入 JSON…"
   },
   "sessionActionsHeader.modelInteractionsFailed": {
-    "defaultMessage": "Failed to load model interactions: {error}"
+    "defaultMessage": "載入模型互動失敗：{error}"
   },
   "sessionActionsHeader.modelInteractionsTitle": {
-    "defaultMessage": "Recent model interactions"
+    "defaultMessage": "最近的模型互動"
   },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "重新命名工作階段失敗：{error}"
@@ -3756,7 +3793,7 @@
     "defaultMessage": "檢視工作階段 JSON"
   },
   "sessionActionsHeader.viewModelInteractions": {
-    "defaultMessage": "View recent model interactions"
+    "defaultMessage": "檢視最近的模型互動"
   },
   "sessionIndicators.error": {
     "defaultMessage": "工作階段發生錯誤"
@@ -4305,7 +4342,7 @@
     "defaultMessage": "中 - 適度思考"
   },
   "switchModelModal.claudeEnabled": {
-    "defaultMessage": "啟用 - 思考使用固定的權杖預算"
+    "defaultMessage": "啟用 - 思考使用固定的詞元預算"
   },
   "switchModelModal.couldNotContactProvider": {
     "defaultMessage": "無法連絡提供者"
@@ -4371,7 +4408,7 @@
     "defaultMessage": "選擇思考模式"
   },
   "switchModelModal.thinkingBudget": {
-    "defaultMessage": "思考預算（權杖）"
+    "defaultMessage": "思考預算（詞元）"
   },
   "switchModelModal.thinkingEffort": {
     "defaultMessage": "思考用力程度"
@@ -4666,5 +4703,74 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "前往"
+  },
+  "settings.agentLoop.description": {
+    "defaultMessage": "使用以操作為基礎的代理程式迴圈。關閉後將使用舊版迴圈。"
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "自動"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "封鎖上限"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "在內容視窗填滿前摘要對話記錄。"
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "內容壓縮"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "截斷值"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "啟用{operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "失敗逾時"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "可設定的操作"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "停止自主工作，並在繼續前詢問使用者。"
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "最大回合數"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "當設定的成功檢查失敗時，重新執行配方檢查。"
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "重試配方"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "重試逾時"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "辨識 /compact、/skills 和配方捷徑等命令。"
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "斜線命令"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "允許掛鉤阻止完成，同時避免無限停止循環。"
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "停止掛鉤"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "閾值 %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "摘要較早的工具請求和回應以節省內容。留空時自動設定截斷值。"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "工具配對壓縮"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "回合"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "代理程式迴圈"
   }
 }

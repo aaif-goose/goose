@@ -7,10 +7,6 @@ import tailwindPlugin from "./plugins/tailwind-config.cjs";
 
 require("dotenv").config();
 
-const inkeepApiKey = process.env.INKEEP_API_KEY;
-const inkeepIntegrationId = process.env.INKEEP_INTEGRATION_ID;
-const inkeepOrgId = process.env.INKEEP_ORG_ID;
-
 type SidebarItem = {
   type?: string;
   label?: string;
@@ -227,11 +223,19 @@ const config: Config = {
           },
           {
             from: "/docs/guides/multi-model/creating-plans",
-            to: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
           },
           {
             from: "/docs/guides/creating-plans",
-            to: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
+          },
+          {
+            from: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
+          },
+          {
+            from: "/docs/tutorials/plan-feature-devcontainer-setup",
+            to: "/docs/guides/context-engineering",
           },
           {
             from: "/docs/guides/config-file",
@@ -371,6 +375,10 @@ const config: Config = {
             to: "/docs/mcp/repomix-mcp",
           },
           {
+            from: "/docs/mcp/rube-mcp",
+            to: "/docs/getting-started/using-extensions",
+          },
+          {
             from: "/docs/tutorials/selenium-mcp",
             to: "/docs/mcp/selenium-mcp",
           },
@@ -408,7 +416,7 @@ const config: Config = {
           },
           {
             from: "/docs/tutorials/lead-worker",
-            to: "/docs/guides/context-engineering/creating-plans",
+            to: "/docs/guides/context-engineering",
           },
         ],
       },
@@ -421,7 +429,6 @@ const config: Config = {
       },
     ],
   ],
-  themes: ["@inkeep/docusaurus/searchBar"],
   themeConfig: {
     // Replace with your project's social card
     image: "img/home-banner.png",
@@ -551,14 +558,6 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.nightOwl,
-    },
-    inkeepConfig: {
-      baseSettings: {
-        apiKey: inkeepApiKey,
-        integrationId: inkeepIntegrationId,
-        organizationId: inkeepOrgId,
-        primaryBrandColor: "#1E1E1E",
-      },
     },
     announcementBar: {
       id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar

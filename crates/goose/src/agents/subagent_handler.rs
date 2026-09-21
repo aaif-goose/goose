@@ -24,7 +24,6 @@ pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
 #[derive(Serialize)]
 pub struct SubagentPromptContext {
     pub max_turns: usize,
-    pub subagent_id: String,
     pub task_instructions: String,
     pub tool_count: usize,
     pub available_tools: String,
@@ -163,11 +162,15 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             .apply_recipe_components(recipe.response.clone(), true)
             .await?;
 
+        let max_turns = task_config
+            .max_turns
+            .expect("TaskConfig always sets max_turns");
         let subagent_prompt =
-            build_subagent_prompt(&agent, &task_config, &session_id, system_instructions).await?;
+            build_subagent_prompt(&agent, max_turns, &session_id, system_instructions).await?;
         agent.override_system_prompt(subagent_prompt).await;
 
-        let user_message = Message::user().with_text(user_task);
+        let user_message =
+            Message::user().with_text(format!("Subagent ID: {session_id}\n\n{user_task}"));
         let mut conversation = Conversation::new_unvalidated(vec![user_message.clone()]);
 
         agent
@@ -193,7 +196,12 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         let mut stream =
             crate::session_context::with_session_id(Some(session_id.to_string()), async {
                 agent
-                    .reply(user_message, session_config, cancellation_token)
+                    .reply(
+                        user_message,
+                        session_config,
+                        crate::agents::state_machine::enabled(),
+                        cancellation_token,
+                    )
                     .await
             })
             .await
@@ -240,30 +248,25 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
 
 async fn build_subagent_prompt(
     agent: &Agent,
-    task_config: &TaskConfig,
+    max_turns: usize,
     session_id: &str,
     system_instructions: String,
 ) -> Result<String> {
-    let tools: Vec<_> = agent
+    let mut tool_names: Vec<_> = agent
         .list_tools(session_id, None)
         .await
         .into_iter()
         .filter(super::reply_parts::is_tool_visible_to_model)
+        .map(|t| t.name.to_string())
         .collect();
+    tool_names.sort_unstable();
     render_template(
         "subagent_system.md",
         &SubagentPromptContext {
-            max_turns: task_config
-                .max_turns
-                .expect("TaskConfig always sets max_turns"),
-            subagent_id: session_id.to_string(),
+            max_turns,
             task_instructions: system_instructions,
-            tool_count: tools.len(),
-            available_tools: tools
-                .iter()
-                .map(|t| t.name.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
+            tool_count: tool_names.len(),
+            available_tools: tool_names.join(", "),
         },
     )
     .map_err(|e| anyhow!("Failed to render subagent system prompt: {}", e))

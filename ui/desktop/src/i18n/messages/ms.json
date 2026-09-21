@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Tambah"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Sentiasa gunakan Toolshim untuk pembekal ini"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Serasi Anthropic"
   },
@@ -926,6 +929,10 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
+
+
+
+
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal mengemas kini direktori kerja"
   },
@@ -1729,6 +1736,36 @@
   },
   "launcher.placeholder": {
     "defaultMessage": "Tanya goose apa sahaja..."
+  },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Adakan perbualan suara masa nyata dengan Goose"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "Suara langsung"
   },
   "loadingGoose.compacting": {
     "defaultMessage": "goose sedang memadatkan perbualan..."
@@ -3156,7 +3193,7 @@
     "defaultMessage": "Tiada resipi disimpan"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Resipi yang disimpan daripada sembang akan dipaparkan di sini."
+    "defaultMessage": "Resipi yang disimpan akan dipaparkan di sini."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Buka dalam tetingkap baharu"
@@ -3693,7 +3730,7 @@
     "defaultMessage": "JSON sesi disalin"
   },
   "sessionActionsHeader.copiedModelInteractions": {
-    "defaultMessage": "Recent model interactions copied"
+    "defaultMessage": "Interaksi model terkini disalin"
   },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "Teks disalin"
@@ -3726,10 +3763,10 @@
     "defaultMessage": "Memuatkan JSON..."
   },
   "sessionActionsHeader.modelInteractionsFailed": {
-    "defaultMessage": "Failed to load model interactions: {error}"
+    "defaultMessage": "Gagal memuatkan interaksi model: {error}"
   },
   "sessionActionsHeader.modelInteractionsTitle": {
-    "defaultMessage": "Recent model interactions"
+    "defaultMessage": "Interaksi model terkini"
   },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Gagal menamakan semula sesi: {error}"
@@ -3756,7 +3793,7 @@
     "defaultMessage": "Lihat JSON sesi"
   },
   "sessionActionsHeader.viewModelInteractions": {
-    "defaultMessage": "View recent model interactions"
+    "defaultMessage": "Lihat interaksi model terkini"
   },
   "sessionIndicators.error": {
     "defaultMessage": "Sesi mengalami ralat"
@@ -4666,5 +4703,74 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Lawati"
+  },
+  "settings.agentLoop.description": {
+    "defaultMessage": "Gunakan gelung ejen berasaskan operasi. Matikan untuk menggunakan gelung legasi."
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Automatik"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Had sekatan"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Merumuskan sejarah perbualan sebelum tetingkap konteks penuh."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Pemadatan konteks"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Had"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "Dayakan {operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Tamat masa kegagalan"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Operasi boleh dikonfigurasi"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Menghentikan kerja autonomi dan bertanya kepada pengguna sebelum meneruskan."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Giliran maksimum"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Menjalankan semula semakan resipi apabila semakan kejayaan yang dikonfigurasi gagal."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Cuba semula resipi"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Tamat masa cuba semula"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Mengenali perintah seperti /compact, /skills dan pintasan resipi."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Perintah garis miring"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Membolehkan hook menyekat penyiapan sambil menghalang kitaran berhenti tanpa henti."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Hook berhenti"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Ambang %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Merumuskan permintaan dan respons alat lama untuk menjimatkan konteks. Had ditetapkan secara automatik jika dibiarkan kosong."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Pemadatan pasangan alat"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Giliran"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Gelung ejen"
   }
 }

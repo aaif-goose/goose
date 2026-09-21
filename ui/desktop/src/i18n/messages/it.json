@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Aggiungi"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Usa sempre Toolshim per questo provider"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Compatibile con Anthropic"
   },
@@ -926,6 +929,10 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
+
+
+
+
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Impossibile aggiornare la cartella di lavoro"
   },
@@ -1729,6 +1736,36 @@
   },
   "launcher.placeholder": {
     "defaultMessage": "Chiedi qualsiasi cosa a goose..."
+  },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Parla con Goose in tempo reale"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "Voce in tempo reale"
   },
   "loadingGoose.compacting": {
     "defaultMessage": "goose sta compattando la conversazione..."
@@ -3156,7 +3193,7 @@
     "defaultMessage": "Nessuna ricetta salvata"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Le ricette salvate dalle chat verranno visualizzate qui."
+    "defaultMessage": "Le ricette salvate verranno visualizzate qui."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Apri in una nuova finestra"
@@ -3693,7 +3730,7 @@
     "defaultMessage": "JSON della sessione copiato"
   },
   "sessionActionsHeader.copiedModelInteractions": {
-    "defaultMessage": "Recent model interactions copied"
+    "defaultMessage": "Interazioni recenti del modello copiate"
   },
   "sessionActionsHeader.copiedText": {
     "defaultMessage": "Testo copiato"
@@ -3726,10 +3763,10 @@
     "defaultMessage": "Caricamento JSON..."
   },
   "sessionActionsHeader.modelInteractionsFailed": {
-    "defaultMessage": "Failed to load model interactions: {error}"
+    "defaultMessage": "Impossibile caricare le interazioni del modello: {error}"
   },
   "sessionActionsHeader.modelInteractionsTitle": {
-    "defaultMessage": "Recent model interactions"
+    "defaultMessage": "Interazioni recenti del modello"
   },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Impossibile rinominare la sessione: {error}"
@@ -3756,7 +3793,7 @@
     "defaultMessage": "Visualizza JSON della sessione"
   },
   "sessionActionsHeader.viewModelInteractions": {
-    "defaultMessage": "View recent model interactions"
+    "defaultMessage": "Mostra le interazioni recenti del modello"
   },
   "sessionIndicators.error": {
     "defaultMessage": "La sessione ha riscontrato un errore"
@@ -4666,5 +4703,74 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
+  },
+  "settings.agentLoop.description": {
+    "defaultMessage": "Usa il ciclo agente basato sulle operazioni. Disattivalo per usare il ciclo legacy."
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Automatico"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Limite di blocco"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Riassume la cronologia della conversazione prima che la finestra di contesto si riempia."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Compattazione del contesto"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Soglia di taglio"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "Abilita {operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Timeout errore"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Operazioni configurabili"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Interrompe il lavoro autonomo e chiede all’utente prima di continuare."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Numero massimo di turni"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Esegue di nuovo i controlli della ricetta quando un controllo di successo configurato non riesce."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Riprova ricetta"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Timeout nuovo tentativo"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Riconosce comandi come /compact, /skills e le scorciatoie delle ricette."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Comandi slash"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Consente agli hook di bloccare il completamento evitando cicli di arresto infiniti."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Hook di arresto"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Soglia %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Riassume le richieste e le risposte meno recenti degli strumenti per risparmiare contesto. La soglia è automatica se il campo è vuoto."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Compattazione delle coppie di strumenti"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Turni"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Ciclo agente"
   }
 }

@@ -34,6 +34,7 @@ use crate::retry::{
     RetryConfig, DEFAULT_BACKOFF_MULTIPLIER, DEFAULT_INITIAL_RETRY_INTERVAL_MS,
     DEFAULT_MAX_RETRIES, DEFAULT_MAX_RETRY_INTERVAL_MS,
 };
+use crate::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 
 const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
@@ -216,15 +217,19 @@ impl DatabricksV2Provider {
     }
 
     fn route_for_model(model_name: &str) -> DatabricksV2Route {
-        if Self::is_model_service_fqn(model_name) {
-            // UC namespaces are user-defined and cannot select a native API.
-            return DatabricksV2Route::MlflowChatCompletions;
-        }
-        let (clean_name, _) = extract_reasoning_effort(model_name);
+        let is_model_service = Self::is_model_service_fqn(model_name);
+        let routing_name = if is_model_service {
+            model_name.rsplit('.').next().unwrap_or(model_name)
+        } else {
+            model_name
+        };
+        let (clean_name, _) = extract_reasoning_effort(routing_name);
         let lower = clean_name.to_lowercase();
 
         if is_openai_responses_model(&clean_name) || Self::looks_like_gpt5(&lower) {
             DatabricksV2Route::OpenAiResponses
+        } else if is_model_service {
+            DatabricksV2Route::MlflowChatCompletions
         } else if Self::is_claude_model(&lower) {
             DatabricksV2Route::AnthropicMessages
         } else {
@@ -248,6 +253,21 @@ impl DatabricksV2Provider {
 
     fn is_claude_model(model_name: &str) -> bool {
         model_name.contains("claude")
+    }
+
+    fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
+        if !model_config.is_reasoning_model()
+            || !(model_config.is_glm_5_3_reasoning_model()
+                || model_config.is_kimi_k3_reasoning_model())
+        {
+            return None;
+        }
+
+        Some(match model_config.thinking_effort() {
+            Some(ThinkingEffort::Off | ThinkingEffort::Low) => "low",
+            Some(ThinkingEffort::Medium | ThinkingEffort::High) => "high",
+            Some(ThinkingEffort::Max) | None => "max",
+        })
     }
 
     fn name_looks_chat_capable(name: &str) -> bool {
@@ -369,6 +389,9 @@ impl DatabricksV2Provider {
         )?;
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
+        }
+        if let Some(effort) = Self::always_on_reasoning_effort(model_config) {
+            payload["reasoning_effort"] = Value::String(effort.to_string());
         }
         if payload.get("max_tokens").is_none() {
             payload["max_tokens"] = Value::from(model_config.max_output_tokens());
@@ -612,8 +635,46 @@ mod tests {
     use super::*;
 
     #[test]
+    fn always_on_effort_mapping_preserves_supported_values() {
+        for model in [
+            "catalog.schema.goose-glm-5-3",
+            "catalog.schema.goose-kimi-k3",
+        ] {
+            for (effort, expected) in [
+                (None, "max"),
+                (Some(ThinkingEffort::Off), "low"),
+                (Some(ThinkingEffort::Low), "low"),
+                (Some(ThinkingEffort::Medium), "high"),
+                (Some(ThinkingEffort::High), "high"),
+                (Some(ThinkingEffort::Max), "max"),
+            ] {
+                let mut config = ModelConfig::new(model).with_default_thinking_effort(effort);
+                assert_eq!(
+                    DatabricksV2Provider::always_on_reasoning_effort(&config),
+                    Some(expected)
+                );
+                config.reasoning = Some(false);
+                assert_eq!(
+                    DatabricksV2Provider::always_on_reasoning_effort(&config),
+                    None
+                );
+            }
+        }
+        assert_eq!(
+            DatabricksV2Provider::always_on_reasoning_effort(&ModelConfig::new(
+                "catalog.schema.custom"
+            )),
+            None
+        );
+    }
+
+    #[test]
     fn routes_known_model_families() {
-        for model in ["databricks-gpt-5-5", "databricks-gpt5"] {
+        for model in [
+            "databricks-gpt-5-5",
+            "databricks-gpt5",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
+        ] {
             assert_eq!(
                 DatabricksV2Provider::route_for_model(model),
                 DatabricksV2Route::OpenAiResponses,
@@ -631,6 +692,10 @@ mod tests {
 
         assert_eq!(
             DatabricksV2Provider::route_for_model("custom-model"),
+            DatabricksV2Route::MlflowChatCompletions
+        );
+        assert_eq!(
+            DatabricksV2Provider::route_for_model("catalog.schema.claude-alias"),
             DatabricksV2Route::MlflowChatCompletions
         );
     }
@@ -743,7 +808,7 @@ mod tests {
     mod gateway_path {
         use super::*;
         use serde_json::json;
-        use wiremock::matchers::{method, path};
+        use wiremock::matchers::{body_partial_json, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
         fn provider(host: String) -> DatabricksV2Provider {
@@ -830,6 +895,66 @@ mod tests {
                     "error for {input:?} should mention {expected:?}, got: {err}"
                 );
             }
+        }
+
+        #[tokio::test]
+        async fn model_service_gpt_6_uses_responses_route_and_preserves_fqn() {
+            let model = "data_workflow_tools.goose.goose-gpt-6-astra";
+            let completed = format!(
+                r#"data: {{"type":"response.completed","sequence_number":1,"response":{{"id":"resp_1","object":"response","created_at":0,"status":"completed","model":"{model}","output":[],"usage":{{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}}}}"#
+            );
+            let body = format!("{completed}\n\ndata: [DONE]\n\n");
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/openai/v1/responses"))
+                .and(body_partial_json(json!({"model": model})))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("GPT-6 model service should use the Responses API");
+        }
+
+        #[test_case::test_case("catalog.schema.goose-glm-5-3" ; "glm 5.3")]
+        #[test_case::test_case("catalog.schema.goose-kimi-k3" ; "kimi k3")]
+        #[tokio::test]
+        async fn model_service_forwards_reasoning_effort(model: &str) {
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "reasoning_effort": "high"
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(
+                    &ModelConfig::new(model).with_thinking_effort(ThinkingEffort::High),
+                    "system",
+                    &[],
+                    &[],
+                )
+                .await
+                .expect("model service should receive reasoning effort");
         }
 
         #[tokio::test]

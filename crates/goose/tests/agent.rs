@@ -611,7 +611,14 @@ mod tests {
                 retry_config: None,
             };
 
-            let reply_stream = agent.reply(user_message, session_config, None).await?;
+            let reply_stream = agent
+                .reply(
+                    user_message,
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
+                .await?;
             tokio::pin!(reply_stream);
 
             let mut responses = Vec::new();
@@ -804,7 +811,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hello"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -851,7 +863,6 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use goose::agents::{AgentConfig, SessionConfig};
-        use goose::config::base::Config;
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -948,11 +959,10 @@ mod tests {
         /// - The original tool pairs are marked invisible
         #[tokio::test]
         async fn test_batch_summarization_preserves_all_summaries() -> Result<()> {
-            // Set a low cutoff so we don't need hundreds of tool pairs.
-            // cutoff=2 means we need >2+10=12 visible tool pairs to trigger.
-            Config::global()
-                .set_param("GOOSE_TOOL_CALL_CUTOFF", 2)
-                .unwrap();
+            let _guard = env_lock::lock_env([
+                ("GOOSE_TOOL_PAIR_SUMMARIZATION", Some("true")),
+                ("GOOSE_TOOL_CALL_CUTOFF", Some("2")),
+            ]);
 
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
@@ -1020,7 +1030,14 @@ mod tests {
                 retry_config: None,
             };
 
-            let reply_stream = agent.reply(user_message, session_config, None).await?;
+            let reply_stream = agent
+                .reply(
+                    user_message,
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
+                .await?;
             tokio::pin!(reply_stream);
 
             // Drain the stream
@@ -1103,9 +1120,6 @@ mod tests {
                 agent_reply_pos,
             );
 
-            // Clean up the config override
-            Config::global().delete("GOOSE_TOOL_CALL_CUTOFF").unwrap();
-
             Ok(())
         }
     }
@@ -1122,7 +1136,7 @@ mod tests {
         use goose::config::GooseMode;
         use goose::session::SessionManager;
 
-        async fn setup_agent_with_extension_manager() -> (Agent, String) {
+        async fn setup_agent_with_extension_manager() -> (Agent, String, tempfile::TempDir) {
             use goose::session::session_manager::SessionType;
 
             // Add the TODO extension to the config so it can be discovered by search_available_extensions
@@ -1179,12 +1193,12 @@ mod tests {
                 .add_extension(ext_config, &session_id)
                 .await
                 .expect("Failed to add extension manager");
-            (agent, session_id)
+            (agent, session_id, temp_dir)
         }
 
         #[tokio::test]
         async fn test_extension_manager_tools_available() {
-            let (agent, session_id) = setup_agent_with_extension_manager().await;
+            let (agent, session_id, _temp_dir) = setup_agent_with_extension_manager().await;
             let tools = agent.list_tools(&session_id, None).await;
 
             // Note: Tool names are prefixed with the normalized extension name "extensionmanager"
@@ -1384,6 +1398,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Do something then say hello"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1438,6 +1453,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Tell me more"),
                     session_config2,
+                    goose::agents::state_machine::enabled(),
                     Some(cancel_token),
                 )
                 .await?;
@@ -1630,6 +1646,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1831,6 +1848,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1915,19 +1933,23 @@ mod tests {
                 );
                 match call {
                     0 => {
-                        // Chunk 1: reasoning only (no tool calls)
-                        let thinking =
-                            Message::assistant().with_thinking("multi-tool reasoning", "sig_0");
-                        // Chunk 2: two tool calls, no reasoning — the multi-tool bug scenario
+                        let thinking = Message::assistant()
+                            .with_id("msg_multi")
+                            .with_thinking("multi-tool reasoning", "sig_0");
+                        let text = Message::assistant()
+                            .with_id("msg_multi")
+                            .with_text("Calling both tools.");
                         let tc1 = CallToolRequestParams::new("tool_a")
                             .with_arguments(object!({"p": "1"}));
                         let tc2 = CallToolRequestParams::new("tool_b")
                             .with_arguments(object!({"p": "2"}));
                         let tool_msg = Message::assistant()
+                            .with_id("msg_multi")
                             .with_tool_request("call_1", Ok(tc1))
                             .with_tool_request("call_2", Ok(tc2));
                         let stream = futures::stream::iter(vec![
                             Ok((Some(thinking), None)),
+                            Ok((Some(text), None)),
                             Ok((Some(tool_msg), Some(usage))),
                         ]);
                         Ok(Box::pin(stream))
@@ -1992,6 +2014,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use both tools"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2096,14 +2119,11 @@ mod tests {
             Ok(())
         }
 
-        /// Regression for the Anthropic 400: signed thinking arriving in a
-        /// separate chunk before the tool calls must be stored once per
-        /// tool-call message and never as an extra standalone message. When the
-        /// Anthropic formatter serializes the persisted history, each assistant
-        /// turn must carry exactly one thinking block — a duplicate signed block
-        /// is rejected with `thinking blocks ... cannot be modified`.
         #[tokio::test]
-        async fn test_signed_thinking_not_duplicated_for_anthropic() -> Result<()> {
+        async fn test_signed_thinking_leads_text_and_tool_calls_for_anthropic() -> Result<()> {
+            use goose::conversation::{
+                fix_conversation, merge_consecutive_messages_for_request, Conversation,
+            };
             use goose_providers::formats::anthropic::format_messages as anthropic_format;
 
             let temp_dir = tempfile::tempdir()?;
@@ -2144,6 +2164,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use both tools"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2159,38 +2180,49 @@ mod tests {
                 .messages()
                 .to_vec();
 
-            // No standalone thinking-only assistant message should be persisted —
-            // thinking lives on the tool-call messages.
-            let standalone_thinking = messages.iter().any(|m| {
-                m.role == rmcp::model::Role::Assistant
-                    && !m.content.is_empty()
-                    && m.content
-                        .iter()
-                        .all(|c| matches!(c, MessageContent::Thinking(_)))
-            });
+            let first_tool_row = messages
+                .iter()
+                .find(|message| {
+                    message.content.iter().any(
+                        |content| matches!(content, MessageContent::ToolRequest(r) if r.id == "call_1"),
+                    )
+                })
+                .expect("the first tool call is persisted");
+            assert_eq!(first_tool_row.id.as_deref(), Some("msg_multi"));
             assert!(
-                !standalone_thinking,
-                "thinking must not be persisted as a standalone message: {messages:#?}"
+                matches!(
+                    first_tool_row.content.as_slice(),
+                    [
+                        MessageContent::Thinking(_),
+                        MessageContent::Text(_),
+                        MessageContent::ToolRequest(_)
+                    ]
+                ),
+                "the first tool call must share the prefix's row: {:#?}",
+                first_tool_row.content
             );
 
-            // Every serialized Anthropic assistant message must contain at most
-            // one thinking block; a duplicate is what triggers the 400.
-            let spec = anthropic_format(&messages);
-            for msg in &spec {
-                if msg.get("role") == Some(&serde_json::json!("assistant")) {
-                    if let Some(content) = msg.get("content").and_then(|c| c.as_array()) {
-                        let thinking_blocks = content
-                            .iter()
-                            .filter(|c| c.get("type") == Some(&serde_json::json!("thinking")))
-                            .count();
-                        assert!(
-                            thinking_blocks <= 1,
-                            "assistant message has {thinking_blocks} thinking blocks, \
-                             Anthropic rejects duplicates: {msg}"
-                        );
-                    }
-                }
-            }
+            let (fixed, _) = fix_conversation(Conversation::new_unvalidated(messages));
+            let spec = anthropic_format(&merge_consecutive_messages_for_request(
+                fixed.messages().to_vec(),
+            ));
+            let assistant_block_types: Vec<Vec<&str>> = spec
+                .iter()
+                .filter(|msg| msg["role"] == "assistant")
+                .map(|msg| {
+                    msg["content"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|block| block["type"].as_str())
+                        .collect()
+                })
+                .collect();
+            assert_eq!(
+                assistant_block_types,
+                vec![vec!["thinking", "text", "tool_use"], vec!["tool_use"]],
+                "{spec:#?}"
+            );
 
             Ok(())
         }
@@ -2331,7 +2363,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hello"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2410,7 +2447,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hello"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2509,6 +2551,7 @@ mod tests {
                 .reply(
                     Message::user().with_text("/goal make all tests pass"),
                     session_config,
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2570,7 +2613,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("/goal"), session_config, None)
+                .reply(
+                    Message::user().with_text("/goal"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2693,7 +2741,12 @@ mod tests {
                 retry_config: None,
             };
             let stream = agent
-                .reply(Message::user().with_text(text), session_config, None)
+                .reply(
+                    Message::user().with_text(text),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(stream);
             while let Some(event) = stream.next().await {
@@ -3103,6 +3156,7 @@ mod tests {
                         max_turns: Some(3),
                         retry_config: None,
                     },
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -3386,7 +3440,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3570,7 +3629,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
             let mut emitted_steer_id = None;
@@ -3656,6 +3720,7 @@ mod tests {
                         max_turns: Some(3),
                         retry_config: None,
                     },
+                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -3722,7 +3787,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3840,7 +3910,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3929,7 +4004,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3991,7 +4071,12 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
+                .reply(
+                    Message::user().with_text("Hi"),
+                    session_config,
+                    goose::agents::state_machine::enabled(),
+                    None,
+                )
                 .await?;
             tokio::pin!(reply_stream);
 

@@ -648,18 +648,6 @@
     "environmentVariables": []
   },
   {
-    "id": "rube-mcp",
-    "name": "Rube",
-    "description": "Connect with 500+ apps like Slack, Gmail, Notion and more through unified integrations",
-    "type": "streamable-http",
-    "url": "https://rube.app/mcp",
-    "link": "https://rube.app",
-    "installation_notes": "Streamable HTTP extension with OAuth browser authentication to your Rube account.",
-    "is_builtin": false,
-    "endorsed": true,
-    "environmentVariables": []
-  },
-  {
     "id": "selenium-mcp",
     "name": "Selenium",
     "description": "Web browser automation and testing",

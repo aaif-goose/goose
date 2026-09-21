@@ -1,6 +1,6 @@
 [package]
 name = "goose-context-management"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -13,11 +13,11 @@ workspace = true
 
 [features]
 default = []
-rustls-tls = ["goose-providers/rustls-tls"]
-native-tls = ["goose-providers/native-tls"]
+rustls-tls = []
+native-tls = []
 
 [dependencies]
-goose-providers = { version = "0.1.0-alpha.8", path = "../goose-providers", default-features = false }
+goose-provider-types = { version = "0.1.0-alpha.9", path = "../goose-provider-types", default-features = false }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 include_dir = { workspace = true }

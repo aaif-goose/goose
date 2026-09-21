@@ -1,19 +1,37 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Hub from './Hub';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { createSession } from '../sessions';
 import { UserInput } from '../types/message';
+import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
+import { subscribeToAcpRecovery } from '../acp/acpConnection';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 type ChatInputCapture = {
   draftRef?: { current: string };
   handleSubmit: (input: UserInput) => void;
+  liveVoice?: {
+    availability: { status: string; message: string } | null;
+    start: () => Promise<void>;
+  };
+  onNextChatExtensionDraftChange?: (draft: { selectedNames: Set<string> }) => void;
 };
 
 type Session = Awaited<ReturnType<typeof createSession>>;
+
+const liveVoice: LiveVoiceController = {
+  activeSessionId: null,
+  liveVoiceSessionId: null,
+  phase: 'idle',
+  muted: false,
+  start: vi.fn(),
+  stop: vi.fn(),
+  toggleMute: vi.fn(),
+};
 
 const captured = vi.hoisted(() => ({ chatInput: null as ChatInputCapture | null }));
 
@@ -46,6 +64,10 @@ vi.mock('../acp/errors', () => ({ formatAcpError: (error: unknown) => String(err
 
 vi.mock('../toasts', () => ({ toastError: vi.fn() }));
 
+vi.mock('../acp/liveVoice', () => ({ acpGetLiveVoiceAvailability: vi.fn() }));
+
+vi.mock('../acp/acpConnection', () => ({ subscribeToAcpRecovery: vi.fn() }));
+
 const DRAFT = 'a half-written thought';
 const TYPED_WHILE_STARTING = 'and one more thought';
 
@@ -62,10 +84,10 @@ function pendingSession() {
   return settle;
 }
 
-function renderHub(draftRef: { current: string }) {
+function renderHub(draftRef: { current: string }, setView = vi.fn()) {
   return render(
     <IntlTestWrapper>
-      <Hub setView={vi.fn()} draftRef={draftRef} />
+      <Hub setView={setView} draftRef={draftRef} liveVoice={liveVoice} />
     </IntlTestWrapper>
   );
 }
@@ -79,7 +101,71 @@ async function submit() {
 describe('Hub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    liveVoice.activeSessionId = null;
+    liveVoice.liveVoiceSessionId = null;
+    liveVoice.phase = 'idle';
     captured.chatInput = null;
+    vi.mocked(acpGetLiveVoiceAvailability).mockRejectedValue(new Error('ACP unavailable'));
+    vi.mocked(subscribeToAcpRecovery).mockReturnValue(() => undefined);
+  });
+
+  it('requests Live voice availability again after ACP recovers', async () => {
+    let recoveryChanged: ((recovering: boolean) => void) | undefined;
+    const available = { status: 'ready' as const, message: 'Start Live voice' };
+    vi.mocked(acpGetLiveVoiceAvailability)
+      .mockRejectedValueOnce(new Error('ACP disconnected'))
+      .mockResolvedValueOnce(available);
+    vi.mocked(subscribeToAcpRecovery).mockImplementation((listener) => {
+      recoveryChanged = listener;
+      return () => undefined;
+    });
+
+    renderHub({ current: '' });
+    await waitFor(() => expect(acpGetLiveVoiceAvailability).toHaveBeenCalledTimes(1));
+
+    act(() => recoveryChanged?.(true));
+    act(() => recoveryChanged?.(false));
+
+    await waitFor(() => {
+      expect(acpGetLiveVoiceAvailability).toHaveBeenCalledTimes(2);
+      expect(captured.chatInput?.liveVoice?.availability).toEqual(available);
+    });
+  });
+
+  it('returns to the session with the active Live voice interaction', async () => {
+    const setView = vi.fn();
+    liveVoice.activeSessionId = 'session-with-live-voice';
+    renderHub({ current: '' }, setView);
+
+    await act(async () => captured.chatInput?.liveVoice?.start?.());
+
+    expect(setView).toHaveBeenCalledWith('pair', {
+      resumeSessionId: 'session-with-live-voice',
+    });
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it('starts a chat with no extensions when the user cleared the picker', async () => {
+    vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
+    renderHub({ current: '' });
+
+    // Touching the picker is what turns "not specified" into a real choice, and
+    // clearing it is the case the composer already promises in a toast.
+    await act(async () => {
+      captured.chatInput?.onNextChatExtensionDraftChange?.({ selectedNames: new Set() });
+    });
+    await submit();
+
+    expect(createSession).toHaveBeenCalledWith('/tmp/goose', { extensionConfigs: [] });
+  });
+
+  it('leaves the set unspecified when the picker was never touched', async () => {
+    vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
+    renderHub({ current: '' });
+
+    await submit();
+
+    expect(createSession).toHaveBeenCalledWith('/tmp/goose', { allExtensions: [] });
   });
 
   it('hands the draft to the input', () => {

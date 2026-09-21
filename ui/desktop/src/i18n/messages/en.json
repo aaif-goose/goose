@@ -638,6 +638,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Add"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Always use Toolshim for this provider"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic Compatible"
   },
@@ -1750,6 +1753,36 @@
   },
   "launcher.placeholder": {
     "defaultMessage": "Ask goose anything..."
+  },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Have a real-time voice conversation with Goose"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "Live voice"
   },
   "loadingGoose.compacting": {
     "defaultMessage": "goose is compacting the conversation..."
@@ -3204,7 +3237,7 @@
     "defaultMessage": "No saved recipes"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Recipe saved from chats will show up here."
+    "defaultMessage": "Saved recipes will show up here."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Open in new window"
@@ -3968,6 +4001,75 @@
   "sessions.toast.updated": {
     "defaultMessage": "Session description updated successfully"
   },
+  "settings.agentLoop.description": {
+    "defaultMessage": "Use the operation-based agent loop. Turn this off to use the legacy loop."
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Auto"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Block limit"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Summarizes conversation history before the context window fills."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Context compaction"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Cutoff"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "Enable {operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Failure timeout"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Configurable operations"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Stops autonomous work and asks the user before continuing."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Max turns"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Runs recipe checks again when a configured success check fails."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Recipe retry"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Retry timeout"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Recognizes commands such as /compact, /skills, and recipe shortcuts."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Slash commands"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Lets hooks block completion while preventing endless stop cycles."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Stop hooks"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Threshold %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Summarizes older tool requests and responses to save context. The cutoff is automatic when blank."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Tool pair compaction"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Turns"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Agent Loop"
+  },
   "settings.appearance.description": {
     "defaultMessage": "Configure how goose appears on your system"
   },
@@ -4146,7 +4248,7 @@
     "defaultMessage": "Chat"
   },
   "settingsView.tabExternalBackend": {
-    "defaultMessage": "External Backend"
+    "defaultMessage": "Agent"
   },
   "settingsView.tabKeyboard": {
     "defaultMessage": "Keyboard"

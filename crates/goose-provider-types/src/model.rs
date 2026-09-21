@@ -282,7 +282,41 @@ impl ModelConfig {
         self.is_openai_reasoning_model()
             || self.model_name.to_lowercase().contains("claude")
             || Self::is_gemini3_reasoning_model_name(&self.model_name)
+            || self.is_glm_5_3_reasoning_model()
+            || self.is_kimi_k3_reasoning_model()
             || is_xai_reasoning_model(&self.model_name)
+    }
+
+    pub fn is_glm_5_3_reasoning_model(&self) -> bool {
+        let name = self
+            .model_name
+            .splitn(3, '.')
+            .nth(2)
+            .unwrap_or(&self.model_name);
+        let lower = name.to_lowercase();
+        let segments: Vec<_> = lower
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        segments
+            .windows(3)
+            .any(|segments| segments == ["glm", "5", "3"])
+    }
+
+    pub fn is_kimi_k3_reasoning_model(&self) -> bool {
+        let name = self
+            .model_name
+            .splitn(3, '.')
+            .nth(2)
+            .unwrap_or(&self.model_name);
+        let lower = name.to_lowercase();
+        let segments: Vec<_> = lower
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        segments
+            .windows(2)
+            .any(|segments| segments == ["kimi", "k3"])
     }
 
     fn is_gemini3_reasoning_model_name(model_name: &str) -> bool {
@@ -856,6 +890,27 @@ mod tests {
         }
 
         #[test]
+        fn resolves_gpt_6_astra_limits_for_databricks_model_service() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+            let config = ModelConfig::new("data_workflow_tools.goose.goose-gpt-6-astra")
+                .with_canonical_limits("databricks_v2");
+
+            let canonical = crate::canonical::maybe_get_canonical_model(
+                "databricks_v2",
+                "data_workflow_tools.goose.goose-gpt-6-astra",
+            )
+            .expect("GPT-6 Astra should have canonical metadata");
+            assert_eq!(canonical.limit.context, 1_050_000);
+            assert_eq!(canonical.limit.output, Some(128_000));
+            assert_eq!(config.max_tokens, Some(128_000));
+            assert_eq!(config.reasoning, Some(true));
+            assert_eq!(config.supports_vision, Some(true));
+        }
+
+        #[test]
         fn fills_supports_vision_from_canonical_model() {
             let _guard = env_lock::lock_env([
                 ("GOOSE_MAX_TOKENS", None::<&str>),
@@ -946,9 +1001,36 @@ mod tests {
             assert!(ModelConfig::new("o3-mini").is_reasoning_model());
             assert!(ModelConfig::new("claude-sonnet-4").is_reasoning_model());
             assert!(ModelConfig::new("gemini-3-pro").is_reasoning_model());
+            assert!(ModelConfig::new("glm-5.3").is_reasoning_model());
+            assert!(
+                ModelConfig::new("data_workflow_tools.goose.goose-glm-5-3").is_reasoning_model()
+            );
+            assert!(!ModelConfig::new("glm-5.30").is_reasoning_model());
+            assert!(!ModelConfig::new("glm_5_3_models.prod.llama-3").is_reasoning_model());
             assert!(ModelConfig::new("grok-4.5").is_reasoning_model());
             assert!(ModelConfig::new("grok-4.20-0309-reasoning").is_reasoning_model());
             assert!(!ModelConfig::new("grok-4.20-0309-non-reasoning").is_reasoning_model());
+        }
+
+        #[test]
+        fn recognizes_kimi_k3_without_matching_other_versions() {
+            for model in [
+                "kimi-k3",
+                "moonshotai/kimi-k3",
+                "catalog.schema.goose-kimi-k3",
+                "Kimi-K3",
+            ] {
+                assert!(ModelConfig::new(model).is_reasoning_model(), "{model}");
+                let mut config = ModelConfig::new(model);
+                config.reasoning = Some(false);
+                assert!(!config.is_reasoning_model());
+            }
+            for model in ["kimi-k30", "kimi-k2.5", "kimi-k2-thinking", "notkimi-k3"] {
+                assert!(
+                    !ModelConfig::new(model).is_kimi_k3_reasoning_model(),
+                    "{model}"
+                );
+            }
         }
 
         #[test]

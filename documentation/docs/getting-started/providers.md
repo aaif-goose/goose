@@ -91,6 +91,29 @@ goose supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) a
 See the [ACP Providers guide](/docs/guides/acp-providers) for detailed setup instructions.
 :::
 
+### Z.AI Coding Plan
+
+In goose Desktop, open **Settings → Models**, choose **Z.AI Coding Plan**, and
+enter your Coding Plan API key. The model selector discovers available models
+from your Coding Plan endpoint; use **Refresh** to update the list.
+Z.AI may list models that your subscription cannot use; access is checked when
+you send a request.
+
+In the CLI, select **Z.AI Coding Plan** in `goose configure` and supply your Coding Plan API key,
+or set `GOOSE_PROVIDER=zai_coding_plan`, `GOOSE_MODEL=glm-5.3`, and
+`ZAI_CODING_PLAN_API_KEY`. GLM-5.3 and GLM-5.3-Flash are the fallback choices
+when the endpoint does not support model discovery.
+
+This provider uses the dedicated OpenAI-compatible endpoint
+`https://api.z.ai/api/coding/paas/v4`. It enables both `stream` and `tool_stream`
+for streaming requests, including newly discovered models, so tool arguments arrive incrementally, and preserves
+`reasoning_content` across tool-result turns. The existing **Z.AI** provider
+continues to use the Anthropic-compatible endpoint.
+
+See Z.AI's [Coding Plan model availability](https://docs.z.ai/devpack/overview),
+[tool streaming](https://docs.z.ai/guides/capabilities/stream-tool), and
+[thinking preservation](https://docs.z.ai/guides/capabilities/thinking-mode) documentation.
+
 ## Configure Provider and Model
 
 To configure your chosen provider, see available options, or select a model, visit the `Models` tab in goose Desktop or run `goose configure` in the CLI.
@@ -737,7 +760,7 @@ Groq offers several open source models that support tool calling, including:
 - **llama-3.3-70b-versatile** - Meta's Llama 3.3 model for versatile applications
 - **llama-3.1-8b-instant** - Meta's Llama 3.1 model for fast inference
 
-For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/groq.json).
+For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/groq.json).
 
 To set up Groq with goose, follow these steps:
 
@@ -778,7 +801,7 @@ EmpirioLabs offers models that support tool calling, including:
 - **kimi-k2-7-code** - Kimi K2.7 Code with a 256K context window
 - **minimax-m3** - MiniMax M3 with a 524K context window
 
-The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
+The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
 
 To set up EmpirioLabs with goose, follow these steps:
 
@@ -817,7 +840,7 @@ FuturMix offers models that support tool calling, including:
 - **deepseek-chat** - DeepSeek V3 with 131K context
 - **claude-haiku-4-20250514** - Anthropic Claude Haiku 4 with 200K context
 
-For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/futurmix.json).
+For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/futurmix.json).
 
 To set up FuturMix with goose, follow these steps:
 
@@ -856,7 +879,7 @@ Novita AI offers many models that support tool calling, including:
 - **deepseek/deepseek-v3.2** - DeepSeek V3.2 with 164K context
 - **google/gemma-4-31b-it** - Google Gemma 4 31B with 262K context
 
-For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/novita.json).
+For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/novita.json).
 
 To set up Novita AI with goose, follow these steps:
 
@@ -893,7 +916,7 @@ Routstr aggregates models from many upstream providers, including:
 - **deepseek-v4-pro** — DeepSeek V4 Pro
 - **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
 
-`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/routstr.json).
+`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/routstr.json).
 
 To set up Routstr with goose, follow these steps:
 
@@ -1551,7 +1574,6 @@ This method simplifies authentication and enhances security for enterprise envir
 
 Beyond single-model setups, goose supports [multi-model configurations](/docs/guides/multi-model/) that can use different models and providers for specialized tasks:
 
-- **Planning Mode** - Use a dedicated planner model to create detailed project breakdowns before execution
 - **Subagents** - Delegate scoped tasks to isolated sessions to keep your primary workflow focused and efficient
 
 ## Meta Muse Spark Reasoning Effort

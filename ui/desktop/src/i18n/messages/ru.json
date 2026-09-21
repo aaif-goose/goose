@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "Добавить"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Всегда использовать Toolshim для этого провайдера"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Совместимо с Anthropic"
   },
@@ -926,6 +929,10 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
+
+
+
+
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Не удалось обновить рабочий каталог"
   },
@@ -1729,6 +1736,36 @@
   },
   "launcher.placeholder": {
     "defaultMessage": "Спросите goose о чем угодно..."
+  },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Общайтесь с Goose голосом в реальном времени"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "Голосовой режим"
   },
   "loadingGoose.compacting": {
     "defaultMessage": "goose сжимает разговор..."
@@ -3156,7 +3193,7 @@
     "defaultMessage": "Нет сохраненных рецептов"
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "Рецепты, сохраненные из чатов, появятся здесь."
+    "defaultMessage": "Сохраненные рецепты появятся здесь."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "Открыть в новом окне"
@@ -3681,82 +3718,82 @@
     "defaultMessage": "Обнаружение внедрения команд работает лучше всего при подключении к WARP (требуется для доступа к сервису классификации)."
   },
   "sessionActionsHeader.actionsLabel": {
-    "defaultMessage": "Session actions"
+    "defaultMessage": "Действия с сеансом"
   },
   "sessionActionsHeader.cancel": {
-    "defaultMessage": "Cancel"
+    "defaultMessage": "Отмена"
   },
   "sessionActionsHeader.close": {
-    "defaultMessage": "Close"
+    "defaultMessage": "Закрыть"
   },
   "sessionActionsHeader.copiedJson": {
-    "defaultMessage": "Session JSON copied"
+    "defaultMessage": "JSON сеанса скопирован"
   },
   "sessionActionsHeader.copiedModelInteractions": {
-    "defaultMessage": "Recent model interactions copied"
+    "defaultMessage": "Недавние взаимодействия с моделью скопированы"
   },
   "sessionActionsHeader.copiedText": {
-    "defaultMessage": "Text copied"
+    "defaultMessage": "Текст скопирован"
   },
   "sessionActionsHeader.copyJson": {
-    "defaultMessage": "Copy JSON"
+    "defaultMessage": "Копировать JSON"
   },
   "sessionActionsHeader.copyText": {
-    "defaultMessage": "Copy text"
+    "defaultMessage": "Копировать текст"
   },
   "sessionActionsHeader.duplicateFailed": {
-    "defaultMessage": "Failed to duplicate session: {error}"
+    "defaultMessage": "Не удалось дублировать сеанс: {error}"
   },
   "sessionActionsHeader.duplicateSession": {
-    "defaultMessage": "Duplicate session"
+    "defaultMessage": "Дублировать сеанс"
   },
   "sessionActionsHeader.duplicated": {
-    "defaultMessage": "Session duplicated"
+    "defaultMessage": "Сеанс дублирован"
   },
   "sessionActionsHeader.fullTextTitle": {
-    "defaultMessage": "Text value"
+    "defaultMessage": "Текстовое значение"
   },
   "sessionActionsHeader.jsonFailed": {
-    "defaultMessage": "Failed to load session JSON: {error}"
+    "defaultMessage": "Не удалось загрузить JSON сеанса: {error}"
   },
   "sessionActionsHeader.jsonTitle": {
-    "defaultMessage": "Session JSON"
+    "defaultMessage": "JSON сеанса"
   },
   "sessionActionsHeader.loadingJson": {
-    "defaultMessage": "Loading JSON..."
+    "defaultMessage": "Загрузка JSON..."
   },
   "sessionActionsHeader.modelInteractionsFailed": {
-    "defaultMessage": "Failed to load model interactions: {error}"
+    "defaultMessage": "Не удалось загрузить взаимодействия с моделью: {error}"
   },
   "sessionActionsHeader.modelInteractionsTitle": {
-    "defaultMessage": "Recent model interactions"
+    "defaultMessage": "Недавние взаимодействия с моделью"
   },
   "sessionActionsHeader.renameFailed": {
-    "defaultMessage": "Failed to rename session: {error}"
+    "defaultMessage": "Не удалось переименовать сеанс: {error}"
   },
   "sessionActionsHeader.renamePlaceholder": {
-    "defaultMessage": "Enter session name"
+    "defaultMessage": "Введите имя сеанса"
   },
   "sessionActionsHeader.renameSession": {
-    "defaultMessage": "Rename session"
+    "defaultMessage": "Переименовать сеанс"
   },
   "sessionActionsHeader.renameTitle": {
-    "defaultMessage": "Rename Session"
+    "defaultMessage": "Переименовать сеанс"
   },
   "sessionActionsHeader.renamed": {
-    "defaultMessage": "Session renamed"
+    "defaultMessage": "Сеанс переименован"
   },
   "sessionActionsHeader.save": {
-    "defaultMessage": "Save"
+    "defaultMessage": "Сохранить"
   },
   "sessionActionsHeader.saving": {
-    "defaultMessage": "Saving..."
+    "defaultMessage": "Сохранение..."
   },
   "sessionActionsHeader.viewJson": {
-    "defaultMessage": "View session JSON"
+    "defaultMessage": "Показать JSON сеанса"
   },
   "sessionActionsHeader.viewModelInteractions": {
-    "defaultMessage": "View recent model interactions"
+    "defaultMessage": "Показать недавние взаимодействия с моделью"
   },
   "sessionIndicators.error": {
     "defaultMessage": "В сеансе возникла ошибка"
@@ -4666,5 +4703,74 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Перейдите на"
+  },
+  "settings.agentLoop.description": {
+    "defaultMessage": "Использовать цикл агента на основе операций. Отключите, чтобы использовать прежний цикл."
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Автоматически"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Лимит блокировок"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Сводит историю диалога до заполнения контекстного окна."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Сжатие контекста"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Порог отсечения"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "Включить {operation}"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Тайм-аут ошибки"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Настраиваемые операции"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Останавливает автономную работу и запрашивает подтверждение пользователя перед продолжением."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Максимум ходов"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Повторно запускает проверки рецепта, если настроенная проверка успеха завершается неудачно."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Повтор рецепта"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Тайм-аут повтора"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Распознаёт команды, такие как /compact, /skills и ярлыки рецептов."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Слэш-команды"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Позволяет хукам блокировать завершение, предотвращая бесконечные циклы остановки."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Хуки остановки"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Порог %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Сводит старые запросы и ответы инструментов для экономии контекста. Если поле пусто, порог выбирается автоматически."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Сжатие пар инструментов"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Ходы"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Цикл агента"
   }
 }

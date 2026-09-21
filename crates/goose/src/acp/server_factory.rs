@@ -1,5 +1,6 @@
 use crate::acp::server::{
-    AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, GooseAcpAgent, GooseAcpAgentOptions,
+    AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, GooseAcpAgent,
+    GooseAcpAgentOptions, LiveVoiceService,
 };
 use crate::agents::GoosePlatform;
 #[cfg(feature = "scheduler")]
@@ -30,16 +31,20 @@ pub struct AcpServer {
     config: AcpServerFactoryConfig,
     #[cfg(feature = "scheduler")]
     scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
-    active_prompt_runs: ActiveRunRegistry,
+    active_runs: Arc<ActiveRunRegistry>,
+    live_voice: Arc<crate::acp::server::LiveVoiceService>,
 }
 
 impl AcpServer {
     pub fn new(config: AcpServerFactoryConfig) -> Self {
+        let active_runs = Arc::new(ActiveRunRegistry::default());
+        let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
         Self {
             config,
             #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
-            active_prompt_runs: ActiveRunRegistry::default(),
+            active_runs,
+            live_voice,
         }
     }
 
@@ -134,7 +139,8 @@ impl AcpServer {
             scheduler,
             #[cfg(not(feature = "scheduler"))]
             scheduler: None,
-            active_prompt_runs: self.active_prompt_runs.clone(),
+            active_runs: self.active_runs.clone(),
+            live_voice: self.live_voice.clone(),
         })
         .await?;
         info!("Created new ACP agent");
@@ -186,8 +192,7 @@ mod tests {
 
         assert!(
             Arc::ptr_eq(a.active_run_registry(), b.active_run_registry()),
-            "each connection's agent must share one per-session run registry so \
-             the active-run guard holds across roaming connections"
+            "each connection's agent must share one per-session run registry"
         );
     }
 

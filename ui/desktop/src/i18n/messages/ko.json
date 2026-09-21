@@ -617,6 +617,9 @@
   "customProviderForm.add": {
     "defaultMessage": "추가"
   },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "이 제공업체에 항상 Toolshim 사용"
+  },
   "customProviderForm.anthropicCompatible": {
     "defaultMessage": "Anthropic 호환"
   },
@@ -926,6 +929,10 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
+
+
+
+
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
   },
@@ -1729,6 +1736,36 @@
   },
   "launcher.placeholder": {
     "defaultMessage": "goose에게 무엇이든 물어보세요..."
+  },
+  "liveVoice.connecting": {
+    "defaultMessage": "Connecting Live voice"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Clear the message and attachments to use Live voice"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live voice failed. Try again"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Stop Live voice"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Mute microphone"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Return to active Live voice"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Stopping Live voice"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Unmute microphone"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Goose와 실시간으로 음성 대화"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "실시간 음성"
   },
   "loadingGoose.compacting": {
     "defaultMessage": "goose가 대화를 압축하고 있어요..."
@@ -3156,7 +3193,7 @@
     "defaultMessage": "저장된 레시피가 없습니다."
   },
   "recipesView.noSavedRecipesDescription": {
-    "defaultMessage": "채팅에서 저장된 레시피가 여기에 표시됩니다."
+    "defaultMessage": "저장된 레시피가 여기에 표시됩니다."
   },
   "recipesView.openInNewWindow": {
     "defaultMessage": "새 창에서 열기"
@@ -4666,5 +4703,74 @@
   },
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "방문하여"
+  },
+  "settings.agentLoop.description": {
+    "defaultMessage": "작업 기반 에이전트 루프를 사용합니다. 기존 루프를 사용하려면 끄세요."
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "자동"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "차단 한도"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "컨텍스트 창이 가득 차기 전에 대화 기록을 요약합니다."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "컨텍스트 압축"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "컷오프"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "{operation} 사용"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "실패 시간 제한"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "구성 가능한 작업"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "자율 작업을 중지하고 계속하기 전에 사용자에게 묻습니다."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "최대 턴 수"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "구성된 성공 검사가 실패하면 레시피 검사를 다시 실행합니다."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "레시피 재시도"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "재시도 시간 제한"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "/compact, /skills 및 레시피 바로가기와 같은 명령을 인식합니다."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "슬래시 명령"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "무한 중지 순환을 방지하면서 훅이 완료를 차단할 수 있게 합니다."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "중지 훅"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "임계값 %"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "이전 도구 요청과 응답을 요약하여 컨텍스트를 절약합니다. 비워 두면 컷오프가 자동으로 설정됩니다."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "도구 쌍 압축"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "턴"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "에이전트 루프"
   }
 }

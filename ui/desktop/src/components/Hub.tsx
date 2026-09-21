@@ -28,6 +28,10 @@ import {
 import { formatAcpError } from '../acp/errors';
 import { toastError } from '../toasts';
 import { formatClockDisplay } from '../utils/timeUtils';
+import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
+import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
+import { subscribeToAcpRecovery } from '../acp/acpConnection';
+import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -48,16 +52,20 @@ function useClock() {
 export default function Hub({
   setView,
   draftRef,
+  liveVoice,
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
   /** Unsent input of this screen, kept above the route outlet across the unmount. */
   draftRef: RefObject<string>;
+  liveVoice: LiveVoiceController;
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
   const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
   const userSelectedWorkingDirRef = useRef(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [liveVoiceAvailability, setLiveVoiceAvailability] =
+    useState<LiveVoiceAvailabilityResponse_unstable | null>(null);
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -72,6 +80,35 @@ export default function Hub({
     });
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let requestGeneration = 0;
+    const requestAvailability = async () => {
+      const generation = ++requestGeneration;
+      try {
+        const availability = await acpGetLiveVoiceAvailability();
+        if (generation === requestGeneration) {
+          setLiveVoiceAvailability(availability);
+        }
+      } catch {
+        if (generation === requestGeneration) {
+          setLiveVoiceAvailability(null);
+        }
+      }
+    };
+
+    void requestAvailability();
+    const unsubscribe = subscribeToAcpRecovery((recovering) => {
+      if (!recovering) {
+        void requestAvailability();
+      }
+    });
+
+    return () => {
+      requestGeneration += 1;
+      unsubscribe();
     };
   }, []);
 
@@ -103,57 +140,86 @@ export default function Hub({
     setWorkingDir(dir);
   }, []);
 
-  const handleSubmit = async (input: UserInput) => {
-    const { msg: userMessage, images } = input;
-    if (!(images.length > 0 || userMessage.trim()) || isCreatingSession) return;
-
-    const draftAtSubmit = draftRef.current;
+  const createHubSession = async () => {
+    if (isCreatingSession) return null;
     setIsCreatingSession(true);
 
     try {
-      const selectedExtensions = nextChatExtensionDraft
-        ? selectNextChatExtensions(extensionsList, nextChatExtensionDraft)
-        : [];
-      const sessionOptions =
-        selectedExtensions.length > 0
-          ? { extensionConfigs: selectedExtensions }
-          : { allExtensions: extensionsList };
+      // A draft exists only once the user has opened the picker, so its absence is
+      // "not specified" while an empty draft is "start with no extensions".
+      const sessionOptions = nextChatExtensionDraft
+        ? {
+            extensionConfigs: selectNextChatExtensions(extensionsList, nextChatExtensionDraft),
+          }
+        : { allExtensions: extensionsList };
 
       // Resolve the effective directory at submit time: the IPC lookup may still
       // be pending when the user submits, and an explicit pick must win.
       const dir = userSelectedWorkingDirRef.current ? workingDir : await getEffectiveWorkingDir();
       const session = await createSession(dir, sessionOptions);
       setNextChatExtensionDraft(null);
-
-      window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
-      window.dispatchEvent(
-        new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-          detail: { sessionId: session.id, initialMessage: { msg: userMessage, images } },
-        })
-      );
-
-      // The draft is this screen's own, so it is dropped once the session exists.
-      // Comparing it against the value at submit leaves an edit made while the
-      // session was starting alone, including one that emptied the input.
-      if (draftRef.current === draftAtSubmit) {
-        draftRef.current = '';
-      }
-
-      setView('pair', {
-        disableAnimation: true,
-        resumeSessionId: session.id,
-        initialMessage: { msg: userMessage, images },
-      });
+      return session;
     } catch (error) {
       console.error('Failed to create session:', error);
       toastError({ title: "Couldn't start chat", msg: formatAcpError(error) });
       setIsCreatingSession(false);
+      return null;
     }
+  };
+
+  const handleSubmit = async (input: UserInput) => {
+    const { msg: userMessage, images } = input;
+    if (!(images.length > 0 || userMessage.trim())) return;
+
+    const draftAtSubmit = draftRef.current;
+    const session = await createHubSession();
+    if (!session) return;
+
+    window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
+    window.dispatchEvent(
+      new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+        detail: { sessionId: session.id, initialMessage: { msg: userMessage, images } },
+      })
+    );
+
+    // Preserve edits made while the session was being created.
+    if (draftRef.current === draftAtSubmit) {
+      draftRef.current = '';
+    }
+
+    setView('pair', {
+      disableAnimation: true,
+      resumeSessionId: session.id,
+      initialMessage: { msg: userMessage, images },
+    });
+  };
+
+  const handleStartLiveVoice = async () => {
+    if (liveVoice.activeSessionId) {
+      setView('pair', { resumeSessionId: liveVoice.activeSessionId });
+      return;
+    }
+
+    const session = await createHubSession();
+    if (!session) return;
+
+    window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
+    window.dispatchEvent(
+      new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+        detail: { sessionId: session.id },
+      })
+    );
+
+    setView('pair', {
+      disableAnimation: true,
+      resumeSessionId: session.id,
+      startLiveVoice: true,
+    });
   };
 
   return (
     <div className="flex flex-col h-full min-h-0 items-center justify-center px-6 relative">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-3xl">
         <div className="flex items-baseline gap-2 mb-1">
           <span className="text-6xl font-light text-text-primary tracking-tight tabular-nums">
             {time}
@@ -170,6 +236,7 @@ export default function Hub({
             draftRef={draftRef}
             handleSubmit={handleSubmit}
             chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
+            hasActiveRun={false}
             onStop={() => {}}
             initialValue=""
             setView={setView}
@@ -185,6 +252,15 @@ export default function Hub({
             inputRef={inputRef}
             nextChatExtensionDraft={draftForMenu}
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}
+            liveVoice={{
+              availability: isCreatingSession ? null : liveVoiceAvailability,
+              phase: 'idle',
+              muted: false,
+              activeInAnotherSession: liveVoice.activeSessionId !== null,
+              start: handleStartLiveVoice,
+              stop: liveVoice.stop,
+              toggleMute: liveVoice.toggleMute,
+            }}
           />
         </ChatInputCard>
       </div>
