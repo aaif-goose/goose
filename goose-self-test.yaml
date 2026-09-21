@@ -16,6 +16,7 @@ activities:
   - Test delegate tool for task delegation (sync and async)
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
+  - Validate Apple Foundation Models native tool handoff and continuation
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Test error boundaries including nested delegation prevention
@@ -26,7 +27,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, apple-foundation-models, acp-effort, advanced"
 
   - key: test_depth
     input_type: string
@@ -352,6 +353,35 @@ prompt: |
   Each delegate runs independently but the tasks are sequentially dependent.
 
   Log results to: {{ workspace_dir }}/phase3_delegation.md
+  {% endif %}
+
+  {% if test_phases == "all" or "apple-foundation-models" in test_phases %}
+  ## Apple Foundation Models Provider
+
+  **Prerequisites**: macOS 27, Apple Intelligence enabled, a build with the
+  default-enabled `apple-foundation-models` feature, provider `apple-foundation-models`, model `system`.
+  On older macOS versions, confirm goose still launches and the provider is absent
+  from both CLI configuration and desktop provider setup/model selection. An
+  explicit request for the provider must also fail without loading the model.
+  Record SKIPPED if these are unavailable. Do not switch to a cloud model.
+
+  1. Run a short conversation, then ask a follow-up that depends on the first answer.
+  2. Read two small text files using developer tools. Confirm the tool requests are
+     visible to goose and each result is returned exactly once before the answer.
+  3. In approve mode, deny a tool request. Confirm the tool does not execute and
+     the model receives the denial through the normal goose tool result.
+  4. Cancel a generation and confirm the next request works.
+  5. Repeat with `GOOSE_STATE_MACHINE=1` and `GOOSE_STATE_MACHINE=0` in separate runs.
+     Both must retain goose's approval and tool-execution behavior.
+  6. Verify oversized history reports a context-length error and image input
+     reports the prototype's text-only limitation.
+  7. Enable developer and summon together and verify a greeting succeeds. In chat
+     mode, request a summon tool call with nested arbitrary recipe parameters;
+     confirm goose sees ordinary JSON arguments, skips execution, and can resume
+     after the skipped result. Test both agent loops.
+
+  Keep the enabled tool set small enough to fit the system model's context.
+  Log results to: {{ workspace_dir }}/apple_foundation_models.md
   {% endif %}
 
   {% if test_phases == "all" or "vision" in test_phases %}

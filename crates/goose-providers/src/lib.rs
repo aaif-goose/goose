@@ -1,3 +1,5 @@
+#[cfg(feature = "apple-foundation-models")]
+pub mod apple_foundation_models;
 #[cfg(all(
     feature = "live-websocket",
     not(any(feature = "rustls-tls", feature = "native-tls"))

@@ -32,6 +32,7 @@ native-tls = [
     "rmcp/reqwest-native-tls",
     "tokio-tungstenite?/native-tls",
 ]
+apple-foundation-models = ["dep:goose-apple-foundation-models", "goose-apple-foundation-models/native", "dep:jsonschema"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -59,6 +60,8 @@ pem = { version = "4.0.0", default-features = false, features = ["std"], optiona
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
 sec1 = { version = "0.8", default-features = false, features = ["der", "std"], optional = true }
 include_dir = { workspace = true }
+goose-apple-foundation-models = { version = "0.1.0", path = "../goose-apple-foundation-models", optional = true }
+jsonschema = { version = "0.55", default-features = false, optional = true }
 
 [dev-dependencies]
 test-case = { workspace = true }

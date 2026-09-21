@@ -5323,6 +5323,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "goose-apple-foundation-models"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "goose-cli"
 version = "1.51.0"
 dependencies = [
@@ -5517,10 +5527,12 @@ dependencies = [
  "env-lock",
  "flate2",
  "futures",
+ "goose-apple-foundation-models",
  "goose-local-inference",
  "goose-provider-types",
  "http 1.5.0",
  "include_dir",
+ "jsonschema",
  "pem 4.0.0",
  "pkcs8 0.11.0",
  "reqwest 0.13.5",

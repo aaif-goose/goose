@@ -1,5 +1,7 @@
 mod acp_tooling;
 pub mod amp_acp;
+#[cfg(feature = "apple-foundation-models")]
+pub mod apple_foundation_models;
 pub mod anthropic {
     pub use goose_providers::anthropic::*;
 }

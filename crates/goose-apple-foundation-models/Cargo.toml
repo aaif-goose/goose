@@ -1,0 +1,25 @@
+[package]
+name = "goose-apple-foundation-models"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "In-process, single-turn Rust bindings for Apple's on-device Foundation Models"
+
+[features]
+default = []
+native = []
+
+[[example]]
+name = "availability"
+required-features = ["native"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }

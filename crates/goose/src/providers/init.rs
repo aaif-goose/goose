@@ -69,6 +69,11 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             true,
             Some(registrations::anthropic_inventory()),
         );
+        #[cfg(all(feature = "apple-foundation-models", target_os = "macos"))]
+        if super::apple_foundation_models::AppleFoundationModelsProvider::is_supported() {
+            registry
+                .register::<super::apple_foundation_models::AppleFoundationModelsProvider>(false);
+        }
         registry.register::<AvianProvider>(false);
         registry.register::<AzureProvider>(false);
         registry.register_with_inventory::<AzureFoundryProviderDef>(
@@ -313,6 +318,32 @@ mod tests {
     use super::*;
     use crate::config::paths::Paths;
     use std::fs;
+
+    #[cfg(feature = "apple-foundation-models")]
+    #[tokio::test]
+    async fn test_apple_foundation_models_selection_requires_supported_os() {
+        use super::super::apple_foundation_models::AppleFoundationModelsProvider;
+        use goose_providers::apple_foundation_models::PROVIDER_NAME;
+
+        let supported = AppleFoundationModelsProvider::is_supported();
+        let metadata = providers().await;
+        assert_eq!(
+            metadata
+                .iter()
+                .any(|(provider, _)| provider.name == PROVIDER_NAME),
+            supported,
+        );
+        let catalog = goose_providers::canonical::catalog::get_setup_catalog_entries(
+            metadata.into_iter().map(|(provider, _)| provider),
+        );
+        assert_eq!(
+            catalog
+                .iter()
+                .any(|entry| entry.provider_id == PROVIDER_NAME),
+            supported,
+        );
+        assert_eq!(get_from_registry(PROVIDER_NAME).await.is_ok(), supported);
+    }
 
     #[tokio::test]
     async fn test_huggingface_provider_registry_wiring() {

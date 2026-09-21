@@ -9,6 +9,7 @@ repository.workspace = true
 description.workspace = true
 
 [features]
+apple-foundation-models = ["goose-providers/apple-foundation-models"]
 default = []
 telemetry = []
 otel = [
