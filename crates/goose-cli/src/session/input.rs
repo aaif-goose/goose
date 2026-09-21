@@ -31,6 +31,14 @@ pub enum InputResult {
     Edit(Option<String>),
     ListSkills,
     LoadSkills(Vec<String>),
+    SecretsCommand(SecretsCommandAction),
+}
+
+#[derive(Debug)]
+pub enum SecretsCommandAction {
+    List,
+    Delete(String),
+    Add(Vec<(String, String)>),
 }
 
 #[derive(Debug)]
@@ -236,6 +244,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_EDIT: &str = "/edit";
     const CMD_EDIT_WITH_SPACE: &str = "/edit ";
     const CMD_SKILLS: &str = "/skills";
+    const CMD_SECRETS: &str = "/secrets";
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
@@ -339,6 +348,10 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             Some(InputResult::Compact)
         }
         "/r" => Some(InputResult::ToggleFullToolOutput),
+        s if s == CMD_SECRETS || s.starts_with(&format!("{CMD_SECRETS} ")) => {
+            let args = s.get(CMD_SECRETS.len()..).unwrap_or("").trim();
+            parse_secrets_command(args)
+        }
         s if s == CMD_EDIT => Some(InputResult::Edit(None)),
         s if s.starts_with(CMD_EDIT_WITH_SPACE) => {
             let prefill = s
@@ -408,6 +421,43 @@ fn parse_prompt_command(args: &str) -> Option<InputResult> {
     Some(InputResult::PromptCommand(options))
 }
 
+fn parse_secrets_command(args: &str) -> Option<InputResult> {
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    match parts.first().copied() {
+        None | Some("list") => Some(InputResult::SecretsCommand(SecretsCommandAction::List)),
+        Some("delete") => {
+            let name = parts.get(1)?;
+            Some(InputResult::SecretsCommand(SecretsCommandAction::Delete(
+                name.to_string(),
+            )))
+        }
+        Some("add") => {
+            let key_descs: Vec<(String, String)> = parts[1..]
+                .iter()
+                .filter_map(|arg| {
+                    arg.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                })
+                .collect();
+            if key_descs.is_empty() {
+                println!("Usage: /secrets add KEY_NAME=description [KEY_NAME=description ...]");
+                Some(InputResult::Retry)
+            } else {
+                Some(InputResult::SecretsCommand(SecretsCommandAction::Add(
+                    key_descs,
+                )))
+            }
+        }
+        Some(unknown) => {
+            println!(
+                "Unknown secrets subcommand: {unknown}\n\
+                 Usage: /secrets [list | delete <name> | add <KEY=description> ...]"
+            );
+            Some(InputResult::Retry)
+        }
+    }
+}
+
 fn help_text() -> String {
     let modes = GooseMode::VARIANTS.join(", ");
     let newline_key = get_newline_key().to_ascii_uppercase();
@@ -435,6 +485,10 @@ fn help_text() -> String {
 {additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
+/secrets - List stored secrets, delete a secret, or add new ones via secure editor
+         /secrets list - Show stored secret names (values are never displayed)
+         /secrets delete <name> - Remove a stored secret
+         /secrets add <NAME=description> [...] - Open editor to securely input secret values
 /skills - List available skills or enable skills by name (usage: /skills [<name>...])
 /? or /help - Display this help message
 /clear - Clears the current chat history
