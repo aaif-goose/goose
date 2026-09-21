@@ -82,6 +82,22 @@ impl Default for ImageTool {
     }
 }
 
+/// Load an image source into an `image` content block plus a one-line summary,
+/// with the same format support, size cap, and optional crop as the `image` tool.
+pub async fn load_image_content(
+    source: &str,
+    crop: Option<CropParams>,
+    working_dir: Option<&Path>,
+) -> Result<(ContentBlock, String), String> {
+    let params = ImageReadParams {
+        source: source.to_string(),
+        crop,
+    };
+    let loaded = load_image(&params, working_dir).await?;
+    let summary = loaded.summary(source);
+    Ok((ContentBlock::image(loaded.data, loaded.mime_type), summary))
+}
+
 #[derive(Debug)]
 struct LoadedImage {
     data: String,

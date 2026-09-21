@@ -6,6 +6,7 @@ pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+pub mod python_session;
 pub mod scheduler;
 pub mod summarize;
 pub mod summon;
@@ -194,6 +195,22 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
         );
 
         map.insert(
+            python_session::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: python_session::EXTENSION_NAME,
+                display_name: "Python Session",
+                description:
+                    "Context as variables: a persistent Python runtime where data stays in variables instead of the conversation, surviving compaction and restarts. Replaces the Developer tools while enabled.",
+                default_enabled: false,
+                unprefixed_tools: true,
+                hidden: false,
+                client_factory: |ctx| {
+                    Some(Box::new(python_session::PythonSessionClient::new(ctx).unwrap()))
+                },
+            },
+        );
+
+        map.insert(
             tom::EXTENSION_NAME,
             PlatformExtensionDef {
                 name: tom::EXTENSION_NAME,
@@ -303,4 +320,50 @@ pub struct PlatformExtensionDef {
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
     pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>>,
+}
+
+/// Python Session owns the shell while it is on, so the two cannot be loaded together.
+const REPLACEMENTS: &[(&str, &str)] =
+    &[(python_session::EXTENSION_NAME, developer::EXTENSION_NAME)];
+
+/// The extension that `key` replaces while it is enabled.
+pub fn replaces(key: &str) -> Option<&'static str> {
+    REPLACEMENTS
+        .iter()
+        .find(|(replacement, _)| *replacement == key)
+        .map(|(_, replaced)| *replaced)
+}
+
+/// The extension that takes over from `key` while it is enabled.
+pub fn replaced_by(key: &str) -> Option<&'static str> {
+    REPLACEMENTS
+        .iter()
+        .find(|(_, replaced)| *replaced == key)
+        .map(|(replacement, _)| *replacement)
+}
+
+/// The enabled-state change that setting `key` to `enabled` implies for its counterpart.
+pub fn companion_toggle(key: &str, enabled: bool) -> Option<(&'static str, bool)> {
+    if let Some(replaced) = replaces(key) {
+        return Some((replaced, !enabled));
+    }
+    if enabled {
+        return replaced_by(key).map(|replacement| (replacement, false));
+    }
+    None
+}
+
+/// Drops extensions that another extension in the same batch replaces, so
+/// concurrent loading cannot end up with both.
+pub fn without_replaced(
+    extensions: Vec<crate::agents::extension::ExtensionConfig>,
+) -> Vec<crate::agents::extension::ExtensionConfig> {
+    let keys: Vec<String> = extensions.iter().map(|config| config.key()).collect();
+    extensions
+        .into_iter()
+        .filter(|config| {
+            replaced_by(&config.key())
+                .is_none_or(|replacement| !keys.iter().any(|key| key == replacement))
+        })
+        .collect()
 }

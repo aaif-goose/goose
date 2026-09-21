@@ -27,7 +27,7 @@ use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
     FINAL_OUTPUT_TOOL_NAME,
 };
-use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
+use crate::agents::platform_extensions::{self, MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE};
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
@@ -1281,7 +1281,7 @@ impl Agent {
 
         let session_id = session.id.clone();
 
-        let extension_futures = enabled_configs
+        let extension_futures = platform_extensions::without_replaced(enabled_configs)
             .into_iter()
             .map(|config| {
                 let config_clone = config.clone();
@@ -1387,7 +1387,7 @@ impl Agent {
         };
         let container = self.container.lock().await.clone();
 
-        let extension_futures = extensions
+        let extension_futures = platform_extensions::without_replaced(extensions)
             .into_iter()
             .map(|config| {
                 let ext_manager = Arc::clone(&self.extension_manager);

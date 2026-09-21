@@ -197,6 +197,12 @@ prompt: |
   2. Update todos and confirm changes are retained
   3. Clear todos and verify clean state
 
+  ### Python Session Extension Testing (Built-in)
+  1. Enable `python_session` with platform__manage_extensions and confirm the `python` tool is available while the developer tools (shell, text_editor) are not
+  2. Run a cell that assigns a large value and echoes its size, e.g. `data = list(range(100_000)); len(data)`, and confirm `=> 100000`
+  3. In a second cell reuse the variable without recomputing it, e.g. `sum(data[:10])`, and confirm `=> 45`
+  4. Disable `python_session` and confirm the developer tools are available again
+
   ### Dynamic Extension Management
   1. Use platform__search_available_extensions to discover available extensions
   2. Document all available extensions

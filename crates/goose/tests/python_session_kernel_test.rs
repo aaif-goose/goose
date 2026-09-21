@@ -1,0 +1,148 @@
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use goose::agents::platform_extensions::python_session::kernel::{ExecOutcome, Kernel, KernelSpec};
+use tokio_util::sync::CancellationToken;
+
+fn python_available() -> bool {
+    std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+macro_rules! require_python {
+    () => {
+        if !python_available() {
+            eprintln!("skipping: python3 not available");
+            return;
+        }
+    };
+}
+
+fn spec(working_dir: &Path, state_path: Option<&Path>) -> KernelSpec {
+    KernelSpec {
+        python: PathBuf::from("python3"),
+        working_dir: working_dir.to_path_buf(),
+        state_path: state_path.map(Path::to_path_buf),
+        env: Vec::new(),
+    }
+}
+
+async fn spawn_kernel() -> Kernel {
+    Kernel::spawn(&spec(&std::env::temp_dir(), None))
+        .await
+        .expect("kernel should spawn")
+}
+
+async fn exec(kernel: &mut Kernel, code: &str) -> ExecOutcome {
+    kernel
+        .exec(code, Duration::from_secs(30), CancellationToken::new())
+        .await
+        .expect("exec should not kill the kernel")
+}
+
+#[tokio::test]
+async fn namespace_persists_across_cells() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    let outcome = exec(&mut kernel, "data = list(range(1000))\nlen(data)").await;
+    assert_eq!(outcome.value.as_deref(), Some("1000"));
+    assert!(outcome.error.is_none());
+
+    let outcome = exec(&mut kernel, "sum(data[:10])").await;
+    assert_eq!(outcome.value.as_deref(), Some("45"));
+
+    let listing = kernel
+        .namespace(Duration::from_secs(5))
+        .await
+        .expect("namespace probe");
+    assert!(listing.contains("data: list len=1000"), "got: {listing}");
+}
+
+#[tokio::test]
+async fn output_is_capped_with_marker() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    let outcome = exec(&mut kernel, "print('x' * 100_000)").await;
+    assert!(
+        outcome.stdout.len() < 20_000,
+        "len: {}",
+        outcome.stdout.len()
+    );
+    assert!(outcome.stdout.contains("output truncated"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn timeout_interrupts_cell_but_keeps_namespace() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    exec(&mut kernel, "marker = 'alive'").await;
+    let outcome = kernel
+        .exec(
+            "import time\ntime.sleep(60)",
+            Duration::from_secs(1),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("interrupt should not kill the kernel");
+    assert!(outcome.interrupted);
+    assert!(outcome
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("KeyboardInterrupt"));
+
+    let outcome = exec(&mut kernel, "marker").await;
+    assert_eq!(outcome.value.as_deref(), Some("'alive'"));
+}
+
+#[tokio::test]
+async fn kernel_death_is_reported_as_error() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    let result = kernel
+        .exec(
+            "import os\nos._exit(9)",
+            Duration::from_secs(5),
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(result.is_err(), "exec against a dead kernel must error");
+}
+
+#[tokio::test]
+async fn namespace_survives_process_restart_via_state_snapshot() {
+    require_python!();
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.pkl");
+    let spec = spec(dir.path(), Some(&state));
+
+    let mut kernel = Kernel::spawn(&spec).await.expect("kernel should spawn");
+    assert!(kernel.restored_names().is_empty());
+    exec(
+        &mut kernel,
+        "totals = {'a': 1, 'b': 2}\nimport socket\nsock = socket.socket()",
+    )
+    .await;
+    kernel.kill();
+
+    let mut revived = Kernel::spawn(&spec).await.expect("kernel should respawn");
+    assert!(
+        revived.restored_names().contains(&"totals".to_string()),
+        "picklable variable should be restored, got: {:?}",
+        revived.restored_names()
+    );
+    assert!(
+        !revived.restored_names().contains(&"sock".to_string()),
+        "unpicklable variable must be skipped, not fail the snapshot"
+    );
+    let outcome = exec(&mut revived, "totals['b']").await;
+    assert_eq!(outcome.value.as_deref(), Some("2"));
+}

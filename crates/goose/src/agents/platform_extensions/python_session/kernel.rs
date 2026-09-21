@@ -1,0 +1,294 @@
+use anyhow::{anyhow, Context, Result};
+use serde::Deserialize;
+use serde_json::json;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio_util::sync::CancellationToken;
+
+const DRIVER_SOURCE: &str = include_str!("driver.py");
+const READY_TIMEOUT: Duration = Duration::from_secs(15);
+const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
+const STDERR_TAIL_CHARS: usize = 4096;
+
+pub struct KernelSpec {
+    pub python: PathBuf,
+    pub working_dir: PathBuf,
+    pub state_path: Option<PathBuf>,
+    pub env: Vec<(&'static str, String)>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DriverResponse {
+    id: i64,
+    #[serde(default)]
+    ok: bool,
+    #[serde(default)]
+    stdout: String,
+    #[serde(default)]
+    stderr: String,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    duration_ms: Option<u64>,
+    #[serde(default)]
+    ns: Option<String>,
+    #[serde(default)]
+    restored: Vec<String>,
+    #[serde(default)]
+    images: Vec<ImageRequest>,
+}
+
+/// An image the cell asked to show the model via `view_image()`; the host loads
+/// the pixels after the cell returns.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImageRequest {
+    pub source: String,
+    #[serde(default)]
+    pub crop: Option<ImageCrop>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImageCrop {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug)]
+pub struct ExecOutcome {
+    pub stdout: String,
+    pub stderr: String,
+    pub value: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub interrupted: bool,
+    pub images: Vec<ImageRequest>,
+}
+
+pub struct Kernel {
+    child: Child,
+    stdin: ChildStdin,
+    lines: Lines<BufReader<ChildStdout>>,
+    next_id: i64,
+    stderr_tail: Arc<Mutex<String>>,
+    restored_names: Vec<String>,
+    _driver_file: tempfile::NamedTempFile,
+}
+
+impl Kernel {
+    pub async fn spawn(spec: &KernelSpec) -> Result<Self> {
+        let driver_file = tempfile::Builder::new()
+            .prefix("goose-python-session-")
+            .suffix(".py")
+            .tempfile()
+            .context("failed to write the python session driver to a temporary file")?;
+        std::fs::write(driver_file.path(), DRIVER_SOURCE)?;
+
+        let mut command = Command::new(&spec.python);
+        command
+            .arg(driver_file.path())
+            .current_dir(&spec.working_dir)
+            .envs(spec.env.iter().cloned())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        if let Some(path) = &spec.state_path {
+            command.env("GOOSE_PYTHON_SESSION_STATE_PATH", path);
+        }
+        #[cfg(unix)]
+        command.process_group(0);
+
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "failed to start the python session with `{}`",
+                spec.python.display()
+            )
+        })?;
+
+        let stdin = child.stdin.take().expect("stdin was piped");
+        let stdout = child.stdout.take().expect("stdout was piped");
+        let stderr = child.stderr.take().expect("stderr was piped");
+
+        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let tail = stderr_tail.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut tail = tail.lock().unwrap();
+                tail.push_str(&line);
+                tail.push('\n');
+                if tail.len() > STDERR_TAIL_CHARS {
+                    let cut = tail.len() - STDERR_TAIL_CHARS;
+                    let cut = tail
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .find(|&i| i >= cut)
+                        .unwrap_or(0);
+                    tail.drain(..cut);
+                }
+            }
+        });
+
+        let mut kernel = Self {
+            child,
+            stdin,
+            lines: BufReader::new(stdout).lines(),
+            next_id: 1,
+            stderr_tail,
+            restored_names: Vec::new(),
+            _driver_file: driver_file,
+        };
+
+        let ready = tokio::time::timeout(READY_TIMEOUT, kernel.read_response(0))
+            .await
+            .map_err(|_| anyhow!("the python session did not become ready within 15s"))?
+            .with_context(|| kernel.death_context("during startup"))?;
+        if !ready.ok {
+            return Err(anyhow!(
+                "the python session failed to start: {}",
+                ready.error.unwrap_or_default()
+            ));
+        }
+        kernel.restored_names = ready.restored;
+        Ok(kernel)
+    }
+
+    pub fn restored_names(&self) -> &[String] {
+        &self.restored_names
+    }
+
+    pub async fn exec(
+        &mut self,
+        code: &str,
+        timeout: Duration,
+        cancellation: CancellationToken,
+    ) -> Result<ExecOutcome> {
+        let id = self.request(json!({"op": "exec", "code": code})).await?;
+
+        let waited = {
+            let read = self.read_response(id);
+            tokio::pin!(read);
+            tokio::select! {
+                response = &mut read => Some(response),
+                _ = tokio::time::sleep(timeout) => None,
+                _ = cancellation.cancelled() => None,
+            }
+        };
+
+        let (response, interrupted) = match waited {
+            Some(response) => (response, false),
+            None => {
+                self.interrupt();
+                let response = tokio::time::timeout(INTERRUPT_GRACE, self.read_response(id))
+                    .await
+                    .map_err(|_| {
+                        anyhow!(
+                            "cell did not stop within {}s of interrupt",
+                            INTERRUPT_GRACE.as_secs()
+                        )
+                    })?;
+                (response, true)
+            }
+        };
+
+        let response = response.with_context(|| self.death_context("while executing a cell"))?;
+        Ok(ExecOutcome {
+            stdout: response.stdout,
+            stderr: response.stderr,
+            value: response.value,
+            error: response.error,
+            duration_ms: response.duration_ms,
+            interrupted,
+            images: response.images,
+        })
+    }
+
+    pub async fn namespace(&mut self, timeout: Duration) -> Result<String> {
+        let id = self.request(json!({"op": "ns"})).await?;
+        let response = tokio::time::timeout(timeout, self.read_response(id))
+            .await
+            .map_err(|_| anyhow!("namespace probe timed out"))??;
+        Ok(response.ns.unwrap_or_default())
+    }
+
+    pub async fn chdir(&mut self, dir: &Path, timeout: Duration) -> Result<()> {
+        let code = format!(
+            "import os\nos.chdir({})",
+            serde_json::to_string(&dir.to_string_lossy())?
+        );
+        let outcome = self.exec(&code, timeout, CancellationToken::new()).await?;
+        match outcome.error {
+            Some(error) => Err(anyhow!(error)),
+            None => Ok(()),
+        }
+    }
+
+    pub fn kill(&mut self) {
+        let _ = self.child.start_kill();
+    }
+
+    async fn request(&mut self, mut payload: serde_json::Value) -> Result<i64> {
+        let id = self.next_id;
+        self.next_id += 1;
+        payload["id"] = json!(id);
+        let mut line = payload.to_string();
+        line.push('\n');
+        self.stdin
+            .write_all(line.as_bytes())
+            .await
+            .with_context(|| self.death_context("while sending a request"))?;
+        Ok(id)
+    }
+
+    async fn read_response(&mut self, id: i64) -> Result<DriverResponse> {
+        loop {
+            let line = self
+                .lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow!("the python session closed its output stream"))?;
+            match serde_json::from_str::<DriverResponse>(&line) {
+                Ok(response) if response.id == id => return Ok(response),
+                Ok(stale) => {
+                    tracing::warn!(got = stale.id, want = id, "skipping stale kernel response")
+                }
+                Err(_) => tracing::warn!("skipping non-protocol kernel output line"),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn interrupt(&self) {
+        if let Some(pid) = self.child.id() {
+            unsafe {
+                libc::kill(pid as i32, libc::SIGINT);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn interrupt(&mut self) {
+        tracing::warn!("cell interrupt is not supported on this platform; killing the kernel");
+        let _ = self.child.start_kill();
+    }
+
+    fn death_context(&self, when: &str) -> String {
+        let tail = self.stderr_tail.lock().unwrap();
+        if tail.trim().is_empty() {
+            format!("the python session died {when}")
+        } else {
+            format!(
+                "the python session died {when}; stderr tail:\n{}",
+                tail.trim_end()
+            )
+        }
+    }
+}

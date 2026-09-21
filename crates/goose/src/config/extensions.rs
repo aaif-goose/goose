@@ -102,30 +102,30 @@ fn get_extensions_map() -> IndexMap<String, ExtensionEntry> {
 enum ExtensionMutation {
     Upsert(String, Box<ExtensionEntry>),
     Remove(String),
-    Noop,
 }
 
 fn with_raw_extensions_mapping<F>(config: &Config, mutate: F)
 where
-    F: FnOnce(&mut IndexMap<String, ExtensionEntry>) -> ExtensionMutation,
+    F: FnOnce(&mut IndexMap<String, ExtensionEntry>) -> Vec<ExtensionMutation>,
 {
     let mut serialize_error = None;
     let result = config.update_param::<Mapping, Mapping, _>(EXTENSIONS_CONFIG_KEY, |mut raw| {
         let mut extensions = parse_extensions_map(&raw);
 
-        match mutate(&mut extensions) {
-            ExtensionMutation::Upsert(key, entry) => match serde_yaml::to_value(entry) {
-                Ok(value) => {
-                    raw.insert(serde_yaml::Value::String(key), value);
+        for mutation in mutate(&mut extensions) {
+            match mutation {
+                ExtensionMutation::Upsert(key, entry) => match serde_yaml::to_value(entry) {
+                    Ok(value) => {
+                        raw.insert(serde_yaml::Value::String(key), value);
+                    }
+                    Err(err) => {
+                        serialize_error = Some(err);
+                    }
+                },
+                ExtensionMutation::Remove(key) => {
+                    raw.shift_remove(key.as_str());
                 }
-                Err(err) => {
-                    serialize_error = Some(err);
-                }
-            },
-            ExtensionMutation::Remove(key) => {
-                raw.shift_remove(key.as_str());
             }
-            ExtensionMutation::Noop => {}
         }
 
         raw
@@ -165,7 +165,37 @@ pub fn set_extension(entry: ExtensionEntry) {
 
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
     let key = entry.config.key();
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)));
+    with_raw_extensions_mapping(config, |extensions| {
+        let mut mutations = companion_mutations(extensions, &key, entry.enabled);
+        mutations.push(ExtensionMutation::Upsert(key, Box::new(entry)));
+        mutations
+    });
+}
+
+/// Enabling an extension that replaces another (or vice versa) flips the other
+/// entry too, so the extensions list always shows which one is active.
+fn companion_mutations(
+    extensions: &IndexMap<String, ExtensionEntry>,
+    key: &str,
+    enabled: bool,
+) -> Vec<ExtensionMutation> {
+    let Some((companion_key, companion_enabled)) =
+        crate::agents::platform_extensions::companion_toggle(key, enabled)
+    else {
+        return Vec::new();
+    };
+    extensions
+        .get(companion_key)
+        .filter(|entry| entry.enabled != companion_enabled)
+        .map(|entry| {
+            let mut entry = entry.clone();
+            entry.enabled = companion_enabled;
+            vec![ExtensionMutation::Upsert(
+                companion_key.to_string(),
+                Box::new(entry),
+            )]
+        })
+        .unwrap_or_default()
 }
 
 pub fn remove_extension(key: &str) {
@@ -173,7 +203,7 @@ pub fn remove_extension(key: &str) {
 }
 
 fn remove_extension_with_config(config: &Config, key: &str) {
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Remove(key.to_string()));
+    with_raw_extensions_mapping(config, |_| vec![ExtensionMutation::Remove(key.to_string())]);
 }
 
 /// Returns true when an existing extension was updated, false when the key was missing.
@@ -184,13 +214,16 @@ pub fn set_extension_enabled(key: &str, enabled: bool) -> bool {
 fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) -> bool {
     let mut updated = false;
     with_raw_extensions_mapping(config, |extensions| {
-        let Some(entry) = extensions.get_mut(key) else {
-            return ExtensionMutation::Noop;
+        let Some(entry) = extensions.get(key) else {
+            return Vec::new();
         };
 
+        let mut entry = entry.clone();
         entry.enabled = enabled;
         updated = true;
-        ExtensionMutation::Upsert(key.to_string(), Box::new(entry.clone()))
+        let mut mutations = companion_mutations(extensions, key, enabled);
+        mutations.push(ExtensionMutation::Upsert(key.to_string(), Box::new(entry)));
+        mutations
     });
 
     updated
@@ -804,6 +837,28 @@ extensions:
 
         set_extension_enabled_with_config(&config, "developer", true);
         assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
+    }
+
+    #[test]
+    fn test_python_session_and_developer_toggle_each_other() {
+        let (config, _config_file, _secrets_file) = test_config("");
+        set_extension_with_config(&config, builtin_entry("developer", true));
+        set_extension_with_config(&config, builtin_entry("python_session", false));
+
+        set_extension_enabled_with_config(&config, "python_session", true);
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+
+        set_extension_enabled_with_config(&config, "python_session", false);
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
+
+        set_extension_with_config(&config, builtin_entry("python_session", true));
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+
+        set_extension_enabled_with_config(&config, "developer", true);
+        assert_eq!(
+            configured_enabled_state(&config, "python_session"),
+            Some(false)
+        );
     }
 
     #[test]

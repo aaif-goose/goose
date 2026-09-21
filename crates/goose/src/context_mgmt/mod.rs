@@ -45,6 +45,15 @@ const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
 
+pub fn is_compaction_continuation(message: &Message) -> bool {
+    matches!(
+        message.as_concat_text().as_str(),
+        CONVERSATION_CONTINUATION_TEXT
+            | TOOL_LOOP_CONTINUATION_TEXT
+            | MANUAL_COMPACT_CONTINUATION_TEXT
+    )
+}
+
 pub struct CompactionResult {
     pub conversation: Conversation,
     /// Billable usage of the summarization call, counting the raw model

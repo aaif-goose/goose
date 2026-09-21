@@ -26,6 +26,7 @@ use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
+use crate::agents::platform_extensions;
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::config::extensions::name_to_key;
 use crate::config::Config;
@@ -492,6 +493,14 @@ impl ExtensionManager {
             );
         }
 
+        if let Some(replaced) = platform_extensions::replaces(&sanitized_name) {
+            self.remove_extension_by_key(replaced).await?;
+        } else if let Some(replacement) = platform_extensions::replaced_by(&sanitized_name) {
+            if self.extensions.lock().await.contains_key(replacement) {
+                return Ok(());
+            }
+        }
+
         let working_dir = working_dir
             .or_else(|| std::env::var("GOOSE_WORKING_DIR").ok().map(PathBuf::from))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
@@ -626,18 +635,31 @@ impl ExtensionManager {
     }
 
     /// Get aggregated usage statistics
-    pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
+    pub async fn remove_extension(self: &Arc<Self>, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
         self.remove_extension_by_key(&sanitized_name).await?;
         Ok(())
     }
 
-    pub async fn remove_extension_by_key(&self, key: &str) -> ExtensionResult<bool> {
+    pub async fn remove_extension_by_key(self: &Arc<Self>, key: &str) -> ExtensionResult<bool> {
         let removed = self.extensions.lock().await.remove(key).is_some();
         if removed {
             self.invalidate_tools_cache_and_bump_version().await;
+            if let Some(replaced) = platform_extensions::replaces(key) {
+                self.restore_extension(replaced).await?;
+            }
         }
         Ok(removed)
+    }
+
+    async fn restore_extension(self: &Arc<Self>, key: &str) -> ExtensionResult<()> {
+        if !crate::config::extensions::is_extension_enabled(key) {
+            return Ok(());
+        }
+        match crate::config::extensions::get_extension_by_name(key) {
+            Some(config) => Box::pin(self.add_extension(config, None, None, None)).await,
+            None => Ok(()),
+        }
     }
 
     pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
@@ -2112,8 +2134,9 @@ mod tests {
     #[tokio::test]
     async fn test_tools_cache_invalidated_on_remove_extension() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
 
         extension_manager
             .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))

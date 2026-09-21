@@ -118,6 +118,44 @@ When running Python scripts or commands, always use `python3` instead of `python
 
 ### Instructions
 Manage agent sessions: list, view, start, send messages, and interrupt agents.
+## python_session
+
+### Instructions
+You have a persistent Python session: variables, imports, functions, and open
+resources persist across `python` calls for the whole conversation, and they
+survive conversation compaction. Reuse variables you have already defined instead
+of recomputing or re-reading them; after a compaction, a `<python-session>` block
+in the turn context re-lists what still exists.
+
+Work in three phases; do not skip the first or the last:
+1. INSPECT before you compute. Never guess an input's format. Print a real
+   sample of the actual data (a genuine line, the raw bytes, the file header,
+   the directory listing) and confirm the exact task requirements before you
+   write the solution. Most wrong answers come from computing confidently on an
+   assumed structure.
+2. SOLVE. Read, search, and transform data in Python and ASSIGN results to
+   variables so later steps are cheap and survive compaction. Large data can
+   stay in variables; print the slice you need to reason about the next step.
+3. VERIFY before you finish. Re-read what success requires and check your output
+   against it. If the task states how it will be judged (a command to run, a
+   file to produce, an expected value), run that exact check and confirm it
+   passes. Inspect the produced artifact directly - open the file you wrote,
+   diff it against the spec. Do not declare the task done on the assumption that
+   your code worked; declare it done only after you have seen it pass.
+
+Tools:
+- Shell commands: r = sh("pytest -q 2>&1"); then inspect r.code, r.out, r.err
+  (full output is retained on the object; the echoed form is a capped tail).
+  Use sh to run the task's own tests or acceptance commands as your verification.
+- File edits: edit(path, old, new) replaces a unique occurrence; edit(path, "",
+  content) creates a file. pathlib is also fine.
+- Images: view_image(path, crop=None) returns an image (a screenshot, diagram,
+  or photo) to you as pixels; pass a local path or http(s) URL. To read a
+  screenshot of code or a diagram, VIEW it - do not OCR it. crop=(x, y, width,
+  height) zooms into a region. You may view several by calling it in a loop.
+- The last expression in a cell is echoed like a REPL; end a cell with the
+  value you want to see.
+
 ## scheduler
 
 ### Instructions
