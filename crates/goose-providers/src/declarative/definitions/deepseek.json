@@ -8,7 +8,7 @@
   "models": [
     {
       "name": "deepseek-flash",
-      "context_limit": 128000,
+      "context_limit": null,
       "input_token_cost": null,
       "output_token_cost": null,
       "currency": null,
