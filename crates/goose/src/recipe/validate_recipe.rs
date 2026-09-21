@@ -435,6 +435,57 @@ response:
         validate_recipe_template_from_content(&stripped.to_yaml().unwrap(), None).unwrap();
     }
 
+    fn render_with_message(message_value: &str) -> Recipe {
+        let recipe_content = r#"
+version: 1.0.0
+title: Snapshot
+description: Rendered snapshot
+prompt: "write a template like {{ message }}"
+parameters:
+  - key: message
+    input_type: string
+    requirement: required
+    description: message parameter
+"#;
+        let params = HashMap::from([("message".to_string(), message_value.to_string())]);
+        validate_recipe_template(recipe_content, None)
+            .unwrap()
+            .render(&params)
+            .unwrap()
+    }
+
+    #[test]
+    fn strip_unreferenced_parameters_when_a_rendered_value_looks_like_a_reference() {
+        let ordinary = render_with_message("hello");
+        assert_eq!(
+            ordinary.prompt.as_deref(),
+            Some("write a template like hello")
+        );
+        assert!(strip_unreferenced_parameters(ordinary).parameters.is_none());
+
+        // The value the user supplied is itself the text "{{ message }}", so rendering
+        // leaves it in the snapshot as data. Re-parsing the snapshot reports `message` as
+        // a template variable again, so the key survives where `hello` lost it.
+        let rendered = render_with_message("{{ message }}");
+        assert_eq!(
+            rendered.prompt.as_deref(),
+            Some("write a template like {{ message }}")
+        );
+        let (_, template_variables) =
+            parse_recipe_content(&rendered.to_yaml().unwrap(), None).unwrap();
+        assert!(template_variables.contains("message"));
+
+        let stripped = strip_unreferenced_parameters(rendered);
+        let keys: Vec<_> = stripped
+            .parameters
+            .as_ref()
+            .expect("rendered user data is read back as a live reference")
+            .iter()
+            .map(|parameter| parameter.key.as_str())
+            .collect();
+        assert_eq!(keys, ["message"]);
+    }
+
     #[test]
     fn strip_unreferenced_parameters_keeps_keys_still_in_the_template() {
         let recipe = Recipe::builder()
