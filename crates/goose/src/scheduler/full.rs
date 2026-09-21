@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -32,6 +32,46 @@ type RunningTasksMap = HashMap<String, CancellationToken>;
 type JobsMap = HashMap<String, (JobId, ScheduledJob)>;
 
 use super::*;
+
+fn read_validated_schedule_recipe(source_path: &Path) -> Result<Vec<u8>, SchedulerError> {
+    let mut source = open_regular_schedule_recipe(source_path).map_err(|error| {
+        SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
+    })?;
+    let metadata = source.metadata().map_err(|error| {
+        SchedulerError::RecipeLoadError(format!("Cannot inspect recipe file: {error}"))
+    })?;
+    if metadata.len() > MAX_SCHEDULE_RECIPE_BYTES {
+        return Err(SchedulerError::RecipeLoadError(format!(
+            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
+        )));
+    }
+
+    let mut bytes = Vec::new();
+    source
+        .by_ref()
+        .take(MAX_SCHEDULE_RECIPE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
+        })?;
+    if bytes.len() as u64 > MAX_SCHEDULE_RECIPE_BYTES {
+        return Err(SchedulerError::RecipeLoadError(format!(
+            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
+        )));
+    }
+
+    let format = recipe_file_format(source_path);
+    let content = std::str::from_utf8(&bytes).map_err(|_| {
+        SchedulerError::RecipeLoadError(SchedulerRecipeError::GenericParse(format).to_string())
+    })?;
+    let recipe_dir = source_path
+        .parent()
+        .map(|path| path.to_string_lossy().into_owned());
+    validate_recipe_for_scheduling(content, recipe_dir, format)
+        .map_err(|error| SchedulerError::RecipeLoadError(error.to_string()))?;
+
+    Ok(bytes)
+}
 
 async fn persist_jobs(
     storage_path: &Path,
