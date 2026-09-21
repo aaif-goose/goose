@@ -111,6 +111,25 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
 
+  rust-build-lean:
+    name: Build Lean ACP Binary
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          key: lean-acp
+
+      - name: Build lean configuration
+        run: ./scripts/lean-size.sh
+
   goose-sdk-uniffi:
     name: Check goose-sdk UniFFI
     runs-on: ubuntu-latest
