@@ -678,6 +678,7 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
                 "name": tool.name,
                 "description": tool.description,
                 "parameters": tool.input_schema,
+                "strict": false,
             }
         }));
     }
@@ -2259,6 +2260,11 @@ mod tests {
         assert_eq!(spec.len(), 1);
         assert_eq!(spec[0]["type"], "function");
         assert_eq!(spec[0]["function"]["name"], "test_tool");
+        assert_eq!(
+            spec[0]["function"]["strict"],
+            json!(false),
+            "Some chat-completions upstreams default strict to true when the flag is absent, but MCP tool schemas are not strict-compatible; must explicitly set strict: false"
+        );
         Ok(())
     }
 
