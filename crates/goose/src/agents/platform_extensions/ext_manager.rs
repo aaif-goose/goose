@@ -186,9 +186,7 @@ impl ExtensionManagerClient {
             })?;
 
         if action == ManageExtensionAction::Disable {
-            if extension_name.eq_ignore_ascii_case(EXTENSION_NAME)
-                || extension_name.eq_ignore_ascii_case("extensionmanager")
-            {
+            if crate::config::extensions::name_to_key(&extension_name) == "extensionmanager" {
                 return Err(ErrorData::new(
                     ErrorCode::INVALID_REQUEST,
                     "The Extension Manager cannot disable itself. Ask the user to disable it from goose settings instead.".to_string(),
@@ -663,7 +661,11 @@ mod tests {
         let client = client_for(&manager);
         let user_id = create_session(&manager, SessionType::User).await;
 
-        for name in ["Extension Manager", "extensionmanager"] {
+        for name in [
+            "Extension Manager",
+            "extensionmanager",
+            "Extension Manager ",
+        ] {
             let result = client
                 .call_tool(
                     &ToolCallContext::new(user_id.clone(), None, None),
