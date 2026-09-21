@@ -186,6 +186,15 @@ impl ExtensionManagerClient {
             })?;
 
         if action == ManageExtensionAction::Disable {
+            if extension_name.eq_ignore_ascii_case(EXTENSION_NAME)
+                || extension_name.eq_ignore_ascii_case("extensionmanager")
+            {
+                return Err(ErrorData::new(
+                    ErrorCode::INVALID_REQUEST,
+                    "The Extension Manager cannot disable itself. Ask the user to disable it from goose settings instead.".to_string(),
+                    None,
+                ));
+            }
             return extension_manager
                 .remove_extension(&extension_name)
                 .await
@@ -589,9 +598,13 @@ mod tests {
     }
 
     fn manage_arguments(action: &str) -> JsonObject {
+        manage_arguments_for(action, "developer")
+    }
+
+    fn manage_arguments_for(action: &str, extension_name: &str) -> JsonObject {
         serde_json::json!({
             "action": action,
-            "extension_name": "developer",
+            "extension_name": extension_name,
         })
         .as_object()
         .unwrap()
@@ -639,6 +652,29 @@ mod tests {
         let user_disable = manage(&client, &user_id, "disable").await;
         assert!(!user_disable.is_error.unwrap_or(false));
         assert!(!manager.is_extension_enabled("developer").await);
+    }
+
+    #[tokio::test]
+    async fn extension_manager_cannot_disable_itself() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        let client = client_for(&manager);
+        let user_id = create_session(&manager, SessionType::User).await;
+
+        for name in ["Extension Manager", "extensionmanager"] {
+            let result = client
+                .call_tool(
+                    &ToolCallContext::new(user_id.clone(), None, None),
+                    MANAGE_EXTENSIONS_TOOL_NAME,
+                    Some(manage_arguments_for("disable", name)),
+                    CancellationToken::default(),
+                )
+                .await
+                .unwrap();
+            assert!(result.is_error.unwrap_or(false));
+        }
     }
 
     #[tokio::test]
