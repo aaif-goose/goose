@@ -95,8 +95,16 @@ function GooseMessage({
         })
       : undefined;
 
+  const responseStats = !isStreaming &&
+    (message.metadata.usage || message.metadata.inferenceSecurity === 'attested_tee') && (
+      <div className="flex items-center gap-2 pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+        {message.metadata.usage && <MessageUsageStats usage={message.metadata.usage} />}
+        <InferenceSecurityBadge security={message.metadata.inferenceSecurity} />
+      </div>
+    );
+
   return (
-    <div className="goose-message flex w-[90%] justify-start min-w-0">
+    <div className="goose-message group flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
         {thinkingContent && (
           <ThinkingContent
@@ -129,7 +137,6 @@ function GooseMessage({
             {toolRequests.length === 0 && (
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-2 pt-1">
-                  <InferenceSecurityBadge security={message.metadata.inferenceSecurity} />
                   <div className="relative">
                     {!isStreaming && (
                       <div className="text-xs font-mono text-text-secondary transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0">
@@ -144,11 +151,7 @@ function GooseMessage({
                       )}
                   </div>
                 </div>
-                {!isStreaming && message.metadata.usage && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
-                  </div>
-                )}
+                {responseStats}
               </div>
             )}
           </div>
@@ -184,7 +187,6 @@ function GooseMessage({
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 pt-1">
-                  <InferenceSecurityBadge security={message.metadata.inferenceSecurity} />
                   <div
                     className={cn(
                       'text-xs text-text-secondary',
@@ -195,11 +197,7 @@ function GooseMessage({
                     {!isStreaming && !hideTimestamp && timestamp}
                   </div>
                 </div>
-                {!isStreaming && message.metadata.usage && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
-                  </div>
-                )}
+                {responseStats}
               </div>
             </div>
           </div>
@@ -208,11 +206,7 @@ function GooseMessage({
         {thinkingContent &&
           !displayText.trim() &&
           imagePaths.length === 0 &&
-          toolRequests.length === 0 && (
-            <div className="pt-1">
-              <InferenceSecurityBadge security={message.metadata.inferenceSecurity} />
-            </div>
-          )}
+          toolRequests.length === 0 && <div className="flex justify-end">{responseStats}</div>}
 
         {outputTokenLimitReached && (
           <div className="mt-2 flex items-start gap-1.5 text-xs text-text-secondary">

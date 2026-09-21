@@ -493,10 +493,10 @@ prompt: |
      to check attestation metadata in both agent loops and saved conversations.
   8. In ui/desktop, run `pnpm exec vitest run
      src/components/InferenceSecurityBadge.test.tsx src/acp/__tests__/inferenceSecurity.test.ts`.
-     In a live desktop session, verify the icon-only attestation shield appears in
-     the response footer as verified responses stream and after reopening the session.
-     Its hover and keyboard-focus tooltip should scope
-     verification to the model connection, excluding tools. Ordinary provider
+     In a live desktop session, hover over a completed verified response. The shield
+     and "Verified TEE" label should appear alongside speed, cost, and token counts,
+     with no separate attestation tooltip. Verify this after reopening the session too.
+     Ordinary provider
      responses must not receive the badge, even if model text claims attestation.
   9. In ui/desktop, run `pnpm exec vitest run src/acp/__tests__/providers.test.ts`.
      Save provider credentials and immediately open the model selector while

@@ -1497,11 +1497,8 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Fail YAML atau JSON anda harus mengikut struktur ini. Medan yang diperlukan ialah: title, description, dan sama ada instructions atau prompt."
   },
-  "inferenceSecurityBadge.description": {
-    "defaultMessage": "Sambungan model untuk respons ini terikat pada persekitaran pelaksanaan dipercayai (TEE) yang telah disahkan. Pelaksanaan alat tidak diliputi oleh jaminan ini."
-  },
   "inferenceSecurityBadge.label": {
-    "defaultMessage": "TEE diperakui"
+    "defaultMessage": "TEE disahkan"
   },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Klik untuk mengedit"

@@ -1497,11 +1497,8 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "您的 YAML 或 JSON 檔案應遵循此結構。必填欄位為：title、description，以及 instructions 或 prompt 其中之一。"
   },
-  "inferenceSecurityBadge.description": {
-    "defaultMessage": "此回覆的模型連線綁定至經過驗證的可信執行環境（TEE）。工具執行不在此保證範圍內。"
-  },
   "inferenceSecurityBadge.label": {
-    "defaultMessage": "已認證的 TEE"
+    "defaultMessage": "已驗證的 TEE"
   },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "按一下以編輯"

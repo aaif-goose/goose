@@ -1497,11 +1497,8 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "YAML 또는 JSON 파일은 이 구조를 따라야 합니다. 필수 필드는 제목, 설명, 지침 또는 프롬프트입니다."
   },
-  "inferenceSecurityBadge.description": {
-    "defaultMessage": "이 응답의 모델 연결은 검증된 신뢰 실행 환경(TEE)에 연결되었습니다. 도구 실행은 이 보증의 대상이 아닙니다."
-  },
   "inferenceSecurityBadge.label": {
-    "defaultMessage": "증명된 TEE"
+    "defaultMessage": "검증된 TEE"
   },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "편집하려면 클릭하세요"

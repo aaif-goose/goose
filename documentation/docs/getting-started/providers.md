@@ -132,11 +132,11 @@ Prompt-cache reuse is scoped to the current provider instance.
 
 ### Attested inference indicator
 
-In goose Desktop, a shield icon appears beside the response timestamp for responses
-delivered over a connection bound to a locally verified trusted execution
-environment. It appears as the response streams and remains in saved conversations.
-Hover over or focus the shield for an explanation. The indicator describes the
-model connection for that response; it does not cover tool execution.
+In goose Desktop, hovering over a completed response reveals a shield and
+**Verified TEE** beside its speed, cost, and token statistics. This indicates a
+model connection bound to a locally verified trusted execution environment.
+The indicator remains available in saved conversations and does not cover tool
+execution.
 
 The indicator is provider-independent. Tinfoil supplies this verification state;
 other providers can support it by reporting verified attestation through the same

@@ -1497,11 +1497,8 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Tu archivo YAML o JSON debe seguir esta estructura. Los campos obligatorios son: title, description y, o bien instructions, o bien prompt."
   },
-  "inferenceSecurityBadge.description": {
-    "defaultMessage": "La conexión con el modelo para esta respuesta estaba vinculada a un entorno de ejecución de confianza (TEE) verificado. La ejecución de herramientas queda fuera de esta garantía."
-  },
   "inferenceSecurityBadge.label": {
-    "defaultMessage": "TEE atestado"
+    "defaultMessage": "TEE verificado"
   },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Haz clic para editar"
