@@ -41,7 +41,7 @@ impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
         )
         .with_setup_steps(vec![
             "Verify `codex-acp --version` shows `@agentclientprotocol/codex-acp`",
-            "If `--version` is rejected, remove `@zed-industries/codex-acp`: `npm uninstall -g @zed-industries/codex-acp`",
+            "If `--version` is rejected, remove `@agentclientprotocol/codex-acp`: `npm uninstall -g @agentclientprotocol/codex-acp`",
             "If `codex-acp` is missing or was removed, install `@agentclientprotocol/codex-acp`: `npm install -g @agentclientprotocol/codex-acp`",
             "Authenticate with OpenAI: run `codex` and follow the prompts",
         ])
