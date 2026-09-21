@@ -1157,6 +1157,7 @@ impl SchedulerTrait for Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
 

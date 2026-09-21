@@ -14,8 +14,8 @@ static MODEL_REGISTRY: Lazy<Result<CanonicalModelRegistry>> = Lazy::new(|| {
     #[cfg(feature = "bundled-model-catalog")]
     {
         const CANONICAL_MODELS_JSON: &str = include_str!("data/canonical_models.json");
-        return CanonicalModelRegistry::from_json(CANONICAL_MODELS_JSON)
-            .context("Failed to parse bundled canonical models JSON");
+        CanonicalModelRegistry::from_json(CANONICAL_MODELS_JSON)
+            .context("Failed to parse bundled canonical models JSON")
     }
 
     #[cfg(not(feature = "bundled-model-catalog"))]

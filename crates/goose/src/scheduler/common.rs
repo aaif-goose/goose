@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -52,44 +52,6 @@ pub(crate) fn open_regular_schedule_recipe(path: &Path) -> io::Result<File> {
         ));
     }
     Ok(file)
-}
-
-#[cfg_attr(not(feature = "scheduler"), allow(dead_code))]
-pub(super) fn copy_bounded_schedule_recipe(
-    source: &Path,
-    destination: &Path,
-) -> Result<(), SchedulerError> {
-    let source = open_regular_schedule_recipe(source).map_err(|error| {
-        SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
-    })?;
-    let metadata = source.metadata().map_err(|error| {
-        SchedulerError::RecipeLoadError(format!("Cannot inspect recipe file: {error}"))
-    })?;
-    if !metadata.is_file() {
-        return Err(SchedulerError::RecipeLoadError(
-            "Recipe path must reference a regular file".to_string(),
-        ));
-    }
-    if metadata.len() > MAX_SCHEDULE_RECIPE_BYTES {
-        return Err(SchedulerError::RecipeLoadError(format!(
-            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
-        )));
-    }
-
-    let mut bytes = Vec::new();
-    source
-        .take(MAX_SCHEDULE_RECIPE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| {
-            SchedulerError::RecipeLoadError(format!("Cannot read recipe file: {error}"))
-        })?;
-    if bytes.len() as u64 > MAX_SCHEDULE_RECIPE_BYTES {
-        return Err(SchedulerError::RecipeLoadError(format!(
-            "Recipe file exceeds the {MAX_SCHEDULE_RECIPE_BYTES} byte limit"
-        )));
-    }
-
-    write_schedule_recipe_bytes(destination, &bytes)
 }
 
 #[cfg_attr(not(feature = "scheduler"), allow(dead_code))]
