@@ -4,11 +4,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import {
-  assignedCoreTeamMembers,
-  readCoreTeam,
-  readyTransitionCoreTeamMember,
-} from "./github_manager.mjs";
+import { readCoreTeam } from "./github_manager.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const minimumReadyAgeMilliseconds = 24 * 60 * 60 * 1000;
@@ -157,11 +153,39 @@ function getPullRequestsReadyForAssignment() {
     }));
 }
 
+function assignedCoreTeamMembers(assignees) {
+  return assignees
+    .map((assignee) => assignee.login)
+    .filter((login) => coreTeamByGithub.has(login.toLowerCase()));
+}
+
+function readyTransitionCoreTeamMember(events) {
+  const readyTransitions = events
+    .filter(
+      (event) =>
+        event.status === "Ready" &&
+        event.project?.number === options.projectNumber &&
+        event.project.owner?.login?.toLowerCase() ===
+          options.projectOwner.toLowerCase(),
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  if (readyTransitions.length === 0) {
+    return { reason: "linked issue has no Ready transition in the project" };
+  }
+
+  const transition = readyTransitions[0];
+  const login = transition.actor?.login;
+  if (transition.wasAutomated || !login) {
+    return { reason: "the latest Ready transition has no human actor" };
+  }
+  const person = coreTeamByGithub.get(login.toLowerCase());
+  return person
+    ? { person }
+    : { reason: `Ready transition actor @${login} is not in the core team` };
+}
+
 function reconcilePullRequest(pullRequest) {
-  const existingCoreTeamMembers = assignedCoreTeamMembers(
-    pullRequest.assignees,
-    coreTeamByGithub,
-  );
+  const existingCoreTeamMembers = assignedCoreTeamMembers(pullRequest.assignees);
   if (existingCoreTeamMembers.length > 0) {
     return {
       pull_request: pullRequest.number,
@@ -189,11 +213,6 @@ function reconcilePullRequest(pullRequest) {
   const issue = linkedIssues[0];
   const selection = readyTransitionCoreTeamMember(
     getReadyTransitions(issue.number),
-    {
-      coreTeamByGithub,
-      projectNumber: options.projectNumber,
-      projectOwner: options.projectOwner,
-    },
   );
   if (!selection.person) {
     return {
