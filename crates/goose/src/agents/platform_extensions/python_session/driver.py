@@ -23,6 +23,7 @@ NS_MAX_ENTRIES = 50
 NS_MAX_CHARS = 1200
 STATE_PATH = os.environ.get("GOOSE_PYTHON_SESSION_STATE_PATH", "")
 STATE_VALUE_CAP = 8 * 1024 * 1024
+STATE_TOTAL_CAP = 64 * 1024 * 1024
 _DRIVER_FILE = globals().get("__file__", "<python-session-driver>")
 
 
@@ -332,18 +333,24 @@ def _dump_capped(value, cap):
 
 
 def _save_state():
-    """Best-effort per-variable pickle so the namespace survives process restarts."""
+    """Best-effort per-variable pickle so the namespace survives process restarts.
+
+    Each value and the snapshot as a whole are capped, so the save that follows
+    every cell stays bounded however large the namespace grows.
+    """
     if not STATE_PATH:
         return
     blobs = {}
     names = []
+    total = 0
     for name, value in NS.items():
         if name.startswith("_") or name in _HELPERS or isinstance(value, type(sys)):
             continue
         names.append(name)
-        blob = _dump_capped(value, STATE_VALUE_CAP)
+        blob = _dump_capped(value, min(STATE_VALUE_CAP, STATE_TOTAL_CAP - total))
         if blob is not None:
             blobs[name] = blob
+            total += len(blob)
     try:
         tmp = STATE_PATH + ".tmp"
         # Snapshots can hold credentials; create them owner-only (no effect on
@@ -366,10 +373,10 @@ def _restore_state():
     try:
         with open(STATE_PATH, "rb") as f:
             state = pickle.load(f)
-        if state.get("python") != sys.version_info[:2]:
-            return [], []
         blobs = state.get("blobs", {})
         names = state.get("names", list(blobs.keys()))
+        if state.get("python") != sys.version_info[:2]:
+            return [], names
     except Exception:
         return [], []
     restored = []

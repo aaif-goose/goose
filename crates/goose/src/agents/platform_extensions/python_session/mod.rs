@@ -5,6 +5,7 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::Config;
+use crate::session::Session;
 use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
@@ -268,15 +269,21 @@ impl PythonSessionClient {
         &self,
         slot: &mut SessionSlot,
         session_id: &str,
-        working_dir: PathBuf,
+        working_dir: Option<PathBuf>,
     ) -> Result<(), String> {
         if slot.kernel.is_some() {
             return Ok(());
         }
+        let session = self.load_session(session_id).await;
         let spec = KernelSpec {
             python: self.interpreter().await?,
-            working_dir,
-            state_path: self.snapshot_path(session_id).await,
+            working_dir: working_dir
+                .or_else(|| session.as_ref().map(|session| session.working_dir.clone()))
+                .unwrap_or_else(|| PathBuf::from(".")),
+            state_path: session
+                .as_ref()
+                .filter(|_| prepare_state_dir())
+                .map(snapshot_path),
             env: self.child_env().await,
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
@@ -301,32 +308,22 @@ impl PythonSessionClient {
         Ok(())
     }
 
-    async fn snapshot_path(&self, session_id: &str) -> Option<PathBuf> {
-        let session = self
-            .context
+    async fn load_session(&self, session_id: &str) -> Option<Session> {
+        self.context
             .session_manager
             .get_session(session_id, false)
             .await
-            .ok()?;
-        state_path(&snapshot_file(
-            &session.id,
-            session.created_at.timestamp_micros(),
-        ))
+            .ok()
     }
 
     async fn working_dir(&self, ctx: &ToolCallContext) -> PathBuf {
         if let Some(dir) = &ctx.working_dir {
             return dir.clone();
         }
-        if let Ok(session) = self
-            .context
-            .session_manager
-            .get_session(&ctx.session_id, false)
-            .await
-        {
-            return session.working_dir;
+        match self.load_session(&ctx.session_id).await {
+            Some(session) => session.working_dir,
+            None => PathBuf::from("."),
         }
-        PathBuf::from(".")
     }
 
     async fn run_python(
@@ -347,8 +344,7 @@ impl PythonSessionClient {
         let mut slot = slot.lock().await;
         slot.last_used = Instant::now();
 
-        let working_dir = self.working_dir(ctx).await;
-        self.ensure_kernel(&mut slot, &ctx.session_id, working_dir)
+        self.ensure_kernel(&mut slot, &ctx.session_id, ctx.working_dir.clone())
             .await?;
 
         let pending_dir = self.pending_dir.lock().unwrap().remove(&ctx.session_id);
@@ -472,6 +468,10 @@ impl PythonSessionClient {
         self.ns_cache.lock().unwrap().get(session_id).cloned()
     }
 
+    fn has_slot(&self, session_id: &str) -> bool {
+        self.sessions.lock().unwrap().contains_key(session_id)
+    }
+
     async fn session_was_compacted(&self, session_id: &str) -> bool {
         if self.compacted.lock().unwrap().contains(session_id) {
             return true;
@@ -548,21 +548,27 @@ fn state_dir() -> PathBuf {
 /// `SessionManager` reuses a session id after the latest one is deleted, so key
 /// the snapshot on the creation time too; a new session never inherits a deleted
 /// conversation's variables (which could include secrets).
-fn snapshot_file(session_id: &str, created_at_micros: i64) -> String {
-    format!("{session_id}-{created_at_micros}.pkl")
+fn snapshot_path(session: &Session) -> PathBuf {
+    state_dir().join(format!(
+        "{}-{}.pkl",
+        session.id,
+        session.created_at.timestamp_micros()
+    ))
 }
 
-fn state_path(file: &str) -> Option<PathBuf> {
+/// Snapshots can hold source data and credentials; keep the directory
+/// owner-only, matching the session database's protected storage.
+fn prepare_state_dir() -> bool {
     let dir = state_dir();
-    std::fs::create_dir_all(&dir).ok()?;
-    // Snapshots can hold source data and credentials; keep the directory
-    // owner-only, matching the session database's protected storage.
+    if std::fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     }
-    Some(dir.join(file))
+    true
 }
 
 fn format_outcome(
@@ -641,29 +647,27 @@ impl McpClientTrait for PythonSessionClient {
     /// The listing rides in the turn context, so every change to it invalidates the
     /// provider's prompt cache from that message onward. Before a compaction the model
     /// still sees its own `python` calls, so the re-anchor is only emitted once history
-    /// has actually been compacted away. A session resumed in a new process has no
-    /// kernel yet, so one is restored from the snapshot to list what came back.
+    /// has actually been compacted away. Sessions that never ran Python (no live
+    /// kernel slot, no snapshot) return before the conversation is scanned. A session
+    /// resumed in a new process has no kernel yet, so one is restored from the
+    /// snapshot to list what came back.
     async fn get_moim(&self, session_id: &str) -> Option<String> {
-        if !self.session_was_compacted(session_id).await {
+        let session = self.load_session(session_id).await?;
+        let has_snapshot = snapshot_path(&session).is_file();
+        if (!self.has_slot(session_id) && !has_snapshot)
+            || !self.session_was_compacted(session_id).await
+        {
             return None;
         }
 
         let slot = self.session_slot(session_id);
         let listing = match slot.try_lock() {
             Ok(mut guard) => {
-                let snapshot = self.snapshot_path(session_id).await;
-                if guard.kernel.is_none() && snapshot.is_some_and(|p| p.is_file()) {
-                    if let Ok(session) = self
-                        .context
-                        .session_manager
-                        .get_session(session_id, false)
-                        .await
-                    {
-                        self.ensure_reaper();
-                        let _ = self
-                            .ensure_kernel(&mut guard, session_id, session.working_dir)
-                            .await;
-                    }
+                if guard.kernel.is_none() && has_snapshot {
+                    self.ensure_reaper();
+                    let _ = self
+                        .ensure_kernel(&mut guard, session_id, Some(session.working_dir))
+                        .await;
                 }
                 match guard.kernel.as_mut() {
                     Some(kernel) => match kernel.namespace(NS_PROBE_TIMEOUT).await {
