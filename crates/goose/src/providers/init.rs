@@ -34,6 +34,7 @@ use super::{
     tetrate::TetrateProvider,
     xai::XaiProvider,
     xai_oauth::XaiOAuthProvider,
+    yolo_auto::YoloAutoProvider,
 };
 use crate::config::ExtensionConfig;
 use crate::providers::anthropic_def::AnthropicProviderDef;
@@ -180,6 +181,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             true,
             Some(registrations::xai_oauth_inventory()),
         );
+        registry.register::<YoloAutoProvider>(false);
     });
     // Register cleanup functions for providers with cached state
     registry.set_cleanup(
