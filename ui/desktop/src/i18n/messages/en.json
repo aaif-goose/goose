@@ -3125,17 +3125,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "Cancel"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Description:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "You are about to execute a recipe that you haven't run before."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "This recipe contains hidden characters that will be ignored for your safety, as they could be used for malicious purposes."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Instructions:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ New Recipe Warning"
@@ -3145,9 +3139,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Security Warning"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Title:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Trust and Execute"
@@ -3560,14 +3551,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "This recipe already has a schedule. Edit it from the Recipes list."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Description: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Recipe parsed successfully"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Title: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Saved recipes"

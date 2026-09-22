@@ -12,6 +12,11 @@ vi.mock('../../../recipe/recipe_management', () => ({
   getStorageDirectory: vi.fn(() => ''),
 }));
 
+vi.mock('../../../recipe', () => ({
+  parseDeeplink: vi.fn(),
+  parseRecipeFromFile: vi.fn(),
+}));
+
 const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
 
@@ -28,20 +33,30 @@ const baseProps = {
   initialDeepLink: null,
 };
 
-const savedRecipeManifest = {
+const savedRecipeManifest: RecipeManifest = {
   id: 'my-recipe',
-  recipe: { title: 'My Recipe', description: 'A test recipe' },
+  recipe: {
+    title: 'My Recipe',
+    description: 'A test recipe',
+    instructions: 'Summarize the day',
+    retry: {
+      max_retries: 2,
+      checks: [{ type: 'shell', command: 'test -f /tmp/report-ready' }],
+      on_failure: 'notify-send retry-failed',
+    },
+    extensions: [{ type: 'stdio', name: 'calendar', cmd: 'calendar-mcp' }],
+  },
   file_path: '/recipes/my-recipe.yaml',
   last_modified: '',
-} as unknown as RecipeManifest;
+};
 
-const alreadyScheduledManifest = {
+const alreadyScheduledManifest: RecipeManifest = {
   id: 'already-scheduled',
   recipe: { title: 'Already Scheduled', description: 'Has a cron' },
   file_path: '/recipes/already-scheduled.yaml',
   last_modified: '',
   schedule_cron: '0 0 9 * * *',
-} as unknown as RecipeManifest;
+};
 
 describe('ScheduleModal', () => {
   beforeEach(() => {
@@ -94,7 +109,7 @@ describe('ScheduleModal', () => {
     await user.click(option);
 
     await waitFor(() => {
-      expect(screen.getByText('Title: My Recipe')).toBeInTheDocument();
+      expect(screen.getByTestId('recipe-preview')).toHaveTextContent('My Recipe');
     });
 
     const createButton = screen.getByRole('button', { name: 'Create Schedule' });
@@ -110,6 +125,25 @@ describe('ScheduleModal', () => {
         cron: expect.any(String),
       });
     });
+  });
+
+  it('shows every nested recipe field before creating a schedule', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<ScheduleModal {...baseProps} isOpen schedule={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Saved recipes' }));
+    const picker = within(screen.getByTestId('saved-recipe-picker'));
+    await user.click(await picker.findByRole('combobox'));
+    await user.click(await picker.findByRole('option', { name: 'My Recipe' }));
+
+    const preview = await screen.findByTestId('recipe-preview');
+    expect(preview).toHaveTextContent('retry');
+    expect(preview).toHaveTextContent('test -f /tmp/report-ready');
+    expect(preview).toHaveTextContent('on_failure');
+    expect(preview).toHaveTextContent('notify-send retry-failed');
+    expect(preview).toHaveTextContent('extensions');
+    expect(preview).toHaveTextContent('calendar-mcp');
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
   });
 
   it('shows an empty state when there are no saved recipes', async () => {
@@ -178,11 +212,11 @@ describe('ScheduleModal', () => {
     await user.click(await picker.findByRole('option', { name: 'My Recipe' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Title: My Recipe')).toBeInTheDocument();
+      expect(screen.getByTestId('recipe-preview')).toHaveTextContent('My Recipe');
     });
 
     await user.click(screen.getByRole('button', { name: 'YAML' }));
-    expect(screen.queryByText('Title: My Recipe')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('recipe-preview')).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/name/i), 'stale-job');
     await user.click(screen.getByRole('button', { name: 'Create Schedule' }));

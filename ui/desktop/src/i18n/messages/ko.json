@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "취소"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "설명:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "이전에 실행한 적이 없는 레시피를 실행하려고 합니다."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "이 레시피에는 숨겨진 문자가 포함되어 있으며, 유해한 목적으로 사용될 수 있어 안전을 위해 무시됩니다."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "지침:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ 새로운 레시피 경고"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ 보안 경고"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "제목:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "신뢰하고 실행"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "이 레시피에는 이미 일정이 있습니다. 레시피 목록에서 편집하세요."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "설명: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "레시피가 성공적으로 파싱되었습니다."
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "제목: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "저장된 레시피"

@@ -20,11 +20,7 @@ export default function RecipeConsentModalContainer() {
     <RecipeWarningModal
       key={request.id}
       isOpen
-      recipeDetails={{
-        title: request.recipe.title,
-        description: request.recipe.description,
-        instructions: request.recipe.instructions || undefined,
-      }}
+      recipe={request.recipe}
       hasSecurityWarnings={request.hasSecurityWarnings}
       onConfirm={() => resolveRecipeConsent(request.id, true)}
       onCancel={() => resolveRecipeConsent(request.id, false)}

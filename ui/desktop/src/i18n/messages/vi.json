@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Không thể cập nhật thư mục làm việc"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "Hủy"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Mô tả:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "Bạn sắp thực thi một công thức mà bạn chưa từng chạy trước đây."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "Công thức này chứa các ký tự ẩn sẽ bị bỏ qua vì sự an toàn của bạn, vì chúng có thể được sử dụng cho mục đích độc hại."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Hướng dẫn:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ Cảnh báo công thức mới"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Cảnh báo bảo mật"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Tiêu đề:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Tin cậy và thực thi"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "Công thức này đã có lịch. Chỉnh sửa từ danh sách Công thức."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Mô tả: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Đã phân tích công thức thành công"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Tiêu đề: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Công thức đã lưu"

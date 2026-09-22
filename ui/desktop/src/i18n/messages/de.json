@@ -3077,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "Abbrechen"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Beschreibung:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "Sie sind dabei, ein Rezept auszuführen, das Sie zuvor noch nicht ausgeführt haben."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "Dieses Rezept enthält versteckte Zeichen, die zu Ihrer Sicherheit ignoriert werden, da sie für böswillige Zwecke verwendet werden könnten."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Anweisungen:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ Warnung zu neuem Rezept"
@@ -3097,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Sicherheitswarnung"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Titel:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Vertrauen und ausführen"
@@ -3512,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "Dieses Rezept hat bereits einen Zeitplan. Bearbeiten Sie ihn in der Rezeptliste."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Beschreibung: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Rezept erfolgreich gelesen"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Titel: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Gespeicherte Rezepte"

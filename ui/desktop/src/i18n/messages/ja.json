@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "作業ディレクトリの更新に失敗しました"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "キャンセル"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "説明:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "これまで実行したことのないレシピを実行しようとしています。"
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "このレシピには、安全のため無視される隠し文字が含まれています。悪意のある目的に使用される可能性があります。"
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "指示:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ 新しいレシピの警告"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ セキュリティ警告"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "タイトル:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "信頼して実行"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "このレシピには既にスケジュールがあります。レシピ一覧から編集してください。"
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "説明: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "レシピを正常に解析しました"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "タイトル: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "保存したレシピ"

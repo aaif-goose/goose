@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "कार्यशील निर्देशिका अद्यतन करने में विफल"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "रद्द करें"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "विवरण:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "आप एक ऐसी रेसिपी को क्रियान्वित करने वाले हैं जिसे आपने पहले नहीं चलाया है।"
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "इस रेसिपी में छिपे हुए पात्र हैं जिन्हें आपकी सुरक्षा के लिए अनदेखा कर दिया जाएगा, क्योंकि उनका उपयोग दुर्भावनापूर्ण उद्देश्यों के लिए किया जा सकता है।"
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "निर्देश:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ नई रेसिपी चेतावनी"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ सुरक्षा चेतावनी"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "शीर्षक:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "भरोसा करें और अमल करें"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "इस रेसिपी का पहले से शेड्यूल है। रेसिपी सूची से इसे संपादित करें।"
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "विवरण: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "रेसिपी सफलतापूर्वक पार्स की गई"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "शीर्षक: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "सहेजी गई रेसिपी"

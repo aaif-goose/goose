@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "無法更新工作目錄"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "取消"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "說明："
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "您即將執行一個尚未執行過的配方。"
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "為了您的安全，此配方包含的隱藏字元將被忽略，因為它們可能被用於惡意目的。"
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "指示："
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ 新配方警告"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ 安全性警告"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "標題："
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "信任並執行"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "此配方已有排程。請從配方清單中編輯。"
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "描述：{description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "食譜剖析成功"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "標題：{title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "已儲存的方案"

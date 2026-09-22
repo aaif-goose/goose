@@ -9,9 +9,10 @@ import {
 } from './dialog';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Button } from './button';
-import MarkdownContent from '../MarkdownContent';
 import { cn } from '../../utils';
 import { defineMessages, useIntl } from '../../i18n';
+import type { Recipe } from '../../recipe';
+import { RecipePreview } from './RecipePreview';
 
 const i18n = defineMessages({
   securityWarningTitle: {
@@ -39,18 +40,6 @@ const i18n = defineMessages({
     id: 'recipeWarningModal.recipePreview',
     defaultMessage: 'Recipe Preview:',
   },
-  titleLabel: {
-    id: 'recipeWarningModal.titleLabel',
-    defaultMessage: 'Title:',
-  },
-  descriptionLabel: {
-    id: 'recipeWarningModal.descriptionLabel',
-    defaultMessage: 'Description:',
-  },
-  instructionsLabel: {
-    id: 'recipeWarningModal.instructionsLabel',
-    defaultMessage: 'Instructions:',
-  },
   cancel: {
     id: 'recipeWarningModal.cancel',
     defaultMessage: 'Cancel',
@@ -65,11 +54,7 @@ interface RecipeWarningModalProps {
   isOpen: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-  recipeDetails: {
-    title?: string;
-    description?: string;
-    instructions?: string;
-  };
+  recipe: Recipe;
   hasSecurityWarnings?: boolean;
 }
 
@@ -77,7 +62,7 @@ export function RecipeWarningModal({
   isOpen,
   onConfirm,
   onCancel,
-  recipeDetails,
+  recipe,
   hasSecurityWarnings = false,
 }: RecipeWarningModalProps) {
   const intl = useIntl();
@@ -124,27 +109,7 @@ export function RecipeWarningModal({
               <h3 className="font-medium mb-3 text-text-primary">
                 {intl.formatMessage(i18n.recipePreview)}
               </h3>
-              <div className="space-y-4">
-                {recipeDetails.title && (
-                  <p className="text-text-primary">
-                    <strong>{intl.formatMessage(i18n.titleLabel)}</strong> {recipeDetails.title}
-                  </p>
-                )}
-                {recipeDetails.description && (
-                  <p className="text-text-primary">
-                    <strong>{intl.formatMessage(i18n.descriptionLabel)}</strong>{' '}
-                    {recipeDetails.description}
-                  </p>
-                )}
-                {recipeDetails.instructions && (
-                  <div>
-                    <h4 className="font-medium text-text-primary mb-1">
-                      {intl.formatMessage(i18n.instructionsLabel)}
-                    </h4>
-                    <MarkdownContent content={recipeDetails.instructions} className="text-sm" />
-                  </div>
-                )}
-              </div>
+              <RecipePreview recipe={recipe} />
             </div>
           </div>
 

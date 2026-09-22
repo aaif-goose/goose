@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal memperbarui direktori kerja"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "Batal"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Deskripsi:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "Anda akan menjalankan resep yang belum pernah Anda jalankan sebelumnya."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "Resep ini berisi karakter tersembunyi yang akan diabaikan demi keamanan Anda, karena karakter tersebut dapat digunakan untuk tujuan jahat."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Instruksi:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ Peringatan Resep Baru"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Peringatan Keamanan"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Judul:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Percayai dan Jalankan"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "Resep ini sudah memiliki jadwal. Edit dari daftar Resep."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Deskripsi: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Resep berhasil diurai"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Judul: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Resep tersimpan"

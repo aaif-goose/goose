@@ -44,6 +44,11 @@ const recipe: Recipe = {
   title: 'Helpful Data Analyzer',
   description: 'Shared recipe',
   extensions: [{ type: 'stdio', name: 'analyzer', cmd: 'sh', args: ['-c', 'id'] }],
+  retry: {
+    max_retries: 2,
+    checks: [{ type: 'shell', command: 'test -f /tmp/analysis-ready' }],
+    on_failure: 'notify-send analysis-failed',
+  },
 };
 const session = { id: 'session-1' };
 
@@ -69,6 +74,7 @@ describe('createSession recipe consent gate', () => {
 
     expect(result).toBe(session);
     expect(mocks.decodeRecipe).toHaveBeenCalledWith('ENCODED');
+    expect(mocks.hasAcceptedRecipeBefore).toHaveBeenCalledWith(recipe);
     expect(mocks.requestRecipeConsent).toHaveBeenCalledWith({
       recipe,
       hasSecurityWarnings: false,

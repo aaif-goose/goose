@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Не удалось обновить рабочий каталог"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "Отмена"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Описание:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "Вы собираетесь выполнить рецепт, который еще не запускали."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "Этот рецепт содержит скрытые символы, которые будут проигнорированы для вашей безопасности, так как их могут использовать во вредоносных целях."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Инструкции:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ Предупреждение о новом рецепте"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Предупреждение безопасности"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Название:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Доверять и выполнить"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "У этого рецепта уже есть расписание. Измените его в списке рецептов."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Описание: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Рецепт успешно разобран"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Название: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Сохранённые рецепты"

@@ -10,6 +10,7 @@ import type { RecipeManifest } from '../../recipe';
 import { listSavedRecipes } from '../../recipe/recipe_management';
 import ClockIcon from '../../assets/clock-icon.svg';
 import { defineMessages, useIntl } from '../../i18n';
+import { RecipePreview } from '../ui/RecipePreview';
 
 const i18n = defineMessages({
   editSchedule: { id: 'scheduleModal.editSchedule', defaultMessage: 'Edit Schedule' },
@@ -51,11 +52,6 @@ const i18n = defineMessages({
     defaultMessage: 'Failed to load recipes.',
   },
   recipeParsed: { id: 'scheduleModal.recipeParsed', defaultMessage: 'Recipe parsed successfully' },
-  recipeTitle: { id: 'scheduleModal.recipeTitle', defaultMessage: 'Title: {title}' },
-  recipeDescription: {
-    id: 'scheduleModal.recipeDescription',
-    defaultMessage: 'Description: {description}',
-  },
   scheduleLabel: { id: 'scheduleModal.scheduleLabel', defaultMessage: 'Schedule:' },
   cancel: { id: 'scheduleModal.cancel', defaultMessage: 'Cancel' },
   updating: { id: 'scheduleModal.updating', defaultMessage: 'Updating...' },
@@ -390,12 +386,9 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
       <p className="text-xs text-green-700 dark:text-green-300 font-medium">
         ✓ {intl.formatMessage(i18n.recipeParsed)}
       </p>
-      <p className="text-xs text-green-600 dark:text-green-400">
-        {intl.formatMessage(i18n.recipeTitle, { title: parsedRecipe.title })}
-      </p>
-      <p className="text-xs text-green-600 dark:text-green-400">
-        {intl.formatMessage(i18n.recipeDescription, { description: parsedRecipe.description })}
-      </p>
+      <div className="mt-2 rounded-md bg-background-primary p-2">
+        <RecipePreview recipe={parsedRecipe} />
+      </div>
     </div>
   ) : null;
 

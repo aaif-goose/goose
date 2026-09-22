@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Impossibile aggiornare la cartella di lavoro"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "Annulla"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Descrizione:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "Stai per eseguire una ricetta che non hai mai eseguito prima."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "Questa ricetta contiene caratteri nascosti che verranno ignorati per la tua sicurezza, poiché potrebbero essere usati per scopi dannosi."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Istruzioni:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ Avviso nuova ricetta"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Avviso di sicurezza"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Titolo:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Considera attendibile ed esegui"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "Questa ricetta ha già una pianificazione. Modificala dall'elenco Ricette."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Descrizione: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Ricetta analizzata correttamente"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Titolo: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Ricette salvate"

@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Çalışma dizini güncellenemedi"
   },
@@ -3081,17 +3077,11 @@
   "recipeWarningModal.cancel": {
     "defaultMessage": "İptal"
   },
-  "recipeWarningModal.descriptionLabel": {
-    "defaultMessage": "Açıklama:"
-  },
   "recipeWarningModal.firstTimeDescription": {
     "defaultMessage": "Daha önce çalıştırmadığınız bir tarifi uygulamak üzeresiniz."
   },
   "recipeWarningModal.hiddenCharsWarning": {
     "defaultMessage": "Bu tarif, kötü amaçlarla kullanılabilecekleri için güvenliğiniz açısından göz ardı edilecek gizli karakterler içermektedir."
-  },
-  "recipeWarningModal.instructionsLabel": {
-    "defaultMessage": "Talimatlar:"
   },
   "recipeWarningModal.newRecipeWarningTitle": {
     "defaultMessage": "⚠️ Yeni Tarif Uyarısı"
@@ -3101,9 +3091,6 @@
   },
   "recipeWarningModal.securityWarningTitle": {
     "defaultMessage": "⚠️ Güvenlik Uyarısı"
-  },
-  "recipeWarningModal.titleLabel": {
-    "defaultMessage": "Başlık:"
   },
   "recipeWarningModal.trustAndExecute": {
     "defaultMessage": "Güvenin ve Uygulayın"
@@ -3516,14 +3503,8 @@
   "scheduleModal.recipeAlreadyScheduled": {
     "defaultMessage": "Bu tarifin zaten bir zamanlaması var. Tarif listesinden düzenleyin."
   },
-  "scheduleModal.recipeDescription": {
-    "defaultMessage": "Açıklama: {description}"
-  },
   "scheduleModal.recipeParsed": {
     "defaultMessage": "Tarif başarıyla ayrıştırıldı"
-  },
-  "scheduleModal.recipeTitle": {
-    "defaultMessage": "Başlık: {title}"
   },
   "scheduleModal.savedRecipes": {
     "defaultMessage": "Kayıtlı tarifeler"
