@@ -41,6 +41,8 @@ struct DriverResponse {
     #[serde(default)]
     restored: Vec<String>,
     #[serde(default)]
+    dropped: Vec<String>,
+    #[serde(default)]
     images: Vec<ImageRequest>,
 }
 
@@ -79,6 +81,7 @@ pub struct Kernel {
     next_id: i64,
     stderr_tail: Arc<Mutex<String>>,
     restored_names: Vec<String>,
+    dropped_names: Vec<String>,
     _driver_file: tempfile::NamedTempFile,
 }
 
@@ -144,6 +147,7 @@ impl Kernel {
             next_id: 1,
             stderr_tail,
             restored_names: Vec::new(),
+            dropped_names: Vec::new(),
             _driver_file: driver_file,
         };
 
@@ -158,11 +162,18 @@ impl Kernel {
             ));
         }
         kernel.restored_names = ready.restored;
+        kernel.dropped_names = ready.dropped;
         Ok(kernel)
     }
 
     pub fn restored_names(&self) -> &[String] {
         &self.restored_names
+    }
+
+    /// Variables that existed when the snapshot was taken but could not be
+    /// persisted (unpicklable or over the size cap), so they did not survive.
+    pub fn dropped_names(&self) -> &[String] {
+        &self.dropped_names
     }
 
     pub async fn exec(
@@ -267,9 +278,12 @@ impl Kernel {
 
     #[cfg(unix)]
     fn interrupt(&self) {
+        // The driver runs in its own process group (see `process_group(0)`), so
+        // signal the whole group: the driver takes the KeyboardInterrupt and any
+        // child it spawned directly is stopped instead of orphaned.
         if let Some(pid) = self.child.id() {
             unsafe {
-                libc::kill(pid as i32, libc::SIGINT);
+                libc::kill(-(pid as i32), libc::SIGINT);
             }
         }
     }

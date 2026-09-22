@@ -43,6 +43,25 @@ def _tail(text, limit):
     return "[... {} chars omitted ...]\n".format(len(text) - limit) + text[-limit:]
 
 
+class _BoundedWriter(io.StringIO):
+    """A stdout/stderr sink that stops growing once a cell floods it, so one
+    runaway print cannot exhaust the kernel's memory before output is capped."""
+
+    _HARD_CAP = MAX_CHARS * 4
+
+    def __init__(self):
+        super().__init__()
+        self._size = 0
+
+    def write(self, text):
+        remaining = self._HARD_CAP - self._size
+        if remaining > 0:
+            chunk = text[:remaining]
+            self._size += len(chunk)
+            super().write(chunk)
+        return len(text)
+
+
 class ShellResult:
     """Result of sh(); full stdout/stderr stay on the object as .out/.err."""
 
@@ -142,7 +161,10 @@ def view_image(path, crop=None):
     them to you, so read a code screenshot or a diagram by VIEWING it, not by OCR.
     `crop=(x, y, width, height)` zooms into a pixel rectangle. Returns None.
     """
-    req = {"source": str(path)}
+    source = str(path)
+    if "://" not in source:
+        source = os.path.abspath(source)
+    req = {"source": source}
     if crop is not None:
         x, y, width, height = crop
         req["crop"] = {"x": int(x), "y": int(y), "width": int(width), "height": int(height)}
@@ -165,8 +187,8 @@ def _run_cell(code):
     _cell_count += 1
     del _pending_images[:]
     filename = "<cell {}>".format(_cell_count)
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
+    stdout_buf = _BoundedWriter()
+    stderr_buf = _BoundedWriter()
     value_repr = None
     error = None
     started = time.monotonic()
@@ -264,31 +286,66 @@ def _namespace_listing():
     return listing
 
 
+class _CapExceeded(Exception):
+    pass
+
+
+class _CappedSink:
+    """A pickle target that aborts once output passes the cap, so an oversized
+    variable is skipped without ever materializing its full pickle in memory."""
+
+    def __init__(self, cap):
+        self._cap = cap
+        self._size = 0
+        self._chunks = []
+
+    def write(self, data):
+        self._size += len(data)
+        if self._size > self._cap:
+            raise _CapExceeded()
+        self._chunks.append(data)
+        return len(data)
+
+    def value(self):
+        return b"".join(self._chunks)
+
+
+def _dump_capped(value, cap):
+    sink = _CappedSink(cap)
+    try:
+        pickle.dump(value, sink, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        return None
+    return sink.value()
+
+
 def _save_state():
     """Best-effort per-variable pickle so the namespace survives process restarts."""
     if not STATE_PATH:
         return
     blobs = {}
+    names = []
     for name, value in NS.items():
         if name.startswith("_") or name in _HELPERS or isinstance(value, type(sys)):
             continue
-        try:
-            blob = pickle.dumps(value)
-        except Exception:
-            continue
-        if len(blob) <= STATE_VALUE_CAP:
+        names.append(name)
+        blob = _dump_capped(value, STATE_VALUE_CAP)
+        if blob is not None:
             blobs[name] = blob
     try:
         tmp = STATE_PATH + ".tmp"
         with open(tmp, "wb") as f:
-            pickle.dump({"python": sys.version_info[:2], "blobs": blobs}, f)
+            pickle.dump(
+                {"python": sys.version_info[:2], "names": names, "blobs": blobs}, f
+            )
         os.replace(tmp, STATE_PATH)
     except Exception:
         pass
 
 
 def _restore_state():
-    """Returns (restored_names, failed_names)."""
+    """Returns (restored_names, dropped_names) where dropped variables existed at
+    save time but could not be persisted (unpicklable or over the size cap)."""
     if not STATE_PATH or not os.path.exists(STATE_PATH):
         return [], []
     try:
@@ -297,16 +354,18 @@ def _restore_state():
         if state.get("python") != sys.version_info[:2]:
             return [], []
         blobs = state.get("blobs", {})
+        names = state.get("names", list(blobs.keys()))
     except Exception:
         return [], []
-    restored, failed = [], []
+    restored = []
     for name, blob in blobs.items():
         try:
             NS[name] = pickle.loads(blob)
             restored.append(name)
         except Exception:
-            failed.append(name)
-    return restored, failed
+            pass
+    dropped = [name for name in names if name not in NS]
+    return restored, dropped
 
 
 def _respond(proto, req_id, payload):
@@ -335,7 +394,7 @@ def main():
         )
         return
 
-    restored, failed = _restore_state()
+    restored, dropped = _restore_state()
     _respond(
         proto,
         0,
@@ -344,7 +403,7 @@ def main():
             "ready": True,
             "python": sys.version.split()[0],
             "restored": restored,
-            "restore_failed": failed,
+            "dropped": dropped,
         },
     )
 

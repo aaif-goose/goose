@@ -494,11 +494,9 @@ impl ExtensionManager {
         }
 
         if let Some(replaced) = platform_extensions::replaces(&sanitized_name) {
-            self.remove_extension_by_key(replaced).await?;
+            self.evict_extension(replaced).await;
         } else if let Some(replacement) = platform_extensions::replaced_by(&sanitized_name) {
-            if self.extensions.lock().await.contains_key(replacement) {
-                return Ok(());
-            }
+            self.evict_extension(replacement).await;
         }
 
         let working_dir = working_dir
@@ -641,10 +639,17 @@ impl ExtensionManager {
         Ok(())
     }
 
-    pub async fn remove_extension_by_key(self: &Arc<Self>, key: &str) -> ExtensionResult<bool> {
+    async fn evict_extension(&self, key: &str) -> bool {
         let removed = self.extensions.lock().await.remove(key).is_some();
         if removed {
             self.invalidate_tools_cache_and_bump_version().await;
+        }
+        removed
+    }
+
+    pub async fn remove_extension_by_key(self: &Arc<Self>, key: &str) -> ExtensionResult<bool> {
+        let removed = self.evict_extension(key).await;
+        if removed {
             if let Some(replaced) = platform_extensions::replaces(key) {
                 self.restore_extension(replaced).await?;
             }
@@ -652,10 +657,12 @@ impl ExtensionManager {
         Ok(removed)
     }
 
+    /// Bring back the extension displaced by an exclusive replacement (Developer
+    /// after Python Session is removed). The pair is mutually exclusive, so this
+    /// runs regardless of the stored enabled flag - which the companion toggle set
+    /// to disabled while the replacer was active - and reuses the displaced
+    /// extension's own config so its settings are not lost.
     async fn restore_extension(self: &Arc<Self>, key: &str) -> ExtensionResult<()> {
-        if !crate::config::extensions::is_extension_enabled(key) {
-            return Ok(());
-        }
         match crate::config::extensions::get_extension_by_name(key) {
             Some(config) => Box::pin(self.add_extension(config, None, None, None)).await,
             None => Ok(()),

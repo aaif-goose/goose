@@ -75,6 +75,7 @@ pub struct PythonSessionClient {
     sessions: Arc<Sessions>,
     ns_cache: Mutex<HashMap<String, String>>,
     compacted: Mutex<HashSet<String>>,
+    pending_dir: Mutex<HashMap<String, PathBuf>>,
     interpreter: tokio::sync::OnceCell<PathBuf>,
     reaper: Once,
 }
@@ -132,6 +133,7 @@ impl PythonSessionClient {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             ns_cache: Mutex::new(HashMap::new()),
             compacted: Mutex::new(HashSet::new()),
+            pending_dir: Mutex::new(HashMap::new()),
             interpreter: tokio::sync::OnceCell::new(),
             reaper: Once::new(),
         })
@@ -244,10 +246,18 @@ impl PythonSessionClient {
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
         if !kernel.restored_names().is_empty() {
-            slot.restore_notice = Some(format!(
-                "[python session restored from a previous process; available again: {}]",
+            let mut notice = format!(
+                "[python session restored from a previous process; available again: {}",
                 kernel.restored_names().join(", ")
-            ));
+            );
+            if !kernel.dropped_names().is_empty() {
+                notice.push_str(&format!(
+                    "; not restored (too large or not picklable): {}",
+                    kernel.dropped_names().join(", ")
+                ));
+            }
+            notice.push(']');
+            slot.restore_notice = Some(notice);
         }
         slot.kernel = Some(kernel);
         Ok(())
@@ -289,6 +299,16 @@ impl PythonSessionClient {
         let working_dir = self.working_dir(ctx).await;
         self.ensure_kernel(&mut slot, &ctx.session_id, working_dir)
             .await?;
+
+        let pending_dir = self.pending_dir.lock().unwrap().remove(&ctx.session_id);
+        if let Some(dir) = pending_dir {
+            if let Some(kernel) = slot.kernel.as_mut() {
+                if let Err(e) = kernel.chdir(&dir, CHDIR_TIMEOUT).await {
+                    tracing::warn!("python session could not change directory: {e:#}");
+                }
+            }
+        }
+
         let restore_notice = slot.restore_notice.take();
 
         let exec_result = slot
@@ -557,6 +577,7 @@ impl McpClientTrait for PythonSessionClient {
                         .get_session(session_id, false)
                         .await
                     {
+                        self.ensure_reaper();
                         let _ = self
                             .ensure_kernel(&mut guard, session_id, session.working_dir)
                             .await;
@@ -591,12 +612,29 @@ impl McpClientTrait for PythonSessionClient {
     }
 
     async fn update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
-        for slot in Self::live_slots(&self.sessions) {
-            if let Ok(mut guard) = slot.try_lock() {
-                if let Some(kernel) = guard.kernel.as_mut() {
-                    if let Err(e) = kernel.chdir(&new_dir, CHDIR_TIMEOUT).await {
-                        tracing::warn!("python session could not change directory: {e:#}");
+        let slots: Vec<(String, Arc<tokio::sync::Mutex<SessionSlot>>)> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, slot)| (id.clone(), slot.clone()))
+            .collect();
+        for (session_id, slot) in slots {
+            match slot.try_lock() {
+                Ok(mut guard) => {
+                    self.pending_dir.lock().unwrap().remove(&session_id);
+                    if let Some(kernel) = guard.kernel.as_mut() {
+                        if let Err(e) = kernel.chdir(&new_dir, CHDIR_TIMEOUT).await {
+                            tracing::warn!("python session could not change directory: {e:#}");
+                        }
                     }
+                }
+                // A cell holds the lock; apply the change before its next cell runs.
+                Err(_) => {
+                    self.pending_dir
+                        .lock()
+                        .unwrap()
+                        .insert(session_id, new_dir.clone());
                 }
             }
         }
