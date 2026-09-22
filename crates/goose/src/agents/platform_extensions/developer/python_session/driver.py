@@ -125,7 +125,9 @@ def sh(command, timeout=None, cwd=None, env=None):
     """Run a shell command; returns ShellResult(code, out, err)."""
     posix = os.name == "posix"
     executable = "/bin/bash" if posix and os.path.exists("/bin/bash") else None
-    proc = subprocess.Popen(
+    # Running a model-authored command line is this helper's purpose, the same
+    # as the Developer shell tool; goose's tool permission mode gates the cell.
+    proc = subprocess.Popen(  # nosemgrep: Intersect.semgrep.custom_ruleset.rules.subprocess-shell-true
         command,
         shell=True,
         executable=executable,
@@ -262,7 +264,8 @@ def _run_cell(code):
     try:
         with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
             if tree.body:
-                exec(compile(tree, filename, "exec"), NS)
+                # The session exists to run the model's code; see the sh() note.
+                exec(compile(tree, filename, "exec"), NS)  # nosemgrep: Intersect.semgrep.custom_ruleset.rules.exec-detected
             if trailing_expr is not None:
                 value = eval(compile(trailing_expr, filename, "eval"), NS)
                 if value is not None:
