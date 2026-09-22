@@ -897,14 +897,6 @@ pub struct DecisionRequest {
     pub questions: HashMap<String, DecisionQuestion>,
 }
 
-#[derive(Debug, Clone, uniffi::Record)]
-pub struct OpenRouterDecisionOptions {
-    pub provider_json: Option<String>,
-    pub session_id: Option<String>,
-    pub trace_json: Option<String>,
-    pub user: Option<String>,
-}
-
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum DecisionAnswer {
     Noul {
@@ -912,14 +904,14 @@ pub enum DecisionAnswer {
     },
     Choice {
         choice: String,
-        confidence: Option<f64>,
-        probabilities: Option<HashMap<String, f64>>,
+        confidence: f64,
+        probabilities: HashMap<String, f64>,
     },
     Score {
         score: f64,
-        confidence: Option<f64>,
-        legend: Option<HashMap<String, String>>,
-        probabilities: Option<HashMap<String, f64>>,
+        confidence: f64,
+        legend_json: HashMap<String, String>,
+        probabilities: HashMap<String, f64>,
     },
 }
 
@@ -927,8 +919,8 @@ pub enum DecisionAnswer {
 pub struct DecisionResponse {
     pub model: String,
     pub answers: HashMap<String, DecisionAnswer>,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
     pub cost: Option<f64>,
     pub id: Option<String>,
     pub provider: Option<String>,
@@ -1020,57 +1012,19 @@ impl From<GooseDecisionAnswer> for DecisionAnswer {
             } => Self::Score {
                 score,
                 confidence,
-                legend,
+                legend_json: legend
+                    .into_iter()
+                    .map(|(level, description)| {
+                        let description = match description {
+                            serde_json::Value::String(text) => text,
+                            other => other.to_string(),
+                        };
+                        (level, description)
+                    })
+                    .collect(),
                 probabilities,
             },
         }
-    }
-}
-
-#[derive(uniffi::Object)]
-pub struct OpenRouterDecisionProvider {
-    provider: Arc<goose_providers::openrouter::OpenRouterProvider>,
-}
-
-#[uniffi::export]
-impl OpenRouterDecisionProvider {
-    pub async fn create_decision(
-        &self,
-        request: DecisionRequest,
-    ) -> Result<DecisionResponse, GooseError> {
-        let request = request.try_into()?;
-        let provider = Arc::clone(&self.provider);
-        let response =
-            run_on_runtime(async move { provider.create_decision(&request).await }).await??;
-        Ok(response.into())
-    }
-
-    pub async fn create_decision_with_options(
-        &self,
-        request: DecisionRequest,
-        options: OpenRouterDecisionOptions,
-    ) -> Result<DecisionResponse, GooseError> {
-        let request = request.try_into()?;
-        let options = goose_providers::openrouter::OpenRouterDecisionOptions {
-            provider: options
-                .provider_json
-                .map(|json| serde_json::from_str(&json))
-                .transpose()?,
-            session_id: options.session_id,
-            trace: options
-                .trace_json
-                .map(|json| serde_json::from_str(&json))
-                .transpose()?,
-            user: options.user,
-        };
-        let provider = Arc::clone(&self.provider);
-        let response = run_on_runtime(async move {
-            provider
-                .create_decision_with_options(&request, &options)
-                .await
-        })
-        .await??;
-        Ok(response.into())
     }
 }
 
@@ -1270,17 +1224,15 @@ fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<Deci
 pub fn openrouter_decision_provider(
     api_key: String,
     base_url: Option<String>,
-) -> Result<Arc<OpenRouterDecisionProvider>, GooseError> {
+) -> Result<Arc<DecisionProvider>, GooseError> {
     let client = ApiClient::new_with_tls(
         base_url.unwrap_or_else(|| "https://openrouter.ai".to_string()),
         AuthMethod::BearerToken(api_key),
         None,
     )?;
-    Ok(Arc::new(OpenRouterDecisionProvider {
-        provider: Arc::new(goose_providers::openrouter::OpenRouterProvider::new(
-            client, None, None,
-        )),
-    }))
+    Ok(decision_provider(
+        goose_providers::openrouter::OpenRouterProvider::new(client, None, None),
+    ))
 }
 
 #[uniffi::export]
@@ -1300,7 +1252,7 @@ pub fn typesafe_decision_provider(
 
 #[uniffi::export]
 pub fn openrouter_decision_default_model() -> String {
-    goose_providers::openrouter::OPENROUTER_DEFAULT_MODEL.to_string()
+    goose_providers::openrouter::OPENROUTER_DECISION_DEFAULT_MODEL.to_string()
 }
 
 #[uniffi::export]

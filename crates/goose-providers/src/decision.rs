@@ -40,6 +40,7 @@ pub struct NoulCriteria {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DecisionResponse {
     pub model: String,
+    #[serde(default)]
     pub answers: HashMap<String, DecisionAnswer>,
     pub usage: DecisionUsage,
     #[serde(default)]
@@ -56,26 +57,23 @@ pub enum DecisionAnswer {
     },
     Choice {
         choice: String,
-        #[serde(default)]
-        confidence: Option<f64>,
-        #[serde(default)]
-        probabilities: Option<HashMap<String, f64>>,
+        confidence: f64,
+        probabilities: HashMap<String, f64>,
     },
     Score {
         score: f64,
-        #[serde(default)]
-        confidence: Option<f64>,
-        #[serde(default)]
-        legend: Option<HashMap<String, String>>,
-        #[serde(default)]
-        probabilities: Option<HashMap<String, f64>>,
+        confidence: f64,
+        legend: HashMap<String, Value>,
+        probabilities: HashMap<String, f64>,
     },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DecisionUsage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
     #[serde(default)]
     pub cost: Option<f64>,
 }

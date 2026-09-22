@@ -213,7 +213,7 @@
               "docs": ""
             }
           ],
-          "returns": "OpenRouterDecisionProvider",
+          "returns": "DecisionProvider",
           "throws": "GooseError",
           "isAsync": false
         },
@@ -1075,39 +1075,6 @@
           "methods": []
         },
         {
-          "name": "OpenRouterDecisionOptions",
-          "kind": "record",
-          "docs": "",
-          "fields": [
-            {
-              "name": "provider_json",
-              "type": "Option<String>",
-              "default": null,
-              "docs": ""
-            },
-            {
-              "name": "session_id",
-              "type": "Option<String>",
-              "default": null,
-              "docs": ""
-            },
-            {
-              "name": "trace_json",
-              "type": "Option<String>",
-              "default": null,
-              "docs": ""
-            },
-            {
-              "name": "user",
-              "type": "Option<String>",
-              "default": null,
-              "docs": ""
-            }
-          ],
-          "variants": [],
-          "methods": []
-        },
-        {
           "name": "DecisionAnswer",
           "kind": "enum",
           "docs": "",
@@ -1135,13 +1102,13 @@
                 },
                 {
                   "name": "confidence",
-                  "type": "Option<f64>",
+                  "type": "f64",
                   "default": null,
                   "docs": ""
                 },
                 {
                   "name": "probabilities",
-                  "type": "Option<HashMap<String, f64>>",
+                  "type": "HashMap<String, f64>",
                   "default": null,
                   "docs": ""
                 }
@@ -1158,19 +1125,19 @@
                 },
                 {
                   "name": "confidence",
-                  "type": "Option<f64>",
+                  "type": "f64",
                   "default": null,
                   "docs": ""
                 },
                 {
-                  "name": "legend",
-                  "type": "Option<HashMap<String, String>>",
+                  "name": "legend_json",
+                  "type": "HashMap<String, String>",
                   "default": null,
                   "docs": ""
                 },
                 {
                   "name": "probabilities",
-                  "type": "Option<HashMap<String, f64>>",
+                  "type": "HashMap<String, f64>",
                   "default": null,
                   "docs": ""
                 }
@@ -1198,13 +1165,13 @@
             },
             {
               "name": "input_tokens",
-              "type": "u64",
+              "type": "Option<u64>",
               "default": null,
               "docs": ""
             },
             {
               "name": "output_tokens",
-              "type": "u64",
+              "type": "Option<u64>",
               "default": null,
               "docs": ""
             },
@@ -1229,51 +1196,6 @@
           ],
           "variants": [],
           "methods": []
-        },
-        {
-          "name": "OpenRouterDecisionProvider",
-          "kind": "object",
-          "docs": "",
-          "fields": [],
-          "variants": [],
-          "methods": [
-            {
-              "name": "create_decision",
-              "docs": "",
-              "params": [
-                {
-                  "name": "request",
-                  "type": "DecisionRequest",
-                  "default": null,
-                  "docs": ""
-                }
-              ],
-              "returns": "DecisionResponse",
-              "throws": "GooseError",
-              "isAsync": true
-            },
-            {
-              "name": "create_decision_with_options",
-              "docs": "",
-              "params": [
-                {
-                  "name": "request",
-                  "type": "DecisionRequest",
-                  "default": null,
-                  "docs": ""
-                },
-                {
-                  "name": "options",
-                  "type": "OpenRouterDecisionOptions",
-                  "default": null,
-                  "docs": ""
-                }
-              ],
-              "returns": "DecisionResponse",
-              "throws": "GooseError",
-              "isAsync": true
-            }
-          ]
         },
         {
           "name": "DecisionProvider",

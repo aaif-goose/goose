@@ -25,6 +25,7 @@ use rmcp::model::Tool;
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4";
+pub const OPENROUTER_DECISION_DEFAULT_MODEL: &str = "typesafe/jev-1.13";
 
 // OpenRouter can run many models, we suggest the default
 pub const OPENROUTER_KNOWN_MODELS: &[&str] = &[
