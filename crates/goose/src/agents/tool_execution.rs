@@ -12,7 +12,6 @@ use tokio_util::sync::CancellationToken;
 use std::path::PathBuf;
 
 use crate::agents::container::Container;
-use crate::agents::extension_manager::ExtensionLease;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
