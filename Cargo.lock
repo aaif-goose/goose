@@ -5506,6 +5506,7 @@ dependencies = [
  "tracing",
  "unicode-normalization",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
