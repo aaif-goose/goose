@@ -201,10 +201,10 @@ jobs:
         run: |
           gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
-          cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode,live-voice,scheduler,acp-http
+          cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
           cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket
-          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,live-voice,scheduler,acp-http -- --skip scenario_tests::scenarios::tests
-          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,live-voice,scheduler,acp-http --jobs 1 scenario_tests::scenarios::tests
+          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http -- --skip scenario_tests::scenarios::tests
+          cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --jobs 1 scenario_tests::scenarios::tests
         env:
           RUST_MIN_STACK: 8388608
 

@@ -129,7 +129,19 @@ scheduler = ["goose/scheduler"]
 platform-apps = ["goose/platform-apps"]
 chat-recall = ["goose/chat-recall"]
 acp-http = ["goose/acp-http"]
-portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
+portable-default = [
+    "rustls-tls",
+    "tree-sitter",
+    "live-voice",
+    "aws-providers",
+    "telemetry",
+    "otel",
+    "bundled-mcp",
+    "scheduler",
+    "platform-apps",
+    "chat-recall",
+    "acp-http",
+]
 # disables the update command
 disable-update = []
 rustls-tls = [

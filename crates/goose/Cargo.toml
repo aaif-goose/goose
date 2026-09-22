@@ -92,7 +92,18 @@ native-tls = [
     "goose-context-management/native-tls",
 ]
 system-keyring = ["dep:keyring"]
-portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
+portable-default = [
+    "rustls-tls",
+    "tree-sitter",
+    "live-voice",
+    "aws-providers",
+    "telemetry",
+    "otel",
+    "scheduler",
+    "platform-apps",
+    "chat-recall",
+    "acp-http",
+]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
 platform-apps = []
 chat-recall = []
