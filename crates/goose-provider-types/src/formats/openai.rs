@@ -979,16 +979,32 @@ fn ensure_valid_json_schema(schema: &mut Value) {
     sanitize_schema_node(schema);
 }
 
+/// JSON Schema keywords that OpenAI's structured-output validator rejects outright
+/// (e.g. `'uniqueItems' is not permitted`) rather than ignoring.
+const UNSUPPORTED_SCHEMA_KEYWORDS: [&str; 15] = [
+    "unevaluatedProperties",
+    "propertyNames",
+    "minProperties",
+    "maxProperties",
+    "unevaluatedItems",
+    "contains",
+    "minContains",
+    "maxContains",
+    "uniqueItems",
+    "not",
+    "dependentRequired",
+    "dependentSchemas",
+    "if",
+    "then",
+    "else",
+];
+
 fn sanitize_schema_node(node: &mut Value) {
     if let Some(obj) = node.as_object_mut() {
-        // Moonshot's walle validator rejects `oneOf` behind a `$ref` as
-        // "infinite recursion" because its termination check only traverses
-        // `anyOf`. The two are interchangeable for tool-argument schemas, so
-        // emit the more widely supported form.
-        if !obj.contains_key("anyOf") {
-            if let Some(one_of) = obj.remove("oneOf") {
-                obj.insert("anyOf".to_string(), one_of);
-            }
+        normalize_compositions(obj);
+
+        for keyword in UNSUPPORTED_SCHEMA_KEYWORDS {
+            obj.remove(keyword);
         }
     }
 
@@ -1003,27 +1019,131 @@ fn sanitize_schema_node(node: &mut Value) {
         obj.entry("required").or_insert_with(|| json!([]));
     }
 
-    for key in ["properties", "$defs", "definitions"] {
+    for key in ["properties", "patternProperties", "$defs", "definitions"] {
         if let Some(children) = obj.get_mut(key).and_then(Value::as_object_mut) {
             for child in children.values_mut() {
                 sanitize_schema_node(child);
             }
         }
     }
-    for key in ["anyOf", "allOf", "prefixItems"] {
+    for key in ["anyOf", "prefixItems"] {
         if let Some(children) = obj.get_mut(key).and_then(Value::as_array_mut) {
             for child in children.iter_mut() {
                 sanitize_schema_node(child);
             }
         }
     }
-    for key in ["items", "additionalProperties"] {
+    for key in ["items", "additionalItems", "additionalProperties"] {
         if let Some(child) = obj.get_mut(key) {
-            if child.is_object() {
-                sanitize_schema_node(child);
+            match child {
+                Value::Array(children) => {
+                    for child in children.iter_mut() {
+                        sanitize_schema_node(child);
+                    }
+                }
+                Value::Object(_) => sanitize_schema_node(child),
+                _ => {}
             }
         }
     }
+}
+
+/// Converts unsupported composition keywords without discarding their subschemas.
+/// `oneOf` is intentionally relaxed to `anyOf` for tool-argument compatibility. `allOf` members
+/// are merged when their intersection can be represented directly; otherwise they are relaxed to
+/// alternatives because OpenAI's supported subset cannot express a general schema intersection.
+fn normalize_compositions(obj: &mut serde_json::Map<String, Value>) {
+    let mut relaxed_all_of = Vec::new();
+    if let Some(Value::Array(mut schemas)) = obj.remove("allOf") {
+        let mut merged = obj.clone();
+        let can_merge = schemas.iter().all(|schema| {
+            schema
+                .as_object()
+                .is_some_and(|schema| merge_schema_object(&mut merged, schema))
+        });
+        if can_merge {
+            *obj = merged;
+        } else {
+            relaxed_all_of.append(&mut schemas);
+        }
+    }
+
+    let mut alternatives = match obj.remove("anyOf") {
+        Some(Value::Array(alternatives)) => alternatives,
+        _ => Vec::new(),
+    };
+
+    if let Some(Value::Array(mut schemas)) = obj.remove("oneOf") {
+        alternatives.append(&mut schemas);
+    }
+    alternatives.append(&mut relaxed_all_of);
+
+    if !alternatives.is_empty() {
+        obj.insert("anyOf".to_string(), Value::Array(alternatives));
+    }
+}
+
+fn merge_schema_object(
+    target: &mut serde_json::Map<String, Value>,
+    source: &serde_json::Map<String, Value>,
+) -> bool {
+    let mut merged = target.clone();
+    for (key, value) in source {
+        let Some(existing) = merged.get_mut(key) else {
+            merged.insert(key.clone(), value.clone());
+            continue;
+        };
+        if existing == value
+            || matches!(
+                key.as_str(),
+                "title"
+                    | "description"
+                    | "default"
+                    | "examples"
+                    | "deprecated"
+                    | "readOnly"
+                    | "writeOnly"
+                    | "$comment"
+            )
+        {
+            continue;
+        }
+        match (key.as_str(), existing, value) {
+            ("required", Value::Array(existing), Value::Array(additional)) => {
+                for required in additional {
+                    if !existing.contains(required) {
+                        existing.push(required.clone());
+                    }
+                }
+            }
+            (
+                "properties" | "patternProperties" | "$defs" | "definitions",
+                Value::Object(existing),
+                Value::Object(additional),
+            ) => {
+                for (name, schema) in additional {
+                    let Some(existing_schema) = existing.get_mut(name) else {
+                        existing.insert(name.clone(), schema.clone());
+                        continue;
+                    };
+                    if existing_schema == schema {
+                        continue;
+                    }
+                    let (Some(existing_schema), Some(schema)) =
+                        (existing_schema.as_object_mut(), schema.as_object())
+                    else {
+                        return false;
+                    };
+                    if !merge_schema_object(existing_schema, schema) {
+                        return false;
+                    }
+                }
+            }
+            _ => return false,
+        }
+    }
+    *target = merged;
+    true
 }
 
 /// Normalizes nullable type representations that some providers (e.g. Vertex Gemini via Bifrost)
@@ -2205,6 +2325,76 @@ mod tests {
         assert!(defs["CacheCommand"].get("oneOf").is_none());
         assert_eq!(defs["CacheCommand"]["anyOf"].as_array().unwrap().len(), 2);
         assert_eq!(defs["TextStyle"]["properties"]["size"]["type"], "integer");
+    }
+
+    #[test]
+    fn test_sanitize_schema_removes_unsupported_keywords() {
+        fn assert_supported(schema: &Value) {
+            match schema {
+                Value::Object(object) => {
+                    for keyword in UNSUPPORTED_SCHEMA_KEYWORDS {
+                        assert!(!object.contains_key(keyword), "{keyword} must be stripped");
+                    }
+                    object.values().for_each(assert_supported);
+                }
+                Value::Array(items) => items.iter().for_each(assert_supported),
+                _ => {}
+            }
+        }
+
+        let mut schema = json!({
+            "type": "object",
+            "$defs": { "Payload": { "type": "string" } },
+            "properties": {
+                "constrained": {
+                    "type": "array",
+                    "contains": {},
+                    "minContains": 1,
+                    "maxContains": 2,
+                    "uniqueItems": true,
+                    "unevaluatedItems": false,
+                    "items": [{
+                        "type": "object",
+                        "minProperties": 1,
+                        "maxProperties": 2,
+                        "unevaluatedProperties": false,
+                        "propertyNames": {},
+                        "not": {},
+                        "dependentRequired": {},
+                        "dependentSchemas": {},
+                        "if": {},
+                        "then": {},
+                        "else": {}
+                    }],
+                    "additionalItems": { "type": "array", "uniqueItems": true }
+                },
+                "wrapped": {
+                    "description": "payload",
+                    "allOf": [{ "$ref": "#/$defs/Payload" }]
+                },
+                "intersection": {
+                    "allOf": [
+                        { "type": "object", "properties": { "left": { "type": "string" } }, "required": ["left"] },
+                        { "type": "object", "properties": { "right": { "type": "integer" } }, "required": ["right"] }
+                    ]
+                },
+                "choice": {
+                    "anyOf": [{ "type": "string" }],
+                    "oneOf": [{ "type": "integer" }]
+                },
+                "score": { "type": "integer", "multipleOf": 5 }
+            }
+        });
+
+        ensure_valid_json_schema(&mut schema);
+
+        assert_supported(&schema);
+        assert!(schema["properties"]["constrained"]["items"].is_array());
+        assert_eq!(schema["properties"]["wrapped"]["$ref"], "#/$defs/Payload");
+        assert_eq!(schema["properties"]["wrapped"]["description"], "payload");
+        assert_eq!(schema["properties"]["intersection"]["required"], json!(["left", "right"]));
+        assert_eq!(schema["properties"]["choice"]["anyOf"].as_array().unwrap().len(), 2);
+        assert_eq!(schema["properties"]["score"]["multipleOf"], 5);
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
