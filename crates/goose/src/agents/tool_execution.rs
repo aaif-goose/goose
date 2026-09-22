@@ -5,12 +5,14 @@ use rmcp::model::CallToolResult;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use std::path::PathBuf;
 
 use crate::agents::container::Container;
+use crate::agents::extension_manager::ExtensionLease;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
@@ -40,6 +42,7 @@ pub struct ToolCallContext {
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
     container: Option<Container>,
+    extension_lease: Option<Arc<ExtensionLease>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
 }
 
@@ -54,6 +57,7 @@ impl ToolCallContext {
             working_dir,
             tool_call_request_id,
             container: None,
+            extension_lease: None,
             notification_emitter: None,
         }
     }
@@ -65,6 +69,15 @@ impl ToolCallContext {
 
     pub(crate) fn container(&self) -> Option<&Container> {
         self.container.as_ref()
+    }
+
+    pub(crate) fn with_extension_lease(mut self, extension_lease: Arc<ExtensionLease>) -> Self {
+        self.extension_lease = Some(extension_lease);
+        self
+    }
+
+    pub(crate) fn extension_lease(&self) -> Option<&Arc<ExtensionLease>> {
+        self.extension_lease.as_ref()
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {

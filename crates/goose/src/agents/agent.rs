@@ -1734,7 +1734,7 @@ impl Agent {
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
                 container,
-                extension_lease,
+                Arc::clone(&extension_lease),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
@@ -1752,7 +1752,7 @@ impl Agent {
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]
-            extension_manager: self.extension_manager.clone(),
+            extension_lease,
             goose_mode: &self.current_goose_mode,
             prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,

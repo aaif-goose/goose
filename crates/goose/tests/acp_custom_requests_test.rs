@@ -1237,3 +1237,57 @@ fn test_app_tool_call_dispatched_in_auto_mode() {
         assert!(text.contains(FAKE_CODE));
     });
 }
+
+#[test]
+#[serial]
+fn test_app_tool_call_applies_extension_mutation() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        conn.set_mode(&session_id, "auto").await.unwrap();
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/list",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "analyze"
+            }),
+        )
+        .await
+        .expect("tools should be listed");
+        assert!(!response["tools"].as_array().unwrap().is_empty());
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/call",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "Extension Manager",
+                "name": "extensionmanager__manage_extensions",
+                "arguments": {
+                    "action": "disable",
+                    "extension_name": "analyze"
+                }
+            }),
+        )
+        .await
+        .expect("extension mutation should succeed");
+        assert_eq!(response["isError"], false);
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/list",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "analyze"
+            }),
+        )
+        .await
+        .expect("tools should be listed");
+        assert_eq!(response["tools"], serde_json::json!([]));
+    });
+}

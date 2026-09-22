@@ -139,12 +139,13 @@ impl ToolCatalog {
     }
 }
 
+#[derive(Clone)]
 pub struct ExtensionLease {
     id: LeaseId,
     scope_id: String,
     working_dir: Option<PathBuf>,
     extensions: Vec<Arc<Extension>>,
-    tool_catalog: OnceCell<ToolCatalog>,
+    tool_catalog: Arc<OnceCell<ToolCatalog>>,
     action_required: Arc<ActionRequiredManager>,
     hydrate_mcp_apps: bool,
 }
@@ -167,7 +168,7 @@ impl ExtensionLease {
             scope_id: set.scope_id.clone(),
             working_dir: set.working_dir.clone(),
             extensions,
-            tool_catalog: OnceCell::new(),
+            tool_catalog: Arc::new(OnceCell::new()),
             action_required,
             hydrate_mcp_apps,
         }
@@ -384,7 +385,8 @@ impl ExtensionLease {
             self.working_dir.clone(),
             tool_call_id,
         )
-        .with_container(container);
+        .with_container(container)
+        .with_extension_lease(Arc::new(self.clone()));
         if let Some(emitter) = emitter {
             call_context = call_context.with_notification_emitter(emitter);
         }
