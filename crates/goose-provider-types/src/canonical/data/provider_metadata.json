@@ -427,7 +427,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 60
+    "model_count": 63
   },
   {
     "id": "crusoe",
@@ -538,7 +538,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 279
+    "model_count": 280
   },
   {
     "id": "empiriolabs",
@@ -549,7 +549,7 @@
     "env": [
       "EMPIRIOLABS_API_KEY"
     ],
-    "model_count": 65
+    "model_count": 66
   },
   {
     "id": "evroc",
@@ -869,7 +869,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 381
+    "model_count": 387
   },
   {
     "id": "kimi-code-plan-cn",
@@ -946,7 +946,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 194
+    "model_count": 202
   },
   {
     "id": "llmgateway-providers",
@@ -957,7 +957,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 406
+    "model_count": 423
   },
   {
     "id": "llmtech",
@@ -1232,7 +1232,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 577
+    "model_count": 581
   },
   {
     "id": "nearai",
@@ -1343,7 +1343,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 144
+    "model_count": 145
   },
   {
     "id": "ollama-cloud",
@@ -1365,7 +1365,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 105
+    "model_count": 108
   },
   {
     "id": "opencode-go",
@@ -1531,7 +1531,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 153
+    "model_count": 155
   },
   {
     "id": "routing-run",
@@ -1752,7 +1752,7 @@
     "env": [
       "TEMPR_API_KEY"
     ],
-    "model_count": 14
+    "model_count": 29
   },
   {
     "id": "tencent-coding-plan",
@@ -2005,7 +2005,7 @@
     "env": [
       "WANDB_API_KEY"
     ],
-    "model_count": 27
+    "model_count": 29
   },
   {
     "id": "xiaomi",
@@ -2016,7 +2016,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 9
   },
   {
     "id": "xiaomi-token-plan-ams",
@@ -2027,7 +2027,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 9
   },
   {
     "id": "xiaomi-token-plan-cn",
@@ -2038,7 +2038,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 9
   },
   {
     "id": "xiaomi-token-plan-sgp",
@@ -2049,7 +2049,7 @@
     "env": [
       "XIAOMI_API_KEY"
     ],
-    "model_count": 7
+    "model_count": 9
   },
   {
     "id": "xpersona",

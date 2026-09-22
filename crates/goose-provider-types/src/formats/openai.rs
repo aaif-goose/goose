@@ -1909,7 +1909,7 @@ pub fn openai_reasoning_effort_for_thinking(
         ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
         ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
         ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
-        ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+        ThinkingEffort::Max => &["max", "xhigh", "high", "medium", "low"],
     };
 
     preferred
@@ -1924,6 +1924,13 @@ pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [
     if normalized.contains("gpt-5") || normalized.contains("gpt-6") {
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
+        } else if normalized.contains("gpt-6") {
+            // GPT-6 Astra does not accept `none`; Sol and Luna do.
+            if normalized.contains("astra") {
+                &["low", "medium", "high", "xhigh", "max"]
+            } else {
+                &["none", "low", "medium", "high", "xhigh", "max"]
+            }
         } else if normalized.contains("gpt-5.4")
             || normalized.contains("gpt-5-4")
             || normalized.contains("gpt-5.5")
@@ -3289,6 +3296,37 @@ mod tests {
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_openai_reasoning_effort_gpt6_sol_and_luna() {
+        for model in ["gpt-6-sol", "gpt-6-luna"] {
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
+                Some("none".to_string())
+            );
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Max),
+                Some("max".to_string())
+            );
+            assert_eq!(
+                openai_reasoning_efforts_for_model(model),
+                &["none", "low", "medium", "high", "xhigh", "max"]
+            );
+            assert!(
+                is_openai_responses_model(model),
+                "{model} uses /v1/responses"
+            );
+        }
+
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-6-astra", ThinkingEffort::Max),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5.6-sol", ThinkingEffort::Max),
+            Some("xhigh".to_string())
+        );
     }
 
     #[test]
