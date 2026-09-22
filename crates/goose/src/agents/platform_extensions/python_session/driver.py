@@ -433,7 +433,11 @@ def _terminate(_signum, _frame):
 
 
 def main():
-    proto = os.fdopen(os.dup(1), "w", buffering=1)
+    # Explicit UTF-8: responses may carry non-ASCII, and the inherited fd would
+    # otherwise encode with the locale (crashing under e.g. LC_ALL=C).
+    proto = os.fdopen(
+        os.dup(1), "w", buffering=1, encoding="utf-8", errors="backslashreplace"
+    )
     os.dup2(2, 1)
     if os.name == "posix":
         signal.signal(signal.SIGTERM, _terminate)

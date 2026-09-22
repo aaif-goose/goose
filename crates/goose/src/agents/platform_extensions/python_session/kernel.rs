@@ -258,15 +258,6 @@ impl Kernel {
         let _ = self.child.start_kill();
     }
 
-    /// Stop the kernel, giving the driver a moment to reap shell commands that run
-    /// in their own session (which a process-group SIGKILL cannot reach) before a
-    /// hard kill. Used when a dropped request abandons a running cell.
-    pub async fn graceful_kill(mut self) {
-        self.terminate();
-        tokio::time::sleep(TEARDOWN_GRACE).await;
-        self.kill();
-    }
-
     #[cfg(unix)]
     fn terminate(&self) {
         // SIGTERM the group; the driver's handler reaps its tracked shell sessions
@@ -419,12 +410,18 @@ impl Drop for RunningKernel {
         let Some(mut kernel) = self.kernel.take() else {
             return;
         };
-        // Give teardown a lifecycle independent of the abandoned request: a
-        // detached task interrupts, waits out the grace, then hard-kills, so a
-        // running cell's shell subprocesses are reaped rather than orphaned.
+        // Signal stop synchronously, before this frame's session-slot lock is
+        // released and a replacement kernel can spawn: the driver's SIGTERM handler
+        // reaps its shell subprocesses and exits without writing a snapshot, so it
+        // cannot clobber the replacement's state. The grace and hard-kill fallback
+        // (for a driver wedged in native code) run detached.
+        kernel.terminate();
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
-                handle.spawn(async move { kernel.graceful_kill().await });
+                handle.spawn(async move {
+                    tokio::time::sleep(TEARDOWN_GRACE).await;
+                    kernel.kill();
+                });
             }
             Err(_) => kernel.kill(),
         }
