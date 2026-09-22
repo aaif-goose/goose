@@ -1,17 +1,18 @@
+use crate::agents::AgentConfig;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
-use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
+use crate::agents::subagent_handler::{OnMessageCallback, SubagentRunParams, run_subagent_task};
+use crate::agents::subagent_task_config::{DEFAULT_SUBAGENT_MAX_TURNS, TaskConfig};
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
-use crate::agents::AgentConfig;
+use crate::config::extensions::name_to_key;
 use crate::config::paths::Paths;
-use crate::config::{Config, GooseMode};
+use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::providers;
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::local_recipes::load_local_recipe_file;
-use crate::recipe::{Recipe, RecipeParameter, Settings, RECIPE_FILE_EXTENSIONS};
-use crate::session::extension_data::EnabledExtensionsState;
+use crate::recipe::{RECIPE_FILE_EXTENSIONS, Recipe, RecipeParameter, Settings};
 use crate::session::SessionType;
+use crate::session::extension_data::EnabledExtensionsState;
 use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
@@ -26,8 +27,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
@@ -1655,31 +1656,13 @@ impl SummonClient {
         recipe: &Recipe,
         session: &crate::session::Session,
     ) -> Result<TaskConfig, anyhow::Error> {
-        let mut extensions = EnabledExtensionsState::extensions_or_default(
-            Some(&session.extension_data),
-            Config::global(),
-        );
-
-        if let Some(filter) = &params.extensions {
-            if filter.is_empty() {
-                extensions = Vec::new();
-            } else {
-                let available_names: Vec<String> =
-                    extensions.iter().map(|ext| ext.name()).collect();
-                extensions.retain(|ext| filter.contains(&ext.name()));
-                let unmatched: Vec<&str> = filter
-                    .iter()
-                    .filter(|name| !available_names.iter().any(|n| n == *name))
-                    .map(String::as_str)
-                    .collect();
-                if !unmatched.is_empty() {
-                    warn!(
-                        "Delegate requested extensions not available in session: {:?}. Available: {:?}",
-                        unmatched, available_names
-                    );
-                }
-            }
-        }
+        let extensions = apply_delegate_extension_filter(
+            EnabledExtensionsState::extensions_or_default(
+                Some(&session.extension_data),
+                Config::global(),
+            ),
+            params.extensions.as_deref(),
+        )?;
 
         let (provider, model_config) = self
             .resolve_provider(params, recipe, session, &extensions)
@@ -2303,6 +2286,64 @@ impl McpClientTrait for SummonClient {
     }
 }
 
+fn extension_matches_filter(ext: &ExtensionConfig, requested: &str) -> bool {
+    let key = ext.key();
+    requested == ext.name() || requested == key || name_to_key(requested) == key
+}
+
+fn available_extension_labels(extensions: &[ExtensionConfig]) -> Vec<String> {
+    extensions
+        .iter()
+        .map(|ext| {
+            let name = ext.name();
+            let key = ext.key();
+            if name == key {
+                name
+            } else {
+                format!("{name} ({key})")
+            }
+        })
+        .collect()
+}
+
+fn apply_delegate_extension_filter(
+    extensions: Vec<ExtensionConfig>,
+    filter: Option<&[String]>,
+) -> Result<Vec<ExtensionConfig>> {
+    let Some(filter) = filter else {
+        return Ok(extensions);
+    };
+    if filter.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let unmatched: Vec<&str> = filter
+        .iter()
+        .filter(|requested| {
+            !extensions
+                .iter()
+                .any(|ext| extension_matches_filter(ext, requested))
+        })
+        .map(String::as_str)
+        .collect();
+    if !unmatched.is_empty() {
+        anyhow::bail!(
+            "Delegate requested extensions not available in session: {:?}. Available: {:?}",
+            unmatched,
+            available_extension_labels(&extensions)
+        );
+    }
+
+    Ok(extensions
+        .into_iter()
+        .filter(|ext| {
+            filter
+                .iter()
+                .any(|requested| extension_matches_filter(ext, requested))
+        })
+        .collect())
+}
+
 /// Resolve a requested `working_dir` override against the parent session
 /// directory. Relative paths are joined to the parent dir; the result must
 /// canonicalize to an existing directory contained within the parent dir.
@@ -2335,6 +2376,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
+    use crate::session::{EnabledExtensionsState, ExtensionData, ExtensionState};
     use futures::StreamExt;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
@@ -3067,6 +3109,108 @@ You review code."#;
         assert!(task_config.extensions.is_empty());
     }
 
+    fn test_extension(name: &str) -> ExtensionConfig {
+        ExtensionConfig::stdio(name, "echo", "", 30u64)
+    }
+
+    fn session_with_enabled_extensions(
+        extensions: Vec<ExtensionConfig>,
+    ) -> crate::session::Session {
+        let mut extension_data = ExtensionData::new();
+        EnabledExtensionsState::new(extensions)
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        crate::session::Session {
+            extension_data,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_extension_filter_matches_display_name_and_normalized_key() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+
+        let by_name =
+            apply_delegate_extension_filter(extensions.clone(), Some(&["Exa Search".to_string()]))
+                .unwrap();
+        let by_key =
+            apply_delegate_extension_filter(extensions.clone(), Some(&["exasearch".to_string()]))
+                .unwrap();
+
+        assert_eq!(by_name, by_key);
+        assert_eq!(by_name.len(), 1);
+        assert_eq!(by_name[0].name(), "Exa Search");
+
+        let by_platform_case =
+            apply_delegate_extension_filter(extensions, Some(&["Developer".to_string()])).unwrap();
+        assert_eq!(by_platform_case.len(), 1);
+        assert_eq!(by_platform_case[0].name(), "developer");
+    }
+
+    #[test]
+    fn test_extension_filter_unknown_name_errors() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+        let err = apply_delegate_extension_filter(extensions, Some(&["missing".to_string()]))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("missing"), "got {err}");
+        assert!(err.contains("Exa Search"), "got {err}");
+        assert!(err.contains("exasearch"), "got {err}");
+        assert!(err.contains("developer"), "got {err}");
+    }
+
+    #[test]
+    fn test_extension_filter_mixed_valid_and_invalid_fails() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+        let err = apply_delegate_extension_filter(
+            extensions,
+            Some(&["exasearch".to_string(), "missing".to_string()]),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("missing"), "got {err}");
+        assert!(
+            !err.contains("No provider configured"),
+            "filter errors must not reach provider resolution, got {err}"
+        );
+    }
+
+    #[test]
+    fn test_extension_filter_empty_disables_all_and_omitted_inherits() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+
+        let disabled = apply_delegate_extension_filter(extensions.clone(), Some(&[])).unwrap();
+        assert!(disabled.is_empty());
+
+        let inherited = apply_delegate_extension_filter(extensions.clone(), None).unwrap();
+        assert_eq!(inherited, extensions);
+    }
+
+    #[tokio::test]
+    async fn test_build_task_config_unmatched_extension_filter_fails_closed() {
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let session = session_with_enabled_extensions(vec![test_extension("Exa Search")]);
+        let params = DelegateParams {
+            extensions: Some(vec!["missing".to_string()]),
+            ..Default::default()
+        };
+
+        let err = client
+            .build_task_config(&params, &empty_recipe(), &session)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("missing"), "got {err}");
+        assert!(err.contains("Exa Search"), "got {err}");
+        assert!(
+            !err.contains("No provider configured"),
+            "unmatched filters must fail before provider resolution, got {err}"
+        );
+    }
+
     const PARENT_MODEL: &str = "claude-3-5-sonnet-20241022";
     const OVERRIDE_MODEL: &str = "claude-opus-4-6";
     const PROVIDER: &str = "anthropic";
@@ -3437,9 +3581,11 @@ You review code."#;
             )
             .unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("No model configured for provider 'lmstudio'"));
+        assert!(
+            error
+                .to_string()
+                .contains("No model configured for provider 'lmstudio'")
+        );
     }
 
     fn test_tool_notification(request_id: &str, subagent_id: &str) -> ServerNotification {
@@ -3550,7 +3696,7 @@ You review code."#;
 
     #[tokio::test]
     async fn test_live_notifications_precede_delegate_result() {
-        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
+        use crate::agents::tool_execution::{ToolStreamItem, tool_stream};
         use tokio_stream::wrappers::ReceiverStream;
 
         for _ in 0..32 {
@@ -3604,7 +3750,7 @@ You review code."#;
 
     #[tokio::test]
     async fn test_async_completion_before_load_replays_notifications() {
-        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
+        use crate::agents::tool_execution::{ToolStreamItem, tool_stream};
         use tokio_stream::wrappers::ReceiverStream;
 
         let client = Arc::new(SummonClient::new(create_test_context()).unwrap());
@@ -3875,11 +4021,13 @@ You review code."#;
         assert_eq!(result.status, "completed");
         assert_eq!(result.turns, Some(5));
 
-        assert!(!client
-            .completed_tasks
-            .lock()
-            .await
-            .contains_key("20260204_2"));
+        assert!(
+            !client
+                .completed_tasks
+                .lock()
+                .await
+                .contains_key("20260204_2")
+        );
 
         let result = client
             .handle_load_task_result("20260204_3", false, false, None)
@@ -4420,11 +4568,13 @@ You review code."#;
         assert!(text.contains("final output"));
 
         // Peek must be non-destructive: the result is still retrievable afterwards.
-        assert!(client
-            .completed_tasks
-            .lock()
-            .await
-            .contains_key("20260204_1"));
+        assert!(
+            client
+                .completed_tasks
+                .lock()
+                .await
+                .contains_key("20260204_1")
+        );
         let result = client
             .handle_load_task_result("20260204_1", false, false, None)
             .await
