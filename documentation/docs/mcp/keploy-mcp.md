@@ -8,9 +8,9 @@ import TabItem from '@theme/TabItem';
 import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructions';
 import GooseDesktopInstaller from '@site/src/components/GooseDesktopInstaller';
 
-This tutorial covers how to add the [Keploy MCP Server](https://github.com/keploy/keploy) as a goose extension to record real API traffic, generate deterministic integration tests with auto-generated mocks, and surface coverage gaps.
+This tutorial covers how to add the [Keploy MCP Server](https://github.com/keploy/keploy) as a goose extension to generate API test suites from OpenAPI specs, curl commands, or Postman collections, run them against a deployed environment, and surface coverage gaps.
 
-Keploy captures real API, database, and Kafka traffic with eBPF and replays it as deterministic tests. This remote MCP server lets goose record traffic, generate test suites from that traffic or from OpenAPI specs, curl commands, and Postman collections, run them against virtualized dependencies, and report coverage gaps.
+Keploy is an API testing platform that turns specs and real traffic into deterministic tests with auto-generated mocks. This remote MCP server lets goose generate test suites from OpenAPI specs, curl commands, or Postman collections, run them against a publicly reachable deployment (such as staging), and report coverage gaps. Recording live traffic with eBPF and replaying it against virtualized dependencies runs through the local Keploy CLI on your own machine — see the [Keploy docs](https://keploy.io/docs/running-keploy/agent-test-generation/).
 
 :::tip Quick Install
 <Tabs groupId="interface">
@@ -74,17 +74,19 @@ Keploy captures real API, database, and Kafka traffic with eBPF and replays it a
 
 ### goose Prompt
 ```
-Record the traffic from my checkout API and generate a test suite with mocks for the database and downstream calls.
+Generate a Keploy test suite from my OpenAPI spec at ./openapi.yaml and run
+it against my staging API at https://staging.example.com, then show coverage.
 ```
 
 ### goose Output
 ```
-I'll help you record traffic from your checkout API and turn it into a deterministic test suite.
+I'll generate a suite from your spec and run it against staging.
 
-1. Started Keploy's eBPF-based recorder against your checkout service
-2. Captured incoming API requests along with the database and downstream calls they triggered
-3. Generated a test suite from the captured traffic, with mocks for each database and downstream dependency
-4. Ran the generated tests against the virtualized dependencies and reported coverage gaps
+1. Read ./openapi.yaml and generated test suites covering its endpoints
+2. Ran the suites against https://staging.example.com and collected results
+3. Reported failures and prioritized the endpoints your spec defines but the
+   suites don't yet cover
 
-Your checkout API now has a deterministic test suite you can run in CI without hitting real dependencies.
+Your staging API now has a Keploy suite, plus a ranked list of coverage gaps
+to close next.
 ```
