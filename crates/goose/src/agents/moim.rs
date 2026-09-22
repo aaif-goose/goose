@@ -341,7 +341,7 @@ mod tests {
             turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)
                 .await
                 .unwrap();
-        let text = &message.content[0].as_text().unwrap().text;
+        let text = message.content[0].as_text().unwrap();
 
         assert!(text.contains("old context"));
         assert!(!text.contains("new context"));
