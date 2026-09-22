@@ -1,13 +1,18 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::conversation::{Conversation, EffectiveRole};
+use goose_providers::decision::{
+    DecisionAnswer, DecisionProvider, DecisionQuestion, DecisionRequest,
+};
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
+use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use super::{
     applied, last_effective_role, messages_since_kickoff, not_applicable, ConversationEffect,
@@ -16,16 +21,14 @@ use super::{
 use crate::config::Config;
 use crate::session::Session;
 
-const ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
-const MODEL: &str = "jev-1.13.0";
 const DECISION: &str = "decision";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct EffortDecision {
     effort: Option<ThinkingEffort>,
     model: Option<String>,
-    confidence: Option<f32>,
-    probabilities: HashMap<String, f32>,
+    confidence: Option<f64>,
+    probabilities: HashMap<String, f64>,
 }
 
 impl EffortDecision {
@@ -39,37 +42,13 @@ impl EffortDecision {
     }
 }
 
-#[derive(Deserialize)]
-struct JevResponse {
-    model: String,
-    answers: JevAnswers,
-}
-
-#[derive(Deserialize)]
-struct JevAnswers {
-    effort: JevChoice,
-}
-
-#[derive(Deserialize)]
-struct JevChoice {
-    choice: ThinkingEffort,
-    confidence: f32,
-    probabilities: HashMap<String, f32>,
-}
-
 pub struct AutoEffortOperation {
-    client: reqwest::Client,
-    api_key: String,
-    endpoint: String,
+    provider: Arc<dyn DecisionProvider>,
 }
 
 impl AutoEffortOperation {
-    pub(super) fn new(api_key: String, endpoint: String) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            api_key,
-            endpoint,
-        }
+    pub(super) fn new(provider: Arc<dyn DecisionProvider>) -> Self {
+        Self { provider }
     }
 
     pub fn from_config(model_config: &ModelConfig) -> Option<Self> {
@@ -91,43 +70,81 @@ impl AutoEffortOperation {
             return None;
         }
 
-        Some(Self::new(api_key, ENDPOINT.to_string()))
+        let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
+        let api_client = ApiClient::with_timeout_and_tls(
+            TYPESAFE_DEFAULT_HOST.to_string(),
+            AuthMethod::BearerToken(api_key),
+            Duration::from_secs(2),
+            tls_config,
+        )
+        .ok()?;
+
+        Some(Self::new(Arc::new(TypeSafeProvider::new(api_client))))
     }
 
     async fn classify(&self, request: &str) -> Result<EffortDecision> {
-        let response = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(&self.api_key)
-            .timeout(Duration::from_secs(2))
-            .json(&json!({
-                "model": MODEL,
-                "state": request,
-                "questions": {
-                    "effort": {
-                        "type": "choice",
-                        "instructions": "Choose the least thinking effort that can reliably handle this request.",
-                        "criteria": {
-                            "off": "No reasoning is needed, such as a greeting or a direct factual response.",
-                            "low": "A small amount of reasoning is enough for a simple, well-scoped task.",
-                            "medium": "The task needs several reasoning steps or ordinary coding work.",
-                            "high": "The task is complex, ambiguous, or needs careful planning and verification.",
-                            "max": "The task is exceptionally difficult or high stakes and benefits from the deepest available reasoning."
-                        }
-                    }
-                }
-            }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<JevResponse>()
+        let mut response = self
+            .provider
+            .create_decision(&DecisionRequest {
+                model: TYPESAFE_DEFAULT_MODEL.to_string(),
+                state: request.into(),
+                questions: HashMap::from([(
+                    "effort".to_string(),
+                    DecisionQuestion::Choice {
+                        instructions:
+                            "Choose the least thinking effort that can reliably handle this request."
+                                .to_string(),
+                        criteria: HashMap::from([
+                            (
+                                "off".to_string(),
+                                "No reasoning is needed, such as a greeting or a direct factual response."
+                                    .to_string(),
+                            ),
+                            (
+                                "low".to_string(),
+                                "A small amount of reasoning is enough for a simple, well-scoped task."
+                                    .to_string(),
+                            ),
+                            (
+                                "medium".to_string(),
+                                "The task needs several reasoning steps or ordinary coding work."
+                                    .to_string(),
+                            ),
+                            (
+                                "high".to_string(),
+                                "The task is complex, ambiguous, or needs careful planning and verification."
+                                    .to_string(),
+                            ),
+                            (
+                                "max".to_string(),
+                                "The task is exceptionally difficult or high stakes and benefits from the deepest available reasoning."
+                                    .to_string(),
+                            ),
+                        ]),
+                    },
+                )]),
+            })
             .await?;
+        let answer = response
+            .answers
+            .remove("effort")
+            .ok_or_else(|| anyhow!("decision provider returned no effort answer"))?;
+        let DecisionAnswer::Choice {
+            choice,
+            confidence,
+            probabilities,
+        } = answer
+        else {
+            return Err(anyhow!(
+                "decision provider returned a non-choice effort answer"
+            ));
+        };
 
         Ok(EffortDecision {
-            effort: Some(response.answers.effort.choice),
+            effort: Some(choice.parse().map_err(anyhow::Error::msg)?),
             model: Some(response.model),
-            confidence: Some(response.answers.effort.confidence),
-            probabilities: response.answers.effort.probabilities,
+            confidence: Some(confidence),
+            probabilities,
         })
     }
 }

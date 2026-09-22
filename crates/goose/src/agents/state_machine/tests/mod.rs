@@ -163,7 +163,9 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
 async fn turn_state_is_persisted_once_per_turn_and_reused_across_inferences() -> Result<()> {
     use std::sync::Arc;
 
+    use goose_providers::api_client::{ApiClient, AuthMethod};
     use goose_providers::thinking::ThinkingEffort;
+    use goose_providers::typesafe::TypeSafeProvider;
     use serde_json::json;
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -178,14 +180,16 @@ async fn turn_state_is_persisted_once_per_turn_and_reused_across_inferences() ->
             .and(header("authorization", "Bearer test-key"))
             .and(body_partial_json(json!({ "state": request })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "model": "jev-1.13.0",
+                "model": "jev-latest",
                 "answers": {
                     "effort": {
+                        "type": "choice",
                         "choice": effort,
                         "confidence": 0.9,
                         "probabilities": probabilities
                     }
-                }
+                },
+                "usage": {"input_tokens": 12, "output_tokens": 3}
             })))
             .expect(1)
             .mount(&jev)
@@ -193,13 +197,17 @@ async fn turn_state_is_persisted_once_per_turn_and_reused_across_inferences() ->
     }
 
     let (pipeline, api) = test_pipeline().await?;
+    let decision_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+        jev.uri(),
+        AuthMethod::BearerToken("test-key".to_string()),
+        None,
+    )?);
     let pipeline =
         pipeline
             .record_model_configs()
-            .with_operation(Arc::new(AutoEffortOperation::new(
-                "test-key".to_string(),
-                format!("{}/v1/systemone", jev.uri()),
-            )));
+            .with_operation(Arc::new(AutoEffortOperation::new(Arc::new(
+                decision_provider,
+            ))));
     api.on("add one").call(ADD, value(1));
     api.on("result: 1").reply("The total is 1");
     api.on("hello").reply("hi there!");
