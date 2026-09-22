@@ -51,6 +51,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "gemini_oauth" => "google",
         "databricks_v2" => "databricks",
         "zhipu" => "zhipuai",
+        "together" => "togetherai",
         "novita" => "novita-ai",
         "opencode_go" => "opencode-go",
         "opencode_zen" => "opencode",
