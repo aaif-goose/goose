@@ -21,9 +21,9 @@ string_slice = "warn"
 
 [workspace.dependencies]
 rmcp = { version = "3.2.0", default-features = false, features = ["schemars", "auth"] }
-agent-client-protocol-schema = { version = "=1.5.0", default-features = false }
-agent-client-protocol = { version = "2.0.0", default-features = false }
-agent-client-protocol-http = { version = "2.0.0", default-features = false }
+agent-client-protocol-schema = { version = "=1.9.1", default-features = false }
+agent-client-protocol = { version = "2.2.0", default-features = false }
+agent-client-protocol-http = { version = "2.2.0", default-features = false }
 arboard = { version = "3", default-features = false }
 anyhow = { version = "1.0.102", default-features = false, features = ["std"] }
 async-stream = { version = "0.3.6", default-features = false }
@@ -115,8 +115,6 @@ icu_calendar = { version = "=2.1.1", default-features = false }
 icu_locale = { version = "=2.1.1", default-features = false }
 
 [patch.crates-io]
-agent-client-protocol = { git = "https://github.com/agentclientprotocol/rust-sdk", rev = "c97a5203d3392f7f231514d84eea014f9f43e6fb" }
-agent-client-protocol-http = { git = "https://github.com/agentclientprotocol/rust-sdk", rev = "c97a5203d3392f7f231514d84eea014f9f43e6fb" }
 v8 = { path = "vendor/v8" }
 cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 
