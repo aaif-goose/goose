@@ -9,15 +9,15 @@ unlisted: true
 
 ![A goose selecting different-sized gears for one reasoning machine](/img/blog/teaching-goose-when-to-think-harder.jpg)
 
-Automatic model routing is having a moment. Six months ago companies were bragging how many tokens they were using and had internal leaderboards who was the most tokenmaxxed. Now CFOs everywhere are waking up to large LLM bills and cost cutting is becoming a thing in AI land. So using cheaper models for simpler tasks and reserving the most capable for things like tricky refactors has become an attractive idea.
+[Automatic model routing](/blog/2026/04/20/mesh-llm) is having a moment. Six months ago companies were bragging about how many tokens they were using and running internal leaderboards for who was the most tokenmaxxed. Now CFOs everywhere are waking up to large LLM bills, and cost-cutting is becoming a thing in AI land. So using cheaper models for simpler tasks and reserving the most capable for things like tricky refactors has become an attractive idea.
 
-But switching models is a blunt instrument. A different model can mean different tool-calling behavior, prompting quirks and context limits. Thinking blocks might not be preserved especially when switching providers. It also means you blow up the cache which can easily wipe out any cost savings.  Reasoning models expose another knob: keep the model fixed and vary how hard it thinks.
+But switching models is a blunt instrument. A different model can mean different tool-calling behavior, prompting quirks and context limits. Thinking blocks might not be preserved, especially when switching providers. It also means you blow away the cache, which can easily wipe out any cost savings. Reasoning models expose another knob: keep the model fixed and vary how hard it thinks.
 
 That is an attractive trade. Reasoning effort is already a range rather than a choice between unrelated models. The prompt, tools and model behavior stay the same. On APIs that support configuration updates, effort can now change without changing the cached prompt prefix. [OpenAI explicitly recommends this pattern](https://developers.openai.com/api/docs/guides/latest-model) when effort changes between responses. Automating this is a nice experiment that should fit our recently released [Agentic State Machines](/blog/2026/09/16/agentic-state-machines) well.
 
 <!-- truncate -->
 
-As luck would have it, there's currently a lot of enthusiasm about Decision Models and they are a good fit. TypeSafe [launched Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev), its first System One model. Jev is not a chat model. It takes some state and one or more typed questions, then returns choices, scores or yes/no probabilities. A Choice response includes the selected option, the probability of every option and a confidence value.
+As luck would have it, there's currently a lot of enthusiasm about decision models, and they are a good fit. TypeSafe [launched Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev), its first System One model. Jev is not a chat model. It takes some state and one or more typed questions, then returns choices, scores or yes/no probabilities. A `Choice` response includes the selected option, the probability of every option and a confidence value.
 
 That is almost exactly the shape of our problem. We do not need a second model to solve the user's task. We need one quick judgment about the task:
 
@@ -31,7 +31,7 @@ The options are ordered in our heads, but the result is still a typed choice the
 
 ## Operations as experiments
 
-In goose's state machine architecture effort selection can be implemented nicely as an Operation. In [the experiment PR](https://github.com/aaif-goose/goose/pull/12237) this is an `AutoEffortOperation` placed immediately before inference. In simplified form, it does this:
+In goose's state machine architecture, effort selection fits naturally as an Operation. In [the experiment PR](https://github.com/aaif-goose/goose/pull/12237), this is an [`AutoEffortOperation`](https://github.com/aaif-goose/goose/blob/237b1ed163a19857b6b832f63e9efacc51b209ea/crates/goose/src/agents/state_machine/ops_auto_effort.rs) placed immediately before inference. In simplified form, it does this:
 
 ```text
 if the kickoff message already has an effort decision:
@@ -57,24 +57,24 @@ The same thing happens after a restart because the decision is conversation meta
 
 ## The test is the explanation
 
-The lifecycle test tells the whole story better than a collection of unit tests could.
+The [lifecycle test](https://github.com/aaif-goose/goose/blob/237b1ed163a19857b6b832f63e9efacc51b209ea/crates/goose/src/agents/state_machine/tests/mod.rs#L161-L268) tells the whole story better than a collection of unit tests could.
 
-The first user message is "add one." The mocked Jev endpoint chooses `high`. Inference asks the calculator tool to add one, receives the result and runs again to produce the final answer. Both inference calls use high effort, but Jev is called exactly once.
+The first user message is "add one." The mocked Jev endpoint chooses `high`. Inference asks the calculator tool to add one, receives the result and runs again to produce the final answer. Both inference calls use `high` effort, but Jev is called exactly once.
 
 The next user message is "hello." That begins a new turn, Jev chooses `off` and inference responds without reasoning harder than it needs to. The persisted conversation contains two full decisions and the client sees one short operation log on each resulting assistant message.
 
 That scenario simultaneously checks turn boundaries, tool loops, persistence, model configuration and observability. More importantly, it checks that the behavior is state-machine behavior. If the implementation had hidden progress in a local variable, reconstructing the machine between steps would expose it.
 
-## New Plumbing
+## New plumbing
 
-The automatic effort Operation is roughly 210 lines, but in the process of integrating it with the desktop, we discovered some extra plumbing that was needed to make this work smoothly. These changes should be useful for future experiments.
+The automatic effort Operation is roughly 210 lines, but integrating it with the desktop exposed some plumbing the state machine still needed. These changes should be useful for future experiments.
 
 We added two general capabilities:
 
 - An Operation can return an effect that updates persisted model configuration.
 - An Operation can attach a structured note to a message, including a short log that clients may display.
 
-Both of these seem generally useful and will probably grow. Allowing Operations to change any setting in the session and allowing Operations to accurately inform the user what they did and why all fit our general plans well.
+Both should serve future experiments: Operations can update session configuration and tell the user what they changed without adding experiment-specific paths to the machine.
 
 ## The shape of an experiment
 
