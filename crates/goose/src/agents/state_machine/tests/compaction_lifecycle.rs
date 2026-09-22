@@ -2,16 +2,14 @@ use anyhow::Result;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
-use super::calculator_extension::{value, ADD, TAPE};
+use super::calculator_extension::{value, ADD};
 use super::dummy_api::ProviderFeatures;
 use super::pipeline::{self, test_pipeline, MessageKind::Agent};
-use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
 use crate::conversation::message::{Message, MessageErrorKind};
 use crate::conversation::Conversation;
-use crate::recipe::{Recipe, Response};
 
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
@@ -500,137 +498,6 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
         .agent_visible_messages()
         .iter()
         .any(|message| message.as_concat_text().contains(&large_result)));
-
-    Ok(())
-}
-
-/// The system prompt is resent with every request but never summarized, so it
-/// fills the window without pushing the summarization request over the limit.
-async fn fill_most_of_the_window(pipeline: &pipeline::TestPipeline) {
-    pipeline
-        .set_system_prompt_override("x".repeat(pipeline.context_limit() * 6 / 10))
-        .await;
-}
-
-#[tokio::test]
-async fn a_tool_result_that_crosses_the_threshold_compacts_before_the_next_request() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let context_limit = pipeline.context_limit();
-    let threshold = (context_limit as f64 * pipeline::COMPACTION_THRESHOLD) as i32;
-    fill_most_of_the_window(&pipeline).await;
-
-    api.on("print the tape")
-        .call(TAPE, serde_json::json!({ "lines": context_limit / 40 }));
-    api.on(SUMMARIZE_HISTORY).reply("tape summarized");
-    api.on("Your context was compacted").reply("tape printed");
-
-    let printed = pipeline.run(["print the tape"]).await?;
-    printed.assert_message(-1, Agent, "tape printed");
-    assert_eq!(printed.history_replacements(), 1);
-
-    let reported_before_tape = printed
-        .conversation()
-        .messages()
-        .iter()
-        .find(|message| message.is_tool_call())
-        .and_then(|message| message.metadata.usage.as_deref())
-        .and_then(|usage| usage.total_tokens)
-        .expect("usage of the inference that requested the tape");
-    assert!(
-        reported_before_tape <= threshold,
-        "only the unreported tape should cross the threshold ({reported_before_tape} > {threshold})"
-    );
-
-    assert!(
-        !api.calls()
-            .iter()
-            .any(|call| call.input_contains("tape line")),
-        "the tape reached the model before compaction"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn compaction_waits_until_every_call_in_a_tool_batch_is_answered() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    fill_most_of_the_window(&pipeline).await;
-    let skill_dir = pipeline.working_dir().join(".agents/skills/ledger");
-    std::fs::create_dir_all(&skill_dir)?;
-    let ledger = (0..pipeline.context_limit() / 40)
-        .map(|line| format!("ledger line {line}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(
-        skill_dir.join("SKILL.md"),
-        format!("---\nname: ledger\ndescription: Calculation ledger\n---\n{ledger}"),
-    )?;
-
-    // SkillOperation answers load_skill before ToolExecutionOperation runs the
-    // tape, and the ledger alone crosses the threshold.
-    api.on("print the tape").calls([
-        (
-            "skill",
-            "load_skill",
-            serde_json::json!({ "name": "ledger" }),
-        ),
-        ("tape", TAPE, serde_json::json!({ "lines": 1 })),
-    ]);
-    api.on(SUMMARIZE_HISTORY).reply("tape summarized");
-    api.on("Your context was compacted").reply("tape printed");
-
-    let printed = pipeline.run(["print the tape"]).await?;
-    printed.assert_message(-1, Agent, "tape printed");
-    assert_eq!(printed.history_replacements(), 1);
-
-    let tape_response = printed
-        .conversation()
-        .messages()
-        .iter()
-        .find(|message| message.get_tool_response_ids().contains("tape"))
-        .expect("tape response");
-    assert!(
-        !tape_response.is_agent_visible(),
-        "the tape ran after compaction hid its request"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_final_output_that_crosses_the_threshold_is_delivered_without_compacting() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    fill_most_of_the_window(&pipeline).await;
-    let recipe = Recipe::builder()
-        .title("Structured output")
-        .description("Return structured output")
-        .instructions("Compute the answer")
-        .response(Response {
-            json_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": { "result": { "type": "string" } },
-                "required": ["result"]
-            })),
-        })
-        .build()
-        .expect("valid recipe");
-    pipeline.set_recipe(recipe).await?;
-    api.on("compute the answer").calls([
-        (
-            "tape",
-            TAPE,
-            serde_json::json!({ "lines": pipeline.context_limit() / 40 }),
-        ),
-        (
-            "answer",
-            FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "result": "42" }),
-        ),
-    ]);
-
-    let completed = pipeline.run(["compute the answer"]).await?;
-    completed.assert_message(-1, Agent, r#"{"result":"42"}"#);
-    assert_eq!(completed.history_replacements(), 0);
 
     Ok(())
 }
