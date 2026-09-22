@@ -243,9 +243,8 @@ impl Kernel {
     }
 
     pub fn kill(&mut self) {
-        // The driver has its own process group (see `process_group(0)`); kill the
-        // whole group so a subprocess it spawned is not orphaned on reap or crash.
-        #[cfg(unix)]
+        // Take the driver's subprocesses too, so a command it spawned is not
+        // orphaned on reap or crash.
         self.kill_process_group();
         let _ = self.child.start_kill();
     }
@@ -295,15 +294,32 @@ impl Kernel {
     #[cfg(not(unix))]
     fn interrupt(&mut self) {
         tracing::warn!("cell interrupt is not supported on this platform; killing the kernel");
+        self.kill_process_group();
         let _ = self.child.start_kill();
     }
 
+    /// The driver has its own process group (see `process_group(0)`), so one
+    /// signal reaches every subprocess it spawned.
     #[cfg(unix)]
     fn kill_process_group(&self) {
         if let Some(pid) = self.child.id() {
             unsafe {
                 libc::kill(-(pid as i32), libc::SIGKILL);
             }
+        }
+    }
+
+    /// Without process groups, `taskkill /T` walks the driver's process tree while
+    /// the driver is still alive to be its root; killing the driver first would
+    /// orphan a shell command it was blocked in.
+    #[cfg(not(unix))]
+    fn kill_process_group(&self) {
+        if let Some(pid) = self.child.id() {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
         }
     }
 
@@ -325,7 +341,6 @@ impl Drop for Kernel {
         // `kill_on_drop` only reaps the driver PID; take its subprocesses too when
         // the kernel is dropped without an explicit `kill()` (e.g. the extension
         // is disabled before the idle reaper runs).
-        #[cfg(unix)]
         self.kill_process_group();
     }
 }

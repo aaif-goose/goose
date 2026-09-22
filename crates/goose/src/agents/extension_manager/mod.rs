@@ -172,6 +172,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     extensions: Mutex<HashMap<String, Extension>>,
+    displaced: std::sync::Mutex<HashMap<String, ExtensionConfig>>,
     context: PlatformExtensionContext,
     provider: SharedProvider,
     tools_cache: Mutex<Option<Arc<Vec<Tool>>>>,
@@ -418,6 +419,7 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             extensions: Mutex::new(HashMap::new()),
+            displaced: std::sync::Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 session_manager,
@@ -494,7 +496,12 @@ impl ExtensionManager {
         }
 
         if let Some(replaced) = platform_extensions::replaces(&sanitized_name) {
-            self.evict_extension(replaced).await;
+            if let Some(config) = self.evict_extension(replaced).await {
+                self.displaced
+                    .lock()
+                    .unwrap()
+                    .insert(replaced.to_string(), config);
+            }
         } else if let Some(replacement) = platform_extensions::replaced_by(&sanitized_name) {
             self.evict_extension(replacement).await;
         }
@@ -591,6 +598,7 @@ impl ExtensionManager {
 
         let server_info = client.get_info().cloned();
 
+        self.displaced.lock().unwrap().remove(&sanitized_name);
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             sanitized_name,
@@ -639,16 +647,14 @@ impl ExtensionManager {
         Ok(())
     }
 
-    async fn evict_extension(&self, key: &str) -> bool {
-        let removed = self.extensions.lock().await.remove(key).is_some();
-        if removed {
-            self.invalidate_tools_cache_and_bump_version().await;
-        }
-        removed
+    async fn evict_extension(&self, key: &str) -> Option<ExtensionConfig> {
+        let removed = self.extensions.lock().await.remove(key)?;
+        self.invalidate_tools_cache_and_bump_version().await;
+        Some(removed.config)
     }
 
     pub async fn remove_extension_by_key(self: &Arc<Self>, key: &str) -> ExtensionResult<bool> {
-        let removed = self.evict_extension(key).await;
+        let removed = self.evict_extension(key).await.is_some();
         if removed {
             if let Some(replaced) = platform_extensions::replaces(key) {
                 self.restore_extension(replaced).await?;
@@ -660,10 +666,12 @@ impl ExtensionManager {
     /// Bring back the extension displaced by an exclusive replacement (Developer
     /// after Python Session is removed). The pair is mutually exclusive, so this
     /// runs regardless of the stored enabled flag - which the companion toggle set
-    /// to disabled while the replacer was active - and reuses the displaced
-    /// extension's own config so its settings are not lost.
+    /// to disabled while the replacer was active. The evicted instance's own
+    /// config comes first so a session or recipe restriction (such as a limited
+    /// `available_tools`) is not widened to the global defaults.
     async fn restore_extension(self: &Arc<Self>, key: &str) -> ExtensionResult<()> {
-        match crate::config::extensions::get_extension_by_name(key) {
+        let displaced = self.displaced.lock().unwrap().remove(key);
+        match displaced.or_else(|| crate::config::extensions::get_extension_by_name(key)) {
             Some(config) => Box::pin(self.add_extension(config, None, None, None)).await,
             None => Ok(()),
         }
@@ -2136,6 +2144,52 @@ mod tests {
             .collect();
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    #[tokio::test]
+    async fn test_removing_python_session_restores_developer_with_its_own_config() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let em = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        em.add_mock_extension_with_tools(
+            "developer".to_string(),
+            Arc::new(MockClient {}),
+            vec!["shell".to_string()],
+        )
+        .await;
+
+        em.add_extension(
+            ExtensionConfig::Platform {
+                name: "python_session".to_string(),
+                description: String::new(),
+                display_name: None,
+                bundled: Some(true),
+                available_tools: Vec::new(),
+            },
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(!em.is_extension_enabled("developer").await);
+
+        em.remove_extension("python_session").await.unwrap();
+        let restored = em
+            .get_extension_configs()
+            .await
+            .into_iter()
+            .find(|config| config.key() == "developer")
+            .expect("developer is restored when python_session is removed");
+        assert!(
+            matches!(
+                restored,
+                ExtensionConfig::Builtin { ref available_tools, .. }
+                    if available_tools == &["shell".to_string()]
+            ),
+            "the displaced developer config must come back, not the global default"
+        );
     }
 
     #[tokio::test]

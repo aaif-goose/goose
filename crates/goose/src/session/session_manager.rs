@@ -449,6 +449,10 @@ impl SessionManager {
         self.storage.get_session(id, include_messages).await
     }
 
+    pub async fn session_exists(&self, id: &str) -> Result<bool> {
+        self.storage.session_exists(id).await
+    }
+
     pub fn update(&self, id: &str) -> SessionUpdateBuilder<'_> {
         SessionUpdateBuilder::new(self, id.to_string())
     }
@@ -1675,6 +1679,15 @@ impl SessionStorage {
         #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
         Ok(session)
+    }
+
+    async fn session_exists(&self, id: &str) -> Result<bool> {
+        let pool = self.pool().await?;
+        let found = sqlx::query_scalar::<_, i64>("SELECT 1 FROM sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+        Ok(found.is_some())
     }
 
     async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {

@@ -52,6 +52,7 @@ struct PythonOutput {
 
 struct SessionSlot {
     kernel: Option<Kernel>,
+    state_path: Option<PathBuf>,
     reset_pending: bool,
     restore_notice: Option<String>,
     last_used: Instant,
@@ -61,6 +62,7 @@ impl Default for SessionSlot {
     fn default() -> Self {
         Self {
             kernel: None,
+            state_path: None,
             reset_pending: false,
             restore_notice: None,
             last_used: Instant::now(),
@@ -278,6 +280,7 @@ impl PythonSessionClient {
             env: self.child_env().await,
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
+        slot.state_path = spec.state_path;
         let restored = kernel.restored_names();
         let dropped = kernel.dropped_names();
         if !restored.is_empty() || !dropped.is_empty() {
@@ -366,6 +369,19 @@ impl PythonSessionClient {
             .exec(&code, cell_timeout(), cancellation_token)
             .await;
 
+        // The driver snapshots after every cell, so a session deleted while this
+        // cell ran has just had its snapshot re-created after the deletion sweep.
+        if self.session_deleted(&ctx.session_id).await {
+            if let Some(mut kernel) = slot.kernel.take() {
+                kernel.kill();
+            }
+            if let Some(path) = &slot.state_path {
+                let _ = std::fs::remove_file(path);
+            }
+            self.ns_cache.lock().unwrap().remove(&ctx.session_id);
+            return Err("the session was deleted while the cell was running".to_string());
+        }
+
         let outcome = match exec_result {
             Ok(outcome) => outcome,
             Err(e) => {
@@ -440,6 +456,16 @@ impl PythonSessionClient {
         } else {
             CallToolResult::success(blocks)
         }
+    }
+
+    async fn session_deleted(&self, session_id: &str) -> bool {
+        matches!(
+            self.context
+                .session_manager
+                .session_exists(session_id)
+                .await,
+            Ok(false)
+        )
     }
 
     fn cached_listing(&self, session_id: &str) -> Option<String> {
