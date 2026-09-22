@@ -12,6 +12,7 @@ import io
 import json
 import os
 import pickle
+import re
 import signal
 import subprocess
 import sys
@@ -25,6 +26,12 @@ STATE_PATH = os.environ.get("GOOSE_PYTHON_SESSION_STATE_PATH", "")
 STATE_VALUE_CAP = 8 * 1024 * 1024
 STATE_TOTAL_CAP = 64 * 1024 * 1024
 _DRIVER_FILE = globals().get("__file__", "<python-session-driver>")
+# Lone surrogates (e.g. from bytes decoded with surrogateescape) cannot be
+# serialized to valid JSON; the host's parser rejects them.
+_SURROGATE_RE = re.compile("[\ud800-\udfff]")
+# Process-group ids of shell commands currently running in their own session,
+# so a SIGTERM teardown can reap them instead of orphaning them.
+_child_sessions = set()
 
 
 def _truncate(text, limit=MAX_CHARS):
@@ -105,6 +112,8 @@ def sh(command, timeout=None, cwd=None, env=None):
         env=env,
         start_new_session=posix,
     )
+    if posix:
+        _child_sessions.add(proc.pid)
 
     def _kill_group():
         try:
@@ -132,6 +141,9 @@ def sh(command, timeout=None, cwd=None, env=None):
     except KeyboardInterrupt:
         _kill_group()
         raise
+    finally:
+        if posix:
+            _child_sessions.discard(proc.pid)
 
 
 def edit(path, old, new):
@@ -402,13 +414,29 @@ def _respond(proto, req_id, payload):
     for key in ("stdout", "stderr", "value", "error"):
         if isinstance(payload.get(key), str):
             payload[key], _ = _truncate(payload[key])
-    proto.write(json.dumps(payload) + "\n")
+    # Replace lone surrogates before the host parses this line, so inspecting a
+    # non-UTF-8 file or filename cannot wedge the cell until its timeout.
+    line = _SURROGATE_RE.sub("\ufffd", json.dumps(payload, ensure_ascii=False))
+    proto.write(line + "\n")
     proto.flush()
+
+
+def _terminate(_signum, _frame):
+    # Reap shell commands still running in their own session before exiting, so a
+    # host teardown (user stop, extension disable) does not orphan them.
+    for pgid in list(_child_sessions):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            pass
+    os._exit(0)
 
 
 def main():
     proto = os.fdopen(os.dup(1), "w", buffering=1)
     os.dup2(2, 1)
+    if os.name == "posix":
+        signal.signal(signal.SIGTERM, _terminate)
 
     # The driver runs as a script, so sys.path[0] is its temp directory; make it
     # the current directory instead (like a REPL) so cells can import project

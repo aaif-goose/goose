@@ -1281,6 +1281,7 @@ impl Agent {
 
         let session_id = session.id.clone();
 
+        self.extension_manager.remember_displaced(&enabled_configs);
         let extension_futures = platform_extensions::without_replaced(enabled_configs)
             .into_iter()
             .map(|config| {
@@ -1387,6 +1388,7 @@ impl Agent {
         };
         let container = self.container.lock().await.clone();
 
+        self.extension_manager.remember_displaced(&extensions);
         let extension_futures = platform_extensions::without_replaced(extensions)
             .into_iter()
             .map(|config| {

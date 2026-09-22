@@ -166,17 +166,19 @@ pub fn set_extension(entry: ExtensionEntry) {
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
     let key = entry.config.key();
     with_raw_extensions_mapping(config, |extensions| {
-        // Only flip the companion when this write introduces the extension or
-        // actually changes its enabled state. The ACP config path re-upserts
-        // existing entries, so rewriting an unchanged "disabled" must not silently
-        // re-enable the counterpart (and its shell tools). Mirrors
-        // set_extension_enabled_with_config.
+        // Enabling an extension always enforces the mutual-exclusion invariant,
+        // even on a fresh config where the counterpart has no entry yet, so the
+        // extensions list never shows both execution extensions active. A write
+        // that only disables or re-saves an entry is gated on an actual
+        // transition: the ACP config path re-upserts existing entries, and
+        // rewriting an unchanged "disabled" must not silently re-enable the
+        // counterpart (and its shell tools).
         let transitions = extensions
             .get(&key)
             .map(|existing| existing.enabled != entry.enabled)
             .unwrap_or(true);
-        let mut mutations = if transitions {
-            companion_mutations(extensions, &key, entry.enabled)
+        let mut mutations = if entry.enabled || transitions {
+            companion_mutations(config, extensions, &key, entry.enabled)
         } else {
             Vec::new()
         };
@@ -188,6 +190,7 @@ fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
 /// Enabling an extension that replaces another (or vice versa) flips the other
 /// entry too, so the extensions list always shows which one is active.
 fn companion_mutations(
+    config: &Config,
     extensions: &IndexMap<String, ExtensionEntry>,
     key: &str,
     enabled: bool,
@@ -197,18 +200,33 @@ fn companion_mutations(
     else {
         return Vec::new();
     };
-    extensions
-        .get(companion_key)
-        .filter(|entry| entry.enabled != companion_enabled)
-        .map(|entry| {
+    match extensions.get(companion_key) {
+        Some(entry) if entry.enabled != companion_enabled => {
             let mut entry = entry.clone();
             entry.enabled = companion_enabled;
             vec![ExtensionMutation::Upsert(
                 companion_key.to_string(),
                 Box::new(entry),
             )]
-        })
-        .unwrap_or_default()
+        }
+        Some(_) => Vec::new(),
+        // The counterpart has no entry yet. Synthesize a disabled one only when we
+        // must force it off (this write enables its replacer): a default-on
+        // counterpart would otherwise load alongside. When the desired state is
+        // "on", the missing entry already defaults on, so nothing to write.
+        None if !companion_enabled => get_extension_by_name_with_config(config, companion_key)
+            .map(|config| {
+                vec![ExtensionMutation::Upsert(
+                    companion_key.to_string(),
+                    Box::new(ExtensionEntry {
+                        enabled: companion_enabled,
+                        config,
+                    }),
+                )]
+            })
+            .unwrap_or_default(),
+        None => Vec::new(),
+    }
 }
 
 pub fn remove_extension(key: &str) {
@@ -241,7 +259,7 @@ fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) 
         let mut mutations = if was_enabled == enabled {
             Vec::new()
         } else {
-            companion_mutations(extensions, key, enabled)
+            companion_mutations(config, extensions, key, enabled)
         };
         mutations.push(ExtensionMutation::Upsert(key.to_string(), Box::new(entry)));
         mutations
@@ -904,6 +922,47 @@ extensions:
 
         set_extension_enabled_with_config(&config, "python_session", false);
         assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+    }
+
+    #[test]
+    fn test_enabling_python_session_on_empty_config_disables_developer() {
+        let (config, _config_file, _secrets_file) = test_config("");
+        // Fresh install: Developer has no entry and would default on. Enabling
+        // Python Session must record Developer as disabled so the two never both
+        // load and the extensions list shows exactly one active.
+        set_extension_with_config(&config, builtin_entry("python_session", true));
+        assert_eq!(
+            configured_enabled_state(&config, "python_session"),
+            Some(true)
+        );
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+    }
+
+    #[test]
+    fn test_enabling_developer_repairs_both_enabled_config() {
+        let (config, _config_file, _secrets_file) = test_config("");
+        // A hand-edited config with both enabled is inconsistent; an explicit
+        // enable of Developer must force Python Session off even though Developer
+        // shows no enabled-state transition.
+        with_raw_extensions_mapping(&config, |_| {
+            vec![
+                ExtensionMutation::Upsert(
+                    "developer".to_string(),
+                    Box::new(builtin_entry("developer", true)),
+                ),
+                ExtensionMutation::Upsert(
+                    "python_session".to_string(),
+                    Box::new(builtin_entry("python_session", true)),
+                ),
+            ]
+        });
+
+        set_extension_with_config(&config, builtin_entry("developer", true));
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
+        assert_eq!(
+            configured_enabled_state(&config, "python_session"),
+            Some(false)
+        );
     }
 
     #[test]

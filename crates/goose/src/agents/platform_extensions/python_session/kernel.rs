@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 const DRIVER_SOURCE: &str = include_str!("driver.py");
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
+const TEARDOWN_GRACE: Duration = Duration::from_millis(500);
 const STDERR_TAIL_CHARS: usize = 4096;
 
 pub struct KernelSpec {
@@ -257,6 +258,32 @@ impl Kernel {
         let _ = self.child.start_kill();
     }
 
+    /// Stop the kernel, giving the driver a moment to reap shell commands that run
+    /// in their own session (which a process-group SIGKILL cannot reach) before a
+    /// hard kill. Used when a dropped request abandons a running cell.
+    pub async fn graceful_kill(mut self) {
+        self.terminate();
+        tokio::time::sleep(TEARDOWN_GRACE).await;
+        self.kill();
+    }
+
+    #[cfg(unix)]
+    fn terminate(&self) {
+        // SIGTERM the group; the driver's handler reaps its tracked shell sessions
+        // and exits. A shell started with its own session is otherwise orphaned.
+        if let Some(pid) = self.child.id() {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGTERM);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn terminate(&self) {
+        // taskkill /T already walks the whole process tree, so there is no
+        // separate session to reap; the hard kill after the grace suffices.
+    }
+
     async fn request(&mut self, mut payload: serde_json::Value) -> Result<i64> {
         let id = self.next_id;
         self.next_id += 1;
@@ -389,8 +416,17 @@ impl RunningKernel {
 
 impl Drop for RunningKernel {
     fn drop(&mut self) {
-        if let Some(mut kernel) = self.kernel.take() {
-            kernel.kill();
+        let Some(mut kernel) = self.kernel.take() else {
+            return;
+        };
+        // Give teardown a lifecycle independent of the abandoned request: a
+        // detached task interrupts, waits out the grace, then hard-kills, so a
+        // running cell's shell subprocesses are reaped rather than orphaned.
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(async move { kernel.graceful_kill().await });
+            }
+            Err(_) => kernel.kill(),
         }
     }
 }

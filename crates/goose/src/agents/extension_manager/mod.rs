@@ -495,17 +495,6 @@ impl ExtensionManager {
             );
         }
 
-        if let Some(replaced) = platform_extensions::replaces(&sanitized_name) {
-            if let Some(config) = self.evict_extension(replaced).await {
-                self.displaced
-                    .lock()
-                    .unwrap()
-                    .insert(replaced.to_string(), config);
-            }
-        } else if let Some(replacement) = platform_extensions::replaced_by(&sanitized_name) {
-            self.evict_extension(replacement).await;
-        }
-
         let working_dir = working_dir
             .or_else(|| std::env::var("GOOSE_WORKING_DIR").ok().map(PathBuf::from))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
@@ -600,6 +589,10 @@ impl ExtensionManager {
 
         self.displaced.lock().unwrap().remove(&sanitized_name);
         let mut extensions = self.extensions.lock().await;
+        // Evict the mutual-exclusion counterpart and insert under the same lock, so
+        // a concurrent add of the counterpart cannot interleave between the two and
+        // leave both extensions active.
+        self.evict_companion_locked(&mut extensions, &sanitized_name);
         extensions.insert(
             sanitized_name,
             Extension::new(config, resolved_config, Arc::from(client), server_info),
@@ -610,6 +603,39 @@ impl ExtensionManager {
         Ok(())
     }
 
+    /// Record configs that bulk loading is about to drop because their
+    /// mutual-exclusion replacement is also being loaded, so a later removal of the
+    /// replacement restores the session's own config (e.g. a recipe's restricted
+    /// `available_tools`) instead of the global default. Without this, the dropped
+    /// config is never live, so it is never captured by `evict_companion_locked`.
+    pub fn remember_displaced(&self, configs: &[ExtensionConfig]) {
+        let keys: Vec<String> = configs.iter().map(|config| config.key()).collect();
+        let mut displaced = self.displaced.lock().unwrap();
+        for config in configs {
+            if let Some(replacement) = platform_extensions::replaced_by(&config.key()) {
+                if keys.iter().any(|key| key == replacement) {
+                    displaced.insert(config.key(), config.clone());
+                }
+            }
+        }
+    }
+
+    /// Remove the mutual-exclusion counterpart of `key` from an already-held
+    /// extensions map, remembering a displaced replaced config so it can be
+    /// restored when the replacer is later removed.
+    fn evict_companion_locked(&self, extensions: &mut HashMap<String, Extension>, key: &str) {
+        if let Some(replaced) = platform_extensions::replaces(key) {
+            if let Some(removed) = extensions.remove(replaced) {
+                self.displaced
+                    .lock()
+                    .unwrap()
+                    .insert(replaced.to_string(), removed.config);
+            }
+        } else if let Some(replacement) = platform_extensions::replaced_by(key) {
+            extensions.remove(replacement);
+        }
+    }
+
     pub async fn add_client(
         &self,
         name: String,
@@ -618,10 +644,13 @@ impl ExtensionManager {
         info: Option<ServerInfo>,
     ) {
         let normalized = name_to_key(&name);
-        self.extensions.lock().await.insert(
+        let mut extensions = self.extensions.lock().await;
+        self.evict_companion_locked(&mut extensions, &normalized);
+        extensions.insert(
             normalized,
             Extension::new(config.clone(), config.clone(), client, info),
         );
+        drop(extensions);
         self.invalidate_tools_cache_and_bump_version().await;
     }
 

@@ -146,3 +146,29 @@ async fn namespace_survives_process_restart_via_state_snapshot() {
     let outcome = exec(&mut revived, "totals['b']").await;
     assert_eq!(outcome.value.as_deref(), Some("2"));
 }
+
+#[tokio::test]
+async fn surrogate_output_does_not_hang_the_cell() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    // Bytes decoded with surrogateescape (e.g. inspecting a non-UTF-8 file or
+    // filename) yield lone surrogates. The driver must neutralize them before the
+    // response is parsed; otherwise the cell would wedge until its timeout.
+    let outcome = kernel
+        .exec(
+            r#"print("start", b"\xff\xfe".decode("utf-8", "surrogateescape"), "end")"#,
+            Duration::from_secs(10),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("surrogate output must not kill the kernel");
+
+    assert!(outcome.error.is_none());
+    assert!(outcome.stdout.contains("start"));
+    assert!(outcome.stdout.contains("end"));
+
+    // The kernel is still healthy for the next cell.
+    let outcome = exec(&mut kernel, "1 + 1").await;
+    assert_eq!(outcome.value.as_deref(), Some("2"));
+}
