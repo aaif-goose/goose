@@ -1001,15 +1001,11 @@ const UNSUPPORTED_SCHEMA_KEYWORDS: [&str; 16] = [
 ];
 
 fn sanitize_schema_node(node: &mut Value) {
-    // Unwrap nullable wrappers first so the keywords they hoist into this node are
-    // still seen by composition normalization and keyword stripping below.
-    normalize_nullable(node);
+    normalize_node(node);
 
     let Some(obj) = node.as_object_mut() else {
         return;
     };
-
-    normalize_compositions(obj);
 
     for keyword in UNSUPPORTED_SCHEMA_KEYWORDS {
         obj.remove(keyword);
@@ -1049,23 +1045,30 @@ fn sanitize_schema_node(node: &mut Value) {
     }
 }
 
-/// Converts unsupported composition keywords without discarding their subschemas.
-/// `oneOf` is intentionally relaxed to `anyOf` for tool-argument compatibility. `allOf` members
-/// are merged when their intersection can be represented directly; otherwise they are relaxed to
-/// alternatives because OpenAI's supported subset cannot express a general schema intersection.
-/// A merged `allOf` member can itself carry `allOf`/`oneOf`/`anyOf`, which would otherwise land in
-/// the output after this node's normalization pass and never be revisited by the traversal.
-/// Re-normalizing until the node is stable keeps those nested compositions from leaking through.
-fn normalize_compositions(obj: &mut serde_json::Map<String, Value>) {
-    loop {
-        normalize_compositions_once(obj);
-        if !obj.contains_key("allOf") && !obj.contains_key("oneOf") {
+/// Applies the node-local rewrites until the node stops changing. Each rewrite can reintroduce
+/// keywords the other handles, and the traversal never revisits a node, so one pass each would let
+/// those forms reach the provider.
+fn normalize_node(node: &mut Value) {
+    for _ in 0..MAX_NORMALIZE_PASSES {
+        let before = node.clone();
+        normalize_nullable(node);
+        if let Some(obj) = node.as_object_mut() {
+            normalize_compositions(obj);
+        }
+        if *node == before {
             return;
         }
     }
 }
 
-fn normalize_compositions_once(obj: &mut serde_json::Map<String, Value>) {
+/// Guards against a pathological schema spinning forever; real schemas settle in a pass or two.
+const MAX_NORMALIZE_PASSES: usize = 32;
+
+/// Converts unsupported composition keywords without discarding their subschemas.
+/// `oneOf` is intentionally relaxed to `anyOf` for tool-argument compatibility. `allOf` members
+/// are merged when their intersection can be represented directly; otherwise they are relaxed to
+/// alternatives because OpenAI's supported subset cannot express a general schema intersection.
+fn normalize_compositions(obj: &mut serde_json::Map<String, Value>) {
     let mut relaxed_all_of = Vec::new();
     if let Some(Value::Array(mut schemas)) = obj.remove("allOf") {
         let mut merged = obj.clone();
@@ -2421,6 +2424,10 @@ mod tests {
                         { "type": "array", "uniqueItems": true, "oneOf": [{ "type": "array" }] },
                         { "type": "null" }
                     ]
+                },
+                "nullable_via_all_of": { "allOf": [{ "type": ["string", "null"] }] },
+                "nullable_any_of_via_all_of": {
+                    "allOf": [{ "anyOf": [{ "type": "integer" }, { "type": "null" }] }]
                 }
             }
         });
@@ -2457,6 +2464,13 @@ mod tests {
         let nullable_constrained = &schema["properties"]["nullable_constrained"];
         assert_eq!(nullable_constrained["type"], "array");
         assert!(nullable_constrained.get("oneOf").is_none());
+        assert_eq!(
+            schema["properties"]["nullable_via_all_of"]["type"],
+            "string"
+        );
+        let nullable_any_of = &schema["properties"]["nullable_any_of_via_all_of"];
+        assert_eq!(nullable_any_of["type"], "integer");
+        assert!(nullable_any_of.get("anyOf").is_none());
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
