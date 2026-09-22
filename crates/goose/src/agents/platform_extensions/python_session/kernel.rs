@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio_util::sync::CancellationToken;
 
@@ -79,24 +79,28 @@ pub struct Kernel {
     stdin: ChildStdin,
     lines: Lines<BufReader<ChildStdout>>,
     next_id: i64,
-    stderr_tail: Arc<Mutex<String>>,
+    stderr_tail: Arc<Mutex<Vec<u8>>>,
     restored_names: Vec<String>,
     dropped_names: Vec<String>,
-    _driver_file: tempfile::NamedTempFile,
+    _driver_dir: tempfile::TempDir,
 }
 
 impl Kernel {
     pub async fn spawn(spec: &KernelSpec) -> Result<Self> {
-        let driver_file = tempfile::Builder::new()
+        // The driver lives in its own directory so the interpreter's implicit
+        // `sys.path[0]` (the script's directory) is owner-only and empty apart
+        // from the driver; on a shared /tmp another user cannot plant an
+        // `ast.py`/`json.py` there to shadow the driver's stdlib imports.
+        let driver_dir = tempfile::Builder::new()
             .prefix("goose-python-session-")
-            .suffix(".py")
-            .tempfile()
-            .context("failed to write the python session driver to a temporary file")?;
-        std::fs::write(driver_file.path(), DRIVER_SOURCE)?;
+            .tempdir()
+            .context("failed to create the python session driver directory")?;
+        let driver_path = driver_dir.path().join("goose_python_session_driver.py");
+        std::fs::write(&driver_path, DRIVER_SOURCE)?;
 
         let mut command = Command::new(&spec.python);
         command
-            .arg(driver_file.path())
+            .arg(&driver_path)
             .current_dir(&spec.working_dir)
             .envs(spec.env.iter().cloned())
             .stdin(Stdio::piped())
@@ -120,22 +124,26 @@ impl Kernel {
         let stdout = child.stdout.take().expect("stdout was piped");
         let stderr = child.stderr.take().expect("stderr was piped");
 
-        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let stderr_tail = Arc::new(Mutex::new(Vec::<u8>::new()));
         let tail = stderr_tail.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let mut tail = tail.lock().unwrap();
-                tail.push_str(&line);
-                tail.push('\n');
-                if tail.len() > STDERR_TAIL_CHARS {
-                    let cut = tail.len() - STDERR_TAIL_CHARS;
-                    let cut = tail
-                        .char_indices()
-                        .map(|(i, _)| i)
-                        .find(|&i| i >= cut)
-                        .unwrap_or(0);
-                    tail.drain(..cut);
+            // Read raw bytes into a bounded ring buffer: a runaway subprocess that
+            // never emits a newline cannot grow an unbounded intermediate line, and
+            // invalid UTF-8 does not terminate the reader (it is decoded lossily
+            // only when a death report is formatted).
+            let mut reader = BufReader::new(stderr);
+            let mut chunk = [0u8; 4096];
+            loop {
+                match reader.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let mut tail = tail.lock().unwrap();
+                        tail.extend_from_slice(&chunk[..n]);
+                        if tail.len() > STDERR_TAIL_CHARS {
+                            let cut = tail.len() - STDERR_TAIL_CHARS;
+                            tail.drain(..cut);
+                        }
+                    }
                 }
             }
         });
@@ -148,7 +156,7 @@ impl Kernel {
             stderr_tail,
             restored_names: Vec::new(),
             dropped_names: Vec::new(),
-            _driver_file: driver_file,
+            _driver_dir: driver_dir,
         };
 
         let ready = tokio::time::timeout(READY_TIMEOUT, kernel.read_response(0))
@@ -325,13 +333,12 @@ impl Kernel {
 
     fn death_context(&self, when: &str) -> String {
         let tail = self.stderr_tail.lock().unwrap();
-        if tail.trim().is_empty() {
+        let tail = String::from_utf8_lossy(&tail);
+        let tail = tail.trim_end();
+        if tail.is_empty() {
             format!("the python session died {when}")
         } else {
-            format!(
-                "the python session died {when}; stderr tail:\n{}",
-                tail.trim_end()
-            )
+            format!("the python session died {when}; stderr tail:\n{tail}")
         }
     }
 }
@@ -342,5 +349,48 @@ impl Drop for Kernel {
         // the kernel is dropped without an explicit `kill()` (e.g. the extension
         // is disabled before the idle reaper runs).
         self.kill_process_group();
+    }
+}
+
+/// Owns a kernel while one cell runs. If the caller's future is dropped mid-cell
+/// (user stop, loop teardown), `Drop` kills the kernel so the still-running cell
+/// and its subprocesses do not outlive the request and block the next call;
+/// `kill_on_drop` cannot help while the kernel is parked in a session slot rather
+/// than owned by the future.
+pub struct RunningKernel {
+    kernel: Option<Kernel>,
+}
+
+impl RunningKernel {
+    pub fn new(kernel: Kernel) -> Self {
+        Self {
+            kernel: Some(kernel),
+        }
+    }
+
+    pub async fn exec(
+        &mut self,
+        code: &str,
+        timeout: Duration,
+        cancellation: CancellationToken,
+    ) -> Result<ExecOutcome> {
+        self.kernel
+            .as_mut()
+            .expect("kernel present until finish()")
+            .exec(code, timeout, cancellation)
+            .await
+    }
+
+    /// Reclaim the kernel after the cell ran to completion, disarming the guard.
+    pub fn finish(mut self) -> Kernel {
+        self.kernel.take().expect("kernel reclaimed once")
+    }
+}
+
+impl Drop for RunningKernel {
+    fn drop(&mut self) {
+        if let Some(mut kernel) = self.kernel.take() {
+            kernel.kill();
+        }
     }
 }

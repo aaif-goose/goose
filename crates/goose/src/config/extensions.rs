@@ -166,7 +166,20 @@ pub fn set_extension(entry: ExtensionEntry) {
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
     let key = entry.config.key();
     with_raw_extensions_mapping(config, |extensions| {
-        let mut mutations = companion_mutations(extensions, &key, entry.enabled);
+        // Only flip the companion when this write introduces the extension or
+        // actually changes its enabled state. The ACP config path re-upserts
+        // existing entries, so rewriting an unchanged "disabled" must not silently
+        // re-enable the counterpart (and its shell tools). Mirrors
+        // set_extension_enabled_with_config.
+        let transitions = extensions
+            .get(&key)
+            .map(|existing| existing.enabled != entry.enabled)
+            .unwrap_or(true);
+        let mut mutations = if transitions {
+            companion_mutations(extensions, &key, entry.enabled)
+        } else {
+            Vec::new()
+        };
         mutations.push(ExtensionMutation::Upsert(key, Box::new(entry)));
         mutations
     });
@@ -890,6 +903,23 @@ extensions:
         });
 
         set_extension_enabled_with_config(&config, "python_session", false);
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+    }
+
+    #[test]
+    fn test_reupserting_unchanged_entry_does_not_flip_companion() {
+        let (config, _config_file, _secrets_file) = test_config("");
+        set_extension_with_config(&config, builtin_entry("developer", true));
+        set_extension_enabled_with_config(&config, "python_session", true);
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
+
+        // The ACP config path re-upserts existing entries verbatim; rewriting the
+        // now-disabled developer must not toggle the active python_session off.
+        set_extension_with_config(&config, builtin_entry("developer", false));
+        assert_eq!(
+            configured_enabled_state(&config, "python_session"),
+            Some(true)
+        );
         assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
     }
 

@@ -1646,10 +1646,15 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        let now = chrono::Utc::now();
+        let today = now.format("%Y%m%d").to_string();
+        // Bind created_at explicitly instead of relying on the column default:
+        // CURRENT_TIMESTAMP is only second-resolution, and a session id can be
+        // reused within the same second, so consumers that key on created_at
+        // (e.g. the Python Session snapshot path) need microsecond distinctness.
         let session = sqlx::query_as(
             r#"
-                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
+                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode, created_at, updated_at)
                 VALUES (
                     ? || '_' || CAST(COALESCE((
                         SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
@@ -1661,6 +1666,8 @@ impl SessionStorage {
                     ?,
                     ?,
                     '{}',
+                    ?,
+                    ?,
                     ?
                 )
                 RETURNING *
@@ -1672,6 +1679,8 @@ impl SessionStorage {
             .bind(session_type.to_string())
             .bind(&*working_dir.to_string_lossy())
             .bind(goose_mode.to_string())
+            .bind(now)
+            .bind(now)
             .fetch_one(&mut *tx)
             .await?;
 

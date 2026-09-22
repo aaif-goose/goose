@@ -9,7 +9,7 @@ use crate::session::Session;
 use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
-use kernel::{ExecOutcome, ImageRequest, Kernel, KernelSpec};
+use kernel::{ExecOutcome, ImageRequest, Kernel, KernelSpec, RunningKernel};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, Tool, ToolAnnotations,
@@ -54,6 +54,9 @@ struct PythonOutput {
 struct SessionSlot {
     kernel: Option<Kernel>,
     state_path: Option<PathBuf>,
+    /// `created_at` (microseconds) of the session this kernel was spawned for;
+    /// a reused session id with a new creation time is a different incarnation.
+    incarnation: Option<i64>,
     reset_pending: bool,
     restore_notice: Option<String>,
     last_used: Instant,
@@ -64,6 +67,7 @@ impl Default for SessionSlot {
         Self {
             kernel: None,
             state_path: None,
+            incarnation: None,
             reset_pending: false,
             restore_notice: None,
             last_used: Instant::now(),
@@ -288,6 +292,7 @@ impl PythonSessionClient {
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
         slot.state_path = spec.state_path;
+        slot.incarnation = session.as_ref().map(|s| s.created_at.timestamp_micros());
         let restored = kernel.restored_names();
         let dropped = kernel.dropped_names();
         if !restored.is_empty() || !dropped.is_empty() {
@@ -357,17 +362,25 @@ impl PythonSessionClient {
         }
 
         let restore_notice = slot.restore_notice.take();
+        let incarnation = slot.incarnation;
 
-        let exec_result = slot
-            .kernel
-            .as_mut()
-            .expect("kernel was just ensured")
+        // Own the kernel for the duration of the cell. If this request future is
+        // dropped mid-cell (user stop, loop teardown), the guard kills the kernel
+        // so the still-running cell and its subprocesses do not outlive the
+        // request and block the next call; `kill_on_drop` cannot help while the
+        // kernel lives in the slot.
+        let mut running = RunningKernel::new(slot.kernel.take().expect("kernel was just ensured"));
+        let exec_result = running
             .exec(&code, cell_timeout(), cancellation_token)
             .await;
+        let kernel = running.finish();
+        slot.kernel = Some(kernel);
 
-        // The driver snapshots after every cell, so a session deleted while this
-        // cell ran has just had its snapshot re-created after the deletion sweep.
-        if self.session_deleted(&ctx.session_id).await {
+        // The driver snapshots after every cell, so a session deleted (or its id
+        // reused for a new conversation) while this cell ran has just re-created a
+        // snapshot after the deletion sweep. Compare the incarnation, not mere
+        // existence, so a reused id does not look alive.
+        if self.session_changed(&ctx.session_id, incarnation).await {
             if let Some(mut kernel) = slot.kernel.take() {
                 kernel.kill();
             }
@@ -454,14 +467,21 @@ impl PythonSessionClient {
         }
     }
 
-    async fn session_deleted(&self, session_id: &str) -> bool {
-        matches!(
-            self.context
-                .session_manager
-                .session_exists(session_id)
-                .await,
-            Ok(false)
-        )
+    async fn session_changed(&self, session_id: &str, incarnation: Option<i64>) -> bool {
+        match self.load_session(session_id).await {
+            Some(session) => {
+                incarnation.is_some_and(|micros| session.created_at.timestamp_micros() != micros)
+            }
+            // A load error here is ambiguous (deleted vs transient); only treat a
+            // confirmed absence as a deletion.
+            None => matches!(
+                self.context
+                    .session_manager
+                    .session_exists(session_id)
+                    .await,
+                Ok(false)
+            ),
+        }
     }
 
     fn cached_listing(&self, session_id: &str) -> Option<String> {

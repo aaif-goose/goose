@@ -141,10 +141,10 @@ def edit(path, old, new):
     """
     if old == "" and not os.path.exists(path):
         os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8", newline="") as f:
             f.write(new)
         return "Created {} ({} chars)".format(path, len(new))
-    with open(path) as f:
+    with open(path, encoding="utf-8", newline="") as f:
         text = f.read()
     count = text.count(old)
     if count == 0:
@@ -154,7 +154,7 @@ def edit(path, old, new):
             "edit: old text matches {} times in {}; add surrounding context to "
             "make it unique".format(count, path)
         )
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text.replace(old, new, 1))
     return "Edited {}".format(path)
 
@@ -268,17 +268,15 @@ def _format_traceback():
 
 
 def _size_hint(value):
-    try:
-        if isinstance(value, (int, float, bool)):
-            return repr(value)[:40]
-        if isinstance(value, str):
-            return "str len={}".format(len(value))
-        if hasattr(value, "shape"):
-            return "{} shape={}".format(type(value).__name__, value.shape)
-        if hasattr(value, "__len__"):
-            return "{} len={}".format(type(value).__name__, len(value))
-    except Exception:
-        pass
+    # Only inspect built-in types; calling len()/.shape on arbitrary objects
+    # would run user code during the post-cell namespace probe, which could
+    # block or kill the kernel outside a cell.
+    if isinstance(value, bool):
+        return repr(value)
+    if isinstance(value, (int, float)):
+        return repr(value)[:40]
+    if isinstance(value, (str, bytes, bytearray, list, tuple, set, frozenset, dict)):
+        return "{} len={}".format(type(value).__name__, len(value))
     return type(value).__name__
 
 
@@ -340,25 +338,36 @@ def _save_state():
     """
     if not STATE_PATH:
         return
-    blobs = {}
     names = []
-    total = 0
+    keep = {}
+    sizes = {}
     for name, value in NS.items():
         if name.startswith("_") or name in _HELPERS or isinstance(value, type(sys)):
             continue
         names.append(name)
-        blob = _dump_capped(value, min(STATE_VALUE_CAP, STATE_TOTAL_CAP - total))
+        blob = _dump_capped(value, STATE_VALUE_CAP)
         if blob is not None:
-            blobs[name] = blob
-            total += len(blob)
+            keep[name] = value
+            sizes[name] = len(blob)
+    # Serialize the survivors as one object graph so shared references
+    # (e.g. `b = a`) are still shared after a restore. Drop the largest
+    # variables until the combined snapshot fits the total cap.
+    graph = _dump_capped(keep, STATE_TOTAL_CAP)
+    while graph is None and keep:
+        del keep[max(keep, key=lambda n: sizes.get(n, 0))]
+        graph = _dump_capped(keep, STATE_TOTAL_CAP)
+    if graph is None:
+        return
     try:
         tmp = STATE_PATH + ".tmp"
         # Snapshots can hold credentials; create them owner-only (no effect on
-        # Windows, which does not use these mode bits).
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # Windows, which does not use these mode bits). O_NOFOLLOW refuses a
+        # planted symlink at the temp path.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags, 0o600)
         with os.fdopen(fd, "wb") as f:
             pickle.dump(
-                {"python": sys.version_info[:2], "names": names, "blobs": blobs}, f
+                {"python": sys.version_info[:2], "names": names, "graph": graph}, f
             )
         os.replace(tmp, STATE_PATH)
     except Exception:
@@ -373,20 +382,18 @@ def _restore_state():
     try:
         with open(STATE_PATH, "rb") as f:
             state = pickle.load(f)
-        blobs = state.get("blobs", {})
-        names = state.get("names", list(blobs.keys()))
+        graph = state.get("graph", b"")
+        restored_ns = pickle.loads(graph) if graph else {}
+        names = state.get("names", list(restored_ns.keys()))
         if state.get("python") != sys.version_info[:2]:
             return [], names
     except Exception:
         return [], []
     restored = []
-    for name, blob in blobs.items():
-        try:
-            NS[name] = pickle.loads(blob)
-            restored.append(name)
-        except Exception:
-            pass
-    dropped = [name for name in names if name not in NS]
+    for name, value in restored_ns.items():
+        NS[name] = value
+        restored.append(name)
+    dropped = [name for name in names if name not in restored_ns]
     return restored, dropped
 
 
