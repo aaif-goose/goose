@@ -165,6 +165,26 @@ check-acp-artifacts: generate-acp-types generate-acp-docs
     fi
     echo "✅ Generated ACP artifacts are up-to-date"
 
+# Build the lean ACP binary and enforce its size budget (override with GOOSE_LEAN_MAX_BYTES)
+build-lean:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    max_bytes="${GOOSE_LEAN_MAX_BYTES:-17825792}"
+    cargo build -p goose --bin goose-acp \
+      --profile lean \
+      --no-default-features \
+      --features native-tls
+
+    binary="target/lean/goose-acp"
+    bytes=$(wc -c < "$binary" | tr -d '[:space:]')
+    mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1024 / 1024 }')
+    printf '%s: %s bytes (%s MiB)\n' "$binary" "$bytes" "$mib"
+
+    if (( bytes > max_bytes )); then
+      printf 'lean binary exceeds budget of %s bytes; set GOOSE_LEAN_MAX_BYTES to override\n' "$max_bytes" >&2
+      exit 1
+    fi
+
 # Generate ACP JSON schema from Rust types
 generate-acp-schema:
     @echo "Generating ACP schema..."
