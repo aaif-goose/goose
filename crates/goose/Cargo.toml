@@ -9,8 +9,7 @@ repository.workspace = true
 description.workspace = true
 
 [features]
-default = ["bundled-model-catalog"]
-bundled-model-catalog = ["goose-providers/bundled-model-catalog"]
+default = []
 telemetry = []
 otel = [
     "dep:tracing-opentelemetry",

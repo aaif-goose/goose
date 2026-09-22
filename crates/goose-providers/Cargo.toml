@@ -12,8 +12,7 @@ description.workspace = true
 workspace = true
 
 [features]
-default = ["bundled-model-catalog"]
-bundled-model-catalog = ["goose-provider-types/bundled-model-catalog"]
+default = []
 local-inference = ["dep:goose-local-inference"]
 local-inference-hf-hub = ["local-inference", "goose-local-inference/hf-hub"]
 cuda = ["local-inference", "goose-local-inference/cuda"]

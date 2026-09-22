@@ -4,28 +4,29 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::Path;
 
-pub const MODEL_CATALOG_PATH_ENV: &str = "GOOSE_MODEL_CATALOG_PATH";
+/// Cached bundled canonical model registry
+static BUNDLED_REGISTRY: Lazy<Result<CanonicalModelRegistry>> = Lazy::new(|| {
+    const CANONICAL_MODELS_JSON: &str = include_str!("data/canonical_models.json");
 
-static MODEL_REGISTRY: Lazy<Result<CanonicalModelRegistry>> = Lazy::new(|| {
-    if let Some(path) = std::env::var_os(MODEL_CATALOG_PATH_ENV) {
-        return CanonicalModelRegistry::from_file(path);
+    let models: Vec<CanonicalModel> = serde_json::from_str(CANONICAL_MODELS_JSON)
+        .context("Failed to parse bundled canonical models JSON")?;
+
+    let mut registry = CanonicalModelRegistry::new();
+    for model in models {
+        // Extract provider and model from id (format: "provider/model")
+        if let Some((provider, model_name)) = model.id.split_once('/') {
+            let provider = provider.to_string();
+            let model_name = model_name.to_string();
+            registry.register(&provider, &model_name, model);
+        }
     }
 
-    #[cfg(feature = "bundled-model-catalog")]
-    {
-        const CANONICAL_MODELS_JSON: &str = include_str!("data/canonical_models.json");
-        CanonicalModelRegistry::from_json(CANONICAL_MODELS_JSON)
-            .context("Failed to parse bundled canonical models JSON")
-    }
-
-    #[cfg(not(feature = "bundled-model-catalog"))]
-    anyhow::bail!(
-        "Set {MODEL_CATALOG_PATH_ENV} to a canonical models JSON file; this build has no bundled model catalog"
-    )
+    Ok(registry)
 });
 
 #[derive(Debug, Clone)]
 pub struct CanonicalModelRegistry {
+    // Key: (provider, model) tuple
     models: HashMap<(String, String), CanonicalModel>,
 }
 
@@ -37,19 +38,18 @@ impl CanonicalModelRegistry {
     }
 
     pub fn bundled() -> Result<&'static Self> {
-        MODEL_REGISTRY
+        BUNDLED_REGISTRY
             .as_ref()
-            .map_err(|error| anyhow::anyhow!("{error}"))
+            .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .context("Failed to read canonical models file")?;
-        Self::from_json(&content).context("Failed to parse canonical models JSON")
-    }
 
-    fn from_json(content: &str) -> Result<Self> {
-        let models: Vec<CanonicalModel> = serde_json::from_str(content)?;
+        let models: Vec<CanonicalModel> =
+            serde_json::from_str(&content).context("Failed to parse canonical models JSON")?;
+
         let mut registry = Self::new();
         for model in models {
             if let Some((provider, model_name)) = model.id.split_once('/') {
@@ -58,6 +58,7 @@ impl CanonicalModelRegistry {
                 registry.register(&provider, &model_name, model);
             }
         }
+
         Ok(registry)
     }
 
