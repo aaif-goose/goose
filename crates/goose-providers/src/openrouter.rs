@@ -14,6 +14,7 @@ use crate::conversation::message::Message;
 use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
 use crate::formats::openai::create_request;
+use crate::http_status::read_json_response;
 use crate::model::ModelConfig;
 use crate::openai_compatible::{handle_status, stream_openai_compat};
 use crate::openrouter_format;
@@ -432,9 +433,7 @@ impl OpenRouterProvider {
             .response_post(&payload)
             .await?;
         let response = handle_status(response).await?;
-        response.json().await.map_err(|error| {
-            ProviderError::RequestFailed(format!("Failed to parse Decisions response: {error}"))
-        })
+        read_json_response(response).await
     }
 }
 

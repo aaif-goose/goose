@@ -1,6 +1,7 @@
 use crate::api_client::ApiClient;
 use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
+use crate::http_status::read_json_response;
 use crate::openai_compatible::handle_status;
 use async_trait::async_trait;
 
@@ -32,9 +33,7 @@ impl DecisionProvider for TypeSafeProvider {
             .response_post(&payload)
             .await?;
         let response = handle_status(response).await?;
-        response.json().await.map_err(|error| {
-            ProviderError::RequestFailed(format!("Failed to parse TypeSafe response: {error}"))
-        })
+        read_json_response(response).await
     }
 }
 
