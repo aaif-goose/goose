@@ -1656,17 +1656,20 @@ impl Agent {
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
         context_limit: usize,
-        max_turns: Option<u32>,
+        session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-        extension_lease: Arc<std::sync::Mutex<Option<Arc<ExtensionLease>>>>,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let container = self.container.lock().await.clone();
-        let max_turns = max_turns.unwrap_or_else(|| {
+        let max_turns = session_config.max_turns.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_MAX_TURNS")
                 .unwrap_or(DEFAULT_MAX_TURNS)
         });
+        let extension_lease = self
+            .tool_confirmation_coordinator
+            .session(&session_config.id)
+            .extension_lease();
         let retry_timeout = Config::global()
             .get_param::<u64>("GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS")
             .unwrap_or(DEFAULT_RETRY_TIMEOUT_SECONDS);
@@ -1991,19 +1994,14 @@ impl Agent {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
-        let extension_lease = self
-            .tool_confirmation_coordinator
-            .session(&session_id)
-            .extension_lease();
         let machine = self
             .create_state_machine(
                 provider,
                 model_config,
                 context_limit,
-                session_config.max_turns,
+                session_config,
                 cancel.clone(),
                 steer_queue,
-                extension_lease,
             )
             .await;
         let reply_span = tracing::Span::current();
