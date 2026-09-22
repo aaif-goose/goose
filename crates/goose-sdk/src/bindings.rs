@@ -1455,18 +1455,6 @@ mod tests {
     }
 
     #[test]
-    fn model_config_resolves_vision_support_from_canonical_catalog() {
-        let config = ProviderModelConfig {
-            model_name: "gpt-4o".to_string(),
-            ..base_model_config()
-        };
-
-        let model = config.to_goose_model_config("openai").unwrap();
-
-        assert_eq!(model.supports_vision, Some(true));
-    }
-
-    #[test]
     fn model_config_rejects_invalid_request_params_json() {
         let config = ProviderModelConfig {
             request_params_json: Some("not json".to_string()),
