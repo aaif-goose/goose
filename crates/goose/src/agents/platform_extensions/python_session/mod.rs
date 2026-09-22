@@ -47,6 +47,7 @@ struct PythonParams {
 struct PythonOutput {
     text: String,
     images: Vec<ImageRequest>,
+    is_error: bool,
 }
 
 struct SessionSlot {
@@ -245,15 +246,17 @@ impl PythonSessionClient {
             env: child_env(),
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
-        if !kernel.restored_names().is_empty() {
-            let mut notice = format!(
-                "[python session restored from a previous process; available again: {}",
-                kernel.restored_names().join(", ")
-            );
-            if !kernel.dropped_names().is_empty() {
+        let restored = kernel.restored_names();
+        let dropped = kernel.dropped_names();
+        if !restored.is_empty() || !dropped.is_empty() {
+            let mut notice = String::from("[python session restored from a previous process");
+            if !restored.is_empty() {
+                notice.push_str(&format!("; available again: {}", restored.join(", ")));
+            }
+            if !dropped.is_empty() {
                 notice.push_str(&format!(
                     "; not restored (too large or not picklable): {}",
-                    kernel.dropped_names().join(", ")
+                    dropped.join(", ")
                 ));
             }
             notice.push(']');
@@ -350,42 +353,48 @@ impl PythonSessionClient {
 
         Ok(PythonOutput {
             text: format_outcome(&outcome, reset_notice, restore_notice),
+            is_error: outcome.error.is_some(),
             images: outcome.images,
         })
     }
 
     async fn assemble_result(&self, ctx: &ToolCallContext, output: PythonOutput) -> CallToolResult {
+        let is_error = output.is_error;
         let mut blocks = vec![ContentBlock::text(output.text)];
-        if output.images.is_empty() {
-            return CallToolResult::success(blocks);
-        }
 
-        let total = output.images.len();
-        let working_dir = self.working_dir(ctx).await;
-        for req in output.images.into_iter().take(MAX_IMAGES_PER_CELL) {
-            let crop = req.crop.map(|c| CropParams {
-                x: c.x,
-                y: c.y,
-                width: c.width,
-                height: c.height,
-            });
-            match load_image_content(&req.source, crop, Some(&working_dir)).await {
-                Ok((image, summary)) => {
-                    blocks.push(ContentBlock::text(summary));
-                    blocks.push(image);
+        if !output.images.is_empty() {
+            let total = output.images.len();
+            let working_dir = self.working_dir(ctx).await;
+            for req in output.images.into_iter().take(MAX_IMAGES_PER_CELL) {
+                let crop = req.crop.map(|c| CropParams {
+                    x: c.x,
+                    y: c.y,
+                    width: c.width,
+                    height: c.height,
+                });
+                match load_image_content(&req.source, crop, Some(&working_dir)).await {
+                    Ok((image, summary)) => {
+                        blocks.push(ContentBlock::text(summary));
+                        blocks.push(image);
+                    }
+                    Err(error) => blocks.push(ContentBlock::text(format!(
+                        "[view_image could not load {}: {error}]",
+                        req.source
+                    ))),
                 }
-                Err(error) => blocks.push(ContentBlock::text(format!(
-                    "[view_image could not load {}: {error}]",
-                    req.source
-                ))),
+            }
+            if total > MAX_IMAGES_PER_CELL {
+                blocks.push(ContentBlock::text(format!(
+                    "[view_image: {total} images requested; only the first {MAX_IMAGES_PER_CELL} are shown]"
+                )));
             }
         }
-        if total > MAX_IMAGES_PER_CELL {
-            blocks.push(ContentBlock::text(format!(
-                "[view_image: {total} images requested; only the first {MAX_IMAGES_PER_CELL} are shown]"
-            )));
+
+        if is_error {
+            CallToolResult::error(blocks)
+        } else {
+            CallToolResult::success(blocks)
         }
-        CallToolResult::success(blocks)
     }
 
     fn cached_listing(&self, session_id: &str) -> Option<String> {

@@ -243,6 +243,14 @@ impl Kernel {
     }
 
     pub fn kill(&mut self) {
+        // The driver has its own process group (see `process_group(0)`); kill the
+        // whole group so a subprocess it spawned is not orphaned on reap or crash.
+        #[cfg(unix)]
+        if let Some(pid) = self.child.id() {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
         let _ = self.child.start_kill();
     }
 

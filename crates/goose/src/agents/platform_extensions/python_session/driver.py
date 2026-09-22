@@ -110,8 +110,15 @@ def sh(command, timeout=None, cwd=None, env=None):
             if posix:
                 os.killpg(proc.pid, signal.SIGKILL)
             else:
-                proc.kill()
-        except (ProcessLookupError, PermissionError):
+                # proc.kill() would stop only the shell, orphaning the command it
+                # launched (which may still hold the pipes open); taskkill /T ends
+                # the whole tree.
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except (ProcessLookupError, PermissionError, OSError):
             pass
 
     try:

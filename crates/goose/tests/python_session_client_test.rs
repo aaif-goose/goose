@@ -15,7 +15,19 @@ fn python_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Keep session snapshots out of the developer's real data directory: the client
+/// persists them under `Paths::data_dir()`, which honors `GOOSE_PATH_ROOT`.
+fn isolate_data_dir() {
+    static ROOT: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("GOOSE_PATH_ROOT", dir.path());
+        dir
+    });
+}
+
 async fn setup() -> (PythonSessionClient, String, tempfile::TempDir) {
+    isolate_data_dir();
     let temp_dir = tempfile::tempdir().unwrap();
     let em = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
     let context = em.get_context().clone();
