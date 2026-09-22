@@ -1001,19 +1001,19 @@ const UNSUPPORTED_SCHEMA_KEYWORDS: [&str; 16] = [
 ];
 
 fn sanitize_schema_node(node: &mut Value) {
-    if let Some(obj) = node.as_object_mut() {
-        normalize_compositions(obj);
-
-        for keyword in UNSUPPORTED_SCHEMA_KEYWORDS {
-            obj.remove(keyword);
-        }
-    }
-
+    // Unwrap nullable wrappers first so the keywords they hoist into this node are
+    // still seen by composition normalization and keyword stripping below.
     normalize_nullable(node);
 
     let Some(obj) = node.as_object_mut() else {
         return;
     };
+
+    normalize_compositions(obj);
+
+    for keyword in UNSUPPORTED_SCHEMA_KEYWORDS {
+        obj.remove(keyword);
+    }
 
     if obj.get("type").and_then(|t| t.as_str()) == Some("object") {
         obj.entry("properties").or_insert_with(|| json!({}));
@@ -2415,7 +2415,13 @@ mod tests {
                         ]
                     }]
                 },
-                "score": { "type": "integer", "multipleOf": 5 }
+                "score": { "type": "integer", "multipleOf": 5 },
+                "nullable_constrained": {
+                    "anyOf": [
+                        { "type": "array", "uniqueItems": true, "oneOf": [{ "type": "array" }] },
+                        { "type": "null" }
+                    ]
+                }
             }
         });
 
@@ -2448,6 +2454,9 @@ mod tests {
                 .len(),
             2
         );
+        let nullable_constrained = &schema["properties"]["nullable_constrained"];
+        assert_eq!(nullable_constrained["type"], "array");
+        assert!(nullable_constrained.get("oneOf").is_none());
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
