@@ -981,8 +981,9 @@ fn ensure_valid_json_schema(schema: &mut Value) {
 
 /// JSON Schema keywords that OpenAI's structured-output validator rejects outright
 /// (e.g. `'uniqueItems' is not permitted`) rather than ignoring.
-const UNSUPPORTED_SCHEMA_KEYWORDS: [&str; 15] = [
+const UNSUPPORTED_SCHEMA_KEYWORDS: [&str; 16] = [
     "unevaluatedProperties",
+    "patternProperties",
     "propertyNames",
     "minProperties",
     "maxProperties",
@@ -1019,7 +1020,7 @@ fn sanitize_schema_node(node: &mut Value) {
         obj.entry("required").or_insert_with(|| json!([]));
     }
 
-    for key in ["properties", "patternProperties", "$defs", "definitions"] {
+    for key in ["properties", "$defs", "definitions"] {
         if let Some(children) = obj.get_mut(key).and_then(Value::as_object_mut) {
             for child in children.values_mut() {
                 sanitize_schema_node(child);
@@ -1052,7 +1053,19 @@ fn sanitize_schema_node(node: &mut Value) {
 /// `oneOf` is intentionally relaxed to `anyOf` for tool-argument compatibility. `allOf` members
 /// are merged when their intersection can be represented directly; otherwise they are relaxed to
 /// alternatives because OpenAI's supported subset cannot express a general schema intersection.
+/// A merged `allOf` member can itself carry `allOf`/`oneOf`/`anyOf`, which would otherwise land in
+/// the output after this node's normalization pass and never be revisited by the traversal.
+/// Re-normalizing until the node is stable keeps those nested compositions from leaking through.
 fn normalize_compositions(obj: &mut serde_json::Map<String, Value>) {
+    loop {
+        normalize_compositions_once(obj);
+        if !obj.contains_key("allOf") && !obj.contains_key("oneOf") {
+            return;
+        }
+    }
+}
+
+fn normalize_compositions_once(obj: &mut serde_json::Map<String, Value>) {
     let mut relaxed_all_of = Vec::new();
     if let Some(Value::Array(mut schemas)) = obj.remove("allOf") {
         let mut merged = obj.clone();
@@ -1117,7 +1130,7 @@ fn merge_schema_object(
                 }
             }
             (
-                "properties" | "patternProperties" | "$defs" | "definitions",
+                "properties" | "$defs" | "definitions",
                 Value::Object(existing),
                 Value::Object(additional),
             ) => {
@@ -2382,6 +2395,26 @@ mod tests {
                     "anyOf": [{ "type": "string" }],
                     "oneOf": [{ "type": "integer" }]
                 },
+                "map": {
+                    "type": "object",
+                    "patternProperties": { "^x": { "type": "string" } }
+                },
+                "nested_intersection": {
+                    "allOf": [{
+                        "allOf": [{
+                            "type": "object",
+                            "properties": { "deep": { "type": "string", "uniqueItems": true } }
+                        }]
+                    }]
+                },
+                "nested_alternatives": {
+                    "allOf": [{
+                        "oneOf": [
+                            { "type": "object", "properties": { "a": { "type": "string" } } },
+                            { "type": "object", "properties": { "b": { "type": "integer" } } }
+                        ]
+                    }]
+                },
                 "score": { "type": "integer", "multipleOf": 5 }
             }
         });
@@ -2392,9 +2425,29 @@ mod tests {
         assert!(schema["properties"]["constrained"]["items"].is_array());
         assert_eq!(schema["properties"]["wrapped"]["$ref"], "#/$defs/Payload");
         assert_eq!(schema["properties"]["wrapped"]["description"], "payload");
-        assert_eq!(schema["properties"]["intersection"]["required"], json!(["left", "right"]));
-        assert_eq!(schema["properties"]["choice"]["anyOf"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            schema["properties"]["intersection"]["required"],
+            json!(["left", "right"])
+        );
+        assert_eq!(
+            schema["properties"]["choice"]["anyOf"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         assert_eq!(schema["properties"]["score"]["multipleOf"], 5);
+        assert_eq!(
+            schema["properties"]["nested_intersection"]["properties"]["deep"]["type"],
+            "string"
+        );
+        assert_eq!(
+            schema["properties"]["nested_alternatives"]["anyOf"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
