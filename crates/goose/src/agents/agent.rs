@@ -29,7 +29,6 @@ use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FINAL_OUTPUT_CONTINUATION_MESSAGE,
     FINAL_OUTPUT_TOOL_NAME,
 };
-use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
@@ -1207,27 +1206,8 @@ impl Agent {
         (request_id, Ok(result))
     }
 
-    /// Save current extension state to session metadata
-    /// Should be called after any extension add/remove operation
     pub async fn save_extension_state(&self, session: &SessionConfig) -> Result<()> {
-        let extensions_state =
-            EnabledExtensionsState::new(self.extension_manager.get_extension_configs().await);
-
-        let session_manager = self.config.session_manager.clone();
-        let mut session_data = session_manager.get_session(&session.id, false).await?;
-
-        if let Err(e) = extensions_state.to_extension_data(&mut session_data.extension_data) {
-            warn!("Failed to serialize extension state: {}", e);
-            return Err(anyhow!("Extension state serialization failed: {}", e));
-        }
-
-        session_manager
-            .update(&session.id)
-            .extension_data(session_data.extension_data)
-            .apply()
-            .await?;
-
-        Ok(())
+        self.persist_extension_state(&session.id).await
     }
 
     /// Save current extension state to session by session_id
@@ -2589,6 +2569,7 @@ impl Agent {
             if let Some(turn_context) = super::moim::turn_context_message(
                 &session_config.id,
                 &self.extension_manager,
+                &inference_lease,
                 turns_taken,
                 max_turns,
                 turn_start,
@@ -2922,22 +2903,6 @@ impl Agent {
                                             result
                                         });
 
-                                    let mut extension_mutation_request_ids = vec![];
-                                    for request in &tool_requests {
-                                        let Ok(tool_call) = &request.tool_call else {
-                                            continue;
-                                        };
-                                        if inference_lease
-                                            .resolves_to(
-                                                &tool_call.name,
-                                                MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
-                                            )
-                                            .await
-                                        {
-                                            extension_mutation_request_ids.push(request.id.clone());
-                                        }
-                                    }
-
                                     let mut tool_futures = self.handle_approved_and_denied_tools(
                                         &inference_lease,
                                         &permission_check_result,
@@ -2972,8 +2937,6 @@ impl Agent {
                                         .collect::<Vec<_>>();
 
                                     let mut combined = stream::select_all(with_id);
-                                    let mut all_extension_mutations_succeeded = true;
-
                                     loop {
                                         if is_token_cancelled(&cancel_token) {
                                             break;
@@ -3011,11 +2974,6 @@ impl Agent {
                                                                     }
                                                                 }
 
-                                                                if extension_mutation_request_ids.contains(&request_id)
-                                                                    && output.is_err()
-                                                                {
-                                                                    all_extension_mutations_succeeded = false;
-                                                                }
                                                                 if let Some(response) = request_to_response_map.get_mut(&request_id) {
                                                                     let metadata = request_metadata.get(&request_id).and_then(|m| m.as_ref());
                                                                     response.add_tool_response_with_metadata(request_id, output, metadata);
@@ -3034,11 +2992,6 @@ impl Agent {
                                         }
                                     }
 
-                                    if all_extension_mutations_succeeded && !extension_mutation_request_ids.is_empty() {
-                                        if let Err(e) = self.save_extension_state(&session_config).await {
-                                            warn!("Failed to save extension state after runtime changes: {}", e);
-                                        }
-                                    }
                                 }
 
                                 // DeepSeek and Kimi need the turn's thinking on every split
@@ -4098,6 +4051,18 @@ mod tests {
             .await
             .unwrap()
             .contains(&"analyze".to_string()));
+        let stored_session = agent
+            .config
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        let stored_extensions =
+            EnabledExtensionsState::from_extension_data(&stored_session.extension_data).unwrap();
+        assert!(stored_extensions
+            .extensions
+            .iter()
+            .any(|config| config.key() == "analyze"));
     }
 
     #[test]

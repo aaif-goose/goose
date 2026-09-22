@@ -30,6 +30,7 @@ use crate::agents::mcp_client::{
 use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
+use crate::session::{EnabledExtensionsState, ExtensionState};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
     ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ResourceContents,
@@ -44,11 +45,6 @@ mod streamable_http;
 
 pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
 
-/// A change to the set an agent wants, produced by the `manage_extensions`
-/// tool and applied by the loop that dispatched it — which, unlike the tool,
-/// knows the session's working directory and container. Carries the name
-/// only: the config is looked up at apply time so secrets never travel in a
-/// tool result.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "action", rename_all = "lowercase")]
 pub enum ExtensionMutation {
@@ -68,7 +64,6 @@ impl ExtensionMutation {
         result.meta = Some(MetaObject(meta));
     }
 
-    /// Remove the mutation from a result, if one is attached.
     pub fn take(result: &mut CallToolResult) -> Option<Self> {
         let meta = result.meta.as_mut()?;
         let value = meta.0.remove(EXTENSION_MUTATION_META_KEY)?;
@@ -296,6 +291,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     extensions: Mutex<IndexMap<String, Arc<Extension>>>,
+    mutation_lock: Mutex<()>,
     context: PlatformExtensionContext,
     provider: SharedProvider,
     client_name: String,
@@ -531,6 +527,7 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             extensions: Mutex::new(IndexMap::new()),
+            mutation_lock: Mutex::new(()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 provider: provider.clone(),
@@ -770,6 +767,7 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: &str,
     ) -> ExtensionResult<()> {
+        let _guard = self.mutation_lock.lock().await;
         match mutation {
             ExtensionMutation::Enable { name } => {
                 let config = get_extension_by_name(&name).ok_or_else(|| {
@@ -779,12 +777,26 @@ impl ExtensionManager {
                     .await
             }
             ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
-        }
+        }?;
+
+        let mut session = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+        EnabledExtensionsState::new(self.get_extension_configs().await)
+            .to_extension_data(&mut session.extension_data)
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+        self.context
+            .session_manager
+            .update(session_id)
+            .extension_data(session.extension_data)
+            .apply()
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))
     }
 
-    /// Wrap a `manage_extensions` result so the change it declares is applied
-    /// before anything downstream — post-tool hooks, telemetry, the model —
-    /// sees the result. A failed apply is the tool's failure.
     pub fn applying_mutation(
         self: &Arc<Self>,
         result: ToolCallResult,
@@ -1281,13 +1293,6 @@ impl ExtensionManager {
             .await
             .get(&normalized)
             .map(|ext| ext.client.clone())
-    }
-
-    pub async fn collect_moim_parts(&self, session_id: &str) -> Vec<String> {
-        self.resolve(&self.current_set(session_id, None).await)
-            .await
-            .moim()
-            .await
     }
 }
 
@@ -1861,6 +1866,58 @@ mod tests {
             .unwrap();
         assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
         assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn successful_mutation_is_persisted_when_another_mutation_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "mixed-mutations".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let successful = manager.apply(
+            ExtensionMutation::Enable {
+                name: "analyze".to_string(),
+            },
+            Some(session.working_dir.clone()),
+            None,
+            &session.id,
+        );
+        let failed = manager.apply(
+            ExtensionMutation::Enable {
+                name: "missing-extension".to_string(),
+            },
+            Some(session.working_dir.clone()),
+            None,
+            &session.id,
+        );
+        let (successful, failed) = tokio::join!(successful, failed);
+
+        assert!(successful.is_ok());
+        assert!(failed.is_err());
+        let stored_session = manager
+            .get_context()
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        let stored_extensions =
+            EnabledExtensionsState::from_extension_data(&stored_session.extension_data).unwrap();
+        assert!(stored_extensions
+            .extensions
+            .iter()
+            .any(|config| config.key() == "analyze"));
     }
 
     #[test]

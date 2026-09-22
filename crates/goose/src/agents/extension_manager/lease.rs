@@ -255,12 +255,6 @@ impl ExtensionLease {
             .collect()
     }
 
-    pub(crate) async fn resolves_to(&self, requested_name: &str, tool_name: &str) -> bool {
-        self.resolve_tool(requested_name, None)
-            .await
-            .is_ok_and(|resolved| resolved.tool.name == tool_name)
-    }
-
     pub async fn moim(&self) -> Vec<String> {
         let mut content = Vec::new();
         for extension in self

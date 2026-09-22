@@ -882,6 +882,20 @@ mod tests {
             .await
             .unwrap()
             .contains(&"analyze".to_string()));
+        let stored_session = manager
+            .get_context()
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        let stored_extensions = crate::session::EnabledExtensionsState::from_extension_data(
+            &stored_session.extension_data,
+        )
+        .unwrap();
+        assert!(stored_extensions
+            .extensions
+            .iter()
+            .any(|config| config.key() == "analyze"));
     }
 
     #[tokio::test]

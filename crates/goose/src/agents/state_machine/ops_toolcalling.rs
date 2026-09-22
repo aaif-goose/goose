@@ -9,7 +9,6 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData
 
 use crate::agents::container::Container;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
-use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_tool_approval::request_executable;
 use crate::agents::state_machine::{
@@ -25,7 +24,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent, 
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
-use crate::session::{EnabledExtensionsState, ExtensionState, Session};
+use crate::session::Session;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -425,14 +424,6 @@ impl<'a> ToolExecutionOperation<'a> {
         }
         .instrument(span)
         .await
-    }
-
-    async fn extension_state_effect(&self, session: &Session) -> Result<GooseEffect> {
-        let extension_configs = self.extension_manager.get_extension_configs().await;
-        let extensions_state = EnabledExtensionsState::new(extension_configs);
-        let mut extension_data = session.extension_data.clone();
-        extensions_state.to_extension_data(&mut extension_data)?;
-        Ok(GooseEffect::SetExtensionData(extension_data))
     }
 
     async fn command_response(
@@ -905,21 +896,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             return applied([response.into()]);
         }
 
-        let lease = self.lease(session).await;
-        let mut extension_mutation_ids = HashSet::new();
-        for (request, _) in &pending {
-            let Ok(tool_call) = &request.tool_call else {
-                continue;
-            };
-            if lease
-                .resolves_to(&tool_call.name, MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE)
-                .await
-            {
-                extension_mutation_ids.insert(request.id.as_str());
-            }
-        }
-        let mut extension_change_failed = false;
-
         let mut tool_streams = Vec::new();
         for (request, disposition) in &pending {
             if *disposition != ToolDisposition::Execute {
@@ -988,11 +964,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                     let Some((request_id, item)) = item else { break };
                     match item {
                         ToolStreamItem::Result(output) => {
-                            if extension_mutation_ids.contains(request_id.as_str())
-                                && output.is_err()
-                            {
-                                extension_change_failed = true;
-                            }
                             if let Ok(result) = &output {
                                 if let Some(notification) = platform_notification(result) {
                                     emit.emit(AgentEvent::McpNotification((
@@ -1037,10 +1008,6 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                     request.metadata.as_ref(),
                 );
             }
-        }
-
-        if !extension_mutation_ids.is_empty() && !extension_change_failed {
-            effects.push(self.extension_state_effect(session).await?);
         }
 
         let response = response.with_generated_id_if_missing();
