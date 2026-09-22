@@ -173,8 +173,13 @@ def view_image(path, crop=None):
         source = os.path.abspath(source)
     req = {"source": source}
     if crop is not None:
-        x, y, width, height = crop
-        req["crop"] = {"x": int(x), "y": int(y), "width": int(width), "height": int(height)}
+        x, y, width, height = (int(v) for v in crop)
+        # The host reads these as unsigned 32-bit ints; reject out-of-range values
+        # here so a bad crop is a normal cell error, not an unparseable response
+        # that hangs the cell until timeout.
+        if any(not (0 <= v <= 0xFFFFFFFF) for v in (x, y, width, height)):
+            raise ValueError("view_image crop values must be between 0 and 4294967295")
+        req["crop"] = {"x": x, "y": y, "width": width, "height": height}
     _pending_images.append(req)
 
 
@@ -341,7 +346,10 @@ def _save_state():
             blobs[name] = blob
     try:
         tmp = STATE_PATH + ".tmp"
-        with open(tmp, "wb") as f:
+        # Snapshots can hold credentials; create them owner-only (no effect on
+        # Windows, which does not use these mode bits).
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
             pickle.dump(
                 {"python": sys.version_info[:2], "names": names, "blobs": blobs}, f
             )

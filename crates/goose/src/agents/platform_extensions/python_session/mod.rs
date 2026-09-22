@@ -529,6 +529,13 @@ fn snapshot_file(session_id: &str, created_at_micros: i64) -> String {
 fn state_path(file: &str) -> Option<PathBuf> {
     let dir = state_dir();
     std::fs::create_dir_all(&dir).ok()?;
+    // Snapshots can hold source data and credentials; keep the directory
+    // owner-only, matching the session database's protected storage.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
     Some(dir.join(file))
 }
 

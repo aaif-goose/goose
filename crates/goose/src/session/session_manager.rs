@@ -394,6 +394,22 @@ pub struct SessionNameUpdate {
     pub user_set_name: bool,
 }
 
+/// Best-effort removal of the Python Session extension's on-disk snapshots for a
+/// deleted session, so pickled variables (which can include secrets) do not
+/// outlive the conversation. The extension names snapshots `<id>-<created>.pkl`
+/// under `data_dir()/python-session`.
+fn remove_python_session_snapshots(session_id: &str) {
+    let dir = Paths::data_dir().join("python-session");
+    let prefix = format!("{session_id}-");
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 impl SessionManager {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
@@ -503,7 +519,9 @@ impl SessionManager {
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
-        self.storage.delete_session(id).await
+        self.storage.delete_session(id).await?;
+        remove_python_session_snapshots(id);
+        Ok(())
     }
 
     pub async fn get_insights(&self) -> Result<SessionInsights> {

@@ -218,10 +218,18 @@ fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) 
             return Vec::new();
         };
 
+        let was_enabled = entry.enabled;
         let mut entry = entry.clone();
         entry.enabled = enabled;
         updated = true;
-        let mut mutations = companion_mutations(extensions, key, enabled);
+        // Only flip the companion on an actual transition: the CLI rewrites every
+        // extension's state on each save, so re-writing an unchanged "disabled"
+        // must not silently re-enable the counterpart (and its shell tools).
+        let mut mutations = if was_enabled == enabled {
+            Vec::new()
+        } else {
+            companion_mutations(extensions, key, enabled)
+        };
         mutations.push(ExtensionMutation::Upsert(key.to_string(), Box::new(entry)));
         mutations
     });
@@ -859,6 +867,30 @@ extensions:
             configured_enabled_state(&config, "python_session"),
             Some(false)
         );
+    }
+
+    #[test]
+    fn test_rewriting_disabled_python_session_does_not_reenable_developer() {
+        let (config, _config_file, _secrets_file) = test_config("");
+        // Seed both extensions disabled directly: the companion-aware setters keep
+        // exactly one execution extension enabled, so this state (a user who
+        // disabled Developer before Python Session existed) is only reachable at
+        // the raw config layer.
+        with_raw_extensions_mapping(&config, |_| {
+            vec![
+                ExtensionMutation::Upsert(
+                    "developer".to_string(),
+                    Box::new(builtin_entry("developer", false)),
+                ),
+                ExtensionMutation::Upsert(
+                    "python_session".to_string(),
+                    Box::new(builtin_entry("python_session", false)),
+                ),
+            ]
+        });
+
+        set_extension_enabled_with_config(&config, "python_session", false);
+        assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
     }
 
     #[test]
