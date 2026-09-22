@@ -1066,6 +1066,7 @@ impl Agent {
     }
 
     #[instrument(
+        name = "dispatch_tool_call",
         skip(self, lease, tool_call, request_id, cancellation_token, session),
         fields(
             input,
