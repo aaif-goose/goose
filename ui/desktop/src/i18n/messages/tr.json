@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Çalışma dizini güncellenemedi"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "Geçersiz URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Resim İçinde Resim penceresini taşıyın (ok tuşlarını kullanın)"
+    "defaultMessage": "Resim İçinde Resim penceresini taşıyın"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Resim İçinde Resim"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Resim İçinde Resim'de Oynatma"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Resim İçinde Resim penceresini yeniden boyutlandırın"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# öğe bulundu} other{# öğe bulundu}}"

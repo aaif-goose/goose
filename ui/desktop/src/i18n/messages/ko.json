@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "유효하지 않은 URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Picture-in-Picture 창 이동(화살표 키 사용)"
+    "defaultMessage": "Picture-in-Picture 창 이동"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "PIP(Picture-in-Picture)"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "PIP(Picture-in-Picture)에서 재생 중"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Picture-in-Picture 창 크기 조절"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{#개 항목 발견} other{#개 항목 발견}}"

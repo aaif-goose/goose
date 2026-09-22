@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "無法更新工作目錄"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "無效的 URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "移動子母畫面視窗（使用方向鍵）"
+    "defaultMessage": "移動子母畫面視窗"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "子母畫面"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "正在子母畫面中播放"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "調整子母畫面視窗大小"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{找到 # 個項目} other{找到 # 個項目}}"
