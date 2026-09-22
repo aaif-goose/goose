@@ -14,6 +14,7 @@ import json
 import os
 import pickle
 import re
+import reprlib
 import signal
 import subprocess
 import sys
@@ -45,12 +46,27 @@ def _truncate(text, limit=MAX_CHARS):
     return text[:limit] + marker, True
 
 
-def _bounded_repr(value):
-    # repr() of a huge str or bytes materializes all of it before the cap
-    # applies; a prefix that is already over the cap echoes the same.
-    if type(value) in (str, bytes, bytearray) and len(value) > MAX_CHARS:
-        return repr(value[:MAX_CHARS])
-    return repr(value)
+def _echo_repr():
+    # repr() of a huge value materializes all of it before the cap applies;
+    # reprlib bounds the traversal of built-in containers and strings instead.
+    bounded = reprlib.Repr()
+    for attr in (
+        "maxlist",
+        "maxtuple",
+        "maxdict",
+        "maxset",
+        "maxfrozenset",
+        "maxdeque",
+        "maxarray",
+        "maxlong",
+    ):
+        setattr(bounded, attr, MAX_CHARS)
+    bounded.maxstring = bounded.maxother = MAX_CHARS + 16
+    bounded.maxlevel = 32
+    return bounded
+
+
+_ECHO_REPR = _echo_repr()
 
 
 def _tail(text, limit):
@@ -251,7 +267,7 @@ def _run_cell(code):
                 value = eval(compile(trailing_expr, filename, "eval"), NS)
                 if value is not None:
                     NS["_"] = value
-                    value_repr = _bounded_repr(value)
+                    value_repr = _ECHO_REPR.repr(value)
     except KeyboardInterrupt:
         error = (
             "KeyboardInterrupt: cell interrupted (timeout or cancellation). "
