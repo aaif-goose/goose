@@ -127,13 +127,13 @@ jobs:
         with:
           key: lean-acp
 
-      - name: Build lean configuration
+      - name: Build lean configuration and check its size budget
         run: |
           source ./bin/activate-hermit
           # use the non-hermit rust toolchain because the rust-cache action does not
           # play nicely with hermit-managed rust
           hermit uninstall rustup
-          just build-lean
+          just check-lean-size
 
   goose-sdk-uniffi:
     name: Check goose-sdk UniFFI

@@ -165,15 +165,28 @@ check-acp-artifacts: generate-acp-types generate-acp-docs
     fi
     echo "✅ Generated ACP artifacts are up-to-date"
 
-# Build the lean ACP binary and enforce its size budget (override with GOOSE_LEAN_MAX_BYTES)
+# Build the lean ACP binary
 build-lean:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    max_bytes="${GOOSE_LEAN_MAX_BYTES:-17825792}"
     cargo build -p goose --bin goose-acp \
       --profile lean \
       --no-default-features \
       --features native-tls
+
+# Budgets are per-platform. ELF carries several MiB that Mach-O does not for the
+# same code: DWARF .eh_frame instead of compact unwind info, and a .rela.dyn
+# table of relative relocations that Mach-O encodes as LINKEDIT rebase opcodes.
+# A single cross-platform number would either be unreachable on Linux or
+# useless as a regression signal on macOS.
+
+# Enforce the lean binary's size budget (override with GOOSE_LEAN_MAX_BYTES)
+check-lean-size: build-lean
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+      Darwin) default_max_bytes=17825792 ;;
+      *) default_max_bytes=23068672 ;;
+    esac
+    max_bytes="${GOOSE_LEAN_MAX_BYTES:-$default_max_bytes}"
 
     binary="target/lean/goose-acp"
     bytes=$(wc -c < "$binary" | tr -d '[:space:]')
