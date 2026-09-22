@@ -87,18 +87,22 @@ async fn agent_with_calculator() -> Result<(
     agent
         .extension_manager
         .add_client(
-            ExtensionConfig::Platform {
-                name: "calculator".to_string(),
-                description: "Stateful test calculator".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: vec![],
-            },
+            calculator_config(),
             calculator.clone(),
             calculator.get_info().cloned(),
         )
         .await;
     Ok((agent, api, session_id, calculator, temp_dir))
+}
+
+fn calculator_config() -> ExtensionConfig {
+    ExtensionConfig::Platform {
+        name: "calculator".to_string(),
+        description: "Stateful test calculator".to_string(),
+        display_name: None,
+        bundled: None,
+        available_tools: vec![],
+    }
 }
 
 fn confirmation_ids(messages: &[Message]) -> Vec<String> {
@@ -181,6 +185,18 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .contains(&confirmation_id));
     }
 
+    let replacement = Arc::new(CalculatorExtension::new(
+        agent.config.session_manager.action_required(),
+    ));
+    agent
+        .extension_manager
+        .add_client(
+            calculator_config(),
+            replacement.clone(),
+            replacement.get_info().cloned(),
+        )
+        .await;
+
     agent
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
@@ -227,6 +243,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .get_tool_response_ids()
         .contains(&confirmation_id.as_str())));
     assert_eq!(calculator.total(), 1);
+    assert_eq!(replacement.total(), 0);
     assert_eq!(api.call_count(), 2);
 
     assert!(agent

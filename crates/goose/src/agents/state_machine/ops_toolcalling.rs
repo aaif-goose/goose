@@ -25,7 +25,7 @@ use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
 use crate::session::Session;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
@@ -317,9 +317,7 @@ pub struct ToolExecutionOperation<'a> {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
     container: Option<Container>,
-    /// Resolved in `inference_tools` and held for the rest of that inference,
-    /// so dispatch sees the catalog the model was shown.
-    lease: Mutex<Option<Arc<ExtensionLease>>>,
+    lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
 impl<'a> ToolExecutionOperation<'a> {
@@ -328,20 +326,26 @@ impl<'a> ToolExecutionOperation<'a> {
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
         container: Option<Container>,
+        lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
             goose_mode,
             extension_manager,
             hook_manager,
             container,
-            lease: Mutex::new(None),
+            lease,
         }
     }
 
     async fn lease(&self, session: &Session) -> Arc<ExtensionLease> {
-        if let Some(lease) = self.lease.lock().await.as_ref() {
+        let lease = self
+            .lease
+            .lock()
+            .expect("extension lease unavailable")
+            .clone();
+        if let Some(lease) = lease {
             if lease.scope_id() == session.id {
-                return Arc::clone(lease);
+                return lease;
             }
         }
         self.resolve_lease(session).await
@@ -353,7 +357,7 @@ impl<'a> ToolExecutionOperation<'a> {
             .current_set(&session.id, Some(&session.working_dir))
             .await;
         let lease = Arc::new(self.extension_manager.resolve(&set).await);
-        *self.lease.lock().await = Some(Arc::clone(&lease));
+        *self.lease.lock().expect("extension lease unavailable") = Some(Arc::clone(&lease));
         lease
     }
 

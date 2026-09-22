@@ -1659,6 +1659,7 @@ impl Agent {
         max_turns: Option<u32>,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
+        extension_lease: Arc<std::sync::Mutex<Option<Arc<ExtensionLease>>>>,
     ) -> StateMachine<'_, Session, GooseEffect> {
         let container = self.container.lock().await.clone();
         let max_turns = max_turns.unwrap_or_else(|| {
@@ -1730,6 +1731,7 @@ impl Agent {
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
                 container,
+                extension_lease,
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
@@ -1792,6 +1794,7 @@ impl Agent {
             .tool_confirmation_coordinator
             .session(&session_id)
             .try_start_turn()?;
+        turn_guard.state().start_new_turn();
 
         if let Some(schedule_id) = session_config.schedule_id.clone() {
             session_manager
@@ -1954,6 +1957,7 @@ impl Agent {
                     .wait_for_all_confirmation_answers(&cancel)
                     .await?;
                 if !has_state_machine_answer {
+                    turn_guard.state().clear_confirmations();
                     return;
                 }
                 turn_guard.state().clear_confirmations();
@@ -1987,6 +1991,10 @@ impl Agent {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
+        let extension_lease = self
+            .tool_confirmation_coordinator
+            .session(&session_id)
+            .extension_lease();
         let machine = self
             .create_state_machine(
                 provider,
@@ -1995,6 +2003,7 @@ impl Agent {
                 session_config.max_turns,
                 cancel.clone(),
                 steer_queue,
+                extension_lease,
             )
             .await;
         let reply_span = tracing::Span::current();

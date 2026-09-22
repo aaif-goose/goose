@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
 use rmcp::model::ElicitationAction;
@@ -156,6 +156,7 @@ impl TestPipeline {
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
                 None,
+                Arc::new(StdMutex::new(None)),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
