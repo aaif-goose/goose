@@ -280,6 +280,33 @@ mod tests {
     }
 
     #[test]
+    fn anthropic_opus_5_5_resolves_with_always_on_adaptive_thinking() {
+        let canonical = maybe_get_canonical_model("anthropic", "claude-opus-5-5")
+            .expect("claude-opus-5-5 should resolve");
+        assert_eq!(canonical.id, "anthropic/claude-opus-5.5");
+        assert_eq!(canonical.limit.context, 1_000_000);
+        assert_eq!(canonical.limit.output, Some(128_000));
+        assert_eq!(
+            canonical.thinking_mode,
+            Some(ThinkingMode::AlwaysOnAdaptive)
+        );
+        assert_eq!(canonical.cost.input, Some(4.0));
+        assert_eq!(canonical.cost.output, Some(20.0));
+    }
+
+    #[test]
+    fn openai_gpt_6_sol_and_luna_resolve() {
+        for (model, input_cost) in [("gpt-6-sol", 2.0), ("gpt-6-luna", 0.1)] {
+            let canonical = maybe_get_canonical_model("openai", model)
+                .unwrap_or_else(|| panic!("{model} should resolve"));
+            assert_eq!(canonical.limit.context, 1_050_000);
+            assert_eq!(canonical.limit.output, Some(128_000));
+            assert_eq!(canonical.cost.input, Some(input_cost));
+            assert!(canonical.tool_call);
+        }
+    }
+
+    #[test]
     fn kimi_code_k3_resolves_with_reasoning_and_context_limit() {
         let canonical = maybe_get_canonical_model("kimi_code", "k3")
             .expect("kimi_code/k3 should resolve via kimi-code-plan-cn provider mapping");
