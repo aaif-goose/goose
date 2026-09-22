@@ -43,13 +43,13 @@ import { errorMessage } from '../../utils/conversionUtils';
 import { defineMessages, useIntl } from '../../i18n';
 import FlyingBird from '../FlyingBird';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
+import { getContainerDimensions } from './containerDimensions';
 import {
   GooseDisplayMode,
   SandboxPermissions,
   McpAppToolCancelled,
   McpAppToolInput,
   McpAppToolInputPartial,
-  DimensionLayout,
   OnDisplayModeChange,
 } from './types';
 import { useDisplayMode, AVAILABLE_DISPLAY_MODES } from './useDisplayMode';
@@ -118,53 +118,6 @@ const FULLSCREEN_HEADER_HEIGHT = 48;
 // Matches the panel's rounded-xl radius so the title bar fills the corner gap.
 const PIP_TITLE_BAR_OVERLAP = 12;
 const DEFAULT_SANDBOX_PERMISSIONS = 'allow-scripts allow-same-origin allow-forms';
-
-const DISPLAY_MODE_LAYOUTS: Record<GooseDisplayMode, DimensionLayout> = {
-  inline: { width: 'fixed', height: 'unbounded' },
-  fullscreen: { width: 'fixed', height: 'fixed' },
-  standalone: { width: 'fixed', height: 'fixed' },
-  pip: { width: 'fixed', height: 'fixed' },
-  // sidecar: { width: 'fixed', height: 'flexible' }, // example on how to use flexible layout
-};
-
-function getContainerDimensions(
-  displayMode: GooseDisplayMode,
-  measuredWidth: number,
-  measuredHeight: number
-): McpUiHostContext['containerDimensions'] {
-  const layout = DISPLAY_MODE_LAYOUTS[displayMode] ?? DISPLAY_MODE_LAYOUTS.inline;
-
-  // Only require a measurement for axes that are fixed or flexible (unbounded axes are omitted).
-  if (
-    (layout.width !== 'unbounded' && measuredWidth <= 0) ||
-    (layout.height !== 'unbounded' && measuredHeight <= 0)
-  )
-    return undefined;
-
-  const widthDimension = (() => {
-    switch (layout.width) {
-      case 'fixed':
-        return { width: measuredWidth };
-      case 'flexible':
-        return { maxWidth: measuredWidth };
-      case 'unbounded':
-        return {};
-    }
-  })();
-
-  const heightDimension = (() => {
-    switch (layout.height) {
-      case 'fixed':
-        return { height: measuredHeight };
-      case 'flexible':
-        return { maxHeight: measuredHeight };
-      case 'unbounded':
-        return {};
-    }
-  })();
-
-  return { ...widthDimension, ...heightDimension };
-}
 
 async function fetchMcpAppProxyUrl(csp: McpUiResourceCsp | null): Promise<string | null> {
   try {
@@ -281,6 +234,14 @@ const PIP_RESIZE_CURSOR: Record<PipResizeHandle, string> = {
   'bottom-left': 'cursor-nesw-resize',
 };
 
+function iframeHeightFor(guestHeight: number, hostContext: McpUiHostContext): number {
+  const dimensions = hostContext.containerDimensions;
+  if (hostContext.displayMode !== 'pip' || !dimensions || !('maxHeight' in dimensions)) {
+    return guestHeight;
+  }
+  return Math.max(guestHeight, dimensions.maxHeight ?? 0);
+}
+
 function GooseAppFrame({
   html,
   sandbox,
@@ -301,6 +262,7 @@ function GooseAppFrame({
 }: GooseAppFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const guestHeightRef = useRef<number | null>(null);
   const bridgeRef = useRef<AppBridge | null>(null);
   const [connected, setConnected] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -402,7 +364,8 @@ function GooseAppFrame({
             iframe.style.width = `${params.width}px`;
           }
           if (params.height !== undefined) {
-            iframe.style.height = `${params.height}px`;
+            guestHeightRef.current = params.height;
+            iframe.style.height = `${iframeHeightFor(params.height, hostContextRef.current)}px`;
           }
         };
         bridge.oninitialized = () => {
@@ -473,6 +436,14 @@ function GooseAppFrame({
       bridge.setHostContext(hostContext);
     }
   }, [initialized, hostContext]);
+
+  // Re-apply the PiP floor when the window is resized or the mode changes.
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    const guestHeight = guestHeightRef.current;
+    if (!iframe || guestHeight === null) return;
+    iframe.style.height = `${iframeHeightFor(guestHeight, hostContext)}px`;
+  }, [hostContext]);
 
   useEffect(() => {
     const bridge = bridgeRef.current;
@@ -895,20 +866,28 @@ export default function McpAppRenderer({
     [isInline]
   );
 
-  // Track the container's pixel dimensions so we can report them to apps via containerDimensions.
+  // Track pixel dimensions for containerDimensions. Width comes from the content
+  // element so a PiP scrollbar gutter is not counted; height from the container.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        setContainerWidth((prev) => (prev !== Math.round(width) ? Math.round(width) : prev));
-        setContainerHeight((prev) => (prev !== Math.round(height) ? Math.round(height) : prev));
+        if (entry.target === content) {
+          const width = Math.round(entry.contentRect.width);
+          setContainerWidth((prev) => (prev !== width ? width : prev));
+        }
+        if (entry.target === container) {
+          const height = Math.round(entry.contentRect.height);
+          setContainerHeight((prev) => (prev !== height ? height : prev));
+        }
       }
     });
 
-    observer.observe(el);
+    observer.observe(container);
+    observer.observe(content);
     return () => observer.disconnect();
   }, []);
 
