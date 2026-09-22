@@ -8,6 +8,7 @@ from user code (e.g. an uncaptured subprocess) cannot corrupt the protocol.
 
 import ast
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -42,6 +43,14 @@ def _truncate(text, limit=MAX_CHARS):
         "variable if you assigned it - slice it instead of re-printing ...]"
     ).format(limit)
     return text[:limit] + marker, True
+
+
+def _bounded_repr(value):
+    # repr() of a huge str or bytes materializes all of it before the cap
+    # applies; a prefix that is already over the cap echoes the same.
+    if type(value) in (str, bytes, bytearray) and len(value) > MAX_CHARS:
+        return repr(value[:MAX_CHARS])
+    return repr(value)
 
 
 def _tail(text, limit):
@@ -242,7 +251,7 @@ def _run_cell(code):
                 value = eval(compile(trailing_expr, filename, "eval"), NS)
                 if value is not None:
                     NS["_"] = value
-                    value_repr = repr(value)
+                    value_repr = _bounded_repr(value)
     except KeyboardInterrupt:
         error = (
             "KeyboardInterrupt: cell interrupted (timeout or cancellation). "
@@ -280,16 +289,21 @@ def _format_traceback():
 
 
 def _size_hint(value):
-    # Only inspect built-in types; calling len()/.shape on arbitrary objects
-    # would run user code during the post-cell namespace probe, which could
-    # block or kill the kernel outside a cell.
-    if isinstance(value, bool):
+    # Exact built-in types only: len()/repr() on subclasses would run user code
+    # during the post-cell namespace probe, which could block or kill the kernel
+    # outside a cell.
+    kind = type(value)
+    if kind is bool:
         return repr(value)
-    if isinstance(value, (int, float)):
-        return repr(value)[:40]
-    if isinstance(value, (str, bytes, bytearray, list, tuple, set, frozenset, dict)):
-        return "{} len={}".format(type(value).__name__, len(value))
-    return type(value).__name__
+    if kind in (int, float):
+        try:
+            return repr(value)[:40]
+        except ValueError:
+            # Beyond sys.get_int_max_str_digits().
+            return kind.__name__
+    if kind in (str, bytes, bytearray, list, tuple, set, frozenset, dict):
+        return "{} len={}".format(kind.__name__, len(value))
+    return kind.__name__
 
 
 def _namespace_listing():
@@ -353,10 +367,14 @@ def _save_state():
     names = []
     keep = {}
     sizes = {}
+    modules = {}
     for name, value in NS.items():
-        if name.startswith("_") or name in _HELPERS or isinstance(value, type(sys)):
+        if name.startswith("_") or name in _HELPERS:
             continue
         names.append(name)
+        if isinstance(value, type(sys)):
+            modules[name] = value.__name__
+            continue
         blob = _dump_capped(value, STATE_VALUE_CAP)
         if blob is not None:
             keep[name] = value
@@ -370,8 +388,10 @@ def _save_state():
         graph = _dump_capped(keep, STATE_TOTAL_CAP)
     if graph is None:
         return
+    # Two goose processes can hold the same session, so each writer stages its
+    # own file before the atomic replace.
+    tmp = "%s.%d.tmp" % (STATE_PATH, os.getpid())
     try:
-        tmp = STATE_PATH + ".tmp"
         # Snapshots can hold credentials; create them owner-only (no effect on
         # Windows, which does not use these mode bits). O_NOFOLLOW refuses a
         # planted symlink at the temp path.
@@ -379,33 +399,123 @@ def _save_state():
         fd = os.open(tmp, flags, 0o600)
         with os.fdopen(fd, "wb") as f:
             pickle.dump(
-                {"python": sys.version_info[:2], "names": names, "graph": graph}, f
+                {
+                    "python": sys.version_info[:2],
+                    "names": names,
+                    "graph": graph,
+                    "modules": modules,
+                },
+                f,
             )
         os.replace(tmp, STATE_PATH)
     except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+
+
+class _Unrestorable:
+    """Stands in for a class or function the snapshot names but this process can
+    no longer import, so the rest of the graph still loads."""
+
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
+    def __init__(self, *args, **kwargs):
         pass
+
+    def __call__(self, *args, **kwargs):
+        return _Unrestorable()
+
+    def __setstate__(self, state):
+        pass
+
+    # Subclasses of list, dict, and set are rebuilt through these.
+    def append(self, item):
+        pass
+
+    def extend(self, items):
+        pass
+
+    def add(self, item):
+        pass
+
+    def __setitem__(self, key, value):
+        pass
+
+
+class _TolerantUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        try:
+            return super().find_class(module, name)
+        except Exception:
+            return _Unrestorable
+
+
+class _Tainted(Exception):
+    pass
+
+
+class _TaintCheck(pickle.Pickler):
+    def persistent_id(self, obj):
+        if obj is _Unrestorable or isinstance(obj, _Unrestorable):
+            raise _Tainted
+        return None
+
+
+class _NullSink:
+    def write(self, data):
+        return len(data)
+
+
+def _reaches_unrestorable(value):
+    try:
+        _TaintCheck(_NullSink(), protocol=pickle.HIGHEST_PROTOCOL).dump(value)
+    except _Tainted:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+def _load_graph(graph):
+    """Returns (values, tolerant): strict load first; if a class or module is
+    gone, load with placeholders so only the variables reaching them are lost."""
+    try:
+        return pickle.loads(graph), False
+    except Exception:
+        return _TolerantUnpickler(io.BytesIO(graph)).load(), True
 
 
 def _restore_state():
     """Returns (restored_names, dropped_names) where dropped variables existed at
-    save time but could not be persisted (unpicklable or over the size cap)."""
+    save time but could not be persisted or loaded again."""
     if not STATE_PATH or not os.path.exists(STATE_PATH):
         return [], []
     try:
         with open(STATE_PATH, "rb") as f:
             state = pickle.load(f)
-        graph = state.get("graph", b"")
-        restored_ns = pickle.loads(graph) if graph else {}
-        names = state.get("names", list(restored_ns.keys()))
+        names = list(state.get("names", []))
         if state.get("python") != sys.version_info[:2]:
             return [], names
+        graph = state.get("graph", b"")
+        values, tolerant = _load_graph(graph) if graph else ({}, False)
+        modules = state.get("modules", {})
     except Exception:
         return [], []
     restored = []
-    for name, value in restored_ns.items():
+    for name, value in values.items():
+        if tolerant and _reaches_unrestorable(value):
+            continue
         NS[name] = value
         restored.append(name)
-    dropped = [name for name in names if name not in restored_ns]
+    # Module aliases (`import pandas as pd`) are re-imported rather than pickled.
+    for alias, module_name in modules.items():
+        try:
+            NS[alias] = importlib.import_module(module_name)
+        except Exception:
+            continue
+        restored.append(alias)
+    dropped = [name for name in names if name not in restored]
     return restored, dropped
 
 

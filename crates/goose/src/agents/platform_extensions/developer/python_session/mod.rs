@@ -18,7 +18,7 @@ use schemars::{schema_for, JsonSchema};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once, Weak};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -275,23 +275,34 @@ impl PythonSessionClient {
         working_dir: Option<PathBuf>,
     ) -> Result<(), String> {
         if slot.kernel.is_some() {
-            return Ok(());
+            if !self.session_changed(session_id, slot.incarnation).await {
+                return Ok(());
+            }
+            // The id now belongs to a new conversation (or none): its first cell
+            // must not run against the old namespace and its secrets.
+            self.discard(slot, session_id);
         }
-        let session = self.load_session(session_id).await;
+        // Without the session record there is no snapshot path or incarnation, so
+        // a kernel spawned now would never persist; fail the cell instead.
+        let Some(session) = self.load_session(session_id).await else {
+            return Err(if self.session_absent(session_id).await {
+                "the session no longer exists".to_string()
+            } else {
+                "the session could not be loaded; try again".to_string()
+            });
+        };
+        let state_dir = self.state_dir();
+        let mut env = self.child_env().await;
+        env.push(("AGENT_SESSION_ID", session_id.to_string()));
         let spec = KernelSpec {
             python: self.interpreter().await?,
-            working_dir: working_dir
-                .or_else(|| session.as_ref().map(|session| session.working_dir.clone()))
-                .unwrap_or_else(|| PathBuf::from(".")),
-            state_path: session
-                .as_ref()
-                .filter(|_| prepare_state_dir())
-                .map(snapshot_path),
-            env: self.child_env().await,
+            working_dir: working_dir.unwrap_or_else(|| session.working_dir.clone()),
+            state_path: prepare_state_dir(&state_dir).then(|| snapshot_path(&state_dir, &session)),
+            env,
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
         slot.state_path = spec.state_path;
-        slot.incarnation = session.as_ref().map(|s| s.created_at.timestamp_micros());
+        slot.incarnation = Some(session.created_at.timestamp_micros());
         let restored = kernel.restored_names();
         let dropped = kernel.dropped_names();
         if !restored.is_empty() || !dropped.is_empty() {
@@ -301,7 +312,7 @@ impl PythonSessionClient {
             }
             if !dropped.is_empty() {
                 notice.push_str(&format!(
-                    "; not restored (too large or not picklable): {}",
+                    "; not restored (too large, not picklable, or no longer importable): {}",
                     dropped.join(", ")
                 ));
             }
@@ -310,6 +321,23 @@ impl PythonSessionClient {
         }
         slot.kernel = Some(kernel);
         Ok(())
+    }
+
+    /// Kill the kernel and remove the snapshot of a session that no longer exists.
+    fn discard(&self, slot: &mut SessionSlot, session_id: &str) {
+        if let Some(mut kernel) = slot.kernel.take() {
+            kernel.kill();
+        }
+        if let Some(path) = slot.state_path.take() {
+            let _ = std::fs::remove_file(path);
+        }
+        slot.incarnation = None;
+        slot.restore_notice = None;
+        self.ns_cache.lock().unwrap().remove(session_id);
+    }
+
+    fn state_dir(&self) -> PathBuf {
+        self.context.session_manager.python_session_dir()
     }
 
     async fn load_session(&self, session_id: &str) -> Option<Session> {
@@ -380,13 +408,7 @@ impl PythonSessionClient {
         // snapshot after the deletion sweep. Compare the incarnation, not mere
         // existence, so a reused id does not look alive.
         if self.session_changed(&ctx.session_id, incarnation).await {
-            if let Some(mut kernel) = slot.kernel.take() {
-                kernel.kill();
-            }
-            if let Some(path) = &slot.state_path {
-                let _ = std::fs::remove_file(path);
-            }
-            self.ns_cache.lock().unwrap().remove(&ctx.session_id);
+            self.discard(&mut slot, &ctx.session_id);
             return Err("the session was deleted while the cell was running".to_string());
         }
 
@@ -471,16 +493,20 @@ impl PythonSessionClient {
             Some(session) => {
                 incarnation.is_some_and(|micros| session.created_at.timestamp_micros() != micros)
             }
-            // A load error here is ambiguous (deleted vs transient); only treat a
-            // confirmed absence as a deletion.
-            None => matches!(
-                self.context
-                    .session_manager
-                    .session_exists(session_id)
-                    .await,
-                Ok(false)
-            ),
+            None => self.session_absent(session_id).await,
         }
+    }
+
+    /// A load error is ambiguous (deleted vs transient); only a confirmed
+    /// absence counts as a deletion.
+    async fn session_absent(&self, session_id: &str) -> bool {
+        matches!(
+            self.context
+                .session_manager
+                .session_exists(session_id)
+                .await,
+            Ok(false)
+        )
     }
 
     fn cached_listing(&self, session_id: &str) -> Option<String> {
@@ -560,15 +586,11 @@ fn login_shell_path(_enabled: bool) -> Option<String> {
     None
 }
 
-fn state_dir() -> PathBuf {
-    crate::config::paths::Paths::data_dir().join("python-session")
-}
-
 /// `SessionManager` reuses a session id after the latest one is deleted, so key
 /// the snapshot on the creation time too; a new session never inherits a deleted
 /// conversation's variables (which could include secrets).
-fn snapshot_path(session: &Session) -> PathBuf {
-    state_dir().join(format!(
+fn snapshot_path(state_dir: &Path, session: &Session) -> PathBuf {
+    state_dir.join(format!(
         "{}-{}.pkl",
         session.id,
         session.created_at.timestamp_micros()
@@ -577,15 +599,14 @@ fn snapshot_path(session: &Session) -> PathBuf {
 
 /// Snapshots can hold source data and credentials; keep the directory
 /// owner-only, matching the session database's protected storage.
-fn prepare_state_dir() -> bool {
-    let dir = state_dir();
-    if std::fs::create_dir_all(&dir).is_err() {
+fn prepare_state_dir(dir: &Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
     }
     true
 }
@@ -672,7 +693,7 @@ impl McpClientTrait for PythonSessionClient {
     /// snapshot to list what came back.
     async fn get_moim(&self, session_id: &str) -> Option<String> {
         let session = self.load_session(session_id).await?;
-        let has_snapshot = snapshot_path(&session).is_file();
+        let has_snapshot = snapshot_path(&self.state_dir(), &session).is_file();
         if (!self.has_slot(session_id) && !has_snapshot)
             || !self.session_was_compacted(session_id).await
         {

@@ -150,6 +150,48 @@ async fn namespace_survives_process_restart_via_state_snapshot() {
 }
 
 #[tokio::test]
+async fn restore_keeps_aliases_and_drops_only_unloadable_variables() {
+    require_python!();
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    std::fs::create_dir(&modules).unwrap();
+    std::fs::write(
+        modules.join("gonemod.py"),
+        "class Thing:\n    pass\n\nclass Bag(list):\n    pass\n\nclass Table(dict):\n    pass\n",
+    )
+    .unwrap();
+    let state = dir.path().join("state.pkl");
+    let spec = spec(dir.path(), Some(&state));
+
+    // The module is importable only through this process's sys.path, so the
+    // respawned kernel cannot resolve `obj` while `a`, `b`, `n`, and the `js`
+    // alias still come back.
+    let mut kernel = Kernel::spawn(&spec).await.expect("kernel should spawn");
+    exec(
+        &mut kernel,
+        &format!(
+            "import sys\nsys.path.insert(0, {:?})\nimport gonemod\nimport json as js\nobj = gonemod.Thing()\nbag = gonemod.Bag([1])\ntable = gonemod.Table(k=1)\na = [1, 2]\nb = a\nn = 5\nbig = 10**5000",
+            modules.to_str().unwrap()
+        ),
+    )
+    .await;
+    kernel.kill();
+
+    let mut revived = Kernel::spawn(&spec).await.expect("kernel should respawn");
+    assert_eq!(
+        revived.dropped_names(),
+        &[
+            "gonemod".to_string(),
+            "obj".to_string(),
+            "bag".to_string(),
+            "table".to_string()
+        ]
+    );
+    let outcome = exec(&mut revived, "(a is b, n, js.dumps(n), big > 0)").await;
+    assert_eq!(outcome.value.as_deref(), Some("(True, 5, '5', True)"));
+}
+
+#[tokio::test]
 async fn surrogate_output_does_not_hang_the_cell() {
     require_python!();
     let mut kernel = spawn_kernel().await;

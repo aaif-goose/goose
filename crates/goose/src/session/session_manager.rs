@@ -394,14 +394,13 @@ pub struct SessionNameUpdate {
     pub user_set_name: bool,
 }
 
-/// Best-effort removal of the Python Session extension's on-disk snapshots for a
-/// deleted session, so pickled variables (which can include secrets) do not
-/// outlive the conversation. The extension names snapshots `<id>-<created>.pkl`
-/// under `data_dir()/python-session`.
-fn remove_python_session_snapshots(session_id: &str) {
-    let dir = Paths::data_dir().join("python-session");
+/// Best-effort removal of the Developer extension's Python session snapshots for
+/// a deleted session, so pickled variables (which can include secrets) do not
+/// outlive the conversation. Snapshots are named `<id>-<created>.pkl` and live
+/// next to the session database, so each store only ever touches its own.
+fn remove_python_session_snapshots(dir: &Path, session_id: &str) {
     let prefix = format!("{session_id}-");
-    if let Ok(entries) = std::fs::read_dir(&dir) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().starts_with(&prefix) {
                 let _ = std::fs::remove_file(entry.path());
@@ -425,6 +424,10 @@ impl SessionManager {
 
     pub fn storage(&self) -> &Arc<SessionStorage> {
         &self.storage
+    }
+
+    pub fn python_session_dir(&self) -> PathBuf {
+        self.storage.python_session_dir()
     }
 
     pub(crate) fn action_required(
@@ -524,7 +527,7 @@ impl SessionManager {
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
         self.storage.delete_session(id).await?;
-        remove_python_session_snapshots(id);
+        remove_python_session_snapshots(&self.python_session_dir(), id);
         Ok(())
     }
 
@@ -987,6 +990,10 @@ impl SessionStorage {
             session_dir,
             action_required: Arc::new(crate::action_required_manager::ActionRequiredManager::new()),
         }
+    }
+
+    pub fn python_session_dir(&self) -> PathBuf {
+        self.session_dir.join("python-session")
     }
 
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {

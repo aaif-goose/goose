@@ -271,8 +271,9 @@ impl Kernel {
 
     #[cfg(not(unix))]
     fn terminate(&self) {
-        // taskkill /T already walks the whole process tree, so there is no
-        // separate session to reap; the hard kill after the grace suffices.
+        // There is no graceful signal to send here, and the caller relies on the
+        // kernel being stopped before it returns, so the tree kill is the stop.
+        self.kill_process_group();
     }
 
     async fn request(&mut self, mut payload: serde_json::Value) -> Result<i64> {

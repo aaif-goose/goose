@@ -114,6 +114,10 @@ fn read_tool() -> Tool {
 }
 
 impl AcpTools {
+    pub fn takes_over(tool_name: &str) -> bool {
+        matches!(tool_name, "read" | "write" | "edit" | "shell")
+    }
+
     fn update_tool_call(&self, ctx: &crate::agents::ToolCallContext, fields: ToolCallUpdateFields) {
         if let Some(ref req_id) = ctx.tool_call_request_id {
             let _ = self

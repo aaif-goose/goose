@@ -45,8 +45,12 @@ export const DeveloperModeSection = () => {
   }, [configuredMode]);
 
   const handleModeChange = async (mode: string) => {
-    setCurrentMode(mode);
-    await upsert(CONFIG_KEY, mode, false);
+    try {
+      await upsert(CONFIG_KEY, mode, false);
+      setCurrentMode(mode);
+    } catch (error) {
+      console.error('Error updating developer mode:', error);
+    }
   };
 
   return (
@@ -54,10 +58,9 @@ export const DeveloperModeSection = () => {
       {developerModes.map((mode) => {
         const checked = currentMode === mode.key;
         return (
-          <div
+          <label
             key={mode.key}
             className={`group flex items-center justify-between text-sm text-text-primary py-2 px-2 rounded-lg transition-all hover:cursor-pointer ${checked ? 'bg-background-secondary' : 'bg-background-primary hover:bg-background-secondary'}`}
-            onClick={() => handleModeChange(mode.key)}
           >
             <div>
               <h3 className="text-text-primary">{intl.formatMessage(mode.label)}</h3>
@@ -79,7 +82,7 @@ export const DeveloperModeSection = () => {
                     transition-all duration-200 ease-in-out group-hover:border-border-primary"
               ></div>
             </div>
-          </div>
+          </label>
         );
       })}
     </div>

@@ -11,7 +11,7 @@ use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
-use crate::agents::platform_extensions::developer::{DeveloperClient, DeveloperMode};
+use crate::agents::platform_extensions::developer::DeveloperClient;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
@@ -1105,10 +1105,24 @@ impl GooseAcpAgent {
             return;
         }
 
-        // In Python session mode Developer has no file or terminal tools for the
-        // client to take over, and wrapping it would drop its turn-context and
-        // working-directory hooks, so the loaded session client is left as is.
-        if DeveloperMode::configured() == DeveloperMode::PythonSession {
+        // The loaded Developer decides, not the current setting: a Python session
+        // client has no file or terminal tools to take over, and wrapping it would
+        // drop its turn-context and working-directory hooks.
+        let developer_tools = match agent
+            .extension_manager
+            .list_tools_from_extension(&session.id, "developer", CancellationToken::new())
+            .await
+        {
+            Ok(result) => result.tools,
+            Err(error) => {
+                warn!(error = ?error, "Failed to list Developer tools for ACP takeover");
+                return;
+            }
+        };
+        if !developer_tools
+            .iter()
+            .any(|tool| AcpTools::takes_over(&tool.name))
+        {
             return;
         }
 
