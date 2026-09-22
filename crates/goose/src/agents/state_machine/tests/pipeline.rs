@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
 use rmcp::model::ElicitationAction;
@@ -133,6 +133,7 @@ impl TestPipeline {
                 COMPACTION_THRESHOLD,
             )));
         }
+        let extension_lease = Arc::new(StdMutex::new(None));
         let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(ToolPairCompactionOperation::new(
                 provider.clone(),
@@ -155,6 +156,8 @@ impl TestPipeline {
                 &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
+                None,
+                Arc::clone(&extension_lease),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
@@ -172,7 +175,7 @@ impl TestPipeline {
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]
-            extension_manager: self.extension_manager.clone(),
+            extension_lease,
             goose_mode: &self.goose_mode,
             prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
@@ -849,7 +852,6 @@ async fn build_test_pipeline(
         if extension.name() == "calculator" {
             extension_manager
                 .add_client(
-                    "calculator".to_string(),
                     extension,
                     calculator.clone(),
                     calculator.get_info().cloned(),

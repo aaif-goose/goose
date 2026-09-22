@@ -1851,28 +1851,14 @@ impl SummonClient {
         )?;
         let provider = match provider_entry {
             Ok(entry) => entry.create(extensions.to_vec()).await?,
-            Err(error) => {
-                let parent_provider = if let Some(extension_manager) = self
-                    .context
-                    .extension_manager
-                    .as_ref()
-                    .and_then(|weak| weak.upgrade())
+            Err(error) => match self.context.provider.lock().await.clone() {
+                Some(provider)
+                    if provider.get_name() == provider_name && !provider.manages_own_context() =>
                 {
-                    extension_manager.get_provider().lock().await.clone()
-                } else {
-                    None
-                };
-
-                match parent_provider {
-                    Some(provider)
-                        if provider.get_name() == provider_name
-                            && !provider.manages_own_context() =>
-                    {
-                        provider
-                    }
-                    _ => return Err(error),
+                    provider
                 }
-            }
+                _ => return Err(error),
+            },
         };
         Ok((provider, model_config))
     }
@@ -2353,6 +2339,7 @@ mod tests {
     ) -> PlatformExtensionContext {
         PlatformExtensionContext {
             extension_manager: None,
+            provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: None,
             session: None,
@@ -3004,14 +2991,8 @@ You review code."#;
             )
             .unwrap(),
         );
-        let extension_manager = Arc::new(
-            crate::agents::extension_manager::ExtensionManager::new_without_provider(
-                temp_dir.path().to_path_buf(),
-            ),
-        );
-        *extension_manager.get_provider().lock().await = Some(Arc::clone(&parent_provider));
-        let mut context = extension_manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&extension_manager));
+        let mut context = create_test_context();
+        context.provider = Arc::new(tokio::sync::Mutex::new(Some(Arc::clone(&parent_provider))));
         let client = SummonClient::new(context).unwrap();
         let session = crate::session::Session {
             provider_name: Some(parent_provider.get_name().to_string()),
@@ -3036,14 +3017,8 @@ You review code."#;
     async fn test_build_task_config_recreates_registered_parent_provider() {
         let temp_dir = TempDir::new().unwrap();
         let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
-        let extension_manager = Arc::new(
-            crate::agents::extension_manager::ExtensionManager::new_without_provider(
-                temp_dir.path().to_path_buf(),
-            ),
-        );
-        *extension_manager.get_provider().lock().await = Some(Arc::clone(&parent_provider));
-        let mut context = extension_manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&extension_manager));
+        let mut context = create_test_context();
+        context.provider = Arc::new(tokio::sync::Mutex::new(Some(Arc::clone(&parent_provider))));
         let client = SummonClient::new(context).unwrap();
         let session = crate::session::Session {
             provider_name: Some(parent_provider.get_name().to_string()),

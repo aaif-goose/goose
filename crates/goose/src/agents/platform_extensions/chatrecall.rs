@@ -441,6 +441,7 @@ mod tests {
 
         let client = ChatRecallClient::new(PlatformExtensionContext {
             extension_manager: None,
+            provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: None,
             session: Some(Arc::new(current_session.clone())),

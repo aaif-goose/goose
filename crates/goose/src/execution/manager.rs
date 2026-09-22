@@ -396,16 +396,20 @@ impl AgentManager {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::TempDir;
 
+    use goose_test_support::McpFixture;
     use test_case::test_case;
+    use tokio::sync::Barrier;
 
+    use crate::agents::extension::{Envs, ExtensionConfig};
     use crate::agents::{AgentConfig, GoosePlatform};
     use crate::config::permission::PermissionManager;
     use crate::config::GooseMode;
     use crate::execution::SessionExecutionMode;
-    use crate::session::SessionManager;
+    use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
 
     use super::AgentManager;
 
@@ -511,52 +515,60 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_concurrent_access() {
+    async fn concurrent_session_creation_initializes_extensions_once() {
         let temp_dir = TempDir::new().unwrap();
         let manager = Arc::new(create_test_manager(&temp_dir).await);
-        let session = String::from("concurrent-test");
-
-        let mut handles = vec![];
-        for _ in 0..10 {
-            let mgr = Arc::clone(&manager);
-            let sess = session.clone();
-            handles.push(tokio::spawn(async move {
-                mgr.get_or_create_agent(sess).await.unwrap()
-            }));
-        }
-
-        let agents: Vec<_> = futures::future::join_all(handles)
+        let mcp = McpFixture::new().await;
+        let session = manager
+            .session_manager()
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "race-condition-test".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
             .await
-            .into_iter()
-            .map(|r| r.unwrap())
-            .collect();
+            .unwrap();
+        let extension = ExtensionConfig::StreamableHttp {
+            name: "mcp-fixture".to_string(),
+            description: "MCP fixture".to_string(),
+            uri: mcp.url.clone(),
+            envs: Envs::default(),
+            env_keys: vec![],
+            headers: HashMap::new(),
+            timeout: Some(30),
+            socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
+            bundled: Some(false),
+            available_tools: vec![],
+        };
+        let mut extension_data = session.extension_data.clone();
+        EnabledExtensionsState::new(vec![extension])
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        manager
+            .session_manager()
+            .update(&session.id)
+            .extension_data(extension_data)
+            .apply()
+            .await
+            .unwrap();
 
-        for agent in &agents[1..] {
-            assert!(Arc::ptr_eq(&agents[0], agent));
-        }
-
-        assert_eq!(manager.session_count().await, 1);
-    }
-
-    #[tokio::test]
-    async fn test_concurrent_session_creation_race_condition() {
-        // Test that concurrent attempts to create the same new session ID
-        // result in only one agent being created (tests double-check pattern)
-        let temp_dir = TempDir::new().unwrap();
-        let manager = Arc::new(create_test_manager(&temp_dir).await);
-        let session_id = String::from("race-condition-test");
-
-        // Spawn multiple tasks trying to create the same NEW session simultaneously
-        let mut handles = vec![];
-        for _ in 0..20 {
-            let sess = session_id.clone();
-            let mgr_clone = Arc::clone(&manager);
+        let callers = 20;
+        let barrier = Arc::new(Barrier::new(callers));
+        let mut handles = Vec::with_capacity(callers);
+        for _ in 0..callers {
+            let manager = Arc::clone(&manager);
+            let session_id = session.id.clone();
+            let barrier = Arc::clone(&barrier);
             handles.push(tokio::spawn(async move {
-                mgr_clone.get_or_create_agent(sess).await.unwrap()
+                barrier.wait().await;
+                manager.get_or_create_agent(session_id).await.unwrap()
             }));
         }
 
-        // Collect all agents
         let agents: Vec<_> = futures::future::join_all(handles)
             .await
             .into_iter()
@@ -566,10 +578,13 @@ mod tests {
         for agent in &agents[1..] {
             assert!(
                 Arc::ptr_eq(&agents[0], agent),
-                "All concurrent requests should get the same agent"
+                "concurrent requests returned different agents"
             );
         }
         assert_eq!(manager.session_count().await, 1);
+        // One discover from one extension start; a second initialization
+        // would have been a second request.
+        assert_eq!(mcp.request_count(), 1);
     }
 
     #[tokio::test]

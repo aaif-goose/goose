@@ -1,6 +1,6 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::extension_manager::is_hidden_extension;
+use crate::agents::extension_manager::{is_hidden_extension, ExtensionMutation};
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::{get_all_extensions, get_extension_by_name};
@@ -127,7 +127,7 @@ impl ExtensionManagerClient {
         &self,
         session_id: &str,
         arguments: Option<JsonObject>,
-    ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
+    ) -> Result<CallToolResult, ExtensionManagerToolError> {
         let arguments = arguments.ok_or(ExtensionManagerToolError::MissingParameter {
             param_name: "arguments".to_string(),
         })?;
@@ -135,15 +135,11 @@ impl ExtensionManagerClient {
         let params: ManageExtensionsParams =
             serde_json::from_value(serde_json::Value::Object(arguments))?;
 
-        match self
-            .manage_extensions_impl(session_id, params.action, params.extension_name)
+        self.manage_extensions_impl(session_id, params.action, params.extension_name)
             .await
-        {
-            Ok(content) => Ok(content),
-            Err(error_data) => Err(ExtensionManagerToolError::OperationFailed {
+            .map_err(|error_data| ExtensionManagerToolError::OperationFailed {
                 message: error_data.message.to_string(),
-            }),
-        }
+            })
     }
 
     async fn manage_extensions_impl(
@@ -151,7 +147,7 @@ impl ExtensionManagerClient {
         session_id: &str,
         action: ManageExtensionAction,
         extension_name: String,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
+    ) -> Result<CallToolResult, ErrorData> {
         let session = self
             .context
             .session_manager
@@ -172,56 +168,41 @@ impl ExtensionManagerClient {
             ));
         }
 
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    "Extension manager is no longer available".to_string(),
-                    None,
-                )
-            })?;
-
-        if action == ManageExtensionAction::Disable {
-            return extension_manager
-                .remove_extension(&extension_name)
-                .await
-                .map(|_| {
-                    vec![ContentBlock::text(format!(
-                        "The extension '{}' has been disabled successfully",
-                        extension_name
-                    ))]
-                })
-                .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None));
-        }
-
-        let config = match get_extension_by_name(&extension_name) {
-            Some(config) => config,
-            None => {
-                return Err(ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
+        let (mutation, text) = match action {
+            ManageExtensionAction::Disable => (
+                ExtensionMutation::Disable {
+                    name: extension_name.clone(),
+                },
+                format!(
+                    "The extension '{}' has been disabled successfully",
+                    extension_name
+                ),
+            ),
+            ManageExtensionAction::Enable => {
+                if get_extension_by_name(&extension_name).is_none() {
+                    return Err(ErrorData::new(
+                        ErrorCode::RESOURCE_NOT_FOUND,
+                        format!(
+                            "Extension '{}' not found. Please check the extension name and try again.",
+                            extension_name
+                        ),
+                        None,
+                    ));
+                }
+                (
+                    ExtensionMutation::Enable {
+                        name: extension_name.clone(),
+                    },
                     format!(
-                        "Extension '{}' not found. Please check the extension name and try again.",
+                        "The extension '{}' has been installed successfully",
                         extension_name
                     ),
-                    None,
-                ));
+                )
             }
         };
-
-        extension_manager
-            .add_extension(config, None, None, None)
-            .await
-            .map(|_| {
-                vec![ContentBlock::text(format!(
-                    "The extension '{}' has been installed successfully",
-                    extension_name
-                ))]
-            })
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))
+        let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
+        mutation.attach(&mut result);
+        Ok(result)
     }
 
     async fn handle_list_resources(
@@ -462,7 +443,12 @@ impl McpClientTrait for ExtensionManagerClient {
                 self.handle_search_available_extensions().await
             }
             MANAGE_EXTENSIONS_TOOL_NAME => {
-                self.handle_manage_extensions(session_id, arguments).await
+                return Ok(self
+                    .handle_manage_extensions(session_id, arguments)
+                    .await
+                    .unwrap_or_else(|error| {
+                        CallToolResult::error(vec![ContentBlock::text(error.to_string())])
+                    }));
             }
             LIST_RESOURCES_TOOL_NAME => self.handle_list_resources(session_id, arguments).await,
             READ_RESOURCE_TOOL_NAME => self.handle_read_resource(session_id, arguments).await,
@@ -565,6 +551,7 @@ mod tests {
     fn client_for(manager: &Arc<ExtensionManager>) -> ExtensionManagerClient {
         ExtensionManagerClient::new(PlatformExtensionContext {
             extension_manager: Some(Arc::downgrade(manager)),
+            provider: manager.get_provider().clone(),
             session_manager: manager.get_context().session_manager.clone(),
             scheduler: None,
             session: None,
@@ -615,7 +602,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subagent_direct_calls_cannot_enable_or_disable_extensions() {
+    async fn manage_extensions_emits_a_mutation_and_refuses_subagents() {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = Arc::new(ExtensionManager::new_without_provider(
             temp_dir.path().to_path_buf(),
@@ -624,21 +611,34 @@ mod tests {
         let user_id = create_session(&manager, SessionType::User).await;
         let subagent_id = create_session(&manager, SessionType::SubAgent).await;
 
-        let enable = manage(&client, &subagent_id, "enable").await;
+        let mut enable = manage(&client, &subagent_id, "enable").await;
         assert!(enable.is_error.unwrap_or(false));
-        assert!(!manager.is_extension_enabled("developer").await);
+        assert_eq!(ExtensionMutation::take(&mut enable), None);
 
-        let user_enable = manage(&client, &user_id, "enable").await;
+        let mut user_enable = manage(&client, &user_id, "enable").await;
         assert!(!user_enable.is_error.unwrap_or(false));
-        assert!(manager.is_extension_enabled("developer").await);
+        assert_eq!(
+            ExtensionMutation::take(&mut user_enable),
+            Some(ExtensionMutation::Enable {
+                name: "developer".to_string()
+            })
+        );
+        assert!(
+            user_enable.meta.is_none(),
+            "the mutation is for the loop, not the model"
+        );
+        assert!(
+            !manager.is_extension_enabled("developer").await,
+            "the tool declares the change; the loop applies it"
+        );
 
-        let disable = manage(&client, &subagent_id, "disable").await;
-        assert!(disable.is_error.unwrap_or(false));
-        assert!(manager.is_extension_enabled("developer").await);
-
-        let user_disable = manage(&client, &user_id, "disable").await;
-        assert!(!user_disable.is_error.unwrap_or(false));
-        assert!(!manager.is_extension_enabled("developer").await);
+        let mut user_disable = manage(&client, &user_id, "disable").await;
+        assert_eq!(
+            ExtensionMutation::take(&mut user_disable),
+            Some(ExtensionMutation::Disable {
+                name: "developer".to_string()
+            })
+        );
     }
 
     #[tokio::test]

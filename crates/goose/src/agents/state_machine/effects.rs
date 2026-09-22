@@ -2,7 +2,6 @@ use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::providers::base::ProviderUsage;
 use crate::recipe::Recipe;
-use crate::session::ExtensionData;
 use goose_agent::operation::{ConversationEffect, MachineEffect};
 
 pub enum GooseEffect {
@@ -12,7 +11,6 @@ pub enum GooseEffect {
         usage: Option<ProviderUsage>,
     },
     SetRecipe(Box<Option<Recipe>>),
-    SetExtensionData(ExtensionData),
     RecordUsage(ProviderUsage),
 }
 

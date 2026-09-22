@@ -689,7 +689,6 @@ mod tests {
     use crate::action_required_manager::ActionRequiredManager;
     use crate::agents::mcp_client::GooseMcpClientCapabilities;
     use rmcp::transport::auth::InMemoryCredentialStore;
-    use std::sync::Weak;
     use tempfile::tempdir;
 
     fn test_ctx(working_dir: &std::path::Path) -> ConnectContext {
@@ -706,7 +705,7 @@ mod tests {
             working_dir: working_dir.to_path_buf(),
             docker_container: None,
             action_required: Arc::new(ActionRequiredManager::new()),
-            extension_manager: Weak::new(),
+            tools_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 

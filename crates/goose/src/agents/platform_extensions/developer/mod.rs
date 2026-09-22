@@ -294,6 +294,7 @@ mod tests {
     fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {
         PlatformExtensionContext {
             extension_manager: None,
+            provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager: Arc::new(SessionManager::new(data_dir)),
             scheduler: None,
             session: None,

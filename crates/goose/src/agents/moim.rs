@@ -1,4 +1,4 @@
-use crate::agents::extension_manager::ExtensionManager;
+use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::conversation::message::{Message, MessageMetadata};
 use crate::conversation::{CURRENT_TIME_TAG, TURN_CONTEXT_TAG, WORKING_DIRECTORY_TAG};
 use std::path::{Path, PathBuf};
@@ -74,6 +74,7 @@ pub(super) async fn compute_compaction_info(
 pub async fn turn_context_message(
     session_id: &str,
     extension_manager: &ExtensionManager,
+    lease: &ExtensionLease,
     turns_taken: u32,
     max_turns: u32,
     turn_start: chrono::DateTime<chrono::Local>,
@@ -113,7 +114,7 @@ pub async fn turn_context_message(
         .as_ref()
         .map(|session| session.working_dir.clone())
         .unwrap_or_else(|| PathBuf::from("."));
-    let mut parts = extension_manager.collect_moim_parts(session_id).await;
+    let mut parts = lease.moim().await;
     parts.extend(compaction_info.map(|value| tag("compaction", &value)));
     parts.extend(turn_budget_part(turns_taken, max_turns));
     turn_context_event(&working_dir, context_limit, parts, turn_start)
@@ -221,6 +222,55 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::mcp_client::McpClientTrait;
+    use crate::agents::tool_execution::ToolCallContext;
+    use crate::config::ExtensionConfig;
+    use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
+    use rmcp::ServiceError;
+    use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
+
+    struct MoimClient(&'static str);
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for MoimClient {
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancel_token: CancellationToken,
+        ) -> Result<ListToolsResult, ServiceError> {
+            Ok(ListToolsResult::default())
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancel_token: CancellationToken,
+        ) -> Result<CallToolResult, ServiceError> {
+            unreachable!()
+        }
+
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+
+        async fn get_moim(&self, _session_id: &str) -> Option<String> {
+            Some(self.0.to_string())
+        }
+    }
+
+    fn moim_extension() -> ExtensionConfig {
+        ExtensionConfig::Platform {
+            name: "context".to_string(),
+            description: String::new(),
+            display_name: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        }
+    }
 
     async fn session_and_manager() -> (String, ExtensionManager, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -242,10 +292,12 @@ mod tests {
     #[tokio::test]
     async fn turn_context_message_is_an_agent_only_user_message() {
         let (session_id, em, _tmp) = session_and_manager().await;
+        let lease = em.resolve(&em.current_set(&session_id, None).await).await;
 
-        let message = turn_context_message(&session_id, &em, 0, 100, chrono::Local::now(), None)
-            .await
-            .expect("turn context should be produced");
+        let message =
+            turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)
+                .await
+                .expect("turn context should be produced");
 
         assert_eq!(message.role, rmcp::model::Role::User);
         assert!(message.is_agent_visible());
@@ -259,12 +311,13 @@ mod tests {
     #[tokio::test]
     async fn turn_context_bytes_are_stable_for_a_turn() {
         let (session_id, em, _tmp) = session_and_manager().await;
+        let lease = em.resolve(&em.current_set(&session_id, None).await).await;
         let turn_start = chrono::Local::now();
 
-        let first = turn_context_message(&session_id, &em, 0, 100, turn_start, None)
+        let first = turn_context_message(&session_id, &em, &lease, 0, 100, turn_start, None)
             .await
             .unwrap();
-        let second = turn_context_message(&session_id, &em, 0, 100, turn_start, None)
+        let second = turn_context_message(&session_id, &em, &lease, 0, 100, turn_start, None)
             .await
             .unwrap();
 
@@ -273,6 +326,25 @@ mod tests {
             second.content[0].as_text(),
             "the same turn inputs must render byte-identical blocks"
         );
+    }
+
+    #[tokio::test]
+    async fn turn_context_uses_the_inference_lease() {
+        let (session_id, em, _tmp) = session_and_manager().await;
+        em.add_client(moim_extension(), Arc::new(MoimClient("old context")), None)
+            .await;
+        let lease = em.resolve(&em.current_set(&session_id, None).await).await;
+        em.add_client(moim_extension(), Arc::new(MoimClient("new context")), None)
+            .await;
+
+        let message =
+            turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)
+                .await
+                .unwrap();
+        let text = message.content[0].as_text().unwrap();
+
+        assert!(text.contains("old context"));
+        assert!(!text.contains("new context"));
     }
 
     #[test]

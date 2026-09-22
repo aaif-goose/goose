@@ -1,7 +1,7 @@
 //! Goose-specific inference request preparation.
 
 #[cfg(feature = "code-mode")]
-use crate::agents::ExtensionManager;
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::PromptManager;
 use crate::config::GooseMode;
 use crate::session::Session;
@@ -13,12 +13,12 @@ use goose_agent::operation::{messages_since_kickoff, InferenceInput};
 use goose_providers::conversation::message::Message;
 use goose_providers::conversation::Conversation;
 #[cfg(feature = "code-mode")]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 
 pub struct GooseInferenceRequestPreparer<'a> {
     #[cfg(feature = "code-mode")]
-    pub(crate) extension_manager: Arc<ExtensionManager>,
+    pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     pub(crate) goose_mode: &'a Mutex<GooseMode>,
     pub(crate) prompt_manager: &'a Mutex<PromptManager>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
@@ -35,11 +35,13 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
     ) -> Result<PreparedInferenceRequest> {
         #[cfg(feature = "code-mode")]
         let code_execution_mode = self
-            .extension_manager
-            .is_extension_enabled(
-                crate::agents::platform_extensions::code_execution::EXTENSION_NAME,
-            )
-            .await;
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable")
+            .as_ref()
+            .is_some_and(|lease| {
+                lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
+            });
         #[cfg(not(feature = "code-mode"))]
         let code_execution_mode = false;
 
