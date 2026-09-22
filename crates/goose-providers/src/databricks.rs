@@ -198,14 +198,17 @@ impl DatabricksProvider {
         model_config: &ModelConfig,
         effective_model_name: &str,
     ) -> Option<ModelConfig> {
-        if model_config.supports_vision.is_some() || effective_model_name == model_config.model_name
-        {
+        if effective_model_name == model_config.model_name {
             return None;
         }
 
         let resolved = ModelConfig::new(effective_model_name)
             .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME)
             .supports_vision?;
+
+        if model_config.supports_vision == Some(resolved) {
+            return None;
+        }
 
         Some(model_config.clone().with_vision_support(resolved))
     }
@@ -1062,6 +1065,18 @@ mod tests {
             .expect("upstream model should resolve vision support");
         assert_eq!(resolved.supports_vision, Some(true));
         assert_eq!(resolved.model_name, "production-chat");
+
+        let catalog_alias = ModelConfig::new("gpt-3.5-turbo")
+            .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME);
+        assert_eq!(catalog_alias.supports_vision, Some(false));
+
+        let corrected = DatabricksProvider::resolve_vision_support(&catalog_alias, "gpt-4o")
+            .expect("upstream model should override alias-derived capability");
+        assert_eq!(corrected.supports_vision, Some(true));
+
+        let downgraded =
+            DatabricksProvider::resolve_vision_support(&resolved, "gpt-3.5-turbo").unwrap();
+        assert_eq!(downgraded.supports_vision, Some(false));
     }
 
     #[test]
