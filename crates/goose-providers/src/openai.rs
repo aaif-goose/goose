@@ -417,6 +417,10 @@ impl OpenAiProvider {
 
     const PROVIDERS_NEEDING_STANDARD_CHAT_PARAMS: &[&str] = &["nearai", "pleumrouter"];
 
+    /// Providers whose endpoints require the non-standard `tool_stream`
+    /// field to stream tool-call arguments incrementally.
+    const PROVIDERS_NEEDING_TOOL_STREAM: &[&str] = &["zai_coding_plan"];
+
     /// Providers whose reasoning models accept an OpenAI-style
     /// `reasoning_effort` field on chat-completions requests but aren't
     /// matched by [`is_openai_responses_model`] (which only recognises
@@ -452,6 +456,12 @@ impl OpenAiProvider {
         model_config: &ModelConfig,
     ) -> serde_json::Value {
         if let Some(obj) = payload.as_object_mut() {
+            if Self::PROVIDERS_NEEDING_TOOL_STREAM.contains(&self.name.as_str())
+                && obj.get("stream") == Some(&json!(true))
+            {
+                obj.entry("tool_stream").or_insert(json!(true));
+            }
+
             if Self::PROVIDERS_NEEDING_MAX_TOKENS_REMAP.contains(&self.name.as_str()) {
                 if let Some(value) = obj.remove("max_completion_tokens") {
                     obj.entry("max_tokens").or_insert(value);
@@ -998,6 +1008,28 @@ mod tests {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    #[test]
+    fn coding_plan_tool_stream_is_scoped_and_preserves_explicit_overrides() {
+        let model = ModelConfig::new("glm-future");
+        for (provider, payload, expected) in [
+            (
+                "zai_coding_plan",
+                json!({"stream": true}),
+                Some(json!(true)),
+            ),
+            ("zai_coding_plan", json!({"stream": false}), None),
+            ("openai", json!({"stream": true}), None),
+            (
+                "zai_coding_plan",
+                json!({"stream": true, "tool_stream": false}),
+                Some(json!(false)),
+            ),
+        ] {
+            let request = make_provider(provider).sanitize_request_for_compat(payload, &model);
+            assert_eq!(request.get("tool_stream"), expected.as_ref());
         }
     }
 

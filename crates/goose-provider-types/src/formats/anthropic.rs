@@ -2385,6 +2385,20 @@ mod tests {
     }
 
     #[test]
+    fn test_thinking_type_opus_5_5_cannot_disable_thinking() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        assert_eq!(
+            thinking_type(&cfg("claude-opus-5-5")),
+            ThinkingType::Adaptive
+        );
+        assert_eq!(
+            thinking_type(&cfg_with_effort("claude-opus-5-5", "off")),
+            ThinkingType::Adaptive
+        );
+    }
+
+    #[test]
     fn test_create_request_fable_5_omits_temperature() -> Result<()> {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
         let mut config = cfg("claude-fable-5");

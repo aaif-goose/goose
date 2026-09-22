@@ -234,7 +234,11 @@ fn is_context_length_exceeded_message(text: &str) -> bool {
         return true;
     }
 
-    mentions_prompt_input_tokens && mentions_limit && mentions_overflow
+    if mentions_prompt_input_tokens && mentions_limit && mentions_overflow {
+        return true;
+    }
+
+    text_lower.contains("many-image") && text_lower.contains("exceed")
 }
 
 pub fn map_http_error_to_provider_error(
@@ -727,6 +731,7 @@ mod tests {
             "Request body is too large",
             "Request payload too large",
             "Content-Length exceeds the maximum allowed request size",
+            "At least one of the image dimensions exceed max allowed size for many-image requests: 2000 pixels",
         ];
 
         for message in messages {

@@ -19,6 +19,11 @@ use goose_providers::{
     databricks::DatabricksProvider as GooseDatabricksProvider,
     databricks_auth::DatabricksAuth,
     databricks_v2::DatabricksV2Provider as GooseDatabricksV2Provider,
+    decision::{
+        DecisionAnswer as GooseDecisionAnswer, DecisionProvider as GooseDecisionProvider,
+        DecisionQuestion as GooseDecisionQuestion, DecisionRequest as GooseDecisionRequest,
+        NoulCriteria as GooseNoulCriteria,
+    },
     declarative::{DeclarativeProviderConfig, EnvKeyResolver},
     documents::{document_media_type_is_supported, SUPPORTED_DOCUMENT_MEDIA_TYPES},
     model::ModelConfig,
@@ -866,6 +871,185 @@ fn convert_tools(tools: Vec<ProviderTool>) -> Result<Vec<Tool>, GooseError> {
     tools.iter().map(ProviderTool::to_goose_tool).collect()
 }
 
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum DecisionQuestion {
+    Noul {
+        instructions: String,
+        criteria: Option<NoulCriteria>,
+    },
+    Choice {
+        instructions: String,
+        criteria: HashMap<String, String>,
+    },
+    Score {
+        instructions: String,
+        criteria: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct NoulCriteria {
+    pub true_description: String,
+    pub false_description: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DecisionRequest {
+    pub model: String,
+    pub state_json: String,
+    pub questions: HashMap<String, DecisionQuestion>,
+}
+
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum DecisionAnswer {
+    Noul {
+        noul: f64,
+    },
+    Choice {
+        choice: String,
+        confidence: f64,
+        probabilities: HashMap<String, f64>,
+    },
+    Score {
+        score: f64,
+        confidence: f64,
+        legend_json: HashMap<String, String>,
+        probabilities: HashMap<String, f64>,
+    },
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DecisionResponse {
+    pub model: String,
+    pub answers: HashMap<String, DecisionAnswer>,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cost: Option<f64>,
+    pub id: Option<String>,
+    pub provider: Option<String>,
+}
+
+impl TryFrom<DecisionRequest> for GooseDecisionRequest {
+    type Error = GooseError;
+
+    fn try_from(value: DecisionRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            model: value.model,
+            state: serde_json::from_str(&value.state_json)?,
+            questions: value
+                .questions
+                .into_iter()
+                .map(|(name, question)| (name, question.into()))
+                .collect(),
+        })
+    }
+}
+
+impl From<DecisionQuestion> for GooseDecisionQuestion {
+    fn from(value: DecisionQuestion) -> Self {
+        match value {
+            DecisionQuestion::Noul {
+                instructions,
+                criteria,
+            } => Self::Noul {
+                instructions,
+                criteria: criteria.map(|criteria| GooseNoulCriteria {
+                    true_description: criteria.true_description,
+                    false_description: criteria.false_description,
+                }),
+            },
+            DecisionQuestion::Choice {
+                instructions,
+                criteria,
+            } => Self::Choice {
+                instructions,
+                criteria,
+            },
+            DecisionQuestion::Score {
+                instructions,
+                criteria,
+            } => Self::Score {
+                instructions,
+                criteria,
+            },
+        }
+    }
+}
+
+impl From<goose_providers::decision::DecisionResponse> for DecisionResponse {
+    fn from(value: goose_providers::decision::DecisionResponse) -> Self {
+        Self {
+            model: value.model,
+            answers: value
+                .answers
+                .into_iter()
+                .map(|(name, answer)| (name, answer.into()))
+                .collect(),
+            input_tokens: value.usage.input_tokens,
+            output_tokens: value.usage.output_tokens,
+            cost: value.usage.cost,
+            id: value.id,
+            provider: value.provider,
+        }
+    }
+}
+
+impl From<GooseDecisionAnswer> for DecisionAnswer {
+    fn from(value: GooseDecisionAnswer) -> Self {
+        match value {
+            GooseDecisionAnswer::Noul { noul } => Self::Noul { noul },
+            GooseDecisionAnswer::Choice {
+                choice,
+                confidence,
+                probabilities,
+            } => Self::Choice {
+                choice,
+                confidence,
+                probabilities,
+            },
+            GooseDecisionAnswer::Score {
+                score,
+                confidence,
+                legend,
+                probabilities,
+            } => Self::Score {
+                score,
+                confidence,
+                legend_json: legend
+                    .into_iter()
+                    .map(|(level, description)| {
+                        let description = match description {
+                            serde_json::Value::String(text) => text,
+                            other => other.to_string(),
+                        };
+                        (level, description)
+                    })
+                    .collect(),
+                probabilities,
+            },
+        }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct DecisionProvider {
+    provider: Arc<dyn GooseDecisionProvider>,
+}
+
+#[uniffi::export]
+impl DecisionProvider {
+    pub async fn create_decision(
+        &self,
+        request: DecisionRequest,
+    ) -> Result<DecisionResponse, GooseError> {
+        let request = request.try_into()?;
+        let provider = Arc::clone(&self.provider);
+        let response =
+            run_on_runtime(async move { provider.create_decision(&request).await }).await??;
+        Ok(response.into())
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct Provider {
     handle: ProviderHandle,
@@ -1031,6 +1215,52 @@ pub fn default_compaction_templates() -> CompactionTemplates {
 pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, GooseError> {
     let provider = goose_providers::declarative::from_json(&json, None, EnvKeyResolver {})?;
     Ok(Provider::new(provider))
+}
+
+fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<DecisionProvider> {
+    Arc::new(DecisionProvider {
+        provider: Arc::new(provider),
+    })
+}
+
+#[uniffi::export]
+pub fn openrouter_decision_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<Arc<DecisionProvider>, GooseError> {
+    let client = ApiClient::new_with_tls(
+        base_url.unwrap_or_else(|| "https://openrouter.ai".to_string()),
+        AuthMethod::BearerToken(api_key),
+        None,
+    )?;
+    Ok(decision_provider(
+        goose_providers::openrouter::OpenRouterProvider::new(client, None, None),
+    ))
+}
+
+#[uniffi::export]
+pub fn typesafe_decision_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<Arc<DecisionProvider>, GooseError> {
+    let client = ApiClient::new_with_tls(
+        base_url.unwrap_or_else(|| goose_providers::typesafe::TYPESAFE_DEFAULT_HOST.to_string()),
+        AuthMethod::BearerToken(api_key),
+        None,
+    )?;
+    Ok(decision_provider(
+        goose_providers::typesafe::TypeSafeProvider::new(client),
+    ))
+}
+
+#[uniffi::export]
+pub fn openrouter_decision_default_model() -> String {
+    goose_providers::openrouter::OPENROUTER_DECISION_DEFAULT_MODEL.to_string()
+}
+
+#[uniffi::export]
+pub fn typesafe_decision_default_model() -> String {
+    goose_providers::typesafe::TYPESAFE_DEFAULT_MODEL.to_string()
 }
 
 #[uniffi::export]

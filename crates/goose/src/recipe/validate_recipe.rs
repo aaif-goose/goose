@@ -12,6 +12,10 @@ use serde_path_to_error::Segment;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+const MAX_PARAMETERS: usize = 32;
+const MAX_TOTAL_SELECT_OPTIONS: usize = 200;
+const MAX_PARAMETERS_SIZE_BYTES: usize = 128 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecipeFileFormat {
     Json,
@@ -289,6 +293,7 @@ fn validate_scheduling_parameters(
     template_variables: &HashSet<String>,
 ) -> Result<(), String> {
     let parameters = parameters.as_deref().unwrap_or_default();
+    validate_parameter_limits(parameters).map_err(|e| e.to_string())?;
 
     let file_defaults = parameters
         .iter()
@@ -585,9 +590,43 @@ fn validate_parameters_in_template(
     Err(anyhow::anyhow!("{}", message.trim_end()))
 }
 
+fn validate_parameter_limits(parameters: &[RecipeParameter]) -> Result<()> {
+    if parameters.len() > MAX_PARAMETERS {
+        return Err(anyhow::anyhow!(
+            "Recipe has {} parameters but the maximum is {}.",
+            parameters.len(),
+            MAX_PARAMETERS
+        ));
+    }
+
+    let total_options: usize = parameters
+        .iter()
+        .map(|p| p.options.as_deref().unwrap_or_default().len())
+        .sum();
+    if total_options > MAX_TOTAL_SELECT_OPTIONS {
+        return Err(anyhow::anyhow!(
+            "Recipe has {} total select options but the maximum is {}.",
+            total_options,
+            MAX_TOTAL_SELECT_OPTIONS
+        ));
+    }
+
+    let serialized = serde_yaml::to_string(&parameters)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize parameters: {}", e))?;
+    if serialized.len() > MAX_PARAMETERS_SIZE_BYTES {
+        return Err(anyhow::anyhow!(
+            "Serialized parameters exceed the {} KiB limit.",
+            MAX_PARAMETERS_SIZE_BYTES / 1024
+        ));
+    }
+
+    Ok(())
+}
+
 fn validate_optional_parameters(parameters: &Option<Vec<RecipeParameter>>) -> Result<()> {
     let empty_params = vec![];
     let params = parameters.as_ref().unwrap_or(&empty_params);
+    validate_parameter_limits(params)?;
 
     let file_params_with_defaults: Vec<String> = params
         .iter()
@@ -629,6 +668,87 @@ parameters:
 {parameters}
 "#
         )
+    }
+
+    fn make_string_param(key: &str) -> String {
+        format!(
+            "  - key: {key}\n    input_type: string\n    requirement: required\n    description: p\n"
+        )
+    }
+
+    fn recipe_with_parameters(parameters: &str) -> String {
+        let vars: String = parameters
+            .lines()
+            .filter_map(|l| {
+                let trimmed = l.trim_start();
+                trimmed
+                    .strip_prefix("- key: ")
+                    .map(|k| format!("{{{{ {k} }}}} "))
+            })
+            .collect();
+        format!(
+            "version: 1.0.0\ntitle: T\ndescription: D\ninstructions: use {vars}\nparameters:\n{parameters}\n"
+        )
+    }
+
+    #[test]
+    fn rejects_too_many_parameters() {
+        let params: String = (0..=MAX_PARAMETERS)
+            .map(|i| make_string_param(&format!("p{i}")))
+            .collect();
+        let recipe_content = recipe_with_parameters(&params);
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+        assert!(error.to_string().contains("maximum is 32"), "{}", error);
+    }
+
+    #[test]
+    fn accepts_exactly_max_parameters() {
+        let params: String = (0..MAX_PARAMETERS)
+            .map(|i| make_string_param(&format!("p{i}")))
+            .collect();
+        let recipe_content = recipe_with_parameters(&params);
+        assert!(validate_recipe_template_from_content(&recipe_content, None).is_ok());
+    }
+
+    #[test]
+    fn rejects_too_many_total_select_options() {
+        let options: String = (0..=MAX_TOTAL_SELECT_OPTIONS)
+            .map(|i| format!("      - opt{i}\n"))
+            .collect();
+        let param = format!("  - key: choice\n    input_type: select\n    requirement: required\n    description: p\n    options:\n{options}");
+        let recipe_content = recipe_with_parameters(&param);
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+        assert!(error.to_string().contains("maximum is 200"), "{}", error);
+    }
+
+    #[test]
+    fn rejects_oversized_serialized_parameters() {
+        let long_desc = "x".repeat(MAX_PARAMETERS_SIZE_BYTES);
+        let param = format!("  - key: p\n    input_type: string\n    requirement: required\n    description: \"{long_desc}\"\n");
+        let recipe_content = recipe_with_parameters(&param);
+        let error = validate_recipe_template_from_content(&recipe_content, None).unwrap_err();
+        assert!(error.to_string().contains("128 KiB"), "{}", error);
+    }
+
+    #[test]
+    fn scheduling_rejects_too_many_parameters() {
+        let params: String = (0..=MAX_PARAMETERS)
+            .map(|i| make_string_param(&format!("p{i}")))
+            .collect();
+        let recipe_content = recipe_with_parameters(&params);
+        let error = scheduling_error(&recipe_content);
+        assert!(error.to_string().contains("maximum is 32"), "{}", error);
+    }
+
+    #[test]
+    fn scheduling_rejects_too_many_total_select_options() {
+        let options: String = (0..=MAX_TOTAL_SELECT_OPTIONS)
+            .map(|i| format!("      - opt{i}\n"))
+            .collect();
+        let param = format!("  - key: choice\n    input_type: select\n    requirement: required\n    description: p\n    options:\n{options}");
+        let recipe_content = recipe_with_parameters(&param);
+        let error = scheduling_error(&recipe_content);
+        assert!(error.to_string().contains("maximum is 200"), "{}", error);
     }
 
     #[test]

@@ -79,6 +79,6 @@ pub(super) async fn record(
 }
 
 pub(super) async fn estimate_context(conversation: &Conversation) -> Result<TokenUsage> {
-    let tokens = crate::context_mgmt::count_context_tokens(conversation).await?;
+    let tokens = crate::context_mgmt::count_context_tokens(conversation.messages()).await?;
     Ok(TokenUsage::new(Some(tokens), None, Some(tokens)))
 }

@@ -6,10 +6,13 @@ use std::path::Path;
 
 /// Cached bundled canonical model registry
 static BUNDLED_REGISTRY: Lazy<Result<CanonicalModelRegistry>> = Lazy::new(|| {
-    const CANONICAL_MODELS_JSON: &str = include_str!("data/canonical_models.json");
+    const CANONICAL_MODELS_ZSTD: &[u8] =
+        include_bytes!(concat!(env!("OUT_DIR"), "/canonical_models.json.zst"));
 
-    let models: Vec<CanonicalModel> = serde_json::from_str(CANONICAL_MODELS_JSON)
-        .context("Failed to parse bundled canonical models JSON")?;
+    let json = zstd::decode_all(CANONICAL_MODELS_ZSTD)
+        .context("Failed to decompress bundled canonical models JSON")?;
+    let models: Vec<CanonicalModel> =
+        serde_json::from_slice(&json).context("Failed to parse bundled canonical models JSON")?;
 
     let mut registry = CanonicalModelRegistry::new();
     for model in models {

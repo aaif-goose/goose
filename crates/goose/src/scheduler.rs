@@ -492,6 +492,7 @@ impl Scheduler {
             write_schedule_recipe_bytes(&destination_recipe_path, &recipe_bytes)?;
             stored_job.recipe_base_dir = original_recipe_path
                 .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
                 .map(|p| p.to_string_lossy().into_owned());
             stored_job.source = destination_recipe_path.to_string_lossy().into_owned();
             stored_job.current_session_id = None;

@@ -208,6 +208,64 @@
           "returns": "Provider",
           "throws": "GooseError",
           "isAsync": false
+        },
+        {
+          "name": "openrouter_decision_default_model",
+          "docs": "",
+          "params": [],
+          "returns": "String",
+          "throws": null,
+          "isAsync": false
+        },
+        {
+          "name": "openrouter_decision_provider",
+          "docs": "",
+          "params": [
+            {
+              "name": "api_key",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "base_url",
+              "type": "Option<String>",
+              "default": null,
+              "docs": ""
+            }
+          ],
+          "returns": "DecisionProvider",
+          "throws": "GooseError",
+          "isAsync": false
+        },
+        {
+          "name": "typesafe_decision_default_model",
+          "docs": "",
+          "params": [],
+          "returns": "String",
+          "throws": null,
+          "isAsync": false
+        },
+        {
+          "name": "typesafe_decision_provider",
+          "docs": "",
+          "params": [
+            {
+              "name": "api_key",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "base_url",
+              "type": "Option<String>",
+              "default": null,
+              "docs": ""
+            }
+          ],
+          "returns": "DecisionProvider",
+          "throws": "GooseError",
+          "isAsync": false
         }
       ],
       "items": [
@@ -928,6 +986,261 @@
             }
           ],
           "methods": []
+        },
+        {
+          "name": "DecisionQuestion",
+          "kind": "enum",
+          "docs": "",
+          "fields": [],
+          "variants": [
+            {
+              "name": "Noul",
+              "fields": [
+                {
+                  "name": "instructions",
+                  "type": "String",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "criteria",
+                  "type": "Option<NoulCriteria>",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            },
+            {
+              "name": "Choice",
+              "fields": [
+                {
+                  "name": "instructions",
+                  "type": "String",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "criteria",
+                  "type": "HashMap<String, String>",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            },
+            {
+              "name": "Score",
+              "fields": [
+                {
+                  "name": "instructions",
+                  "type": "String",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "criteria",
+                  "type": "Vec<String>",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            }
+          ],
+          "methods": []
+        },
+        {
+          "name": "NoulCriteria",
+          "kind": "record",
+          "docs": "",
+          "fields": [
+            {
+              "name": "true_description",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "false_description",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            }
+          ],
+          "variants": [],
+          "methods": []
+        },
+        {
+          "name": "DecisionRequest",
+          "kind": "record",
+          "docs": "",
+          "fields": [
+            {
+              "name": "model",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "state_json",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "questions",
+              "type": "HashMap<String, DecisionQuestion>",
+              "default": null,
+              "docs": ""
+            }
+          ],
+          "variants": [],
+          "methods": []
+        },
+        {
+          "name": "DecisionAnswer",
+          "kind": "enum",
+          "docs": "",
+          "fields": [],
+          "variants": [
+            {
+              "name": "Noul",
+              "fields": [
+                {
+                  "name": "noul",
+                  "type": "f64",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            },
+            {
+              "name": "Choice",
+              "fields": [
+                {
+                  "name": "choice",
+                  "type": "String",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "confidence",
+                  "type": "f64",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "probabilities",
+                  "type": "HashMap<String, f64>",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            },
+            {
+              "name": "Score",
+              "fields": [
+                {
+                  "name": "score",
+                  "type": "f64",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "confidence",
+                  "type": "f64",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "legend_json",
+                  "type": "HashMap<String, String>",
+                  "default": null,
+                  "docs": ""
+                },
+                {
+                  "name": "probabilities",
+                  "type": "HashMap<String, f64>",
+                  "default": null,
+                  "docs": ""
+                }
+              ]
+            }
+          ],
+          "methods": []
+        },
+        {
+          "name": "DecisionResponse",
+          "kind": "record",
+          "docs": "",
+          "fields": [
+            {
+              "name": "model",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "answers",
+              "type": "HashMap<String, DecisionAnswer>",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "input_tokens",
+              "type": "Option<u64>",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "output_tokens",
+              "type": "Option<u64>",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "cost",
+              "type": "Option<f64>",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "id",
+              "type": "Option<String>",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "provider",
+              "type": "Option<String>",
+              "default": null,
+              "docs": ""
+            }
+          ],
+          "variants": [],
+          "methods": []
+        },
+        {
+          "name": "DecisionProvider",
+          "kind": "object",
+          "docs": "",
+          "fields": [],
+          "variants": [],
+          "methods": [
+            {
+              "name": "create_decision",
+              "docs": "",
+              "params": [
+                {
+                  "name": "request",
+                  "type": "DecisionRequest",
+                  "default": null,
+                  "docs": ""
+                }
+              ],
+              "returns": "DecisionResponse",
+              "throws": "GooseError",
+              "isAsync": true
+            }
+          ]
         },
         {
           "name": "Provider",
