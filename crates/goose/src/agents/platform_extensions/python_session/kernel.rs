@@ -246,11 +246,7 @@ impl Kernel {
         // The driver has its own process group (see `process_group(0)`); kill the
         // whole group so a subprocess it spawned is not orphaned on reap or crash.
         #[cfg(unix)]
-        if let Some(pid) = self.child.id() {
-            unsafe {
-                libc::kill(-(pid as i32), libc::SIGKILL);
-            }
-        }
+        self.kill_process_group();
         let _ = self.child.start_kill();
     }
 
@@ -302,6 +298,15 @@ impl Kernel {
         let _ = self.child.start_kill();
     }
 
+    #[cfg(unix)]
+    fn kill_process_group(&self) {
+        if let Some(pid) = self.child.id() {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+    }
+
     fn death_context(&self, when: &str) -> String {
         let tail = self.stderr_tail.lock().unwrap();
         if tail.trim().is_empty() {
@@ -312,5 +317,15 @@ impl Kernel {
                 tail.trim_end()
             )
         }
+    }
+}
+
+impl Drop for Kernel {
+    fn drop(&mut self) {
+        // `kill_on_drop` only reaps the driver PID; take its subprocesses too when
+        // the kernel is dropped without an explicit `kill()` (e.g. the extension
+        // is disabled before the idle reaper runs).
+        #[cfg(unix)]
+        self.kill_process_group();
     }
 }

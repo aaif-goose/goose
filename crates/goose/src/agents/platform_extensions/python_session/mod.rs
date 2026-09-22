@@ -78,6 +78,7 @@ pub struct PythonSessionClient {
     compacted: Mutex<HashSet<String>>,
     pending_dir: Mutex<HashMap<String, PathBuf>>,
     interpreter: tokio::sync::OnceCell<PathBuf>,
+    resolved_path: tokio::sync::OnceCell<Option<String>>,
     reaper: Once,
 }
 
@@ -136,6 +137,7 @@ impl PythonSessionClient {
             compacted: Mutex::new(HashSet::new()),
             pending_dir: Mutex::new(HashMap::new()),
             interpreter: tokio::sync::OnceCell::new(),
+            resolved_path: tokio::sync::OnceCell::new(),
             reaper: Once::new(),
         })
     }
@@ -218,11 +220,41 @@ impl PythonSessionClient {
         });
     }
 
-    async fn interpreter(&self) -> Result<PathBuf, String> {
+    /// The PATH the kernel and its `sh()` subprocesses should see. Desktop launches
+    /// goosed with a minimal PATH, so resolve the login-shell PATH once (as the
+    /// Developer shell does) and reuse it for both interpreter discovery and the
+    /// kernel environment; otherwise `sh("rg ...")`, `cargo`, `pnpm` fail.
+    async fn resolved_path(&self) -> Option<String> {
         let use_login_shell_path = self.context.use_login_shell_path;
+        self.resolved_path
+            .get_or_init(|| async move {
+                tokio::task::spawn_blocking(move || {
+                    login_shell_path(use_login_shell_path).or_else(|| std::env::var("PATH").ok())
+                })
+                .await
+                .ok()
+                .flatten()
+            })
+            .await
+            .clone()
+    }
+
+    async fn child_env(&self) -> Vec<(&'static str, String)> {
+        let mut env = Vec::new();
+        if let Some(chars) = config_value::<u64>(MAX_OUTPUT_CHARS_KEY) {
+            env.push((MAX_OUTPUT_CHARS_KEY, chars.to_string()));
+        }
+        if let Some(path) = self.resolved_path().await {
+            env.push(("PATH", path));
+        }
+        env
+    }
+
+    async fn interpreter(&self) -> Result<PathBuf, String> {
+        let path = self.resolved_path().await;
         self.interpreter
             .get_or_try_init(|| async move {
-                tokio::task::spawn_blocking(move || discover_interpreter(use_login_shell_path))
+                tokio::task::spawn_blocking(move || discover_interpreter(path))
                     .await
                     .map_err(|e| e.to_string())?
             })
@@ -242,8 +274,8 @@ impl PythonSessionClient {
         let spec = KernelSpec {
             python: self.interpreter().await?,
             working_dir,
-            state_path: state_path(session_id),
-            env: child_env(),
+            state_path: self.snapshot_path(session_id).await,
+            env: self.child_env().await,
         };
         let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
         let restored = kernel.restored_names();
@@ -264,6 +296,19 @@ impl PythonSessionClient {
         }
         slot.kernel = Some(kernel);
         Ok(())
+    }
+
+    async fn snapshot_path(&self, session_id: &str) -> Option<PathBuf> {
+        let session = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .ok()?;
+        state_path(&snapshot_file(
+            &session.id,
+            session.created_at.timestamp_micros(),
+        ))
     }
 
     async fn working_dir(&self, ctx: &ToolCallContext) -> PathBuf {
@@ -438,20 +483,11 @@ fn cell_timeout() -> Duration {
     Duration::from_secs(secs.max(1))
 }
 
-fn child_env() -> Vec<(&'static str, String)> {
-    config_value::<u64>(MAX_OUTPUT_CHARS_KEY)
-        .map(|chars| (MAX_OUTPUT_CHARS_KEY, chars.to_string()))
-        .into_iter()
-        .collect()
-}
-
-fn discover_interpreter(use_login_shell_path: bool) -> Result<PathBuf, String> {
+fn discover_interpreter(path: Option<String>) -> Result<PathBuf, String> {
     if let Some(configured) = config_value::<String>(INTERPRETER_KEY) {
         return Ok(PathBuf::from(configured));
     }
-    let path = login_shell_path(use_login_shell_path)
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default();
+    let path = path.unwrap_or_default();
     ["python3", "python"]
         .iter()
         .map(|name| format!("{name}{}", std::env::consts::EXE_SUFFIX))
@@ -483,14 +519,17 @@ fn state_dir() -> PathBuf {
     crate::config::paths::Paths::data_dir().join("python-session")
 }
 
-fn state_path(session_id: &str) -> Option<PathBuf> {
-    let dir = state_dir();
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join(format!("{session_id}.pkl")))
+/// `SessionManager` reuses a session id after the latest one is deleted, so key
+/// the snapshot on the creation time too; a new session never inherits a deleted
+/// conversation's variables (which could include secrets).
+fn snapshot_file(session_id: &str, created_at_micros: i64) -> String {
+    format!("{session_id}-{created_at_micros}.pkl")
 }
 
-fn snapshot_exists(session_id: &str) -> bool {
-    state_dir().join(format!("{session_id}.pkl")).is_file()
+fn state_path(file: &str) -> Option<PathBuf> {
+    let dir = state_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join(file))
 }
 
 fn format_outcome(
@@ -579,7 +618,8 @@ impl McpClientTrait for PythonSessionClient {
         let slot = self.session_slot(session_id);
         let listing = match slot.try_lock() {
             Ok(mut guard) => {
-                if guard.kernel.is_none() && snapshot_exists(session_id) {
+                let snapshot = self.snapshot_path(session_id).await;
+                if guard.kernel.is_none() && snapshot.is_some_and(|p| p.is_file()) {
                     if let Ok(session) = self
                         .context
                         .session_manager

@@ -5,6 +5,7 @@ use goose::agents::ToolCallContext;
 use goose::config::GooseMode;
 use goose::session::SessionType;
 use serde_json::json;
+use serial_test::serial;
 use tokio_util::sync::CancellationToken;
 
 fn python_available() -> bool {
@@ -72,6 +73,7 @@ async fn run_cell(
 }
 
 #[tokio::test]
+#[serial]
 async fn cells_share_state_and_moim_waits_for_compaction() {
     if !python_available() {
         eprintln!("skipping: python3 not available");
@@ -93,6 +95,7 @@ async fn cells_share_state_and_moim_waits_for_compaction() {
 }
 
 #[tokio::test]
+#[serial]
 async fn kernel_death_is_reported_and_snapshot_restores_the_next_cell() {
     if !python_available() {
         eprintln!("skipping: python3 not available");

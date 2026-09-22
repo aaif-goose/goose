@@ -82,6 +82,13 @@ Settings can be set as environment variables or in `config.yaml`.
   On Windows, interrupts are not available, so a timed-out cell restarts the session instead.
 - Sessions idle for 30 minutes are shut down and restored from the snapshot on the next call.
 
+## Limitations
+
+- Forking a session starts the fork with a fresh Python namespace.
+  Variables from the original session are not carried into the fork, so a forked conversation re-runs the Python it needs.
+- Under Flatpak sandboxing, the session runs the interpreter inside the sandbox rather than on the host.
+  Use the Developer extension there until host execution is supported.
+
 ## Example Usage
 
 In this example, goose analyzes a large log file without ever pasting it into the conversation.

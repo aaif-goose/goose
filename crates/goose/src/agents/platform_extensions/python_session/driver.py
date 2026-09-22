@@ -388,6 +388,11 @@ def main():
     proto = os.fdopen(os.dup(1), "w", buffering=1)
     os.dup2(2, 1)
 
+    # The driver runs as a script, so sys.path[0] is its temp directory; make it
+    # the current directory instead (like a REPL) so cells can import project
+    # modules, and so imports follow later os.chdir calls.
+    sys.path[0] = ""
+
     if sys.version_info < (3, 9):
         _respond(
             proto,
