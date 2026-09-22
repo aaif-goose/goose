@@ -29,6 +29,7 @@ use super::{
     ExtensionMutation, GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
+use crate::agents::container::Container;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::reply_parts::is_tool_visible_to_app;
@@ -254,6 +255,12 @@ impl ExtensionLease {
             .collect()
     }
 
+    pub(crate) async fn resolves_to(&self, requested_name: &str, tool_name: &str) -> bool {
+        self.resolve_tool(requested_name, None)
+            .await
+            .is_ok_and(|resolved| resolved.tool.name == tool_name)
+    }
+
     pub async fn moim(&self) -> Vec<String> {
         let mut content = Vec::new();
         for extension in self
@@ -274,25 +281,36 @@ impl ExtensionLease {
         calling_app: Option<&str>,
     ) -> Result<ResolvedTool<'_>, ErrorData> {
         let catalog = self.tool_catalog().await;
-        let entry = catalog.get(tool_name).or_else(|| {
-            let tool_owners = catalog
-                .entries
-                .iter()
-                .map(|entry| (entry.tool.name.as_ref(), get_tool_owner(&entry.tool)))
-                .collect::<Vec<_>>();
-            recover_mangled_tool_name(
-                tool_name,
-                tool_owners
+        let extension_key = calling_app.map(name_to_key);
+        let belongs_to_extension = |entry: &&CatalogEntry| {
+            extension_key
+                .as_ref()
+                .is_none_or(|key| entry.extension.key == *key)
+        };
+        let entry = catalog
+            .get(tool_name)
+            .filter(belongs_to_extension)
+            .or_else(|| {
+                let tool_owners = catalog
+                    .entries
                     .iter()
-                    .map(|(name, owner)| (*name, owner.as_deref())),
-            )
-            .and_then(|recovered| catalog.get(&recovered))
-        });
+                    .filter(belongs_to_extension)
+                    .map(|entry| (entry.tool.name.as_ref(), get_tool_owner(&entry.tool)))
+                    .collect::<Vec<_>>();
+                recover_mangled_tool_name(
+                    tool_name,
+                    tool_owners
+                        .iter()
+                        .map(|(name, owner)| (*name, owner.as_deref())),
+                )
+                .and_then(|recovered| catalog.get(&recovered))
+            });
 
         let Some(entry) = entry else {
             let available = catalog
                 .entries
                 .iter()
+                .filter(belongs_to_extension)
                 .map(|entry| entry.tool.name.as_ref())
                 .collect::<Vec<&str>>()
                 .join(", ");
@@ -306,21 +324,12 @@ impl ExtensionLease {
             ));
         };
 
-        if let Some(calling_app) = calling_app {
-            if name_to_key(calling_app) != entry.extension.key {
-                return Err(ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
-                    format!("Tool '{}' not found for extension", tool_name),
-                    None,
-                ));
-            }
-            if !is_tool_visible_to_app(&entry.tool) {
-                return Err(ErrorData::new(
-                    ErrorCode::INVALID_PARAMS,
-                    "Tool is not visible to app clients",
-                    None,
-                ));
-            }
+        if calling_app.is_some() && !is_tool_visible_to_app(&entry.tool) {
+            return Err(ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                "Tool is not visible to app clients",
+                None,
+            ));
         }
 
         Ok(ResolvedTool {
@@ -367,6 +376,7 @@ impl ExtensionLease {
         let CallRequest {
             tool_call_id,
             notification_emitter,
+            container,
         } = request;
         let client = resolved.extension.client.clone();
         let action_required_stream = self.action_required_stream(tool_call_id.as_deref()).await;
@@ -379,7 +389,8 @@ impl ExtensionLease {
             self.scope_id.clone(),
             self.working_dir.clone(),
             tool_call_id,
-        );
+        )
+        .with_container(container);
         if let Some(emitter) = emitter {
             call_context = call_context.with_notification_emitter(emitter);
         }
@@ -470,6 +481,7 @@ impl ExtensionLease {
 pub struct CallRequest {
     pub(crate) tool_call_id: Option<String>,
     pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
+    pub(crate) container: Option<Container>,
 }
 
 impl CallRequest {
@@ -477,7 +489,13 @@ impl CallRequest {
         Self {
             tool_call_id: Some(tool_call_id.into()),
             notification_emitter: None,
+            container: None,
         }
+    }
+
+    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
+        self.container = container;
+        self
     }
 }
 
@@ -486,6 +504,7 @@ impl From<&ToolCallContext> for CallRequest {
         Self {
             tool_call_id: ctx.tool_call_request_id.clone(),
             notification_emitter: ctx.notification_emitter().cloned(),
+            container: ctx.container().cloned(),
         }
     }
 }

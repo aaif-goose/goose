@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -17,8 +17,8 @@ use super::tool_confirmation_coordinator::{
 };
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{
-    tool_stream, ToolCallResult, ToolStream, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-    DECLINED_RESPONSE,
+    tool_stream, ApprovalToolContext, ToolCallResult, ToolStream, ToolStreamItem,
+    CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE,
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
@@ -286,9 +286,6 @@ pub struct Agent {
     pub(super) current_goose_mode: Mutex<GooseMode>,
 
     pub extension_manager: Arc<ExtensionManager>,
-    /// Points to the lease owned by the active legacy inference without
-    /// extending that lease's lifetime.
-    lease: Mutex<Weak<ExtensionLease>>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
     pub(super) tool_confirmation_router: ToolConfirmationRouter,
@@ -439,7 +436,6 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_goose_mode: Mutex::new(initial_mode),
-            lease: Mutex::new(Weak::new()),
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
@@ -906,6 +902,7 @@ impl Agent {
 
     async fn handle_approved_and_denied_tools(
         &self,
+        lease: &ExtensionLease,
         permission_check_result: &PermissionCheckResult,
         request_to_response_map: &mut HashMap<String, Message>,
         cancel_token: Option<tokio_util::sync::CancellationToken>,
@@ -917,7 +914,8 @@ impl Agent {
         for request in &permission_check_result.approved {
             if let Ok(tool_call) = request.tool_call.clone() {
                 let (req_id, tool_result) = self
-                    .dispatch_tool_call(
+                    .dispatch_tool_call_on(
+                        lease,
                         tool_call,
                         request.id.clone(),
                         cancel_token.clone(),
@@ -1055,9 +1053,20 @@ impl Agent {
         Ok(())
     }
 
-    /// Dispatch a single tool call to the appropriate client
+    pub async fn dispatch_tool_call(
+        &self,
+        tool_call: CallToolRequestParams,
+        request_id: String,
+        cancellation_token: Option<CancellationToken>,
+        session: &Session,
+    ) -> (String, Result<ToolCallResult, ErrorData>) {
+        let lease = self.resolve_lease(&session.id, &session.working_dir).await;
+        self.dispatch_tool_call_on(&lease, tool_call, request_id, cancellation_token, session)
+            .await
+    }
+
     #[instrument(
-        skip(self, tool_call, request_id, cancellation_token, session),
+        skip(self, lease, tool_call, request_id, cancellation_token, session),
         fields(
             input,
             output,
@@ -1071,8 +1080,9 @@ impl Agent {
             error.type = tracing::field::Empty,
         )
     )]
-    pub async fn dispatch_tool_call(
+    pub(super) async fn dispatch_tool_call_on(
         &self,
+        lease: &ExtensionLease,
         tool_call: CallToolRequestParams,
         request_id: String,
         cancellation_token: Option<CancellationToken>,
@@ -1167,12 +1177,11 @@ impl Agent {
         }
 
         debug!("WAITING_TOOL_START: {}", tool_call.name);
-        let result = self
-            .lease(&session.id, &session.working_dir)
-            .await
+        let container = self.container.lock().await.clone();
+        let result = lease
             .call(
                 tool_call.clone(),
-                CallRequest::new(request_id.clone()),
+                CallRequest::new(request_id.clone()).with_container(container.clone()),
                 cancellation_token.unwrap_or_default(),
             )
             .await;
@@ -1184,17 +1193,12 @@ impl Agent {
             );
             ToolCallResult::from(Err(error_data))
         });
-        let result = if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
-            let container = self.container.lock().await.clone();
-            self.extension_manager.applying_mutation(
-                result,
-                Some(session.working_dir.clone()),
-                container,
-                &session.id,
-            )
-        } else {
-            result
-        };
+        let result = self.extension_manager.applying_mutation(
+            result,
+            Some(session.working_dir.clone()),
+            container,
+            &session.id,
+        );
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
 
@@ -1476,18 +1480,7 @@ impl Agent {
             .extension_manager
             .current_set(session_id, Some(working_dir))
             .await;
-        let lease = Arc::new(self.extension_manager.resolve(&set).await);
-        *self.lease.lock().await = Arc::downgrade(&lease);
-        lease
-    }
-
-    async fn lease(&self, session_id: &str, working_dir: &std::path::Path) -> Arc<ExtensionLease> {
-        if let Some(lease) = self.lease.lock().await.upgrade() {
-            if lease.scope_id() == session_id {
-                return lease;
-            }
-        }
-        self.resolve_lease(session_id, working_dir).await
+        Arc::new(self.extension_manager.resolve(&set).await)
     }
 
     pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
@@ -2928,17 +2921,24 @@ impl Agent {
                                             result
                                         });
 
-                                    // Track extension requests
-                                    let mut enable_extension_request_ids = vec![];
+                                    let mut extension_mutation_request_ids = vec![];
                                     for request in &tool_requests {
-                                        if let Ok(tool_call) = &request.tool_call {
-                                            if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
-                                                enable_extension_request_ids.push(request.id.clone());
-                                            }
+                                        let Ok(tool_call) = &request.tool_call else {
+                                            continue;
+                                        };
+                                        if inference_lease
+                                            .resolves_to(
+                                                &tool_call.name,
+                                                MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
+                                            )
+                                            .await
+                                        {
+                                            extension_mutation_request_ids.push(request.id.clone());
                                         }
                                     }
 
                                     let mut tool_futures = self.handle_approved_and_denied_tools(
+                                        &inference_lease,
                                         &permission_check_result,
                                         &mut request_to_response_map,
                                         cancel_token.clone(),
@@ -2948,11 +2948,14 @@ impl Agent {
                                     {
                                         let mut tool_approval_stream = self.handle_approval_tool_requests(
                                             &permission_check_result.needs_approval,
-                                            &mut tool_futures,
-                                            &mut request_to_response_map,
-                                            cancel_token.clone(),
-                                            &session,
-                                            &inspection_results,
+                                            ApprovalToolContext {
+                                                lease: &inference_lease,
+                                                tool_futures: &mut tool_futures,
+                                                request_to_response_map: &mut request_to_response_map,
+                                                cancellation_token: cancel_token.clone(),
+                                                session: &session,
+                                                inspection_results: &inspection_results,
+                                            },
                                         );
 
                                         while let Some(msg) = tool_approval_stream.try_next().await? {
@@ -2968,7 +2971,7 @@ impl Agent {
                                         .collect::<Vec<_>>();
 
                                     let mut combined = stream::select_all(with_id);
-                                    let mut all_install_successful = true;
+                                    let mut all_extension_mutations_succeeded = true;
 
                                     loop {
                                         if is_token_cancelled(&cancel_token) {
@@ -3007,10 +3010,10 @@ impl Agent {
                                                                     }
                                                                 }
 
-                                                                if enable_extension_request_ids.contains(&request_id)
+                                                                if extension_mutation_request_ids.contains(&request_id)
                                                                     && output.is_err()
                                                                 {
-                                                                    all_install_successful = false;
+                                                                    all_extension_mutations_succeeded = false;
                                                                 }
                                                                 if let Some(response) = request_to_response_map.get_mut(&request_id) {
                                                                     let metadata = request_metadata.get(&request_id).and_then(|m| m.as_ref());
@@ -3030,7 +3033,7 @@ impl Agent {
                                         }
                                     }
 
-                                    if all_install_successful && !enable_extension_request_ids.is_empty() {
+                                    if all_extension_mutations_succeeded && !extension_mutation_request_ids.is_empty() {
                                         if let Err(e) = self.save_extension_state(&session_config).await {
                                             warn!("Failed to save extension state after runtime changes: {}", e);
                                         }
@@ -3957,6 +3960,8 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::agents::gen_ai_telemetry::{self, test_support::SpanFieldCapture};
+    use crate::agents::mcp_client::{Error as McpClientError, McpClientTrait};
+    use crate::agents::ToolCallContext;
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
     use crate::providers::base::{stream_from_single_message, MessageStream, PermissionRouting};
     use crate::recipe::Response;
@@ -3978,18 +3983,120 @@ mod tests {
         }
     }
 
+    struct LeaseValueClient(&'static str);
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for LeaseValueClient {
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> std::result::Result<rmcp::model::ListToolsResult, McpClientError> {
+            Ok(rmcp::model::ListToolsResult::with_all_items(vec![
+                Tool::new(
+                    "value".to_string(),
+                    "Return the client value".to_string(),
+                    Arc::new(serde_json::Map::new()),
+                ),
+            ]))
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<rmcp::model::JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> std::result::Result<CallToolResult, McpClientError> {
+            Ok(CallToolResult::success(vec![ContentBlock::text(self.0)]))
+        }
+
+        fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
+            None
+        }
+    }
+
     #[tokio::test]
-    async fn agent_does_not_keep_resolved_lease_alive() {
-        let agent = Agent::new();
-        let working_dir = tempfile::tempdir().unwrap();
-        let lease = agent
-            .resolve_lease("test-session", working_dir.path())
+    async fn overlapping_dispatches_use_their_inference_lease() {
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        agent
+            .extension_manager
+            .add_client(
+                persisted_builtin("changing"),
+                Arc::new(LeaseValueClient("first")),
+                None,
+            )
             .await;
-        let lease_reference = Arc::downgrade(&lease);
+        let first_lease = agent.resolve_lease(&session.id, &session.working_dir).await;
 
-        drop(lease);
+        agent
+            .extension_manager
+            .add_client(
+                persisted_builtin("changing"),
+                Arc::new(LeaseValueClient("second")),
+                None,
+            )
+            .await;
+        let second_lease = agent.resolve_lease(&session.id, &session.working_dir).await;
 
-        assert!(lease_reference.upgrade().is_none());
+        let first = agent.dispatch_tool_call_on(
+            &first_lease,
+            CallToolRequestParams::new("changing__value"),
+            "first-call".to_string(),
+            None,
+            &session,
+        );
+        let second = agent.dispatch_tool_call_on(
+            &second_lease,
+            CallToolRequestParams::new("changing__value"),
+            "second-call".to_string(),
+            None,
+            &session,
+        );
+        let ((_, first), (_, second)) = tokio::join!(first, second);
+        let first = first.unwrap().result.await.unwrap();
+        let second = second.unwrap().result.await.unwrap();
+
+        assert_eq!(first.content[0].as_text().unwrap().text, "first");
+        assert_eq!(second.content[0].as_text().unwrap().text, "second");
+    }
+
+    #[tokio::test]
+    async fn mangled_manage_extensions_call_applies_its_mutation() {
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        agent
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
+                &session.id,
+            )
+            .await
+            .unwrap();
+        let lease = agent.resolve_lease(&session.id, &session.working_dir).await;
+        let tool_call =
+            CallToolRequestParams::new("functions.extensionmanager__manage_extensions".to_string())
+                .with_arguments(rmcp::object!({
+                    "action": "enable",
+                    "extension_name": "analyze",
+                }));
+
+        let (_, result) = agent
+            .dispatch_tool_call_on(&lease, tool_call, "manage".to_string(), None, &session)
+            .await;
+        result.unwrap().result.await.unwrap();
+
+        assert!(agent
+            .extension_manager
+            .list_extensions()
+            .await
+            .unwrap()
+            .contains(&"analyze".to_string()));
     }
 
     #[test]

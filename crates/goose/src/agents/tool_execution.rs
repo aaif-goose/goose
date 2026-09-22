@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use std::path::PathBuf;
 
+use crate::agents::container::Container;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
@@ -38,6 +39,7 @@ pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
+    container: Option<Container>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
 }
 
@@ -51,8 +53,18 @@ impl ToolCallContext {
             session_id,
             working_dir,
             tool_call_request_id,
+            container: None,
             notification_emitter: None,
         }
+    }
+
+    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
+        self.container = container;
+        self
+    }
+
+    pub(crate) fn container(&self) -> Option<&Container> {
+        self.container.as_ref()
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {
@@ -90,6 +102,7 @@ impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
     }
 }
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::Agent;
 use crate::conversation::message::ToolRequest;
 use crate::session::Session;
@@ -103,6 +116,15 @@ pub(super) enum ToolStreamItem<T> {
 
 pub(super) type ToolStream =
     Pin<Box<dyn Stream<Item = ToolStreamItem<ToolResult<CallToolResult>>> + Send>>;
+
+pub(super) struct ApprovalToolContext<'a> {
+    pub lease: &'a ExtensionLease,
+    pub tool_futures: &'a mut Vec<(String, ToolStream)>,
+    pub request_to_response_map: &'a mut HashMap<String, Message>,
+    pub cancellation_token: Option<CancellationToken>,
+    pub session: &'a Session,
+    pub inspection_results: &'a [crate::tool_inspection::InspectionResult],
+}
 
 pub(super) fn tool_stream<S, A, F>(rx: S, action_required_rx: A, done: F) -> ToolStream
 where
@@ -149,12 +171,16 @@ impl Agent {
     pub(super) fn handle_approval_tool_requests<'a>(
         &'a self,
         tool_requests: &'a [ToolRequest],
-        tool_futures: &'a mut Vec<(String, ToolStream)>,
-        request_to_response_map: &'a mut HashMap<String, Message>,
-        cancellation_token: Option<CancellationToken>,
-        session: &'a Session,
-        inspection_results: &'a [crate::tool_inspection::InspectionResult],
+        context: ApprovalToolContext<'a>,
     ) -> BoxStream<'a, anyhow::Result<Message>> {
+        let ApprovalToolContext {
+            lease,
+            tool_futures,
+            request_to_response_map,
+            cancellation_token,
+            session,
+            inspection_results,
+        } = context;
         try_stream! {
         for request in tool_requests.iter() {
             if let Ok(tool_call) = request.tool_call.clone() {
@@ -203,7 +229,7 @@ impl Agent {
                 }
 
                 if confirmation.permission == Permission::AllowOnce || confirmation.permission == Permission::AlwaysAllow {
-                    let (req_id, tool_result) = self.dispatch_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
+                    let (req_id, tool_result) = self.dispatch_tool_call_on(lease, tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
 
                     tool_futures.push((req_id, match tool_result {
                         Ok(result) => tool_stream(

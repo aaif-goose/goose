@@ -383,7 +383,16 @@ fn create_tool_callback(
                     .dispatch_tool_call(&ctx, tool_call, cancellation_token)
                     .await
                 {
-                    Ok(dispatch_result) => match dispatch_result.result.await {
+                    Ok(dispatch_result) => match manager
+                        .applying_mutation(
+                            dispatch_result,
+                            ctx.working_dir.clone(),
+                            ctx.container().cloned(),
+                            &ctx.session_id,
+                        )
+                        .result
+                        .await
+                    {
                         Ok(result) => Ok(callback_result_to_value(&result)),
                         Err(e) => Err(format!("Tool error: {}", e.message)),
                     },
@@ -815,6 +824,64 @@ mod tests {
         assert!(names.contains(&"model_visible"));
         assert!(names.contains(&"ordinary"));
         assert!(configs.iter().all(|config| config.output_schema.is_none()));
+    }
+
+    #[tokio::test]
+    async fn callback_applies_extension_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            temp.path().join("manager"),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "code-mode-mutation".to_string(),
+                crate::session::session_manager::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
+                Some(session.working_dir.clone()),
+                None,
+                Some(&session.id),
+            )
+            .await
+            .unwrap();
+        let callback = create_tool_callback(
+            ToolCallContext::new(
+                session.id.clone(),
+                Some(session.working_dir.clone()),
+                Some("manage".to_string()),
+            ),
+            "functions.extensionmanager__manage_extensions".to_string(),
+            Arc::clone(&manager),
+            CancellationToken::new(),
+            tokio::runtime::Handle::current(),
+        );
+
+        callback(Some(json!({
+            "action": "enable",
+            "extension_name": "analyze",
+        })))
+        .await
+        .unwrap();
+
+        assert!(manager
+            .list_extensions()
+            .await
+            .unwrap()
+            .contains(&"analyze".to_string()));
     }
 
     #[tokio::test]

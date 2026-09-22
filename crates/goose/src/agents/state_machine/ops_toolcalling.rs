@@ -396,7 +396,7 @@ impl<'a> ToolExecutionOperation<'a> {
                 .await
                 .call(
                     tool_call.clone(),
-                    CallRequest::new(request_id.clone()),
+                    CallRequest::new(request_id.clone()).with_container(self.container.clone()),
                     cancellation_token,
                 )
                 .await;
@@ -408,16 +408,12 @@ impl<'a> ToolExecutionOperation<'a> {
                 );
                 ToolCallResult::from(Err(error))
             });
-            let result = if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
-                self.extension_manager.applying_mutation(
-                    result,
-                    Some(session.working_dir.clone()),
-                    self.container.clone(),
-                    &session.id,
-                )
-            } else {
-                result
-            };
+            let result = self.extension_manager.applying_mutation(
+                result,
+                Some(session.working_dir.clone()),
+                self.container.clone(),
+                &session.id,
+            );
             Ok(with_post_tool_hooks(
                 &self.hook_manager,
                 result,
@@ -909,15 +905,19 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             return applied([response.into()]);
         }
 
-        let manage_extensions_ids: HashSet<&str> = pending
-            .iter()
-            .filter_map(|(request, _)| match &request.tool_call {
-                Ok(tool_call) if tool_call.name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE => {
-                    Some(request.id.as_str())
-                }
-                _ => None,
-            })
-            .collect();
+        let lease = self.lease(session).await;
+        let mut extension_mutation_ids = HashSet::new();
+        for (request, _) in &pending {
+            let Ok(tool_call) = &request.tool_call else {
+                continue;
+            };
+            if lease
+                .resolves_to(&tool_call.name, MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE)
+                .await
+            {
+                extension_mutation_ids.insert(request.id.as_str());
+            }
+        }
         let mut extension_change_failed = false;
 
         let mut tool_streams = Vec::new();
@@ -988,7 +988,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                     let Some((request_id, item)) = item else { break };
                     match item {
                         ToolStreamItem::Result(output) => {
-                            if manage_extensions_ids.contains(request_id.as_str())
+                            if extension_mutation_ids.contains(request_id.as_str())
                                 && output.is_err()
                             {
                                 extension_change_failed = true;
@@ -1039,7 +1039,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             }
         }
 
-        if !manage_extensions_ids.is_empty() && !extension_change_failed {
+        if !extension_mutation_ids.is_empty() && !extension_change_failed {
             effects.push(self.extension_state_effect(session).await?);
         }
 

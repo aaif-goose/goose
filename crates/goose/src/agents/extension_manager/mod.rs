@@ -1701,13 +1701,7 @@ mod tests {
             1,
             "colliding names collapse to one entry"
         );
-        let owner = lease
-            .resolve("ext_a__ext_b__secret", None)
-            .await
-            .unwrap()
-            .extension
-            .key
-            .clone();
+        let owner = get_tool_owner(&lease.tools().await[0]).unwrap();
         let other = if owner == "ext_a" {
             "ext_a__ext_b"
         } else {
