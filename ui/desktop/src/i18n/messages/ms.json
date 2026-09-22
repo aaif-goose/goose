@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Menunggu imej disimpan..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Pilih cara sambungan Developer dijalankan. Berkuat kuasa apabila Developer dimulakan seterusnya, contohnya dalam sesi baharu."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Alat Pembangun"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Pilih mod lalai yang Goose gunakan untuk sesi baharu. Sesi sedia ada mengekalkan mod semasanya."
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "Tunjukkan {count} pilihan"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Satu sesi Python yang berterusan. Data kekal dalam pembolehubah merentas panggilan, pemadatan dan mula semula, bukan dalam perbualan."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Sesi Python"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Alat berasingan untuk shell, fail, pepohon direktori dan imej."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Alat"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Jika anda melaporkan pepijat, pertimbangkan untuk melampirkan laporan diagnostik kepadanya."

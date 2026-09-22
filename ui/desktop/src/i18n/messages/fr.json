@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "En attente de l'enregistrement des images..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Choisissez comment l'extension Developer s'exécute. S'applique au prochain démarrage de Developer, par exemple dans une nouvelle session."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Outils de développement"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Choisissez le mode par défaut que Goose utilise pour les nouvelles sessions. Les sessions existantes conservent leur mode actuel."
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "Afficher {count} options"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Une session Python persistante. Les données restent dans des variables entre les appels, les compactages et les redémarrages, plutôt que dans la conversation."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Session Python"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Outils distincts pour le shell, les fichiers, l'arborescence et les images."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Outils"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Si vous signalez un bogue, pensez à y joindre le rapport de diagnostic."

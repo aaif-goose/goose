@@ -11,7 +11,7 @@ use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
-use crate::agents::platform_extensions::developer::DeveloperClient;
+use crate::agents::platform_extensions::developer::{DeveloperClient, DeveloperMode};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
@@ -1102,6 +1102,13 @@ impl GooseAcpAgent {
             .is_extension_enabled("developer")
             .await
         {
+            return;
+        }
+
+        // In Python session mode Developer has no file or terminal tools for the
+        // client to take over, and wrapping it would drop its turn-context and
+        // working-directory hooks, so the loaded session client is left as is.
+        if DeveloperMode::configured() == DeveloperMode::PythonSession {
             return;
         }
 

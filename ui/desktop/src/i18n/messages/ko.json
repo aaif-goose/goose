@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "이미지 저장을 기다리는 중..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Developer 확장 프로그램의 실행 방식을 선택합니다. 새 세션 등 Developer가 다음에 시작될 때 적용됩니다."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "개발자 도구"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "새 세션에 goose가 사용할 기본 모드를 선택합니다. 기존 세션은 현재 모드를 유지합니다."
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "{count} 옵션 표시"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "하나의 지속적인 Python 세션. 데이터가 대화가 아닌 변수에 저장되어 호출, 압축, 재시작 사이에도 유지됩니다."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python 세션"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "셸, 파일, 트리, 이미지용 개별 도구."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "도구"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "버그를 신고하는 경우 진단 보고서를 첨부해 보세요."

@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use goose::agents::platform_extensions::python_session::kernel::{ExecOutcome, Kernel, KernelSpec};
+use goose::agents::platform_extensions::developer::python_session::kernel::{
+    ExecOutcome, Kernel, KernelSpec,
+};
 use tokio_util::sync::CancellationToken;
 
 fn python_available() -> bool {

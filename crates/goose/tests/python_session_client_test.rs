@@ -1,6 +1,6 @@
 use goose::agents::extension_manager::ExtensionManager;
 use goose::agents::mcp_client::McpClientTrait;
-use goose::agents::platform_extensions::python_session::PythonSessionClient;
+use goose::agents::platform_extensions::developer::python_session::PythonSessionClient;
 use goose::agents::ToolCallContext;
 use goose::config::GooseMode;
 use goose::session::SessionType;

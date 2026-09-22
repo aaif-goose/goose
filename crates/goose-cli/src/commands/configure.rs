@@ -16,8 +16,8 @@ use goose::config::paths::Paths;
 use goose::config::permission::PermissionLevel;
 use goose::config::signup_tetrate::TetrateAuth;
 use goose::config::{
-    configure_tetrate, Config, ConfigError, ExperimentManager, ExtensionEntry, GooseMode,
-    PermissionManager,
+    configure_tetrate, Config, ConfigError, DeveloperMode, ExperimentManager, ExtensionEntry,
+    GooseMode, PermissionManager,
 };
 #[cfg(feature = "telemetry")]
 use goose::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
@@ -1426,11 +1426,13 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
 
 pub async fn configure_settings_dialog() -> anyhow::Result<()> {
     #[allow(unused_mut)]
-    let mut setting_select = cliclack::select("What setting would you like to configure?").item(
-        "goose_mode",
-        "goose mode",
-        "Configure goose mode",
-    );
+    let mut setting_select = cliclack::select("What setting would you like to configure?")
+        .item("goose_mode", "goose mode", "Configure goose mode")
+        .item(
+            "developer_mode",
+            "Developer Mode",
+            "Run the Developer extension as separate tools or as one persistent Python session",
+        );
     #[cfg(feature = "telemetry")]
     {
         setting_select = setting_select.item(
@@ -1477,6 +1479,9 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
     match setting_type {
         "goose_mode" => {
             configure_goose_mode_dialog()?;
+        }
+        "developer_mode" => {
+            configure_developer_mode_dialog()?;
         }
         #[cfg(feature = "telemetry")]
         "telemetry" => {
@@ -1550,6 +1555,39 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
         GooseMode::Approve => "Set to Approve Mode - all tools and modifications require approval",
         GooseMode::SmartApprove => "Set to Smart Approve Mode - modifications require approval",
         GooseMode::Chat => "Set to Chat Mode - no tools or modifications enabled",
+    };
+    cliclack::outro(msg)?;
+    Ok(())
+}
+
+pub fn configure_developer_mode_dialog() -> anyhow::Result<()> {
+    let config = Config::global();
+
+    if std::env::var("GOOSE_DEVELOPER_MODE").is_ok() {
+        let _ = cliclack::log::info(
+            "Notice: GOOSE_DEVELOPER_MODE environment variable is set and will override the configuration here.",
+        );
+    }
+
+    let mode = cliclack::select("How should the Developer extension run?")
+        .item(
+            DeveloperMode::Tools,
+            "Tools",
+            "Separate shell, file, tree, and image tools",
+        )
+        .item(
+            DeveloperMode::PythonSession,
+            "Python Session",
+            "One persistent Python session: data stays in variables across calls, compaction, and restarts",
+        )
+        .interact()?;
+
+    config.set_goose_developer_mode(mode)?;
+    let msg = match mode {
+        DeveloperMode::Tools => "Set Developer to Tools - shell, file, tree, and image tools",
+        DeveloperMode::PythonSession => {
+            "Set Developer to Python Session - applies when the Developer extension next starts"
+        }
     };
     cliclack::outro(msg)?;
     Ok(())

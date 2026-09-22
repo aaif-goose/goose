@@ -1,6 +1,6 @@
 pub mod kernel;
 
-use super::developer::image::{load_image_content, CropParams};
+use super::image::{load_image_content, CropParams};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
@@ -23,7 +23,6 @@ use std::sync::{Arc, Mutex, Once, Weak};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
-pub static EXTENSION_NAME: &str = "python_session";
 const PYTHON_TOOL_NAME: &str = "python";
 const MAX_IMAGES_PER_CELL: usize = 8;
 const NS_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
@@ -93,8 +92,8 @@ impl PythonSessionClient {
     pub fn new(context: PlatformExtensionContext) -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(
-                Implementation::new(EXTENSION_NAME.to_string(), "1.0.0".to_string())
-                    .with_title("Python Session"),
+                Implementation::new(super::EXTENSION_NAME, "1.0.0")
+                    .with_title("Developer (Python session)"),
             )
             .with_instructions(
                 indoc! {r#"
@@ -552,7 +551,7 @@ fn discover_interpreter(path: Option<String>) -> Result<PathBuf, String> {
 #[cfg(not(windows))]
 fn login_shell_path(enabled: bool) -> Option<String> {
     enabled
-        .then(super::developer::shell::resolve_login_shell_path)
+        .then(super::shell::resolve_login_shell_path)
         .flatten()
 }
 
