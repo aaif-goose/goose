@@ -23,6 +23,7 @@ pub(super) const ADD_VALUES: &str = "calculator__add_values";
 pub(super) const ADD_WITH_AUDIENCE: &str = "calculator__add_with_audience";
 pub(super) const DIVIDE: &str = "calculator__divide";
 pub(super) const REQUEST_VALUE: &str = "calculator__request_value";
+pub(super) const TAPE: &str = "calculator__tape";
 const EXECUTION_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub(super) fn value(value: i64) -> Value {
@@ -51,6 +52,11 @@ struct ValueParams {
 
 #[derive(JsonSchema)]
 struct RequestValueParams {}
+
+#[derive(Deserialize, JsonSchema)]
+struct TapeParams {
+    lines: usize,
+}
 
 pub(super) struct CalculatorExtension {
     info: InitializeResult,
@@ -124,6 +130,11 @@ impl McpClientTrait for CalculatorExtension {
             .as_object()
             .unwrap()
             .clone();
+        let tape_schema = serde_json::to_value(schema_for!(TapeParams))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
         Ok(ListToolsResult::with_all_items(vec![
             Tool::new(
                 "add",
@@ -170,6 +181,11 @@ impl McpClientTrait for CalculatorExtension {
                 "request_value",
                 "Ask the user for a value",
                 Arc::new(request_value_schema),
+            ),
+            Tool::new(
+                "tape",
+                "Print lines of the calculation tape",
+                Arc::new(tape_schema),
             ),
         ]))
     }
@@ -223,6 +239,16 @@ impl McpClientTrait for CalculatorExtension {
             });
         }
         let arguments = Value::Object(arguments.unwrap_or_default());
+        if name == "tape" {
+            let params: TapeParams = serde_json::from_value(arguments).map_err(|error| {
+                McpError::McpError(ErrorData::invalid_params(error.to_string(), None))
+            })?;
+            let tape = (0..params.lines)
+                .map(|line| format!("tape line {line}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Ok(CallToolResult::success(vec![ContentBlock::text(tape)]));
+        }
         let (calculate, value, delay_ms): (fn(i64, i64) -> Option<i64>, i64, u64) =
             if name == "add_values" {
                 let values: HashMap<String, i64> =
