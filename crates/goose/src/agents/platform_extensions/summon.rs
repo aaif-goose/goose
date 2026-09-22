@@ -1,18 +1,18 @@
-use crate::agents::AgentConfig;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::subagent_handler::{OnMessageCallback, SubagentRunParams, run_subagent_task};
-use crate::agents::subagent_task_config::{DEFAULT_SUBAGENT_MAX_TURNS, TaskConfig};
+use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
+use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
+use crate::agents::AgentConfig;
 use crate::config::extensions::name_to_key;
 use crate::config::paths::Paths;
 use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::providers;
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::local_recipes::load_local_recipe_file;
-use crate::recipe::{RECIPE_FILE_EXTENSIONS, Recipe, RecipeParameter, Settings};
-use crate::session::SessionType;
+use crate::recipe::{Recipe, RecipeParameter, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::EnabledExtensionsState;
+use crate::session::SessionType;
 use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
@@ -27,8 +27,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
@@ -3581,11 +3581,9 @@ You review code."#;
             )
             .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("No model configured for provider 'lmstudio'")
-        );
+        assert!(error
+            .to_string()
+            .contains("No model configured for provider 'lmstudio'"));
     }
 
     fn test_tool_notification(request_id: &str, subagent_id: &str) -> ServerNotification {
@@ -3696,7 +3694,7 @@ You review code."#;
 
     #[tokio::test]
     async fn test_live_notifications_precede_delegate_result() {
-        use crate::agents::tool_execution::{ToolStreamItem, tool_stream};
+        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
         use tokio_stream::wrappers::ReceiverStream;
 
         for _ in 0..32 {
@@ -3750,7 +3748,7 @@ You review code."#;
 
     #[tokio::test]
     async fn test_async_completion_before_load_replays_notifications() {
-        use crate::agents::tool_execution::{ToolStreamItem, tool_stream};
+        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
         use tokio_stream::wrappers::ReceiverStream;
 
         let client = Arc::new(SummonClient::new(create_test_context()).unwrap());
@@ -4021,13 +4019,11 @@ You review code."#;
         assert_eq!(result.status, "completed");
         assert_eq!(result.turns, Some(5));
 
-        assert!(
-            !client
-                .completed_tasks
-                .lock()
-                .await
-                .contains_key("20260204_2")
-        );
+        assert!(!client
+            .completed_tasks
+            .lock()
+            .await
+            .contains_key("20260204_2"));
 
         let result = client
             .handle_load_task_result("20260204_3", false, false, None)
@@ -4568,13 +4564,11 @@ You review code."#;
         assert!(text.contains("final output"));
 
         // Peek must be non-destructive: the result is still retrievable afterwards.
-        assert!(
-            client
-                .completed_tasks
-                .lock()
-                .await
-                .contains_key("20260204_1")
-        );
+        assert!(client
+            .completed_tasks
+            .lock()
+            .await
+            .contains_key("20260204_1"));
         let result = client
             .handle_load_task_result("20260204_1", false, false, None)
             .await
