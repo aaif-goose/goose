@@ -5,12 +5,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  assignedCoreTeamMembers,
   bestMatchingIssueChannels,
   channelMatchesIssue,
   getOpenIssues,
   getProjectIssues,
   issueReferenceFromChannel,
   readCoreTeam,
+  readyTransitionCoreTeamMember,
   selectRecentQueueEntries,
 } from "./github_manager.mjs";
 
@@ -212,4 +214,67 @@ test("uses one complete core-team schema", (context) => {
     JSON.stringify({ owners: [person], members: [] }),
   );
   assert.throws(() => readCoreTeam(path), /positive capacity/);
+});
+
+test("finds core-team members already assigned to a pull request", () => {
+  const coreTeamByGithub = new Map([
+    ["member", { github: "Member" }],
+  ]);
+  assert.deepEqual(
+    assignedCoreTeamMembers(
+      [{ login: "contributor" }, { login: "MEMBER" }],
+      coreTeamByGithub,
+    ),
+    ["MEMBER"],
+  );
+});
+
+test("selects the latest core-team member who moved the issue to Ready", () => {
+  const coreTeamByGithub = new Map([
+    ["first", { github: "first" }],
+    ["second", { github: "second" }],
+  ]);
+  const project = { number: 1, owner: { login: "aaif-goose" } };
+  const selection = readyTransitionCoreTeamMember(
+    [
+      {
+        actor: { login: "first" },
+        createdAt: "2026-01-01T00:00:00Z",
+        project,
+        status: "Ready",
+        wasAutomated: false,
+      },
+      {
+        actor: { login: "second" },
+        createdAt: "2026-02-01T00:00:00Z",
+        project,
+        status: "Ready",
+        wasAutomated: false,
+      },
+    ],
+    { coreTeamByGithub, projectNumber: 1, projectOwner: "AAIF-GOOSE" },
+  );
+
+  assert.equal(selection.person.github, "second");
+});
+
+test("does not assign a Ready transition actor outside the core team", () => {
+  const selection = readyTransitionCoreTeamMember(
+    [
+      {
+        actor: { login: "contributor" },
+        createdAt: "2026-01-01T00:00:00Z",
+        project: { number: 1, owner: { login: "aaif-goose" } },
+        status: "Ready",
+        wasAutomated: false,
+      },
+    ],
+    {
+      coreTeamByGithub: new Map([["member", { github: "member" }]]),
+      projectNumber: 1,
+      projectOwner: "aaif-goose",
+    },
+  );
+
+  assert.match(selection.reason, /not in the core team/);
 });
