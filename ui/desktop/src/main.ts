@@ -59,7 +59,7 @@ import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { WEB_PROTOCOLS } from './utils/urlSecurity';
 import { openExternalUrl } from './utils/openExternalUrl';
-import { buildCSP, leaseBackendOrigin } from './utils/csp';
+import { buildCSP, leaseBackendOrigin, shouldApplyRendererCsp } from './utils/csp';
 import { resolveWorkingDir } from './utils/workingDir';
 import {
   DesktopFileAccess,
@@ -2482,9 +2482,13 @@ async function appMain() {
     }
   });
 
-  // Add CSP headers to all sessions, recomputed on every response so external
-  // backend settings take effect without restarting the app.
+  // Add CSP headers to the renderer's own documents, recomputed on every
+  // response so external backend settings take effect without restarting the app.
   rendererSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!shouldApplyRendererCsp(details.resourceType)) {
+      callback({});
+      return;
+    }
     const currentSettings = getSettings();
     callback({
       responseHeaders: {
