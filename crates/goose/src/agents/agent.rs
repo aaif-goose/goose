@@ -4046,10 +4046,9 @@ mod tests {
             self.turn_contexts.lock().unwrap().push(
                 messages
                     .iter()
-                    .rev()
-                    .find(|message| message.is_turn_context())
-                    .expect("provider request should contain turn context")
-                    .as_concat_text(),
+                    .map(Message::as_concat_text)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             );
             let call = self.call_count.fetch_add(1, Ordering::SeqCst);
             let message = if call == 0 {
@@ -4173,7 +4172,13 @@ mod tests {
         let contexts = provider.turn_contexts.lock().unwrap();
         assert_eq!(contexts.len(), 2);
         assert!(contexts[0].contains("<lease-value>first</lease-value>"));
-        assert!(contexts[1].contains("<lease-value>second</lease-value>"));
+        let first = contexts[1]
+            .rfind("<lease-value>first</lease-value>")
+            .expect("second inference should retain its prefix");
+        let second = contexts[1]
+            .rfind("<lease-value>second</lease-value>")
+            .expect("second inference should include refreshed context");
+        assert!(second > first);
         Ok(())
     }
 
