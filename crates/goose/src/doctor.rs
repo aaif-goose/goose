@@ -291,7 +291,7 @@ mod tests {
         ));
         let agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
             Arc::clone(&session_manager),
-            Arc::new(crate::permission::PermissionManager::new(
+            Arc::new(crate::config::PermissionManager::new(
                 data_dir.path().to_path_buf(),
             )),
             None,
