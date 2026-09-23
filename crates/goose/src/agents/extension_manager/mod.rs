@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -278,6 +278,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 pub struct ExtensionManager {
     extensions: Mutex<IndexMap<String, Arc<Extension>>>,
     mutation_lock: Mutex<()>,
+    directory_lock: RwLock<()>,
     context: PlatformExtensionContext,
     provider: SharedProvider,
     client_name: String,
@@ -502,6 +503,7 @@ impl ExtensionManager {
         Self {
             extensions: Mutex::new(IndexMap::new()),
             mutation_lock: Mutex::new(()),
+            directory_lock: RwLock::new(()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 provider: provider.clone(),
@@ -551,7 +553,7 @@ impl ExtensionManager {
     /// Resolve a set against what is running. A selected extension that is
     /// not running, or is running under a different config, is left out.
     pub async fn resolve(&self, set: &ExtensionSet) -> ExtensionLease {
-        let _guard = self.mutation_lock.lock().await;
+        let _guard = self.directory_lock.read().await;
         let members = {
             let extensions = self.extensions.lock().await;
             set.extensions()
@@ -588,7 +590,7 @@ impl ExtensionManager {
         session_id: &str,
         working_dir: Option<&Path>,
     ) -> ExtensionLease {
-        let _guard = self.mutation_lock.lock().await;
+        let _guard = self.directory_lock.read().await;
         let mut extensions = self
             .extensions
             .lock()
@@ -618,6 +620,18 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: Option<&str>,
     ) -> ExtensionResult<()> {
+        let _guard = self.directory_lock.read().await;
+        let working_dir = match session_id {
+            Some(session_id) => Some(
+                self.context
+                    .session_manager
+                    .get_session(session_id, false)
+                    .await
+                    .map_err(|error| ExtensionError::SetupError(error.to_string()))?
+                    .working_dir,
+            ),
+            None => working_dir,
+        };
         self.add_extension_if_current(config, working_dir, container, session_id, None)
             .await
     }
@@ -787,6 +801,7 @@ impl ExtensionManager {
         session_id: &str,
     ) -> ExtensionResult<()> {
         let _guard = self.mutation_lock.lock().await;
+        let _directory_guard = self.directory_lock.read().await;
         let mut session = self
             .context
             .session_manager
@@ -798,11 +813,12 @@ impl ExtensionManager {
                 let config = get_extension_by_name(&name).ok_or_else(|| {
                     ExtensionError::ConfigError(format!("Extension '{}' not found", name))
                 })?;
-                self.add_extension(
+                self.add_extension_if_current(
                     config,
                     Some(session.working_dir.clone()),
                     container,
                     Some(session_id),
+                    None,
                 )
                 .await
             }
@@ -857,6 +873,7 @@ impl ExtensionManager {
         client: McpClientBox,
         info: Option<ServerInfo>,
     ) {
+        let _guard = self.directory_lock.read().await;
         let key = config.key();
         let working_dir =
             working_dir.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
@@ -905,8 +922,20 @@ impl ExtensionManager {
         new_dir: &Path,
         container: Option<&Container>,
         session_id: &str,
-    ) {
+    ) -> ExtensionResult<()> {
         let _guard = self.mutation_lock.lock().await;
+        let _directory_guard = self.directory_lock.write().await;
+        let session = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .ok()
+            .map(|mut session| {
+                session.working_dir = new_dir.to_path_buf();
+                session
+            })
+            .map(Arc::new);
         let extensions = self
             .extensions
             .lock()
@@ -919,12 +948,16 @@ impl ExtensionManager {
                 continue;
             }
             if !extension.reconnect_on_working_dir_change {
+                let client = session
+                    .as_ref()
+                    .and_then(|session| extension.client.rebind_session(Arc::clone(session)))
+                    .unwrap_or_else(|| Arc::clone(&extension.client));
                 let replacement = Arc::new(Extension {
                     key: extension.key.clone(),
                     config: extension.config.clone(),
                     working_dir: new_dir.to_path_buf(),
                     resolved_config: extension.resolved_config.clone(),
-                    client: Arc::clone(&extension.client),
+                    client,
                     server_info: extension.server_info.clone(),
                     reconnect_on_working_dir_change: false,
                     tools_version: Arc::clone(&extension.tools_version),
@@ -941,20 +974,16 @@ impl ExtensionManager {
                 continue;
             }
 
-            let name = extension.config.name().to_string();
-            if let Err(error) = self
-                .add_extension_if_current(
-                    extension.config.clone(),
-                    Some(new_dir.to_path_buf()),
-                    container,
-                    Some(session_id),
-                    Some(&extension),
-                )
-                .await
-            {
-                tracing::warn!(extension = %name, %error, "failed to reconnect extension");
-            }
+            self.add_extension_if_current(
+                extension.config.clone(),
+                Some(new_dir.to_path_buf()),
+                container,
+                Some(session_id),
+                Some(&extension),
+            )
+            .await?;
         }
+        Ok(())
     }
 
     pub async fn list_extensions(&self) -> ExtensionResult<Vec<String>> {
@@ -1847,7 +1876,8 @@ mod tests {
 
         extension_manager
             .update_working_dir(new_working_dir.path(), None, "session")
-            .await;
+            .await
+            .unwrap();
 
         let updated_set = ExtensionSet::new(
             "session",
@@ -1902,6 +1932,17 @@ mod tests {
         let manager = Arc::new(ExtensionManager::new_without_provider(
             data_dir.path().to_path_buf(),
         ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "platform-state".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
         manager
             .add_extension(
                 ExtensionConfig::Platform {
@@ -1913,15 +1954,16 @@ mod tests {
                 },
                 Some(old_working_dir.path().to_path_buf()),
                 None,
-                Some("session"),
+                Some(&session.id),
             )
             .await
             .unwrap();
         let original = manager.extensions.lock().await["developer"].clone();
 
         manager
-            .update_working_dir(new_working_dir.path(), None, "session")
-            .await;
+            .update_working_dir(new_working_dir.path(), None, &session.id)
+            .await
+            .unwrap();
 
         let updated = manager.extensions.lock().await["developer"].clone();
         assert!(Arc::ptr_eq(&original.client, &updated.client));
@@ -2269,6 +2311,46 @@ mod tests {
                 },
                 None,
                 &session.id,
+            )
+            .await
+            .unwrap();
+
+        let extension = manager.extensions.lock().await["analyze"].clone();
+        assert_eq!(extension.working_dir, new_working_dir.path());
+    }
+
+    #[tokio::test]
+    async fn direct_add_uses_the_sessions_current_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                new_working_dir.path().to_path_buf(),
+                "moved-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "analyze".to_string(),
+                    display_name: None,
+                    description: "analyze".to_string(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                Some(old_working_dir.path().to_path_buf()),
+                None,
+                Some(&session.id),
             )
             .await
             .unwrap();

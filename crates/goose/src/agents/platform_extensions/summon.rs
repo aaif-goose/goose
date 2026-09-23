@@ -577,13 +577,16 @@ fn is_session_id(s: &str) -> bool {
 pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
-    source_cache: Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>,
-    background_tasks: Mutex<HashMap<String, BackgroundTask>>,
-    completed_tasks: Mutex<HashMap<String, CompletedTask>>,
+    source_cache: Arc<Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>>,
+    background_tasks: Arc<Mutex<HashMap<String, BackgroundTask>>>,
+    completed_tasks: Arc<Mutex<HashMap<String, CompletedTask>>>,
 }
 
 impl Drop for SummonClient {
     fn drop(&mut self) {
+        if Arc::strong_count(&self.background_tasks) > 1 {
+            return;
+        }
         // Best-effort cancellation of running tasks on shutdown
         if let Ok(tasks) = self.background_tasks.try_lock() {
             for task in tasks.values() {
@@ -601,10 +604,22 @@ impl SummonClient {
         Ok(Self {
             info,
             context,
-            source_cache: Mutex::new(None),
-            background_tasks: Mutex::new(HashMap::new()),
-            completed_tasks: Mutex::new(HashMap::new()),
+            source_cache: Arc::new(Mutex::new(None)),
+            background_tasks: Arc::new(Mutex::new(HashMap::new())),
+            completed_tasks: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    fn rebound(&self, session: Arc<crate::session::Session>) -> Self {
+        let mut context = self.context.clone();
+        context.session = Some(session);
+        Self {
+            info: self.info.clone(),
+            context,
+            source_cache: Arc::clone(&self.source_cache),
+            background_tasks: Arc::clone(&self.background_tasks),
+            completed_tasks: Arc::clone(&self.completed_tasks),
+        }
     }
 
     async fn create_subagent_session(
@@ -2219,6 +2234,13 @@ impl McpClientTrait for SummonClient {
         }
     }
 
+    fn rebind_session(
+        &self,
+        session: Arc<crate::session::Session>,
+    ) -> Option<Arc<dyn McpClientTrait>> {
+        Some(Arc::new(self.rebound(session)))
+    }
+
     async fn get_moim(&self, _session_id: &str, _tools: &[Tool]) -> Option<String> {
         self.cleanup_completed_tasks().await;
         let refreshed_turns = self.refresh_running_task_turns().await;
@@ -2368,6 +2390,62 @@ mod tests {
                 .unwrap();
         }
         session.id
+    }
+
+    #[tokio::test]
+    async fn rebound_client_refreshes_instructions_and_preserves_task_state() {
+        let data_dir = TempDir::new().unwrap();
+        let old_working_dir = TempDir::new().unwrap();
+        let new_working_dir = TempDir::new().unwrap();
+        for (working_dir, name) in [
+            (old_working_dir.path(), "old-agent"),
+            (new_working_dir.path(), "new-agent"),
+        ] {
+            let agents = working_dir.join(".goose/agents");
+            fs::create_dir_all(&agents).unwrap();
+            fs::write(
+                agents.join(format!("{name}.md")),
+                format!("---\nname: {name}\ndescription: {name}\n---\n{name}"),
+            )
+            .unwrap();
+        }
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let old_session = session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "old".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let new_session = session_manager
+            .create_session(
+                new_working_dir.path().to_path_buf(),
+                "new".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut context = create_test_context_with_session_manager(session_manager);
+        context.session = Some(Arc::new(old_session));
+        let client = SummonClient::new(context).unwrap();
+
+        let rebound = client.rebound(Arc::new(new_session));
+
+        assert!(client.get_instructions().unwrap().contains("old-agent"));
+        assert!(rebound.get_instructions().unwrap().contains("new-agent"));
+        assert!(Arc::ptr_eq(
+            &client.background_tasks,
+            &rebound.background_tasks
+        ));
+        assert!(Arc::ptr_eq(
+            &client.completed_tasks,
+            &rebound.completed_tasks
+        ));
     }
 
     #[test]

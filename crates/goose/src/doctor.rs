@@ -286,6 +286,17 @@ mod tests {
     #[tokio::test]
     async fn developer_requirement_accepts_enabled_extension() {
         let agent = crate::agents::Agent::new();
+        let session = agent
+            .config
+            .session_manager
+            .create_session(
+                std::env::current_dir().unwrap(),
+                "doctor-test".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
         agent
             .extension_manager
             .add_extension(
@@ -298,7 +309,7 @@ mod tests {
                 },
                 None,
                 None,
-                Some("doctor-enabled-test"),
+                Some(&session.id),
             )
             .await
             .expect("developer extension should load");

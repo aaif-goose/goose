@@ -1483,11 +1483,11 @@ impl Agent {
         &self,
         session_id: &str,
         working_dir: &std::path::Path,
-    ) {
+    ) -> ExtensionResult<()> {
         let container = self.container.lock().await;
         self.extension_manager
             .update_working_dir(working_dir, container.as_ref(), session_id)
-            .await;
+            .await
     }
 
     pub(crate) async fn resolve_lease(

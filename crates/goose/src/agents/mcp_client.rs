@@ -132,6 +132,13 @@ pub trait McpClientTrait: Send + Sync {
         self.get_info().and_then(|info| info.instructions.clone())
     }
 
+    fn rebind_session(
+        &self,
+        _session: Arc<crate::session::Session>,
+    ) -> Option<Arc<dyn McpClientTrait>> {
+        None
+    }
+
     async fn list_resources(
         &self,
         _session_id: &str,

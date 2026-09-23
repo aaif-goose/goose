@@ -196,7 +196,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .await?;
     agent
         .update_extension_working_dir(&session_config.id, new_working_dir.path())
-        .await;
+        .await?;
 
     {
         let session = agent

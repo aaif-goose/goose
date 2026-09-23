@@ -590,7 +590,8 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         .unwrap();
     fx.manager
         .update_working_dir(&new_working_dir, None, &session.id)
-        .await;
+        .await
+        .unwrap();
     let moved_session = fx
         .session_manager
         .get_session(&session.id, false)

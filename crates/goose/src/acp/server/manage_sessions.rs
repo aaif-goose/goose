@@ -23,16 +23,15 @@ impl GooseAcpAgent {
                     .data(format!("Session not found: {}", session_id))
             })?;
 
-        if path == session.working_dir {
-            return Ok(EmptyResponse {});
+        let working_dir_changed = path != session.working_dir;
+        if working_dir_changed {
+            self.session_manager
+                .update(session_id)
+                .working_dir(path)
+                .apply()
+                .await
+                .internal_err_ctx("Failed to update session working directory")?;
         }
-
-        self.session_manager
-            .update(session_id)
-            .working_dir(path)
-            .apply()
-            .await
-            .internal_err_ctx("Failed to update session working directory")?;
 
         let session = self
             .session_manager
@@ -41,14 +40,17 @@ impl GooseAcpAgent {
             .internal_err_ctx("Failed to reload session")?;
 
         let agent = self.get_session_agent(session_id).await?;
-        agent
-            .restore_provider_from_session(&session)
-            .await
-            .internal_err_ctx("Failed to refresh provider from session")?;
+        if working_dir_changed {
+            agent
+                .restore_provider_from_session(&session)
+                .await
+                .internal_err_ctx("Failed to refresh provider from session")?;
+        }
 
         agent
             .update_extension_working_dir(&session.id, &session.working_dir)
-            .await;
+            .await
+            .internal_err_ctx("Failed to update extension working directory")?;
 
         Ok(EmptyResponse {})
     }
