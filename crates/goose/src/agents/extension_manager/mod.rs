@@ -185,24 +185,33 @@ impl Extension {
     /// `available_tools`, prefixed unless first-class, tagged with the owner,
     /// schema-normalized.
     pub(super) async fn public_tools(&self, scope_id: &str) -> Arc<Vec<Tool>> {
-        let version = self.tools_version.load(Ordering::SeqCst);
-        if let Some(cached) = &*self.tools.lock().await {
-            if cached.version == version && cached.scope_id == scope_id {
-                return Arc::clone(&cached.tools);
+        loop {
+            let version;
+            {
+                let cache = self.tools.lock().await;
+                version = self.tools_version.load(Ordering::SeqCst);
+                if let Some(cached) = &*cache {
+                    if cached.version == version && cached.scope_id == scope_id {
+                        let tools = Arc::clone(&cached.tools);
+                        if self.tools_version.load(Ordering::SeqCst) == version {
+                            return tools;
+                        }
+                    }
+                }
+            }
+
+            let tools = Arc::new(self.fetch_public_tools(scope_id).await);
+
+            let mut cache = self.tools.lock().await;
+            if self.tools_version.load(Ordering::SeqCst) == version {
+                *cache = Some(CachedTools {
+                    scope_id: scope_id.to_string(),
+                    version,
+                    tools: Arc::clone(&tools),
+                });
+                return tools;
             }
         }
-
-        let tools = Arc::new(self.fetch_public_tools(scope_id).await);
-
-        let mut cache = self.tools.lock().await;
-        if self.tools_version.load(Ordering::SeqCst) == version {
-            *cache = Some(CachedTools {
-                scope_id: scope_id.to_string(),
-                version,
-                tools: Arc::clone(&tools),
-            });
-        }
-        tools
     }
 
     async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
@@ -1180,7 +1189,7 @@ impl ExtensionManager {
         tool_call: CallToolRequestParams,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        self.current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+        self.lease_for_tool_call(ctx)
             .await
             .call(tool_call, CallRequest::from(ctx), cancellation_token)
             .await
@@ -1193,7 +1202,7 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        self.current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+        self.lease_for_tool_call(ctx)
             .await
             .call_for_app(
                 tool_call,
@@ -1202,6 +1211,16 @@ impl ExtensionManager {
                 cancellation_token,
             )
             .await
+    }
+
+    async fn lease_for_tool_call(&self, ctx: &ToolCallContext) -> ExtensionLease {
+        match ctx.working_dir.as_deref() {
+            Some(working_dir) => {
+                self.current_session_lease(&ctx.session_id, working_dir)
+                    .await
+            }
+            None => self.current_lease(&ctx.session_id, None).await,
+        }
     }
 
     pub async fn list_prompts_from_extension(
@@ -2000,6 +2019,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn app_dispatch_reconciles_a_stale_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving-app-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_client(
+                builtin_config("external", vec![]),
+                Some(old_working_dir.path().to_path_buf()),
+                Arc::new(NamedToolsClient(vec![app_tool("ping")])),
+                None,
+            )
+            .await;
+        manager
+            .update_working_dir(new_working_dir.path(), None, &session.id)
+            .await
+            .unwrap();
+
+        let ctx =
+            ToolCallContext::new(session.id, Some(old_working_dir.path().to_path_buf()), None);
+        manager
+            .dispatch_app_tool_call(
+                &ctx,
+                CallToolRequestParams::new("external__ping".to_string()),
+                "external",
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+            .result
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn working_dir_updates_preserve_platform_client_state() {
         let data_dir = tempfile::tempdir().unwrap();
         let old_working_dir = tempfile::tempdir().unwrap();
@@ -2290,8 +2357,10 @@ mod tests {
         tools_version.fetch_add(1, Ordering::SeqCst);
         tools_client.release_first_fetch.add_permits(1);
 
-        let stale_result = first_fetch.await.unwrap();
-        assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
+        let refreshed_during_fetch = first_fetch.await.unwrap();
+        assert!(refreshed_during_fetch
+            .iter()
+            .any(|tool| tool.name == "dynamic__new"));
 
         let refreshed = manager
             .get_prefixed_tools("test-session", None)
