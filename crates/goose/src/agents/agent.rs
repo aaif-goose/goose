@@ -3980,6 +3980,16 @@ mod tests {
         }
     }
 
+    fn platform_extension(name: &str) -> ExtensionConfig {
+        ExtensionConfig::Platform {
+            name: name.to_string(),
+            description: String::new(),
+            display_name: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        }
+    }
+
     struct LeaseValueClient(&'static str);
 
     #[async_trait::async_trait]
@@ -4060,7 +4070,7 @@ mod tests {
                     .expect("extension manager unavailable");
                 manager
                     .add_client(
-                        persisted_builtin("changing"),
+                        platform_extension("changing"),
                         Arc::new(LeaseValueClient("second")),
                         None,
                     )
@@ -4093,7 +4103,7 @@ mod tests {
         agent
             .extension_manager
             .add_client(
-                persisted_builtin("changing"),
+                platform_extension("changing"),
                 Arc::new(LeaseValueClient("first")),
                 None,
             )
