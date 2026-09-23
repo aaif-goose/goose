@@ -1538,7 +1538,7 @@ export type ExportSessionResponse_unstable = {
 };
 
 /**
- * Import a session from a JSON string or share link.
+ * Import a session from a serialized session JSON string.
  */
 export type ImportSessionRequest_unstable = {
     input: string;

@@ -1186,7 +1186,7 @@ export const zExportSessionResponse_unstable = z.object({
 });
 
 /**
- * Import a session from a JSON string or share link.
+ * Import a session from a serialized session JSON string.
  */
 export const zImportSessionRequest_unstable = z.object({
     input: z.string()
