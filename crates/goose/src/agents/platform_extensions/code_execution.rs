@@ -425,7 +425,6 @@ fn create_tool_callback(
                     Ok(dispatch_result) => match manager
                         .applying_mutation(
                             dispatch_result,
-                            ctx.working_dir.clone(),
                             ctx.container().cloned(),
                             &ctx.session_id,
                         )

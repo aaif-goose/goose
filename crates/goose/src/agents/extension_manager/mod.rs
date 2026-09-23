@@ -640,6 +640,11 @@ impl ExtensionManager {
             ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
             _ => working_dir.clone(),
         };
+        let reconnect_on_working_dir_change = !matches!(
+            &resolved_config,
+            ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
+                if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
+        );
 
         if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
             if existing.config == config
@@ -763,7 +768,7 @@ impl ExtensionManager {
                 resolved_config,
                 client: Arc::from(client),
                 server_info,
-                reconnect_on_working_dir_change: true,
+                reconnect_on_working_dir_change,
                 tools_version,
                 tools: Mutex::new(None),
             }),
@@ -775,28 +780,32 @@ impl ExtensionManager {
     pub async fn apply(
         self: &Arc<Self>,
         mutation: ExtensionMutation,
-        working_dir: Option<PathBuf>,
         container: Option<&Container>,
         session_id: &str,
     ) -> ExtensionResult<()> {
         let _guard = self.mutation_lock.lock().await;
-        match mutation {
-            ExtensionMutation::Enable { name } => {
-                let config = get_extension_by_name(&name).ok_or_else(|| {
-                    ExtensionError::ConfigError(format!("Extension '{}' not found", name))
-                })?;
-                self.add_extension(config, working_dir, container, Some(session_id))
-                    .await
-            }
-            ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
-        }?;
-
         let mut session = self
             .context
             .session_manager
             .get_session(session_id, false)
             .await
             .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+        match mutation {
+            ExtensionMutation::Enable { name } => {
+                let config = get_extension_by_name(&name).ok_or_else(|| {
+                    ExtensionError::ConfigError(format!("Extension '{}' not found", name))
+                })?;
+                self.add_extension(
+                    config,
+                    Some(session.working_dir.clone()),
+                    container,
+                    Some(session_id),
+                )
+                .await
+            }
+            ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
+        }?;
+
         EnabledExtensionsState::new(self.get_extension_configs().await)
             .to_extension_data(&mut session.extension_data)
             .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
@@ -812,7 +821,6 @@ impl ExtensionManager {
     pub fn applying_mutation(
         self: &Arc<Self>,
         result: ToolCallResult,
-        working_dir: Option<PathBuf>,
         container: Option<Container>,
         session_id: &str,
     ) -> ToolCallResult {
@@ -825,7 +833,7 @@ impl ExtensionManager {
                     let mut result = inner.await?;
                     if let Some(mutation) = ExtensionMutation::take(&mut result) {
                         manager
-                            .apply(mutation, working_dir, container.as_ref(), &session_id)
+                            .apply(mutation, container.as_ref(), &session_id)
                             .await
                             .map_err(|e| {
                                 ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
@@ -1884,6 +1892,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn working_dir_updates_preserve_platform_client_state() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "developer".to_string(),
+                    display_name: None,
+                    description: "developer".to_string(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                Some(old_working_dir.path().to_path_buf()),
+                None,
+                Some("session"),
+            )
+            .await
+            .unwrap();
+        let original = manager.extensions.lock().await["developer"].clone();
+
+        manager
+            .update_working_dir(new_working_dir.path(), None, "session")
+            .await;
+
+        let updated = manager.extensions.lock().await["developer"].clone();
+        assert!(Arc::ptr_eq(&original.client, &updated.client));
+        assert_eq!(updated.working_dir, new_working_dir.path());
+    }
+
+    #[tokio::test]
     async fn stale_working_dir_reconnect_does_not_restore_removed_extension() {
         let data_dir = tempfile::tempdir().unwrap();
         let new_working_dir = tempfile::tempdir().unwrap();
@@ -2161,7 +2203,6 @@ mod tests {
             ExtensionMutation::Enable {
                 name: "analyze".to_string(),
             },
-            Some(session.working_dir.clone()),
             None,
             &session.id,
         );
@@ -2169,7 +2210,6 @@ mod tests {
             ExtensionMutation::Enable {
                 name: "missing-extension".to_string(),
             },
-            Some(session.working_dir.clone()),
             None,
             &session.id,
         );
@@ -2189,6 +2229,49 @@ mod tests {
             .extensions
             .iter()
             .any(|config| config.key() == "analyze"));
+    }
+
+    #[tokio::test]
+    async fn mutation_uses_the_sessions_current_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moved-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .get_context()
+            .session_manager
+            .update(&session.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await
+            .unwrap();
+
+        manager
+            .apply(
+                ExtensionMutation::Enable {
+                    name: "analyze".to_string(),
+                },
+                None,
+                &session.id,
+            )
+            .await
+            .unwrap();
+
+        let extension = manager.extensions.lock().await["analyze"].clone();
+        assert_eq!(extension.working_dir, new_working_dir.path());
     }
 
     #[test]

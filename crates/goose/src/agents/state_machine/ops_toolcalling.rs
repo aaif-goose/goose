@@ -423,7 +423,6 @@ impl<'a> ToolExecutionOperation<'a> {
             });
             let result = self.extension_manager.applying_mutation(
                 result,
-                Some(session.working_dir.clone()),
                 self.container.clone(),
                 &session.id,
             );

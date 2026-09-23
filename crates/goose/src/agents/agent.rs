@@ -1223,12 +1223,9 @@ impl Agent {
             );
             ToolCallResult::from(Err(error_data))
         });
-        let result = self.extension_manager.applying_mutation(
-            result,
-            Some(session.working_dir.clone()),
-            container,
-            &session.id,
-        );
+        let result = self
+            .extension_manager
+            .applying_mutation(result, container, &session.id);
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
 
