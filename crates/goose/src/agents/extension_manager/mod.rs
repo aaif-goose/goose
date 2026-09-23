@@ -1862,9 +1862,9 @@ mod tests {
             data_dir.path().to_path_buf(),
         ));
         let config = ExtensionConfig::Platform {
-            name: "calculator".to_string(),
+            name: "developer".to_string(),
             display_name: None,
-            description: "calculator".to_string(),
+            description: "developer".to_string(),
             bundled: None,
             available_tools: vec![],
         };
@@ -1875,11 +1875,11 @@ mod tests {
             .extensions
             .lock()
             .await
-            .get("calculator")
+            .get("developer")
             .unwrap()
             .clone();
         extension_manager
-            .remove_extension("calculator")
+            .remove_extension("developer")
             .await
             .unwrap();
 
@@ -1894,7 +1894,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(!extension_manager.is_extension_enabled("calculator").await);
+        assert!(!extension_manager.is_extension_enabled("developer").await);
     }
 
     #[test]
