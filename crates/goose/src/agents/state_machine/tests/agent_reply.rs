@@ -509,7 +509,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
                 .as_tool_response_text()
                 .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
         }));
-    assert_eq!(api.call_count(), 1);
+    assert_eq!(api.call_count(), 0);
     Ok(())
 }
 
