@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 16;
+pub const CURRENT_SCHEMA_VERSION: i32 = 17;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -1109,6 +1109,11 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
         sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_message ON messages(session_id, message_id)",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_timestamp, id)",
         )
         .execute(&mut *tx)
@@ -1602,6 +1607,18 @@ impl SessionStorage {
             16 => {
                 sqlx::query(
                     "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_timestamp, id)",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
+            17 => {
+                // Loading a single message within a session is what
+                // `save_compacted_conversation` does once per message; without
+                // this index each of those lookups scans every message in the
+                // session, which holds the write lock for minutes on a large
+                // session and starves every other session writing to the DB.
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_session_message ON messages(session_id, message_id)",
                 )
                 .execute(&mut **tx)
                 .await?;
@@ -3280,6 +3297,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_messages_session_message_index_avoids_session_scan() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage.pool().await.unwrap();
+
+        let index_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_messages_session_message')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(
+            index_exists,
+            "idx_messages_session_message should exist after schema init"
+        );
+
+        // A single message is looked up by both columns once per message while
+        // a conversation is compacted. If message_id is not matched by the
+        // index, each lookup scans the whole session and the transaction that
+        // does it holds the write lock for the duration.
+        let plan_rows = sqlx::query(
+            "EXPLAIN QUERY PLAN \
+             SELECT metadata_json FROM messages WHERE session_id = ? AND message_id = ?",
+        )
+        .bind("nonexistent_session")
+        .bind("nonexistent_message")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        let plan_text: String = plan_rows
+            .iter()
+            .map(|r| r.try_get::<String, _>("detail").unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            plan_text.contains("idx_messages_session_message"),
+            "looking a message up by session and id should use idx_messages_session_message, got: {plan_text}"
+        );
+        assert!(
+            !plan_text.contains("SCAN messages"),
+            "looking a message up by session and id must not scan the table, got: {plan_text}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_last_message_at_is_derived_from_messages() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -4678,6 +4743,55 @@ mod tests {
 
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
+    }
+
+    #[tokio::test]
+    async fn test_messages_session_message_index_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+
+        SessionStorage::create_schema(&pool).await.unwrap();
+
+        // Recreate a v16-shaped database, which has no (session_id, message_id)
+        // index.
+        sqlx::query("DROP INDEX idx_messages_session_message")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 16")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap(); // Triggers migration
+
+        let index_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_messages_session_message')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+        assert!(
+            index_exists,
+            "migrating to v17 should create idx_messages_session_message"
+        );
     }
 
     #[tokio::test]
