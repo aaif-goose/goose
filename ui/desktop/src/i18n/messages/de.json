@@ -3863,9 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "Sitzung importieren"
   },
-  "sessions.importing": {
-    "defaultMessage": "Wird importiert..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP-Sitzungen einschließen"
   },

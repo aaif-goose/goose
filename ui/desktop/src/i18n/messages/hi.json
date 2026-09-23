@@ -3863,9 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "आयात सत्र"
   },
-  "sessions.importing": {
-    "defaultMessage": "आयात किया जा रहा है..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP सत्र शामिल करें"
   },

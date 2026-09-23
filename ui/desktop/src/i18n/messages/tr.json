@@ -3863,9 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "Oturumu İçe Aktar"
   },
-  "sessions.importing": {
-    "defaultMessage": "İçe aktarılıyor..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP oturumlarını dahil et"
   },
