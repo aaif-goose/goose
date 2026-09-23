@@ -185,6 +185,10 @@ impl Extension {
             .is_some()
     }
 
+    fn invalidate_tools(&self) {
+        self.tools_version.fetch_add(1, Ordering::SeqCst);
+    }
+
     pub(super) fn is_platform(&self) -> bool {
         match &self.config {
             ExtensionConfig::Platform { .. } => true,
@@ -508,6 +512,12 @@ pub fn is_hidden_extension(name: &str) -> bool {
 }
 
 impl ExtensionManager {
+    fn invalidate_extension_manager_tools(extensions: &IndexMap<String, Arc<Extension>>) {
+        if let Some(extension_manager) = extensions.get("extensionmanager") {
+            extension_manager.invalidate_tools();
+        }
+    }
+
     fn mcp_client_capabilities(&self) -> GooseMcpClientCapabilities {
         GooseMcpClientCapabilities {
             mcpui: self.capabilities.mcpui,
@@ -746,7 +756,8 @@ impl ExtensionManager {
 
         let server_info = client.get_info().cloned();
 
-        self.extensions.lock().await.insert(
+        let mut extensions = self.extensions.lock().await;
+        extensions.insert(
             sanitized_name.clone(),
             Arc::new(Extension::new(
                 sanitized_name,
@@ -757,6 +768,7 @@ impl ExtensionManager {
                 tools_version,
             )),
         );
+        Self::invalidate_extension_manager_tools(&extensions);
         Ok(())
     }
 
@@ -834,7 +846,8 @@ impl ExtensionManager {
         info: Option<ServerInfo>,
     ) {
         let key = config.key();
-        self.extensions.lock().await.insert(
+        let mut extensions = self.extensions.lock().await;
+        extensions.insert(
             key.clone(),
             Arc::new(Extension::new(
                 key,
@@ -845,6 +858,7 @@ impl ExtensionManager {
                 Arc::new(AtomicU64::new(0)),
             )),
         );
+        Self::invalidate_extension_manager_tools(&extensions);
     }
 
     /// Get extensions info for building the system prompt
@@ -861,7 +875,12 @@ impl ExtensionManager {
     }
 
     pub async fn remove_extension_by_key(&self, key: &str) -> ExtensionResult<bool> {
-        Ok(self.extensions.lock().await.shift_remove(key).is_some())
+        let mut extensions = self.extensions.lock().await;
+        let removed = extensions.shift_remove(key).is_some();
+        if removed {
+            Self::invalidate_extension_manager_tools(&extensions);
+        }
+        Ok(removed)
     }
 
     pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
@@ -1823,6 +1842,70 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("appears twice"));
+    }
+
+    #[tokio::test]
+    async fn extension_manager_tools_follow_resource_support() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        extension_manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    display_name: None,
+                    description: String::new(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let tools = extension_manager
+            .get_prefixed_tools("session", Some("extensionmanager".to_string()))
+            .await
+            .unwrap();
+        assert!(tools
+            .iter()
+            .all(|tool| tool.name != "extensionmanager__list_resources"));
+
+        let resource_info = InitializeResult::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_resources()
+                .build(),
+        );
+        extension_manager
+            .add_client(
+                builtin_config("resources", vec![]),
+                Arc::new(MockClient {}),
+                Some(resource_info),
+            )
+            .await;
+
+        let tools = extension_manager
+            .get_prefixed_tools("session", Some("extensionmanager".to_string()))
+            .await
+            .unwrap();
+        assert!(tools
+            .iter()
+            .any(|tool| tool.name == "extensionmanager__list_resources"));
+
+        extension_manager
+            .remove_extension("resources")
+            .await
+            .unwrap();
+        let tools = extension_manager
+            .get_prefixed_tools("session", Some("extensionmanager".to_string()))
+            .await
+            .unwrap();
+        assert!(tools
+            .iter()
+            .all(|tool| tool.name != "extensionmanager__list_resources"));
     }
 
     #[tokio::test]
