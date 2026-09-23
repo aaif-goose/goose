@@ -3866,9 +3866,6 @@
   "sessions.import": {
     "defaultMessage": "Import Sesi"
   },
-  "sessions.importing": {
-    "defaultMessage": "Mengimport..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Sertakan sesi ACP"
   },

@@ -3866,9 +3866,6 @@
   "sessions.import": {
     "defaultMessage": "セッションをインポート"
   },
-  "sessions.importing": {
-    "defaultMessage": "インポート中..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP セッションを含める"
   },

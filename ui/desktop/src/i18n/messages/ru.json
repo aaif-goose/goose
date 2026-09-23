@@ -3866,9 +3866,6 @@
   "sessions.import": {
     "defaultMessage": "Импортировать сеанс"
   },
-  "sessions.importing": {
-    "defaultMessage": "Импорт..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Включить сессии ACP"
   },

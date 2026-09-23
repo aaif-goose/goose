@@ -3914,9 +3914,6 @@
   "sessions.import": {
     "defaultMessage": "Import Session"
   },
-  "sessions.importing": {
-    "defaultMessage": "Importing..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Include ACP sessions"
   },
