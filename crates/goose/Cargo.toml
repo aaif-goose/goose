@@ -79,7 +79,6 @@ native-tls = [
 ]
 system-keyring = ["dep:keyring"]
 portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
-nostr = ["dep:nostr", "dep:nostr-sdk"]
 
 [lints]
 workspace = true
@@ -215,8 +214,6 @@ goose-acp-macros = { path = "../goose-acp-macros", default-features = false }
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
 process-wrap = { version = "9", default-features = false, features = ["std"] }
-nostr = { version = "0.45.1", default-features = false, features = ["nip44", "os-rng", "std"], optional = true }
-nostr-sdk = { version = "0.45.1", default-features = false, optional = true }
 rustls = { workspace = true, optional = true }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem"], optional = true }
 axum-server = { workspace = true, optional = true }

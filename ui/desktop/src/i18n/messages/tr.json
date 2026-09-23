@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Çalışma dizini güncellenemedi"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Yeni pencerede aç"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Şifrelenmiş Nostr bağlantısını paylaşın"
-  },
   "sessions.cancel": {
     "defaultMessage": "İptal"
   },
@@ -3870,21 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "Oturumu İçe Aktar"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Bağlantıyı İçe Aktar"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Oturumu almak, şifresini çözmek ve içe aktarmak için bir Goose Nostr paylaşım bağlantısını yapıştırın."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nostr Oturumunu İçe Aktar"
-  },
-  "sessions.importing": {
-    "defaultMessage": "İçe aktarılıyor..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP oturumlarını dahil et"
   },
@@ -3912,12 +3890,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Arama geçmişi..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Bu bağlantıya sahip olan herkes oturumu alıp şifresini çözebilir. Buna bir sırmış gibi davran."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Şifreli Nostr Paylaşım Bağlantısı"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Panoya kopyalandı"
   },
@@ -3944,12 +3916,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Oturum başarıyla içe aktarıldı"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Şifrelenmiş Nostr paylaşım bağlantısı oluşturuldu"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr paylaşım bağlantısı oluşturulamadı: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Oturum açıklaması güncellenemedi: {error}"

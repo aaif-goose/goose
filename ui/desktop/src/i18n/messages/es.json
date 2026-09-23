@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "No se pudo actualizar el directorio de trabajo"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Abrir en una ventana nueva"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Compartir enlace cifrado de Nostr"
-  },
   "sessions.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -3870,21 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "Importar sesión"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Importar enlace"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Pega un enlace de Goose para compartir por Nostr para obtener, descifrar e importar la sesión."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Importar sesión de Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Importando..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Incluir sesiones ACP"
   },
@@ -3912,12 +3890,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Buscar en el historial..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Cualquiera que tenga este enlace puede obtener y descifrar la sesión. Trátalo como un secreto."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Enlace cifrado de Nostr para compartir"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Copiado al portapapeles"
   },
@@ -3944,12 +3916,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sesión importada correctamente"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Enlace cifrado de Nostr creado para compartir"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "No se pudo crear el enlace de Nostr para compartir: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "No se pudo actualizar la descripción de la sesión: {error}"

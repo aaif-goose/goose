@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "無法更新工作目錄"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新視窗中開啟"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "分享加密的 Nostr 連結"
-  },
   "sessions.cancel": {
     "defaultMessage": "取消"
   },
@@ -3870,21 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "匯入工作階段"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "匯入連結"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "貼上 Goose Nostr 分享連結，以擷取、解密並匯入該工作階段。"
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "匯入 Nostr 工作階段"
-  },
-  "sessions.importing": {
-    "defaultMessage": "正在匯入…"
-  },
   "sessions.includeAcp": {
     "defaultMessage": "包含 ACP 工作階段"
   },
@@ -3912,12 +3890,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "搜尋記錄..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "任何持有此連結的人都能擷取並解密該工作階段。請將其視為機密。"
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "加密的 Nostr 分享連結"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "已複製到剪貼簿"
   },
@@ -3944,12 +3916,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "已成功匯入工作階段"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "已建立加密的 Nostr 分享連結"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "無法建立 Nostr 分享連結：{error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "無法更新工作階段描述：{error}"

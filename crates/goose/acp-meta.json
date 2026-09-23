@@ -291,11 +291,6 @@
       "responseType": "ImportSessionResponse_unstable"
     },
     {
-      "method": "_goose/unstable/session/share/nostr",
-      "requestType": "ShareSessionNostrRequest_unstable",
-      "responseType": "ShareSessionNostrResponse_unstable"
-    },
-    {
       "method": "_goose/unstable/recipes/encode",
       "requestType": "EncodeRecipeRequest_unstable",
       "responseType": "EncodeRecipeResponse_unstable"

@@ -2,10 +2,6 @@ use anyhow::{Context, Result};
 
 use cliclack::{confirm, multiselect, select};
 use etcetera::home_dir;
-#[cfg(feature = "nostr")]
-use goose::config::Config;
-#[cfg(feature = "nostr")]
-use goose::session::nostr_share;
 use goose::session::{
     export_session_to_markdown, generate_diagnostics, DiagnosticsLevel, Session, SessionManager,
     SessionType,
@@ -270,8 +266,6 @@ pub async fn handle_session_export(
     session_id: String,
     output_path: Option<PathBuf>,
     format: String,
-    nostr: bool,
-    #[cfg_attr(not(feature = "nostr"), allow(unused_variables))] relays: Vec<String>,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
     let session = match session_manager.get_session(&session_id, true).await {
@@ -297,34 +291,6 @@ pub async fn handle_session_export(
         _ => return Err(anyhow::anyhow!("Unsupported format: {}", format)),
     };
 
-    #[cfg(feature = "nostr")]
-    if nostr {
-        if format != "json" {
-            return Err(anyhow::anyhow!(
-                "Nostr session sharing only supports --format json"
-            ));
-        }
-        if output_path.is_some() {
-            return Err(anyhow::anyhow!(
-                "Nostr session sharing cannot be combined with --output"
-            ));
-        }
-
-        let relays = nostr_share::resolve_relays(relays, Config::global());
-        let share = nostr_share::publish_session_json(&output, relays).await?;
-        println!("Session published to Nostr relays:");
-        for relay in &share.relays {
-            println!("- {}", relay);
-        }
-        println!("\nShare link:");
-        println!("{}", share.deeplink);
-        return Ok(());
-    }
-    #[cfg(not(feature = "nostr"))]
-    if nostr {
-        return Err(anyhow::anyhow!("goose was not built with nostr support"));
-    }
-
     if let Some(output_path) = output_path {
         fs::write(&output_path, output).with_context(|| {
             format!("Failed to write to output file: {}", output_path.display())
@@ -337,18 +303,9 @@ pub async fn handle_session_export(
     Ok(())
 }
 
-pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
-    let json = if nostr || input.starts_with("goose://sessions/nostr") {
-        #[cfg(feature = "nostr")]
-        {
-            nostr_share::import_session_json_from_deeplink(&input).await?
-        }
-        #[cfg(not(feature = "nostr"))]
-        return Err(anyhow::anyhow!("goose was not built with nostr support"));
-    } else {
-        fs::read_to_string(&input)
-            .with_context(|| format!("Failed to read session import file: {input}"))?
-    };
+pub async fn handle_session_import(input: String) -> Result<()> {
+    let json = fs::read_to_string(&input)
+        .with_context(|| format!("Failed to read session import file: {input}"))?;
 
     let format = goose::session::import_formats::detect_format(&json);
     let label = match format {

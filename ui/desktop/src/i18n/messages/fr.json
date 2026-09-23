@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Échec de la mise à jour du répertoire de travail"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Ouvrir dans une nouvelle fenêtre"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Partager un lien Nostr chiffré"
-  },
   "sessions.cancel": {
     "defaultMessage": "Annuler"
   },
@@ -3870,21 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "Importer une session"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Importer un lien"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Collez un lien de partage Goose Nostr pour récupérer, déchiffrer et importer la session."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Importer une session Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Importation..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Inclure les sessions ACP"
   },
@@ -3912,12 +3890,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Rechercher dans l'historique..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Toute personne disposant de ce lien peut récupérer et déchiffrer la session. Traitez-le comme un secret."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Lien de partage Nostr chiffré"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Copié dans le presse-papiers"
   },
@@ -3944,12 +3916,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Session importée avec succès"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Lien de partage Nostr chiffré créé"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Échec de la création du lien de partage Nostr : {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Échec de la mise à jour de la description de la session : {error}"
