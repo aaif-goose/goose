@@ -107,7 +107,7 @@ In Python session mode the Developer extension exposes one tool, `python`, which
 - Every cell runs in the same process, so variables, imports, functions, and the working directory carry over between calls.
 - The last expression of a cell is echoed like a REPL and is also available as `_`.
 - stdout, stderr, and the echoed value are each capped per cell, so goose assigns large data to variables and prints slices.
-- Helpers are preloaded in the session: `sh(command)` runs a shell command and returns an object with `.code`, `.out`, and `.err`, `edit(path, old, new)` does a unique-match text replacement, and `view_image(path, crop=None)` attaches an image to the result so goose can see it.
+- Helpers are preloaded in the session: `sh(command)` runs a shell command and returns an object with `.code`, `.out`, and `.err` (each stream keeps up to 64 MiB), `edit(path, old, new)` does a unique-match text replacement, and `view_image(path, crop=None)` attaches an image to the result so goose can see it.
 - Cells that run past the timeout are interrupted with `KeyboardInterrupt` and the session keeps its variables.
   On Windows, interrupts are not available, so a timed-out cell restarts the session instead.
 

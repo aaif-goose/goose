@@ -34,6 +34,7 @@ const REAPER_TICK: Duration = Duration::from_secs(60);
 const INTERPRETER_KEY: &str = "GOOSE_PYTHON_SESSION_PYTHON";
 const CELL_TIMEOUT_KEY: &str = "GOOSE_PYTHON_SESSION_CELL_TIMEOUT_SECS";
 const MAX_OUTPUT_CHARS_KEY: &str = "GOOSE_PYTHON_SESSION_MAX_OUTPUT_CHARS";
+const MAX_IMAGES_KEY: &str = "GOOSE_PYTHON_SESSION_MAX_IMAGES";
 
 const KERNEL_RESET_NOTICE: &str = "[python session was restarted: variables, imports, and \
     functions from before this point no longer exist; recreate what you need]";
@@ -47,6 +48,7 @@ struct PythonParams {
 struct PythonOutput {
     text: String,
     images: Vec<ImageRequest>,
+    images_dropped: usize,
     is_error: bool,
 }
 
@@ -167,7 +169,7 @@ impl PythonSessionClient {
                 - stdout/stderr/echo are each capped; assign large data to variables and
                   print slices instead of dumping it.
                 - sh(command, timeout=None) runs a shell command and returns a result object
-                  (.code/.out/.err, full output retained); edit(path, old, new) does a
+                  (.code/.out/.err, up to 64 MiB per stream retained); edit(path, old, new) does a
                   unique-match text replacement.
                 - view_image(path, crop=None) attaches an image (local path or http(s) URL) to
                   the result so you can see it; prefer this over OCR to read text in a picture.
@@ -246,7 +248,7 @@ impl PythonSessionClient {
     }
 
     async fn child_env(&self) -> Vec<(&'static str, String)> {
-        let mut env = Vec::new();
+        let mut env = vec![(MAX_IMAGES_KEY, MAX_IMAGES_PER_CELL.to_string())];
         if let Some(chars) = config_value::<u64>(MAX_OUTPUT_CHARS_KEY) {
             env.push((MAX_OUTPUT_CHARS_KEY, chars.to_string()));
         }
@@ -446,6 +448,7 @@ impl PythonSessionClient {
             text: format_outcome(&outcome, reset_notice, restore_notice),
             is_error: outcome.error.is_some(),
             images: outcome.images,
+            images_dropped: outcome.images_dropped,
         })
     }
 
@@ -454,7 +457,7 @@ impl PythonSessionClient {
         let mut blocks = vec![ContentBlock::text(output.text)];
 
         if !output.images.is_empty() {
-            let total = output.images.len();
+            let total = output.images.len() + output.images_dropped;
             let working_dir = self.working_dir(ctx).await;
             for req in output.images.into_iter().take(MAX_IMAGES_PER_CELL) {
                 let crop = req.crop.map(|c| CropParams {

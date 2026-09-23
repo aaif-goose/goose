@@ -191,6 +191,43 @@ async fn restore_keeps_aliases_and_drops_only_unloadable_variables() {
     assert_eq!(outcome.value.as_deref(), Some("(True, 5, '5', True)"));
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn shell_capture_is_bounded_per_stream() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    // 70 MB exceeds the 64 MiB per-stream capture cap; the head is kept on the
+    // result and the remainder is reported, not buffered.
+    let outcome = exec(
+        &mut kernel,
+        r#"r = sh("yes aaaaaaaa | head -c 70000000")
+(len(r.out) < 68 * 1024 * 1024, r.out.startswith("aaaa"), "bytes of stdout dropped" in r.out, r.code)"#,
+    )
+    .await;
+    assert_eq!(
+        outcome.value.as_deref(),
+        Some("(True, True, True, 0)"),
+        "error: {:?}",
+        outcome.error
+    );
+}
+
+#[tokio::test]
+async fn image_requests_are_capped_in_the_driver() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+
+    let outcome = exec(
+        &mut kernel,
+        "for i in range(20):\n    view_image('/tmp/shot-%d.png' % i)",
+    )
+    .await;
+    assert_eq!(outcome.images.len(), 8);
+    assert_eq!(outcome.images_dropped, 12);
+    assert!(outcome.images[0].source.ends_with("shot-0.png"));
+}
+
 #[tokio::test]
 async fn surrogate_output_does_not_hang_the_cell() {
     require_python!();

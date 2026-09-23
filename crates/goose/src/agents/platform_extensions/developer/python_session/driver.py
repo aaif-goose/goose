@@ -18,10 +18,14 @@ import reprlib
 import signal
 import subprocess
 import sys
+import threading
 import time
 import traceback
 
 MAX_CHARS = max(1024, int(os.environ.get("GOOSE_PYTHON_SESSION_MAX_OUTPUT_CHARS", "16384")))
+MAX_IMAGES = max(1, int(os.environ.get("GOOSE_PYTHON_SESSION_MAX_IMAGES", "8")))
+SH_CAPTURE_CAP = 64 * 1024 * 1024
+SH_DRAIN_GRACE_SECS = 0.5
 NS_MAX_ENTRIES = 50
 NS_MAX_CHARS = 1200
 STATE_PATH = os.environ.get("GOOSE_PYTHON_SESSION_STATE_PATH", "")
@@ -46,27 +50,43 @@ def _truncate(text, limit=MAX_CHARS):
     return text[:limit] + marker, True
 
 
-def _echo_repr():
-    # repr() of a huge value materializes all of it before the cap applies;
-    # reprlib bounds the traversal of built-in containers and strings instead.
-    bounded = reprlib.Repr()
-    for attr in (
-        "maxlist",
-        "maxtuple",
-        "maxdict",
-        "maxset",
-        "maxfrozenset",
-        "maxdeque",
-        "maxarray",
-        "maxlong",
-    ):
-        setattr(bounded, attr, MAX_CHARS)
-    bounded.maxstring = bounded.maxother = MAX_CHARS + 16
-    bounded.maxlevel = 32
-    return bounded
+class _BudgetedRepr(reprlib.Repr):
+    """repr() of a huge trailing expression materializes all of it before the
+    output cap applies. reprlib bounds each container by element count and each
+    string by length, but not the total, so a running character budget also
+    stops the traversal once the result could no longer fit in a response."""
+
+    def __init__(self, budget):
+        super().__init__()
+        self._budget = budget
+        self._remaining = budget
+        for attr in (
+            "maxlist",
+            "maxtuple",
+            "maxdict",
+            "maxset",
+            "maxfrozenset",
+            "maxdeque",
+            "maxarray",
+            "maxlong",
+        ):
+            setattr(self, attr, budget)
+        self.maxstring = self.maxother = budget
+        self.maxlevel = 32
+
+    def repr(self, x):
+        self._remaining = self._budget
+        return super().repr(x)
+
+    def repr1(self, x, level):
+        if self._remaining <= 0:
+            return "..."
+        text = super().repr1(x, level)
+        self._remaining -= len(text)
+        return text
 
 
-_ECHO_REPR = _echo_repr()
+_ECHO_REPR = _BudgetedRepr(MAX_CHARS + 16)
 
 
 def _tail(text, limit):
@@ -121,6 +141,43 @@ class ShellResult:
         return "\n".join(parts)
 
 
+class _PipeDrain(threading.Thread):
+    """Reads one child pipe to EOF, keeping at most SH_CAPTURE_CAP bytes, so a
+    command flooding its output cannot grow the kernel until the cell times out."""
+
+    def __init__(self, pipe):
+        super().__init__(daemon=True)
+        self._pipe = pipe
+        self.kept = bytearray()
+        self.dropped = 0
+        self.start()
+
+    def run(self):
+        while True:
+            try:
+                chunk = os.read(self._pipe.fileno(), 1 << 16)
+            except OSError:
+                return
+            if not chunk:
+                return
+            room = SH_CAPTURE_CAP - len(self.kept)
+            if room > 0:
+                self.kept += chunk[:room]
+            self.dropped += max(0, len(chunk) - room)
+
+    def text(self, label):
+        text = bytes(self.kept).decode("utf-8", errors="replace")
+        if self.dropped:
+            text += "\n[... {} more bytes of {} dropped; sh() keeps at most {} MiB per stream ...]".format(
+                self.dropped, label, SH_CAPTURE_CAP >> 20
+            )
+        if self.is_alive():
+            text += "\n[... {} is still open (a backgrounded process holds it); later output was not captured ...]".format(
+                label
+            )
+        return text
+
+
 def sh(command, timeout=None, cwd=None, env=None):
     """Run a shell command; returns ShellResult(code, out, err)."""
     posix = os.name == "posix"
@@ -133,14 +190,14 @@ def sh(command, timeout=None, cwd=None, env=None):
         executable=executable,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
-        errors="replace",
         cwd=cwd,
         env=env,
         start_new_session=posix,
     )
     if posix:
         _child_sessions.add(proc.pid)
+    out = _PipeDrain(proc.stdout)
+    err = _PipeDrain(proc.stderr)
 
     def _kill_group():
         try:
@@ -158,19 +215,29 @@ def sh(command, timeout=None, cwd=None, env=None):
         except (ProcessLookupError, PermissionError, OSError):
             pass
 
+    timed_out = False
     try:
-        out, err = proc.communicate(timeout=timeout)
-        return ShellResult(command, proc.returncode, out, err)
-    except subprocess.TimeoutExpired:
-        _kill_group()
-        out, err = proc.communicate()
-        return ShellResult(command, None, out or "", err or "", timed_out=True)
-    except KeyboardInterrupt:
-        _kill_group()
-        raise
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_group()
+            proc.wait()
+        except KeyboardInterrupt:
+            _kill_group()
+            raise
     finally:
         if posix:
             _child_sessions.discard(proc.pid)
+    for drain in (out, err):
+        drain.join(SH_DRAIN_GRACE_SECS)
+    return ShellResult(
+        command,
+        None if timed_out else proc.returncode,
+        out.text("stdout"),
+        err.text("stderr"),
+        timed_out=timed_out,
+    )
 
 
 def edit(path, old, new):
@@ -199,6 +266,7 @@ def edit(path, old, new):
 
 
 _pending_images = []
+_images_dropped = 0
 
 
 def view_image(path, crop=None):
@@ -208,6 +276,7 @@ def view_image(path, crop=None):
     them to you, so read a code screenshot or a diagram by VIEWING it, not by OCR.
     `crop=(x, y, width, height)` zooms into a pixel rectangle. Returns None.
     """
+    global _images_dropped
     source = str(path)
     if "://" not in source:
         source = os.path.abspath(source)
@@ -220,7 +289,12 @@ def view_image(path, crop=None):
         if any(not (0 <= v <= 0xFFFFFFFF) for v in (x, y, width, height)):
             raise ValueError("view_image crop values must be between 0 and 4294967295")
         req["crop"] = {"x": x, "y": y, "width": width, "height": height}
-    _pending_images.append(req)
+    # The host shows at most MAX_IMAGES per cell; queuing every request from a
+    # loop over a large directory would only bloat the response.
+    if len(_pending_images) < MAX_IMAGES:
+        _pending_images.append(req)
+    else:
+        _images_dropped += 1
 
 
 NS = {
@@ -235,9 +309,10 @@ _cell_count = 0
 
 
 def _run_cell(code):
-    global _cell_count
+    global _cell_count, _images_dropped
     _cell_count += 1
     del _pending_images[:]
+    _images_dropped = 0
     filename = "<cell {}>".format(_cell_count)
     stdout_buf = _BoundedWriter()
     stderr_buf = _BoundedWriter()
@@ -292,6 +367,7 @@ def _run_cell(code):
         "error": error,
         "duration_ms": duration_ms,
         "images": list(_pending_images),
+        "images_dropped": _images_dropped,
     }
 
 
