@@ -1974,6 +1974,7 @@ impl Agent {
                     }
 
                     if !has_confirmations {
+                        turn_guard.state().clear_confirmations();
                         return;
                     }
                 }
@@ -1986,7 +1987,6 @@ impl Agent {
                     turn_guard.state().clear_confirmations();
                     return;
                 }
-                turn_guard.state().clear_confirmations();
                 stream = Some(
                     self.stream_state_machine_session(
                         session_config.clone(),

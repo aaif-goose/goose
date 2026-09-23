@@ -165,9 +165,7 @@ impl ActiveTurnGuard {
 
 impl Drop for ActiveTurnGuard {
     fn drop(&mut self) {
-        let preserve_lease = self.state.has_confirmations();
-        self.state.clear_confirmations();
-        if !preserve_lease {
+        if !self.state.has_confirmations() {
             self.state.clear_extension_lease();
         }
     }
@@ -236,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn active_turn_drop_clears_pending_requests() {
+    fn interrupted_turn_keeps_pending_requests_until_the_next_turn() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
         let guard = session.try_start_turn().unwrap();
@@ -245,8 +243,12 @@ mod tests {
 
         drop(guard);
 
+        assert!(session.contains_request("request"));
+        let next_turn = session.try_start_turn().unwrap();
+        session.start_new_turn();
         assert!(!session.contains_request("request"));
         assert!(session.answer("request").is_none());
+        drop(next_turn);
     }
 
     #[test]

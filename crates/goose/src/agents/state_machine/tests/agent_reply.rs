@@ -13,7 +13,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-use super::calculator_extension::{value, CalculatorExtension, ADD};
+use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
@@ -137,7 +137,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
     let agent = Arc::new(agent);
 
-    api.on("add one").call(ADD, value(1));
+    api.on("add one").call(ADD, delayed_value(1, 500));
     api.on("result: 1").reply("the result is one");
 
     let session_config = SessionConfig {
@@ -233,6 +233,23 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::DenyOnce)
         .await
         .is_err());
+
+    loop {
+        tokio::select! {
+            event = stream.next() => {
+                let event = event.expect("resumed turn should still be active")?;
+                if let AgentEvent::Message(message) = event {
+                    messages.push(message);
+                }
+            }
+            _ = async {
+                while calculator.contexts().is_empty() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            } => break,
+        }
+    }
+    assert_eq!(calculator.total(), 0);
     drop(stream);
     let stream = agent
         .resume_state_machine_turn(session_config.clone(), CancellationToken::new())
