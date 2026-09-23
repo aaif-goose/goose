@@ -211,6 +211,16 @@ where
         GoosePlatform::GooseCli,
     );
     let agent = Agent::with_config(agent_config);
+    let session = agent
+        .config
+        .session_manager
+        .create_session(
+            PathBuf::default(),
+            "scenario-runner".to_string(),
+            SessionType::Hidden,
+            GooseMode::default(),
+        )
+        .await?;
     agent
         .extension_manager
         .add_client(
@@ -222,22 +232,11 @@ where
                 bundled: None,
                 available_tools: vec![],
             },
-            None,
+            Some(session.working_dir.clone()),
             Arc::new(mock_client),
             None,
         )
         .await;
-
-    let session = agent
-        .config
-        .session_manager
-        .create_session(
-            PathBuf::default(),
-            "scenario-runner".to_string(),
-            SessionType::Hidden,
-            GooseMode::default(),
-        )
-        .await?;
 
     let scenario_model_config =
         goose::model_config::model_config_from_user_config(&factory_name, config.model_name)?;
