@@ -374,8 +374,8 @@ mod tests {
                 .unwrap();
         let text = message.content[0].as_text().unwrap();
 
-        assert!(text.contains("<working_directory>/leased/dir</working_directory>"));
-        assert!(!text.contains("<working_directory>/test/dir</working_directory>"));
+        assert!(text.contains("<working-directory>/leased/dir</working-directory>"));
+        assert!(!text.contains("<working-directory>/test/dir</working-directory>"));
     }
 
     #[test]
