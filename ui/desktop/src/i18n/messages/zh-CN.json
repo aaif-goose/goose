@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "更新工作目录失败"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新窗口中打开"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "分享加密的 Nostr 链接"
-  },
   "sessions.cancel": {
     "defaultMessage": "取消"
   },
@@ -3870,18 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "导入会话"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "导入链接"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "粘贴 Goose Nostr 分享链接以获取、解密并导入会话。"
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "导入 Nostr 会话"
-  },
   "sessions.importing": {
     "defaultMessage": "正在导入..."
   },
@@ -3912,12 +3893,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "搜索历史…"
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "任何拥有此链接的人都可以获取并解密该会话。请像对待密钥一样保护它。"
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "加密的 Nostr 分享链接"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "已复制到剪贴板"
   },
@@ -3944,12 +3919,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "会话导入成功"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "已创建加密的 Nostr 分享链接"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "创建 Nostr 分享链接失败：{error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "更新会话描述失败：{error}"

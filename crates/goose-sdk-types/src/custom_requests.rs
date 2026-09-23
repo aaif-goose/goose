@@ -832,37 +832,6 @@ pub struct ExportSessionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ImportSessionRequest {
     pub input: String,
-    pub source: SessionImportSource,
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionImportSource {
-    #[default]
-    Auto,
-    Json,
-    Nostr,
-}
-
-/// Share a session through Nostr and return its share links.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(
-    method = "_goose/unstable/session/share/nostr",
-    response = ShareSessionNostrResponse
-)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareSessionNostrRequest {
-    pub session_id: String,
-    pub relays: Vec<String>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareSessionNostrResponse {
-    pub deeplink: String,
-    pub nevent: String,
-    pub event_id: String,
-    pub relays: Vec<String>,
 }
 
 /// Import session response — metadata about the newly created session.

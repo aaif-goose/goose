@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Falha ao atualizar o diretório de trabalho"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Abrir numa nova janela"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Partilhar ligação Nostr encriptada"
-  },
   "sessions.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -3870,18 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "Importar sessão"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Importar ligação"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Cole uma ligação de partilha Nostr do Goose para obter, desencriptar e importar a sessão."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Importar sessão Nostr"
-  },
   "sessions.importing": {
     "defaultMessage": "A importar..."
   },
@@ -3912,12 +3893,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Pesquisar no histórico..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Qualquer pessoa com este link pode obter e descriptografar a sessão. Trate-o como um segredo."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Link de Partilha Nostr Criptografado"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Copiado para a área de transferência"
   },
@@ -3944,12 +3919,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sessão importada com êxito"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Link de partilha Nostr criptografado criado"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Falha ao criar o link de partilha Nostr: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Falha ao atualizar a descrição da sessão: {error}"

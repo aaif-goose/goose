@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "कार्यशील निर्देशिका अद्यतन करने में विफल"
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "नई विंडो में खोलें"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "एन्क्रिप्टेड नोस्ट्र लिंक साझा करें"
-  },
   "sessions.cancel": {
     "defaultMessage": "रद्द करें"
   },
@@ -3870,18 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "आयात सत्र"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "लिंक आयात करें"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "सत्र लाने, डिक्रिप्ट करने और आयात करने के लिए Goose नॉस्ट्र शेयर लिंक चिपकाएँ।"
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "नोस्ट्र सत्र आयात करें"
-  },
   "sessions.importing": {
     "defaultMessage": "आयात किया जा रहा है..."
   },
@@ -3912,12 +3893,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "खोज इतिहास..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "इस लिंक वाला कोई भी व्यक्ति सत्र को ला सकता है और डिक्रिप्ट कर सकता है। इसे एक रहस्य की तरह समझो."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "एन्क्रिप्टेड नोस्ट्र शेयर लिंक"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "क्लिपबोर्ड पर कॉपी किया गया"
   },
@@ -3944,12 +3919,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "सत्र सफलतापूर्वक आयात किया गया"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "एन्क्रिप्टेड नोस्ट्र शेयर लिंक बनाया गया"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr शेयर लिंक बनाने में विफल: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "सत्र विवरण अद्यतन करने में विफल: {error}"

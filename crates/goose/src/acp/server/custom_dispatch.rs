@@ -494,14 +494,6 @@ impl GooseAcpAgent {
         self.on_import_session(req).await
     }
 
-    #[custom_method(ShareSessionNostrRequest)]
-    async fn dispatch_share_session_nostr(
-        &self,
-        req: ShareSessionNostrRequest,
-    ) -> Result<ShareSessionNostrResponse, agent_client_protocol::Error> {
-        self.on_share_session_nostr(req).await
-    }
-
     #[custom_method(EncodeRecipeRequest)]
     async fn dispatch_encode_recipe(
         &self,

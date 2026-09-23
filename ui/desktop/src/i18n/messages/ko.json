@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "작업 디렉터리를 업데이트하지 못했습니다."
   },
@@ -3828,9 +3824,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "새 창에서 열기"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "암호화된 Nostr 링크 공유"
-  },
   "sessions.cancel": {
     "defaultMessage": "취소"
   },
@@ -3870,18 +3863,6 @@
   "sessions.import": {
     "defaultMessage": "세션 가져오기"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "링크 가져오기"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "goose Nostr 공유 링크를 붙여넣어 세션을 가져오고 복호화한 뒤 불러오세요."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nostr 세션 가져오기"
-  },
   "sessions.importing": {
     "defaultMessage": "가져오는 중..."
   },
@@ -3912,12 +3893,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "기록 검색..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "이 링크가 있는 사람은 누구나 세션을 가져오고 복호화할 수 있습니다. 비밀처럼 다루세요."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "암호화된 Nostr 공유 링크"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "클립보드에 복사됨"
   },
@@ -3944,12 +3919,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "세션을 성공적으로 가져왔습니다."
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "암호화된 Nostr 공유 링크가 생성되었습니다."
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr 공유 링크 생성 실패: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "세션 설명 업데이트 실패: {error}"
