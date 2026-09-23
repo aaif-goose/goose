@@ -35,6 +35,9 @@ use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::container::Container;
 use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
 use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::platform_extensions::ext_manager::{
+    EXTENSION_NAME as EXTENSION_MANAGER_NAME, LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
+};
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
@@ -118,6 +121,10 @@ struct ToolCatalog {
 
 impl ToolCatalog {
     async fn build(scope_id: &str, extensions: &[Arc<Extension>]) -> Self {
+        let supports_resources = extensions
+            .iter()
+            .any(|extension| extension.supports_resources());
+        let extension_manager_key = name_to_key(EXTENSION_MANAGER_NAME);
         let lists = futures::future::join_all(
             extensions
                 .iter()
@@ -143,6 +150,15 @@ impl ToolCatalog {
                     .strip_prefix(&format!("{}__", extension.key))
                     .unwrap_or(&tool.name)
                     .to_string();
+                if extension.key == extension_manager_key
+                    && !supports_resources
+                    && matches!(
+                        server_name.as_str(),
+                        LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME
+                    )
+                {
+                    continue;
+                }
                 by_name.insert(name, entries.len());
                 entries.push(CatalogEntry {
                     tool: tool.clone(),

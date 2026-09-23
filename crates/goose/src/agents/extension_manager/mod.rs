@@ -558,14 +558,6 @@ impl ExtensionManager {
         &self.provider
     }
 
-    pub async fn supports_resources(&self) -> bool {
-        self.extensions
-            .lock()
-            .await
-            .values()
-            .any(|ext| ext.supports_resources())
-    }
-
     fn hydrate_mcp_apps(&self) -> bool {
         match &self.capabilities.host_info {
             Some(host_info) if host_info.explicit_extensions => host_info.mcpui_enabled(),
@@ -1851,6 +1843,10 @@ mod tests {
             )
             .await;
         let lease = extension_manager.current_lease("session", None).await;
+        extension_manager
+            .remove_extension("resources")
+            .await
+            .unwrap();
         assert!(lease
             .tools()
             .await

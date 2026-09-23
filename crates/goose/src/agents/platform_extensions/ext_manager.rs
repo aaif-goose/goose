@@ -258,7 +258,7 @@ impl ExtensionManagerClient {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn get_tools(&self, include_manage_extensions: bool) -> Vec<Tool> {
+    fn get_tools(&self, include_manage_extensions: bool) -> Vec<Tool> {
         let mut tools = vec![Tool::new(
                 SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME.to_string(),
                 "Searches for additional extensions available to help complete tasks.
@@ -310,13 +310,10 @@ impl ExtensionManagerClient {
             );
         }
 
-        if let Some(weak_ref) = &self.context.extension_manager {
-            if let Some(extension_manager) = weak_ref.upgrade() {
-                if extension_manager.supports_resources().await {
-                    tools.extend([
-                        Tool::new(
-                            LIST_RESOURCES_TOOL_NAME.to_string(),
-                            indoc! {r#"
+        tools.extend([
+            Tool::new(
+                LIST_RESOURCES_TOOL_NAME.to_string(),
+                indoc! {r#"
             List resources from an extension(s).
 
             Resources allow extensions to share data that provide context to LLMs, such as
@@ -324,25 +321,25 @@ impl ExtensionManagerClient {
             in the provided extension, and returns a list for the user to browse. If no extension
             is provided, the tool will search all extensions for the resource.
         "#}
-                            .to_string(),
-                            Arc::new(
-                                serde_json::to_value(schema_for!(ListResourcesParams))
-                                    .expect("Failed to serialize schema")
-                                    .as_object()
-                                    .expect("Schema must be an object")
-                                    .clone(),
-                            ),
-                        )
-                        .annotate(ToolAnnotations::from_raw(
-                            Some("List resources".to_string()),
-                            Some(true),
-                            Some(false),
-                            Some(false),
-                            Some(false),
-                        )),
-                        Tool::new(
-                            READ_RESOURCE_TOOL_NAME.to_string(),
-                            indoc! {r#"
+                .to_string(),
+                Arc::new(
+                    serde_json::to_value(schema_for!(ListResourcesParams))
+                        .expect("Failed to serialize schema")
+                        .as_object()
+                        .expect("Schema must be an object")
+                        .clone(),
+                ),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("List resources".to_string()),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(false),
+            )),
+            Tool::new(
+                READ_RESOURCE_TOOL_NAME.to_string(),
+                indoc! {r#"
             Read a resource from a specific extension.
 
             Resources allow extensions to share data that provide context to LLMs, such as
@@ -351,26 +348,23 @@ impl ExtensionManagerClient {
             URI, call `list_resources` first — its output labels each resource with its
             extension.
         "#}
-                            .to_string(),
-                            Arc::new(
-                                serde_json::to_value(schema_for!(ReadResourceParams))
-                                    .expect("Failed to serialize schema")
-                                    .as_object()
-                                    .expect("Schema must be an object")
-                                    .clone(),
-                            ),
-                        )
-                        .annotate(ToolAnnotations::from_raw(
-                            Some("Read a resource".to_string()),
-                            Some(true),
-                            Some(false),
-                            Some(false),
-                            Some(false),
-                        )),
-                    ]);
-                }
-            }
-        }
+                .to_string(),
+                Arc::new(
+                    serde_json::to_value(schema_for!(ReadResourceParams))
+                        .expect("Failed to serialize schema")
+                        .as_object()
+                        .expect("Schema must be an object")
+                        .clone(),
+                ),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Read a resource".to_string()),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(false),
+            )),
+        ]);
 
         tools
     }
@@ -411,7 +405,7 @@ impl McpClientTrait for ExtensionManagerClient {
             .is_ok_and(|session| session.session_type != SessionType::SubAgent);
 
         Ok(ListToolsResult {
-            tools: self.get_tools(can_manage_extensions).await,
+            tools: self.get_tools(can_manage_extensions),
             next_cursor: None,
             meta: None,
             ..Default::default()
