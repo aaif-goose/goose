@@ -2219,7 +2219,7 @@ impl McpClientTrait for SummonClient {
         }
     }
 
-    async fn get_moim(&self, _session_id: &str) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str, _tools: &[Tool]) -> Option<String> {
         self.cleanup_completed_tasks().await;
         let refreshed_turns = self.refresh_running_task_turns().await;
 
@@ -3821,7 +3821,7 @@ You review code."#;
             );
         }
 
-        let moim = client.get_moim("test").await.unwrap();
+        let moim = client.get_moim("test", &[]).await.unwrap();
         assert!(moim.contains("20260204_2"));
         assert!(moim.contains("20260204_3"));
         assert!(moim.contains(r#"use load("20260204_2") to get result"#));
@@ -3872,7 +3872,7 @@ You review code."#;
         assert!(result.unwrap_err().contains("not found"));
 
         // All tasks consumed -- moim should be empty
-        assert!(client.get_moim("test").await.is_none());
+        assert!(client.get_moim("test", &[]).await.is_none());
     }
 
     #[tokio::test]
@@ -4347,7 +4347,7 @@ You review code."#;
         assert!(text.contains("**Turns taken:** 1"));
         assert_eq!(result.turns, Some(1));
 
-        let moim = client.get_moim("test").await.unwrap();
+        let moim = client.get_moim("test", &[]).await.unwrap();
         assert!(moim.contains("1 turns"));
 
         // Task should still be in background_tasks (not consumed)

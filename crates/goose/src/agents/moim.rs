@@ -257,7 +257,11 @@ mod tests {
             None
         }
 
-        async fn get_moim(&self, _session_id: &str) -> Option<String> {
+        async fn get_moim(
+            &self,
+            _session_id: &str,
+            _tools: &[rmcp::model::Tool],
+        ) -> Option<String> {
             Some(self.0.to_string())
         }
     }

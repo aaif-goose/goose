@@ -3,9 +3,10 @@
 //! extensions into an `ExtensionLease`. The lease builds its public tool
 //! catalog on first use and keeps both its extensions and catalog stable, so an
 //! existing lease survives manager changes while a newly resolved lease sees
-//! replacements, removals, and tool-list changes. Tool calls use the lease's
-//! scope and working directory and carry their notification and action-required
-//! streams with them.
+//! replacements, removals, and tool-list changes. Tool calls, resource
+//! operations, and extension prompt context use the lease's snapshot. Calls
+//! also use its scope and working directory and carry their notification and
+//! action-required streams with them.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,9 +16,11 @@ use std::sync::Arc;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, ServerNotification, Tool,
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, ListResourcesResult,
+    ReadResourceResult, ResourceContents, ServerNotification, Tool,
 };
 use rmcp::service::ServiceError;
+use serde_json::Value;
 use tokio::sync::{mpsc, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -36,6 +39,23 @@ use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
 use crate::conversation::message::Message;
+
+fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
+    let value = value.get(name).ok_or_else(|| {
+        ErrorData::new(
+            ErrorCode::INVALID_PARAMS,
+            format!("The parameter {name} is required"),
+            None,
+        )
+    })?;
+    value.as_str().ok_or_else(|| {
+        ErrorData::new(
+            ErrorCode::INVALID_PARAMS,
+            format!("The parameter {name} must be a string"),
+            None,
+        )
+    })
+}
 
 #[derive(Debug)]
 pub struct ExtensionSet {
@@ -237,6 +257,153 @@ impl ExtensionLease {
             .any(|extension| extension.supports_resources())
     }
 
+    pub async fn read_resource_tool(
+        &self,
+        params: Value,
+        cancellation_token: CancellationToken,
+    ) -> Result<Vec<ContentBlock>, ErrorData> {
+        let uri = require_str_parameter(&params, "uri")?;
+        let extension_name = require_str_parameter(&params, "extension_name")?;
+        let read_result = self
+            .read_resource(uri, extension_name, cancellation_token)
+            .await?;
+
+        Ok(read_result
+            .contents
+            .into_iter()
+            .filter_map(|content| match content {
+                ResourceContents::TextResourceContents { text, .. } => {
+                    Some(ContentBlock::text(format!("{uri}\n\n{text}")))
+                }
+                _ => None,
+            })
+            .collect())
+    }
+
+    pub async fn read_resource(
+        &self,
+        uri: &str,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        let key = name_to_key(extension_name);
+        let client = self
+            .extensions
+            .iter()
+            .find(|extension| extension.key == key)
+            .map(|extension| Arc::clone(&extension.client))
+            .ok_or_else(|| {
+                let available = self
+                    .extensions
+                    .iter()
+                    .map(|extension| extension.key.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!(
+                        "Extension '{extension_name}' not found. Here are the available extensions: {available}"
+                    ),
+                    None,
+                )
+            })?;
+
+        client
+            .read_resource(&self.scope_id, uri, cancellation_token)
+            .await
+            .map_err(|_| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Could not read resource with uri: {uri}"),
+                    None,
+                )
+            })
+    }
+
+    pub async fn list_resources_result_from_extension(
+        &self,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        let key = name_to_key(extension_name);
+        let client = self
+            .extensions
+            .iter()
+            .find(|extension| extension.key == key)
+            .map(|extension| Arc::clone(&extension.client))
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("Extension {extension_name} is not valid"),
+                    None,
+                )
+            })?;
+
+        client
+            .list_resources(&self.scope_id, None, cancellation_token)
+            .await
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Unable to list resources for {extension_name}, {error:?}"),
+                    None,
+                )
+            })
+    }
+
+    async fn list_resources_from_extension(
+        &self,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<Vec<ContentBlock>, ErrorData> {
+        self.list_resources_result_from_extension(extension_name, cancellation_token)
+            .await
+            .map(|result| {
+                let resources = result
+                    .resources
+                    .into_iter()
+                    .map(|resource| {
+                        format!(
+                            "{extension_name} - {}, uri: ({})",
+                            resource.name, resource.uri
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                vec![ContentBlock::text(resources)]
+            })
+    }
+
+    pub async fn list_resources(
+        &self,
+        params: Value,
+        cancellation_token: CancellationToken,
+    ) -> Result<Vec<ContentBlock>, ErrorData> {
+        if let Some(extension_name) = params.get("extension_name").and_then(Value::as_str) {
+            return self
+                .list_resources_from_extension(extension_name, cancellation_token)
+                .await;
+        }
+
+        let results = futures::future::join_all(
+            self.extensions
+                .iter()
+                .filter(|extension| extension.supports_resources())
+                .map(|extension| {
+                    self.list_resources_from_extension(&extension.key, cancellation_token.clone())
+                }),
+        )
+        .await;
+        let mut resources = Vec::new();
+        for result in results {
+            match result {
+                Ok(content) => resources.extend(content),
+                Err(error) => warn!(?error, "failed to list resources"),
+            }
+        }
+        Ok(resources)
+    }
+
     pub fn instructions(&self) -> Vec<ExtensionInfo> {
         let working_dir = self
             .working_dir
@@ -263,7 +430,8 @@ impl ExtensionLease {
             .iter()
             .filter(|extension| extension.is_platform())
         {
-            if let Some(part) = extension.client.get_moim(&self.scope_id).await {
+            let tools = self.tools_excluding(&extension.key).await;
+            if let Some(part) = extension.client.get_moim(&self.scope_id, &tools).await {
                 content.push(part);
             }
         }

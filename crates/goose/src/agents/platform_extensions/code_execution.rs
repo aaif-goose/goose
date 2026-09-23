@@ -94,6 +94,10 @@ impl CodeExecutionClient {
                 .ok()?,
         };
 
+        Some(Self::callback_configs(tools))
+    }
+
+    fn callback_configs(tools: Vec<Tool>) -> Vec<CallbackConfig> {
         let mut cfgs = vec![];
         for tool in tools {
             if get_tool_resource_uri(&tool).is_some() || !is_tool_visible_to_model(&tool) {
@@ -116,7 +120,7 @@ impl CodeExecutionClient {
                 output_schema: None,
             })
         }
-        Some(cfgs)
+        cfgs
     }
 
     /// Get the cached CodeMode, rebuilding if callback configs have changed
@@ -129,6 +133,13 @@ impl CodeExecutionClient {
             .load_callback_configs(session_id, lease)
             .await
             .ok_or("Failed to load callback configs")?;
+        self.get_code_mode_for_configs(cfgs).await
+    }
+
+    async fn get_code_mode_for_configs(
+        &self,
+        cfgs: Vec<CallbackConfig>,
+    ) -> Result<CodeMode, String> {
         let current_hash = CodeModeState::hash(&cfgs);
 
         // Use cache if no state change
@@ -619,8 +630,11 @@ impl McpClientTrait for CodeExecutionClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, session_id: &str) -> Option<String> {
-        let code_mode = self.get_code_mode(session_id, None).await.ok()?;
+    async fn get_moim(&self, _session_id: &str, tools: &[Tool]) -> Option<String> {
+        let code_mode = self
+            .get_code_mode_for_configs(Self::callback_configs(tools.to_vec()))
+            .await
+            .ok()?;
 
         let disclosure_style_moim = match self.disclosure {
             ToolDisclosure::Catalog => {
@@ -1152,6 +1166,28 @@ mod tests {
         assert!(moim.contains("get_function_details"));
         assert!(!moim.contains("extract_relations"));
         assert!(!moim.contains("ask_heimdall"));
+    }
+
+    #[tokio::test]
+    async fn moim_uses_the_supplied_tool_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            temp.path().join("manager"),
+        ));
+        let mut context = manager.get_context().clone();
+        context.extension_manager = Some(Arc::downgrade(&manager));
+        let client = CodeExecutionClient::new(context, ToolDisclosure::Catalog).unwrap();
+        let tool = McpTool::new(
+            "leased__tool".to_string(),
+            "Leased tool".to_string(),
+            JsonObject::new(),
+        );
+
+        let moim = client.get_moim("session", &[tool]).await.unwrap();
+        assert!(moim.contains("1 callback functions"));
+
+        let moim = client.get_moim("session", &[]).await.unwrap();
+        assert!(moim.contains("No execute_typescript callback functions"));
     }
 
     #[tokio::test]

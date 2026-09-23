@@ -181,7 +181,7 @@ impl McpClientTrait for TodoClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, session_id: &str) -> Option<String> {
+    async fn get_moim(&self, session_id: &str, _tools: &[Tool]) -> Option<String> {
         let metadata = self
             .context
             .session_manager

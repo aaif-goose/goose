@@ -173,7 +173,7 @@ pub trait McpClientTrait: Send + Sync {
         mpsc::channel(1).1
     }
 
-    async fn get_moim(&self, _session_id: &str) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
         None
     }
 

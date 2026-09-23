@@ -61,7 +61,7 @@ impl McpClientTrait for TomClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, _session_id: &str) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
         let mut parts = Vec::new();
 
         if let Ok(text) = std::env::var("GOOSE_MOIM_MESSAGE_TEXT") {

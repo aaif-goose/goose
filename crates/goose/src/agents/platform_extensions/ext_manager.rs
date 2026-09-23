@@ -207,66 +207,54 @@ impl ExtensionManagerClient {
 
     async fn handle_list_resources(
         &self,
-        session_id: &str,
+        ctx: &ToolCallContext,
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
-        if let Some(weak_ref) = &self.context.extension_manager {
-            if let Some(extension_manager) = weak_ref.upgrade() {
-                let params = arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                match extension_manager
-                    .list_resources(
-                        session_id,
-                        params,
-                        tokio_util::sync::CancellationToken::default(),
-                    )
-                    .await
-                {
-                    Ok(content) => Ok(content),
-                    Err(e) => Err(ExtensionManagerToolError::OperationFailed {
-                        message: format!("Failed to list resources: {}", e.message),
-                    }),
-                }
-            } else {
-                Err(ExtensionManagerToolError::ManagerUnavailable)
-            }
+        let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
+        let result = if let Some(lease) = ctx.extension_lease() {
+            lease
+                .list_resources(params, CancellationToken::default())
+                .await
         } else {
-            Err(ExtensionManagerToolError::ManagerUnavailable)
-        }
+            let manager = self
+                .context
+                .extension_manager
+                .as_ref()
+                .and_then(|manager| manager.upgrade())
+                .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
+            manager
+                .list_resources(&ctx.session_id, params, CancellationToken::default())
+                .await
+        };
+        result.map_err(|error| ExtensionManagerToolError::OperationFailed {
+            message: format!("Failed to list resources: {}", error.message),
+        })
     }
 
     async fn handle_read_resource(
         &self,
-        session_id: &str,
+        ctx: &ToolCallContext,
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
-        if let Some(weak_ref) = &self.context.extension_manager {
-            if let Some(extension_manager) = weak_ref.upgrade() {
-                let params = arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                match extension_manager
-                    .read_resource_tool(
-                        session_id,
-                        params,
-                        tokio_util::sync::CancellationToken::default(),
-                    )
-                    .await
-                {
-                    Ok(content) => Ok(content),
-                    Err(e) => Err(ExtensionManagerToolError::OperationFailed {
-                        message: format!("Failed to read resource: {}", e.message),
-                    }),
-                }
-            } else {
-                Err(ExtensionManagerToolError::ManagerUnavailable)
-            }
+        let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
+        let result = if let Some(lease) = ctx.extension_lease() {
+            lease
+                .read_resource_tool(params, CancellationToken::default())
+                .await
         } else {
-            Err(ExtensionManagerToolError::ManagerUnavailable)
-        }
+            let manager = self
+                .context
+                .extension_manager
+                .as_ref()
+                .and_then(|manager| manager.upgrade())
+                .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
+            manager
+                .read_resource_tool(&ctx.session_id, params, CancellationToken::default())
+                .await
+        };
+        result.map_err(|error| ExtensionManagerToolError::OperationFailed {
+            message: format!("Failed to read resource: {}", error.message),
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -450,8 +438,8 @@ impl McpClientTrait for ExtensionManagerClient {
                         CallToolResult::error(vec![ContentBlock::text(error.to_string())])
                     }));
             }
-            LIST_RESOURCES_TOOL_NAME => self.handle_list_resources(session_id, arguments).await,
-            READ_RESOURCE_TOOL_NAME => self.handle_read_resource(session_id, arguments).await,
+            LIST_RESOURCES_TOOL_NAME => self.handle_list_resources(ctx, arguments).await,
+            READ_RESOURCE_TOOL_NAME => self.handle_read_resource(ctx, arguments).await,
             _ => Err(ExtensionManagerToolError::UnknownTool {
                 tool_name: name.to_string(),
             }),

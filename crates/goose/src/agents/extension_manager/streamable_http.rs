@@ -544,8 +544,8 @@ impl McpClientTrait for OAuthStepUpClient {
         receiver
     }
 
-    async fn get_moim(&self, session_id: &str) -> Option<String> {
-        self.inner.read().await.get_moim(session_id).await
+    async fn get_moim(&self, session_id: &str, tools: &[rmcp::model::Tool]) -> Option<String> {
+        self.inner.read().await.get_moim(session_id, tools).await
     }
 
     async fn update_working_dir(

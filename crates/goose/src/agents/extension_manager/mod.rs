@@ -33,8 +33,7 @@ use crate::oauth::GooseCredentialStore;
 use crate::session::{EnabledExtensionsState, ExtensionState};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ResourceContents,
-    ServerInfo, Tool,
+    ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ServerInfo, Tool,
 };
 use serde_json::Value;
 
@@ -332,24 +331,6 @@ impl ResourceItem {
             priority,
             token_count: None,
         }
-    }
-}
-
-fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
-    let v = v.get(name).ok_or_else(|| {
-        ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} is required"),
-            None,
-        )
-    })?;
-    match v.as_str() {
-        Some(r) => Ok(r),
-        None => Err(ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} must be a string"),
-            None,
-        )),
     }
 }
 
@@ -965,27 +946,16 @@ impl ExtensionManager {
         Ok(lease.tools_excluding(exclude).await)
     }
 
-    // Function that gets executed for read_resource tool
     pub async fn read_resource_tool(
         &self,
         session_id: &str,
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, ErrorData> {
-        let uri = require_str_parameter(&params, "uri")?;
-        let extension_name = require_str_parameter(&params, "extension_name")?;
-
-        let read_result = self
-            .read_resource(session_id, uri, extension_name, cancellation_token)
-            .await?;
-
-        let mut result = Vec::new();
-        for content in read_result.contents {
-            if let ResourceContents::TextResourceContents { text, .. } = content {
-                result.push(ContentBlock::text(format!("{}\n\n{}", uri, text)));
-            }
-        }
-        Ok(result)
+        self.resolve(&self.current_set(session_id, None).await)
+            .await
+            .read_resource_tool(params, cancellation_token)
+            .await
     }
 
     pub async fn read_resource(
@@ -995,34 +965,10 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<rmcp::model::ReadResourceResult, ErrorData> {
-        let available_extensions = self
-            .extensions
-            .lock()
+        self.resolve(&self.current_set(session_id, None).await)
             .await
-            .keys()
-            .map(|s| s.as_str())
-            .collect::<Vec<&str>>()
-            .join(", ");
-        let error_msg = format!(
-            "Extension '{}' not found. Here are the available extensions: {}",
-            extension_name, available_extensions
-        );
-
-        let client = self
-            .get_server_client(extension_name)
+            .read_resource(uri, extension_name, cancellation_token)
             .await
-            .ok_or(ErrorData::new(ErrorCode::INVALID_PARAMS, error_msg, None))?;
-
-        client
-            .read_resource(session_id, uri, cancellation_token)
-            .await
-            .map_err(|_| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Could not read resource with uri: {}", uri),
-                    None,
-                )
-            })
     }
 
     pub async fn get_ui_resources(
@@ -1066,47 +1012,10 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<ListResourcesResult, ErrorData> {
-        let client = self
-            .get_server_client(extension_name)
+        self.resolve(&self.current_set(session_id, None).await)
             .await
-            .ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::INVALID_PARAMS,
-                    format!("Extension {} is not valid", extension_name),
-                    None,
-                )
-            })?;
-
-        client
-            .list_resources(session_id, None, cancellation_token)
+            .list_resources_result_from_extension(extension_name, cancellation_token)
             .await
-            .map_err(|e| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Unable to list resources for {}, {:?}", extension_name, e),
-                    None,
-                )
-            })
-    }
-
-    async fn list_resources_from_extension(
-        &self,
-        session_id: &str,
-        extension_name: &str,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        self.list_resources_result_from_extension(session_id, extension_name, cancellation_token)
-            .await
-            .map(|lr| {
-                let resource_list = lr
-                    .resources
-                    .into_iter()
-                    .map(|r| format!("{} - {}, uri: ({})", extension_name, r.name, r.uri))
-                    .collect::<Vec<String>>()
-                    .join("\n");
-
-                vec![ContentBlock::text(resource_list)]
-            })
     }
 
     pub async fn list_resources(
@@ -1115,61 +1024,10 @@ impl ExtensionManager {
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, ErrorData> {
-        let extension = params.get("extension_name").and_then(|v| v.as_str());
-
-        match extension {
-            Some(extension_name) => {
-                // Handle single extension case
-                self.list_resources_from_extension(session_id, extension_name, cancellation_token)
-                    .await
-            }
-            None => {
-                // Handle all extensions case using FuturesUnordered
-                let mut futures = FuturesUnordered::new();
-
-                // Create futures for each resource_capable_extension
-                self.extensions
-                    .lock()
-                    .await
-                    .iter()
-                    .filter(|(_name, ext)| ext.supports_resources())
-                    .map(|(name, _ext)| name.clone())
-                    .for_each(|name| {
-                        let token = cancellation_token.clone();
-                        futures.push(async move {
-                            self.list_resources_from_extension(session_id, name.as_str(), token)
-                                .await
-                        });
-                    });
-
-                let mut all_resources = Vec::new();
-                let mut errors = Vec::new();
-
-                // Process results as they complete
-                while let Some(result) = futures.next().await {
-                    match result {
-                        Ok(content) => {
-                            all_resources.extend(content);
-                        }
-                        Err(tool_error) => {
-                            errors.push(tool_error);
-                        }
-                    }
-                }
-
-                if !errors.is_empty() {
-                    tracing::error!(
-                        errors = ?errors
-                            .into_iter()
-                            .map(|e| format!("{:?}", e))
-                            .collect::<Vec<_>>(),
-                        "errors from listing resources"
-                    );
-                }
-
-                Ok(all_resources)
-            }
-        }
+        self.resolve(&self.current_set(session_id, None).await)
+            .await
+            .list_resources(params, cancellation_token)
+            .await
     }
 
     pub async fn dispatch_tool_call(
@@ -1319,7 +1177,7 @@ impl ExtensionManager {
 mod tests {
     use super::*;
     use rmcp::model::CallToolResult;
-    use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
+    use rmcp::model::{CustomNotification, InitializeResult, JsonObject, ReadResourceResult};
     use rmcp::{object, ServiceError as Error};
 
     use rmcp::model::ListPromptsResult;
@@ -1463,6 +1321,62 @@ mod tests {
 
         async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
             mpsc::channel(1).1
+        }
+    }
+
+    struct ResourceClient {
+        label: &'static str,
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for ResourceClient {
+        async fn list_resources(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListResourcesResult, Error> {
+            Ok(ListResourcesResult {
+                resources: vec![Resource::new(
+                    "resource://snapshot".to_string(),
+                    format!("{} resource", self.label),
+                )],
+                ..Default::default()
+            })
+        }
+
+        async fn read_resource(
+            &self,
+            _session_id: &str,
+            uri: &str,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ReadResourceResult, Error> {
+            Ok(ReadResourceResult::new(vec![
+                rmcp::model::ResourceContents::text(self.label, uri),
+            ]))
+        }
+
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            Ok(ListToolsResult::default())
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
         }
     }
 
@@ -1906,6 +1820,93 @@ mod tests {
         assert!(tools
             .iter()
             .all(|tool| tool.name != "extensionmanager__list_resources"));
+    }
+
+    #[tokio::test]
+    async fn extension_manager_resource_tools_use_the_calling_lease() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        extension_manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    display_name: None,
+                    description: String::new(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let resource_info = InitializeResult::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_resources()
+                .build(),
+        );
+        extension_manager
+            .add_client(
+                builtin_config("resources", vec![]),
+                Arc::new(ResourceClient { label: "old" }),
+                Some(resource_info.clone()),
+            )
+            .await;
+        let lease = extension_manager
+            .resolve(&extension_manager.current_set("session", None).await)
+            .await;
+        assert!(lease
+            .tools()
+            .await
+            .iter()
+            .any(|tool| tool.name == "extensionmanager__read_resource"));
+
+        extension_manager
+            .add_client(
+                builtin_config("resources", vec![]),
+                Arc::new(ResourceClient { label: "new" }),
+                Some(resource_info),
+            )
+            .await;
+
+        let listed = lease
+            .call(
+                CallToolRequestParams::new("extensionmanager__list_resources")
+                    .with_arguments(object!({"extension_name": "resources"})),
+                CallRequest::default(),
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+            .result
+            .await
+            .unwrap();
+        assert!(listed.content.iter().any(|content| content
+            .as_text()
+            .is_some_and(|text| text.text.contains("old resource"))));
+
+        let read = lease
+            .call(
+                CallToolRequestParams::new("extensionmanager__read_resource").with_arguments(
+                    object!({
+                        "extension_name": "resources",
+                        "uri": "resource://snapshot"
+                    }),
+                ),
+                CallRequest::default(),
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+            .result
+            .await
+            .unwrap();
+        assert!(read.content.iter().any(|content| content
+            .as_text()
+            .is_some_and(|text| text.text.ends_with("\n\nold"))));
     }
 
     #[tokio::test]
