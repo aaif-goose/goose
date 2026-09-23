@@ -423,7 +423,12 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
         .expect("session conversation")
         .messages()
         .iter()
-        .any(|message| message.as_concat_text().contains(EXPIRED_APPROVAL_RESPONSE)));
+        .flat_map(|message| &message.content)
+        .any(|content| {
+            content
+                .as_tool_response_text()
+                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
+        }));
     assert_eq!(api.call_count(), 2);
 
     Ok(())
