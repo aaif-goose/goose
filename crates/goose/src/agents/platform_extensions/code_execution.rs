@@ -906,11 +906,7 @@ mod tests {
             .unwrap();
         let lease = Arc::new(
             manager
-                .resolve(
-                    &manager
-                        .current_set(&session.id, Some(&session.working_dir))
-                        .await,
-                )
+                .current_lease(&session.id, Some(&session.working_dir))
                 .await,
         );
         manager.remove_extension("extensionmanager").await.unwrap();

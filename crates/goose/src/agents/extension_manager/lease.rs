@@ -60,7 +60,7 @@ fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, Er
 #[derive(Debug)]
 pub struct ExtensionSet {
     scope_id: String,
-    working_dir: Option<PathBuf>,
+    pub(super) working_dir: Option<PathBuf>,
     extensions: Vec<ExtensionConfig>,
 }
 
@@ -178,15 +178,16 @@ struct ResolvedTool<'a> {
 
 impl ExtensionLease {
     pub(super) fn new(
-        set: &ExtensionSet,
+        scope_id: impl Into<String>,
+        working_dir: Option<PathBuf>,
         extensions: Vec<Arc<Extension>>,
         action_required: Arc<ActionRequiredManager>,
         hydrate_mcp_apps: bool,
     ) -> Self {
         Self {
             id: LeaseId::next(),
-            scope_id: set.scope_id.clone(),
-            working_dir: set.working_dir.clone(),
+            scope_id: scope_id.into(),
+            working_dir,
             extensions,
             tool_catalog: Arc::new(OnceCell::new()),
             action_required,

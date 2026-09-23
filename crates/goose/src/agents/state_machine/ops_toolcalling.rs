@@ -352,11 +352,11 @@ impl<'a> ToolExecutionOperation<'a> {
     }
 
     async fn resolve_lease(&self, session: &Session) -> Arc<ExtensionLease> {
-        let set = self
-            .extension_manager
-            .current_set(&session.id, Some(&session.working_dir))
-            .await;
-        let lease = Arc::new(self.extension_manager.resolve(&set).await);
+        let lease = Arc::new(
+            self.extension_manager
+                .current_lease(&session.id, Some(&session.working_dir))
+                .await,
+        );
         *self.lease.lock().expect("extension lease unavailable") = Some(Arc::clone(&lease));
         lease
     }

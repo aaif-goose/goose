@@ -1457,11 +1457,11 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> Arc<ExtensionLease> {
-        let set = self
-            .extension_manager
-            .current_set(session_id, Some(working_dir))
-            .await;
-        Arc::new(self.extension_manager.resolve(&set).await)
+        Arc::new(
+            self.extension_manager
+                .current_lease(session_id, Some(working_dir))
+                .await,
+        )
     }
 
     pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {

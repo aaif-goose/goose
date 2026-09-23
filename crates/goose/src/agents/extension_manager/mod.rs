@@ -594,27 +594,34 @@ impl ExtensionManager {
                 .collect()
         };
         ExtensionLease::new(
-            set,
+            set.scope_id(),
+            set.working_dir.clone(),
             members,
             self.context.session_manager.action_required(),
             self.hydrate_mcp_apps(),
         )
     }
 
-    /// Everything running, in key order. Callers that do not yet hold a set of
-    /// their own go through this; it disappears once the set comes from
-    /// session state.
-    pub async fn current_set(&self, session_id: &str, working_dir: Option<&Path>) -> ExtensionSet {
-        let mut extensions: Vec<ExtensionConfig> = self
+    pub async fn current_lease(
+        &self,
+        session_id: &str,
+        working_dir: Option<&Path>,
+    ) -> ExtensionLease {
+        let mut extensions = self
             .extensions
             .lock()
             .await
             .values()
-            .map(|ext| ext.config.clone())
-            .collect();
-        extensions.sort_by_key(|config| config.key());
-        ExtensionSet::new(session_id, working_dir.map(Path::to_path_buf), extensions)
-            .expect("registry keys are unique")
+            .cloned()
+            .collect::<Vec<_>>();
+        extensions.sort_by(|left, right| left.key.cmp(&right.key));
+        ExtensionLease::new(
+            session_id,
+            working_dir.map(Path::to_path_buf),
+            extensions,
+            self.context.session_manager.action_required(),
+            self.hydrate_mcp_apps(),
+        )
     }
 
     /// Add an extension with an optional working directory.
@@ -844,7 +851,7 @@ impl ExtensionManager {
 
     /// Get extensions info for building the system prompt
     pub async fn get_extensions_info(&self, working_dir: &Path) -> Vec<ExtensionInfo> {
-        self.resolve(&self.current_set("", Some(working_dir)).await)
+        self.current_lease("", Some(working_dir))
             .await
             .instructions()
     }
@@ -897,9 +904,7 @@ impl ExtensionManager {
         session_id: &str,
         extension_name: Option<String>,
     ) -> ExtensionResult<Vec<Tool>> {
-        let lease = self
-            .resolve(&self.current_set(session_id, None).await)
-            .await;
+        let lease = self.current_lease(session_id, None).await;
         Ok(match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
@@ -940,9 +945,7 @@ impl ExtensionManager {
         session_id: &str,
         exclude: &str,
     ) -> ExtensionResult<Vec<Tool>> {
-        let lease = self
-            .resolve(&self.current_set(session_id, None).await)
-            .await;
+        let lease = self.current_lease(session_id, None).await;
         Ok(lease.tools_excluding(exclude).await)
     }
 
@@ -952,7 +955,7 @@ impl ExtensionManager {
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, ErrorData> {
-        self.resolve(&self.current_set(session_id, None).await)
+        self.current_lease(session_id, None)
             .await
             .read_resource_tool(params, cancellation_token)
             .await
@@ -965,7 +968,7 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<rmcp::model::ReadResourceResult, ErrorData> {
-        self.resolve(&self.current_set(session_id, None).await)
+        self.current_lease(session_id, None)
             .await
             .read_resource(uri, extension_name, cancellation_token)
             .await
@@ -1012,7 +1015,7 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<ListResourcesResult, ErrorData> {
-        self.resolve(&self.current_set(session_id, None).await)
+        self.current_lease(session_id, None)
             .await
             .list_resources_result_from_extension(extension_name, cancellation_token)
             .await
@@ -1024,7 +1027,7 @@ impl ExtensionManager {
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, ErrorData> {
-        self.resolve(&self.current_set(session_id, None).await)
+        self.current_lease(session_id, None)
             .await
             .list_resources(params, cancellation_token)
             .await
@@ -1036,10 +1039,7 @@ impl ExtensionManager {
         tool_call: CallToolRequestParams,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        let set = self
-            .current_set(&ctx.session_id, ctx.working_dir.as_deref())
-            .await;
-        self.resolve(&set)
+        self.current_lease(&ctx.session_id, ctx.working_dir.as_deref())
             .await
             .call(tool_call, CallRequest::from(ctx), cancellation_token)
             .await
@@ -1052,10 +1052,7 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
-        let set = self
-            .current_set(&ctx.session_id, ctx.working_dir.as_deref())
-            .await;
-        self.resolve(&set)
+        self.current_lease(&ctx.session_id, ctx.working_dir.as_deref())
             .await
             .call_for_app(
                 tool_call,
@@ -1631,9 +1628,7 @@ mod tests {
             )
             .await;
 
-        let lease = extension_manager
-            .resolve(&extension_manager.current_set("session", None).await)
-            .await;
+        let lease = extension_manager.current_lease("session", None).await;
         assert_eq!(
             lease.tools().await.len(),
             1,
@@ -1855,9 +1850,7 @@ mod tests {
                 Some(resource_info.clone()),
             )
             .await;
-        let lease = extension_manager
-            .resolve(&extension_manager.current_set("session", None).await)
-            .await;
+        let lease = extension_manager.current_lease("session", None).await;
         assert!(lease
             .tools()
             .await
