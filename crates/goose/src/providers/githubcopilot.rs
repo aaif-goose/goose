@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai::is_openai_responses_model;
 use goose_providers::images::ImageFormat;
-use reqwest::{Client, Response};
+use reqwest::{redirect::Policy, Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -113,6 +113,29 @@ fn validate_copilot_api_endpoint(endpoint: &str) -> Result<bool, ProviderError> 
         Err(ProviderError::RequestFailed(
             "GitHub Copilot API endpoint must use HTTPS unless it targets loopback".to_string(),
         ))
+    }
+}
+
+fn secure_client_for_copilot_endpoint(endpoint: &str) -> Result<Client, ProviderError> {
+    let https_only = validate_copilot_api_endpoint(endpoint)?;
+    let builder = Client::builder().timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS));
+    if https_only {
+        Ok(builder.https_only(true).build()?)
+    } else {
+        Ok(builder
+            .no_proxy()
+            .redirect(Policy::custom(|attempt| {
+                if attempt.previous().len() >= 10 {
+                    return attempt.error("too many redirects");
+                }
+
+                if validate_copilot_api_endpoint(attempt.url().as_str()).is_ok() {
+                    attempt.follow()
+                } else {
+                    attempt.error("redirect violates the GitHub Copilot endpoint transport policy")
+                }
+            }))
+            .build()?)
     }
 }
 
@@ -387,8 +410,8 @@ impl GithubCopilotProvider {
         &self,
         github_token: &str,
     ) -> Result<CopilotTokenInfo, ProviderError> {
-        let response = self
-            .client
+        let client = secure_client_for_copilot_endpoint(&self.urls.copilot_token_url)?;
+        let response = client
             .get(&self.urls.copilot_token_url)
             .headers(self.get_github_headers())
             .header(
@@ -981,6 +1004,79 @@ mod tests {
             let error = provider.refresh_api_info("rejected").await.unwrap_err();
 
             assert!(matches!(error, ProviderError::Authentication(_)));
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_api_info_rejects_plaintext_remote_token_endpoint_before_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/copilot-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "token": "copilot-secret",
+                "expires_at": 0,
+                "refresh_in": 600,
+                "endpoints": { "api": "https://api.example.com" }
+            })))
+            .mount(&server)
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let provider = GithubCopilotProvider {
+            client: Client::new(),
+            cache: DiskCache {
+                cache_path: directory.path().join("info.json"),
+            },
+            mu: tokio::sync::Mutex::new(RefCell::new(None)),
+            urls: GithubCopilotUrls {
+                device_code_url: String::new(),
+                access_token_url: String::new(),
+                copilot_token_url: format!("{}/copilot-token", server.uri())
+                    .replace("127.0.0.1", "0.0.0.0"),
+            },
+            client_id: DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string(),
+            name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
+            tls_config: None,
+        };
+
+        let error = provider.refresh_api_info("github-token").await.unwrap_err();
+
+        assert!(matches!(error, ProviderError::RequestFailed(_)));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn refresh_api_info_rejects_plaintext_remote_redirect_before_replaying_token() {
+        for status in [307, 308] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/copilot-token"))
+                .respond_with(ResponseTemplate::new(status).insert_header(
+                    "Location",
+                    format!("{}/redirected", server.uri()).replace("127.0.0.1", "0.0.0.0"),
+                ))
+                .mount(&server)
+                .await;
+            let directory = tempfile::tempdir().unwrap();
+            let provider = GithubCopilotProvider {
+                client: Client::new(),
+                cache: DiskCache {
+                    cache_path: directory.path().join("info.json"),
+                },
+                mu: tokio::sync::Mutex::new(RefCell::new(None)),
+                urls: GithubCopilotUrls {
+                    device_code_url: String::new(),
+                    access_token_url: String::new(),
+                    copilot_token_url: format!("{}/copilot-token", server.uri()),
+                },
+                client_id: DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string(),
+                name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
+                tls_config: None,
+            };
+
+            let error = provider.refresh_api_info("github-token").await.unwrap_err();
+
+            assert!(matches!(error, ProviderError::RequestFailed(_)));
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
         }
     }
 
