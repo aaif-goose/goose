@@ -13,7 +13,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
+use super::calculator_extension::{delayed_value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
