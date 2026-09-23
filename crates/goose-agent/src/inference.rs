@@ -509,6 +509,11 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
                 return yielded_with(usage_effects);
             }
 
+            if ends_with_successful_tool_response(conversation.messages()) && accumulator.is_empty()
+            {
+                return yielded_with(usage_effects);
+            }
+
             usage_effects.extend(accumulator.into_iter().map(|message| E::from(message)));
             applied(usage_effects)
         }
