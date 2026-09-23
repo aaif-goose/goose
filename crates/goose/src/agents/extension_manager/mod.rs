@@ -890,6 +890,7 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: &str,
     ) {
+        let _guard = self.mutation_lock.lock().await;
         let extensions = self
             .extensions
             .lock()
