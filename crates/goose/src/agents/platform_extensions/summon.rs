@@ -577,10 +577,12 @@ fn is_session_id(s: &str) -> bool {
 pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
-    source_cache: Arc<Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>>,
+    source_cache: Arc<Mutex<Option<CachedSources>>>,
     background_tasks: Arc<Mutex<HashMap<String, BackgroundTask>>>,
     completed_tasks: Arc<Mutex<HashMap<String, CompletedTask>>>,
 }
+
+type CachedSources = (Instant, PathBuf, Vec<SourceEntry>);
 
 impl Drop for SummonClient {
     fn drop(&mut self) {
