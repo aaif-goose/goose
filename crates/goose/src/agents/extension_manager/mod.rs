@@ -135,6 +135,7 @@ fn resolve_timeout(timeout: Option<u64>) -> u64 {
 pub(super) struct Extension {
     pub(super) key: String,
     pub(super) config: ExtensionConfig,
+    working_dir: PathBuf,
     /// Resolved config snapshot (with secrets from keyring substituted)
     /// captured at client-creation time. Used to detect secret rotation
     /// without re-reading the keyring on every comparison. Only held in
@@ -161,6 +162,7 @@ impl Extension {
     fn new(
         key: String,
         config: ExtensionConfig,
+        working_dir: PathBuf,
         resolved_config: ExtensionConfig,
         client: McpClientBox,
         server_info: Option<ServerInfo>,
@@ -169,6 +171,7 @@ impl Extension {
         Self {
             key,
             config,
+            working_dir,
             resolved_config,
             client,
             server_info,
@@ -574,10 +577,15 @@ impl ExtensionManager {
                 .iter()
                 .filter_map(|config| {
                     let running = extensions.get(&config.key())?;
-                    if running.config != *config {
+                    if running.config != *config
+                        || set
+                            .working_dir
+                            .as_ref()
+                            .is_some_and(|working_dir| running.working_dir != *working_dir)
+                    {
                         warn!(
                             extension = %config.key(),
-                            "selected config differs from the running one; leaving it out"
+                            "selected extension differs from the running one; leaving it out"
                         );
                         return None;
                     }
@@ -627,25 +635,25 @@ impl ExtensionManager {
     ) -> ExtensionResult<()> {
         let sanitized_name = config.key();
 
-        // Compare both the unresolved config (to detect structural changes like
-        // migrating from plaintext envs to env_keys) and the resolved config (to
-        // detect secret rotation where only keyring values changed). Only skip
-        // restart if both match.
         let resolved_config = config.clone().resolve(Config::global()).await?;
-
-        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
-            if existing.config == config && existing.resolved_config == resolved_config {
-                return Ok(());
-            }
-            tracing::debug!(
-                name = sanitized_name,
-                "extension config changed, restarting with updated config"
-            );
-        }
-
         let working_dir = working_dir
             .or_else(|| std::env::var("GOOSE_WORKING_DIR").ok().map(PathBuf::from))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let client_working_dir = match &resolved_config {
+            ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
+            _ => working_dir.clone(),
+        };
+
+        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
+            if existing.config == config
+                && existing.resolved_config == resolved_config
+                && existing.working_dir == working_dir
+            {
+                return Ok(());
+            }
+            tracing::debug!(name = sanitized_name, "extension changed, restarting");
+        }
+
         let tools_version = Arc::new(AtomicU64::new(0));
         let ctx = |timeout: Option<u64>, working_dir: PathBuf| ConnectContext {
             timeout: Duration::from_secs(resolve_timeout(timeout)),
@@ -682,7 +690,7 @@ impl ExtensionManager {
                     name: name.clone(),
                     headers: headers.clone(),
                     static_oauth_client,
-                    ctx: ctx(*timeout, working_dir),
+                    ctx: ctx(*timeout, client_working_dir),
                 };
                 streamable_http::connect(
                     params,
@@ -710,26 +718,31 @@ impl ExtensionManager {
                 client
             }
             ExtensionConfig::Builtin { name, timeout, .. } => {
-                builtin::connect(name, container, ctx(*timeout, working_dir)).await?
+                builtin::connect(name, container, ctx(*timeout, client_working_dir)).await?
             }
             ExtensionConfig::Platform { name, .. } => {
-                builtin::connect(name, container, ctx(None, working_dir)).await?
+                builtin::connect(name, container, ctx(None, client_working_dir)).await?
             }
             ExtensionConfig::Stdio {
                 cmd,
                 args,
                 envs,
                 timeout,
-                cwd,
                 ..
             } => {
                 let mut envs = envs.get_env();
                 if let Some(sid) = session_id {
                     envs.insert("AGENT_SESSION_ID".to_string(), sid.to_string());
                 }
-                let working_dir = cwd.as_deref().map(PathBuf::from).unwrap_or(working_dir);
                 Box::new(
-                    stdio::connect(cmd, args, envs, container, ctx(*timeout, working_dir)).await?,
+                    stdio::connect(
+                        cmd,
+                        args,
+                        envs,
+                        container,
+                        ctx(*timeout, client_working_dir),
+                    )
+                    .await?,
                 )
             }
         };
@@ -742,6 +755,7 @@ impl ExtensionManager {
             Arc::new(Extension::new(
                 sanitized_name,
                 config,
+                working_dir,
                 resolved_config,
                 Arc::from(client),
                 server_info,
@@ -832,6 +846,7 @@ impl ExtensionManager {
             Arc::new(Extension::new(
                 key,
                 config.clone(),
+                std::env::current_dir().unwrap_or_default(),
                 config,
                 client,
                 info,
@@ -863,11 +878,25 @@ impl ExtensionManager {
         Ok(removed)
     }
 
-    pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
-        let extensions = self.extensions.lock().await;
-        for (name, ext) in extensions.iter() {
-            if let Err(e) = ext.client.update_working_dir(new_dir.to_path_buf()).await {
-                tracing::warn!(extension = %name, error = %e, "failed to update roots");
+    pub async fn update_working_dir(
+        self: &Arc<Self>,
+        new_dir: &Path,
+        container: Option<&Container>,
+        session_id: &str,
+    ) {
+        let configs = self.get_extension_configs().await;
+        for config in configs {
+            let name = config.name().to_string();
+            if let Err(error) = self
+                .add_extension(
+                    config,
+                    Some(new_dir.to_path_buf()),
+                    container,
+                    Some(session_id),
+                )
+                .await
+            {
+                tracing::warn!(extension = %name, %error, "failed to reconnect extension");
             }
         }
     }

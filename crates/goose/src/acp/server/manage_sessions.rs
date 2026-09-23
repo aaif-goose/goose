@@ -47,8 +47,7 @@ impl GooseAcpAgent {
             .internal_err_ctx("Failed to refresh provider from session")?;
 
         agent
-            .extension_manager
-            .update_working_dir(&session.working_dir)
+            .update_extension_working_dir(&session.id, &session.working_dir)
             .await;
 
         Ok(EmptyResponse {})

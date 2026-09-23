@@ -255,6 +255,16 @@ fn platform(name: &str) -> ExtensionConfig {
     }
 }
 
+fn write_skill(workspace: &std::path::Path, marker: &str) {
+    let skill_dir = workspace.join(".goose/skills/leased-workspace");
+    fs::create_dir_all(&skill_dir).unwrap();
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: leased-workspace\ndescription: workspace lease\n---\n{marker}"),
+    )
+    .unwrap();
+}
+
 fn tool_names(tools: &[Tool]) -> Vec<String> {
     tools.iter().map(|tool| tool.name.to_string()).collect()
 }
@@ -297,6 +307,18 @@ async fn call_text(lease: &ExtensionLease, name: &str) -> String {
     text_of(&call(lease, name, None).await.unwrap())
 }
 
+async fn load_leased_skill(lease: &ExtensionLease) -> String {
+    text_of(
+        &call(
+            lease,
+            "load_skill",
+            Some(object!({ "name": "leased-workspace" })),
+        )
+        .await
+        .unwrap(),
+    )
+}
+
 async fn inspect_context(lease: &ExtensionLease, name: &str) -> ContextReport {
     serde_json::from_str(&call_text(lease, name).await).unwrap()
 }
@@ -317,6 +339,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     let http_server = McpFixture::with_max_protocol_version(ProtocolVersion::V_2025_11_25).await;
     let fx = fixture(false, Some(ProtocolVersion::V_2025_11_25)).await;
     let session = fx.session(SessionType::Hidden).await;
+    write_skill(&session.working_dir, "old workspace");
 
     let http = http_fixture("fixture_http", &http_server.url);
     let stdio = stdio_fixture(
@@ -325,10 +348,11 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         &["get_code", "inspect_context"],
     );
     let todo = platform("todo");
-    for config in [&http, &stdio, &todo] {
+    let skills = platform("skills");
+    for config in [&http, &stdio, &todo, &skills] {
         fx.add(&session, config).await;
     }
-    let configs = vec![http.clone(), stdio.clone(), todo.clone()];
+    let configs = vec![http.clone(), stdio.clone(), todo.clone(), skills.clone()];
     let lease = fx.resolve(&session, &configs).await;
 
     // The catalog: prefixed per extension, filtered by available_tools.
@@ -339,6 +363,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         "fixture_stdio__get_code",
         "fixture_stdio__inspect_context",
         "todo__todo_write",
+        "load_skill",
     ] {
         assert!(names.contains(&expected.to_string()), "{names:?}");
     }
@@ -404,6 +429,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         Some(working_dir.as_str())
     );
     assert_eq!(stdio_context.roots, [working_dir_root]);
+    assert!(load_leased_skill(&lease).await.contains("old workspace"));
     assert!(text_of(
         &call(
             &lease,
@@ -473,7 +499,15 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     );
     fx.add(&session, &wider_stdio).await;
     let after_restart = fx
-        .resolve(&session, &[http.clone(), wider_stdio.clone(), todo.clone()])
+        .resolve(
+            &session,
+            &[
+                http.clone(),
+                wider_stdio.clone(),
+                todo.clone(),
+                skills.clone(),
+            ],
+        )
         .await;
     assert_ne!(
         inspect_context(&after_restart, "fixture_stdio__inspect_context")
@@ -498,7 +532,12 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     // tools/list_changed arrives on the GET stream: the next resolve sees the
     // new tool while the held lease stays as it was.
     let late = "fixture_http__late_tool".to_string();
-    let current = vec![http.clone(), wider_stdio.clone(), todo.clone()];
+    let current = vec![
+        http.clone(),
+        wider_stdio.clone(),
+        todo.clone(),
+        skills.clone(),
+    ];
     assert!(!tool_names(&lease.tools().await).contains(&late));
     assert_eq!(
         call_text(&lease, "fixture_http__change_tools").await,
@@ -521,12 +560,67 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     fx.manager.remove_extension("todo").await.unwrap();
     assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
     assert!(!tool_names(
-        &fx.resolve(&session, &[http.clone(), wider_stdio.clone(), todo.clone()])
-            .await
-            .tools()
-            .await
+        &fx.resolve(
+            &session,
+            &[
+                http.clone(),
+                wider_stdio.clone(),
+                todo.clone(),
+                skills.clone(),
+            ],
+        )
+        .await
+        .tools()
+        .await
     )
     .contains(&"todo__todo_write".to_string()));
+
+    let active_configs = vec![http.clone(), wider_stdio.clone(), skills.clone()];
+    let before_move = fx.resolve(&session, &active_configs).await;
+    let before_http = inspect_context(&before_move, "fixture_http__inspect_context").await;
+    let before_stdio = inspect_context(&before_move, "fixture_stdio__inspect_context").await;
+    let new_working_dir = fx._temp_dir.path().join("new-workspace");
+    fs::create_dir_all(&new_working_dir).unwrap();
+    write_skill(&new_working_dir, "new workspace");
+    fx.session_manager
+        .update(&session.id)
+        .working_dir(new_working_dir.clone())
+        .apply()
+        .await
+        .unwrap();
+    fx.manager
+        .update_working_dir(&new_working_dir, None, &session.id)
+        .await;
+    let moved_session = fx
+        .session_manager
+        .get_session(&session.id, false)
+        .await
+        .unwrap();
+    let after_move = fx.resolve(&moved_session, &active_configs).await;
+    let after_http = inspect_context(&after_move, "fixture_http__inspect_context").await;
+    let after_stdio = inspect_context(&after_move, "fixture_stdio__inspect_context").await;
+    let new_root = url::Url::from_file_path(&new_working_dir)
+        .unwrap()
+        .to_string();
+    assert_eq!(after_http.roots, [new_root.clone()]);
+    assert_eq!(after_stdio.roots, [new_root]);
+    assert_ne!(after_http.instance_id, before_http.instance_id);
+    assert_ne!(after_stdio.instance_id, before_stdio.instance_id);
+    assert!(load_leased_skill(&after_move)
+        .await
+        .contains("new workspace"));
+    let retained_http = inspect_context(&before_move, "fixture_http__inspect_context").await;
+    let retained_stdio = inspect_context(&before_move, "fixture_stdio__inspect_context").await;
+    let old_root = url::Url::from_file_path(&session.working_dir)
+        .unwrap()
+        .to_string();
+    assert_eq!(retained_http.instance_id, before_http.instance_id);
+    assert_eq!(retained_http.roots, [old_root.clone()]);
+    assert_eq!(retained_stdio.instance_id, before_stdio.instance_id);
+    assert_eq!(retained_stdio.roots, [old_root]);
+    assert!(load_leased_skill(&before_move)
+        .await
+        .contains("old workspace"));
 
     assert!(ExtensionSet::new("s", None, vec![todo.clone(), platform("Todo")]).is_err());
 }

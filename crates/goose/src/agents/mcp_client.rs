@@ -176,10 +176,6 @@ pub trait McpClientTrait: Send + Sync {
     async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
         None
     }
-
-    async fn update_working_dir(&self, _new_dir: PathBuf) -> Result<(), Error> {
-        Ok(())
-    }
 }
 
 struct ActiveToolCallGuard {
@@ -212,7 +208,7 @@ pub struct GooseClient {
     active_tool_calls: Arc<StdMutex<HashMap<String, Vec<String>>>>,
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
-    working_dir: Arc<tokio::sync::RwLock<PathBuf>>,
+    working_dir: PathBuf,
     action_required: Arc<ActionRequiredManager>,
     tools_version: Arc<AtomicU64>,
 }
@@ -234,14 +230,10 @@ impl GooseClient {
             active_tool_calls: Arc::new(StdMutex::new(HashMap::new())),
             client_name,
             capabilities,
-            working_dir: Arc::new(tokio::sync::RwLock::new(working_dir)),
+            working_dir,
             action_required,
             tools_version,
         }
-    }
-
-    pub fn shared_working_dir(&self) -> Arc<tokio::sync::RwLock<PathBuf>> {
-        self.working_dir.clone()
     }
 
     async fn set_session_id(&self, session_id: &str) {
@@ -387,7 +379,7 @@ impl ClientHandler for GooseClient {
         &self,
         _context: RequestContext<RoleClient>,
     ) -> Result<ListRootsResult, ErrorData> {
-        Ok(working_dir_roots(&self.working_dir.read().await))
+        Ok(working_dir_roots(&self.working_dir))
     }
 
     async fn on_progress(
@@ -726,14 +718,6 @@ impl McpClient {
         self.docker_container.as_deref()
     }
 
-    async fn do_update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
-        let client = self.client.lock().await;
-        let shared = client.service().shared_working_dir();
-        *shared.write().await = new_dir;
-        client.peer().notify_roots_list_changed().await?;
-        Ok(())
-    }
-
     async fn send_request_with_context(
         &self,
         session_id: &str,
@@ -1038,10 +1022,6 @@ impl McpClientTrait for McpClient {
         let (tx, rx) = mpsc::channel(16);
         self.notification_subscribers.lock().await.push(tx);
         rx
-    }
-
-    async fn update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
-        self.do_update_working_dir(new_dir).await
     }
 }
 

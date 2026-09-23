@@ -547,14 +547,6 @@ impl McpClientTrait for OAuthStepUpClient {
     async fn get_moim(&self, session_id: &str, tools: &[rmcp::model::Tool]) -> Option<String> {
         self.inner.read().await.get_moim(session_id, tools).await
     }
-
-    async fn update_working_dir(
-        &self,
-        new_dir: PathBuf,
-    ) -> Result<(), crate::agents::mcp_client::Error> {
-        self.params.write().await.ctx.working_dir = new_dir.clone();
-        self.inner.read().await.update_working_dir(new_dir).await
-    }
 }
 
 pub(super) async fn connect(
