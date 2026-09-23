@@ -102,7 +102,7 @@ The extension exposes three tools:
 
 | Tool | What it does |
 | --- | --- |
-| `register` | Provisions an inbox by proof of work and stores its credentials. Idempotent for the same username; pass a separate `credentials_dir` to hold more than one inbox. |
+| `register` | Provisions an inbox by proof of work and stores its credentials. Takes a `username` of 5-21 characters and a required `watch` value of `scheduled` or `on-demand`. Idempotent for the same username; pass a separate `credentials_dir` to hold more than one inbox. |
 | `jmap_request` | Runs a JMAP method-call batch, authenticated automatically. Takes either inline `ops` or a named preset such as `list_inbox.json`, `send_mail.json` or `reply.json`, with placeholder substitution and local-file attachments. |
 | `help` | Serves the bundled docs — JMAP cheatsheet, preset list, troubleshooting. Worth calling before the first `jmap_request` rather than guessing method shapes. |
 
@@ -116,7 +116,7 @@ Ask goose to set itself up with an inbox and then check it.
 
 ### goose Prompt
 
-> _Register yourself an email inbox as `goose-demo`, then tell me the address and whether anything has arrived._
+> _Register yourself an email inbox as `goose-demo`. I'll check it myself, so set watch to on-demand. Then tell me the address and whether anything has arrived._
 
 ### goose Output
 
@@ -134,6 +134,8 @@ Ask goose to set itself up with an inbox and then check it.
     ─── register | atomicmail ──────────────────────────
 
     username: goose-demo
+
+    watch: on-demand
 
 
 
@@ -153,5 +155,5 @@ The mailbox is empty right now — nothing has arrived since it was created a mo
 :::
 
 :::warning Scheduled inbox checks
-`register` takes a `watch` value that decides who reads the inbox afterwards. If you choose scheduled checks, run them on goose's own scheduler rather than at the OS level, and give that session only the tools it needs — an unattended agent reading mail from strangers should not also hold broad shell access. Call `help` with the `cron` topic for the details.
+`register` requires a `watch` value of `scheduled` or `on-demand`, deciding who reads the inbox afterwards. It is the operator's call, so goose should ask rather than pick one. If you choose scheduled checks, run them on goose's own scheduler rather than at the OS level, and give that session only the tools it needs — an unattended agent reading mail from strangers should not also hold broad shell access. Call `help` with the `cron` topic for the details.
 :::
