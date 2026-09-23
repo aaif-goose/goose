@@ -107,6 +107,22 @@ fn calculator_config() -> ExtensionConfig {
     }
 }
 
+async fn enable_developer(agent: &Agent, session_id: &str) -> Result<()> {
+    agent
+        .add_extension(
+            ExtensionConfig::Platform {
+                name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
+                description: "Developer tools".to_string(),
+                display_name: Some("Developer".to_string()),
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+            session_id,
+        )
+        .await?;
+    Ok(())
+}
+
 fn confirmation_ids(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
@@ -439,6 +455,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
     let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+    enable_developer(&agent, &session_id).await?;
     agent
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
@@ -539,6 +556,7 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
 #[tokio::test]
 async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    enable_developer(&agent, &session_id).await?;
     let session_config = SessionConfig {
         id: session_id,
         schedule_id: None,
