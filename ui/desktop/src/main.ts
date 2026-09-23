@@ -546,54 +546,13 @@ function queuePendingDeepLink(windowId: number, url: string): void {
 
 const reactReadyWindows = new Set<number>();
 
-const DEEPLINK_BURST_DEDUP_MS = 2000;
-const recentSessionDeepLinkSends = new Map<string, number>();
-
-function pruneExpiredSessionDeepLinkSends(now: number): void {
-  for (const [url, sentAt] of recentSessionDeepLinkSends) {
-    if (now - sentAt >= DEEPLINK_BURST_DEDUP_MS) {
-      recentSessionDeepLinkSends.delete(url);
-    }
-  }
-}
-
-function isBurstDuplicateSessionDeepLink(url: string): boolean {
-  const now = Date.now();
-  pruneExpiredSessionDeepLinkSends(now);
-  const sentAt = recentSessionDeepLinkSends.get(url);
-  return sentAt !== undefined && now - sentAt < DEEPLINK_BURST_DEDUP_MS;
-}
-
-function recordSessionDeepLinkSend(url: string): void {
-  const now = Date.now();
-  recentSessionDeepLinkSends.set(url, now);
-  pruneExpiredSessionDeepLinkSends(now);
-}
-
-function sendOpenSharedSession(window: BrowserWindow, url: string): void {
-  if (isBurstDuplicateSessionDeepLink(url)) {
-    log.info('[Main] Ignoring burst duplicate session deep link');
-    return;
-  }
-  recordSessionDeepLinkSend(url);
-  window.webContents.send('open-shared-session', url);
-}
-
-function deliverExtensionOrSessionDeepLink(
-  url: string,
-  parsedUrl: URL,
-  targetWindow: BrowserWindow
-): void {
+function deliverExtensionDeepLink(url: string, targetWindow: BrowserWindow): void {
   if (!reactReadyWindows.has(targetWindow.id) || targetWindow.webContents.isLoadingMainFrame()) {
     queuePendingDeepLink(targetWindow.id, url);
     return;
   }
 
-  if (parsedUrl.hostname === 'extension') {
-    targetWindow.webContents.send('add-extension', url);
-  } else if (parsedUrl.hostname === 'sessions') {
-    sendOpenSharedSession(targetWindow, url);
-  }
+  targetWindow.webContents.send('add-extension', url);
 }
 
 function getResumeSessionId(parsedUrl: URL): string | null {
@@ -670,8 +629,6 @@ async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWi
 
   if (parsedUrl.hostname === 'extension') {
     window.webContents.send('add-extension', url);
-  } else if (parsedUrl.hostname === 'sessions') {
-    sendOpenSharedSession(window, url);
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     const deeplinkData = parseRecipeDeeplink(url);
     const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
@@ -740,14 +697,14 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    // For extension/session URLs, send to an existing regular window or open one
+    // For extension URLs, send to an existing regular window or open one
     const regularWindows = getRegularWindows();
     if (regularWindows.length > 0) {
       const targetWindow = regularWindows[0];
       if (targetWindow.isMinimized()) targetWindow.restore();
       targetWindow.focus();
-      if (parsedUrl.hostname === 'extension' || parsedUrl.hostname === 'sessions') {
-        deliverExtensionOrSessionDeepLink(url, parsedUrl, targetWindow);
+      if (parsedUrl.hostname === 'extension') {
+        deliverExtensionDeepLink(url, targetWindow);
       }
     } else {
       openUrlHandledLaunch = true;
@@ -982,7 +939,6 @@ let appConfig = {
   GOOSE_LOCALE: process.env.GOOSE_LOCALE || undefined,
   // If GOOSE_ALLOWLIST_WARNING env var is not set, defaults to false (strict blocking mode)
   GOOSE_ALLOWLIST_WARNING: process.env.GOOSE_ALLOWLIST_WARNING === 'true',
-  GOOSE_DISABLE_NOSTR_SHARING: process.env.GOOSE_DISABLE_NOSTR_SHARING === 'true',
 };
 
 const windowMap = new Map<number, BrowserWindow>();
@@ -1918,8 +1874,6 @@ ipcMain.on('react-ready', (event) => {
       const parsedUrl = new URL(deepLinkUrl);
       if (parsedUrl.hostname === 'extension') {
         window.webContents.send('add-extension', deepLinkUrl);
-      } else if (parsedUrl.hostname === 'sessions') {
-        sendOpenSharedSession(window, deepLinkUrl);
       }
     } catch (error) {
       log.error('Error processing pending deep link:', error);

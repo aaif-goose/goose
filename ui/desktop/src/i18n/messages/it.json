@@ -3827,9 +3827,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Apri in una nuova finestra"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Condividi link Nostr crittografato"
-  },
   "sessions.cancel": {
     "defaultMessage": "Annulla"
   },
@@ -3869,18 +3866,6 @@
   "sessions.import": {
     "defaultMessage": "Importa sessione"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Importa link"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Incolla un link di condivisione Nostr di Goose per recuperare, decrittografare e importare la sessione."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Importa sessione Nostr"
-  },
   "sessions.importing": {
     "defaultMessage": "Importazione in corso..."
   },
@@ -3911,12 +3896,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Cerca nella cronologia..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Chiunque abbia questo link può recuperare e decifrare la sessione. Trattalo come un segreto."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Link di condivisione Nostr crittografato"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Copiato negli appunti"
   },
@@ -3943,12 +3922,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sessione importata correttamente"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Link di condivisione Nostr crittografato creato"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Impossibile creare il link di condivisione Nostr: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Impossibile aggiornare la descrizione della sessione: {error}"

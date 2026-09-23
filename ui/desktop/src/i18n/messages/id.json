@@ -3827,9 +3827,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka di jendela baru"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Bagikan tautan Nostr terenkripsi"
-  },
   "sessions.cancel": {
     "defaultMessage": "Batal"
   },
@@ -3869,18 +3866,6 @@
   "sessions.import": {
     "defaultMessage": "Impor Sesi"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Impor Tautan"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Tempel tautan berbagi Nostr Goose untuk mengambil, mendekripsi, dan mengimpor sesi."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Impor Sesi Nostr"
-  },
   "sessions.importing": {
     "defaultMessage": "Mengimpor..."
   },
@@ -3911,12 +3896,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Cari riwayat..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Siapa pun yang memiliki tautan ini dapat mengambil dan mendekripsi sesi. Perlakukan seperti rahasia."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Tautan Berbagi Nostr Terenkripsi"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Disalin ke papan klip"
   },
@@ -3943,12 +3922,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sesi berhasil diimpor"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Tautan berbagi Nostr terenkripsi dibuat"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Gagal membuat tautan berbagi Nostr: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Gagal memperbarui deskripsi sesi: {error}"
