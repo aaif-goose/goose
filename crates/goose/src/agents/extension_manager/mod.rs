@@ -640,11 +640,14 @@ impl ExtensionManager {
             ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
             _ => working_dir.clone(),
         };
-        let reconnect_on_working_dir_change = !matches!(
-            &resolved_config,
+        let reconnect_on_working_dir_change = match &resolved_config {
             ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
-                if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
-        );
+                if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str()) =>
+            {
+                name_to_key(name) == crate::skills::EXTENSION_NAME
+            }
+            _ => true,
+        };
 
         if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
             if existing.config == config
