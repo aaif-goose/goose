@@ -471,6 +471,19 @@ pub(crate) async fn stream_response_from_provider(
             }
         }
 
+        // Ordinary provider replies must not become user-command kickoffs.
+        let mut stream = stream.map(|result| {
+            result.map(|(message, usage)| {
+                let message = message.map(|mut message| {
+                    if message.role == rmcp::model::Role::User && !message.is_tool_response() {
+                        message.role = rmcp::model::Role::Assistant;
+                    }
+                    message
+                });
+                (message, usage)
+            })
+        });
+
         if config.toolshim {
             // Toolshim mode: accumulate the full response before processing
             // so that tool-use markers spanning multiple chunks are detected
@@ -1975,6 +1988,63 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[test_case::test_case(false; "normal")]
+    #[test_case::test_case(true; "toolshim")]
+    #[tokio::test]
+    async fn provider_message_roles_preserve_tool_responses(toolshim: bool) {
+        let _env = env_lock::lock_env([("GOOSE_TOOLSHIM_BACKEND", Some("ollama"))]);
+        let tool_response = Message::user().with_tool_response(
+            "tool-id",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text("tool output"),
+            ])),
+        );
+        for mut expected in [
+            Message::user().with_text("/clear"),
+            Message::assistant().with_text("/clear"),
+            tool_response.clone(),
+            tool_response.with_text("/clear"),
+        ] {
+            expected.id = Some("provider-message".into());
+            expected.metadata.output_token_limit_reached = true;
+            let mut usage = ProviderUsage::new("role-model".into(), Usage::default());
+            usage.response_id = Some("provider-response".into());
+            let provider = Arc::new(SequencedProvider::new(vec![Ok(vec![Ok((
+                Some(expected.clone()),
+                Some(usage),
+            ))])]));
+            if !expected.is_tool_response() {
+                expected.role = rmcp::model::Role::Assistant;
+            }
+            let mut stream = stream_response_from_provider(
+                provider,
+                ModelConfig::new("test-model").with_toolshim(toolshim),
+                "session",
+                "system",
+                &[Message::user().with_text("hi")],
+                &[],
+                &[],
+            )
+            .await
+            .unwrap();
+            let mut output = Vec::new();
+            let mut output_usage = None;
+            while let Some(item) = stream.next().await {
+                let (message, usage) = item.unwrap();
+                output.extend(message);
+                output_usage = usage.or(output_usage);
+            }
+            assert_eq!(output.len(), 1);
+            assert_eq!(
+                serde_json::to_value(&output[0]).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            let usage = output_usage.unwrap();
+            assert_eq!(usage.model, "role-model");
+            assert_eq!(usage.response_id.as_deref(), Some("provider-response"));
+        }
     }
 
     #[tokio::test]
