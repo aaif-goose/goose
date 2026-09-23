@@ -44,7 +44,7 @@ pub trait InferenceRequestPreparer<S>: Send + Sync {
 pub struct IdentityInferenceRequestPreparer;
 
 #[async_trait]
-impl<S: Send + Sync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
+impl<S: Sync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
     async fn prepare(
         &self,
         _session: &S,
@@ -324,7 +324,7 @@ impl<S: Sync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> 
 }
 
 #[async_trait]
-impl<S: Send + Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
