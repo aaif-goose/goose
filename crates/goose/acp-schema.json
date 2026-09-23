@@ -3602,7 +3602,7 @@
       "required": [
         "input"
       ],
-      "description": "Import a session from a JSON string or share link.",
+      "description": "Import a session from a serialized session JSON string.",
       "x-side": "agent",
       "x-method": "_goose/unstable/session/import"
     },

@@ -826,7 +826,7 @@ pub struct ExportSessionResponse {
     pub data: String,
 }
 
-/// Import a session from a JSON string or share link.
+/// Import a session from a serialized session JSON string.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/unstable/session/import", response = ImportSessionResponse)]
 #[serde(rename_all = "camelCase")]
