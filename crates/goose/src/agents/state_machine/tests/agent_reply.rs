@@ -137,7 +137,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
     let agent = Arc::new(agent);
 
-    api.on("add one").call(ADD, delayed_value(1, 500));
+    api.on("add one").call(ADD, delayed_value(1, 80));
     api.on("result: 1").reply("the result is one");
 
     let session_config = SessionConfig {
@@ -259,8 +259,15 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     assert!(messages.iter().any(|message| message
         .get_tool_response_ids()
         .contains(&confirmation_id.as_str())));
-    assert_eq!(calculator.total(), 1);
-    assert_eq!(replacement.total(), 0);
+    assert_eq!(
+        (
+            calculator.total(),
+            calculator.contexts().len(),
+            replacement.total(),
+            replacement.contexts().len(),
+        ),
+        (1, 2, 0, 0),
+    );
     assert_eq!(api.call_count(), 2);
 
     assert!(agent
