@@ -602,7 +602,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     let new_root = url::Url::from_file_path(&new_working_dir)
         .unwrap()
         .to_string();
-    assert_eq!(after_http.roots, [new_root.clone()]);
+    assert_eq!(after_http.roots, std::slice::from_ref(&new_root));
     assert_eq!(after_stdio.roots, [new_root]);
     assert_ne!(after_http.instance_id, before_http.instance_id);
     assert_ne!(after_stdio.instance_id, before_stdio.instance_id);
@@ -615,7 +615,7 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
         .unwrap()
         .to_string();
     assert_eq!(retained_http.instance_id, before_http.instance_id);
-    assert_eq!(retained_http.roots, [old_root.clone()]);
+    assert_eq!(retained_http.roots, std::slice::from_ref(&old_root));
     assert_eq!(retained_stdio.instance_id, before_stdio.instance_id);
     assert_eq!(retained_stdio.roots, [old_root]);
     assert!(load_leased_skill(&before_move)
