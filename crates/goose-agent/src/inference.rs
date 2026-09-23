@@ -131,6 +131,24 @@ fn is_empty_response(message: &Message) -> bool {
     })
 }
 
+pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
+    let Some(message) = messages.last() else {
+        return false;
+    };
+    let mut responses = message
+        .content
+        .iter()
+        .filter_map(MessageContent::as_tool_response)
+        .peekable();
+    responses.peek().is_some()
+        && responses.all(|response| {
+            response
+                .tool_result
+                .as_ref()
+                .is_ok_and(|result| !result.is_error.unwrap_or(false))
+        })
+}
+
 fn record_request_params(span: &tracing::Span, model_config: &ModelConfig) {
     if let Some(temperature) = model_config.temperature {
         span.record("gen_ai.request.temperature", temperature as f64);
@@ -479,6 +497,7 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             }
 
             let empty_response = !cancelled
+                && !ends_with_successful_tool_response(conversation.messages())
                 && !accumulator
                     .iter()
                     .any(|message| message.metadata.output_token_limit_reached)
