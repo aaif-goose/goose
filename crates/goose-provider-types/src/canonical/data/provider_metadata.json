@@ -360,7 +360,7 @@
     "env": [
       "CLINE_API_KEY"
     ],
-    "model_count": 15
+    "model_count": 18
   },
   {
     "id": "cloudferro-sherlock",
@@ -427,7 +427,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 63
+    "model_count": 66
   },
   {
     "id": "crusoe",
@@ -483,7 +483,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 97
+    "model_count": 100
   },
   {
     "id": "dinference",
@@ -538,7 +538,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 280
+    "model_count": 283
   },
   {
     "id": "empiriolabs",
@@ -626,7 +626,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 29
+    "model_count": 32
   },
   {
     "id": "gmicloud",
@@ -858,7 +858,7 @@
     "env": [
       "KENARI_API_KEY"
     ],
-    "model_count": 59
+    "model_count": 60
   },
   {
     "id": "kilo",
@@ -869,7 +869,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 387
+    "model_count": 390
   },
   {
     "id": "kimi-code-plan-cn",
@@ -946,7 +946,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 202
+    "model_count": 205
   },
   {
     "id": "llmgateway-providers",
@@ -957,7 +957,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 423
+    "model_count": 426
   },
   {
     "id": "llmtech",
@@ -1232,7 +1232,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 581
+    "model_count": 586
   },
   {
     "id": "nearai",
@@ -1343,7 +1343,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 145
+    "model_count": 148
   },
   {
     "id": "ollama-cloud",
@@ -1365,7 +1365,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 108
+    "model_count": 110
   },
   {
     "id": "opencode-go",
@@ -1376,7 +1376,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 39
+    "model_count": 40
   },
   {
     "id": "openreason",
@@ -1453,7 +1453,7 @@
     "env": [
       "PIONEER_API_KEY"
     ],
-    "model_count": 112
+    "model_count": 114
   },
   {
     "id": "poe",
@@ -1531,7 +1531,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 155
+    "model_count": 159
   },
   {
     "id": "routing-run",
@@ -1675,7 +1675,7 @@
     "env": [
       "STEPFUN_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 9
   },
   {
     "id": "stepfun-ai",
@@ -1697,7 +1697,7 @@
     "env": [
       "STEPFUN_API_KEY"
     ],
-    "model_count": 3
+    "model_count": 4
   },
   {
     "id": "stepfun-step-plan",
