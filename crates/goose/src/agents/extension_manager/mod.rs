@@ -613,6 +613,18 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: Option<&str>,
     ) -> ExtensionResult<()> {
+        self.add_extension_if_current(config, working_dir, container, session_id, None)
+            .await
+    }
+
+    async fn add_extension_if_current(
+        self: &Arc<Self>,
+        config: ExtensionConfig,
+        working_dir: Option<PathBuf>,
+        container: Option<&Container>,
+        session_id: Option<&str>,
+        expected: Option<&Arc<Extension>>,
+    ) -> ExtensionResult<()> {
         let sanitized_name = config.key();
 
         let resolved_config = config.clone().resolve(Config::global()).await?;
@@ -730,6 +742,13 @@ impl ExtensionManager {
         let server_info = client.get_info().cloned();
 
         let mut extensions = self.extensions.lock().await;
+        if expected.is_some_and(|expected| {
+            !extensions
+                .get(&sanitized_name)
+                .is_some_and(|current| Arc::ptr_eq(current, expected))
+        }) {
+            return Ok(());
+        }
         extensions.insert(
             sanitized_name.clone(),
             Arc::new(Extension {
@@ -895,18 +914,24 @@ impl ExtensionManager {
                     tools: Mutex::new(None),
                 });
                 let mut running = self.extensions.lock().await;
-                running.insert(extension.key.clone(), replacement);
-                Self::invalidate_extension_manager_tools(&running);
+                if running
+                    .get(&extension.key)
+                    .is_some_and(|current| Arc::ptr_eq(current, &extension))
+                {
+                    running.insert(extension.key.clone(), replacement);
+                    Self::invalidate_extension_manager_tools(&running);
+                }
                 continue;
             }
 
             let name = extension.config.name().to_string();
             if let Err(error) = self
-                .add_extension(
+                .add_extension_if_current(
                     extension.config.clone(),
                     Some(new_dir.to_path_buf()),
                     container,
                     Some(session_id),
+                    Some(&extension),
                 )
                 .await
             {
@@ -1827,6 +1852,49 @@ mod tests {
             .await
             .iter()
             .any(|tool| tool.name == "external__ping"));
+    }
+
+    #[tokio::test]
+    async fn stale_working_dir_reconnect_does_not_restore_removed_extension() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let config = ExtensionConfig::Platform {
+            name: "calculator".to_string(),
+            display_name: None,
+            description: "calculator".to_string(),
+            bundled: None,
+            available_tools: vec![],
+        };
+        extension_manager
+            .add_client(config.clone(), None, Arc::new(MockClient {}), None)
+            .await;
+        let stale = extension_manager
+            .extensions
+            .lock()
+            .await
+            .get("calculator")
+            .unwrap()
+            .clone();
+        extension_manager
+            .remove_extension("calculator")
+            .await
+            .unwrap();
+
+        extension_manager
+            .add_extension_if_current(
+                config,
+                Some(new_working_dir.path().to_path_buf()),
+                None,
+                Some("session"),
+                Some(&stale),
+            )
+            .await
+            .unwrap();
+
+        assert!(!extension_manager.is_extension_enabled("calculator").await);
     }
 
     #[test]

@@ -135,7 +135,21 @@ async fn stream_messages(
 #[tokio::test]
 async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<()> {
     let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
-    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let (mut agent, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
+    let hook_dir = tempfile::tempdir()?;
+    let plugin_dir = hook_dir.path().join("test-plugin");
+    std::fs::create_dir_all(plugin_dir.join("hooks"))?;
+    std::fs::write(
+        plugin_dir.join("hooks/hooks.json"),
+        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
+    )?;
+    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+        crate::plugins::discovery::DiscoveredPlugin {
+            name: "test-plugin".into(),
+            root: plugin_dir.clone(),
+            scope: crate::plugins::discovery::PluginScope::Project,
+        },
+    ]));
     let agent = Arc::new(agent);
 
     api.on("add one").call(ADD, delayed_value(1, 80));
@@ -170,6 +184,19 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         }
     };
     assert_eq!(calculator.total(), 0);
+
+    let new_working_dir = tempfile::tempdir()?;
+    agent
+        .config
+        .session_manager
+        .update(&session_config.id)
+        .working_dir(new_working_dir.path().to_path_buf())
+        .apply()
+        .await?;
+    agent
+        .update_extension_working_dir(&session_config.id, new_working_dir.path())
+        .await;
+
     {
         let session = agent
             .config
@@ -258,6 +285,16 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .await?
         .expect("persisted confirmation response should resume the state-machine turn");
     messages.extend(stream_messages(stream).await?);
+
+    let hook_log = std::fs::read_to_string(plugin_dir.join("hook.log"))?;
+    let hook_payloads = hook_log
+        .lines()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .collect::<serde_json::Result<Vec<_>>>()?;
+    assert_eq!(hook_payloads.len(), 2);
+    assert!(hook_payloads.iter().all(|payload| {
+        payload["working_dir"].as_str() == Some(temp_dir.path().to_string_lossy().as_ref())
+    }));
     assert!(messages.iter().any(|message| message
         .get_tool_response_ids()
         .contains(&confirmation_id.as_str())));
@@ -270,6 +307,10 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         ),
         (1, 2, 0, 0),
     );
+    assert!(calculator
+        .contexts()
+        .iter()
+        .all(|context| { context.working_dir.as_deref() == Some(temp_dir.path()) }));
     assert_eq!(api.call_count(), 2);
 
     assert!(agent

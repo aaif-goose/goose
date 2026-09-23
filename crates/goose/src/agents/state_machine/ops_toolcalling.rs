@@ -371,6 +371,15 @@ impl<'a> ToolExecutionOperation<'a> {
         let span = tool_span(&tool_call.name, &request_id, &session.id);
         crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
         let result_span = span.clone();
+        let lease = self.lease(session).await;
+        let leased_session = lease.working_dir().and_then(|working_dir| {
+            (working_dir != session.working_dir.as_path()).then(|| {
+                let mut session = session.clone();
+                session.working_dir = working_dir.to_path_buf();
+                session
+            })
+        });
+        let session = leased_session.as_ref().unwrap_or(session);
 
         async {
             let tool_input = tool_call
@@ -394,9 +403,7 @@ impl<'a> ToolExecutionOperation<'a> {
             )
             .await;
 
-            let result = self
-                .lease(session)
-                .await
+            let result = lease
                 .call(
                     tool_call.clone(),
                     CallRequest::new(request_id.clone()).with_container(self.container.clone()),

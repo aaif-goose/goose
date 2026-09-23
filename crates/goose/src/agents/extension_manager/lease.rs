@@ -9,7 +9,7 @@
 //! action-required streams with them.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -223,6 +223,10 @@ impl ExtensionLease {
 
     pub fn scope_id(&self) -> &str {
         &self.scope_id
+    }
+
+    pub fn working_dir(&self) -> Option<&Path> {
+        self.working_dir.as_deref()
     }
 
     pub async fn tools(&self) -> Vec<Tool> {
