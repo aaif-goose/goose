@@ -1789,7 +1789,7 @@ impl Agent {
         ];
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
-            #[cfg(feature = "code-mode")]
+            extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             goose_mode: &self.current_goose_mode,
             prompt_manager: &self.prompt_manager,
@@ -2032,11 +2032,6 @@ impl Agent {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
-        let extension_manager = Arc::clone(&self.extension_manager);
-        let extension_lease = self
-            .tool_confirmation_coordinator
-            .session(&session_id)
-            .extension_lease();
         let machine = self
             .create_state_machine(
                 provider,
@@ -2056,14 +2051,7 @@ impl Agent {
                 let result = {
                     let run = crate::session_context::with_session_id(
                         Some(session_id.clone()),
-                        run_goose(
-                            &machine,
-                            session_manager.as_ref(),
-                            extension_manager.as_ref(),
-                            &extension_lease,
-                            &session_id,
-                            &emit,
-                        ),
+                        run_goose(&machine, session_manager.as_ref(), &session_id, &emit),
                     );
                     tokio::pin!(run);
                     loop {

@@ -1,7 +1,6 @@
 //! Goose-specific inference request preparation.
 
-#[cfg(feature = "code-mode")]
-use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::PromptManager;
 use crate::config::GooseMode;
 use crate::session::Session;
@@ -12,12 +11,11 @@ use goose_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest}
 use goose_agent::operation::{messages_since_kickoff, InferenceInput};
 use goose_providers::conversation::message::Message;
 use goose_providers::conversation::Conversation;
-#[cfg(feature = "code-mode")]
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 
 pub struct GooseInferenceRequestPreparer<'a> {
-    #[cfg(feature = "code-mode")]
+    pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     pub(crate) goose_mode: &'a Mutex<GooseMode>,
     pub(crate) prompt_manager: &'a Mutex<PromptManager>,
@@ -27,6 +25,18 @@ pub struct GooseInferenceRequestPreparer<'a> {
 
 #[async_trait]
 impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
+    async fn prepare_session(&self, session: &Session) -> Result<Option<Session>> {
+        let (session, lease) = self
+            .extension_manager
+            .current_session_snapshot(session)
+            .await;
+        *self
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable") = Some(Arc::new(lease));
+        Ok(Some(session))
+    }
+
     async fn prepare(
         &self,
         session: &Session,

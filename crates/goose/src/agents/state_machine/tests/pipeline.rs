@@ -91,8 +91,8 @@ pub(super) struct TestPipeline {
     provider_features: ProviderFeatures,
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
-    pub(super) extension_manager: Arc<ExtensionManager>,
-    pub(super) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    extension_manager: Arc<ExtensionManager>,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     goose_mode: TokioMutex<GooseMode>,
     prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
@@ -177,7 +177,7 @@ impl TestPipeline {
         ];
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
-            #[cfg(feature = "code-mode")]
+            extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             goose_mode: &self.goose_mode,
             prompt_manager: &self.prompt_manager,

@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
     ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect, Operation,
-    OperationFuture, OperationResult, StepResult,
+    OperationResult, StepResult,
 };
 use goose_provider_types::conversation::Conversation;
 
@@ -83,9 +83,16 @@ where
             let result = if self.cancel.is_cancelled() {
                 OperationResult::NotApplicable
             } else {
-                let step_fut: OperationFuture<'_, Result<OperationResult<E>>> = match step {
-                    Step::Operation(operation) => operation.run(session, conversation, emit),
+                match step {
+                    Step::Operation(operation) => {
+                        operation.run(session, conversation, emit).await?
+                    }
                     Step::Inference(inference) => {
+                        let prepared_session = inference.prepare_session(session).await?;
+                        let session = prepared_session.as_ref().unwrap_or(session);
+                        let conversation = session.conversation().ok_or_else(|| {
+                            anyhow!("state-machine session loaded without conversation")
+                        })?;
                         if !inference.applies(conversation) {
                             continue;
                         }
@@ -105,10 +112,9 @@ where
                                 .moim_parts
                                 .extend(operation.moim_parts(session, conversation).await?);
                         }
-                        inference.infer(session, conversation, input, emit)
+                        inference.infer(session, conversation, input, emit).await?
                     }
-                };
-                step_fut.await?
+                }
             };
             let cancelled = self.cancel.is_cancelled();
             let result = if cancelled {

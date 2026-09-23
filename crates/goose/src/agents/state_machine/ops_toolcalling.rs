@@ -721,10 +721,6 @@ pub(super) fn pending_advertised_tool_requests(
         .collect()
 }
 
-pub(super) fn has_pending_advertised_tool_requests(messages: &[Message]) -> bool {
-    !pending_advertised_tool_requests(messages).is_empty()
-}
-
 pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
     let Some(tool_call) = request.tool_call.as_ref().ok() else {
         return true;
