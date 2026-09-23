@@ -4082,6 +4082,7 @@ mod tests {
                 manager
                     .add_client(
                         platform_extension("changing"),
+                        None,
                         Arc::new(LeaseValueClient("second")),
                         None,
                     )
@@ -4115,6 +4116,7 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
+                None,
                 Arc::new(LeaseValueClient("first")),
                 None,
             )
@@ -4125,6 +4127,7 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
+                None,
                 Arc::new(LeaseValueClient("second")),
                 None,
             )

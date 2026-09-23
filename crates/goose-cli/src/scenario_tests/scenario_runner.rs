@@ -222,6 +222,7 @@ where
                 bundled: None,
                 available_tools: vec![],
             },
+            None,
             Arc::new(mock_client),
             None,
         )

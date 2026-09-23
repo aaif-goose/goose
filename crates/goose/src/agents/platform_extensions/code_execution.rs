@@ -849,6 +849,7 @@ mod tests {
                     bundled: None,
                     available_tools: vec![],
                 },
+                None,
                 Arc::new(VisibilityClient),
                 None,
             )

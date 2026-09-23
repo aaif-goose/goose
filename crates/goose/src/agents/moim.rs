@@ -333,11 +333,21 @@ mod tests {
     #[tokio::test]
     async fn turn_context_uses_the_inference_lease() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        em.add_client(moim_extension(), Arc::new(MoimClient("old context")), None)
-            .await;
+        em.add_client(
+            moim_extension(),
+            None,
+            Arc::new(MoimClient("old context")),
+            None,
+        )
+        .await;
         let lease = em.current_lease(&session_id, None).await;
-        em.add_client(moim_extension(), Arc::new(MoimClient("new context")), None)
-            .await;
+        em.add_client(
+            moim_extension(),
+            None,
+            Arc::new(MoimClient("new context")),
+            None,
+        )
+        .await;
 
         let message =
             turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)

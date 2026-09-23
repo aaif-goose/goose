@@ -143,6 +143,7 @@ pub(super) struct Extension {
     resolved_config: ExtensionConfig,
     pub(super) client: McpClientBox,
     server_info: Option<ServerInfo>,
+    reconnect_on_working_dir_change: bool,
     /// Bumped by the client on tools/list_changed; a cached list is only valid
     /// for the version it was fetched under.
     tools_version: Arc<AtomicU64>,
@@ -167,6 +168,7 @@ impl Extension {
         client: McpClientBox,
         server_info: Option<ServerInfo>,
         tools_version: Arc<AtomicU64>,
+        reconnect_on_working_dir_change: bool,
     ) -> Self {
         Self {
             key,
@@ -175,6 +177,7 @@ impl Extension {
             resolved_config,
             client,
             server_info,
+            reconnect_on_working_dir_change,
             tools_version,
             tools: Mutex::new(None),
         }
@@ -760,6 +763,7 @@ impl ExtensionManager {
                 Arc::from(client),
                 server_info,
                 tools_version,
+                true,
             )),
         );
         Self::invalidate_extension_manager_tools(&extensions);
@@ -836,21 +840,25 @@ impl ExtensionManager {
     pub async fn add_client(
         &self,
         config: ExtensionConfig,
+        working_dir: Option<PathBuf>,
         client: McpClientBox,
         info: Option<ServerInfo>,
     ) {
         let key = config.key();
+        let working_dir =
+            working_dir.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             key.clone(),
             Arc::new(Extension::new(
                 key,
                 config.clone(),
-                std::env::current_dir().unwrap_or_default(),
+                working_dir,
                 config,
                 client,
                 info,
                 Arc::new(AtomicU64::new(0)),
+                false,
             )),
         );
         Self::invalidate_extension_manager_tools(&extensions);
@@ -884,12 +892,38 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: &str,
     ) {
-        let configs = self.get_extension_configs().await;
-        for config in configs {
-            let name = config.name().to_string();
+        let extensions = self
+            .extensions
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for extension in extensions {
+            if extension.working_dir == new_dir {
+                continue;
+            }
+            if !extension.reconnect_on_working_dir_change {
+                let replacement = Arc::new(Extension::new(
+                    extension.key.clone(),
+                    extension.config.clone(),
+                    new_dir.to_path_buf(),
+                    extension.resolved_config.clone(),
+                    Arc::clone(&extension.client),
+                    extension.server_info.clone(),
+                    Arc::clone(&extension.tools_version),
+                    false,
+                ));
+                let mut running = self.extensions.lock().await;
+                running.insert(extension.key.clone(), replacement);
+                Self::invalidate_extension_manager_tools(&running);
+                continue;
+            }
+
+            let name = extension.config.name().to_string();
             if let Err(error) = self
                 .add_extension(
-                    config,
+                    extension.config.clone(),
                     Some(new_dir.to_path_buf()),
                     container,
                     Some(session_id),
@@ -1228,7 +1262,7 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            self.add_client(config, client, None).await;
+            self.add_client(config, None, client, None).await;
         }
     }
 
@@ -1760,6 +1794,61 @@ mod tests {
         assert!(lease.tools().await.is_empty());
     }
 
+    #[tokio::test]
+    async fn working_dir_updates_preserve_supplied_clients() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let config = builtin_config("external", vec![]);
+        extension_manager
+            .add_client(
+                config.clone(),
+                None,
+                Arc::new(NamedToolsClient(vec![Tool::new(
+                    "ping",
+                    "supplied tool",
+                    Arc::new(JsonObject::new()),
+                )])),
+                None,
+            )
+            .await;
+
+        let original_set = ExtensionSet::new(
+            "session",
+            Some(std::env::current_dir().unwrap()),
+            vec![config.clone()],
+        )
+        .unwrap();
+        let original_lease = extension_manager.resolve(&original_set).await;
+
+        extension_manager
+            .update_working_dir(new_working_dir.path(), None, "session")
+            .await;
+
+        let updated_set = ExtensionSet::new(
+            "session",
+            Some(new_working_dir.path().to_path_buf()),
+            vec![config],
+        )
+        .unwrap();
+        let updated_lease = extension_manager.resolve(&updated_set).await;
+
+        assert!(original_lease.is_enabled("external"));
+        assert!(updated_lease.is_enabled("external"));
+        assert!(original_lease
+            .tools()
+            .await
+            .iter()
+            .any(|tool| tool.name == "external__ping"));
+        assert!(updated_lease
+            .tools()
+            .await
+            .iter()
+            .any(|tool| tool.name == "external__ping"));
+    }
+
     #[test]
     fn set_rejects_the_same_extension_twice() {
         let error = ExtensionSet::new(
@@ -1812,6 +1901,7 @@ mod tests {
         extension_manager
             .add_client(
                 builtin_config("resources", vec![]),
+                None,
                 Arc::new(MockClient {}),
                 Some(resource_info),
             )
@@ -1867,6 +1957,7 @@ mod tests {
         extension_manager
             .add_client(
                 builtin_config("resources", vec![]),
+                None,
                 Arc::new(ResourceClient { label: "old" }),
                 Some(resource_info.clone()),
             )
@@ -1885,6 +1976,7 @@ mod tests {
         extension_manager
             .add_client(
                 builtin_config("resources", vec![]),
+                None,
                 Arc::new(ResourceClient { label: "new" }),
                 Some(resource_info),
             )
