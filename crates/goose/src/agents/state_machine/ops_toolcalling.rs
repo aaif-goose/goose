@@ -357,7 +357,7 @@ impl<'a> ToolExecutionOperation<'a> {
     async fn resolve_lease(&self, session: &Session) -> Arc<ExtensionLease> {
         let lease = Arc::new(
             self.extension_manager
-                .current_lease(&session.id, Some(&session.working_dir))
+                .current_session_lease(&session.id, &session.working_dir)
                 .await,
         );
         *self.lease.lock().expect("extension lease unavailable") = Some(Arc::clone(&lease));
@@ -749,6 +749,32 @@ pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest
         })
 }
 
+fn request_was_generated_by_operation(messages: &[Message], request: &ToolRequest) -> bool {
+    messages.iter().any(|message| {
+        message.role == Role::Assistant
+            && message.metadata.inference.is_none()
+            && message.content.iter().any(|content| {
+                content
+                    .as_tool_request()
+                    .is_some_and(|item| item.id == request.id)
+            })
+    })
+}
+
+fn request_has_approval_history(messages: &[Message], request: &ToolRequest) -> bool {
+    messages.iter().any(|message| {
+        message.content.iter().any(|content| match content {
+            MessageContent::ActionRequired(action) => matches!(
+                &action.data,
+                ActionRequiredData::ToolConfirmation { id, .. }
+                    | ActionRequiredData::ToolConfirmationResponse { id, .. }
+                    if id == &request.id
+            ),
+            _ => false,
+        })
+    })
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub(super) enum ToolDisposition {
     Execute,
@@ -872,6 +898,23 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             .lock()
             .expect("extension lease unavailable")
             .clone();
+        let lease = match lease {
+            Some(lease) => Some(lease),
+            None if pending
+                .iter()
+                .any(|(_, disposition)| *disposition == ToolDisposition::Execute)
+                && pending
+                    .iter()
+                    .filter(|(_, disposition)| *disposition == ToolDisposition::Execute)
+                    .all(|(request, _)| {
+                        request_was_generated_by_operation(messages, request)
+                            && !request_has_approval_history(messages, request)
+                    }) =>
+            {
+                Some(self.resolve_lease(session).await)
+            }
+            None => None,
+        };
         let Some(lease) = lease else {
             let mut response = Message::user();
             for (request, disposition) in pending {

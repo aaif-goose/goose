@@ -435,6 +435,68 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
 }
 
 #[tokio::test]
+async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+    agent
+        .update_goose_mode(GooseMode::Approve, &session_id)
+        .await?;
+    let agent = Arc::new(agent);
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("!echo should-not-run"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break confirmation_id;
+            }
+        }
+    };
+
+    agent.clear_extension_lease_for_test(&session_config.id);
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    stream_messages(stream).await?;
+
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_config.id, true)
+        .await?;
+    assert!(session
+        .conversation
+        .as_ref()
+        .expect("session conversation")
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .any(|content| {
+            content
+                .as_tool_response_text()
+                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
+        }));
+    assert_eq!(api.call_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn reply_streams_the_turn_and_ends() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("are you there?").reply("still here");
@@ -493,6 +555,7 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
         .await?;
     tokio::pin!(stream);
     let mut requested_shell = false;
+    let mut shell_output = false;
     while let Some(event) = stream.next().await {
         if let AgentEvent::Message(message) = event? {
             requested_shell |= message.content.iter().any(|content| {
@@ -502,10 +565,16 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
                         if request.tool_call.as_ref().is_ok_and(|call| call.name == "shell")
                 )
             });
+            shell_output |= message.content.iter().any(|content| {
+                content
+                    .as_tool_response_text()
+                    .is_some_and(|text| text.contains("hello"))
+            });
         }
     }
 
     assert!(requested_shell);
+    assert!(shell_output);
     assert_eq!(api.call_count(), 0);
 
     Ok(())

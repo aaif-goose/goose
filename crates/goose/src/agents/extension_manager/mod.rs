@@ -591,6 +591,31 @@ impl ExtensionManager {
         working_dir: Option<&Path>,
     ) -> ExtensionLease {
         let _guard = self.directory_lock.read().await;
+        self.lease_for_working_dir(session_id, working_dir).await
+    }
+
+    pub async fn current_session_lease(
+        &self,
+        session_id: &str,
+        fallback_working_dir: &Path,
+    ) -> ExtensionLease {
+        let _guard = self.directory_lock.read().await;
+        let working_dir = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map(|session| session.working_dir)
+            .unwrap_or_else(|_| fallback_working_dir.to_path_buf());
+        self.lease_for_working_dir(session_id, Some(&working_dir))
+            .await
+    }
+
+    async fn lease_for_working_dir(
+        &self,
+        session_id: &str,
+        working_dir: Option<&Path>,
+    ) -> ExtensionLease {
         let mut extensions = self
             .extensions
             .lock()
@@ -925,17 +950,27 @@ impl ExtensionManager {
     ) -> ExtensionResult<()> {
         let _guard = self.mutation_lock.lock().await;
         let _directory_guard = self.directory_lock.write().await;
-        let session = self
+        let session = match self
             .context
             .session_manager
             .get_session(session_id, false)
             .await
-            .ok()
-            .map(|mut session| {
+        {
+            Ok(mut session) => {
+                if session.working_dir != new_dir {
+                    self.context
+                        .session_manager
+                        .update(session_id)
+                        .working_dir(new_dir.to_path_buf())
+                        .apply()
+                        .await
+                        .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+                }
                 session.working_dir = new_dir.to_path_buf();
-                session
-            })
-            .map(Arc::new);
+                Some(Arc::new(session))
+            }
+            Err(_) => None,
+        };
         let extensions = self
             .extensions
             .lock()
@@ -1922,6 +1957,46 @@ mod tests {
             .await;
 
         assert!(!lease.is_enabled("external"));
+    }
+
+    #[tokio::test]
+    async fn session_lease_reconciles_a_stale_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_client(
+                builtin_config("external", vec![]),
+                Some(old_working_dir.path().to_path_buf()),
+                Arc::new(MockClient {}),
+                None,
+            )
+            .await;
+
+        manager
+            .update_working_dir(new_working_dir.path(), None, &session.id)
+            .await
+            .unwrap();
+        let lease = manager
+            .current_session_lease(&session.id, old_working_dir.path())
+            .await;
+
+        assert_eq!(lease.working_dir(), Some(new_working_dir.path()));
+        assert!(lease.is_enabled("external"));
     }
 
     #[tokio::test]
