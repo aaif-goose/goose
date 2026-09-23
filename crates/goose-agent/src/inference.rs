@@ -509,7 +509,8 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
                 return yielded_with(usage_effects);
             }
 
-            if ends_with_successful_tool_response(conversation.messages()) && accumulator.is_empty()
+            if ends_with_successful_tool_response(conversation.messages())
+                && accumulator.iter().all(is_empty_response)
             {
                 return yielded_with(usage_effects);
             }
@@ -607,5 +608,10 @@ mod tests {
         assert!(!is_empty_response(
             &Message::assistant().with_content(MessageContent::thinking("", "sig-omitted"))
         ));
+    }
+
+    #[test]
+    fn whitespace_only_text_is_an_empty_response() {
+        assert!(is_empty_response(&Message::assistant().with_text(" \n\t ")));
     }
 }
