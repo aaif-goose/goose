@@ -185,33 +185,31 @@ impl Extension {
     /// `available_tools`, prefixed unless first-class, tagged with the owner,
     /// schema-normalized.
     pub(super) async fn public_tools(&self, scope_id: &str) -> Arc<Vec<Tool>> {
-        loop {
-            let version;
-            {
-                let cache = self.tools.lock().await;
-                version = self.tools_version.load(Ordering::SeqCst);
-                if let Some(cached) = &*cache {
-                    if cached.version == version && cached.scope_id == scope_id {
-                        let tools = Arc::clone(&cached.tools);
-                        if self.tools_version.load(Ordering::SeqCst) == version {
-                            return tools;
-                        }
+        let version;
+        {
+            let cache = self.tools.lock().await;
+            version = self.tools_version.load(Ordering::SeqCst);
+            if let Some(cached) = &*cache {
+                if cached.version == version && cached.scope_id == scope_id {
+                    let tools = Arc::clone(&cached.tools);
+                    if self.tools_version.load(Ordering::SeqCst) == version {
+                        return tools;
                     }
                 }
             }
-
-            let tools = Arc::new(self.fetch_public_tools(scope_id).await);
-
-            let mut cache = self.tools.lock().await;
-            if self.tools_version.load(Ordering::SeqCst) == version {
-                *cache = Some(CachedTools {
-                    scope_id: scope_id.to_string(),
-                    version,
-                    tools: Arc::clone(&tools),
-                });
-                return tools;
-            }
         }
+
+        let tools = Arc::new(self.fetch_public_tools(scope_id).await);
+
+        let mut cache = self.tools.lock().await;
+        if self.tools_version.load(Ordering::SeqCst) == version {
+            *cache = Some(CachedTools {
+                scope_id: scope_id.to_string(),
+                version,
+                tools: Arc::clone(&tools),
+            });
+        }
+        tools
     }
 
     async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
@@ -2357,10 +2355,8 @@ mod tests {
         tools_version.fetch_add(1, Ordering::SeqCst);
         tools_client.release_first_fetch.add_permits(1);
 
-        let refreshed_during_fetch = first_fetch.await.unwrap();
-        assert!(refreshed_during_fetch
-            .iter()
-            .any(|tool| tool.name == "dynamic__new"));
+        let stale_result = first_fetch.await.unwrap();
+        assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
 
         let refreshed = manager
             .get_prefixed_tools("test-session", None)
