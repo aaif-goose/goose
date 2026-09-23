@@ -23,6 +23,7 @@ use crate::providers::toolshim::{
     augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
     modify_system_prompt_for_tool_json, sanitize_residual_markers,
 };
+use crate::session::Session;
 use goose_providers::conversation::token_usage::{CostSource, ProviderStats, ProviderUsage, Usage};
 use goose_providers::model::ModelConfig;
 use rmcp::model::{ErrorData, Tool};
@@ -196,16 +197,20 @@ fn ensure_unique_tool_names(tools: &[Tool]) -> Result<()> {
 impl Agent {
     pub async fn prepare_tools_and_prompt(
         &self,
-        session_id: &str,
-        working_dir: &std::path::Path,
+        fallback_session: &Session,
     ) -> Result<(
+        Session,
         Arc<ExtensionLease>,
         Vec<Tool>,
         Vec<Tool>,
         String,
         ModelConfig,
     )> {
-        let lease = self.resolve_lease(session_id, working_dir).await;
+        let (session, lease) = self
+            .extension_manager
+            .current_session_snapshot(fallback_session)
+            .await;
+        let lease = Arc::new(lease);
         let mut tools = lease.tools().await;
         if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
             tools.push(final_output_tool.tool());
@@ -220,7 +225,7 @@ impl Agent {
         let tools = prepare_inference_tools(tools, code_execution_active);
 
         let extensions_info = lease.instructions();
-        let model_config = self.effective_model_config_for_session(session_id).await?;
+        let model_config = self.effective_model_config_for_session(&session.id).await?;
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -233,14 +238,21 @@ impl Agent {
             .builder()
             .with_extensions(extensions_info.into_iter())
             .with_code_execution_mode(code_execution_active)
-            .with_hints(working_dir)
+            .with_hints(&session.working_dir)
             .with_goose_mode(goose_mode)
             .build();
 
         let (tools, toolshim_tools, system_prompt) =
             prepare_tools_for_provider(tools, system_prompt, &model_config);
 
-        Ok((lease, tools, toolshim_tools, system_prompt, model_config))
+        Ok((
+            session,
+            lease,
+            tools,
+            toolshim_tools,
+            system_prompt,
+            model_config,
+        ))
     }
 }
 

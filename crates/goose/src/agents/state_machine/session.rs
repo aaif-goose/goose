@@ -1,7 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::{Arc, Mutex as StdMutex};
 
+use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::effects::GooseEffect;
+use crate::agents::state_machine::ops_toolcalling::has_pending_advertised_tool_requests;
 use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -163,6 +166,8 @@ impl EffectUsage<GooseEffect> for SessionManager {
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
+    extension_manager: &ExtensionManager,
+    extension_lease: &Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
@@ -190,7 +195,25 @@ pub(crate) async fn run(
 
     let mut turn_usage = goose_providers::conversation::token_usage::Usage::default();
     loop {
-        let session = runtime.load(session_id).await?;
+        let mut session = runtime.load(session_id).await?;
+        let pending_tools = session
+            .conversation()
+            .map(crate::agents::state_machine::messages_since_kickoff)
+            .transpose()?
+            .is_some_and(has_pending_advertised_tool_requests);
+        if pending_tools {
+            let lease = extension_lease
+                .lock()
+                .expect("extension lease unavailable")
+                .clone();
+            if let Some(working_dir) = lease.as_ref().and_then(|lease| lease.working_dir()) {
+                session.working_dir = working_dir.to_path_buf();
+            }
+        } else {
+            let (snapshot, lease) = extension_manager.current_session_snapshot(&session).await;
+            session = snapshot;
+            *extension_lease.lock().expect("extension lease unavailable") = Some(Arc::new(lease));
+        }
         let Some(mut result) = machine.step(&session, emit).await? else {
             break;
         };

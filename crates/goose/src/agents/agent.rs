@@ -177,6 +177,7 @@ pub(crate) fn stop_hook_block_cap_warning(plugin: &str, cap: u32) -> Message {
 
 /// Context needed for the reply function
 pub struct ReplyContext {
+    session: Session,
     lease: Arc<ExtensionLease>,
     pub conversation: Conversation,
     pub tools: Vec<Tool>,
@@ -875,9 +876,8 @@ impl Agent {
 
     async fn prepare_reply_context(
         &self,
-        session_id: &str,
+        session: &Session,
         unfixed_conversation: Conversation,
-        working_dir: &std::path::Path,
     ) -> Result<ReplyContext> {
         let unfixed_messages = unfixed_conversation.messages().clone();
         let (conversation, issues) = fix_conversation(unfixed_conversation.clone());
@@ -891,9 +891,8 @@ impl Agent {
                 )
             );
         }
-        let (lease, tools, toolshim_tools, system_prompt, model_config) = self
-            .prepare_tools_and_prompt(session_id, working_dir)
-            .await?;
+        let (session, lease, tools, toolshim_tools, system_prompt, model_config) =
+            self.prepare_tools_and_prompt(session).await?;
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -918,6 +917,7 @@ impl Agent {
         };
 
         Ok(ReplyContext {
+            session,
             lease,
             conversation,
             tools,
@@ -2032,6 +2032,11 @@ impl Agent {
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
+        let extension_manager = Arc::clone(&self.extension_manager);
+        let extension_lease = self
+            .tool_confirmation_coordinator
+            .session(&session_id)
+            .extension_lease();
         let machine = self
             .create_state_machine(
                 provider,
@@ -2051,7 +2056,14 @@ impl Agent {
                 let result = {
                     let run = crate::session_context::with_session_id(
                         Some(session_id.clone()),
-                        run_goose(&machine, session_manager.as_ref(), &session_id, &emit),
+                        run_goose(
+                            &machine,
+                            session_manager.as_ref(),
+                            extension_manager.as_ref(),
+                            &extension_lease,
+                            &session_id,
+                            &emit,
+                        ),
                     );
                     tokio::pin!(run);
                     loop {
@@ -2468,10 +2480,9 @@ impl Agent {
         cancel_token: Option<CancellationToken>,
         reply_span: tracing::Span,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let context = self
-            .prepare_reply_context(&session.id, conversation, session.working_dir.as_path())
-            .await?;
+        let context = self.prepare_reply_context(&session, conversation).await?;
         let ReplyContext {
+            session,
             lease: mut inference_lease,
             mut conversation,
             mut tools,
@@ -2642,11 +2653,12 @@ impl Agent {
                 if first_inference {
                     first_inference = false;
                 } else {
-                    session = session_manager
+                    let fallback_session = session_manager
                         .get_session(&session_config.id, false)
                         .await?;
-                    (inference_lease, tools, toolshim_tools, system_prompt, _) =
-                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
+                    (session, inference_lease, tools, toolshim_tools, system_prompt, _) = self
+                        .prepare_tools_and_prompt(&fallback_session)
+                        .await?;
                     let project_addendum = self.load_project_instructions(&session).await;
                     if let Some(project_addendum) = &project_addendum {
                         system_prompt = format!("{system_prompt}\n\n{project_addendum}");
@@ -4330,6 +4342,49 @@ mod tests {
         let tool_lists = provider.tool_lists.lock().unwrap();
         assert_eq!(tool_lists.len(), 2);
         assert!(tool_lists[1].iter().any(|tool| tool == "changing__value"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn inference_context_uses_the_lease_session_snapshot() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let new_working_dir = temp_dir.path().join("moved");
+        std::fs::create_dir(&new_working_dir)?;
+        std::fs::write(
+            new_working_dir.join("AGENTS.md"),
+            "instructions from the moved directory",
+        )?;
+        let (agent, session_id) = create_test_agent(
+            temp_dir.path().join("data"),
+            crate::hooks::HookManager::from_plugins_for_test(vec![]),
+            Arc::new(RefreshingLeaseProvider::new()),
+        )
+        .await?;
+        let stale_session = agent
+            .config
+            .session_manager
+            .get_session(&session_id, false)
+            .await?;
+        agent
+            .extension_manager
+            .add_client(
+                persisted_builtin("changing"),
+                Some(stale_session.working_dir.clone()),
+                Arc::new(LeaseValueClient("value")),
+                None,
+            )
+            .await;
+        agent
+            .update_extension_working_dir(&session_id, &new_working_dir)
+            .await?;
+
+        let (session, lease, tools, _, system_prompt, _) =
+            agent.prepare_tools_and_prompt(&stale_session).await?;
+
+        assert_eq!(session.working_dir, new_working_dir);
+        assert_eq!(lease.working_dir(), Some(session.working_dir.as_path()));
+        assert!(tools.iter().any(|tool| tool.name == "changing__value"));
+        assert!(system_prompt.contains("instructions from the moved directory"));
         Ok(())
     }
 

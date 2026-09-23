@@ -30,7 +30,7 @@ use crate::agents::mcp_client::{
 use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
-use crate::session::{EnabledExtensionsState, ExtensionState};
+use crate::session::{EnabledExtensionsState, ExtensionState, Session};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
     ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ServerInfo, Tool,
@@ -616,6 +616,20 @@ impl ExtensionManager {
             .unwrap_or_else(|_| fallback_working_dir.to_path_buf());
         self.lease_for_working_dir(session_id, Some(&working_dir))
             .await
+    }
+
+    pub async fn current_session_snapshot(&self, fallback: &Session) -> (Session, ExtensionLease) {
+        let _guard = self.directory_lock.read().await;
+        let session = self
+            .context
+            .session_manager
+            .get_session(&fallback.id, fallback.conversation.is_some())
+            .await
+            .unwrap_or_else(|_| fallback.clone());
+        let lease = self
+            .lease_for_working_dir(&session.id, Some(&session.working_dir))
+            .await;
+        (session, lease)
     }
 
     async fn lease_for_working_dir(
