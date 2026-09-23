@@ -4536,6 +4536,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Chi tiết công cụ"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Mã định danh công cụ"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Kết quả công cụ"
   },
