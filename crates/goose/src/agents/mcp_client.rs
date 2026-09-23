@@ -12,7 +12,7 @@ use rmcp::model::{
 use rmcp::{
     model::{
         CallToolRequestParams, CallToolResult, CancelledNotificationParam, ClientCapabilities,
-        ClientInfo, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
+        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
         InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
         ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
@@ -460,7 +460,7 @@ impl ClientHandler for GooseClient {
             })
     }
 
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         let extensions = self.resolved_extensions();
 
         InitializeRequestParams::new(
