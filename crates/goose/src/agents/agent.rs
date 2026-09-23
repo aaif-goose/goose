@@ -336,6 +336,29 @@ async fn persist_and_push_message_with_id(
     Ok(message)
 }
 
+async fn persist_turn_context_if_changed(
+    session_manager: &SessionManager,
+    session_id: &str,
+    conversation: &mut Conversation,
+    turn_context: Option<Message>,
+) -> Result<()> {
+    let Some(turn_context) = turn_context else {
+        return Ok(());
+    };
+    if conversation
+        .messages()
+        .iter()
+        .rev()
+        .find(|message| message.is_turn_context())
+        .is_some_and(|current| current.as_concat_text() == turn_context.as_concat_text())
+    {
+        return Ok(());
+    }
+    persist_and_push_message_with_id(session_manager, session_id, conversation, turn_context)
+        .await?;
+    Ok(())
+}
+
 fn project_message_for_user_event(message: &Message) -> Message {
     message.user_visible_content()
 }
@@ -2573,25 +2596,22 @@ impl Agent {
                 super::moim::compute_compaction_info(&session_config.id, &self.extension_manager)
                     .await;
 
-            if let Some(turn_context) = super::moim::turn_context_message(
+            persist_turn_context_if_changed(
+                &session_manager,
                 &session_config.id,
-                &self.extension_manager,
-                &inference_lease,
-                turns_taken,
-                max_turns,
-                turn_start,
-                turn_start_compaction_info,
-            )
-            .await
-            {
-                persist_and_push_message_with_id(
-                    &session_manager,
+                &mut conversation,
+                super::moim::turn_context_message(
                     &session_config.id,
-                    &mut conversation,
-                    turn_context,
+                    &self.extension_manager,
+                    &inference_lease,
+                    turns_taken,
+                    max_turns,
+                    turn_start,
+                    turn_start_compaction_info.clone(),
                 )
-                .await?;
-            }
+                .await,
+            )
+            .await?;
             // Snapshot after the turn-context append so a retry keeps the sent prefix.
             let initial_messages = conversation.messages().clone();
 
@@ -2612,6 +2632,22 @@ impl Agent {
                     if let Some(project_addendum) = &project_addendum {
                         system_prompt = format!("{system_prompt}\n\n{project_addendum}");
                     }
+                    persist_turn_context_if_changed(
+                        &session_manager,
+                        &session_config.id,
+                        &mut conversation,
+                        super::moim::turn_context_message(
+                            &session_config.id,
+                            &self.extension_manager,
+                            &inference_lease,
+                            turns_taken,
+                            max_turns,
+                            turn_start,
+                            turn_start_compaction_info.clone(),
+                        )
+                        .await,
+                    )
+                    .await?;
                 }
 
                 if can_drain_pending_steers {
@@ -3976,6 +4012,80 @@ mod tests {
         fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
             None
         }
+
+        async fn get_moim(&self, _session_id: &str, _tools: &[Tool]) -> Option<String> {
+            Some(format!("<lease-value>{}</lease-value>", self.0))
+        }
+    }
+
+    struct RefreshingLeaseProvider {
+        manager: std::sync::Mutex<Option<Arc<ExtensionManager>>>,
+        turn_contexts: std::sync::Mutex<Vec<String>>,
+        call_count: AtomicUsize,
+    }
+
+    impl RefreshingLeaseProvider {
+        fn new() -> Self {
+            Self {
+                manager: std::sync::Mutex::new(None),
+                turn_contexts: std::sync::Mutex::new(Vec::new()),
+                call_count: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for RefreshingLeaseProvider {
+        async fn stream(
+            &self,
+            _model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.turn_contexts.lock().unwrap().push(
+                messages
+                    .iter()
+                    .rev()
+                    .find(|message| message.is_turn_context())
+                    .expect("provider request should contain turn context")
+                    .as_concat_text(),
+            );
+            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+            let message = if call == 0 {
+                let manager = self
+                    .manager
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .expect("extension manager unavailable");
+                manager
+                    .add_client(
+                        persisted_builtin("changing"),
+                        Arc::new(LeaseValueClient("second")),
+                        None,
+                    )
+                    .await;
+                Message::assistant().with_tool_request(
+                    "refresh-context",
+                    Ok(CallToolRequestParams::new("changing__value")),
+                )
+            } else {
+                Message::assistant().with_text("done")
+            };
+            Ok(stream_from_single_message(
+                message,
+                ProviderUsage::new("mock-model".to_string(), Usage::default()),
+            ))
+        }
+
+        fn get_name(&self) -> &str {
+            "refreshing-lease"
+        }
+
+        async fn get_context_limit(&self, _model: &str, _override_limit: Option<usize>) -> usize {
+            100_000
+        }
     }
 
     #[tokio::test]
@@ -4021,6 +4131,50 @@ mod tests {
 
         assert_eq!(first.content[0].as_text().unwrap().text, "first");
         assert_eq!(second.content[0].as_text().unwrap().text, "second");
+    }
+
+    #[tokio::test]
+    async fn legacy_inference_refreshes_extension_context() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let provider = Arc::new(RefreshingLeaseProvider::new());
+        let (agent, session_id) = create_test_agent(
+            temp_dir.path().join("data"),
+            crate::hooks::HookManager::from_plugins_for_test(vec![]),
+            provider.clone(),
+        )
+        .await?;
+        *provider.manager.lock().unwrap() = Some(Arc::clone(&agent.extension_manager));
+        agent
+            .extension_manager
+            .add_client(
+                persisted_builtin("changing"),
+                Arc::new(LeaseValueClient("first")),
+                None,
+            )
+            .await;
+
+        let mut stream = agent
+            .reply(
+                Message::user().with_text("refresh extension context"),
+                SessionConfig {
+                    id: session_id,
+                    schedule_id: None,
+                    max_turns: Some(100),
+                    retry_config: None,
+                },
+                false,
+                None,
+            )
+            .await?;
+        while let Some(event) = stream.next().await {
+            event?;
+        }
+
+        let contexts = provider.turn_contexts.lock().unwrap();
+        assert_eq!(contexts.len(), 2);
+        assert!(contexts[0].contains("<lease-value>first</lease-value>"));
+        assert!(contexts[1].contains("<lease-value>second</lease-value>"));
+        Ok(())
     }
 
     #[tokio::test]

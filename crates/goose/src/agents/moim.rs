@@ -69,8 +69,6 @@ pub(super) async fn compute_compaction_info(
     compaction_remaining_line(total_tokens, context_limit, compaction_threshold)
 }
 
-/// The turn's context block: composed once per turn, persisted as an
-/// agent-only user message, never moved or edited afterwards.
 pub async fn turn_context_message(
     session_id: &str,
     extension_manager: &ExtensionManager,
