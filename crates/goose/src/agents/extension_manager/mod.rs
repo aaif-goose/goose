@@ -160,29 +160,6 @@ struct CachedTools {
 }
 
 impl Extension {
-    fn new(
-        key: String,
-        config: ExtensionConfig,
-        working_dir: PathBuf,
-        resolved_config: ExtensionConfig,
-        client: McpClientBox,
-        server_info: Option<ServerInfo>,
-        tools_version: Arc<AtomicU64>,
-        reconnect_on_working_dir_change: bool,
-    ) -> Self {
-        Self {
-            key,
-            config,
-            working_dir,
-            resolved_config,
-            client,
-            server_info,
-            reconnect_on_working_dir_change,
-            tools_version,
-            tools: Mutex::new(None),
-        }
-    }
-
     pub(super) fn supports_resources(&self) -> bool {
         self.server_info
             .as_ref()
@@ -755,16 +732,17 @@ impl ExtensionManager {
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             sanitized_name.clone(),
-            Arc::new(Extension::new(
-                sanitized_name,
+            Arc::new(Extension {
+                key: sanitized_name,
                 config,
                 working_dir,
                 resolved_config,
-                Arc::from(client),
+                client: Arc::from(client),
                 server_info,
+                reconnect_on_working_dir_change: true,
                 tools_version,
-                true,
-            )),
+                tools: Mutex::new(None),
+            }),
         );
         Self::invalidate_extension_manager_tools(&extensions);
         Ok(())
@@ -850,16 +828,17 @@ impl ExtensionManager {
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             key.clone(),
-            Arc::new(Extension::new(
+            Arc::new(Extension {
                 key,
-                config.clone(),
+                config: config.clone(),
                 working_dir,
-                config,
+                resolved_config: config,
                 client,
-                info,
-                Arc::new(AtomicU64::new(0)),
-                false,
-            )),
+                server_info: info,
+                reconnect_on_working_dir_change: false,
+                tools_version: Arc::new(AtomicU64::new(0)),
+                tools: Mutex::new(None),
+            }),
         );
         Self::invalidate_extension_manager_tools(&extensions);
     }
@@ -904,16 +883,17 @@ impl ExtensionManager {
                 continue;
             }
             if !extension.reconnect_on_working_dir_change {
-                let replacement = Arc::new(Extension::new(
-                    extension.key.clone(),
-                    extension.config.clone(),
-                    new_dir.to_path_buf(),
-                    extension.resolved_config.clone(),
-                    Arc::clone(&extension.client),
-                    extension.server_info.clone(),
-                    Arc::clone(&extension.tools_version),
-                    false,
-                ));
+                let replacement = Arc::new(Extension {
+                    key: extension.key.clone(),
+                    config: extension.config.clone(),
+                    working_dir: new_dir.to_path_buf(),
+                    resolved_config: extension.resolved_config.clone(),
+                    client: Arc::clone(&extension.client),
+                    server_info: extension.server_info.clone(),
+                    reconnect_on_working_dir_change: false,
+                    tools_version: Arc::clone(&extension.tools_version),
+                    tools: Mutex::new(None),
+                });
                 let mut running = self.extensions.lock().await;
                 running.insert(extension.key.clone(), replacement);
                 Self::invalidate_extension_manager_tools(&running);
