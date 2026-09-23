@@ -90,6 +90,7 @@ pub(super) struct TestPipeline {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     extension_manager: Arc<ExtensionManager>,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     goose_mode: TokioMutex<GooseMode>,
     prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
@@ -133,7 +134,7 @@ impl TestPipeline {
                 COMPACTION_THRESHOLD,
             )));
         }
-        let extension_lease = Arc::new(StdMutex::new(None));
+        let extension_lease = Arc::clone(&self.extension_lease);
         let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(ToolPairCompactionOperation::new(
                 provider.clone(),
@@ -345,7 +346,7 @@ impl TestPipeline {
         let session = self.session().await?;
         let goal = self.goal.lock().await.clone();
         let grind = self.grind.lock().await.clone();
-        let pipeline = build_test_pipeline(
+        let mut pipeline = build_test_pipeline(
             self.session_manager.clone(),
             self.api.clone(),
             self.provider_features,
@@ -356,6 +357,7 @@ impl TestPipeline {
         .await?
         .with_hook_manager(self.hook_manager.clone())
         .with_stop_hook_block_cap(self.stop_hook_block_cap);
+        pipeline.extension_lease = Arc::clone(&self.extension_lease);
         *pipeline.goal.lock().await = goal;
         *pipeline.grind.lock().await = grind;
         Ok(pipeline)
@@ -401,6 +403,7 @@ impl TestPipeline {
         let mut events = Vec::new();
 
         for text in user_messages {
+            *self.extension_lease.lock().unwrap() = None;
             self.session_manager
                 .add_message(&self.session_id, &Message::user().with_text(text))
                 .await?;
@@ -412,6 +415,7 @@ impl TestPipeline {
     }
 
     pub(super) async fn run_message(&self, message: Message) -> Result<TestRun> {
+        *self.extension_lease.lock().unwrap() = None;
         self.session_manager
             .add_message(&self.session_id, &message)
             .await?;
@@ -423,6 +427,7 @@ impl TestPipeline {
         mut self,
         message: &str,
     ) -> Result<(Self, TestRun, usize)> {
+        *self.extension_lease.lock().unwrap() = None;
         self.session_manager
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
@@ -541,6 +546,7 @@ impl TestPipeline {
         message: &str,
         cancel: CancellationToken,
     ) -> Result<TestRun> {
+        *self.extension_lease.lock().unwrap() = None;
         self.session_manager
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
@@ -564,6 +570,7 @@ impl TestPipeline {
         action: ElicitationAction,
         user_data: serde_json::Value,
     ) -> Result<TestRun> {
+        *self.extension_lease.lock().unwrap() = None;
         self.session_manager
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
@@ -807,6 +814,7 @@ async fn build_test_pipeline(
         provider: provider.clone(),
         model_config,
         extension_manager,
+        extension_lease: Arc::new(StdMutex::new(None)),
         goose_mode: TokioMutex::new(session.goose_mode),
         prompt_manager: TokioMutex::new(PromptManager::new()),
         tool_inspection_manager,

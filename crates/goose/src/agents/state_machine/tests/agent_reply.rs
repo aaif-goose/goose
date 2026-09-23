@@ -392,7 +392,6 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
             Some(CancellationToken::new()),
         )
         .await?;
-    let mut messages = Vec::new();
     let confirmation_id = loop {
         let event = stream
             .next()
@@ -400,7 +399,6 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
             .expect("state machine should request confirmation")?;
         if let AgentEvent::Message(message) = event {
             let confirmation_id = confirmation_ids(std::slice::from_ref(&message)).pop();
-            messages.push(message);
             if let Some(confirmation_id) = confirmation_id {
                 break confirmation_id;
             }
@@ -411,10 +409,19 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
     agent
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
-    messages.extend(stream_messages(stream).await?);
+    stream_messages(stream).await?;
 
     assert_eq!(calculator.total(), 0);
-    assert!(messages
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_config.id, true)
+        .await?;
+    assert!(session
+        .conversation
+        .as_ref()
+        .expect("session conversation")
+        .messages()
         .iter()
         .any(|message| message.as_concat_text().contains(EXPIRED_APPROVAL_RESPONSE)));
     assert_eq!(api.call_count(), 2);
