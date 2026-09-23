@@ -97,7 +97,7 @@ impl CodeExecutionClient {
         Some(Self::callback_configs(tools))
     }
 
-    fn callback_configs(tools: Vec<Tool>) -> Vec<CallbackConfig> {
+    fn callback_configs(tools: Vec<McpTool>) -> Vec<CallbackConfig> {
         let mut cfgs = vec![];
         for tool in tools {
             if get_tool_resource_uri(&tool).is_some() || !is_tool_visible_to_model(&tool) {
@@ -630,7 +630,7 @@ impl McpClientTrait for CodeExecutionClient {
         Some(&self.info)
     }
 
-    async fn get_moim(&self, _session_id: &str, tools: &[Tool]) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str, tools: &[McpTool]) -> Option<String> {
         let code_mode = self
             .get_code_mode_for_configs(Self::callback_configs(tools.to_vec()))
             .await

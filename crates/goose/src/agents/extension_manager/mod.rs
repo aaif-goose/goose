@@ -1177,7 +1177,7 @@ impl ExtensionManager {
 mod tests {
     use super::*;
     use rmcp::model::CallToolResult;
-    use rmcp::model::{CustomNotification, InitializeResult, JsonObject, ReadResourceResult};
+    use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
     use rmcp::{object, ServiceError as Error};
 
     use rmcp::model::ListPromptsResult;
