@@ -1,8 +1,10 @@
+use goose::agents::extension::PlatformExtensionContext;
 use goose::agents::extension_manager::ExtensionManager;
 use goose::agents::mcp_client::McpClientTrait;
 use goose::agents::platform_extensions::developer::python_session::PythonSessionClient;
 use goose::agents::ToolCallContext;
 use goose::config::GooseMode;
+use goose::conversation::message::Message;
 use goose::session::SessionType;
 use serde_json::json;
 use serial_test::serial;
@@ -27,7 +29,12 @@ fn isolate_data_dir() {
     });
 }
 
-async fn setup() -> (PythonSessionClient, String, tempfile::TempDir) {
+async fn setup() -> (
+    PythonSessionClient,
+    String,
+    tempfile::TempDir,
+    PlatformExtensionContext,
+) {
     isolate_data_dir();
     let temp_dir = tempfile::tempdir().unwrap();
     let em = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
@@ -42,8 +49,8 @@ async fn setup() -> (PythonSessionClient, String, tempfile::TempDir) {
         )
         .await
         .unwrap();
-    let client = PythonSessionClient::new(context).unwrap();
-    (client, session.id, temp_dir)
+    let client = PythonSessionClient::new(context.clone()).unwrap();
+    (client, session.id, temp_dir, context)
 }
 
 fn result_text(result: &rmcp::model::CallToolResult) -> String {
@@ -79,7 +86,7 @@ async fn cells_share_state_and_moim_waits_for_compaction() {
         eprintln!("skipping: python3 not available");
         return;
     }
-    let (client, session_id, _dir) = setup().await;
+    let (client, session_id, _dir, _) = setup().await;
 
     let result = run_cell(&client, &session_id, "report = 'x' * 50_000\nlen(report)").await;
     assert_ne!(result.is_error, Some(true));
@@ -101,7 +108,7 @@ async fn kernel_death_is_reported_and_snapshot_restores_the_next_cell() {
         eprintln!("skipping: python3 not available");
         return;
     }
-    let (client, session_id, _dir) = setup().await;
+    let (client, session_id, _dir, _) = setup().await;
 
     run_cell(&client, &session_id, "precious = 41").await;
     let result = run_cell(&client, &session_id, "import os; os._exit(3)").await;
@@ -114,5 +121,37 @@ async fn kernel_death_is_reported_and_snapshot_restores_the_next_cell() {
     assert!(
         text.contains("restored from a previous process") && text.contains("=> 42"),
         "snapshot should bring the variable back after a crash, got: {text}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn copied_conversation_is_told_the_namespace_is_fresh() {
+    let (client, session_id, _dir, context) = setup().await;
+    assert!(
+        client.get_moim(&session_id).await.is_none(),
+        "a session without python history gets no notice"
+    );
+
+    let call = rmcp::model::CallToolRequestParams::new("developer__python");
+    let message = Message::assistant().with_tool_request("call_1", Ok(call));
+    context
+        .session_manager
+        .add_message(&session_id, &message)
+        .await
+        .unwrap();
+    let fork = context
+        .session_manager
+        .copy_session(&session_id, "fork".to_string())
+        .await
+        .unwrap();
+
+    let notice = client
+        .get_moim(&fork.id)
+        .await
+        .expect("a copied conversation with python calls gets a fresh-namespace notice");
+    assert!(
+        notice.contains("none of their variables exist here"),
+        "got: {notice}"
     );
 }

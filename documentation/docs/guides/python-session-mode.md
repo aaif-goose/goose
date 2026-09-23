@@ -126,7 +126,9 @@ In Python session mode the Developer extension exposes one tool, `python`, which
   Use `sh()`, `edit()`, and `view_image()` inside the session instead.
   Per-tool permissions apply to the single `python` tool.
 - Forking a session starts the fork with a fresh Python namespace.
-  Variables from the original session are not carried into the fork, so a forked conversation re-runs the Python it needs.
+  Variables from the original session are not carried into the fork; goose is told so at the start of the fork and re-runs the Python it needs.
+- A command backgrounded from `sh()` that still writes to the cell's output is stopped together with the session.
+  Redirect its output to a file to keep it running after the session ends.
 - Under Flatpak sandboxing, the session runs the interpreter inside the sandbox rather than on the host.
   Use tools mode there until host execution is supported.
 - ACP clients that normally take over Developer's file and terminal tools have nothing to take over in this mode, so the session runs on the goose side.

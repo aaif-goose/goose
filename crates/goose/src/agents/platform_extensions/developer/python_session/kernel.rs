@@ -263,6 +263,24 @@ impl Kernel {
         let _ = self.child.start_kill();
     }
 
+    /// Stop the kernel gracefully: the driver's SIGTERM handler reaps the shell
+    /// commands it started in their own process groups (a group kill alone would
+    /// miss them), then the group is hard-killed after a grace period in case the
+    /// driver is wedged in native code. The signal is sent before this returns, so
+    /// a replacement kernel spawned by the caller cannot be clobbered by this one.
+    pub fn stop(mut self) {
+        self.terminate();
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(async move {
+                    tokio::time::sleep(TEARDOWN_GRACE).await;
+                    self.kill();
+                });
+            }
+            Err(_) => self.kill(),
+        }
+    }
+
     #[cfg(unix)]
     fn terminate(&self) {
         // SIGTERM the group; the driver's handler reaps its tracked shell sessions
@@ -413,23 +431,8 @@ impl RunningKernel {
 
 impl Drop for RunningKernel {
     fn drop(&mut self) {
-        let Some(mut kernel) = self.kernel.take() else {
-            return;
-        };
-        // Signal stop synchronously, before this frame's session-slot lock is
-        // released and a replacement kernel can spawn: the driver's SIGTERM handler
-        // reaps its shell subprocesses and exits without writing a snapshot, so it
-        // cannot clobber the replacement's state. The grace and hard-kill fallback
-        // (for a driver wedged in native code) run detached.
-        kernel.terminate();
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                handle.spawn(async move {
-                    tokio::time::sleep(TEARDOWN_GRACE).await;
-                    kernel.kill();
-                });
-            }
-            Err(_) => kernel.kill(),
+        if let Some(kernel) = self.kernel.take() {
+            kernel.stop();
         }
     }
 }

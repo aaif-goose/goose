@@ -213,6 +213,50 @@ async fn shell_capture_is_bounded_per_stream() {
     );
 }
 
+#[cfg(unix)]
+fn process_running(pattern: &str) -> bool {
+    std::process::Command::new("pgrep")
+        .args(["-f", pattern])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn background_command_holding_the_pipes_is_reaped_with_the_kernel() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+    let marker = format!("sleep 300.{}", std::process::id() % 100_000);
+
+    let outcome = exec(
+        &mut kernel,
+        &format!("r = sh(\"{marker} &\")\n\"still open\" in r.out"),
+    )
+    .await;
+    assert_eq!(
+        outcome.value.as_deref(),
+        Some("True"),
+        "error: {:?}",
+        outcome.error
+    );
+    assert!(
+        process_running(&marker),
+        "the background command should outlive the shell"
+    );
+
+    // The driver's SIGTERM handler reaps the shell group that still holds the pipes.
+    kernel.stop();
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while process_running(&marker) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background command was orphaned by the kernel stop"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[tokio::test]
 async fn image_requests_are_capped_in_the_driver() {
     require_python!();

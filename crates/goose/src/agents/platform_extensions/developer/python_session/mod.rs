@@ -1,10 +1,12 @@
 pub mod kernel;
 
 use super::image::{load_image_content, CropParams};
+use super::EXTENSION_NAME;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::Config;
+use crate::conversation::message::MessageContent;
 use crate::session::Session;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,6 +40,9 @@ const MAX_IMAGES_KEY: &str = "GOOSE_PYTHON_SESSION_MAX_IMAGES";
 
 const KERNEL_RESET_NOTICE: &str = "[python session was restarted: variables, imports, and \
     functions from before this point no longer exist; recreate what you need]";
+const FRESH_NAMESPACE_NOTICE: &str = "<python-session>\nThis session's Python namespace is \
+    fresh: the earlier python calls in this conversation ran elsewhere and none of their \
+    variables exist here; recreate what you need.\n</python-session>";
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 struct PythonParams {
@@ -84,6 +89,7 @@ pub struct PythonSessionClient {
     sessions: Arc<Sessions>,
     ns_cache: Mutex<HashMap<String, String>>,
     compacted: Mutex<HashSet<String>>,
+    no_python_history: Mutex<HashSet<String>>,
     pending_dir: Mutex<HashMap<String, PathBuf>>,
     interpreter: tokio::sync::OnceCell<PathBuf>,
     resolved_path: tokio::sync::OnceCell<Option<String>>,
@@ -143,6 +149,7 @@ impl PythonSessionClient {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             ns_cache: Mutex::new(HashMap::new()),
             compacted: Mutex::new(HashSet::new()),
+            no_python_history: Mutex::new(HashSet::new()),
             pending_dir: Mutex::new(HashMap::new()),
             interpreter: tokio::sync::OnceCell::new(),
             resolved_path: tokio::sync::OnceCell::new(),
@@ -217,8 +224,8 @@ impl PythonSessionClient {
                     for slot in Self::live_slots(&sessions) {
                         if let Ok(mut slot) = slot.try_lock() {
                             if slot.last_used.elapsed() >= IDLE_KERNEL_TTL {
-                                if let Some(mut kernel) = slot.kernel.take() {
-                                    kernel.kill();
+                                if let Some(kernel) = slot.kernel.take() {
+                                    kernel.stop();
                                 }
                             }
                         }
@@ -327,8 +334,8 @@ impl PythonSessionClient {
 
     /// Kill the kernel and remove the snapshot of a session that no longer exists.
     fn discard(&self, slot: &mut SessionSlot, session_id: &str) {
-        if let Some(mut kernel) = slot.kernel.take() {
-            kernel.kill();
+        if let Some(kernel) = slot.kernel.take() {
+            kernel.stop();
         }
         if let Some(path) = slot.state_path.take() {
             let _ = std::fs::remove_file(path);
@@ -546,6 +553,55 @@ impl PythonSessionClient {
         }
         hit
     }
+
+    /// A conversation copied from another session (ACP fork, import) still shows
+    /// earlier `python` calls, but this session has neither a kernel nor a snapshot,
+    /// so the model must be told not to expect those variables. Sessions without
+    /// Python history are remembered so the conversation is scanned once.
+    async fn fresh_namespace_notice(&self, session_id: &str) -> Option<String> {
+        if self.no_python_history.lock().unwrap().contains(session_id) {
+            return None;
+        }
+        let session = self
+            .context
+            .session_manager
+            .get_session(session_id, true)
+            .await
+            .ok()?;
+        let python_tool = format!("{EXTENSION_NAME}__{PYTHON_TOOL_NAME}");
+        let has_history = session.conversation.is_some_and(|conversation| {
+            conversation
+                .messages()
+                .iter()
+                .flat_map(|message| message.content.iter())
+                .any(|block| {
+                    matches!(block, MessageContent::ToolRequest(request)
+                        if request.tool_call.as_ref().is_ok_and(|call| call.name == python_tool))
+                })
+        });
+        if !has_history {
+            self.no_python_history
+                .lock()
+                .unwrap()
+                .insert(session_id.to_string());
+            return None;
+        }
+        Some(FRESH_NAMESPACE_NOTICE.to_string())
+    }
+}
+
+impl Drop for PythonSessionClient {
+    fn drop(&mut self) {
+        // Idle kernels stop gracefully so their tracked shell commands are reaped;
+        // a kernel mid-cell is guarded by `RunningKernel`.
+        for slot in Self::live_slots(&self.sessions) {
+            if let Ok(mut slot) = slot.try_lock() {
+                if let Some(kernel) = slot.kernel.take() {
+                    kernel.stop();
+                }
+            }
+        }
+    }
 }
 
 fn config_value<T: DeserializeOwned>(key: &str) -> Option<T> {
@@ -690,16 +746,18 @@ impl McpClientTrait for PythonSessionClient {
     /// The listing rides in the turn context, so every change to it invalidates the
     /// provider's prompt cache from that message onward. Before a compaction the model
     /// still sees its own `python` calls, so the re-anchor is only emitted once history
-    /// has actually been compacted away. Sessions that never ran Python (no live
-    /// kernel slot, no snapshot) return before the conversation is scanned. A session
-    /// resumed in a new process has no kernel yet, so one is restored from the
-    /// snapshot to list what came back.
+    /// has actually been compacted away. A session with neither a live kernel slot
+    /// nor a snapshot has no variables to list, but a copied conversation may show
+    /// `python` calls whose variables never existed here. A session resumed in a new
+    /// process has no kernel yet, so one is restored from the snapshot to list what
+    /// came back.
     async fn get_moim(&self, session_id: &str) -> Option<String> {
         let session = self.load_session(session_id).await?;
         let has_snapshot = snapshot_path(&self.state_dir(), &session).is_file();
-        if (!self.has_slot(session_id) && !has_snapshot)
-            || !self.session_was_compacted(session_id).await
-        {
+        if !self.has_slot(session_id) && !has_snapshot {
+            return self.fresh_namespace_notice(session_id).await;
+        }
+        if !self.session_was_compacted(session_id).await {
             return None;
         }
 

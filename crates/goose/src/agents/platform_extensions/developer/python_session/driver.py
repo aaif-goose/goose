@@ -145,25 +145,29 @@ class _PipeDrain(threading.Thread):
     """Reads one child pipe to EOF, keeping at most SH_CAPTURE_CAP bytes, so a
     command flooding its output cannot grow the kernel until the cell times out."""
 
-    def __init__(self, pipe):
+    def __init__(self, pipe, on_close):
         super().__init__(daemon=True)
         self._pipe = pipe
+        self._on_close = on_close
         self.kept = bytearray()
         self.dropped = 0
         self.start()
 
     def run(self):
-        while True:
-            try:
-                chunk = os.read(self._pipe.fileno(), 1 << 16)
-            except OSError:
-                return
-            if not chunk:
-                return
-            room = SH_CAPTURE_CAP - len(self.kept)
-            if room > 0:
-                self.kept += chunk[:room]
-            self.dropped += max(0, len(chunk) - room)
+        try:
+            while True:
+                try:
+                    chunk = os.read(self._pipe.fileno(), 1 << 16)
+                except OSError:
+                    return
+                if not chunk:
+                    return
+                room = SH_CAPTURE_CAP - len(self.kept)
+                if room > 0:
+                    self.kept += chunk[:room]
+                self.dropped += max(0, len(chunk) - room)
+        finally:
+            self._on_close()
 
     def text(self, label):
         text = bytes(self.kept).decode("utf-8", errors="replace")
@@ -172,9 +176,11 @@ class _PipeDrain(threading.Thread):
                 self.dropped, label, SH_CAPTURE_CAP >> 20
             )
         if self.is_alive():
-            text += "\n[... {} is still open (a backgrounded process holds it); later output was not captured ...]".format(
-                label
-            )
+            text += (
+                "\n[... {} is still open (a backgrounded process holds it); later output "
+                "was not captured, and the process is killed with this session. Redirect "
+                "its output to a file to detach it ...]"
+            ).format(label)
         return text
 
 
@@ -196,8 +202,20 @@ def sh(command, timeout=None, cwd=None, env=None):
     )
     if posix:
         _child_sessions.add(proc.pid)
-    out = _PipeDrain(proc.stdout)
-    err = _PipeDrain(proc.stderr)
+    open_pipes = [2]
+    pipes_lock = threading.Lock()
+
+    def _pipe_closed():
+        # A backgrounded command that still holds the pipes stays tracked, so a
+        # session teardown reaps it; one that redirected its output is on its own.
+        with pipes_lock:
+            open_pipes[0] -= 1
+            last = open_pipes[0] == 0
+        if last and posix:
+            _child_sessions.discard(proc.pid)
+
+    out = _PipeDrain(proc.stdout, _pipe_closed)
+    err = _PipeDrain(proc.stderr, _pipe_closed)
 
     def _kill_group():
         try:
@@ -217,18 +235,14 @@ def sh(command, timeout=None, cwd=None, env=None):
 
     timed_out = False
     try:
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            _kill_group()
-            proc.wait()
-        except KeyboardInterrupt:
-            _kill_group()
-            raise
-    finally:
-        if posix:
-            _child_sessions.discard(proc.pid)
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _kill_group()
+        proc.wait()
+    except KeyboardInterrupt:
+        _kill_group()
+        raise
     for drain in (out, err):
         drain.join(SH_DRAIN_GRACE_SECS)
     return ShellResult(
