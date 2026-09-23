@@ -64,6 +64,8 @@ async fn capture_state_machine_trace_fields(
     super::session::run(
         &machine,
         pipeline.session_manager.as_ref(),
+        pipeline.extension_manager.as_ref(),
+        &pipeline.extension_lease,
         &pipeline.session_id,
         &emit,
     )
