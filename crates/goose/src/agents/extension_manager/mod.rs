@@ -551,6 +551,7 @@ impl ExtensionManager {
     /// Resolve a set against what is running. A selected extension that is
     /// not running, or is running under a different config, is left out.
     pub async fn resolve(&self, set: &ExtensionSet) -> ExtensionLease {
+        let _guard = self.mutation_lock.lock().await;
         let members = {
             let extensions = self.extensions.lock().await;
             set.extensions()
@@ -587,11 +588,15 @@ impl ExtensionManager {
         session_id: &str,
         working_dir: Option<&Path>,
     ) -> ExtensionLease {
+        let _guard = self.mutation_lock.lock().await;
         let mut extensions = self
             .extensions
             .lock()
             .await
             .values()
+            .filter(|extension| {
+                working_dir.is_none_or(|working_dir| extension.working_dir == working_dir)
+            })
             .cloned()
             .collect::<Vec<_>>();
         extensions.sort_by(|left, right| left.key.cmp(&right.key));
@@ -1853,6 +1858,29 @@ mod tests {
             .await
             .iter()
             .any(|tool| tool.name == "external__ping"));
+    }
+
+    #[tokio::test]
+    async fn current_lease_excludes_extensions_from_another_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(data_dir.path().to_path_buf());
+        extension_manager
+            .add_client(
+                builtin_config("external", vec![]),
+                Some(old_working_dir.path().to_path_buf()),
+                Arc::new(MockClient {}),
+                None,
+            )
+            .await;
+
+        let lease = extension_manager
+            .current_lease("session", Some(new_working_dir.path()))
+            .await;
+
+        assert!(!lease.is_enabled("external"));
     }
 
     #[tokio::test]

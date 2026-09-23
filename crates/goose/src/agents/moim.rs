@@ -108,9 +108,10 @@ pub async fn turn_context_message(
         return None;
     }
 
-    let working_dir = session
-        .as_ref()
-        .map(|session| session.working_dir.clone())
+    let working_dir = lease
+        .working_dir()
+        .map(Path::to_path_buf)
+        .or_else(|| session.as_ref().map(|session| session.working_dir.clone()))
         .unwrap_or_else(|| PathBuf::from("."));
     let mut parts = lease.moim().await;
     parts.extend(compaction_info.map(|value| tag("compaction", &value)));
@@ -357,6 +358,24 @@ mod tests {
 
         assert!(text.contains("old context"));
         assert!(!text.contains("new context"));
+    }
+
+    #[tokio::test]
+    async fn turn_context_uses_the_leased_working_dir() {
+        let (session_id, em, _tmp) = session_and_manager().await;
+        let leased_working_dir = PathBuf::from("/leased/dir");
+        let lease = em
+            .current_lease(&session_id, Some(&leased_working_dir))
+            .await;
+
+        let message =
+            turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)
+                .await
+                .unwrap();
+        let text = message.content[0].as_text().unwrap();
+
+        assert!(text.contains("<working_directory>/leased/dir</working_directory>"));
+        assert!(!text.contains("<working_directory>/test/dir</working_directory>"));
     }
 
     #[test]
