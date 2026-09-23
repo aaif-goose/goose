@@ -818,13 +818,15 @@ impl SummonClient {
         )
     }
 
-    async fn get_working_dir(&self, session_id: &str) -> PathBuf {
-        self.context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .ok()
-            .map(|s| s.working_dir)
+    fn working_dir(&self, ctx: &ToolCallContext) -> PathBuf {
+        ctx.working_dir
+            .clone()
+            .or_else(|| {
+                self.context
+                    .session
+                    .as_ref()
+                    .map(|session| session.working_dir.clone())
+            })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     }
 
@@ -1001,6 +1003,7 @@ impl SummonClient {
     async fn handle_load(
         &self,
         session_id: &str,
+        working_dir: &Path,
         arguments: Option<JsonObject>,
         notification_emitter: Option<ToolCallNotificationEmitter>,
     ) -> Result<CallToolResult, String> {
@@ -1023,11 +1026,9 @@ impl SummonClient {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let working_dir = self.get_working_dir(session_id).await;
-
         if source_name.is_none() {
             return self
-                .handle_load_discovery(session_id, &working_dir)
+                .handle_load_discovery(session_id, working_dir)
                 .await
                 .map(CallToolResult::success);
         }
@@ -1062,7 +1063,7 @@ impl SummonClient {
             return Ok(CallToolResult::success(task_result.content).with_meta(Some(meta)));
         }
 
-        self.handle_load_source(session_id, name, &working_dir)
+        self.handle_load_source(session_id, name, working_dir)
             .await
             .map(CallToolResult::success)
     }
@@ -1368,6 +1369,7 @@ impl SummonClient {
     async fn handle_delegate(
         &self,
         session_id: &str,
+        working_dir: &Path,
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
         notification_emitter: Option<ToolCallNotificationEmitter>,
@@ -1382,19 +1384,30 @@ impl SummonClient {
 
         self.validate_delegate_params(&params)?;
 
-        let session = self
+        let mut session = match self
             .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| format!("Failed to get session: {}", e))?;
+            .session
+            .as_deref()
+            .filter(|session| session.id == session_id)
+        {
+            Some(session) => session.clone(),
+            None => self
+                .context
+                .session_manager
+                .get_session(session_id, false)
+                .await
+                .map_err(|e| format!("Failed to get session: {}", e))?,
+        };
+        session.working_dir = working_dir.to_path_buf();
 
         if session.session_type == SessionType::SubAgent {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
         if params.r#async {
-            let (content, task_id) = self.handle_async_delegate(session_id, params).await?;
+            let (content, task_id) = self
+                .handle_async_delegate(session_id, params, session)
+                .await?;
             let mut meta = MetaObject::new();
             meta.0.insert(
                 "subagent_session_id".to_string(),
@@ -1403,9 +1416,8 @@ impl SummonClient {
             return Ok(CallToolResult::success(content).with_meta(Some(meta)));
         }
 
-        let working_dir = session.working_dir.clone();
         let recipe = self
-            .build_delegate_recipe(&params, session_id, &working_dir)
+            .build_delegate_recipe(&params, session_id, working_dir)
             .await?;
 
         let task_config = self
@@ -2045,6 +2057,7 @@ impl SummonClient {
         &self,
         session_id: &str,
         params: DelegateParams,
+        session: crate::session::Session,
     ) -> Result<(Vec<ContentBlock>, String), String> {
         let task_count = self.background_tasks.lock().await.len();
         let max_tasks = max_background_tasks();
@@ -2054,13 +2067,6 @@ impl SummonClient {
                 max_tasks
             ));
         }
-
-        let session = self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| format!("Failed to get session: {}", e))?;
 
         let working_dir = session.working_dir.clone();
         let recipe = self
@@ -2194,9 +2200,15 @@ impl McpClientTrait for SummonClient {
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
         let session_id = &ctx.session_id;
+        let working_dir = self.working_dir(ctx);
         match name {
             "load" => match self
-                .handle_load(session_id, arguments, ctx.notification_emitter().cloned())
+                .handle_load(
+                    session_id,
+                    &working_dir,
+                    arguments,
+                    ctx.notification_emitter().cloned(),
+                )
                 .await
             {
                 Ok(result) => Ok(result),
@@ -2209,6 +2221,7 @@ impl McpClientTrait for SummonClient {
                 match self
                     .handle_delegate(
                         session_id,
+                        &working_dir,
                         arguments,
                         cancellation_token,
                         ctx.notification_emitter().cloned(),
@@ -2454,6 +2467,67 @@ mod tests {
             &client.completed_tasks,
             &rebound.completed_tasks
         ));
+    }
+
+    #[tokio::test]
+    async fn leased_client_loads_sources_from_its_snapshot_directory() {
+        let data_dir = TempDir::new().unwrap();
+        let old_working_dir = TempDir::new().unwrap();
+        let new_working_dir = TempDir::new().unwrap();
+        for (working_dir, instructions) in [
+            (old_working_dir.path(), "old instructions"),
+            (new_working_dir.path(), "new instructions"),
+        ] {
+            let agents = working_dir.join(".goose/agents");
+            fs::create_dir_all(&agents).unwrap();
+            fs::write(
+                agents.join("reviewer.md"),
+                format!("---\nname: reviewer\ndescription: reviewer\n---\n{instructions}"),
+            )
+            .unwrap();
+        }
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut context = create_test_context_with_session_manager(Arc::clone(&session_manager));
+        context.session = Some(Arc::new(session.clone()));
+        let client = SummonClient::new(context).unwrap();
+        session_manager
+            .update(&session.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await
+            .unwrap();
+        let ctx =
+            ToolCallContext::new(session.id, Some(old_working_dir.path().to_path_buf()), None);
+
+        let result = client
+            .call_tool(
+                &ctx,
+                "load",
+                Some(
+                    serde_json::json!({"source": "reviewer"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let text = result.content[0].as_text().unwrap();
+
+        assert!(text.text.contains("old instructions"));
+        assert!(!text.text.contains("new instructions"));
     }
 
     #[tokio::test]
@@ -4061,7 +4135,7 @@ You review code."#;
             .unwrap()
             .clone();
         let result = client
-            .handle_load("parent", Some(arguments), None)
+            .handle_load("parent", temp_dir.path(), Some(arguments), None)
             .await
             .unwrap();
         let text = extract_text(&result.content[0]);

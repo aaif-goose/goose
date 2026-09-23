@@ -920,9 +920,38 @@ impl ExtensionManager {
         info: Option<ServerInfo>,
     ) {
         let _guard = self.directory_lock.read().await;
-        let key = config.key();
         let working_dir =
             working_dir.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        self.insert_client(config, working_dir, client, info).await;
+    }
+
+    pub async fn add_session_client(
+        &self,
+        config: ExtensionConfig,
+        session_id: &str,
+        client: McpClientBox,
+        info: Option<ServerInfo>,
+    ) -> ExtensionResult<()> {
+        let _guard = self.directory_lock.read().await;
+        let working_dir = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?
+            .working_dir;
+        self.insert_client(config, working_dir, client, info).await;
+        Ok(())
+    }
+
+    async fn insert_client(
+        &self,
+        config: ExtensionConfig,
+        working_dir: PathBuf,
+        client: McpClientBox,
+        info: Option<ServerInfo>,
+    ) {
+        let key = config.key();
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             key.clone(),
@@ -2076,6 +2105,54 @@ mod tests {
             .result
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_client_uses_the_current_session_directory() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving-client-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .get_context()
+            .session_manager
+            .update(&session.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await
+            .unwrap();
+
+        manager
+            .add_session_client(
+                builtin_config("external", vec![]),
+                &session.id,
+                Arc::new(MockClient {}),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(manager
+            .current_lease(&session.id, Some(new_working_dir.path()))
+            .await
+            .is_enabled("external"));
+        assert!(!manager
+            .current_lease(&session.id, Some(old_working_dir.path()))
+            .await
+            .is_enabled("external"));
     }
 
     #[tokio::test]
