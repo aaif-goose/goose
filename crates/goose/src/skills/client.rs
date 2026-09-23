@@ -461,51 +461,6 @@ mod tests {
         assert!(result_text(&result).contains("Symlinked supporting guidance."));
     }
 
-    fn write_skill(workspace: &Path, name: &str, marker: &str) {
-        let skill_dir = workspace.join(".goose/skills").join(name);
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            format!("---\nname: {name}\ndescription: {marker} description\n---\n{marker} body"),
-        )
-        .unwrap();
-        fs::write(skill_dir.join("guide.md"), format!("{marker} guide")).unwrap();
-    }
-
-    fn client_for(workspace: &Path) -> SkillsClient {
-        let config = Box::leak(Box::new(
-            Config::new(
-                workspace.join("test-config.yaml"),
-                "goose-skills-workspace-test",
-            )
-            .unwrap(),
-        ));
-        let session = Arc::new(crate::session::Session {
-            working_dir: workspace.to_path_buf(),
-            ..crate::session::Session::default()
-        });
-        SkillsClient::new(PlatformExtensionContext {
-            extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
-            session_manager: Arc::new(crate::session::SessionManager::instance()),
-            scheduler: None,
-            session: Some(session),
-            use_login_shell_path: false,
-        })
-        .unwrap()
-        .with_builtin_skills(false)
-        .with_config(config)
-    }
-
-    async fn load_skill(client: &SkillsClient, name: &str) -> CallToolResult {
-        let ctx = ToolCallContext::new("test".to_string(), None, None);
-        let args = serde_json::from_value(serde_json::json!({"name": name})).unwrap();
-        client
-            .call_tool(&ctx, "load_skill", Some(args), CancellationToken::new())
-            .await
-            .unwrap()
-    }
-
     #[tokio::test]
     async fn test_load_filesystem_skill_without_builtin_skills() {
         let temp_dir = TempDir::new().unwrap();
