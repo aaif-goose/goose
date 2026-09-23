@@ -4089,7 +4089,7 @@ mod tests {
                 manager
                     .add_client(
                         platform_extension("changing"),
-                        None,
+                        Some(PathBuf::default()),
                         Arc::new(LeaseValueClient("second")),
                         None,
                     )
@@ -4123,7 +4123,7 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
-                None,
+                Some(session.working_dir.clone()),
                 Arc::new(LeaseValueClient("first")),
                 None,
             )
@@ -4134,7 +4134,7 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
-                None,
+                Some(session.working_dir.clone()),
                 Arc::new(LeaseValueClient("second")),
                 None,
             )
