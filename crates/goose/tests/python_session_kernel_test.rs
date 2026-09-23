@@ -130,7 +130,7 @@ async fn namespace_survives_process_restart_via_state_snapshot() {
     assert!(kernel.restored_names().is_empty());
     exec(
         &mut kernel,
-        "totals = {'a': 1, 'b': 2}\nimport socket\nsock = socket.socket()",
+        "totals = {'a': 1, 'b': 2}\n_scratch = [3]\nimport socket\nsock = socket.socket()",
     )
     .await;
     kernel.kill();
@@ -145,8 +145,8 @@ async fn namespace_survives_process_restart_via_state_snapshot() {
         !revived.restored_names().contains(&"sock".to_string()),
         "unpicklable variable must be skipped, not fail the snapshot"
     );
-    let outcome = exec(&mut revived, "totals['b']").await;
-    assert_eq!(outcome.value.as_deref(), Some("2"));
+    let outcome = exec(&mut revived, "(totals['b'], _scratch)").await;
+    assert_eq!(outcome.value.as_deref(), Some("(2, [3])"));
 }
 
 #[tokio::test]

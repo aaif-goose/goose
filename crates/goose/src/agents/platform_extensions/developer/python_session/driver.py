@@ -305,6 +305,9 @@ NS = {
     "view_image": view_image,
 }
 _HELPERS = frozenset(("sh", "edit", "view_image"))
+# Names the session owns; everything else in NS, including `_scratch`, belongs
+# to the model and is listed and persisted.
+_INTERNAL_NAMES = frozenset(("__name__", "__builtins__", "_")) | _HELPERS
 _cell_count = 0
 
 
@@ -404,7 +407,7 @@ def _size_hint(value):
 def _namespace_listing():
     entries = []
     for name, value in NS.items():
-        if name.startswith("_") or name in _HELPERS:
+        if name in _INTERNAL_NAMES:
             continue
         if isinstance(value, type(sys)):
             continue
@@ -464,7 +467,7 @@ def _save_state():
     sizes = {}
     modules = {}
     for name, value in NS.items():
-        if name.startswith("_") or name in _HELPERS:
+        if name in _INTERNAL_NAMES:
             continue
         names.append(name)
         if isinstance(value, type(sys)):
