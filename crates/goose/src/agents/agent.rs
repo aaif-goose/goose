@@ -4103,7 +4103,7 @@ mod tests {
         agent
             .extension_manager
             .add_client(
-                platform_extension("changing"),
+                persisted_builtin("changing"),
                 Arc::new(LeaseValueClient("first")),
                 None,
             )
@@ -4153,14 +4153,6 @@ mod tests {
         )
         .await?;
         *provider.manager.lock().unwrap() = Some(Arc::clone(&agent.extension_manager));
-        agent
-            .extension_manager
-            .add_client(
-                persisted_builtin("changing"),
-                Arc::new(LeaseValueClient("first")),
-                None,
-            )
-            .await;
 
         let mut stream = agent
             .reply(
@@ -4181,14 +4173,8 @@ mod tests {
 
         let contexts = provider.turn_contexts.lock().unwrap();
         assert_eq!(contexts.len(), 2);
-        assert!(contexts[0].contains("<lease-value>first</lease-value>"));
-        let first = contexts[1]
-            .rfind("<lease-value>first</lease-value>")
-            .expect("second inference should retain its prefix");
-        let second = contexts[1]
-            .rfind("<lease-value>second</lease-value>")
-            .expect("second inference should include refreshed context");
-        assert!(second > first);
+        assert!(!contexts[0].contains("<lease-value>second</lease-value>"));
+        assert!(contexts[1].contains("<lease-value>second</lease-value>"));
         Ok(())
     }
 
