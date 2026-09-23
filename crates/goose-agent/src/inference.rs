@@ -478,6 +478,10 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
                                 accumulator.push(chunk);
                                 continue;
                             }
+                            if is_empty_response(&chunk) {
+                                accumulator.push(chunk);
+                                continue;
+                            }
                             let chunk = emit.message(chunk).await;
                             accumulator.push(chunk);
                         }
@@ -512,10 +516,23 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             if ends_with_successful_tool_response(conversation.messages())
                 && accumulator.iter().all(is_empty_response)
             {
-                return yielded_with(usage_effects);
+                let mut message = accumulator
+                    .into_iter()
+                    .last()
+                    .unwrap_or_else(Message::assistant);
+                message.content.clear();
+                message.metadata.user_visible = false;
+                message.metadata.agent_visible = false;
+                message.metadata.set_operation_note(
+                    "inference",
+                    "completed_empty_response",
+                    true.into(),
+                );
+                let message = emit.message(message).await;
+                usage_effects.push(E::from(message));
+            } else {
+                usage_effects.extend(accumulator.into_iter().map(|message| E::from(message)));
             }
-
-            usage_effects.extend(accumulator.into_iter().map(|message| E::from(message)));
             applied(usage_effects)
         }
         .instrument(span)
