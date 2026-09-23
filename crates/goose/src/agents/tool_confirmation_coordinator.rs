@@ -144,7 +144,7 @@ impl SessionToolConfirmationState {
             .is_empty()
     }
 
-    fn clear_extension_lease(&self) {
+    pub(super) fn clear_extension_lease(&self) {
         *self
             .extension_lease
             .lock()

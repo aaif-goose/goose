@@ -13,11 +13,12 @@ use anyhow::Result;
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-use super::calculator_extension::{delayed_value, CalculatorExtension, ADD};
+use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
 use crate::config::permission::PermissionManager;
 use crate::config::GooseMode;
@@ -364,6 +365,59 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
             .count(),
         1
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let agent = Arc::new(agent);
+
+    api.on("add one").call(ADD, value(1));
+    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("add one"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let mut messages = Vec::new();
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            let confirmation_id = confirmation_ids(std::slice::from_ref(&message)).pop();
+            messages.push(message);
+            if let Some(confirmation_id) = confirmation_id {
+                break confirmation_id;
+            }
+        }
+    };
+
+    agent.clear_extension_lease_for_test(&session_config.id);
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    messages.extend(stream_messages(stream).await?);
+
+    assert_eq!(calculator.total(), 0);
+    assert!(messages
+        .iter()
+        .any(|message| message.as_concat_text().contains(EXPIRED_APPROVAL_RESPONSE)));
+    assert_eq!(api.call_count(), 2);
 
     Ok(())
 }

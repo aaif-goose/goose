@@ -502,6 +502,13 @@ impl Agent {
     }
 
     #[cfg(test)]
+    pub(crate) fn clear_extension_lease_for_test(&self, session_id: &str) {
+        self.tool_confirmation_coordinator
+            .session(session_id)
+            .clear_extension_lease();
+    }
+
+    #[cfg(test)]
     pub(crate) fn set_stop_hook_block_cap_for_test(&mut self, cap: u32) {
         self.stop_hook_block_cap_override = Some(cap);
     }

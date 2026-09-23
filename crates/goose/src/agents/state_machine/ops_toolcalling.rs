@@ -25,6 +25,9 @@ use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
 use crate::session::Session;
+
+pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
+    "Tool approval expired because its extension lease is no longer available. Request the tool again.";
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -363,6 +366,7 @@ impl<'a> ToolExecutionOperation<'a> {
 
     async fn dispatch_tool_call(
         &self,
+        lease: Arc<ExtensionLease>,
         tool_call: CallToolRequestParams,
         request_id: String,
         cancellation_token: CancellationToken,
@@ -371,7 +375,6 @@ impl<'a> ToolExecutionOperation<'a> {
         let span = tool_span(&tool_call.name, &request_id, &session.id);
         crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
         let result_span = span.clone();
-        let lease = self.lease(session).await;
         let leased_session = lease.working_dir().and_then(|working_dir| {
             (working_dir != session.working_dir.as_path()).then(|| {
                 let mut session = session.clone();
@@ -865,9 +868,38 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             return not_applicable();
         }
 
-        let known_tools: HashSet<_> = self
-            .lease(session)
-            .await
+        let lease = self
+            .lease
+            .lock()
+            .expect("extension lease unavailable")
+            .clone();
+        let Some(lease) = lease else {
+            let mut response = Message::user();
+            for (request, disposition) in pending {
+                let result = match disposition {
+                    ToolDisposition::Execute => {
+                        CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
+                    }
+                    ToolDisposition::Decline => CallToolResult::error(vec![ContentBlock::text(
+                        DECLINED_RESPONSE,
+                    )]),
+                    ToolDisposition::ParseError(parse_error) => {
+                        CallToolResult::error(vec![ContentBlock::text(format!(
+                            "The tool call could not be parsed: {parse_error}. Correct the arguments and try again."
+                        ))])
+                    }
+                };
+                response.add_tool_response_with_metadata(
+                    request.id,
+                    Ok(result),
+                    request.metadata.as_ref(),
+                );
+            }
+            let response = emit.message(response).await;
+            return applied([response.into()]);
+        };
+
+        let known_tools: HashSet<_> = lease
             .tools_excluding(crate::skills::EXTENSION_NAME)
             .await
             .into_iter()
@@ -918,6 +950,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                 .map_err(|e| anyhow!("tool call could not be parsed: {e}"))?;
             let result = self
                 .dispatch_tool_call(
+                    Arc::clone(&lease),
                     tool_call,
                     request.id.clone(),
                     emit.cancel_token().clone(),
