@@ -2482,7 +2482,7 @@ impl Agent {
             model_config,
         } = context;
 
-        let mut project_addendum = self.load_project_instructions(&session).await;
+        let project_addendum = self.load_project_instructions(&session).await;
         if let Some(project_addendum) = &project_addendum {
             system_prompt = format!("{system_prompt}\n\n{project_addendum}");
         }
@@ -2647,7 +2647,7 @@ impl Agent {
                         .await?;
                     (inference_lease, tools, toolshim_tools, system_prompt, _) =
                         self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
-                    project_addendum = self.load_project_instructions(&session).await;
+                    let project_addendum = self.load_project_instructions(&session).await;
                     if let Some(project_addendum) = &project_addendum {
                         system_prompt = format!("{system_prompt}\n\n{project_addendum}");
                     }
