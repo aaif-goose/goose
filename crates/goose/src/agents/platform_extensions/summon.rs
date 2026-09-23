@@ -578,19 +578,25 @@ pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
     source_cache: Arc<Mutex<Option<CachedSources>>>,
-    background_tasks: Arc<Mutex<HashMap<String, BackgroundTask>>>,
+    background_tasks: Arc<BackgroundTasks>,
     completed_tasks: Arc<Mutex<HashMap<String, CompletedTask>>>,
 }
 
 type CachedSources = (Instant, PathBuf, Vec<SourceEntry>);
 
-impl Drop for SummonClient {
+struct BackgroundTasks(Mutex<HashMap<String, BackgroundTask>>);
+
+impl std::ops::Deref for BackgroundTasks {
+    type Target = Mutex<HashMap<String, BackgroundTask>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for BackgroundTasks {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.background_tasks) > 1 {
-            return;
-        }
-        // Best-effort cancellation of running tasks on shutdown
-        if let Ok(tasks) = self.background_tasks.try_lock() {
+        if let Ok(tasks) = self.0.try_lock() {
             for task in tasks.values() {
                 task.cancellation_token.cancel();
             }
@@ -607,7 +613,7 @@ impl SummonClient {
             info,
             context,
             source_cache: Arc::new(Mutex::new(None)),
-            background_tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_tasks: Arc::new(BackgroundTasks(Mutex::new(HashMap::new()))),
             completed_tasks: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -2448,6 +2454,55 @@ mod tests {
             &client.completed_tasks,
             &rebound.completed_tasks
         ));
+    }
+
+    #[tokio::test]
+    async fn shared_background_tasks_are_cancelled_after_all_clients_drop() {
+        let data_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = session_manager
+            .create_session(
+                data_dir.path().to_path_buf(),
+                "rebound".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let client =
+            SummonClient::new(create_test_context_with_session_manager(session_manager)).unwrap();
+        let rebound = client.rebound(Arc::new(session));
+        let cancellation_token = CancellationToken::new();
+        let task_token = cancellation_token.clone();
+        let handle = tokio::spawn(async move {
+            task_token.cancelled().await;
+            Ok("cancelled".to_string())
+        });
+        client.background_tasks.lock().await.insert(
+            "task".to_string(),
+            BackgroundTask {
+                id: "task".to_string(),
+                description: "task".to_string(),
+                started_at: Instant::now(),
+                turns: Arc::new(AtomicU32::new(0)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle,
+                cancellation_token: cancellation_token.clone(),
+                completion_token: CancellationToken::new(),
+                notification_sink: buffered_notification_sink(Vec::new()),
+            },
+        );
+
+        let (first, second) = tokio::join!(
+            tokio::spawn(async move { drop(client) }),
+            tokio::spawn(async move { drop(rebound) })
+        );
+        first.unwrap();
+        second.unwrap();
+
+        assert!(cancellation_token.is_cancelled());
     }
 
     #[test]
