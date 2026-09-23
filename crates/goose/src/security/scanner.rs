@@ -241,14 +241,17 @@ impl PromptInjectionScanner {
             });
         }
 
-        let max_confidence = stream::iter(user_messages)
+        let (max_confidence, any_scanned) = stream::iter(user_messages)
             .map(|msg| async move {
                 self.scan_with_classifier(&msg, classifier, ClassifierType::Prompt)
                     .await
             })
             .buffer_unordered(ML_SCAN_CONCURRENCY)
-            .fold(0.0_f32, |acc, result| async move {
-                result.unwrap_or(0.0).max(acc)
+            .fold((0.0_f32, false), |(acc, scanned), result| async move {
+                match result {
+                    Some(confidence) => (confidence.max(acc), true),
+                    None => (acc, scanned),
+                }
             })
             .await;
 
@@ -256,7 +259,7 @@ impl PromptInjectionScanner {
             confidence: max_confidence,
             pattern_confidence: 0.0,
             pattern_matches: Vec::new(),
-            ml_confidence: Some(max_confidence),
+            ml_confidence: any_scanned.then_some(max_confidence),
             used_pattern_detection: false,
         })
     }
@@ -432,7 +435,7 @@ impl Default for PromptInjectionScanner {
 mod tests {
     use super::*;
     use rmcp::object;
-    use wiremock::matchers::method;
+    use wiremock::matchers::{body_string_contains, method};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn classifier_with_confidence(
@@ -714,5 +717,126 @@ mod tests {
             extracted,
             vec!["newest prompt", "middle prompt", "oldest prompt"]
         );
+    }
+
+    fn unreachable_classifier() -> ClassificationClient {
+        ClassificationClient::from_endpoint(
+            "http://127.0.0.1:1/classify".to_string(),
+            Some(500),
+            None,
+        )
+        .unwrap()
+    }
+
+    fn scanner_with_prompt_classifier(
+        prompt_classifier: ClassificationClient,
+    ) -> PromptInjectionScanner {
+        PromptInjectionScanner {
+            pattern_matcher: PatternMatcher::new(),
+            command_classifier: None,
+            prompt_classifier: Some(prompt_classifier),
+        }
+    }
+
+    async fn prompt_classifier_responding(
+        response: ResponseTemplate,
+    ) -> (MockServer, ClassificationClient) {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(response)
+            .mount(&mock_server)
+            .await;
+        let classifier =
+            ClassificationClient::from_endpoint(mock_server.uri(), None, None).unwrap();
+        (mock_server, classifier)
+    }
+
+    #[tokio::test]
+    async fn unreachable_prompt_classifier_reports_no_context_signal() {
+        let scanner = scanner_with_prompt_classifier(unreachable_classifier());
+        let messages = vec![Message::user().with_text("deploy the service")];
+
+        let result = scanner.scan_conversation(&messages).await.unwrap();
+
+        assert_eq!(result.ml_confidence, None);
+    }
+
+    #[tokio::test]
+    async fn prompt_classifier_error_status_reports_no_context_signal() {
+        let (_server, classifier) = prompt_classifier_responding(ResponseTemplate::new(500)).await;
+        let scanner = scanner_with_prompt_classifier(classifier);
+        let messages = vec![Message::user().with_text("deploy the service")];
+
+        let result = scanner.scan_conversation(&messages).await.unwrap();
+
+        assert_eq!(result.ml_confidence, None);
+    }
+
+    #[tokio::test]
+    async fn malformed_prompt_classifier_response_reports_no_context_signal() {
+        let (_server, classifier) =
+            prompt_classifier_responding(ResponseTemplate::new(200).set_body_string("not json"))
+                .await;
+        let scanner = scanner_with_prompt_classifier(classifier);
+        let messages = vec![Message::user().with_text("deploy the service")];
+
+        let result = scanner.scan_conversation(&messages).await.unwrap();
+
+        assert_eq!(result.ml_confidence, None);
+    }
+
+    #[tokio::test]
+    async fn partially_failed_prompt_scan_keeps_successful_scores() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(body_string_contains("unscannable"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([[{
+                    "label": "INJECTION",
+                    "score": 0.6
+                }, {
+                    "label": "SAFE",
+                    "score": 0.4
+                }]])),
+            )
+            .mount(&mock_server)
+            .await;
+        let classifier =
+            ClassificationClient::from_endpoint(mock_server.uri(), None, None).unwrap();
+        let scanner = scanner_with_prompt_classifier(classifier);
+        let messages = vec![
+            Message::user().with_text("unscannable message"),
+            Message::user().with_text("ordinary message"),
+        ];
+
+        let result = scanner.scan_conversation(&messages).await.unwrap();
+
+        let confidence = result.ml_confidence.expect("surviving scan should report");
+        assert!((confidence - 0.6).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn unreachable_prompt_classifier_does_not_lower_command_confidence() {
+        let (_command_server, command_classifier) = classifier_with_confidence(0.85).await;
+        let scanner = PromptInjectionScanner {
+            pattern_matcher: PatternMatcher::new(),
+            command_classifier: Some(command_classifier),
+            prompt_classifier: Some(unreachable_classifier()),
+        };
+
+        let tool_call =
+            CallToolRequestParams::new("shell").with_arguments(object!({"command": "echo hello"}));
+        let messages = vec![Message::user().with_text("deploy the service")];
+
+        let result = scanner
+            .analyze_tool_call_with_context(&tool_call, &messages)
+            .await
+            .unwrap();
+
+        assert!((result.confidence - 0.85).abs() < 1e-6);
     }
 }
