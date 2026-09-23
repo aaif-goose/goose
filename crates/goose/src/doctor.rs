@@ -285,7 +285,20 @@ mod tests {
 
     #[tokio::test]
     async fn developer_requirement_accepts_enabled_extension() {
-        let agent = crate::agents::Agent::new();
+        let data_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+            Arc::clone(&session_manager),
+            Arc::new(crate::permission::PermissionManager::new(
+                data_dir.path().to_path_buf(),
+            )),
+            None,
+            crate::config::GooseMode::default(),
+            false,
+            crate::agents::GoosePlatform::GooseCli,
+        ));
         let session = agent
             .config
             .session_manager
