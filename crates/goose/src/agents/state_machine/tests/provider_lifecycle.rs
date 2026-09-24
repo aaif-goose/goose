@@ -262,6 +262,78 @@ async fn provider_lifecycle() -> Result<()> {
 }
 
 #[tokio::test]
+async fn thinking_only_response_is_prompted_to_continue() -> Result<()> {
+    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
+        preserves_thinking: true,
+        ..ProviderFeatures::default()
+    })
+    .await?;
+
+    api.on("think without answering")
+        .reasoning("deep thoughts with no answer");
+    api.on("did not produce an answer")
+        .reply("recovered after thinking");
+
+    let result = pipeline.run(["think without answering"]).await?;
+    result.assert_message(-1, Agent, "recovered after thinking");
+
+    let thinking = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message.content.iter().any(|content| {
+                matches!(content, MessageContent::Thinking(thinking) if thinking.thinking == "deep thoughts with no answer")
+            })
+        })
+        .expect("the thinking-only response should be kept");
+    assert!(thinking.is_agent_visible());
+    let continuation = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message
+                .as_concat_text()
+                .contains("did not produce an answer")
+        })
+        .expect("a continuation prompt should be persisted");
+    assert_eq!(continuation.role, rmcp::model::Role::User);
+    assert!(continuation.is_agent_visible());
+    assert!(!continuation.is_user_visible());
+
+    let recovery_call = api.calls().last().cloned().expect("continuation request");
+    assert!(recovery_call.input_contains("did not produce an answer"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn persistent_thinking_only_responses_surface_a_message() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+
+    api.on("keep thinking forever").reasoning("just thinking");
+
+    let result = pipeline.run(["keep thinking forever"]).await?;
+    assert_eq!(
+        api.call_count(),
+        4,
+        "thinking-only continuation retries should be bounded"
+    );
+    result.assert_message(
+        -1,
+        Agent,
+        "The model finished thinking but did not produce an answer",
+    );
+
+    api.on("after thinking forever").reply("answering again");
+    let result = pipeline.run(["after thinking forever"]).await?;
+    result.assert_message(-1, Agent, "answering again");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("hello").reply("hi there");
