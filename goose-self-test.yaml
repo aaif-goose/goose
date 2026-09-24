@@ -9,6 +9,7 @@ activities:
   - Test file operations (create, read, update, delete, undo)
   - Validate shell command execution and error handling
   - Validate Azure AI Foundry provider routing and deployment aliases
+  - Validate custom-provider model modality resolution
   - Validate the configurable Databricks AI Gateway path across all inference routes
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
@@ -176,6 +177,9 @@ prompt: |
   When running from a goose source checkout:
   1. Run `cargo test -p goose test_gondola_provider_registry_wiring` to verify Gondola is registered with the correct name, default model (`deepseek-v4-flash`), and a secret `GONDOLA_API_KEY` config key.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
+
+  ### Custom Provider Model Modality Validation
+  When running from a goose source checkout, run `cargo test -p goose model_config::modality_tests` and verify a custom provider can resolve explicit input/output modality metadata, including image input and text fallback. If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   ### Databricks AI Gateway Path Validation
   When running from a goose source checkout:

@@ -1,3 +1,4 @@
+use crate::canonical::Modality;
 use crate::formats::openai::{
     extract_reasoning_effort, is_openai_responses_model, is_xai_reasoning_model,
     supports_xai_reasoning_effort,
@@ -9,6 +10,43 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 pub const DEFAULT_CONTEXT_LIMIT: usize = 128_000;
+
+fn legacy_input_modalities(supports_vision: Option<bool>) -> Vec<Modality> {
+    let mut modalities = vec![Modality::Text];
+    if supports_vision.unwrap_or_default() {
+        modalities.push(Modality::Image);
+    }
+    modalities
+}
+
+pub fn normalize_modalities(modalities: Vec<Modality>) -> Vec<Modality> {
+    if modalities.is_empty() {
+        vec![Modality::Text]
+    } else {
+        modalities
+    }
+}
+
+/// Strips a trailing reasoning-effort suffix (e.g. `-high`) from a model name,
+/// for the model families whose runtime `model_name` gets normalized this way
+/// by [`ModelConfig::normalize_effort_suffix`]. Unlike [`extract_reasoning_effort`],
+/// this covers xAI/Grok reasoning models in addition to the OpenAI Responses family,
+/// so callers matching against a normalized `ModelConfig::model_name` don't miss them.
+pub fn strip_reasoning_effort_suffix(model_name: &str) -> Option<(String, ThinkingEffort)> {
+    if !is_openai_responses_model(model_name) && !supports_xai_reasoning_effort(model_name) {
+        return None;
+    }
+    let parts: Vec<&str> = model_name.split('-').collect();
+    let effort = match *parts.last()? {
+        "none" => ThinkingEffort::Off,
+        "low" => ThinkingEffort::Low,
+        "medium" => ThinkingEffort::Medium,
+        "high" => ThinkingEffort::High,
+        "xhigh" => ThinkingEffort::Max,
+        _ => return None,
+    };
+    Some((parts[..parts.len() - 1].join("-"), effort))
+}
 
 /// Request param keys that describe model-family-agnostic reasoning behavior and
 /// are therefore safe to carry across a model switch or subagent delegation.
@@ -51,8 +89,10 @@ pub struct ModelConfig {
     pub request_params: Option<HashMap<String, Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supports_vision: Option<bool>,
+    #[serde(default)]
+    pub input_modalities: Vec<Modality>,
+    #[serde(default)]
+    pub output_modalities: Vec<Modality>,
     /// Per-request HTTP headers attached to outgoing provider calls.
     /// Never serialized into request bodies.
     #[serde(skip)]
@@ -77,7 +117,11 @@ impl<'de> Deserialize<'de> for ModelConfig {
             request_params: Option<HashMap<String, Value>>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             reasoning: Option<bool>,
-            #[serde(default, skip_serializing_if = "Option::is_none")]
+            #[serde(default)]
+            input_modalities: Option<Vec<Modality>>,
+            #[serde(default)]
+            output_modalities: Option<Vec<Modality>>,
+            #[serde(default)]
             supports_vision: Option<bool>,
         }
 
@@ -91,7 +135,12 @@ impl<'de> Deserialize<'de> for ModelConfig {
             toolshim_model: raw.toolshim_model,
             request_params: raw.request_params,
             reasoning: raw.reasoning,
-            supports_vision: raw.supports_vision,
+            input_modalities: raw
+                .input_modalities
+                .unwrap_or_else(|| legacy_input_modalities(raw.supports_vision)),
+            output_modalities: raw
+                .output_modalities
+                .unwrap_or_else(|| vec![Modality::Text]),
             request_headers: None,
         };
         config.normalize_effort_suffix();
@@ -110,7 +159,8 @@ impl ModelConfig {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![Modality::Text],
+            output_modalities: vec![Modality::Text],
             request_headers: None,
         };
         config.normalize_effort_suffix();
@@ -159,14 +209,8 @@ impl ModelConfig {
             if self.reasoning.is_none() {
                 self.reasoning = canonical.reasoning;
             }
-            if self.supports_vision.is_none() {
-                self.supports_vision = Some(
-                    canonical
-                        .modalities
-                        .input
-                        .contains(&crate::canonical::Modality::Image),
-                )
-            }
+            self.input_modalities = normalize_modalities(canonical.modalities.input);
+            self.output_modalities = normalize_modalities(canonical.modalities.output);
         }
 
         self
@@ -253,9 +297,22 @@ impl ModelConfig {
         self
     }
 
-    pub fn with_vision_support(mut self, supports_vision: bool) -> Self {
-        self.supports_vision = Some(supports_vision);
+    pub fn with_modalities(
+        mut self,
+        input_modalities: Vec<Modality>,
+        output_modalities: Vec<Modality>,
+    ) -> Self {
+        self.input_modalities = normalize_modalities(input_modalities);
+        self.output_modalities = normalize_modalities(output_modalities);
         self
+    }
+
+    pub fn supports_input_modality(&self, modality: Modality) -> bool {
+        self.input_modalities.contains(&modality)
+    }
+
+    pub fn supports_output_modality(&self, modality: Modality) -> bool {
+        self.output_modalities.contains(&modality)
     }
 
     pub fn with_inherited_session_settings_from(
@@ -348,23 +405,10 @@ impl ModelConfig {
     }
 
     pub fn normalize_effort_suffix(&mut self) {
-        if !self.is_openai_reasoning_model() && !supports_xai_reasoning_effort(&self.model_name) {
+        let Some((base, effort)) = strip_reasoning_effort_suffix(&self.model_name) else {
             return;
-        }
-        let parts: Vec<&str> = self.model_name.split('-').collect();
-        let last = match parts.last() {
-            Some(l) => *l,
-            None => return,
         };
-        let effort = match last {
-            "none" => ThinkingEffort::Off,
-            "low" => ThinkingEffort::Low,
-            "medium" => ThinkingEffort::Medium,
-            "high" => ThinkingEffort::High,
-            "xhigh" => ThinkingEffort::Max,
-            _ => return,
-        };
-        self.model_name = parts[..parts.len() - 1].join("-");
+        self.model_name = base;
         let has_explicit_effort = self
             .request_params
             .as_ref()
@@ -781,43 +825,54 @@ mod tests {
         }
     }
 
-    mod supports_vision {
+    mod modalities {
         use super::*;
 
         #[test]
-        fn reads_supports_vision_from_config() {
+        fn reads_legacy_vision_data_for_session_compatibility() {
             let config: ModelConfig = serde_json::from_str(
                 r#"{"model_name":"gpt-4o","toolshim":false,"supports_vision":true}"#,
             )
             .unwrap();
-            assert_eq!(config.supports_vision, Some(true));
+            assert!(config.supports_input_modality(Modality::Image));
 
             let config: ModelConfig = serde_json::from_str(
                 r#"{"model_name":"gpt-4o","toolshim":false,"supports_vision":false}"#,
             )
             .unwrap();
-            assert_eq!(config.supports_vision, Some(false));
+            assert_eq!(config.input_modalities, vec![Modality::Text]);
         }
 
         #[test]
-        fn defaults_supports_vision_to_none_when_absent() {
+        fn missing_modalities_are_compatible() {
             let config: ModelConfig =
                 serde_json::from_str(r#"{"model_name":"deepseek-v4","toolshim":false}"#).unwrap();
-            assert_eq!(config.supports_vision, None);
+            assert_eq!(config.input_modalities, vec![Modality::Text]);
+            assert_eq!(config.output_modalities, vec![Modality::Text]);
         }
 
         #[test]
-        fn serializes_supports_vision_only_when_some() {
-            let config = ModelConfig::new("gpt-4o").with_vision_support(true);
+        fn serializes_generic_modalities() {
+            let config = ModelConfig::new("gpt-4o")
+                .with_modalities(vec![Modality::Text, Modality::Image], vec![Modality::Text]);
             let serialized = serde_json::to_value(&config).unwrap();
             assert_eq!(
-                serialized.get("supports_vision"),
-                Some(&serde_json::Value::Bool(true))
+                serialized["input_modalities"],
+                serde_json::json!(["text", "image"])
             );
-
-            let config = ModelConfig::new("deepseek-v4");
-            let serialized = serde_json::to_value(&config).unwrap();
+            assert_eq!(serialized["output_modalities"], serde_json::json!(["text"]));
             assert!(serialized.get("supports_vision").is_none());
+        }
+
+        #[test]
+        fn normalize_modalities_defaults_empty_lists_to_text() {
+            // Exercised whenever a direction resolves to an empty list, whether
+            // from an explicit custom declaration or incomplete canonical metadata.
+            assert_eq!(normalize_modalities(Vec::new()), vec![Modality::Text]);
+            assert_eq!(
+                normalize_modalities(vec![Modality::Image]),
+                vec![Modality::Image]
+            );
         }
     }
 
@@ -922,30 +977,17 @@ mod tests {
             assert_eq!(canonical.limit.output, Some(128_000));
             assert_eq!(config.max_tokens, Some(128_000));
             assert_eq!(config.reasoning, Some(true));
-            assert_eq!(config.supports_vision, Some(true));
+            assert!(config.supports_input_modality(Modality::Image));
         }
 
         #[test]
-        fn fills_supports_vision_from_canonical_model() {
+        fn fills_modalities_from_canonical_model() {
             let _guard = env_lock::lock_env([
                 ("GOOSE_MAX_TOKENS", None::<&str>),
                 ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ]);
-            // gpt-4o is a vision model in the canonical catalog (image input modality).
             let config = ModelConfig::new("gpt-4o").with_canonical_limits("openai");
-            assert_eq!(config.supports_vision, Some(true));
-        }
-
-        #[test]
-        fn does_not_override_existing_supports_vision() {
-            let _guard = env_lock::lock_env([
-                ("GOOSE_MAX_TOKENS", None::<&str>),
-                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
-            ]);
-            let config = ModelConfig::new("gpt-4o")
-                .with_vision_support(false)
-                .with_canonical_limits("openai");
-            assert_eq!(config.supports_vision, Some(false));
+            assert!(config.supports_input_modality(Modality::Image));
         }
     }
 

@@ -1113,7 +1113,8 @@ mod tests {
                 toolshim_model: None,
                 request_params: None,
                 reasoning: None,
-                supports_vision: None,
+                input_modalities: vec![goose_providers::canonical::Modality::Text],
+                output_modalities: vec![goose_providers::canonical::Modality::Text],
                 request_headers: None,
             },
         )

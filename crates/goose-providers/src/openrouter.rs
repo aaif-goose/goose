@@ -609,7 +609,8 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
-            supports_vision: None,
+            input_modalities: vec![crate::canonical::Modality::Text],
+            output_modalities: vec![crate::canonical::Modality::Text],
             request_headers: None,
         }
     }

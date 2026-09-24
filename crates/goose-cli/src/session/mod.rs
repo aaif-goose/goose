@@ -2935,7 +2935,11 @@ mod tests {
                 serde_json::json!(["output-128k-2025-02-19"]),
             )])),
             reasoning: Some(false),
-            supports_vision: Some(true),
+            input_modalities: vec![
+                goose_providers::canonical::Modality::Text,
+                goose_providers::canonical::Modality::Image,
+            ],
+            output_modalities: vec![goose_providers::canonical::Modality::Text],
             request_headers: None,
         };
 
