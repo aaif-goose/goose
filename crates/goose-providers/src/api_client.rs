@@ -317,6 +317,17 @@ impl ApiClient {
             .read_timeout(timeout)
     }
 
+    /// Build a reqwest client that honors the same custom CA and client
+    /// certificate settings as provider API clients.
+    pub fn http_client(tls_config: Option<&TlsConfig>) -> Result<Client> {
+        let mut client_builder =
+            Self::client_builder(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS));
+        if let Some(tls_config) = tls_config {
+            client_builder = Self::configure_tls(client_builder, tls_config)?;
+        }
+        Ok(client_builder.build()?)
+    }
+
     fn rebuild_client(&mut self) -> Result<()> {
         let mut client_builder =
             Self::client_builder(self.timeout).default_headers(self.default_headers.clone());

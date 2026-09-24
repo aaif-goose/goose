@@ -372,9 +372,10 @@ impl MuseCodeAuth {
     }
 
     async fn get_valid_token(&self) -> Result<MuseToken, ProviderError> {
+        let generation = MUSE_TOKEN_GENERATION.load(Ordering::SeqCst);
         if let Some(token) = self.cache.load() {
-            match self.use_or_refresh(token).await {
-                Ok(token) => return self.ensure_api_key(token).await,
+            match self.use_or_refresh(token, generation).await {
+                Ok(token) => return self.ensure_api_key(token, generation).await,
                 Err(ProviderError::NotConfigured | ProviderError::Authentication(_)) => {}
                 Err(error) => return Err(error),
             }
@@ -382,39 +383,55 @@ impl MuseCodeAuth {
 
         if let Some(token) = muse_cli_token() {
             if token.expires_at > Utc::now() {
-                return self.ensure_api_key(token).await;
+                return self.ensure_api_key(token, generation).await;
             }
         }
 
         Err(ProviderError::NotConfigured)
     }
 
-    async fn ensure_api_key(&self, mut token: MuseToken) -> Result<MuseToken, ProviderError> {
+    async fn ensure_api_key(
+        &self,
+        mut token: MuseToken,
+        generation: u64,
+    ) -> Result<MuseToken, ProviderError> {
         if !token.api_key.is_empty() {
             return Ok(token);
         }
         if token.access_token.is_empty() {
             return Err(ProviderError::NotConfigured);
         }
-        let generation = MUSE_TOKEN_GENERATION.load(Ordering::SeqCst);
         token.api_key = self
             .mint_api_key(&token.access_token)
             .await
             .map_err(|error| {
                 ProviderError::Authentication(format!("Failed to mint Muse API key: {error}"))
             })?;
-        if MUSE_TOKEN_GENERATION.load(Ordering::SeqCst) != generation {
-            return Err(ProviderError::Authentication(
-                "Muse Code credential was removed during mint".to_string(),
-            ));
-        }
-        if let Err(error) = self.cache.save(&token) {
-            tracing::warn!("failed to persist minted muse_code api key: {error}");
-        }
+        self.save_unless_cleaned(&token, generation).await?;
         Ok(token)
     }
 
-    async fn use_or_refresh(&self, token: MuseToken) -> Result<MuseToken, ProviderError> {
+    async fn save_unless_cleaned(
+        &self,
+        token: &MuseToken,
+        generation: u64,
+    ) -> Result<(), ProviderError> {
+        let _guard = global_muse_refresh_mutex().lock().await;
+        if MUSE_TOKEN_GENERATION.load(Ordering::SeqCst) != generation {
+            return Err(ProviderError::Authentication(
+                "Muse Code credential was removed during authentication".to_string(),
+            ));
+        }
+        self.cache.save(token).map_err(|error| {
+            ProviderError::Authentication(format!("Failed to save Muse Code credential: {error}"))
+        })
+    }
+
+    async fn use_or_refresh(
+        &self,
+        token: MuseToken,
+        generation: u64,
+    ) -> Result<MuseToken, ProviderError> {
         if token.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS) {
             return Ok(token);
         }
@@ -429,6 +446,12 @@ impl MuseCodeAuth {
 
         let _guard = global_muse_refresh_mutex().lock().await;
 
+        if MUSE_TOKEN_GENERATION.load(Ordering::SeqCst) != generation {
+            return Err(ProviderError::Authentication(
+                "Muse Code credential was removed during authentication".to_string(),
+            ));
+        }
+
         if let Some(reloaded) = self.cache.load() {
             if reloaded != token
                 && reloaded.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS)
@@ -436,26 +459,33 @@ impl MuseCodeAuth {
                 return Ok(reloaded);
             }
             if reloaded != token && !reloaded.refresh_token.is_empty() {
-                return self.refresh_with_token(reloaded).await;
+                drop(_guard);
+                return self.refresh_with_token(reloaded, generation).await;
             }
         }
 
-        self.refresh_with_token(token).await
+        drop(_guard);
+        self.refresh_with_token(token, generation).await
     }
 
-    async fn refresh_with_token(&self, token: MuseToken) -> Result<MuseToken, ProviderError> {
+    async fn refresh_with_token(
+        &self,
+        token: MuseToken,
+        generation: u64,
+    ) -> Result<MuseToken, ProviderError> {
         let refresh_token = token.refresh_token.clone();
         match self.do_refresh_token(&refresh_token).await {
             Ok(refreshed) => {
-                if let Err(e) = self.cache.save(&refreshed) {
-                    tracing::warn!("failed to persist refreshed muse_code token: {}", e);
-                }
+                self.save_unless_cleaned(&refreshed, generation).await?;
                 Ok(refreshed)
             }
             Err(error) => {
                 let mapped = muse_refresh_error(error);
                 if matches!(mapped, ProviderError::Authentication(_)) {
-                    let _ = self.cache.clear();
+                    let _guard = global_muse_refresh_mutex().lock().await;
+                    if MUSE_TOKEN_GENERATION.load(Ordering::SeqCst) == generation {
+                        let _ = self.cache.clear();
+                    }
                     return Err(mapped);
                 }
                 if token.expires_at > Utc::now() {
@@ -503,11 +533,7 @@ async fn from_env(tls_config: Option<TlsConfig>) -> Result<MuseCodeProvider> {
 
     let auth = Arc::new(MuseCodeAuth {
         cache: TokenCache::new(),
-        client: Client::builder()
-            .connect_timeout(StdDuration::from_secs(
-                crate::providers::base::DEFAULT_CONNECT_TIMEOUT_SECS,
-            ))
-            .build()?,
+        client: ApiClient::http_client(tls_config.as_ref())?,
         api_host: host.clone(),
         auth_host,
         client_id,
@@ -619,16 +645,13 @@ impl Provider for MuseCodeProvider {
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
+        let generation = MUSE_TOKEN_GENERATION.load(Ordering::SeqCst);
         let token = self
             .auth
             .device_flow_login()
             .await
             .map_err(|e| ProviderError::Authentication(format!("OAuth flow failed: {e}")))?;
-        let _guard = global_muse_refresh_mutex().lock().await;
-        self.auth.cache.save(&token).map_err(|e| {
-            ProviderError::Authentication(format!("Failed to save OAuth token: {e}"))
-        })?;
-        Ok(())
+        self.auth.save_unless_cleaned(&token, generation).await
     }
 }
 
@@ -673,13 +696,7 @@ mod tests {
                 .iter()
                 .map(|model| model.context_limit)
                 .collect::<Vec<_>>(),
-            vec![
-                Some(1_048_576),
-                Some(1_048_576),
-                Some(1_000_000),
-                Some(1_048_576),
-                Some(1_048_576)
-            ]
+            vec![Some(1_048_576); 5]
         );
         assert!(
             metadata.known_models.iter().all(|model| model.reasoning),
@@ -1029,6 +1046,85 @@ mod tests {
                 .get("authorization")
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer LLM-cli-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn configure_oauth_does_not_restore_credential_removed_during_sign_in() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/oidc/device/authorization/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "device_code": "device",
+                "user_code": "ABCD-EFGH",
+                "verification_uri": "https://auth.meta.com/activate",
+                "expires_in": 600,
+                "interval": 1
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/oidc/device/token/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(std::time::Duration::from_millis(300))
+                    .set_body_json(json!({
+                        "access_token": "muse-access",
+                        "refresh_token": "muse-refresh",
+                        "expires_in": 3600
+                    })),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/muse-code/key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "api_key": "LLM-muse-key"
+            })))
+            .mount(&server)
+            .await;
+
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", None::<&str>),
+            ("MUSE_CODE_HOST", None::<&str>),
+            ("MUSE_CODE_AUTH_HOST", None::<&str>),
+            ("MUSE_CODE_CLIENT_ID", None::<&str>),
+            ("MUSE_AUTH_PATH", None::<&str>),
+            ("XDG_CONFIG_HOME", None::<&str>),
+        ]);
+        let temp_dir = tempfile::tempdir().expect("tempdir should be created");
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+        std::env::set_var("MUSE_CODE_HOST", server.uri());
+        std::env::set_var("MUSE_CODE_AUTH_HOST", server.uri());
+        std::env::set_var(
+            "MUSE_AUTH_PATH",
+            temp_dir
+                .path()
+                .join("missing-auth.json")
+                .to_string_lossy()
+                .as_ref(),
+        );
+        TokenCache::new()
+            .save(&fresh_token("old-access"))
+            .expect("existing token should save");
+
+        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+            .await
+            .expect("provider should build");
+        let sign_in = tokio::spawn(async move { provider.configure_oauth().await });
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        MuseCodeProvider::cleanup()
+            .await
+            .expect("disconnect should remove the credential");
+
+        let err = sign_in
+            .await
+            .expect("sign-in task should finish")
+            .expect_err("in-flight sign-in should not undo disconnect");
+        assert!(matches!(err, ProviderError::Authentication(_)));
+        assert!(
+            TokenCache::new().load().is_none(),
+            "disconnect during sign-in must not be overwritten"
         );
     }
 }
