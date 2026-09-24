@@ -9,7 +9,8 @@ use tokio::sync::watch;
 
 use crate::{
     canonical::{
-        catalog::ProviderSetupMetadata, map_to_canonical_model, CanonicalModelRegistry, Modality,
+        catalog::ProviderSetupMetadata, map_to_canonical_model, recommended_models_from_registry,
+        CanonicalModelRegistry,
     },
     conversation::{
         message::{Message, MessageContentBlock},
@@ -376,6 +377,13 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         thinking_preservation_format: None,
         request_params: None,
     }
+}
+
+pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
+    recommended_models_from_registry(provider)
+        .into_iter()
+        .map(|name| model_info_for_provider_model(provider, &name))
+        .collect()
 }
 
 /// Collect all chunks from a MessageStream into a single Message and ProviderUsage

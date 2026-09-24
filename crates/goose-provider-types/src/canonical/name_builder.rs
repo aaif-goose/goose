@@ -51,11 +51,12 @@ pub fn map_provider_name(provider: &str) -> &str {
         "gemini_oauth" => "google",
         "databricks_v2" => "databricks",
         "zhipu" => "zhipuai",
+        "together" => "togetherai",
         "novita" => "novita-ai",
         "opencode_go" => "opencode-go",
         "opencode_zen" => "opencode",
         "ollama_cloud" => "ollama-cloud",
-        "kimi_code" => "kimi-for-coding",
+        "kimi_code" => "kimi-code-plan-cn",
         _ => provider,
     }
 }
@@ -545,11 +546,15 @@ mod tests {
         // === Kimi Code ===
         assert_eq!(
             map_to_canonical_model("kimi_code", "kimi-for-coding", r),
-            Some("kimi-for-coding/kimi-for-coding".to_string())
+            Some("kimi-code-plan-cn/kimi-for-coding".to_string())
         );
         assert_eq!(
             map_to_canonical_model("kimi_code", "kimi-for-coding-highspeed", r),
-            Some("kimi-for-coding/kimi-for-coding-highspeed".to_string())
+            Some("kimi-code-plan-cn/kimi-for-coding-highspeed".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("kimi_code", "k3", r),
+            Some("kimi-code-plan-cn/k3".to_string())
         );
 
         // === GCP Vertex AI ===

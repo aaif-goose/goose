@@ -24,7 +24,7 @@ pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect]) {
     for index in 0..effects.len() {
         let (usage, replaces_conversation) = match &effects[index] {
             GooseEffect::RecordUsage(usage) => (usage.clone(), false),
-            GooseEffect::ReplaceConversation {
+            GooseEffect::CompactConversation {
                 usage: Some(usage), ..
             } => (usage.clone(), true),
             _ => continue,
@@ -53,7 +53,7 @@ pub(super) fn enrich(session: &Session, effects: &mut [GooseEffect]) {
         }
         match &mut effects[index] {
             GooseEffect::RecordUsage(usage) => *usage = enriched,
-            GooseEffect::ReplaceConversation { usage, .. } => *usage = Some(enriched),
+            GooseEffect::CompactConversation { usage, .. } => *usage = Some(enriched),
             _ => {}
         }
     }
@@ -79,6 +79,6 @@ pub(super) async fn record(
 }
 
 pub(super) async fn estimate_context(conversation: &Conversation) -> Result<TokenUsage> {
-    let tokens = crate::context_mgmt::count_context_tokens(conversation).await?;
+    let tokens = crate::context_mgmt::count_context_tokens(conversation.messages()).await?;
     Ok(TokenUsage::new(Some(tokens), None, Some(tokens)))
 }

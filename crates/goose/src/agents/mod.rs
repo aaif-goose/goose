@@ -10,10 +10,12 @@ mod large_response_handler;
 pub mod mcp_client;
 pub mod moim;
 pub mod platform_extensions;
+#[cfg(feature = "scheduler")]
 pub mod platform_tools;
 pub mod prompt_manager;
 pub mod reply_parts;
 pub mod retry;
+#[cfg(feature = "scheduler")]
 mod schedule_tool;
 pub mod state_machine;
 pub mod subagent_execution_tool;
@@ -34,6 +36,7 @@ pub use extension_manager::ExtensionManager;
 pub use goose_agent::events::AgentEvent;
 pub(crate) use large_response_handler::max_tool_response_size;
 pub use prompt_manager::PromptManager;
+#[cfg(feature = "scheduler")]
 pub use schedule_tool::ScheduleTool;
 pub use subagent_handler::SUBAGENT_TOOL_REQUEST_TYPE;
 pub use subagent_task_config::TaskConfig;

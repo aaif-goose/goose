@@ -27,7 +27,7 @@ pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
     Config::global()
         .get_param::<bool>("GOOSE_TOOL_PAIR_SUMMARIZATION")
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 
 const CONVERSATION_CONTINUATION_TEXT: &str =
@@ -191,7 +191,7 @@ pub async fn compact_messages(
     }
 
     let conversation = Conversation::new_unvalidated(final_messages);
-    let retained_context_tokens = match count_context_tokens(&conversation).await {
+    let retained_context_tokens = match count_context_tokens(conversation.messages()).await {
         Ok(tokens) => tokens,
         Err(error) => {
             warn!("Failed to count retained context tokens, using billable output tokens: {error}");
@@ -206,14 +206,13 @@ pub async fn compact_messages(
     })
 }
 
-/// Estimate the tokens of the agent-visible conversation, counted the same way
+/// Estimate the tokens of the agent-visible messages, counted the same way
 /// as the fallback estimation in `check_if_compaction_needed`.
-pub(crate) async fn count_context_tokens(conversation: &Conversation) -> Result<i32> {
+pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
     let counter = create_token_counter()
         .await
         .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
-    let total: usize = conversation
-        .messages()
+    let total: usize = messages
         .iter()
         .filter(|message| message.is_agent_visible())
         .map(|message| counter.count_chat_tokens("", std::slice::from_ref(message), &[]))
@@ -1176,6 +1175,7 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_tool_calls_share_one_summary_request() {
+        let _guard = env_lock::lock_env([("GOOSE_TOOL_PAIR_SUMMARIZATION", Some("true"))]);
         let provider = Arc::new(MockProvider::new(
             Message::assistant().with_text("summary"),
             1000,

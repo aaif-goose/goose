@@ -31,6 +31,7 @@ tokio = { workspace = true, features = ["sync", "time"] }
 tracing = { workspace = true }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 uuid = { workspace = true, features = ["v4", "std"] }
+zstd = "0.14.0"
 
 [dev-dependencies]
 env-lock = { workspace = true }
@@ -38,3 +39,6 @@ tempfile = { workspace = true }
 test-case = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tokio-stream = { workspace = true }
+
+[build-dependencies]
+zstd = "0.14.0"

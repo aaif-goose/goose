@@ -1426,7 +1426,7 @@ impl CliSession {
                                 output::hide_thinking();
                                 let _ = progress_bars.hide();
 
-                                match elicitation::collect_elicitation_input(&elicitation_message, &schema) {
+                                match elicitation::collect_elicitation_input(&elicitation_message, &schema, &cancel_token_clone) {
                                     Ok(input) => {
                                         match &input.action {
                                             ElicitationAction::Decline => {

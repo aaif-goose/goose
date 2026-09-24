@@ -165,6 +165,39 @@ check-acp-artifacts: generate-acp-types generate-acp-docs
     fi
     echo "✅ Generated ACP artifacts are up-to-date"
 
+# Build the lean ACP binary
+build-lean:
+    cargo build -p goose --bin goose-acp \
+      --profile lean \
+      --no-default-features \
+      --features native-tls
+
+# Budgets are per-platform. ELF carries several MiB that Mach-O does not for the
+# same code: DWARF .eh_frame instead of compact unwind info, and a .rela.dyn
+# table of relative relocations that Mach-O encodes as LINKEDIT rebase opcodes.
+# A single cross-platform number would either be unreachable on Linux or
+# useless as a regression signal on macOS.
+
+# Enforce the lean binary's size budget (override with GOOSE_LEAN_MAX_BYTES)
+check-lean-size: build-lean
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+      Darwin) default_max_bytes=17825792 ;;
+      *) default_max_bytes=23068672 ;;
+    esac
+    max_bytes="${GOOSE_LEAN_MAX_BYTES:-$default_max_bytes}"
+
+    binary="target/lean/goose-acp"
+    bytes=$(wc -c < "$binary" | tr -d '[:space:]')
+    mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1024 / 1024 }')
+    printf '%s: %s bytes (%s MiB)\n' "$binary" "$bytes" "$mib"
+
+    if (( bytes > max_bytes )); then
+      printf 'lean binary exceeds budget of %s bytes; set GOOSE_LEAN_MAX_BYTES to override\n' "$max_bytes" >&2
+      exit 1
+    fi
+
 # Generate ACP JSON schema from Rust types
 generate-acp-schema:
     @echo "Generating ACP schema..."

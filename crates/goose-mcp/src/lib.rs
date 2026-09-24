@@ -1,5 +1,11 @@
 use etcetera::AppStrategyArgs;
 use once_cell::sync::Lazy;
+#[cfg(any(
+    feature = "autovisualiser",
+    feature = "computer-controller",
+    feature = "memory-server",
+    feature = "tutorial-server"
+))]
 use rmcp::{ServerHandler, ServiceExt};
 use std::collections::HashMap;
 
@@ -11,23 +17,43 @@ pub static APP_STRATEGY: Lazy<AppStrategyArgs> = Lazy::new(|| AppStrategyArgs {
     app_name: "goose".to_string(),
 });
 
+#[cfg(feature = "autovisualiser")]
 pub mod autovisualiser;
+#[cfg(feature = "computer-controller")]
 pub mod computercontroller;
+#[cfg(any(
+    feature = "autovisualiser",
+    feature = "computer-controller",
+    feature = "memory-server",
+    feature = "tutorial-server"
+))]
 pub mod mcp_server_runner;
+#[cfg(feature = "memory-server")]
 mod memory;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "computer-controller"))]
 pub mod peekaboo;
+#[cfg(feature = "computer-controller")]
 pub mod subprocess;
+#[cfg(feature = "tutorial-server")]
 pub mod tutorial;
 
+#[cfg(feature = "autovisualiser")]
 pub use autovisualiser::AutoVisualiserRouter;
+#[cfg(feature = "computer-controller")]
 pub use computercontroller::ComputerControllerServer;
+#[cfg(feature = "memory-server")]
 pub use memory::MemoryServer;
+#[cfg(feature = "tutorial-server")]
 pub use tutorial::TutorialServer;
 
-/// Type definition for a function that spawns and serves a builtin extension server
 pub type SpawnServerFn = fn(tokio::io::DuplexStream, tokio::io::DuplexStream);
 
+#[cfg(any(
+    feature = "autovisualiser",
+    feature = "computer-controller",
+    feature = "memory-server",
+    feature = "tutorial-server"
+))]
 fn spawn_and_serve<S>(
     name: &'static str,
     server: S,
@@ -45,6 +71,12 @@ fn spawn_and_serve<S>(
     });
 }
 
+#[cfg(any(
+    feature = "autovisualiser",
+    feature = "computer-controller",
+    feature = "memory-server",
+    feature = "tutorial-server"
+))]
 macro_rules! builtin {
     ($name:ident, $server_ty:ty) => {{
         fn spawn(r: tokio::io::DuplexStream, w: tokio::io::DuplexStream) {
@@ -55,10 +87,15 @@ macro_rules! builtin {
 }
 
 pub static BUILTIN_EXTENSIONS: Lazy<HashMap<&'static str, SpawnServerFn>> = Lazy::new(|| {
-    HashMap::from([
-        builtin!(autovisualiser, AutoVisualiserRouter),
-        builtin!(computercontroller, ComputerControllerServer),
-        builtin!(memory, MemoryServer),
-        builtin!(tutorial, TutorialServer),
-    ])
+    #[allow(unused_mut)]
+    let mut extensions = HashMap::new();
+    #[cfg(feature = "autovisualiser")]
+    extensions.extend([builtin!(autovisualiser, AutoVisualiserRouter)]);
+    #[cfg(feature = "computer-controller")]
+    extensions.extend([builtin!(computercontroller, ComputerControllerServer)]);
+    #[cfg(feature = "memory-server")]
+    extensions.extend([builtin!(memory, MemoryServer)]);
+    #[cfg(feature = "tutorial-server")]
+    extensions.extend([builtin!(tutorial, TutorialServer)]);
+    extensions
 });

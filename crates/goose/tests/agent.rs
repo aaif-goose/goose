@@ -863,7 +863,6 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use goose::agents::{AgentConfig, SessionConfig};
-        use goose::config::base::Config;
         use goose::config::permission::PermissionManager;
         use goose::config::GooseMode;
         use goose::conversation::message::Message;
@@ -960,11 +959,10 @@ mod tests {
         /// - The original tool pairs are marked invisible
         #[tokio::test]
         async fn test_batch_summarization_preserves_all_summaries() -> Result<()> {
-            // Set a low cutoff so we don't need hundreds of tool pairs.
-            // cutoff=2 means we need >2+10=12 visible tool pairs to trigger.
-            Config::global()
-                .set_param("GOOSE_TOOL_CALL_CUTOFF", 2)
-                .unwrap();
+            let _guard = env_lock::lock_env([
+                ("GOOSE_TOOL_PAIR_SUMMARIZATION", Some("true")),
+                ("GOOSE_TOOL_CALL_CUTOFF", Some("2")),
+            ]);
 
             let temp_dir = tempfile::tempdir()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
@@ -1121,9 +1119,6 @@ mod tests {
                 last_summary_pos,
                 agent_reply_pos,
             );
-
-            // Clean up the config override
-            Config::global().delete("GOOSE_TOOL_CALL_CUTOFF").unwrap();
 
             Ok(())
         }

@@ -1,11 +1,15 @@
+#[cfg(feature = "tree-sitter")]
 pub mod analyze;
+#[cfg(feature = "platform-apps")]
 pub mod apps;
+#[cfg(feature = "chat-recall")]
 pub mod chatrecall;
 #[cfg(feature = "code-mode")]
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+#[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
 pub mod summon;
@@ -30,6 +34,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
     || {
         let mut map = HashMap::new();
 
+        #[cfg(feature = "tree-sitter")]
         map.insert(
             analyze::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -51,13 +56,14 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 display_name: "Todo",
                 description:
                     "Enable a todo list for goose so it can keep track of what it is doing",
-                default_enabled: true,
+                default_enabled: false,
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| Some(Box::new(todo::TodoClient::new(ctx).unwrap())),
             },
         );
 
+        #[cfg(feature = "platform-apps")]
         map.insert(
             apps::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -72,6 +78,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "chat-recall")]
         map.insert(
             chatrecall::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -102,6 +109,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "scheduler")]
         map.insert(
             scheduler::EXTENSION_NAME,
             PlatformExtensionDef {
