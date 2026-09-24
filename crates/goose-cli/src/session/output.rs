@@ -647,11 +647,15 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
     }
 }
 
-pub(super) fn sanitize_terminal_line(line: &str) -> String {
-    strip_str(line)
+fn sanitize_terminal_output(text: &str) -> String {
+    strip_str(text)
         .flat_map(str::chars)
-        .filter(|character| *character == '\t' || !character.is_control())
+        .filter(|character| matches!(*character, '\n' | '\t') || !character.is_control())
         .collect()
+}
+
+pub(super) fn sanitize_terminal_line(line: &str) -> String {
+    sanitize_terminal_output(line)
 }
 
 fn sanitize_tool_confirmation_line(line: &str) -> String {
@@ -1135,7 +1139,8 @@ pub fn env_no_color() -> bool {
 
 fn print_markdown(content: &str, theme: Theme) {
     if std::io::stdout().is_terminal() {
-        if let Some((before, table, after)) = extract_markdown_table(content) {
+        let content = sanitize_terminal_output(content);
+        if let Some((before, table, after)) = extract_markdown_table(&content) {
             if !before.is_empty() {
                 print_markdown_raw(&before, theme);
             }
@@ -1144,7 +1149,7 @@ fn print_markdown(content: &str, theme: Theme) {
                 print_markdown(after, theme);
             }
         } else {
-            print_markdown_raw(content, theme);
+            print_markdown_raw(&content, theme);
         }
     } else {
         print!("{}", content);
@@ -1762,6 +1767,26 @@ mod tests {
         assert_eq!(
             sanitize_terminal_line("before\x08after\x07\r\tvisible"),
             "beforeafter\tvisible"
+        );
+    }
+
+    #[test]
+    fn markdown_sanitizer_strips_alt_screen_and_osc52() {
+        assert_eq!(
+            sanitize_terminal_output("safe \x1b[?1049h after"),
+            "safe  after"
+        );
+        assert_eq!(
+            sanitize_terminal_output("before\x1b]52;c;VEVTVA==\x07after"),
+            "beforeafter"
+        );
+        assert_eq!(
+            sanitize_terminal_output("before\x1b]52;c;VEVTVA==\x1b\\after"),
+            "beforeafter"
+        );
+        assert_eq!(
+            sanitize_terminal_output("# Title\n\n- item\n"),
+            "# Title\n\n- item\n"
         );
     }
 
