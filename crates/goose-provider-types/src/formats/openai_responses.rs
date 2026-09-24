@@ -149,21 +149,23 @@ pub struct ResponseUsage {
 pub struct InputTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<i32>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<i32>,
 }
 
 impl ResponseUsage {
     fn to_usage(&self) -> Usage {
-        // input_tokens already includes cached tokens
-        let cached_tokens = self
-            .input_tokens_details
-            .as_ref()
-            .and_then(|d| d.cached_tokens);
+        // input_tokens already includes cached and cache-write tokens
+        let input_tokens_details = self.input_tokens_details.as_ref();
+        let cached_tokens = input_tokens_details.and_then(|details| details.cached_tokens);
+        let cache_write_tokens =
+            input_tokens_details.and_then(|details| details.cache_write_tokens);
         Usage::new(
             Some(self.input_tokens),
             Some(self.output_tokens),
             Some(self.total_tokens),
         )
-        .with_cache_tokens(cached_tokens, None)
+        .with_cache_tokens(cached_tokens, cache_write_tokens)
     }
 }
 
@@ -1275,6 +1277,33 @@ mod tests {
     use rmcp::model::CallToolRequestParams;
     use rmcp::object;
 
+    #[test]
+    fn test_responses_usage_preserves_cache_write_tokens() {
+        let response: ResponsesApiResponse = serde_json::from_value(serde_json::json!({
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 1737368310,
+            "status": "completed",
+            "model": "gpt-6-luna",
+            "output": [],
+            "usage": {
+                "input_tokens": 5457,
+                "output_tokens": 5,
+                "total_tokens": 5462,
+                "input_tokens_details": {
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 5454
+                }
+            }
+        }))
+        .expect("Responses API usage should deserialize");
+
+        let usage = get_responses_usage(&response);
+
+        assert_eq!(usage.cache_read_input_tokens, Some(0));
+        assert_eq!(usage.cache_write_input_tokens, Some(5454));
+    }
+
     #[tokio::test]
     async fn test_responses_stream_ignores_keepalive_event() -> anyhow::Result<()> {
         let lines = vec![
@@ -1282,7 +1311,7 @@ mod tests {
             r#"data: {"type":"keepalive"}"#.to_string(),
             r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#.to_string(),
             r#"data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#.to_string(),
-            r#"data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"gpt-5.2-pro","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14,"input_tokens_details":{"cached_tokens":6}}}}"#.to_string(),
+            r#"data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"gpt-5.2-pro","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14,"input_tokens_details":{"cached_tokens":6,"cache_write_tokens":2}}}}"#.to_string(),
             "data: [DONE]".to_string(),
         ];
 
@@ -1314,7 +1343,7 @@ mod tests {
         assert_eq!(usage.usage.output_tokens, Some(4));
         assert_eq!(usage.usage.total_tokens, Some(14));
         assert_eq!(usage.usage.cache_read_input_tokens, Some(6));
-        assert_eq!(usage.usage.cache_write_input_tokens, None);
+        assert_eq!(usage.usage.cache_write_input_tokens, Some(2));
 
         Ok(())
     }
@@ -1402,7 +1431,7 @@ mod tests {
         let lines = vec![
             r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"in_progress","model":"gpt-5.2-pro","output":[]}}"#.to_string(),
             r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Partial response"}"#.to_string(),
-            r#"data: {"type":"response.incomplete","sequence_number":3,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"incomplete","model":"gpt-5.2-pro","output":[],"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}"#.to_string(),
+            r#"data: {"type":"response.incomplete","sequence_number":3,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"incomplete","model":"gpt-5.2-pro","output":[],"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":3}}}}"#.to_string(),
             "data: [DONE]".to_string(),
         ];
 
@@ -1441,6 +1470,8 @@ mod tests {
         assert_eq!(usage.usage.input_tokens, Some(10));
         assert_eq!(usage.usage.output_tokens, Some(5));
         assert_eq!(usage.usage.total_tokens, Some(15));
+        assert_eq!(usage.usage.cache_read_input_tokens, Some(2));
+        assert_eq!(usage.usage.cache_write_input_tokens, Some(3));
         assert_eq!(
             usage.finish_reasons.as_deref(),
             Some(&["max_output_tokens".to_string()][..])
