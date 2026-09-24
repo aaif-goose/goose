@@ -364,6 +364,29 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
     }
 }
 
+/// Build `ModelInfo` for discovered model names, preferring metadata declared in
+/// provider configuration over the canonical registry.
+///
+/// Configured entries are authoritative: a statically declared model carries its
+/// own `context_limit`/`reasoning` values, which the canonical registry does not
+/// know about. Names absent from `configured` fall back to registry metadata.
+pub fn merge_configured_model_info(
+    provider_name: &str,
+    model_names: &[String],
+    configured: &[ModelInfo],
+) -> Vec<ModelInfo> {
+    model_names
+        .iter()
+        .map(|model_name| {
+            configured
+                .iter()
+                .find(|declared| declared.name == *model_name)
+                .cloned()
+                .unwrap_or_else(|| model_info_for_provider_model(provider_name, model_name))
+        })
+        .collect()
+}
+
 pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
     recommended_models_from_registry(provider)
         .into_iter()
@@ -728,6 +751,29 @@ pub trait Provider: Send + Sync {
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[test]
+    fn merge_configured_model_info_falls_back_to_registry_for_undeclared_models() {
+        let declared = ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("declared-model").with_context_limit(4096)
+        };
+
+        let merged = merge_configured_model_info(
+            "openai",
+            &["declared-model".to_string(), "gpt-4o".to_string()],
+            std::slice::from_ref(&declared),
+        );
+
+        assert_eq!(merged[0].context_limit, Some(4096));
+        assert!(merged[0].reasoning);
+
+        assert_eq!(merged[1].name, "gpt-4o");
+        assert_eq!(
+            merged[1].context_limit,
+            model_info_for_provider_model("openai", "gpt-4o").context_limit
+        );
+    }
 
     struct ModelInventoryProvider {
         models: Vec<String>,

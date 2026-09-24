@@ -401,6 +401,15 @@ impl Provider for AnthropicProvider {
         self.fetch_models_from_api().await
     }
 
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let names = self.fetch_supported_models().await?;
+        Ok(crate::base::merge_configured_model_info(
+            &self.name,
+            &names,
+            self.custom_models.as_deref().unwrap_or_default(),
+        ))
+    }
+
     async fn stream(
         &self,
         model_config: &ModelConfig,
@@ -595,6 +604,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(payload["thinking"]["clear_thinking"], false);
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_model_info_preserves_configured_metadata() {
+        let mut provider = make_provider_with_custom_models("http://localhost", vec![]);
+        provider.dynamic_models = Some(false);
+        provider.custom_models = Some(vec![ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("unrecognized-static-model").with_context_limit(4096)
+        }]);
+
+        let models = provider.fetch_supported_model_info().await.unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "unrecognized-static-model");
+        assert_eq!(models[0].context_limit, Some(4096));
+        assert!(models[0].reasoning);
     }
 
     fn make_provider_with_custom_models(
